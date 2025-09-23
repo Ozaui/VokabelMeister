@@ -5,9 +5,18 @@ const wordSchema = new mongoose.Schema(
     german: { type: String, required: true },
     turkish: { type: String, required: true },
     sampleSentence: { type: String },
-    category: { type: String, required: true }, // İsim, fiil, sıfat vb.
-    difficulty: { type: String, required: true }, // easy, medium, hard
+    category: { type: String, required: true },
+    level: {
+      type: String,
+      required: true,
+      enum: ["A1", "A2", "B1", "B2", "C1", "C2"],
+    },
     learned: { type: Boolean, default: false },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
   { timestamps: true }
 );

@@ -1,9 +1,10 @@
 import express from "express";
-import { getWords, addWord } from "../controllers/wordController.js";
+import { getWordsByLevel, addWord } from "../controllers/wordController.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", getWords);
-router.post("/", addWord);
+router.get("/", authMiddleware, getWordsByLevel);
+router.post("/", authMiddleware, addWord);
 
 export default router;
