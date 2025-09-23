@@ -1,0 +1,56 @@
+import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { AuthState, User } from "../../Types/authTypes";
+import { loginUserThunk, registerUserThunk } from "./authThunk";
+
+const token = localStorage.getItem("token");
+const initialState: AuthState = {
+  user: token ? ({ token } as User) : null,
+  loading: false,
+  error: null,
+};
+
+const authSlice = createSlice({
+  name: "auth",
+  initialState,
+  reducers: {
+    logoutUser: (state) => {
+      state.user = null;
+      state.error = null;
+      localStorage.removeItem("token");
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      // Register
+      .addCase(registerUserThunk.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(registerUserThunk.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(registerUserThunk.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
+      // Login
+      .addCase(loginUserThunk.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(
+        loginUserThunk.fulfilled,
+        (state, action: PayloadAction<User>) => {
+          state.loading = false;
+          state.user = action.payload;
+        }
+      )
+      .addCase(loginUserThunk.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload || "Login failed";
+      });
+  },
+});
+
+export const { logoutUser } = authSlice.actions;
+export default authSlice.reducer;
