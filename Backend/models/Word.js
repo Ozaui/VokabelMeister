@@ -5,7 +5,7 @@ const wordSchema = new mongoose.Schema(
     german: { type: String, required: true },
     turkish: { type: String, required: true },
     sampleSentence: { type: String },
-    category: { type: String, required: true },
+    category: { type: String, default: true },
     level: {
       type: String,
       required: true,

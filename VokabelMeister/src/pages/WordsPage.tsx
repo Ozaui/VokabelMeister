@@ -1,16 +1,18 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../store/store";
 import { useNavigate } from "react-router-dom";
 import { logoutUser } from "../features/auth/authSlice";
 import { fetchWordsThunk } from "../features/word/wordThunk";
+import AddWordComponent from "../Components/addWordComponent";
 
 const WordsPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-  const { words, loading, error } = useSelector(
+  const { words, fetchLoading, error } = useSelector(
     (state: RootState) => state.words
   );
+
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
@@ -22,7 +24,12 @@ const WordsPage: React.FC = () => {
     navigate("/login");
   };
 
-  if (loading) return <h1>loading...</h1>;
+  const [addNewWord, setAddNewWord] = useState(false);
+  const handleNewWord = () => {
+    setAddNewWord(true);
+  };
+
+  if (fetchLoading) return <h1>loading...</h1>;
   if (error) return <h1>Error: {error}</h1>;
   return (
     <div>
@@ -37,6 +44,12 @@ const WordsPage: React.FC = () => {
           </li>
         ))}
       </ul>
+
+      {!addNewWord ? (
+        <button onClick={handleNewWord}>Add New Word</button>
+      ) : (
+        <AddWordComponent />
+      )}
 
       <button onClick={handleLogout}>Log Out</button>
     </div>

@@ -17,16 +17,19 @@ export const getWordsByLevel = async (req, res) => {
 };
 
 export const addWord = async (req, res) => {
-  const { german, turkish, sampleSentence, category, level, isDefault } =
-    req.body;
+  const { german, turkish, sampleSentence, category } = req.body;
+
+  if (!req.user || !req.user.userId) {
+    return res.status(401).json({ message: "unauthorized" });
+  }
 
   const word = new Word({
     german,
     turkish,
     sampleSentence,
     category,
-    level,
-    userId: isDefault ? null : req.user.userId,
+    level: req.user.level,
+    userId: req.user.userId,
   });
 
   try {

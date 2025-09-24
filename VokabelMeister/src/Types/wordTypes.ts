@@ -9,8 +9,16 @@ export type Word = {
   userId: string | null;
 };
 
+export type AddWordPayload = {
+  german: string;
+  turkish: string;
+  sampleSentence?: string;
+  category: string;
+};
+
 export type WordsState = {
   words: Word[];
-  loading: boolean;
+  fetchLoading: boolean;
+  addLoading: boolean;
   error: string | null;
 };
