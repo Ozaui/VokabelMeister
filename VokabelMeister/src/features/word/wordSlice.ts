@@ -1,9 +1,10 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { Word, WordsState } from "../../Types/wordTypes";
+import type { Word, WordsResponse, WordsState } from "../../Types/wordTypes";
 import { addWordThunk, fetchWordsThunk } from "./wordThunk";
 
 const initialState: WordsState = {
-  words: [],
+  defaultWords: [],
+  userWords: [],
   fetchLoading: false,
   addLoading: false,
   error: null,
@@ -21,9 +22,10 @@ const wordsSlice = createSlice({
       })
       .addCase(
         fetchWordsThunk.fulfilled,
-        (state, action: PayloadAction<Word[]>) => {
+        (state, action: PayloadAction<WordsResponse>) => {
           state.fetchLoading = false;
-          state.words = action.payload;
+          state.defaultWords = action.payload.defaultWords;
+          state.userWords = action.payload.userWords;
         }
       )
       .addCase(fetchWordsThunk.rejected, (state, action) => {
@@ -37,7 +39,7 @@ const wordsSlice = createSlice({
       })
       .addCase(addWordThunk.fulfilled, (state, action: PayloadAction<Word>) => {
         state.addLoading = false;
-        state.words.push(action.payload);
+        state.userWords.push(action.payload);
       })
       .addCase(addWordThunk.rejected, (state, action) => {
         state.addLoading = false;

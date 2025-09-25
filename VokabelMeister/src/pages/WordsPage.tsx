@@ -4,12 +4,12 @@ import type { AppDispatch, RootState } from "../store/store";
 import { useNavigate } from "react-router-dom";
 import { logoutUser } from "../features/auth/authSlice";
 import { fetchWordsThunk } from "../features/word/wordThunk";
-import AddWordComponent from "../Components/addWordComponent";
+import AddWordComponent from "../Components/AddWordComponent";
 
 const WordsPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-  const { words, fetchLoading, error } = useSelector(
+  const { defaultWords, userWords, fetchLoading, error } = useSelector(
     (state: RootState) => state.words
   );
 
@@ -34,13 +34,26 @@ const WordsPage: React.FC = () => {
   return (
     <div>
       <h1>{user?.level} Level Words</h1>
+      <h2>Default Words</h2>
       <ul>
-        {words.map((word) => (
+        {defaultWords.map((word) => (
           <li key={word._id}>
             <strong>
               {word.german} = {word.turkish}
             </strong>
-            <p>{word.sampleSentence && word.sampleSentence}</p>
+            {word.sampleSentence && <p>{word.sampleSentence}</p>}
+          </li>
+        ))}
+      </ul>
+
+      <h2>My Words</h2>
+      <ul>
+        {userWords.map((word) => (
+          <li key={word._id}>
+            <strong>
+              {word.german} = {word.turkish}
+            </strong>
+            {word.sampleSentence && <p>{word.sampleSentence}</p>}
           </li>
         ))}
       </ul>

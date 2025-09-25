@@ -17,8 +17,14 @@ export type AddWordPayload = {
 };
 
 export type WordsState = {
-  words: Word[];
+  defaultWords: Word[];
+  userWords: Word[];
   fetchLoading: boolean;
   addLoading: boolean;
   error: string | null;
+};
+
+export type WordsResponse = {
+  defaultWords: Word[];
+  userWords: Word[];
 };

@@ -5,12 +5,17 @@ export const getWordsByLevel = async (req, res) => {
     const userLevel = req.user.level;
     const userId = req.user.userId;
 
-    const words = await Word.find({
+    const defaultWords = await Word.find({
       level: userLevel,
-      $or: [{ userId: userId }, { userId: null }],
+      userId: null,
     });
 
-    res.json(words);
+    const userWords = await Word.find({
+      level: userLevel,
+      userId: userId,
+    });
+
+    res.json({ defaultWords, userWords });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

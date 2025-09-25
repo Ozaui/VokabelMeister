@@ -1,5 +1,9 @@
 import axios from "axios";
-import type { addWordPayload, Word } from "../../Types/wordTypes";
+import type {
+  AddWordPayload,
+  Word,
+  WordsResponse,
+} from "../../Types/wordTypes";
 
 const API_BASE_URL = import.meta.env.VITE_BASE_URL as string;
 
@@ -14,12 +18,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export const fetchWords = async (): Promise<Word[]> => {
+export const fetchWords = async (): Promise<WordsResponse> => {
   const response = await api.get("/words");
   return response.data;
 };
 
-export const addWordApi = async (wordData: addWordPayload): Promise<Word> => {
+export const addWordApi = async (wordData: AddWordPayload): Promise<Word> => {
   const response = await api.post("/words", wordData);
   return response.data;
 };
