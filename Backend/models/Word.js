@@ -11,7 +11,7 @@ const wordSchema = new mongoose.Schema(
       required: true,
       enum: ["A1", "A2", "B1", "B2", "C1", "C2"],
     },
-    learned: { type: Boolean, default: false },
+    learnedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

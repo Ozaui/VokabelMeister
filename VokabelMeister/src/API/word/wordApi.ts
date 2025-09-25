@@ -27,3 +27,8 @@ export const addWordApi = async (wordData: AddWordPayload): Promise<Word> => {
   const response = await api.post("/words", wordData);
   return response.data;
 };
+
+export const markWordAsLearnedApi = async (wordId: string): Promise<Word> => {
+  const response = await api.post("/words/learned", { wordId });
+  return response.data;
+};

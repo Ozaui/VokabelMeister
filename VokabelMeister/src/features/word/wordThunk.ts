@@ -1,16 +1,19 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import type {
-  AddWordPayload,
   Word,
   WordsResponse,
+  AddWordPayload,
 } from "../../Types/wordTypes";
-import { addWordApi, fetchWords } from "../../API/word.ts/wordApi";
+import {
+  fetchWords,
+  addWordApi,
+  markWordAsLearnedApi,
+} from "../../API/word/wordApi";
 
 export const fetchWordsThunk = createAsyncThunk<WordsResponse>(
   "words/fetchWords",
   async () => {
-    const data = await fetchWords();
-    return data;
+    return await fetchWords();
   }
 );
 
@@ -18,13 +21,23 @@ export const addWordThunk = createAsyncThunk<Word, AddWordPayload>(
   "words/addWord",
   async (wordData, { rejectWithValue }) => {
     try {
-      const newWord = await addWordApi(wordData);
-      return newWord;
+      return await addWordApi(wordData);
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        return rejectWithValue(error.message);
-      }
-      return rejectWithValue("As unknown error occurred");
+      if (error instanceof Error) return rejectWithValue(error.message);
+      return rejectWithValue("Unknown error occurred");
     }
   }
 );
+
+export const markWordAsLearnedThunk = createAsyncThunk<
+  Word,
+  string,
+  { rejectValue: string }
+>("words/markAsLearned", async (wordId, { rejectWithValue }) => {
+  try {
+    return await markWordAsLearnedApi(wordId);
+  } catch (error: unknown) {
+    if (error instanceof Error) return rejectWithValue(error.message);
+    return rejectWithValue("Unknown error occurred");
+  }
+});

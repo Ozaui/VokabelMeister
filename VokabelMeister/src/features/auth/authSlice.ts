@@ -17,6 +17,7 @@ const authSlice = createSlice({
       state.user = null;
       state.error = null;
       localStorage.removeItem("token");
+      localStorage.removeItem("token_expiration");
     },
   },
   extraReducers: (builder) => {

@@ -5,8 +5,8 @@ export type Word = {
   sampleSentence?: string;
   category: string;
   level: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-  learned: boolean;
   userId: string | null;
+  isLearned: boolean;
 };
 
 export type AddWordPayload = {
@@ -19,6 +19,7 @@ export type AddWordPayload = {
 export type WordsState = {
   defaultWords: Word[];
   userWords: Word[];
+  learnedWords: Word[];
   fetchLoading: boolean;
   addLoading: boolean;
   error: string | null;
@@ -27,4 +28,5 @@ export type WordsState = {
 export type WordsResponse = {
   defaultWords: Word[];
   userWords: Word[];
+  learnedWords: Word[];
 };
