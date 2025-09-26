@@ -6,6 +6,7 @@ import WordsPage from "../pages/WordsPage";
 import PublicRoute from "./PublicRoute";
 import PrivateRoute from "./PrivateRoute";
 import NotFound from "../pages/NotFound";
+import MainPage from "../pages/MainPage";
 
 const AppRoutes: React.FC = () => {
   return (
@@ -13,6 +14,7 @@ const AppRoutes: React.FC = () => {
       <Routes>
         {/* 404 Route */}
         <Route path="*" element={<NotFound />} />
+        <Route path="/" element={<MainPage />} />
 
         {/* Public Routes */}
         <Route

@@ -32,68 +32,184 @@ const RegisterPage: React.FC = () => {
     }
   };
 
+  const inputClass =
+    "w-full rounded-lg border border-gray-300 p-3 shadow-sm focus:border-orange-500 focus:ring-orange-500 transition duration-150";
+  const labelClass = "block text-sm font-medium text-gray-700 mb-1";
+  const errorClass = "mt-1 text-sm text-red-600";
+
   return (
-    <div>
-      <h1>Register</h1>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-lg rounded-xl bg-white p-8 shadow-2xl">
+        {/* Başlık */}
+        <h1 className="text-center text-3xl font-bold text-gray-800 mb-4">
+          Join <span className="text-orange-500">Vokabel Meister</span>
+        </h1>
+        <p className="text-center text-gray-600 mb-8">
+          Start your language journey in a fun and effective way!
+        </p>
 
-      <Formik
-        initialValues={initialValues}
-        validationSchema={registerSchema}
-        onSubmit={handleSubmit}
-      >
-        {({ isSubmitting }) => (
-          <Form>
-            <div>
-              <label>Name</label>
-              <Field type="text" name="name" />
-              <ErrorMessage name="name" component="div" />
-            </div>
+        <Formik
+          initialValues={initialValues}
+          validationSchema={registerSchema}
+          onSubmit={handleSubmit}
+        >
+          {({ isSubmitting }) => (
+            <Form className="space-y-5">
+              {/* İsim ve Soyisim Gruplaması */}
+              <div className="flex gap-4">
+                <div className="w-1/2">
+                  <label htmlFor="name" className={labelClass}>
+                    Name
+                  </label>
+                  <Field
+                    type="text"
+                    name="name"
+                    id="name"
+                    className={inputClass}
+                    placeholder="First Name"
+                  />
+                  <ErrorMessage
+                    name="name"
+                    component="div"
+                    className={errorClass}
+                  />
+                </div>
+                <div className="w-1/2">
+                  <label htmlFor="surname" className={labelClass}>
+                    Surname
+                  </label>
+                  <Field
+                    type="text"
+                    name="surname"
+                    id="surname"
+                    className={inputClass}
+                    placeholder="Last Name"
+                  />
+                  <ErrorMessage
+                    name="surname"
+                    component="div"
+                    className={errorClass}
+                  />
+                </div>
+              </div>
 
-            <div>
-              <label>Surname</label>
-              <Field type="text" name="surname" />
-              <ErrorMessage name="surname" component="div" />
-            </div>
+              {/* Email Alanı */}
+              <div>
+                <label htmlFor="email" className={labelClass}>
+                  Email Address
+                </label>
+                <Field
+                  type="email"
+                  name="email"
+                  id="email"
+                  className={inputClass}
+                  placeholder="you@example.com"
+                />
+                <ErrorMessage
+                  name="email"
+                  component="div"
+                  className={errorClass}
+                />
+              </div>
 
-            <div>
-              <label>Email</label>
-              <Field type="email" name="email" />
-              <ErrorMessage name="email" component="div" />
-            </div>
+              {/* Şifre Alanları Gruplaması */}
+              <div className="flex gap-4">
+                <div className="w-1/2">
+                  <label htmlFor="password" className={labelClass}>
+                    Password
+                  </label>
+                  <Field
+                    type="password"
+                    name="password"
+                    id="password"
+                    className={inputClass}
+                    placeholder="••••••••"
+                  />
+                  <ErrorMessage
+                    name="password"
+                    component="div"
+                    className={errorClass}
+                  />
+                </div>
+                <div className="w-1/2">
+                  <label htmlFor="confirmPassword" className={labelClass}>
+                    Confirm Password
+                  </label>
+                  <Field
+                    type="password"
+                    name="confirmPassword"
+                    id="confirmPassword"
+                    className={inputClass}
+                    placeholder="••••••••"
+                  />
+                  <ErrorMessage
+                    name="confirmPassword"
+                    component="div"
+                    className={errorClass}
+                  />
+                </div>
+              </div>
 
-            <div>
-              <label>Password</label>
-              <Field type="password" name="password" />
-              <ErrorMessage name="password" component="div" />
-            </div>
+              {/* Dil Seviyesi Alanı */}
+              <div>
+                <label htmlFor="level" className={labelClass}>
+                  Select your current level
+                </label>
+                <Field
+                  as="select"
+                  name="level"
+                  id="level"
+                  className={inputClass}
+                >
+                  <option value="A1">A1 - Beginner</option>
+                  <option value="A2">A2 - Elementary</option>
+                  <option value="B1">B1 - Intermediate</option>
+                  <option value="B2">B2 - Upper Intermediate</option>
+                  <option value="C1">C1 - Advanced</option>
+                  <option value="C2">C2 - Proficiency</option>
+                </Field>
+                <ErrorMessage
+                  name="level"
+                  component="div"
+                  className={errorClass}
+                />
+              </div>
 
-            <div>
-              <label>Confirm Password</label>
-              <Field type="password" name="confirmPassword" />
-              <ErrorMessage name="confirmPassword" component="div" />
-            </div>
+              {/* Kayıt Butonu */}
+              <button
+                type="submit"
+                disabled={isSubmitting || loading}
+                className={`w-full py-3 px-4 rounded-full font-bold text-white transition-colors duration-300 shadow-lg mt-6 ${
+                  isSubmitting || loading
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-orange-500 hover:bg-orange-600"
+                }`}
+              >
+                {loading ? "Registering..." : "Create Account"}
+              </button>
 
-            <div>
-              <label>Select your level</label>
-              <Field as="select" name="level">
-                <option value="A1">A1</option>
-                <option value="A2">A2</option>
-                <option value="B1">B1</option>
-                <option value="B2">B2</option>
-                <option value="C1">C1</option>
-                <option value="C2">C2</option>
-              </Field>
-              <ErrorMessage name="level" component="div" />
-            </div>
+              {/* Hata Mesajı */}
+              {error && (
+                <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-center">
+                  {error}
+                </div>
+              )}
 
-            <button type="submit" disabled={isSubmitting || loading}>
-              {loading ? "Registering..." : "Register"}
-            </button>
-
-            {error && <div style={{ color: "red" }}>{error}</div>}
-          </Form>
-        )}
-      </Formik>
+              {/* Giriş Yapma Linki */}
+              <p className="mt-4 text-center text-sm text-gray-600">
+                Already have an account?
+                <button
+                  type="button"
+                  onClick={() => navigate("/login")}
+                  className="font-semibold text-orange-500 hover:text-orange-600 ml-1"
+                >
+                  Log In
+                </button>
+              </p>
+            </Form>
+          )}
+        </Formik>
+      </div>
     </div>
   );
 };
