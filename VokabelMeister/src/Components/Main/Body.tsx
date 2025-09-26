@@ -1,6 +1,8 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 
 const Body: React.FC = () => {
+  const navigate = useNavigate();
   return (
     <main className="flex justify-center items-center py-16 px-4 md:px-0">
       <div
@@ -26,10 +28,16 @@ const Body: React.FC = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
-            <button className="bg-orange-500 text-white font-semibold py-3 px-8 rounded-full hover:bg-blue-700 transition-colors duration-300 w-full sm:w-auto">
+            <button
+              onClick={() => navigate("/register")}
+              className="bg-orange-500 text-white font-semibold py-3 px-8 rounded-full hover:bg-orange-700 transition-colors duration-300 w-full sm:w-auto cursor-pointer"
+            >
               Get Started for Free
             </button>
-            <button className="bg-white text-gray-800 font-semibold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors duration-300 w-full sm:w-auto">
+            <button
+              onClick={() => navigate("/courses")}
+              className="bg-white text-gray-800 font-semibold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors duration-300 w-full sm:w-auto cursor-pointer"
+            >
               Explore Courses
             </button>
           </div>
