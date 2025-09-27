@@ -4,7 +4,7 @@ import { checkTokenExpiration } from "./API/auth/authApi";
 
 const App: React.FC = () => {
   useEffect(() => {
-    checkTokenExpiration(); // sayfa açılır açılmaz kontrol
+    checkTokenExpiration();
   }, []);
   return (
     <div>
