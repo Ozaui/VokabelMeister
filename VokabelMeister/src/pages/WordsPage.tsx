@@ -14,6 +14,7 @@ import {
   FaPlus,
   FaSignOutAlt,
   FaTimesCircle,
+  FaEye,
 } from "react-icons/fa";
 
 const WordsPage: React.FC = () => {
@@ -33,6 +34,8 @@ const WordsPage: React.FC = () => {
   const [addNewWord, setAddNewWord] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  const [showTranslation, setShowTranslation] = useState(false);
+
   useEffect(() => {
     if (user) dispatch(fetchWordsThunk());
   }, [user, dispatch]);
@@ -40,6 +43,10 @@ const WordsPage: React.FC = () => {
   const allWords = [...defaultWords, ...userWords].filter(
     (word) => !learnedWords.some((learned) => learned._id === word._id)
   );
+
+  useEffect(() => {
+    setShowTranslation(false);
+  }, [currentIndex]);
 
   const handleLogout = () => {
     dispatch(logoutUser());
@@ -71,7 +78,6 @@ const WordsPage: React.FC = () => {
       </div>
     );
 
-  // Durum: Hiç kelime yok
   if (allWords.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
@@ -117,7 +123,6 @@ const WordsPage: React.FC = () => {
     );
   }
 
-  // Durum: Kelimeler var
   const currentWord = allWords[currentIndex];
 
   return (
@@ -137,7 +142,6 @@ const WordsPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Ana kelime kartı */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-2xl p-8 border-t-8 border-orange-500 flex flex-col items-center text-center">
             <h2 className="text-xl font-semibold text-gray-600 mb-6">
               Word {currentIndex + 1} of {allWords.length}
@@ -146,33 +150,57 @@ const WordsPage: React.FC = () => {
             <strong className="text-6xl font-extrabold text-gray-800 mb-4">
               {currentWord.german}
             </strong>
-            <p className="text-3xl text-orange-500 font-medium mb-8">
-              = {currentWord.turkish}
-            </p>
 
-            {currentWord.sampleSentence && (
+            {!showTranslation ? (
+              <button
+                onClick={() => setShowTranslation(true)}
+                className="bg-orange-100 text-orange-700 font-bold py-3 px-8 rounded-full hover:bg-orange-200 transition-colors duration-300 flex items-center shadow-md mb-8"
+              >
+                <FaEye className="mr-2" /> Show Translation
+              </button>
+            ) : (
+              <p
+                className={`text-3xl text-orange-500 font-medium mb-8 transition-all duration-500 ${
+                  showTranslation ? "filter-none" : "filter blur-md"
+                }`}
+              >
+                = {currentWord.turkish}
+              </p>
+            )}
+
+            {currentWord.sampleSentence && showTranslation && (
               <p className="text-lg italic text-gray-700 max-w-lg mb-10 p-4 bg-gray-50 rounded-lg border-l-4 border-gray-200">
                 "{currentWord.sampleSentence}"
               </p>
             )}
 
-            <div className="flex space-x-6">
-              <button
-                onClick={() => handleLearned(currentWord._id)}
-                className="bg-green-500 text-white font-bold py-3 px-8 rounded-full hover:bg-green-600 transition-colors duration-300 flex items-center shadow-md"
-              >
-                <FaCheckCircle className="mr-2" /> Learned It
-              </button>
+            {showTranslation && (
+              <div className="flex space-x-6">
+                <button
+                  onClick={() => handleLearned(currentWord._id)}
+                  className="bg-green-500 text-white font-bold py-3 px-8 rounded-full hover:bg-green-600 transition-colors duration-300 flex items-center shadow-md"
+                >
+                  <FaCheckCircle className="mr-2" /> Learned It
+                </button>
+                <button
+                  onClick={handleNextWord}
+                  className="bg-gray-400 text-white font-bold py-3 px-8 rounded-full hover:bg-gray-500 transition-colors duration-300 flex items-center shadow-md"
+                >
+                  <FaTimesCircle className="mr-2" /> Not Yet
+                </button>
+              </div>
+            )}
+
+            {!showTranslation && (
               <button
                 onClick={handleNextWord}
                 className="bg-gray-400 text-white font-bold py-3 px-8 rounded-full hover:bg-gray-500 transition-colors duration-300 flex items-center shadow-md"
               >
-                <FaTimesCircle className="mr-2" /> Not Yet
+                <FaTimesCircle className="mr-2" /> Skip Word
               </button>
-            </div>
+            )}
           </div>
 
-          {/* Sağ panel */}
           <div className="lg:col-span-1 space-y-8">
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">
