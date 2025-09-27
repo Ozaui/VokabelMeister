@@ -32,7 +32,7 @@ app.use(
     allowedHeaders: "Content-Type,Authorization",
   })
 );
-app.use(express.json()); // JSON verilerini okuma
+app.use(express.json());
 
 app.use(async (req, res, next) => {
   await connectDB();
