@@ -30,21 +30,21 @@ const WordsPage: React.FC = () => {
 
   const user = useSelector((state: RootState) => state.auth.user);
 
+  const [addNewWord, setAddNewWord] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
   useEffect(() => {
     if (user) dispatch(fetchWordsThunk());
   }, [user, dispatch]);
+
+  const allWords = [...defaultWords, ...userWords].filter(
+    (word) => !learnedWords.some((learned) => learned._id === word._id)
+  );
 
   const handleLogout = () => {
     dispatch(logoutUser());
     navigate("/login");
   };
-
-  const [addNewWord, setAddNewWord] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  const allWords = [...defaultWords, ...userWords].filter(
-    (word) => !learnedWords.some((learned) => learned._id === word._id)
-  );
 
   const handleNextWord = () => {
     setCurrentIndex((prev) => (prev + 1 < allWords.length ? prev + 1 : 0));
@@ -71,61 +71,53 @@ const WordsPage: React.FC = () => {
       </div>
     );
 
-  if (allWords.length === 0 && learnedWords.length > 0)
+  // Durum: Hiç kelime yok
+  if (allWords.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
-        <FaCheckCircle className="text-green-500 w-16 h-16 mb-4" />
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">
-          Congratulations! You've learned all available words!
+        {learnedWords.length > 0 ? (
+          <FaCheckCircle className="text-green-500 w-16 h-16 mb-4" />
+        ) : (
+          <FaBookReader className="text-orange-500 w-16 h-16 mb-4" />
+        )}
+        <h1 className="text-3xl font-bold text-gray-800 mb-4">
+          {learnedWords.length > 0
+            ? "Congratulations! You've learned all available words!"
+            : `Welcome, ${
+                user?.name || "User"
+              }! Start your vocabulary journey.`}
         </h1>
-        <p className="text-gray-600 mb-8">
-          Ready to add new vocabulary or review your learned words?
-        </p>
+        {learnedWords.length > 0 && (
+          <p className="text-gray-600 mb-8">
+            Ready to add new vocabulary or review your learned words?
+          </p>
+        )}
 
         {!addNewWord ? (
           <button
             onClick={() => setAddNewWord(true)}
-            className="bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center shadow-lg"
+            className="bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center shadow-lg mb-4"
           >
-            <FaPlus className="mr-2" /> Add New Word
+            <FaPlus className="mr-2" />
+            {learnedWords.length > 0 ? "Add New Word" : "Add Your First Word"}
           </button>
         ) : (
-          <div className="max-w-lg w-full">
+          <div className="max-w-lg w-full mb-4">
             <AddWordComponent onCancel={() => setAddNewWord(false)} />
           </div>
         )}
 
         <button
           onClick={handleLogout}
-          className="mt-4 text-gray-600 hover:text-orange-500 transition-colors"
+          className="mt-4 text-gray-600 hover:text-orange-500 transition-colors flex items-center"
         >
-          <FaSignOutAlt className="inline mr-2" /> Log Out
+          <FaSignOutAlt className="mr-2" /> Log Out
         </button>
       </div>
     );
+  }
 
-  if (allWords.length === 0 && learnedWords.length === 0)
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
-        <FaBookReader className="text-orange-500 w-16 h-16 mb-4" />
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">
-          Welcome, {user?.name || "User"}! Start your vocabulary journey.
-        </h1>
-        <button
-          onClick={() => setAddNewWord(true)}
-          className="bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center shadow-lg"
-        >
-          <FaPlus className="mr-2" /> Add Your First Word
-        </button>
-        <button
-          onClick={handleLogout}
-          className="mt-4 text-gray-600 hover:text-orange-500 transition-colors"
-        >
-          <FaSignOutAlt className="inline mr-2" /> Log Out
-        </button>
-      </div>
-    );
-
+  // Durum: Kelimeler var
   const currentWord = allWords[currentIndex];
 
   return (
@@ -145,6 +137,7 @@ const WordsPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Ana kelime kartı */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-2xl p-8 border-t-8 border-orange-500 flex flex-col items-center text-center">
             <h2 className="text-xl font-semibold text-gray-600 mb-6">
               Word {currentIndex + 1} of {allWords.length}
@@ -179,6 +172,7 @@ const WordsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Sağ panel */}
           <div className="lg:col-span-1 space-y-8">
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">
