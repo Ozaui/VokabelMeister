@@ -24,7 +24,14 @@ const connectDB = async () => {
   }
 };
 
-app.use(cors()); // Cors ayarları
+app.use(
+  cors({
+    origin: "https://vokabel-meister-frontend.vercel.app",
+    credentials: true,
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+    allowedHeaders: "Content-Type,Authorization",
+  })
+);
 app.use(express.json()); // JSON verilerini okuma
 
 app.use(async (req, res, next) => {
