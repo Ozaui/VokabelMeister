@@ -21,12 +21,20 @@
 
 1. **New Project** → Aynı GitHub repo'yu seç
 2. **Root Directory**: `VokabelMeister` olarak ayarla
-3. **Environment Variables** ekle:
+3. **Build Command**: `npm run build` (otomatik olarak gelecek)
+4. **Output Directory**: `dist` (otomatik olarak gelecek)
+5. **Environment Variables** ekle:
    ```
    VITE_BASE_URL=https://your-backend.vercel.app/api
    NODE_ENV=production
    ```
-4. **Deploy** et
+6. **Deploy** et
+
+### Önemli:
+
+- `vercel-build` script'i `package.json`'da mevcut
+- `vercel.json` dosyası basit konfigürasyon ile ayarlandı
+- Build output `dist` klasörüne gidecek
 
 ## 3. Önemli Notlar
 
