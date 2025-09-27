@@ -44,6 +44,20 @@ Eğer frontend-backend bağlantısında sorun yaşıyorsanız:
 3. **MongoDB**: Atlas'ta IP whitelist'e `0.0.0.0/0` ekleyin
 4. **Network**: Browser console'da network errors'ları kontrol edin
 
+## 5. CSS/JS MIME Type Hataları
+
+Eğer şu hataları alıyorsanız:
+
+- `'text/html' is not a valid JavaScript MIME type`
+- `non CSS MIME types are not allowed in strict mode`
+
+**Çözüm:**
+
+1. Frontend'i yeniden deploy edin
+2. Vercel cache'i temizleyin
+3. Browser cache'i temizleyin (Ctrl+F5)
+4. Vite build assets'ların doğru MIME type'larla serve edildiğinden emin olun
+
 ## 5. Test Etme
 
 1. Backend URL'ini browser'da test edin: `https://your-backend.vercel.app/api/users`
