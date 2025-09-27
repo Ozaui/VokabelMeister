@@ -61,10 +61,18 @@ Eğer şu hataları alıyorsanız:
 
 **Çözüm:**
 
-1. Frontend'i yeniden deploy edin
-2. Vercel cache'i temizleyin
-3. Browser cache'i temizleyin (Ctrl+F5)
-4. Vite build assets'ların doğru MIME type'larla serve edildiğinden emin olun
+1. Frontend'i yeniden deploy edin (bu güncellenmiş vercel.json ile)
+2. Vercel cache'i temizleyin (Redeploy)
+3. Browser cache'i temizleyin (Ctrl+Shift+R veya hard refresh)
+4. Assets klasör yapısı optimize edildi (css/, js/, images/, fonts/)
+5. Doğru MIME type headers eklendi
+
+**Yeni Asset Yapısı:**
+
+- CSS dosyaları: `/assets/css/`
+- JS dosyaları: `/assets/js/`
+- Resimler: `/assets/images/`
+- Fontlar: `/assets/fonts/`
 
 ## 5. Test Etme
 
