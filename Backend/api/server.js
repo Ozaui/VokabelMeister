@@ -26,7 +26,7 @@ const connectDB = async () => {
 
 app.use(
   cors({
-    origin: "https://vokabel-meister-frontend.vercel.app",
+    origin: "https://vokabel-meister-xkjc.vercel.app",
     credentials: true,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
     allowedHeaders: "Content-Type,Authorization",
