@@ -8,6 +8,13 @@ import {
   markWordAsLearnedThunk,
 } from "../features/word/wordThunk";
 import AddWordComponent from "../Components/AddWordComponent";
+import {
+  FaBookReader,
+  FaCheckCircle,
+  FaPlus,
+  FaSignOutAlt,
+  FaTimesCircle,
+} from "react-icons/fa";
 
 const WordsPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -33,64 +40,191 @@ const WordsPage: React.FC = () => {
   };
 
   const [addNewWord, setAddNewWord] = useState(false);
-  const handleNewWord = () => {
-    setAddNewWord(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const allWords = [...defaultWords, ...userWords].filter(
+    (word) => !learnedWords.some((learned) => learned._id === word._id)
+  );
+
+  const handleNextWord = () => {
+    setCurrentIndex((prev) => (prev + 1 < allWords.length ? prev + 1 : 0));
   };
 
-  if (fetchLoading || addLoading) return <h1>loading...</h1>;
-  if (error) return <h1>Error: {error}</h1>;
+  const handleLearned = (wordId: string) => {
+    dispatch(markWordAsLearnedThunk(wordId));
+    handleNextWord();
+  };
+
+  if (fetchLoading || addLoading)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <h1 className="text-3xl font-semibold text-orange-500">
+          Loading words...
+        </h1>
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <h1 className="text-3xl font-semibold text-red-600">Error: {error}</h1>
+      </div>
+    );
+
+  if (allWords.length === 0 && learnedWords.length > 0)
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
+        <FaCheckCircle className="text-green-500 w-16 h-16 mb-4" />
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">
+          Congratulations! You've learned all available words!
+        </h1>
+        <p className="text-gray-600 mb-8">
+          Ready to add new vocabulary or review your learned words?
+        </p>
+
+        {!addNewWord ? (
+          <button
+            onClick={() => setAddNewWord(true)}
+            className="bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center shadow-lg"
+          >
+            <FaPlus className="mr-2" /> Add New Word
+          </button>
+        ) : (
+          <div className="max-w-lg w-full">
+            <AddWordComponent onCancel={() => setAddNewWord(false)} />
+          </div>
+        )}
+
+        <button
+          onClick={handleLogout}
+          className="mt-4 text-gray-600 hover:text-orange-500 transition-colors"
+        >
+          <FaSignOutAlt className="inline mr-2" /> Log Out
+        </button>
+      </div>
+    );
+
+  if (allWords.length === 0 && learnedWords.length === 0)
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6 text-center">
+        <FaBookReader className="text-orange-500 w-16 h-16 mb-4" />
+        <h1 className="text-3xl font-bold text-gray-800 mb-8">
+          Welcome, {user?.name || "User"}! Start your vocabulary journey.
+        </h1>
+        <button
+          onClick={() => setAddNewWord(true)}
+          className="bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center shadow-lg"
+        >
+          <FaPlus className="mr-2" /> Add Your First Word
+        </button>
+        <button
+          onClick={handleLogout}
+          className="mt-4 text-gray-600 hover:text-orange-500 transition-colors"
+        >
+          <FaSignOutAlt className="inline mr-2" /> Log Out
+        </button>
+      </div>
+    );
+
+  const currentWord = allWords[currentIndex];
+
   return (
-    <div>
-      <h1>{user?.level} Level Words</h1>
-      <h2>Default Words</h2>
-      <ul>
-        {defaultWords.map((word) => (
-          <li key={word._id}>
-            <strong>
-              {word.german} = {word.turkish}
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-10">
+          <h1 className="text-3xl font-extrabold text-gray-900">
+            <span className="text-orange-500">{user?.level}</span> Level
+            Vocabulary
+          </h1>
+          <button
+            onClick={handleLogout}
+            className="text-gray-600 hover:text-orange-500 font-semibold transition-colors flex items-center"
+          >
+            <FaSignOutAlt className="mr-2" /> Log Out
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-2xl p-8 border-t-8 border-orange-500 flex flex-col items-center text-center">
+            <h2 className="text-xl font-semibold text-gray-600 mb-6">
+              Word {currentIndex + 1} of {allWords.length}
+            </h2>
+
+            <strong className="text-6xl font-extrabold text-gray-800 mb-4">
+              {currentWord.german}
             </strong>
-            {word.sampleSentence && <p>{word.sampleSentence}</p>}
-            <button
-              onClick={() => dispatch(markWordAsLearnedThunk(word._id))}
-            ></button>
-          </li>
-        ))}
-      </ul>
+            <p className="text-3xl text-orange-500 font-medium mb-8">
+              = {currentWord.turkish}
+            </p>
 
-      <h2>My Words</h2>
-      <ul>
-        {userWords.map((word) => (
-          <li key={word._id}>
-            <strong>
-              {word.german} = {word.turkish}
-            </strong>
-            {word.sampleSentence && <p>{word.sampleSentence}</p>}
-            <button
-              onClick={() => dispatch(markWordAsLearnedThunk(word._id))}
-            ></button>
-          </li>
-        ))}
-      </ul>
+            {currentWord.sampleSentence && (
+              <p className="text-lg italic text-gray-700 max-w-lg mb-10 p-4 bg-gray-50 rounded-lg border-l-4 border-gray-200">
+                "{currentWord.sampleSentence}"
+              </p>
+            )}
 
-      <h2>Learned Words</h2>
-      <ul>
-        {learnedWords.map((word) => (
-          <li key={word._id}>
-            <strong>
-              {word.german} = {word.turkish}
-            </strong>
-            {word.sampleSentence && <p>{word.sampleSentence}</p>}
-          </li>
-        ))}
-      </ul>
+            <div className="flex space-x-6">
+              <button
+                onClick={() => handleLearned(currentWord._id)}
+                className="bg-green-500 text-white font-bold py-3 px-8 rounded-full hover:bg-green-600 transition-colors duration-300 flex items-center shadow-md"
+              >
+                <FaCheckCircle className="mr-2" /> Learned It
+              </button>
+              <button
+                onClick={handleNextWord}
+                className="bg-gray-400 text-white font-bold py-3 px-8 rounded-full hover:bg-gray-500 transition-colors duration-300 flex items-center shadow-md"
+              >
+                <FaTimesCircle className="mr-2" /> Not Yet
+              </button>
+            </div>
+          </div>
 
-      {!addNewWord ? (
-        <button onClick={handleNewWord}>Add New Word</button>
-      ) : (
-        <AddWordComponent />
-      )}
+          <div className="lg:col-span-1 space-y-8">
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-2xl font-bold text-gray-800 mb-4">
+                {addNewWord ? "Add Custom Word" : "Your Vocabulary Tools"}
+              </h3>
 
-      <button onClick={handleLogout}>Log Out</button>
+              {!addNewWord ? (
+                <button
+                  onClick={() => setAddNewWord(true)}
+                  className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-full hover:bg-orange-600 transition duration-300 flex items-center justify-center shadow-md"
+                >
+                  <FaPlus className="mr-2" /> Add New Word
+                </button>
+              ) : (
+                <AddWordComponent onCancel={() => setAddNewWord(false)} />
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg p-6 max-h-96 overflow-y-auto border-t-4 border-green-500">
+              <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                <FaCheckCircle className="text-green-500 mr-2" /> Learned Words
+                ({learnedWords.length})
+              </h3>
+              {learnedWords.length === 0 ? (
+                <p className="text-gray-500 italic">
+                  No words learned yet. Keep practicing!
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {learnedWords.map((word) => (
+                    <li
+                      key={word._id}
+                      className="border-b pb-2 last:border-b-0"
+                    >
+                      <strong className="text-gray-800">{word.german}</strong>
+                      <span className="text-orange-500 text-sm ml-2">
+                        = {word.turkish}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

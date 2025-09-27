@@ -3,7 +3,6 @@ import Header from "../Components/Header";
 import Footer from "../Components/Footer";
 
 const AboutPage: React.FC = () => {
-  // Backend teknolojileri (dependencies'den seçilmiş ana teknolojiler)
   const backendSkills = [
     "Node.js",
     "Express.js",
@@ -13,10 +12,11 @@ const AboutPage: React.FC = () => {
     "JWT",
   ];
 
-  // Frontend teknolojileri (dependencies'den seçilmiş ana teknolojiler)
   const frontendSkills = [
     "React",
+    "JavaScript",
     "TypeScript",
+    "HTML - CSS",
     "Tailwind CSS",
     "Redux Toolkit ",
     "React Router DOM",
