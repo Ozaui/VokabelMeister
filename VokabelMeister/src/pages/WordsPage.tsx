@@ -154,7 +154,7 @@ const WordsPage: React.FC = () => {
               Word {currentIndex + 1} of {allWords.length}
             </h2>
 
-            <strong className="text-6xl font-extrabold text-gray-800 mb-4">
+            <strong className="text-4xl sm:text-6xl font-extrabold text-gray-800 mb-4 break-words text-center">
               {currentWord.german}
             </strong>
 
