@@ -22,7 +22,7 @@ You can try the project here:
 
 ## Tech Stack
 
-### � Backend
+### Backend
 - Node.js  
 - Express.js  
 - MongoDB  
@@ -42,6 +42,6 @@ You can try the project here:
 - Yup  
 - Axios
 
-##Future Plans
+## Future Plans
 - Mobile app (React Native)
 
