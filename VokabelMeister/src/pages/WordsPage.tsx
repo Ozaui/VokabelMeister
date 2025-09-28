@@ -65,7 +65,6 @@ const WordsPage: React.FC = () => {
   const handleLearned = (wordId: string) => {
     dispatch(markWordAsLearnedThunk(wordId));
     setShowTranslation(false);
-    handleNextWord();
   };
 
   if (fetchLoading || addLoading)
