@@ -33,7 +33,6 @@ const WordsPage: React.FC = () => {
 
   const [addNewWord, setAddNewWord] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-
   const [showTranslation, setShowTranslation] = useState(false);
 
   useEffect(() => {
@@ -44,6 +43,14 @@ const WordsPage: React.FC = () => {
     (word) => !learnedWords.some((learned) => learned._id === word._id)
   );
 
+  // Eğer index dışarı taşarsa sıfırla
+  useEffect(() => {
+    if (currentIndex >= allWords.length) {
+      setCurrentIndex(0);
+    }
+  }, [allWords, currentIndex]);
+
+  // Yeni kelimeye geçerken çeviriyi sıfırla
   useEffect(() => {
     setShowTranslation(false);
   }, [currentIndex]);
@@ -59,7 +66,7 @@ const WordsPage: React.FC = () => {
 
   const handleLearned = (wordId: string) => {
     dispatch(markWordAsLearnedThunk(wordId));
-    handleNextWord();
+    // Burada handleNextWord KALDIRILDI
   };
 
   if (fetchLoading || addLoading)
