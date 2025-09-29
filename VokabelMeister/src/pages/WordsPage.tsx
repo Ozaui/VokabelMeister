@@ -150,29 +150,31 @@ const WordsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-extrabold text-gray-900">
+        <div className="flex flex-col sm:flex-row sm:justify-between items-center mb-6 space-y-4 sm:space-y-0">
+          <h1 className="text-3xl font-extrabold text-gray-900 text-center sm:text-left">
             <span className="text-orange-500">{user?.level}</span> Level
             Vocabulary
           </h1>
 
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="border p-2 rounded"
-            />
-            <button
-              onClick={handleSearch}
-              className="bg-orange-500 text-white px-4 py-2 rounded flex items-center"
-            >
-              <FaSearch className="mr-2" /> Ara
-            </button>
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto items-stretch">
+            <div className="flex space-x-2 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="border p-2 rounded flex-grow"
+              />
+              <button
+                onClick={handleSearch}
+                className="bg-orange-500 text-white px-4 py-2 rounded flex items-center shrink-0"
+              >
+                <FaSearch className="mr-2" /> Ara
+              </button>
+            </div>
             <button
               onClick={handleLogout}
-              className="text-gray-600 hover:text-orange-500 font-semibold transition-colors flex items-center ml-4"
+              className="text-gray-600 hover:text-orange-500 font-semibold transition-colors flex items-center justify-center sm:justify-start w-full sm:w-auto mt-2 sm:mt-0"
             >
               <FaSignOutAlt className="mr-2" /> Log Out
             </button>
