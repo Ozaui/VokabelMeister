@@ -77,6 +77,7 @@ export const checkTokenExpiration = () => {
   if (token && expiration && new Date().getTime() > Number(expiration)) {
     localStorage.removeItem("token");
     localStorage.removeItem("token_expiration");
+    localStorage.removeItem("user");
     console.log("Token süresi dolduğu için silindi");
   }
 };
