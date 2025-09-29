@@ -156,7 +156,6 @@ const WordsPage: React.FC = () => {
             Vocabulary
           </h1>
 
-          {/* 🔎 Arama Alanı */}
           <div className="flex space-x-2">
             <input
               type="text"
