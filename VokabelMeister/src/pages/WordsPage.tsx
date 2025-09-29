@@ -159,7 +159,7 @@ const WordsPage: React.FC = () => {
           <div className="flex space-x-2">
             <input
               type="text"
-              placeholder="Kelime ara..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="border p-2 rounded"
