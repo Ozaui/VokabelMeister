@@ -15,6 +15,7 @@ import {
   FaSignOutAlt,
   FaTimesCircle,
   FaEye,
+  FaSearch,
 } from "react-icons/fa";
 
 const WordsPage: React.FC = () => {
@@ -34,6 +35,7 @@ const WordsPage: React.FC = () => {
   const [addNewWord, setAddNewWord] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showTranslation, setShowTranslation] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     if (user) dispatch(fetchWordsThunk());
@@ -65,6 +67,21 @@ const WordsPage: React.FC = () => {
   const handleLearned = (wordId: string) => {
     dispatch(markWordAsLearnedThunk(wordId));
     setShowTranslation(false);
+  };
+
+  const handleSearch = () => {
+    const index = allWords.findIndex(
+      (word) =>
+        word.german.toLowerCase() === searchTerm.toLowerCase() ||
+        word.turkish.toLowerCase() === searchTerm.toLowerCase()
+    );
+
+    if (index !== -1) {
+      setCurrentIndex(index);
+      setShowTranslation(true);
+    } else {
+      alert("Kelime bulunamadı!");
+    }
   };
 
   if (fetchLoading || addLoading || !user)
@@ -133,17 +150,34 @@ const WordsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-10">
+        <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-extrabold text-gray-900">
             <span className="text-orange-500">{user?.level}</span> Level
             Vocabulary
           </h1>
-          <button
-            onClick={handleLogout}
-            className="text-gray-600 hover:text-orange-500 font-semibold transition-colors flex items-center"
-          >
-            <FaSignOutAlt className="mr-2" /> Log Out
-          </button>
+
+          {/* 🔎 Arama Alanı */}
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              placeholder="Kelime ara..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="border p-2 rounded"
+            />
+            <button
+              onClick={handleSearch}
+              className="bg-orange-500 text-white px-4 py-2 rounded flex items-center"
+            >
+              <FaSearch className="mr-2" /> Ara
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-gray-600 hover:text-orange-500 font-semibold transition-colors flex items-center ml-4"
+            >
+              <FaSignOutAlt className="mr-2" /> Log Out
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
