@@ -2,9 +2,9 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AuthState, User } from "../../Types/authTypes";
 import { loginUserThunk, registerUserThunk } from "./authThunk";
 
-const token = localStorage.getItem("token");
+const savedUser = localStorage.getItem("user");
 const initialState: AuthState = {
-  user: token ? ({ token } as User) : null,
+  user: savedUser ? JSON.parse(savedUser) : null,
   loading: false,
   error: null,
 };
@@ -17,7 +17,7 @@ const authSlice = createSlice({
       state.user = null;
       state.error = null;
       localStorage.removeItem("token");
-      localStorage.removeItem("token_expiration");
+      localStorage.removeItem("user");
     },
   },
   extraReducers: (builder) => {
@@ -44,6 +44,9 @@ const authSlice = createSlice({
         (state, action: PayloadAction<User>) => {
           state.loading = false;
           state.user = action.payload;
+
+          localStorage.setItem("user", JSON.stringify(action.payload));
+          localStorage.setItem("token", action.payload.token);
         }
       )
       .addCase(loginUserThunk.rejected, (state, action) => {
