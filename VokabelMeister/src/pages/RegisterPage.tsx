@@ -50,6 +50,9 @@ const RegisterPage: React.FC = () => {
           <p className="text-center text-gray-600 mb-8">
             Start your language journey in a fun and effective way!
           </p>
+          <p className="text-red-600">
+            Plase Select A1 Level. Because the other levels has not any words
+          </p>
 
           <Formik
             initialValues={initialValues}
