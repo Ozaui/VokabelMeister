@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../store/store";
 import { useNavigate } from "react-router-dom";
@@ -6,6 +6,7 @@ import type { LoginFormValues } from "../Types/authTypes";
 import { loginUserThunk } from "../features/auth/authThunk";
 import { ErrorMessage, Field, Form, Formik } from "formik";
 import { loginSchema } from "../schemas/loginSchema";
+import { checkTokenExpiration } from "../API/auth/authApi";
 
 import HeaderForLogin from "../Components/HeaderForLogin";
 import Footer from "../Components/Footer";
@@ -14,6 +15,11 @@ const LoginPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state: RootState) => state.auth);
+
+  // Sayfa yüklendiğinde token kontrolü yap
+  useEffect(() => {
+    checkTokenExpiration();
+  }, []);
 
   const initialValues: LoginFormValues = {
     email: "",

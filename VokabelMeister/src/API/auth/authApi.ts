@@ -25,6 +25,7 @@ api.interceptors.request.use((config) => {
       // Token süresi dolmuş, sil
       localStorage.removeItem("token");
       localStorage.removeItem("token_expiration");
+      localStorage.removeItem("user");
       console.log("Token süresi doldu, otomatik silindi.");
       return config; // istersen burada hata fırlatabilirsin
     }
@@ -35,6 +36,29 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
+
+// Response interceptor: 401 hatalarını yakalar ve token'ı temizler
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // 401 hatası geldiğinde token'ı temizle
+      localStorage.removeItem("token");
+      localStorage.removeItem("token_expiration");
+      localStorage.removeItem("user");
+      console.log("401 hatası alındı, token temizlendi.");
+
+      // Eğer login/register sayfasında değilse login sayfasına yönlendir
+      if (
+        window.location.pathname !== "/login" &&
+        window.location.pathname !== "/register"
+      ) {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Register API
 export const registerUserApi = async (
@@ -80,4 +104,11 @@ export const checkTokenExpiration = () => {
     localStorage.removeItem("user");
     console.log("Token süresi dolduğu için silindi");
   }
+};
+
+// Test için: Token süresini manuel olarak doldur
+export const expireTokenForTesting = () => {
+  const expiredTime = new Date().getTime() - 1000; // 1 saniye önce
+  localStorage.setItem("token_expiration", expiredTime.toString());
+  console.log("Token süresi test için dolduruldu");
 };

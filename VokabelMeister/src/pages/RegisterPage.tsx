@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../store/store";
 import type { RegisterFormValues } from "../Types/authTypes";
@@ -6,6 +6,7 @@ import { registerUserThunk } from "../features/auth/authThunk";
 import { Formik, Form, Field, ErrorMessage } from "formik";
 import { registerSchema } from "../schemas/registerSchemas";
 import { useNavigate } from "react-router-dom";
+import { checkTokenExpiration } from "../API/auth/authApi";
 import Footer from "../Components/Footer";
 import HeaderForLogin from "../Components/HeaderForLogin";
 
@@ -13,6 +14,11 @@ const RegisterPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { loading, error } = useSelector((state: RootState) => state.auth);
   const navigate = useNavigate();
+
+  // Sayfa yüklendiğinde token kontrolü yap
+  useEffect(() => {
+    checkTokenExpiration();
+  }, []);
 
   const initialValues: RegisterFormValues = {
     name: "",
