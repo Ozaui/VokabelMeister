@@ -26,7 +26,7 @@ const connectDB = async () => {
 
 app.use(
   cors({
-    origin: "https://vokabelmeister.vercel.app",
+    origin: ["https://vokabelmeister.vercel.app", "*"], // Mobile app için tüm origin'lere izin
     credentials: true,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
     allowedHeaders: "Content-Type,Authorization",

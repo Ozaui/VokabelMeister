@@ -106,9 +106,8 @@ export const checkTokenExpiration = () => {
   }
 };
 
-// Test için: Token süresini manuel olarak doldur
 export const expireTokenForTesting = () => {
-  const expiredTime = new Date().getTime() - 1000; // 1 saniye önce
+  const expiredTime = new Date().getTime() - 1000;
   localStorage.setItem("token_expiration", expiredTime.toString());
   console.log("Token süresi test için dolduruldu");
 };
