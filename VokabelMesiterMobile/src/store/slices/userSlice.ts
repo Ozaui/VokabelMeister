@@ -1,5 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
-import { UserState } from "../../types/UserTypes";
+import { User, UserState } from "../../types/UserTypes";
 import { registerUser, loginUser } from "./userThunk";
 
 const initialState: UserState = {
@@ -49,8 +49,9 @@ const userSlice = createSlice({
         state.loading = false;
         state.error = null;
         state.isAuthenticated = true;
-        state.token = action.payload.token;
-        // User bilgileri token'dan çıkarılabilir veya ayrı endpoint'ten alınabilir
+        const payload = action.payload as { token: string; user?: User };
+        state.token = payload.token;
+        state.user = payload.user || null;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;

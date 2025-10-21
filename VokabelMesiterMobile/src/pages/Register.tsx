@@ -14,7 +14,7 @@ import { Formik, FormikHelpers } from "formik";
 import { useNavigation } from "@react-navigation/native";
 import { registerSchema } from "../schemas/RegisterSchema";
 import { RegisterFormValues } from "../types/RegisterTypes";
-import { useAppDispatch } from "../store/hooks";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { registerUser } from "../store/slices/userThunk";
 import { RegisterScreenNavigationProp } from "../types/NavigationTypes";
 
@@ -22,6 +22,9 @@ const levels = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
 const Register = () => {
   const navigation = useNavigation<RegisterScreenNavigationProp>();
+  const dispatch = useAppDispatch();
+  const { loading } = useAppSelector((state) => state.user);
+
   const initialValues: RegisterFormValues = {
     name: "",
     surname: "",
@@ -32,18 +35,20 @@ const Register = () => {
   };
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const dispatch = useAppDispatch();
 
   const handleSubmit = async (
     values: RegisterFormValues,
     { resetForm, setFieldError }: FormikHelpers<RegisterFormValues>
   ) => {
-    setIsLoading(true);
-
     try {
       // Confirm password'ü çıkarıyoruz çünkü backend'e gönderilmemeli
-      const { confirmPassword: _confirmPassword, ...registerData } = values;
+      const registerData = {
+        name: values.name,
+        surname: values.surname,
+        email: values.email,
+        password: values.password,
+        level: values.level,
+      };
 
       const result = await dispatch(registerUser(registerData));
 
@@ -62,8 +67,6 @@ const Register = () => {
       }
     } catch {
       Alert.alert("Registration Failed", "Network error occurred");
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -256,15 +259,13 @@ const Register = () => {
                   activeOpacity={0.8}
                   style={[
                     styles.button,
-                    (isSubmitting || isLoading) && styles.buttonDisabled,
+                    (isSubmitting || loading) && styles.buttonDisabled,
                   ]}
                   onPress={() => handleSubmit()}
-                  disabled={isSubmitting || isLoading}
+                  disabled={isSubmitting || loading}
                 >
                   <Text style={styles.buttonText}>
-                    {isSubmitting || isLoading
-                      ? "Creating..."
-                      : "Create Account"}
+                    {isSubmitting || loading ? "Creating..." : "Create Account"}
                   </Text>
                 </TouchableOpacity>
 

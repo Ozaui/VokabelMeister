@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { Formik, FormikHelpers } from "formik";
 import { useNavigation } from "@react-navigation/native";
 import { loginSchema } from "../schemas/LoginSchema";
 import { LoginFormValues } from "../types/LoginTypes";
-import { useAppDispatch } from "../store/hooks";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { loginUser } from "../store/slices/userThunk";
 import { LoginScreenNavigationProp } from "../types/NavigationTypes";
 
@@ -23,16 +23,14 @@ const initialValues: LoginFormValues = {
 };
 
 const LoginPage = () => {
-  const [isLoading, setIsLoading] = useState(false);
   const dispatch = useAppDispatch();
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  const { loading } = useAppSelector((state) => state.user);
 
   const handleSubmit = async (
     values: LoginFormValues,
     { resetForm, setFieldError }: FormikHelpers<LoginFormValues>
   ) => {
-    setIsLoading(true);
-
     try {
       const result = await dispatch(loginUser(values));
 
@@ -51,8 +49,6 @@ const LoginPage = () => {
       }
     } catch {
       Alert.alert("Login Failed", "Network error occurred");
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -123,13 +119,13 @@ const LoginPage = () => {
                   activeOpacity={0.8}
                   style={[
                     styles.button,
-                    (isSubmitting || isLoading) && styles.buttonDisabled,
+                    (isSubmitting || loading) && styles.buttonDisabled,
                   ]}
                   onPress={() => handleSubmit()}
-                  disabled={isSubmitting || isLoading}
+                  disabled={isSubmitting || loading}
                 >
                   <Text style={styles.buttonText}>
-                    {isSubmitting || isLoading ? "Signing In..." : "Sign In"}
+                    {isSubmitting || loading ? "Signing In..." : "Sign In"}
                   </Text>
                 </TouchableOpacity>
 
