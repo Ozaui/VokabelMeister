@@ -1,16 +1,22 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { logout } from "../store/slices/userSlice";
+import { fetchWords } from "../store/slices/wordThunk";
+import Card from "../components/Card";
 
 const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
   const { token } = useAppSelector((state) => state.user);
 
-  const handleLogout = () => {
-    dispatch(logout());
-  };
+  useEffect(() => {
+    if (token) {
+      dispatch(fetchWords(token));
+    }
+  }, [dispatch, token]);
+
+  const { defaultWords } = useAppSelector((state) => state.words);
+  const [currentIndex, setCurrentIndex] = React.useState(0);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -22,25 +28,46 @@ const Dashboard: React.FC = () => {
 
         <View style={styles.content}>
           <View style={styles.welcomeCard}>
-            <Text style={styles.welcomeText}>🎉 Login Successful!</Text>
+            <Text style={styles.welcomeText}> Login Successful!</Text>
             <Text style={styles.userInfo}>
               You are now logged in to VokabelMeister
             </Text>
-            {token && (
-              <Text style={styles.tokenInfo}>
-                Token received: {token.substring(0, 20)}...
-              </Text>
-            )}
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                flex: 1,
+              }}
+            >
+              {defaultWords && defaultWords.length > 0 && (
+                <Card
+                  german={defaultWords[currentIndex]?.german}
+                  turkish={defaultWords[currentIndex]?.turkish}
+                />
+              )}
+              {defaultWords && defaultWords.length > 1 && (
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: "#ff6900",
+                    paddingVertical: 12,
+                    paddingHorizontal: 32,
+                    borderRadius: 12,
+                    marginTop: 16,
+                  }}
+                  onPress={() =>
+                    setCurrentIndex((prev) => (prev + 1) % defaultWords.length)
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}
+                  >
+                    İleri
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-
-          {/* Logout Button */}
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.logoutButtonText}>Logout</Text>
-          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

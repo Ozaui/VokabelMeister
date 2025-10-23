@@ -41,7 +41,6 @@ const Register = () => {
     { resetForm, setFieldError }: FormikHelpers<RegisterFormValues>
   ) => {
     try {
-      // Confirm password'ü çıkarıyoruz çünkü backend'e gönderilmemeli
       const registerData = {
         name: values.name,
         surname: values.surname,

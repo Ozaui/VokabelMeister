@@ -136,7 +136,6 @@ const LoginPage = () => {
                       style={styles.footerLink}
                       onPress={() => navigation.navigate("Register")}
                     >
-                      {" "}
                       Sign Up
                     </Text>
                   </Text>
