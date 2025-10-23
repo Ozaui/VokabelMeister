@@ -15,7 +15,8 @@ const Dashboard: React.FC = () => {
     }
   }, [dispatch, token]);
 
-  const { defaultWords } = useAppSelector((state) => state.words);
+  const { defaultWords, userWords } = useAppSelector((state) => state.words);
+  const allWords = [...defaultWords, ...userWords];
   const [currentIndex, setCurrentIndex] = React.useState(0);
 
   return (
@@ -27,46 +28,24 @@ const Dashboard: React.FC = () => {
         </View>
 
         <View style={styles.content}>
-          <View style={styles.welcomeCard}>
-            <Text style={styles.welcomeText}> Login Successful!</Text>
-            <Text style={styles.userInfo}>
-              You are now logged in to VokabelMeister
-            </Text>
-            <View
-              style={{
-                alignItems: "center",
-                justifyContent: "center",
-                flex: 1,
-              }}
-            >
-              {defaultWords && defaultWords.length > 0 && (
-                <Card
-                  german={defaultWords[currentIndex]?.german}
-                  turkish={defaultWords[currentIndex]?.turkish}
-                />
-              )}
-              {defaultWords && defaultWords.length > 1 && (
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: "#ff6900",
-                    paddingVertical: 12,
-                    paddingHorizontal: 32,
-                    borderRadius: 12,
-                    marginTop: 16,
-                  }}
-                  onPress={() =>
-                    setCurrentIndex((prev) => (prev + 1) % defaultWords.length)
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}
-                  >
-                    İleri
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
+          <View style={styles.cardContainer}>
+            {allWords && allWords.length > 0 && (
+              <Card
+                german={defaultWords[currentIndex]?.german}
+                turkish={defaultWords[currentIndex]?.turkish}
+              />
+            )}
+            {allWords && allWords.length > 1 && (
+              <TouchableOpacity
+                style={styles.nextButton}
+                onPress={() =>
+                  setCurrentIndex((prev) => (prev + 1) % defaultWords.length)
+                }
+                activeOpacity={0.8}
+              >
+                <Text style={styles.nextButtonText}>İleri</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -86,8 +65,9 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: 16,
     alignItems: "center",
+    paddingTop: 8,
   },
   title: {
     fontSize: 42,
@@ -105,6 +85,25 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "center",
+    alignItems: "center",
+    paddingBottom: 80,
+  },
+  cardContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  nextButton: {
+    backgroundColor: "#ff6900",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  nextButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
   },
   welcomeCard: {
     backgroundColor: "#ffffff",
