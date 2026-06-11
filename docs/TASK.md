@@ -30,13 +30,13 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 ### TASK-001 — Proje İskeleti
 **Referans:** DEVELOPMENT_SETUP.md, ARCHITECTURE.md §9
 
-- [ ] Solution ve 4 proje oluştur: API, Application, Infrastructure, Domain
-- [ ] Projeler arası referanslar (Domain ← Infrastructure ← Application ← API)
-- [ ] NuGet paketlerini yükle (TECHNICAL_SPECIFICATIONS.md §1.1)
-- [ ] `appsettings.json` ve `appsettings.Development.json` oluştur
-- [ ] `Program.cs` temel yapılandırması
-- [ ] `appsettings.Development.json` bağlantı dizesini ayarla (local SQL Server)
-- [ ] `docs/` klasörüne MD dosyalarını kopyala
+- [x] Solution ve 4 proje oluştur: API, Application, Infrastructure, Domain
+- [x] Projeler arası referanslar (Domain ← Infrastructure ← Application ← API)
+- [x] NuGet paketlerini yükle (TECHNICAL_SPECIFICATIONS.md §1.1)
+- [x] `appsettings.json` ve `appsettings.Development.json` oluştur
+- [x] `Program.cs` temel yapılandırması
+- [x] `appsettings.Development.json` bağlantı dizesini ayarla (local SQL Server)
+- [x] `docs/` klasörüne MD dosyalarını kopyala
 
 ---
 
@@ -44,77 +44,77 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 **Referans:** TECHNICAL_SPECIFICATIONS.md §2, DATABASE_SCHEMA.md §2–§5, ARCHITECTURE.md §7
 
 **Temel:**
-- [ ] `BaseEntity` abstract class (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt)
-- [ ] `User` entity
-- [ ] `RefreshToken` entity
+- [x] `BaseEntity` abstract class (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt)
+- [x] `User` entity
+- [x] `RefreshToken` entity
 
 **Sistem Kelimeleri:**
-- [ ] `Word` entity
-- [ ] `WordDetail` entity (Almanca gramer — cinsiyet, artikeller, çekimler JSON)
-- [ ] `WordExample` entity (seviyeli + türlü örnek cümleler)
+- [x] `Word` entity
+- [x] `WordDetail` entity (Almanca gramer — cinsiyet, artikeller, çekimler JSON)
+- [x] `WordExample` entity (seviyeli + türlü örnek cümleler)
 
 **Kategoriler:**
-- [ ] `Category` entity (self-referencing hiyerarşi)
-- [ ] `WordCategory` ara tablo (Word ↔ Category M:N)
+- [x] `Category` entity (self-referencing hiyerarşi)
+- [x] `WordCategory` ara tablo (Word ↔ Category M:N)
 
 **Kişisel Kartlar:**
-- [ ] `UserCard` entity
-- [ ] `UserCardExample` entity
-- [ ] `UserCategory` entity (kişisel kategoriler)
-- [ ] `UserCardCategory` ara tablo (UserCard ↔ Category M:N)
-- [ ] `UserCardUserCategory` ara tablo (UserCard ↔ UserCategory M:N)
+- [x] `UserCard` entity
+- [x] `UserCardExample` entity
+- [x] `UserCategory` entity (kişisel kategoriler)
+- [x] `UserCardCategory` ara tablo (UserCard ↔ Category M:N)
+- [x] `UserCardUserCategory` ara tablo (UserCard ↔ UserCategory M:N)
 
 **Öğrenme:**
-- [ ] `UserProgress` entity (sistem kelimesi SRS)
-- [ ] `UserCardProgress` entity (kişisel kart SRS)
-- [ ] `LearningHistory` entity
-- [ ] `LearningSession` entity
+- [x] `UserProgress` entity (sistem kelimesi SRS)
+- [x] `UserCardProgress` entity (kişisel kart SRS)
+- [x] `LearningHistory` entity
+- [x] `LearningSession` entity
 
 **Gamification:**
-- [ ] `Achievement` ve `UserAchievement` entity
+- [x] `Achievement` ve `UserAchievement` entity
 
 **Sosyal:**
-- [ ] `Class` entity (sınıf)
-- [ ] `ClassMembership` entity
-- [ ] `ClassCategory` ara tablo (Class ↔ Category M:N)
-- [ ] `ClassUserCategory` ara tablo (Class ↔ UserCategory M:N)
-- [ ] `Friendship` entity
-- [ ] `SharedContent` entity (paylaşım linkleri)
-- [ ] `SharedContentImport` entity
+- [x] `Class` entity (sınıf)
+- [x] `ClassMembership` entity
+- [x] `ClassCategory` ara tablo (Class ↔ Category M:N)
+- [x] `ClassUserCategory` ara tablo (Class ↔ UserCategory M:N)
+- [x] `Friendship` entity
+- [x] `SharedContent` entity (paylaşım linkleri)
+- [x] `SharedContentImport` entity
 
-- [ ] Tüm entity'lere Türkçe XML dokümantasyon ekle
+- [x] Tüm entity'lere Türkçe XML dokümantasyon ekle
 
 ---
 
 ### TASK-003 — DbContext ve Konfigürasyonlar
 **Referans:** DATABASE_SCHEMA.md §2–§6, TECHNICAL_SPECIFICATIONS.md §5
 
-- [ ] `WordLearnerDbContext` oluştur
-- [ ] Her entity için ayrı `IEntityTypeConfiguration<T>` sınıfı yaz
-- [ ] İlişkileri Fluent API ile tanımla (FK, Cascade, Unique, Check Constraints)
-- [ ] Soft delete global query filter (`HasQueryFilter(e => !e.IsDeleted)`)
-- [ ] `SaveChangesAsync` override → `UpdatedAt` otomatik güncelleme
-- [ ] İlk migration: `dotnet ef migrations add InitialCreate`
-- [ ] Seed data (başlangıç kategorileri — DATABASE_SCHEMA.md §3)
+- [x] `WordLearnerDbContext` oluştur
+- [x] Her entity için ayrı `IEntityTypeConfiguration<T>` sınıfı yaz
+- [x] İlişkileri Fluent API ile tanımla (FK, Cascade, Unique, Check Constraints)
+- [x] Soft delete global query filter (`HasQueryFilter(e => !e.IsDeleted)`)
+- [x] `SaveChangesAsync` override → `UpdatedAt` otomatik güncelleme
+- [x] İlk migration: `dotnet ef migrations add InitialCreate`
+- [x] Seed data (başlangıç kategorileri — DATABASE_SCHEMA.md §3)
 
 ---
 
 ### TASK-004 — Repository Pattern
 **Referans:** TECHNICAL_SPECIFICATIONS.md §5
 
-- [ ] `IRepository<T>` generic interface + `Repository<T>` implementasyon
-- [ ] `IUserRepository` + `UserRepository`
-- [ ] `IWordRepository` + `WordRepository`
-- [ ] `IUserCardRepository` + `UserCardRepository` (UserId filtresi zorunlu)
-- [ ] `ICategoryRepository` + `CategoryRepository`
-- [ ] `IUserCategoryRepository` + `UserCategoryRepository`
-- [ ] `IUserProgressRepository` + `UserProgressRepository` (SRS sorguları)
-- [ ] `IUserCardProgressRepository` + `UserCardProgressRepository`
-- [ ] `IRefreshTokenRepository` + `RefreshTokenRepository`
-- [ ] `IClassRepository` + `ClassRepository`
-- [ ] `IFriendshipRepository` + `FriendshipRepository`
-- [ ] `ISharedContentRepository` + `SharedContentRepository`
-- [ ] DI extension metodu: `AddInfrastructureServices()`
+- [x] `IRepository<T>` generic interface + `Repository<T>` implementasyon
+- [x] `IUserRepository` + `UserRepository`
+- [x] `IWordRepository` + `WordRepository`
+- [x] `IUserCardRepository` + `UserCardRepository` (UserId filtresi zorunlu)
+- [x] `ICategoryRepository` + `CategoryRepository`
+- [x] `IUserCategoryRepository` + `UserCategoryRepository`
+- [x] `IUserProgressRepository` + `UserProgressRepository` (SRS sorguları)
+- [x] `IUserCardProgressRepository` + `UserCardProgressRepository`
+- [x] `IRefreshTokenRepository` + `RefreshTokenRepository`
+- [x] `IClassRepository` + `ClassRepository`
+- [x] `IFriendshipRepository` + `FriendshipRepository`
+- [x] `ISharedContentRepository` + `SharedContentRepository`
+- [x] DI extension metodu: `AddInfrastructureServices()`
 
 ---
 
@@ -575,10 +575,10 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 
 | Faz | Task | Başlık | Durum |
 |-----|------|--------|-------|
-| 1 | TASK-001 | Proje İskeleti | ⬜ |
-| 1 | TASK-002 | Domain Entities | ⬜ |
-| 1 | TASK-003 | DbContext ve Konfigürasyonlar | ⬜ |
-| 1 | TASK-004 | Repository Pattern | ⬜ |
+| 1 | TASK-001 | Proje İskeleti | ✅ |
+| 1 | TASK-002 | Domain Entities | ✅ |
+| 1 | TASK-003 | DbContext ve Konfigürasyonlar | ✅ |
+| 1 | TASK-004 | Repository Pattern | ✅ |
 | 1 | TASK-005 | Kimlik Doğrulama Servisleri | ⬜ |
 | 1 | TASK-006 | Auth Controller ve Middleware | ⬜ |
 | 1 | TASK-007 | Sistem Kelimesi Servisi ve Controller | ⬜ |

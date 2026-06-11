@@ -1,3 +1,4 @@
+
 # CLAUDE.md
 
 ## Proje
@@ -28,6 +29,7 @@ Admin paneli kullanırken backend'de eksik veya hatalı şeyler görülür, mobi
 4. Her dosyanın başında `AMAÇ / NEDEN / BAĞIMLILIKLAR` bloğu zorunlu
 5. Her public metodun üstünde `AMAÇ / NEDEN / NASIL` bloğu zorunlu
 6. Karmaşık kod bloklarında adım adım Türkçe yorum zorunlu
+7. **Uygulama yalnızca Türkçe-Almanca destekler.** İngilizce çeviri/isim alanları (`EnglishTranslation`, `SentenceEN`, `NameEN` vb.) entity'lere ve DTO'lara eklenmez. İleride başka dil eklenmesi gerekirse bu kural TASK listesine eklenerek ayrıca ele alınır.
 
 Yorum şablonu için → `docs/CODING_STANDARDS.md`
 

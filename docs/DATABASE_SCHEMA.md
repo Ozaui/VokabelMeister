@@ -53,6 +53,10 @@ CREATE TABLE Users (
     PreferredLanguagePair NVARCHAR(10)  NOT NULL DEFAULT 'TR-DE',  -- TR-DE, EN-DE vb.
     PreferredUILanguage   NVARCHAR(5)   NOT NULL DEFAULT 'tr',
 
+    -- Öğrenme Hedefleri
+    DailyWordGoal         INT           NOT NULL DEFAULT 10,   -- Günlük toplam kelime hedefi
+    DailyNewWordLimit     INT           NOT NULL DEFAULT 5,    -- Günlük yeni kelime limiti (geri kalanı SRS tekrarı)
+
     -- Öğrenme İstatistikleri
     CurrentLevel          NVARCHAR(2)   NOT NULL DEFAULT 'A1',
     TotalXP               INT           NOT NULL DEFAULT 0,
@@ -62,6 +66,7 @@ CREATE TABLE Users (
     LastStreakDate        DATETIME2     NULL,
 
     -- Hesap Durumu
+    IsOnboardingCompleted BIT           NOT NULL DEFAULT 0,   -- Kayıt sonrası onboarding akışı tamamlandı mı?
     IsActive              BIT           NOT NULL DEFAULT 1,
     IsEmailVerified       BIT           NOT NULL DEFAULT 0,
     EmailVerifiedAt       DATETIME2     NULL,

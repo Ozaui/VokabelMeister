@@ -348,29 +348,53 @@ export default api;
 
 ## 11. SM-2 SRS Algoritması
 
+### Kullanıcı Öz Değerlendirme (4'lü Sistem)
+
+Mobil/Web UI'da her kartın arkasında 4 buton gösterilir:
+
+| Buton | UI Etiketi | SelfRating (quality) | Sonuç |
+|-------|-----------|----------------------|-------|
+| 🔴 | Bilmedim | 0 | Level 0 reset, EF düşer |
+| 🟠 | Zor | 2 | Interval kısalır, EF düşer |
+| 🟢 | İyi | 4 | Normal ilerleme |
+| 🔵 | Çok Kolay | 5 | Interval uzar, EF yükselir |
+
+### Algoritma Kodu
+
 ```csharp
 // Application/Services/SrsService.cs
 public static class SrsCalculator
 {
-    // SM-2 algoritması
-    // quality: 0-5 (0=tamamen yanlış, 5=çok kolay)
-    public static (int intervalDays, int newLevel) Calculate(int currentLevel, bool isCorrect)
+    // SM-2 algoritması — quality: 0-5 (kullanıcı öz değerlendirmesi)
+    // 🔴 Bilmedim=0  🟠 Zor=2  🟢 İyi=4  🔵 Çok Kolay=5
+    public static (int intervalDays, int newLevel, decimal newEF) Calculate(
+        int currentLevel,
+        int repetitionNumber,
+        decimal easinessFactor,
+        int quality)  // 0-5: kullanıcının öz değerlendirmesi
     {
-        if (!isCorrect)
-            return (intervalDays: 1, newLevel: 0);  // Yanlış → sıfırla
-
-        // Doğru → seviye ve interval artır
-        int interval = currentLevel switch
+        // Yanlış veya çok zor (quality < 3) → başa dön
+        if (quality < 3)
         {
-            0 => 1,   // İlk kez doğru → 1 gün
-            1 => 3,   // İkinci doğru → 3 gün
-            2 => 7,   // → 1 hafta
-            3 => 14,  // → 2 hafta
-            4 => 30,  // → 1 ay
-            _ => 60   // → 2 ay (mastery)
-        };
+            return (intervalDays: 1, newLevel: 0, newEF: Math.Max(1.3m, easinessFactor - 0.2m));
+        }
 
-        return (intervalDays: interval, newLevel: Math.Min(currentLevel + 1, 5));
+        // Doğru → SM-2 interval hesapla
+        int interval;
+        if (repetitionNumber == 0)
+            interval = 1;           // İlk başarılı tekrar → 1 gün
+        else if (repetitionNumber == 1)
+            interval = 3;           // İkinci başarılı tekrar → 3 gün
+        else
+            interval = (int)Math.Round((repetitionNumber - 1) * easinessFactor);
+
+        // Easiness Factor güncelle: EF = EF + (0.1 - (5-q)*(0.08+(5-q)*0.02))
+        // q = quality (0-5)
+        decimal newEF = easinessFactor + (0.1m - (5 - quality) * (0.08m + (5 - quality) * 0.02m));
+        newEF = Math.Max(1.3m, newEF);  // Minimum 1.3 — hiç sıfırlanmaz
+
+        int newLevel = Math.Min(currentLevel + 1, 5);
+        return (intervalDays: interval, newLevel: newLevel, newEF: newEF);
     }
 }
 ```
