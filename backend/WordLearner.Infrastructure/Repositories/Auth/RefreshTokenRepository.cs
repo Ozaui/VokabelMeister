@@ -5,7 +5,6 @@
 /// NEDEN: IRefreshTokenRepository sözleşmesi IRepository'den türemez — RefreshToken BaseEntity değil.
 /// BAĞIMLILIKLAR: IRefreshTokenRepository (Application), WordLearnerDbContext, RefreshToken entity
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Domain.Entities;
@@ -33,23 +32,28 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     /// NEDEN: Refresh akışında gelen token hash'lenerek bu sorguyla doğrulanır.
     /// NASIL: IsUsed=false, RevokedAt=null ve ExpiresAt>şimdi koşulları birlikte aranır.
     /// </summary>
-    public Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default)
-        => _db.RefreshTokens
-            .FirstOrDefaultAsync(t =>
-                t.TokenHash == tokenHash &&
-                !t.IsUsed &&
-                t.RevokedAt == null &&
-                t.ExpiresAt > DateTime.UtcNow, ct);
+    public Task<RefreshToken?> GetByTokenHashAsync(
+        string tokenHash,
+        CancellationToken ct = default
+    ) =>
+        _db.RefreshTokens.FirstOrDefaultAsync(
+            t =>
+                t.TokenHash == tokenHash
+                && !t.IsUsed
+                && t.RevokedAt == null
+                && t.ExpiresAt > DateTime.UtcNow,
+            ct
+        );
 
     /// <summary>
     /// AMAÇ: Bir aileye ait tüm token kayıtlarını getirir.
     /// NEDEN: Token Family Pattern — eski token kullanıldığında tüm aile iptal edilecek.
     /// NASIL: TokenFamily eşleşmesi; IsUsed veya RevokedAt durumuna bakılmaz (hepsi gözden geçirilir).
     /// </summary>
-    public async Task<IEnumerable<RefreshToken>> GetByFamilyAsync(string tokenFamily, CancellationToken ct = default)
-        => await _db.RefreshTokens
-            .Where(t => t.TokenFamily == tokenFamily)
-            .ToListAsync(ct);
+    public async Task<IEnumerable<RefreshToken>> GetByFamilyAsync(
+        string tokenFamily,
+        CancellationToken ct = default
+    ) => await _db.RefreshTokens.Where(t => t.TokenFamily == tokenFamily).ToListAsync(ct);
 
     /// <summary>
     /// AMAÇ: Kullanıcının tüm aktif token'larını iptal eder — çıkış veya şifre değişikliği için.
@@ -59,8 +63,8 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     public async Task RevokeAllByUserAsync(int userId, CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
-        await _db.RefreshTokens
-            .Where(t => t.UserId == userId && t.RevokedAt == null)
+        await _db
+            .RefreshTokens.Where(t => t.UserId == userId && t.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, now), ct);
     }
 
@@ -72,8 +76,8 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     public async Task RevokeAllByFamilyAsync(string tokenFamily, CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
-        await _db.RefreshTokens
-            .Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
+        await _db
+            .RefreshTokens.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, now), ct);
     }
 
@@ -103,8 +107,8 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken ct = default)
     {
-        await _db.RefreshTokens
-            .Where(t => t.ExpiresAt < DateTime.UtcNow || t.IsUsed)
+        await _db
+            .RefreshTokens.Where(t => t.ExpiresAt < DateTime.UtcNow || t.IsUsed)
             .ExecuteDeleteAsync(ct);
     }
 }

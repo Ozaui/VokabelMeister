@@ -111,6 +111,23 @@ Kart formu doldurur:
   └── Örnek cümle ekle (opsiyonel)
         │
         ▼
+Ön yüz metni sistem Words tablosundaki GermanWord ile eşleşiyor mu?
+  ├── Evet → API yanıtında suggestedSystemWordId döner
+  │   Mobil "Bu kelime sistemde zaten var. Öğrenme listene ekleyelim mi?" gösterir
+  │   │
+  │   ├── Kullanıcı "Evet" derse →
+  │   │     POST /user-cards/learn-system-word { wordId }
+  │   │     UserProgress kaydı açılır, UserCard OLUŞTURULMAZ
+  │   │     Sistem verisi kullanılır (gramer, artikel, örnek cümleler otomatik gelir)
+  │   │
+  │   └── Kullanıcı "Hayır" derse →
+  │         Kullanıcı kendi UserCard'ını oluşturabilir
+  │         NOT: Aynı kelime için UserProgress mevcutsa Mixed session'da
+  │              bu UserCard atlanır — UserProgress sürümü kullanılır
+  │
+  └── Hayır → Normal UserCard oluşturma devam eder
+        │
+        ▼
 Kategori bağlar:
   ├── Sistem kategorisi seç (örn: "Hayvanlar")
   └── Kendi kategorisini seç / oluştur (örn: "Favori Kelimelerim")

@@ -123,29 +123,78 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 ### TASK-005 — Kimlik Doğrulama Servisleri
 **Referans:** TECHNICAL_SPECIFICATIONS.md §4, SECURITY.md §2, DEVELOPMENT_SETUP.md §6
 
-- [ ] `IPasswordService` + `PasswordService` (bcrypt, work factor 12)
-- [ ] `ITokenService` + `JwtTokenService` (manuel JWT)
-- [ ] Token Family Pattern (refresh token yeniden kullanım tespiti)
-- [ ] `IAuthService` + `AuthService`
-  - [ ] Register (e-posta + şifre)
-  - [ ] Login (e-posta + şifre)
-  - [ ] Google ile giriş (`GoogleLoginAsync` — Google token doğrula, kendi JWT üret)
-  - [ ] Apple ile giriş (`AppleLoginAsync` — Apple identity token doğrula, kendi JWT üret)
-  - [ ] Refresh (token family kontrolü)
-  - [ ] Logout
-  - [ ] Şifre sıfırlama isteği (15 dk token)
-  - [ ] Şifre sıfırlama onayı
-- [ ] `Google.Apis.Auth` NuGet paketi ekle (Google token doğrulama)
-- [ ] Users tablosuna `GoogleId`, `AppleId`, `AuthProvider` alanları ekle
+**OTP Süreleri:** LoginOtp=5dk | PasswordReset=5dk | EmailVerification=24saat | AccountDeletion=15dk
+
+**Arayüzler ve DTO'lar:**
+- [x] `IPasswordService` (BCrypt hash + SHA-256 token hash)
+- [x] `ITokenService` (JWT access + refresh — `GenerateRefreshToken` → `RefreshTokenResult` döner)
+- [x] `IAuthService` (tüm auth akışları)
+- [x] `IEmailService` (e-posta gönderim sözleşmesi)
+- [x] `IAppleTokenValidator` (Apple JWKS doğrulama sözleşmesi)
+- [x] Tüm auth DTO'ları (Register, Login, VerifyLoginOtp, VerifyEmail, ResetPassword, DeleteAccount vb.)
+- [x] `RefreshTokenResult` record (token + ExpiresAt)
+- [x] `AuthResponse` (AccountWasRecovered flag dahil)
+- [x] `AuthExceptions` (EmailNotVerified, InvalidCredentials, AccountDisabled vb.)
+
+**User entity güncellemeleri:**
+- [x] `PendingOtpCodeHash` / `PendingOtpCodeExpiresAt` / `PendingOtpCodePurpose` (tek set, tüm OTP amaçları)
+- [x] `ScheduledDeletionAt` (30 günlük grace period)
+- [x] `IsAnonymized` + `OriginalEmailHash` (kalıcı blok için)
+- [x] `GoogleId`, `AppleId`, `AuthProvider` (zaten mevcut — TASK-002'de eklendi)
+- [x] `UserConfiguration` güncellendi (yeni sütunlar + check constraint)
+
+**Implementasyonlar:**
+- [ ] `PasswordService` (BCrypt work factor 12 + SHA-256 HashToken)
+- [ ] `JwtTokenService`
+  - [ ] `GenerateAccessToken` (HMAC-SHA256, 15 dk)
+  - [ ] `GenerateRefreshToken` → `RefreshTokenResult` (ExpiresAt dahil)
+  - [ ] `GetPrincipalFromExpiredToken` — **JWT Algorithm Confusion Attack önlemi:**
+        ValidateToken sonrası `jwtToken.Header.Alg == HmacSha256` kontrolü zorunlu
+- [ ] `IAppleTokenValidator` implementasyonu (Infrastructure — Apple JWKS, ES256)
+- [ ] `DevEmailService` (Infrastructure — Serilog ile loglar, geliştirme ortamı için)
+- [ ] `AuthService`
+  - [ ] `RegisterAsync` — e-posta blok kontrolü (aktif + silinmiş + anonimleştirilmiş)
+  - [ ] `VerifyEmailAsync` + `ResendVerificationEmailAsync`
+  - [ ] `LoginRequestOtpAsync` (Adım 1: şifre doğrula → OTP gönder)
+        **Timing attack önlemi:** kullanıcı bulunamazsa sahte BCrypt karşılaştırması
+  - [ ] `LoginVerifyOtpAsync` (Adım 2: OTP doğrula → token)
+        → Grace period kontrolü: hesap silinmişse otomatik kurtar, `AccountWasRecovered=true`
+        → Kalıcı silindi: `IsAnonymized=true` → 403
+  - [ ] `GoogleLoginAsync` (Google.Apis.Auth doğrulama)
+  - [ ] `AppleLoginAsync` (IAppleTokenValidator ile)
+  - [ ] `RefreshAsync` (Token Family Pattern — replay attack tespiti)
+  - [ ] `LogoutAsync`
+  - [ ] `ForgotPasswordAsync` (5 dk OTP — kullanıcı yok bile başarı dön)
+  - [ ] `ResetPasswordAsync` (OTP + yeni şifre → tüm cihazlardan çıkış)
+  - [ ] `RequestAccountDeletionAsync` (15 dk OTP)
+  - [ ] `ConfirmAccountDeletionAsync` (OTP + şifre → soft delete + 30 gün zamanla)
+- [ ] `ApplicationServiceExtensions.AddApplicationServices()`
+- [ ] `Google.Apis.Auth` NuGet paketi ekle
+- [ ] Migration: `AddOtpAndDeletionFieldsToUser`
+- [ ] `Program.cs` güncelle — `AddApplicationServices()` çağrısı
 
 ---
 
 ### TASK-006 — Auth Controller ve Middleware
 **Referans:** API_ENDPOINTS.md §3, SECURITY.md §2, §5
 
-- [ ] `AuthController` (tüm auth endpoint'leri)
-- [ ] FluentValidation kuralları (tüm request DTO'ları)
-- [ ] Global exception handling middleware
+- [ ] `AuthController` endpoint'leri:
+  - [ ] `POST /auth/register`
+  - [ ] `POST /auth/verify-email`
+  - [ ] `POST /auth/resend-verification`
+  - [ ] `POST /auth/login` (Adım 1 — OTP tetikler, token dönmez)
+  - [ ] `POST /auth/login/verify-otp` (Adım 2 — token döner)
+  - [ ] `POST /auth/google`
+  - [ ] `POST /auth/apple`
+  - [ ] `POST /auth/refresh`
+  - [ ] `POST /auth/logout`
+  - [ ] `POST /auth/forgot-password`
+  - [ ] `POST /auth/reset-password`
+  - [ ] `POST /auth/delete-account/request`
+  - [ ] `POST /auth/delete-account/confirm`
+- [ ] FluentValidation kuralları (tüm request DTO'ları — şifre karmaşıklığı, e-posta formatı)
+- [ ] Rate limiting: login → 5 deneme / 15 dk | OTP → 3 yanlış → kod geçersiz
+- [ ] Global exception handling middleware (AuthException → HTTP kodu map)
 - [ ] Security headers middleware
 - [ ] Request/Response loglama middleware
 
@@ -193,11 +242,20 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
           `GermanWord` ile birebir eşleşiyorsa yanıta `suggestedSystemWordId` ekle ve
           "Bu kelime sistemde zaten var, öğrenme listene eklemek ister misin?" mesajı döndür.
           Bu uyarı **engelleyici değildir** — kullanıcı kartını yine de oluşturabilir.
+          Ancak kullanıcının bu kelime için mevcut bir `UserProgress` kaydı varsa
+          yanıta ek olarak `hasExistingUserProgress: true` ve `existingUserProgressId`
+          ekle; mobil "Zaten bu kelimeyi öğreniyorsun" mesajını gösterebilir.
+    - [ ] **Mixed session çakışma kuralı (servis katmanında):** Kullanıcı hem `UserProgress`
+          hem `UserCard` kaydına sahipse ve FrontText ↔ GermanWord eşleşiyorsa,
+          UserCard oluşturulurken bu durum `LearningSessionService`'e iletilmek üzere
+          `UserCard` meta verisine not düşülür. (Bkz. TASK-012 deduplication kuralı.)
   - [ ] Güncelleme — sadece kart sahibi
   - [ ] Silme soft delete — sadece kart sahibi
   - [ ] **Sistem kelimesini öğrenme listesine ekle:** `POST /user-cards/learn-system-word`
         Body: `{ "wordId": 5 }` → Yeni UserCard oluşturmak yerine UserProgress kaydı açar
         (eğer yoksa) ve kelimeyi öğrenme kuyruğuna alır. Yanıt: `{ "userProgressId": ... }`
+        **UserCard OLUŞTURULMAZ** — sistem kelimesi tüm gramer verisiyle (WordDetail,
+        WordExamples) zaten mevcuttur, tekrar kayıt açmak gereksizdir.
 - [ ] `UserCardController`
 - [ ] Yetki kontrolü: kullanıcı başkasının kartına erişememeli
 
@@ -237,6 +295,13 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 
 - [ ] `ILearningSessionService` + `LearningSessionService`
   - [ ] Oturum başlat (kaynak + seviye + çoklu kategori + sınıf içeriği)
+  - [ ] **Mixed session deduplication:** `sourceType: Mixed` sorgusunda hem
+        `UserProgress` (sistem kelimeleri) hem `UserCardProgress` (kişisel kartlar)
+        sorgulanır. Bir `UserCard`'ın `FrontText`'i, kullanıcının aktif `UserProgress`
+        kaydındaki herhangi bir `Words.GermanWord` ile birebir eşleşiyorsa o `UserCard`
+        oturuma **dahil edilmez** — `UserProgress` sürümü kullanılır.
+        Bu kural `(UserId, NextReviewAt)` index sorgusu yapıldıktan sonra
+        uygulama katmanında set farkı alınarak uygulanır; DB'ye ek join yazılmaz.
   - [ ] Cevap işle (sistem kelimesi veya kişisel kart)
   - [ ] Oturumu tamamla (XP, rozet kontrolü)
   - [ ] Oturumu bırak
@@ -317,12 +382,55 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 
 ---
 
-### TASK-018 — Loglama ve İzleme
+### TASK-018 — Loglama, İzleme ve E-posta Servisi
 **Referans:** SECURITY.md §6
 
+**Loglama:**
 - [ ] Serilog yapılandır (konsol + dosya)
 - [ ] `SecurityLogger` servisi
 - [ ] Health check endpoint (`GET /health`)
+
+**E-posta Servisi (IEmailService implementasyonları):**
+- [ ] `DevEmailService` (Infrastructure) — Serilog ile kodu loglar, gerçek SMTP kullanmaz
+      → Geliştirme ortamında DI'a kayıtlı olur; SMTP olmadan auth akışı test edilebilir
+- [ ] `SmtpEmailService` (Infrastructure) — Gerçek SMTP ile e-posta gönderir
+      → `System.Net.Mail.SmtpClient` veya `MailKit` kütüphanesi
+- [ ] E-posta şablonları (string interpolation — HTML şablon gereksiz, düz metin yeterli):
+  - [ ] E-posta doğrulama kodu
+  - [ ] Giriş OTP kodu (2FA)
+  - [ ] Şifre sıfırlama kodu
+  - [ ] Hesap silme onay kodu
+  - [ ] Şifre değiştirildi bildirimi
+  - [ ] Hesap kurtarıldı bildirimi
+- [ ] `appsettings.json`'a SMTP yapılandırma bölümü ekle:
+      ```json
+      "Email": {
+        "SmtpHost": "smtp.gmail.com",
+        "SmtpPort": 587,
+        "EnableSsl": true,
+        "SmtpUsername": "",
+        "SmtpPassword": "",
+        "FromEmail": "noreply@vokabelmeister.com",
+        "FromName": "VokabelMeister"
+      }
+      ```
+      ⚠️ `SmtpUsername` ve `SmtpPassword` alanlarını appsettings.Development.json'a gir.
+      Production için environment variable veya secrets yönetimine taşı (TASK-042).
+- [ ] DI kaydı: development → `DevEmailService`, production → `SmtpEmailService`
+      (Environment kontrolüyle `Program.cs` veya `InfrastructureServiceExtensions`)
+
+**Hesap Kalıcı Silme Görevi (Background Job):**
+- [ ] `AccountCleanupBackgroundService` : `IHostedService`
+      → `ScheduledDeletionAt <= şimdi` olan silinmiş hesapları tespit eder
+      → PII anonimleştirme:
+         - `Email` → `deleted_{Id}@deleted.invalid` (placeholder)
+         - `FirstName`, `LastName` → "Silindi"
+         - `PasswordHash`, `GoogleId`, `AppleId` → null
+         - `AvatarUrl`, `DisplayName`, `LastLoginIP` → null
+         - `OriginalEmailHash` → SHA-256(orijinal e-posta) → kalıcı blok için saklanır
+         - `IsAnonymized` → true
+      → Çalışma sıklığı: günde bir kez (gece 03:00 UTC)
+      → `IUserRepository.GetScheduledForDeletionAsync(DateTime before)` metodu gerekli
 
 ---
 
@@ -595,10 +703,22 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 **Referans:** SECURITY.md §10
 
 - [ ] IIS publish ayarlarını kontrol et (web.config)
-- [ ] Production secrets yönetimi
-- [ ] IIS publish ayarlarını kontrol et (web.config)
+- [ ] Production secrets yönetimi:
+  - [ ] `appsettings.json`'daki `Jwt:SecretKey` → environment variable veya User Secrets
+  - [ ] `Email:SmtpUsername` ve `Email:SmtpPassword` → environment variable (asla commit edilmemeli)
+  - [ ] `Google:ClientId` ve `Apple:BundleId` → environment variable
 - [ ] Güvenlik checklist (SECURITY.md §10.3)
 - [ ] Database backup stratejisi
+- [ ] **GDPR / KVKK uyumluluk kontrolü:**
+  - [ ] **NOT:** Uygulamadaki genel soft delete (kelime, kart, kategori vb.) sorunsuz —
+        o verilerde kişisel veri (PII) yok, `IsDeleted=true` yeterli.
+  - [ ] **Yalnızca hesap silmede** soft delete tek başına GDPR'a aykırı:
+        `Email`, `FirstName`, `LastName`, `LastLoginIP` gibi PII alanlar DB'de kalır.
+        Çözümümüz: 30 gün grace period → `AccountCleanupBackgroundService` → PII anonimleştir.
+        Bu servisin production'da düzgün çalıştığı doğrulanmalı.
+  - [ ] `OriginalEmailHash` bloklama çalışıyor mu? (silinmiş e-posta ile kayıt denensin)
+  - [ ] Kullanıcı verisi dışa aktarma endpoint'i (`GET /users/me/export`) — ileride eklenebilir
+  - [ ] Veri saklama politikası dokümante edilmeli (kaç gün log, kaç gün anonim kayıt)
 
 ---
 

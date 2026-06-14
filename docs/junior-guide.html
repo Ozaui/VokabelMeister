@@ -737,28 +737,221 @@ public static class InfrastructureServiceExtensions
     title: 'Kimlik Doğrulama Servisleri',
     faz: 1,
     status: 'next',
-    summary: 'Manuel JWT token üretimi, BCrypt şifre hashleme, Token Family Pattern ile güvenli refresh token yönetimi. Google ve Apple OAuth entegrasyonu.',
+    summary: 'Manuel JWT (BCrypt + HMAC-SHA256), 2 adımlı 2FA girişi (şifre → e-posta OTP), e-posta doğrulama zorunluluğu, Token Family Pattern, Google/Apple OAuth, şifre sıfırlama ve OTP ile hesap silme + 30 günlük grace period. Tüm arayüzler ve DTO\'lar bu oturumda tasarlandı.',
     checklist: [
-      { done: false, text: 'IPasswordService + PasswordService (BCrypt, work factor 12)' },
-      { done: false, text: 'ITokenService + JwtTokenService (manuel JWT üretimi)' },
-      { done: false, text: 'Token Family Pattern (refresh token yeniden kullanım tespiti)' },
-      { done: false, text: 'IAuthService + AuthService (Register, Login, Refresh, Logout)' },
-      { done: false, text: 'Google ile giriş (GoogleLoginAsync — Google token doğrula)' },
-      { done: false, text: 'Apple ile giriş (AppleLoginAsync — Apple identity token)' },
-      { done: false, text: 'Şifre sıfırlama (15 dakika geçerli token)' },
+      { done: true,  text: 'IPasswordService (BCrypt hash + SHA-256 token hash)' },
+      { done: true,  text: 'ITokenService — GenerateRefreshToken → RefreshTokenResult (token + ExpiresAt birlikte)' },
+      { done: true,  text: 'IAuthService — tüm auth akışları tanımlandı' },
+      { done: true,  text: 'IEmailService — e-posta gönderim sözleşmesi (5 metot)' },
+      { done: true,  text: 'IAppleTokenValidator — Apple JWKS doğrulama sözleşmesi (Infrastructure\'da implement edilecek)' },
+      { done: true,  text: 'Tüm auth DTO\'ları (Register, Login, VerifyLoginOtp, VerifyEmail, ResetPassword, DeleteAccount vb.)' },
+      { done: true,  text: 'AuthExceptions (EmailNotVerified, InvalidCredentials, AccountDisabled, InvalidResetToken vb.)' },
+      { done: true,  text: 'User entity güncellendi: PendingOtpCodeHash/ExpiresAt/Purpose, ScheduledDeletionAt, IsAnonymized, OriginalEmailHash' },
+      { done: true,  text: 'UserConfiguration güncellendi (yeni sütunlar + CK_Users_OtpPurpose check constraint)' },
+      { done: false, text: 'PasswordService implementasyonu (BCrypt work factor 12 + SHA-256 HashToken)' },
+      { done: false, text: 'JwtTokenService — GetPrincipalFromExpiredToken: Algorithm Confusion Attack önlemi (alg == HS256 kontrolü)' },
+      { done: false, text: 'AppleTokenValidator implementasyonu (Infrastructure — Apple JWKS, ES256)' },
+      { done: false, text: 'DevEmailService implementasyonu (Serilog ile loglar)' },
+      { done: false, text: 'AuthService — RegisterAsync (e-posta blok: aktif + silinmiş + anonimleştirilmiş)' },
+      { done: false, text: 'AuthService — VerifyEmailAsync + ResendVerificationEmailAsync' },
+      { done: false, text: 'AuthService — LoginRequestOtpAsync (Adım 1: şifre + timing attack önlemi)' },
+      { done: false, text: 'AuthService — LoginVerifyOtpAsync (Adım 2: OTP + grace period kurtarma)' },
+      { done: false, text: 'AuthService — GoogleLoginAsync + AppleLoginAsync' },
+      { done: false, text: 'AuthService — RefreshAsync (Token Family Pattern)' },
+      { done: false, text: 'AuthService — ForgotPasswordAsync + ResetPasswordAsync (5 dk OTP)' },
+      { done: false, text: 'AuthService — RequestAccountDeletionAsync + ConfirmAccountDeletionAsync (OTP + şifre + 30 gün)' },
+      { done: false, text: 'ApplicationServiceExtensions.AddApplicationServices()' },
       { done: false, text: 'Google.Apis.Auth NuGet paketi eklenmesi' },
+      { done: false, text: 'Migration: AddOtpAndDeletionFieldsToUser' },
+      { done: false, text: 'Program.cs güncelleme — AddApplicationServices() çağrısı' },
     ],
-    why: 'ASP.NET Identity kullanılmıyor çünkü bu proje eğitim amaçlı — JWT nasıl üretilir, şifre nasıl hash\'lenir, refresh token güvenliği nasıl sağlanır? Bunların içini görmek için sıfırdan yazıyoruz.',
+    why: 'ASP.NET Identity kullanılmıyor — JWT nasıl üretilir, şifre nasıl hashlenir, 2FA nasıl çalışır, token güvenliği nasıl sağlanır — bunların içini görmek için sıfırdan yazıyoruz. Aynı zamanda gerçek üretim uygulamalarındaki güvenlik kararları (timing attack, algorithm confusion, grace period, GDPR) burada deneyimleniyor.',
     keyPoints: [
-      { icon: '🔑', title: 'JWT Neden Manuel?', desc: 'ASP.NET Identity her şeyi gizler. Claim\'ler nasıl çalışır, token nasıl imzalanır, süresi nasıl kontrol edilir — bunları bilmek için sıfırdan yazıyoruz.' },
-      { icon: '🔒', title: 'BCrypt Work Factor 12', desc: '2^12 = 4096 iterasyon. Hash işlemi ~250ms sürer. Brute force saldırısını yavaşlatır. MD5/SHA1 ASLA kullanılmaz — rainbow table ile kırılabilir.' },
-      { icon: '👨‍👩‍👧', title: 'Token Family Pattern', desc: 'Her refresh token bir "family" (GUID) ye ait. Çalınan token kullanılınca aynı family\'deki TÜM tokenlar iptal edilir. Replay attack koruması.' },
+      { icon: '🔑', title: 'JWT Neden Manuel?', desc: 'ASP.NET Identity her şeyi sarar. Claim nedir, token nasıl imzalanır, süresi nasıl kontrol edilir — bunları bilmek için sıfırdan yazıyoruz. System.IdentityModel.Tokens.Jwt paketi direkt kullanılıyor.' },
+      { icon: '🔒', title: 'BCrypt Work Factor 12', desc: '2^12 = 4096 iterasyon. Hash ~250ms sürer. GPU brute force saldırısını pratikte imkânsız kılar. MD5/SHA1 şifre için ASLA kullanılmaz — rainbow table ile saniyeler içinde kırılır.' },
+      { icon: '📦', title: 'RefreshTokenResult Neden Record?', desc: 'GenerateRefreshToken() sadece string dönseydi, ExpiresAt\'ı kim hesaplayacak? AuthService mi? O zaman token politikası iki yerde olur — tutarsızlık çıkar. Record dönerek üretici (ITokenService) politikayı kendisi belirler.' },
+      { icon: '🛡️', title: 'JWT Algorithm Confusion Attack', desc: 'Saldırgan token header\'ını değiştirip alg:"none" veya RS256→HS256 yapabilir. GetPrincipalFromExpiredToken içinde ValidateToken sonrası jwtToken.Header.Alg == HmacSha256 kontrolü zorunlu. Eşleşmezse null döner.' },
+      { icon: '👨‍👩‍👧', title: 'Token Family Pattern', desc: 'Her refresh token bir "family" (GUID) ye ait. Çalınan eski token kullanılmaya çalışılınca aynı family\'deki TÜM tokenlar iptal edilir. Cihaz çalınsa bile saldırgan tüm oturumları sürekli tutamaz.' },
+      { icon: '📱', title: '2FA Neden OTP Kodu?', desc: 'Link tabanlı sıfırlama mobilde sorunlu: deep link konfigürasyonu lazım, e-posta istemcisi linki değiştirebilir, kullanıcı başka uygulamaya geçmek zorunda kalır. 6 haneli kod: kullanıcı uygulamadan çıkmadan girer, UX çok daha akıcı.' },
+      { icon: '🔄', title: 'Tek OTP Alanı Neden?', desc: 'EmailVerification, PasswordReset, LoginOtp, AccountDeletion — her biri için ayrı alan yazmak 8 nullable sütun demek. Bir kullanıcı aynı anda iki farklı OTP işlemi yapmaz. PendingOtpCodePurpose ile hangi akış olduğu bilinir. 3 sütun, 4 amaç.' },
+      { icon: '⏳', title: 'Grace Period (30 Gün)', desc: 'Kullanıcı hesabı silince IsDeleted=true + ScheduledDeletionAt=şimdi+30gün. 30 gün içinde giriş yaparsa hesap otomatik kurtarılır. 30 gün sonra arka plan görevi PII\'yi anonimleştirir. Pişmanlık ve GDPR\'ın ikisi birden karşılanır.' },
+      { icon: '🚫', title: 'E-posta Kalıcı Blok', desc: 'Anonimleştirme sonrası Email alanı placeholder ile değiştirilir. Ama OriginalEmailHash (SHA-256) tutulur. Yeni kayıtta bu hash kontrol edilir. Silinmiş hesabın e-postasıyla asla yeniden kayıt yapılamaz.' },
+      { icon: '🍎', title: 'Google/Apple 2FA Gereksiz', desc: 'Google ve Apple zaten kullanıcıyı doğrulamış. Google\'dan gelen IdToken = Google\'ın imzaladığı JWT. Üstüne bir de e-posta OTP sormak hem gereksiz hem kötü UX. Sosyal girişlerde OTP adımı atlanır.' },
     ],
-    code: [],
+    code: [
+      {
+        title: 'ITokenService — RefreshTokenResult ile güvenli imza',
+        lang: 'csharp',
+        body: `// ❌ YANLIŞ — ExpiresAt kim hesaplayacak? Tutarsızlık riski
+string GenerateRefreshToken();
+
+// ✅ DOĞRU — Üretici politikayı kendisi belirler
+RefreshTokenResult GenerateRefreshToken();
+
+public record RefreshTokenResult(string Token, DateTime ExpiresAt);
+
+// Implementasyonda:
+public RefreshTokenResult GenerateRefreshToken()
+{
+    var bytes = new byte[64];
+    RandomNumberGenerator.Fill(bytes);
+    var token = Convert.ToBase64String(bytes);
+    var days = int.Parse(_config["Jwt:RefreshTokenExpirationDays"]!);
+    return new RefreshTokenResult(token, DateTime.UtcNow.AddDays(days));
+}`
+      },
+      {
+        title: 'JWT Algorithm Confusion Attack Önlemi',
+        lang: 'csharp',
+        body: `public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+{
+    // ValidateLifetime = false → süresi dolmuş token'ı okuyabilir
+    var parameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = _signingKey,
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = false
+    };
+
+    SecurityToken securityToken;
+    ClaimsPrincipal principal;
+    try
+    {
+        principal = new JwtSecurityTokenHandler()
+            .ValidateToken(token, parameters, out securityToken);
+    }
+    catch { return null; }
+
+    // ⚠️ KRİTİK: Algorithm Confusion Attack önlemi
+    // Saldırgan alg:"none" veya RS256→HS256 yapabilir
+    if (securityToken is not JwtSecurityToken jwtToken ||
+        !jwtToken.Header.Alg.Equals(
+            SecurityAlgorithms.HmacSha256,
+            StringComparison.InvariantCultureIgnoreCase))
+    {
+        return null; // Algoritma uyuşmazlığı — token sahte
+    }
+
+    return principal;
+}`
+      },
+      {
+        title: '2FA Giriş Akışı — 2 Adım',
+        lang: 'csharp',
+        body: `// ADIM 1: POST /auth/login
+// Şifre doğrula → OTP gönder → token YOK
+public async Task LoginRequestOtpAsync(LoginRequest request, CancellationToken ct)
+{
+    var user = await _users.GetByEmailAsync(request.Email.ToLower(), ct);
+
+    // ⚠️ Timing Attack Önlemi:
+    // Kullanıcı bulunamazsa da BCrypt.Verify çalıştır (sahte hash ile)
+    // Böylece yanıt süresi her durumda ~250ms → saldırgan e-posta varlığını anlayamaz
+    var hash = user?.PasswordHash ?? "$2b$12$invalidhashfortimingggg";
+    var valid = _passwordService.Verify(request.Password, hash);
+
+    if (user == null || !valid)
+        throw new InvalidCredentialsException("E-posta veya şifre hatalı");
+
+    // OTP üret ve e-posta ile gönder
+    var code = GenerateSixDigitCode();
+    user.PendingOtpCodeHash = _passwordService.HashToken(code);
+    user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+    user.PendingOtpCodePurpose = "LoginOtp";
+    await _users.UpdateAsync(user, ct);
+    await _emailService.SendLoginOtpAsync(user.Email, user.FirstName, code, ct);
+}
+
+// ADIM 2: POST /auth/login/verify-otp
+// OTP doğrula → grace period kontrolü → token döndür
+public async Task<AuthResponse> LoginVerifyOtpAsync(
+    VerifyLoginOtpRequest request, string? ip, string? device, CancellationToken ct)
+{
+    var user = await _users.GetByEmailAsync(request.Email.ToLower(), ct)
+        ?? throw new InvalidRefreshTokenException("Kod geçersiz");
+
+    // OTP kontrol
+    var hash = _passwordService.HashToken(request.Code);
+    if (user.PendingOtpCodeHash != hash ||
+        user.PendingOtpCodePurpose != "LoginOtp" ||
+        user.PendingOtpCodeExpiresAt < DateTime.UtcNow)
+        throw new InvalidVerificationCodeException("Kod hatalı veya süresi dolmuş");
+
+    var wasRecovered = false;
+
+    // Grace period kontrolü → otomatik kurtarma
+    if (user.IsDeleted && user.ScheduledDeletionAt > DateTime.UtcNow)
+    {
+        user.IsDeleted = false;
+        user.ScheduledDeletionAt = null;
+        wasRecovered = true;
+        await _emailService.SendAccountRecoveredNotificationAsync(
+            user.Email, user.FirstName, ct);
+    }
+
+    // OTP temizle ve istatistikleri güncelle
+    user.PendingOtpCodeHash = null;
+    user.PendingOtpCodeExpiresAt = null;
+    user.PendingOtpCodePurpose = null;
+    user.LastLoginAt = DateTime.UtcNow;
+    user.LastLoginIP = ip;
+    user.LoginCount++;
+    await _users.UpdateAsync(user, ct);
+
+    return await GenerateAuthResponseAsync(user, device, wasRecovered, ct);
+}`
+      },
+      {
+        title: 'Hesap Silme + Grace Period + E-posta Kalıcı Blok',
+        lang: 'csharp',
+        body: `// ONAY: POST /auth/delete-account/confirm
+public async Task ConfirmAccountDeletionAsync(
+    int userId, DeleteAccountRequest request, CancellationToken ct)
+{
+    var user = await _users.GetByIdAsync(userId, ct)
+        ?? throw new InvalidCredentialsException("Kullanıcı bulunamadı");
+
+    // OTP doğrula (Purpose = "AccountDeletion", 15 dk)
+    var hash = _passwordService.HashToken(request.Code);
+    if (user.PendingOtpCodeHash != hash ||
+        user.PendingOtpCodePurpose != "AccountDeletion" ||
+        user.PendingOtpCodeExpiresAt < DateTime.UtcNow)
+        throw new InvalidResetTokenException("Silme kodu geçersiz veya süresi dolmuş");
+
+    // Şifre doğrula (Google/Apple kullanıcısı için null geçerli)
+    if (user.AuthProvider == "Local" && request.Password != null)
+        if (!_passwordService.Verify(request.Password, user.PasswordHash!))
+            throw new InvalidCredentialsException("Şifre hatalı");
+
+    // Soft delete + 30 gün zamanla
+    user.IsDeleted = true;
+    user.DeletedAt = DateTime.UtcNow;
+    user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(30);
+    user.PendingOtpCodeHash = null;
+    user.PendingOtpCodeExpiresAt = null;
+    user.PendingOtpCodePurpose = null;
+    await _users.UpdateAsync(user, ct);
+
+    // Tüm cihazlardan çıkış
+    await _refreshTokens.RevokeAllByUserAsync(userId, ct);
+}
+
+// ARKA PLAN GÖREVİ (TASK-018 — AccountCleanupBackgroundService)
+// ScheduledDeletionAt geçince:
+// user.OriginalEmailHash = SHA256(user.Email)  → kalıcı blok
+// user.Email = $"deleted_{user.Id}@deleted.invalid"
+// user.FirstName = "Silindi"; user.LastName = "";
+// user.PasswordHash = null; user.IsAnonymized = true;
+// → O e-posta ile artık kayıt yapılamaz (EmailExistsAsync IgnoreQueryFilters kullanır)`
+      },
+    ],
     unlocks: [
-      'TASK-006: Auth Controller endpoint\'leri bu servisleri kullanacak',
-      'Kullanıcılar sisteme giriş yapabilecek',
-      'JWT token ile korumalı endpoint\'ler erişilebilir olacak',
+      'TASK-006: AuthController tüm bu endpoint\'leri expose edecek',
+      'TASK-018: DevEmailService + SmtpEmailService + AccountCleanupBackgroundService implement edilecek',
+      'Kullanıcılar 2FA ile güvenli giriş yapabilecek',
+      'Hesap silme güvenli ve geri alınabilir hale gelecek',
     ]
   },
 ];

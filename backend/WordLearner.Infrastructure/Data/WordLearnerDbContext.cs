@@ -65,6 +65,7 @@ public class WordLearnerDbContext : DbContext
     // ─── Sosyal ──────────────────────────────────────────────────────────────
     public DbSet<Class> Classes { get; set; }
     public DbSet<ClassMembership> ClassMemberships { get; set; }
+
     // Instructor'ın sınıfına özel kelimeleri — sistem Words tablosundan bağımsız
     public DbSet<ClassWord> ClassWords { get; set; }
     public DbSet<ClassCategory> ClassCategories { get; set; }

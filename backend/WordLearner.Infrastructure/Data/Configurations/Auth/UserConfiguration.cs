@@ -62,6 +62,19 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         // ─── Rol ──────────────────────────────────────────────────────────────
         builder.Property(u => u.Role).IsRequired().HasMaxLength(20).HasDefaultValue("User");
 
+        // ─── Bekleyen OTP Kodu ────────────────────────────────────────────────
+        // SHA-256 Base64 = 44 karakter; biraz pay bırakarak 88 maksimum
+        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(88);
+        builder.Property(u => u.PendingOtpCodePurpose).HasMaxLength(30);
+        // Hash üzerinde index: doğrulama sorgusunda kullanılmaz (email ile bulunur),
+        // yalnızca temizlik sorgularında taranır → partial index gerekmez.
+
+        // ─── Hesap Silme ve Kalıcı Blok ─────────────────────────────────────
+        // OriginalEmailHash: kayıt kontrolünde SHA256(email) ile karşılaştırılır
+        builder.Property(u => u.OriginalEmailHash).HasMaxLength(88);
+        builder.HasIndex(u => u.OriginalEmailHash); // Kayıt sırasında hızlı blok kontrolü
+        builder.HasIndex(u => u.ScheduledDeletionAt); // Arka plan görevi için tarama
+
         // ─── Check Kısıtlamaları ──────────────────────────────────────────────
         builder.ToTable(t =>
         {
@@ -73,6 +86,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             t.HasCheckConstraint(
                 "CK_Users_AuthProvider",
                 "[AuthProvider] IN ('Local','Google','Apple')"
+            );
+            t.HasCheckConstraint(
+                "CK_Users_OtpPurpose",
+                "[PendingOtpCodePurpose] IS NULL OR [PendingOtpCodePurpose] " +
+                "IN ('EmailVerification','PasswordReset','LoginOtp','AccountDeletion')"
             );
         });
 

@@ -300,6 +300,22 @@ Query Params:
 ### PUT /user-cards/{id}  [Authorize — sadece kart sahibi]
 ### DELETE /user-cards/{id}  [Authorize — sadece kart sahibi]  (Soft delete)
 
+### POST /user-cards/learn-system-word  [Authorize]
+```json
+// Sistem kelimesini öğrenme listesine ekle — UserCard OLUŞTURULMAZ
+// İstek
+{ "wordId": 5 }
+
+// Yanıt 200 — mevcut kayıt varsa aynı kaydı döner, yoksa yeni açar
+{ "success": true, "data": { "userProgressId": 12, "wordId": 5, "germanWord": "laufen", "alreadyExists": false } }
+```
+
+> **Not:** Bu endpoint `POST /user-cards` ile `FrontText` sistem Words tablosundaki
+> bir `GermanWord` ile eşleştiğinde yanıtla birlikte gelen `suggestedSystemWordId`
+> kullanılarak çağrılır. Kullanıcı "Sisteme ekle" seçeneğini seçerse bu endpoint;
+> "Hayır, kendi kartımı oluşturayım" seçeneğini seçerse normal `POST /user-cards`
+> devam eder.
+
 ---
 
 ## 8. Kişisel Kategori Endpoints
@@ -333,6 +349,10 @@ Query Params:
   "userCategoryIds": [1],           // Opsiyonel — kişisel kategoriler
   "wordCount": 10                    // Kaç kelime
 }
+// Mixed sourceType notu: Hem UserProgress hem UserCardProgress sorgulanır.
+// Bir UserCard'ın FrontText'i kullanıcının aktif UserProgress'indeki bir
+// GermanWord ile eşleşiyorsa UserCard oturuma dahil edilmez; UserProgress
+// sürümü kullanılır (çift görünme önlenir).
 
 // Yanıt 201
 {

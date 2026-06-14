@@ -5,7 +5,6 @@
 /// NEDEN: Ortak CRUD kodunun tek yerde yazılması; türetilmiş sınıflar sadece özel sorguları ekler.
 /// BAĞIMLILIKLAR: WordLearnerDbContext, BaseEntity (Domain), IRepository (Application)
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Domain.Common;
@@ -20,14 +19,15 @@ namespace WordLearner.Infrastructure.Repositories;
 /// NEDEN: Her repository'de aynı kodu tekrarlamamak — DRY prensibi.
 /// NASIL: protected _db ve _set alanları türetilmiş sınıfların özel sorgular yazmasına izin verir.
 /// </summary>
-public class Repository<T> : IRepository<T> where T : BaseEntity
+public class Repository<T> : IRepository<T>
+    where T : BaseEntity
 {
     protected readonly WordLearnerDbContext _db;
     protected readonly DbSet<T> _set;
 
     public Repository(WordLearnerDbContext db)
     {
-        _db  = db;
+        _db = db;
         _set = db.Set<T>();
     }
 
@@ -36,16 +36,16 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     /// NEDEN: HasQueryFilter otomatik soft delete filtrelemesi yapar — IsDeleted=true görünmez.
     /// NASIL: FirstOrDefaultAsync ile Id eşleşmesi; birden fazla kayıt olamaz (PK).
     /// </summary>
-    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default)
-        => _set.FirstOrDefaultAsync(e => e.Id == id, ct);
+    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
+        _set.FirstOrDefaultAsync(e => e.Id == id, ct);
 
     /// <summary>
     /// AMAÇ: Tüm aktif kayıtları getirir.
     /// NEDEN: Küçük tablolar (kategoriler, rozetler) için pratik listeleme.
     /// NASIL: HasQueryFilter zaten uygulanmış; ek filtre gerekmez.
     /// </summary>
-    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
-        => await _set.ToListAsync(ct);
+    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>
+        await _set.ToListAsync(ct);
 
     /// <summary>
     /// AMAÇ: Yeni entity ekler ve veritabanına kaydeder.
@@ -79,7 +79,8 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     {
         // Kayıt bulunamazsa işlem yapılmaz — controller zaten 404 döner
         var entity = await GetByIdAsync(id, ct);
-        if (entity is null) return;
+        if (entity is null)
+            return;
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
@@ -90,6 +91,5 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     /// AMAÇ: Değişiklikleri veritabanına kaydeder — birden fazla işlemi tek transaction'da birleştirmek için.
     /// NEDEN: Servis katmanı bazen birden fazla entity değiştirip tek seferde kaydetmek ister.
     /// </summary>
-    public Task SaveChangesAsync(CancellationToken ct = default)
-        => _db.SaveChangesAsync(ct);
+    public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

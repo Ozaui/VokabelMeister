@@ -7,7 +7,6 @@
 ///   Tüm sorgularda ClassId + üyelik kontrolü zorunludur.
 /// BAĞIMLILIKLAR: IRepository (generic), ClassWord entity, Class entity
 /// </summary>
-
 using WordLearner.Domain.Entities;
 
 namespace WordLearner.Application.Interfaces.Repositories;

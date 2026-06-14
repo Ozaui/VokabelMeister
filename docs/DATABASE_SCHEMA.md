@@ -698,6 +698,15 @@ VALUES
 
 5. LearningSessions.CategoryIds JSON dizi olarak saklanır
    çünkü kullanıcı aynı anda birden fazla kategori seçebilir.
+
+6. Sistem kelimesi eşleşmesi → UserProgress tercih edilir.
+   Kullanıcı bir kişisel kart oluştururken FrontText, Words.GermanWord
+   ile birebir eşleşiyorsa önerilen yol UserCard değil UserProgress
+   kaydı açmaktır (API yanıtında suggestedSystemWordId döner).
+   Kullanıcı yine de UserCard oluşturabilir; ancak Mixed sınav
+   oturumlarında çift görünmeyi önlemek için aynı GermanWord'e ait
+   UserProgress kaydı mevcutsa o UserCard Mixed session'a dahil
+   EDİLMEZ — UserProgress sürümü öncelik alır.
 ```
 
 ---

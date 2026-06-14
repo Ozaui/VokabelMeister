@@ -168,6 +168,59 @@ public class User : BaseEntity
     /// <summary>Toplam giriş sayısı — güvenlik analizi için izlenir.</summary>
     public int LoginCount { get; set; } = 0;
 
+    // ─── Bekleyen OTP Kodu (tek set — tüm amaçlar için ortak) ───────────────
+    //
+    // NEDEN TEK SET:
+    //   Bir kullanıcının aynı anda birden fazla farklı OTP işlemi yapması beklenmez.
+    //   (E-posta doğrulama VEYA şifre sıfırlama VEYA giriş VEYA silme — sadece biri)
+    //   Ayrı alanlar yerine tek set = daha temiz şema, daha az nullable sütun.
+    //
+    // Purpose değerleri:
+    //   "EmailVerification" | "PasswordReset" | "LoginOtp" | "AccountDeletion"
+
+    /// <summary>
+    /// Aktif OTP kodunun SHA-256 hash'i (max 88 karakter — Base64).
+    /// NEDEN HASH: Veritabanı sızıntısında ham kod ele geçirilmez.
+    /// </summary>
+    public string? PendingOtpCodeHash { get; set; }
+
+    /// <summary>
+    /// OTP kodunun son kullanma tarihi (UTC).
+    /// LoginOtp / PasswordReset → 5 dakika | EmailVerification → 24 saat | AccountDeletion → 15 dakika
+    /// </summary>
+    public DateTime? PendingOtpCodeExpiresAt { get; set; }
+
+    /// <summary>
+    /// OTP kodunun amacı — doğru akışın kullanıldığını kontrol etmek için.
+    /// NEDEN: Şifre sıfırlama kodu ile giriş OTP'si birbirinin yerine kullanılamasın.
+    /// </summary>
+    public string? PendingOtpCodePurpose { get; set; }
+
+    // ─── Hesap Silme ve Kalıcı Blok ─────────────────────────────────────────
+
+    /// <summary>
+    /// Hesabın kalıcı olarak silineceği tarih (UTC).
+    /// NASIL ÇALIŞIR:
+    ///   1. Kullanıcı silme onayı verince → IsDeleted=true, ScheduledDeletionAt=şimdi+30gün
+    ///   2. 30 gün içinde giriş yaparsa → hesap otomatik kurtarılır (IsDeleted=false, bu alan null)
+    ///   3. 30 gün dolarsa → arka plan görevi PII'yi anonimleştirir (IsAnonymized=true)
+    /// </summary>
+    public DateTime? ScheduledDeletionAt { get; set; }
+
+    /// <summary>
+    /// Kişisel veriler (PII) anonimleştirildi mi?
+    /// NEDEN: GDPR — 30 gün sonunda ad, soyad, e-posta anonimleştirilir.
+    ///        E-posta alanı placeholder ile değiştirilir; OriginalEmailHash blok için tutulur.
+    /// </summary>
+    public bool IsAnonymized { get; set; } = false;
+
+    /// <summary>
+    /// Anonimleştirme sonrası e-posta adresinin SHA-256 hash'i (max 88 karakter).
+    /// NEDEN: E-posta alanı silinmiş olsa bile bu mail ile yeniden kayıt engellenir.
+    /// NASIL: Kayıt sırasında SHA256(yeniEmail) == OriginalEmailHash ise kayıt reddedilir.
+    /// </summary>
+    public string? OriginalEmailHash { get; set; }
+
     // ─── Rol ────────────────────────────────────────────────────────────────
 
     /// <summary>
