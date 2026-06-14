@@ -5,7 +5,6 @@
 /// NEDEN: Status check kısıtı ve StartedAt DESC index performans için kritik.
 /// BAĞIMLILIKLAR: LearningSession entity, User entity
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities;
@@ -29,8 +28,10 @@ public class LearningSessionConfiguration : IEntityTypeConfiguration<LearningSes
         builder.Property(s => s.UserCategoryIds).HasColumnType("nvarchar(max)");
 
         builder.ToTable(t =>
-            t.HasCheckConstraint("CK_LearningSessions_Status",
-                "[Status] IN ('Active','Completed','Abandoned')")
+            t.HasCheckConstraint(
+                "CK_LearningSessions_Status",
+                "[Status] IN ('Active','Completed','Abandoned')"
+            )
         );
 
         builder.HasIndex(s => s.UserId);

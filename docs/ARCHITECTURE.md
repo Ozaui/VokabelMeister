@@ -200,45 +200,56 @@ Arkadaşın paylaşıma açık kategorisini kendi listene ekleyebilirsin
 ## 4. Kullanım Akışı — Admin Perspektifi
 
 ```
-Admin panel'e giriş yapar (Admin/Instructor rolü)
+Admin panel'e giriş yapar (Admin rolü)
         │
-        ├── Kelime Yönetimi
+        ├── Sistem Kelimesi Yönetimi  [YALNIZCA ADMIN]
         │     ├── Yeni kelime ekle (Almanca + çeviri + gramer detayları)
         │     ├── Örnek cümle ekle (seviye + tür)
         │     ├── Kategoriye bağla (birden fazla)
-        │     └── Yayın durumu (Aktif/Pasif)
+        │     └── Yayın durumu (Aktif/Pasif) / Silme
         │
-        ├── Kategori Yönetimi
+        ├── Kategori Yönetimi  [YALNIZCA ADMIN]
         │     ├── Yeni kategori oluştur
         │     ├── Hiyerarşi düzenle (alt/üst kategori)
         │     └── Görünürlük (Aktif/Pasif)
         │
-        ├── Kullanıcı Yönetimi
+        ├── Kullanıcı Yönetimi  [YALNIZCA ADMIN]
         │     ├── Kullanıcıları listele
         │     ├── Rol değiştir (User → Instructor)
         │     └── Hesap dondur/aktif et
         │
-        ├── İçerik Moderasyonu
+        ├── İçerik Moderasyonu  [YALNIZCA ADMIN]
         │     ├── "Herkese Açık" yapılan kullanıcı kartlarını incele
         │     ├── Onayla veya reddet
         │     └── Uygunsuz içerik bildirimleri
         │
-        └── İstatistikler
+        └── İstatistikler  [YALNIZCA ADMIN]
               ├── En çok öğrenilen kelimeler
               ├── En çok sorun çıkan kelimeler
               └── Aktif kullanıcı sayısı
+
+Admin panel'e giriş yapar (Instructor rolü)
+        │
+        └── Sınıf Kelimesi Yönetimi  [INSTRUCTOR — YALNIZCA KENDİ SINIFLARI İÇİN]
+              ├── Sınıfa özel kelime ekle (Almanca + Türkçe çeviri)
+              ├── Opsiyonel gramer bilgisi (cinsiyet, artikel, çoğul)
+              ├── Kelime düzenle / pasif yap
+              └── Kelimeyi sil
+              NOT: Bu kelimeler YALNIZCA sınıf üyelerine görünür.
+                   Diğer kullanıcılar bu kelimeleri asla göremez.
 ```
 
 ---
 
 ## 5. İçerik Görünürlük Matrisi
 
-| İçerik Türü | Varsayılan | Herkese Açık | Paylaşım Linki | Sınıf/Arkadaş |
-|-------------|-----------|--------------|----------------|----------------|
-| Sistem Kelimeleri | ✅ Herkes | — | — | — |
-| Kullanıcı Kartı | 🔒 Sadece sahibi | ✅ Admin onayıyla | ✅ Linki olan | ✅ Sınıf üyeleri |
-| Kullanıcı Kategorisi | 🔒 Sadece sahibi | ✅ Admin onayıyla | ✅ Linki olan | ✅ Sınıf üyeleri |
-| Sınıf İçeriği | 🔒 Sınıf üyeleri | — | ✅ Davet linki | — |
+| İçerik Türü | Kim Ekler | Varsayılan | Herkese Açık | Paylaşım Linki | Sınıf/Arkadaş |
+|-------------|-----------|-----------|--------------|----------------|----------------|
+| Sistem Kelimeleri | Yalnızca Admin | ✅ Herkes | — | — | — |
+| Sınıf Kelimeleri | Instructor (kendi sınıfı) | 🔒 Yalnızca sınıf üyeleri | ❌ Asla | ❌ Asla | — |
+| Kullanıcı Kartı | Her kullanıcı | 🔒 Sadece sahibi | ✅ Admin onayıyla | ✅ Linki olan | ✅ Sınıf üyeleri |
+| Kullanıcı Kategorisi | Her kullanıcı | 🔒 Sadece sahibi | ✅ Admin onayıyla | ✅ Linki olan | ✅ Sınıf üyeleri |
+| Sınıf İçeriği | Sınıf sahibi | 🔒 Sınıf üyeleri | — | ✅ Davet linki | — |
 
 ---
 
@@ -296,6 +307,7 @@ UserCategory  (Kişisel Kategoriler)
 Class  (Sınıflar)
  ├── N:1 ──► User (owner)
  ├── 1:N ──► ClassMembership
+ ├── 1:N ──► ClassWord          (Instructor'ın sınıfa özel eklediği kelimeler)
  ├── M:N ──► Category (ClassCategory)
  └── M:N ──► UserCategory (ClassUserCategory)
 
@@ -333,6 +345,7 @@ SharedContent  (Paylaşım Linkleri)
 | UserCardUserCategory | Kişisel | UserCard ↔ UserCategory M:N |
 | Class | Sosyal | Sınıf/grup |
 | ClassMembership | Sosyal | Sınıf üyelikleri |
+| ClassWord | Sosyal | Instructor'ın sınıfına özel eklediği kelimeler (yalnızca sınıf üyeleri görür) |
 | ClassCategory | Sosyal | Sınıf ↔ Category M:N |
 | ClassUserCategory | Sosyal | Sınıf ↔ UserCategory M:N |
 | Friendship | Sosyal | Arkadaşlık ilişkileri |
@@ -345,8 +358,12 @@ SharedContent  (Paylaşım Linkleri)
 | Rol | Kimler | Yetkiler |
 |-----|--------|---------|
 | User | Kayıtlı kullanıcılar | Kendi verileri, öğrenme, kişisel kart/kategori, sınıf, arkadaş |
-| Instructor | İçerik editörleri | User + sistem kelimesi/kategori ekleme |
-| Admin | Yöneticiler | Tüm yetkiler + kullanıcı yönetimi, moderasyon |
+| Instructor | Öğretmenler | User'ın tüm yetkileri + **kendi sınıflarına** özel kelime ekleme/düzenleme/silme. Eklediği kelimeler yalnızca o sınıfın üyelerine görünür; diğer kullanıcılar asla göremez. |
+| Admin | Yöneticiler | Tüm yetkiler + sistem kelimesi CRUD + kategori CRUD + kullanıcı yönetimi + moderasyon |
+
+**Kritik Ayrım:**
+- `Sistem Kelimeleri` (Words tablosu): Tüm kullanıcılara açık. **Yalnızca Admin** ekler/düzenler/siler.
+- `Sınıf Kelimeleri` (ClassWords tablosu): Yalnızca sınıf üyelerine açık. **Instructor** kendi sınıfı için ekler/düzenler/siler.
 
 ---
 

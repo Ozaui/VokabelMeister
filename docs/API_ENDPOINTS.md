@@ -204,7 +204,7 @@ Query Params:
 }
 ```
 
-### POST /words  [Authorize — Instructor, Admin]
+### POST /words  [Authorize — Admin]
 ```json
 // İstek
 {
@@ -218,7 +218,7 @@ Query Params:
 // Yanıt 201
 ```
 
-### PUT /words/{id}  [Authorize — Instructor, Admin]
+### PUT /words/{id}  [Authorize — Admin]
 ### DELETE /words/{id}  [Authorize — Admin]  (Soft delete)
 
 ---
@@ -481,6 +481,44 @@ Query Params: page=1, pageSize=20, search=string, role=User|Instructor|Admin
 
 ### DELETE /classes/{id}  [Authorize — Sınıf sahibi]
 ### DELETE /classes/{id}/leave  [Authorize — Sınıf üyesi]
+
+### POST /classes/{id}/words  [Authorize — Sınıf sahibi (Instructor/Admin)]
+```json
+// Sınıfa özel kelime ekle — YALNIZCA sınıf üyeleri görebilir
+// İstek
+{
+  "germanWord": "der Hund",
+  "turkishTranslation": "Köpek",
+  "partOfSpeech": "Noun",
+  "gender": "Masculine",
+  "articleDefiniteNom": "der",
+  "pluralForm": "Hunde",
+  "notes": "Evcil hayvan"
+}
+// Yanıt 201
+{ "id": 1, "germanWord": "der Hund", "turkishTranslation": "Köpek", "classId": 5 }
+```
+
+### GET /classes/{id}/words  [Authorize — Sınıf üyesi]
+```
+Query Params: page=1, pageSize=20, search=string
+```
+```json
+// Yanıt 200 — yalnızca bu sınıfa özel kelimeler
+{
+  "data": [
+    { "id": 1, "germanWord": "der Hund", "turkishTranslation": "Köpek", "gender": "Masculine", "articleDefiniteNom": "der", "pluralForm": "Hunde" }
+  ],
+  "pagination": { "currentPage": 1, "totalPages": 1, "totalItems": 1 }
+}
+```
+
+### PUT /classes/{id}/words/{wordId}  [Authorize — Sınıf sahibi]
+```json
+{ "germanWord": "der Hund", "turkishTranslation": "Köpek", "notes": "Düzenlenmiş not" }
+```
+
+### DELETE /classes/{id}/words/{wordId}  [Authorize — Sınıf sahibi]  (Soft delete)
 
 ---
 

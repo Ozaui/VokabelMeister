@@ -59,6 +59,44 @@ Yorum şablonu için → `docs/CODING_STANDARDS.md`
 
 ---
 
+## Junior Rehberi Güncelleme Kuralı
+
+Her task tamamlandıktan sonra `docs/junior-guide.html` dosyasındaki `TASKS` dizisine yeni bir obje eklenmeli.
+
+**Kural:** Task statusu `'done'` olan bir task tamamlandığında, `TASKS` dizisinde o task'ı `status: 'next'` iken `status: 'done'` olarak güncelle. Sıradaki task'ı `status: 'next'` olarak ekle.
+
+**Ekleme formatı:**
+```js
+{
+  id: 'task-XXX',
+  num: 'TASK-XXX',
+  title: 'Task Başlığı',
+  faz: 1,           // 1 | 2 | 3 | 4
+  status: 'done',   // 'done' | 'next' | 'todo'
+  summary: 'Ne yapıldığını 1-2 cümleyle anlat.',
+  checklist: [
+    { done: true, text: 'Yapılan adım 1' },
+    { done: true, text: 'Yapılan adım 2' },
+  ],
+  why: 'Bu task neden bu sırada yapıldı? Ne için gerekli?',
+  keyPoints: [
+    { icon: '💡', title: 'Kavram Adı', desc: 'Açıklama' },
+  ],
+  code: [
+    { title: 'Dosya.cs — Açıklama', lang: 'csharp', body: `// kod buraya` },
+  ],
+  unlocks: [
+    'TASK-XXX: Bu task olmadan yapılamayan şey',
+  ]
+}
+```
+
+**Dosya konumu:** `docs/junior-guide.html` — `TASKS` dizisinin içine, son `done` task'ın hemen arkasına ekle.
+
+**ÖNEMLİ:** Bu kuralı takip etmeden task tamamlandı demek yasak. Her task sonunda HTML güncellenir.
+
+---
+
 ## Klasör Yapısı
 
 ```

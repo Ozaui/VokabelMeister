@@ -6,7 +6,6 @@
 ///        EasinessFactor SM-2 algoritması için zorunludur.
 /// BAĞIMLILIKLAR: UserProgress entity, User entity, Word entity
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities;

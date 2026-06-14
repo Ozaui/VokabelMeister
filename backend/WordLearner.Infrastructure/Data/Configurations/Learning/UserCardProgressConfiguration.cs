@@ -5,7 +5,6 @@
 /// NEDEN: UserProgress ile aynı mantık, kişisel kartlar için.
 /// BAĞIMLILIKLAR: UserCardProgress entity, User entity, UserCard entity
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities;

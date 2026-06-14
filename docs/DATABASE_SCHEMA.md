@@ -15,10 +15,16 @@ Users
  │                                ── UserCardUserCategories (M:N) ── UserCategories
  └── UserCategories         (1:N)
 
-Words
+Words  [Tüm kullanıcılara açık — YALNIZCA Admin ekler]
  ├── WordDetails            (1:1)
  ├── WordExamples           (1:N)
  └── WordCategories         (M:N) ── Categories
+
+Classes
+ ├── ClassMemberships       (1:N)
+ ├── ClassWords             (1:N)  [Yalnızca sınıf üyelerine açık — Instructor ekler]
+ ├── ClassCategories        (M:N) ── Categories
+ └── ClassUserCategories    (M:N) ── UserCategories
 
 Categories
  └── Self-referencing (ParentCategoryId)
@@ -698,7 +704,7 @@ VALUES
 
 ## 5. Sosyal Özellikler — Yeni Tablolar
 
-### 5.1 Classes (Sınıflar)
+### 5.1 Classes (Sınıflar — Instructor veya Admin Oluşturur)
 
 ```sql
 CREATE TABLE Classes (
@@ -722,7 +728,50 @@ CREATE TABLE Classes (
 
 ---
 
-### 5.2 ClassMemberships (Sınıf Üyelikleri)
+### 5.2 ClassWords (Sınıfa Özel Kelimeler — Instructor Ekler)
+
+```sql
+-- Instructor'ın kendi sınıfı için eklediği kelimeler.
+-- Bu kelimeler YALNIZCA sınıf üyelerine görünür; system Words tablosuna EKLENMEZ.
+CREATE TABLE ClassWords (
+    Id                  INT           PRIMARY KEY IDENTITY(1,1),
+    ClassId             INT           NOT NULL,   -- Hangi sınıfa ait
+    CreatedBy           INT           NOT NULL,   -- Ekleyen Instructor ID'si
+
+    -- Kelime İçeriği (Almanca-Türkçe)
+    GermanWord          NVARCHAR(255) NOT NULL,
+    TurkishTranslation  NVARCHAR(500) NOT NULL,
+    PartOfSpeech        NVARCHAR(20)  NULL,   -- Noun, Verb, Adjective, vb. (opsiyonel)
+    Notes               NVARCHAR(MAX) NULL,   -- Öğretmenin notu
+
+    -- Opsiyonel Almanca Gramer (İsimler için)
+    Gender              NVARCHAR(20)  NULL,   -- Masculine, Feminine, Neuter
+    ArticleDefiniteNom  NVARCHAR(10)  NULL,   -- der / die / das
+    PluralForm          NVARCHAR(255) NULL,   -- Çoğul formu
+
+    IsActive            BIT           NOT NULL DEFAULT 1,
+
+    -- Soft Delete
+    IsDeleted           BIT           NOT NULL DEFAULT 0,
+    DeletedAt           DATETIME2     NULL,
+    CreatedAt           DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt           DATETIME2     NOT NULL DEFAULT GETUTCDATE(),
+
+    FOREIGN KEY (ClassId)   REFERENCES Classes(Id) ON DELETE CASCADE,
+    FOREIGN KEY (CreatedBy) REFERENCES Users(Id),
+
+    CONSTRAINT CK_ClassWords_PartOfSpeech CHECK (PartOfSpeech IS NULL OR PartOfSpeech IN ('Noun','Verb','Adjective','Adverb','Conjunction','Preposition','Pronoun','Other')),
+    CONSTRAINT CK_ClassWords_Gender       CHECK (Gender IS NULL OR Gender IN ('Masculine','Feminine','Neuter')),
+
+    INDEX IX_ClassWords_ClassId   (ClassId),
+    INDEX IX_ClassWords_CreatedBy (CreatedBy),
+    INDEX IX_ClassWords_IsDeleted (IsDeleted)
+);
+```
+
+---
+
+### 5.3 ClassMemberships (Sınıf Üyelikleri)
 
 ```sql
 CREATE TABLE ClassMemberships (
@@ -745,7 +794,7 @@ CREATE TABLE ClassMemberships (
 
 ---
 
-### 5.3 ClassCategories (Sınıf ↔ Sistem Kategorisi M:N)
+### 5.4 ClassCategories (Sınıf ↔ Sistem Kategorisi M:N)
 
 ```sql
 CREATE TABLE ClassCategories (
@@ -767,7 +816,7 @@ CREATE TABLE ClassCategories (
 
 ---
 
-### 5.4 ClassUserCategories (Sınıf ↔ Kişisel Kategori M:N)
+### 5.5 ClassUserCategories (Sınıf ↔ Kişisel Kategori M:N)
 
 ```sql
 CREATE TABLE ClassUserCategories (
@@ -789,7 +838,7 @@ CREATE TABLE ClassUserCategories (
 
 ---
 
-### 5.5 Friendships (Arkadaşlıklar)
+### 5.6 Friendships (Arkadaşlıklar)
 
 ```sql
 CREATE TABLE Friendships (
@@ -815,7 +864,7 @@ CREATE TABLE Friendships (
 
 ---
 
-### 5.6 SharedContents (Paylaşım Linkleri)
+### 5.7 SharedContents (Paylaşım Linkleri)
 
 ```sql
 CREATE TABLE SharedContents (
@@ -847,7 +896,7 @@ https://app.wordlearner.com/share/550e8400-e29b-41d4-a716-446655440000
 
 ---
 
-### 5.7 SharedContentImports (Paylaşım Kopyalamaları)
+### 5.8 SharedContentImports (Paylaşım Kopyalamaları)
 
 ```sql
 -- Bir kullanıcı paylaşım linkinden içerik eklediğinde kaydedilir
@@ -872,8 +921,17 @@ CREATE TABLE SharedContentImports (
 ## 6. Görünürlük Kuralları (Uygulama Katmanında Zorunlu)
 
 ```
-Sistem Kelimeleri (Words):
+Sistem Kelimeleri (Words tablosu):
   → Tüm aktif kullanıcılar görebilir
+  → YALNIZCA Admin ekleyebilir, güncelleyebilir, silebilir
+  → Instructor bu tabloya DOKUNAMAZ
+
+Sınıf Kelimeleri (ClassWords tablosu):
+  → YALNIZCA o sınıfın üyeleri (ClassMembership kaydı olan) görebilir
+  → Instructor yalnızca kendi sınıflarına kelime ekleyebilir/düzenleyebilir/silebilir
+  → Paylaşım linki OLUŞTURULAMAZ
+  → Diğer kullanıcılar, Admin bile olsa bu kelimeleri başka kullanıcıya gösteremez
+  → Sorgu: WHERE ClassId = ? AND ClassId IN (kullanıcının üye olduğu sınıflar)
 
 Kullanıcı Kartı (UserCard):
   → Varsayılan: Sadece sahibi
@@ -888,5 +946,5 @@ Sınıf (Class):
   → ClassMembership kaydı olanlar görebilir
   → InviteCode veya SharedContent linki ile katılınabilir
 
-Repository katmanında her sorguda UserId filtresi ZORUNLUDUR.
+Repository katmanında her sorguda UserId/ClassId filtresi ZORUNLUDUR.
 ```

@@ -76,6 +76,7 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 **Sosyal:**
 - [x] `Class` entity (sınıf)
 - [x] `ClassMembership` entity
+- [x] `ClassWord` entity (Instructor'ın sınıfına özel kelimeleri — yalnızca sınıf üyeleri görür)
 - [x] `ClassCategory` ara tablo (Class ↔ Category M:N)
 - [x] `ClassUserCategory` ara tablo (Class ↔ UserCategory M:N)
 - [x] `Friendship` entity
@@ -112,6 +113,7 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 - [x] `IUserCardProgressRepository` + `UserCardProgressRepository`
 - [x] `IRefreshTokenRepository` + `RefreshTokenRepository`
 - [x] `IClassRepository` + `ClassRepository`
+- [x] `IClassWordRepository` + `ClassWordRepository`
 - [x] `IFriendshipRepository` + `FriendshipRepository`
 - [x] `ISharedContentRepository` + `SharedContentRepository`
 - [x] DI extension metodu: `AddInfrastructureServices()`
@@ -155,9 +157,12 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 - [ ] `IWordService` + `WordService`
   - [ ] Listeleme (seviye, kategori, kelime türü, arama + sayfalama)
   - [ ] Detay (WordDetail + WordExamples kullanıcı seviyesine göre)
-  - [ ] Oluşturma (Admin/Instructor)
-  - [ ] Güncelleme (Admin/Instructor)
-  - [ ] Silme soft delete (Admin)
+  - [ ] Oluşturma (yalnızca Admin)
+    - [ ] **Duplikat uyarısı:** Oluşturma isteğinde `GermanWord` zaten Words tablosunda varsa
+          `HTTP 409` dön, yanıta mevcut kelimenin `id` ve `germanWord` bilgisini ekle.
+          Admin `?force=true` query parametresiyle uyarıyı geçip yine de ekleyebilir.
+  - [ ] Güncelleme (yalnızca Admin)
+  - [ ] Silme soft delete (yalnızca Admin)
 - [ ] `WordController`
 - [ ] `PagedResult<T>` yardımcı sınıfı
 
@@ -181,8 +186,18 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
   - [ ] Listeleme (kategori / kişisel kategori filtresi) — sadece kart sahibi
   - [ ] Detay — sadece kart sahibi
   - [ ] Oluşturma (sistem + kişisel kategoriye bağlama)
+    - [ ] **Duplikat uyarısı — kendi kartları:** `FrontText` kullanıcının mevcut UserCard'larında
+          zaten varsa `HTTP 409` dön; yanıta çakışan kartın `id` ve `frontText`'ini ekle.
+          Kullanıcı `?force=true` ile yine de ekleyebilir (farklı çeviri veya not için).
+    - [ ] **Sistem kelimesi eşleşme uyarısı:** `FrontText` sistem Words tablosundaki bir
+          `GermanWord` ile birebir eşleşiyorsa yanıta `suggestedSystemWordId` ekle ve
+          "Bu kelime sistemde zaten var, öğrenme listene eklemek ister misin?" mesajı döndür.
+          Bu uyarı **engelleyici değildir** — kullanıcı kartını yine de oluşturabilir.
   - [ ] Güncelleme — sadece kart sahibi
   - [ ] Silme soft delete — sadece kart sahibi
+  - [ ] **Sistem kelimesini öğrenme listesine ekle:** `POST /user-cards/learn-system-word`
+        Body: `{ "wordId": 5 }` → Yeni UserCard oluşturmak yerine UserProgress kaydı açar
+        (eğer yoksa) ve kelimeyi öğrenme kuyruğuna alır. Yanıt: `{ "userProgressId": ... }`
 - [ ] `UserCardController`
 - [ ] Yetki kontrolü: kullanıcı başkasının kartına erişememeli
 
@@ -209,6 +224,9 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
   - [ ] Kişisel kart ilerlemesi (UserCardProgress)
   - [ ] XP hesaplama ve güncelleme
   - [ ] Streak güncelleme
+  - [ ] **Sistem kelimesini öğrenme listesine al:** TASK-009'daki
+        `POST /user-cards/learn-system-word` isteğini karşılar — mevcut UserProgress
+        kaydı varsa döndür, yoksa yeni kayıt aç ve SRS kuyruğuna ekle.
 - [ ] `ProgressController`
 - [ ] SM-2 unit testleri
 
@@ -239,7 +257,7 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
 ---
 
 ### TASK-014 — Sınıf Servisi ve Controller
-**Referans:** API_ENDPOINTS.md §12, DATABASE_SCHEMA.md §5.1–§5.4
+**Referans:** API_ENDPOINTS.md §12, DATABASE_SCHEMA.md §5.1–§5.6
 
 - [ ] `IClassService` + `ClassService`
   - [ ] Sınıf oluştur (davet kodu üret)
@@ -247,7 +265,20 @@ FAZ 1 → FAZ 3 → FAZ 1+ → FAZ 2 → FAZ 4
   - [ ] Sınıfa kategori / kişisel kategori ekle
   - [ ] Sınıf istatistikleri (üye başarı oranları)
   - [ ] Sınıftan ayrıl / sınıfı sil
-- [ ] `ClassController`
+- [ ] `IClassWordService` + `ClassWordService`
+  - [ ] Sınıfa özel kelime ekle (yalnızca sınıf sahibi Instructor/Admin)
+    - [ ] **Duplikat uyarısı — aynı sınıf içi:** `GermanWord` aynı sınıfın ClassWords tablosunda
+          zaten varsa `HTTP 409` dön; yanıta çakışan kelimenin `id` ve `germanWord`'ünü ekle.
+          Instructor `?force=true` ile yine de ekleyebilir.
+    - [ ] **Sistem kelimesi eşleşme uyarısı:** `GermanWord` sistem Words tablosunda varsa
+          engelleyici olmayan bir uyarı döndür: `"warningSystemWordExists": true, "systemWordId": 12`
+          Instructor sistem kelimesini bilmesine rağmen sınıfına özel bir versiyon eklemek
+          isteyebilir (farklı not veya açıklama); bu nedenle engellemez, yalnızca uyarır.
+  - [ ] Sınıfın kelimelerini listele (yalnızca sınıf üyeleri)
+  - [ ] Sınıf kelimesini güncelle (yalnızca sınıf sahibi)
+  - [ ] Sınıf kelimesini sil soft delete (yalnızca sınıf sahibi)
+  - [ ] Yetki kontrolü: Kullanıcı o sınıfın sahibi değilse 403 döner
+- [ ] `ClassController` (sınıf endpoint'leri + ClassWord endpoint'leri)
 
 ---
 

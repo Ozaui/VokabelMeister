@@ -5,7 +5,6 @@
 /// NEDEN: Admin tarafından yönetilen rozet tanımları; Rarity enum benzeri alan kısıtlanmalı.
 /// BAĞIMLILIKLAR: Achievement entity
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities;
@@ -24,8 +23,10 @@ public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
         builder.Property(a => a.Rarity).IsRequired().HasMaxLength(20).HasDefaultValue("Common");
 
         builder.ToTable(t =>
-            t.HasCheckConstraint("CK_Achievements_Rarity",
-                "[Rarity] IN ('Common','Rare','Epic','Legendary')")
+            t.HasCheckConstraint(
+                "CK_Achievements_Rarity",
+                "[Rarity] IN ('Common','Rare','Epic','Legendary')"
+            )
         );
     }
 }

@@ -6,7 +6,6 @@
 ///        İkili FK (WordId/UserCardId) kısıtı uygulama katmanında doğrulanır.
 /// BAĞIMLILIKLAR: LearningHistory entity, User, Word, UserCard, LearningSession
 /// </summary>
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities;
@@ -31,14 +30,16 @@ public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHis
         builder.HasIndex(h => h.LearningSessionId);
 
         // UserCard ile ilişki — UserCard silinse bile geçmiş kayıt korunur
-        builder.HasOne(h => h.UserCard)
+        builder
+            .HasOne(h => h.UserCard)
             .WithMany()
             .HasForeignKey(h => h.UserCardId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         // LearningSession ile ilişki — oturum silinse bile geçmiş kayıt kalsın
-        builder.HasOne(h => h.LearningSession)
+        builder
+            .HasOne(h => h.LearningSession)
             .WithMany(s => s.LearningHistories)
             .HasForeignKey(h => h.LearningSessionId)
             .IsRequired(false)

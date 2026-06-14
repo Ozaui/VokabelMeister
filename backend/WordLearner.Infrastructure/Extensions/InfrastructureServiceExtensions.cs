@@ -64,6 +64,8 @@ public static class InfrastructureServiceExtensions
 
         // ─── Social Repository'leri ───────────────────────────────────────────
         services.AddScoped<IClassRepository, ClassRepository>();
+        // Instructor'ın sınıfa özel kelime repository'si — sistem Words'ten bağımsız
+        services.AddScoped<IClassWordRepository, ClassWordRepository>();
         services.AddScoped<IFriendshipRepository, FriendshipRepository>();
         services.AddScoped<ISharedContentRepository, SharedContentRepository>();
 

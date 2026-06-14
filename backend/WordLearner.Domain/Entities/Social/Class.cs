@@ -3,7 +3,7 @@
 ///
 /// AMAÇ:
 ///   Öğretmen/Instructor tarafından oluşturulan sanal sınıfları temsil eder.
-///   Öğrenciler davet koduyla sınıfa katılır ve sınıfa atanan kategorileri çalışabilir.
+///   Öğrenciler davet koduyla sınıfa katılır; Instructor sınıfa özel kelime ekleyebilir.
 ///
 /// NEDEN:
 ///   Kurumsal öğrenme senaryosu: Dil okulu öğretmeni öğrencilerine kelime listesi atar.
@@ -13,6 +13,7 @@
 ///   - BaseEntity (Id, zaman damgaları, soft delete)
 ///   - User (N:1 — sınıf sahibi)
 ///   - ClassMembership (1:N — üyeler)
+///   - ClassWord (1:N — Instructor'ın sınıfa eklediği özel kelimeler)
 ///   - ClassCategory (M:N — atanan sistem kategorileri)
 ///   - ClassUserCategory (M:N — atanan kişisel kategoriler)
 /// </summary>
@@ -55,6 +56,12 @@ public class Class : BaseEntity
 
     /// <summary>Sınıf üyelikleri (1:N)</summary>
     public ICollection<ClassMembership> ClassMemberships { get; set; } = new List<ClassMembership>();
+
+    /// <summary>
+    /// Instructor'ın sınıfa eklediği özel kelimeler (1:N).
+    /// ÖNEMLI: Bu kelimeler yalnızca sınıf üyelerine görünür; sistem Words tablosundan bağımsızdır.
+    /// </summary>
+    public ICollection<ClassWord> ClassWords { get; set; } = new List<ClassWord>();
 
     /// <summary>Sınıfa atanan sistem kategorileri (M:N ara tablo)</summary>
     public ICollection<ClassCategory> ClassCategories { get; set; } = new List<ClassCategory>();
