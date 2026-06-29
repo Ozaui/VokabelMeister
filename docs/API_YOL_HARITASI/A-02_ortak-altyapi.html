@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<!--
+  AMAÇ: A-02 Ortak Altyapı — tüm API'ların üzerine inşa edildiği temel katman.
+  NEDEN: Feature entity'si yok; yalnızca BaseEntity, DbContext, Repository<T>,
+         ortak tipler, middleware ve Program.cs tam yapılandırması.
+  BAĞIMLILIKLAR: style.css, render.js.
+-->
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Yol Haritası — A-02 Ortak Altyapı</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="logo">🗺️</span>
+  <div><strong>VokabelMeister</strong> <small>API Yol Haritası</small></div>
+  <span class="sp"></span>
+  <a class="back" href="../index.html">← Tüm API'lar</a>
+</div>
+
+<div class="wrap"><div id="content"></div></div>
+
+<script>
+window.API = {
+  id: 'ortak-altyapi',
+  faz: 'A-02',
+  metot: '-',
+  yol: '-',
+  auth: '-',
+  baslik: 'Ortak Altyapı',
+  durum: 'wip',
+  ozet: 'Tüm API\'ların paylaştığı temel yapı taşları: BaseEntity, DbContext, Repository<T>, ortak response/exception tipleri, middleware\'ler ve Program.cs tam yapılandırması. Hiçbir feature entity içermez.',
+  adimlar: [
+    {
+      num: 1, tur: 'entity',
+      baslik: 'BaseEntity.cs', dosya: 'Domain/Entities/BaseEntity.cs',
+      aciklama: 'Tüm entity\'lerin türeyeceği soyut taban sınıf. Id (PK), CreatedAt/UpdatedAt (audit zaman damgaları) ve IsDeleted/DeletedAt (soft delete) alanlarını tek yerden yönetir. Sonraki her adım bu sınıfa bağımlı olduğu için ilk yazılır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// BaseEntity.cs
+//
+// AMAÇ: Tüm domain entity'lerinin türeceği ortak taban sınıf.
+// NEDEN: Id, zaman damgaları ve soft delete alanlarını tek yerden yönetir;
+//        entity'lere tekrar tekrar aynı alanları yazmayı önler.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı, hiçbir dış pakete bağımlı değil.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Entities;
+
+public abstract class BaseEntity
+{
+    // AMAÇ: Her kaydın birincil anahtarı.
+    // NEDEN: EF Core bu adı otomatik PK olarak tanır; ayrıca konfigürasyon gerekmez.
+    public int Id { get; set; }
+
+    // AMAÇ: Kaydın ilk oluşturulduğu an (UTC).
+    // NEDEN: Audit trail ve sıralama için zorunlu; UTC kullanmak zaman dilimi hatalarını önler.
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // AMAÇ: Kaydın son güncellendiği an (UTC).
+    // NEDEN: Repository<T>.UpdateAsync her çağrıda bu alanı otomatik günceller;
+    //        manuel set etmeye gerek kalmaz.
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // AMAÇ: Kaydın silinip silinmediğini gösteren bayrak (soft delete).
+    // NEDEN: Fiziksel silme yerine bu bayrağı set ederiz; böylece silinmiş kayıtlar
+    //        DB'de kalır, geri yüklenebilir ve audit geçmişi korunur.
+    //        WordLearnerDbContext'teki global query filter bu bayrağa göre filtreler.
+    public bool IsDeleted { get; set; }
+
+    // AMAÇ: Kaydın soft delete yapıldığı an (UTC). Silinmemişse null.
+    // NEDEN: Kullanıcı hesabı 30 günlük grace period sonrası anonimleştirme (A-10)
+    //        gibi süre bazlı işlemlerde bu tarih kullanılır.
+    public DateTime? DeletedAt { get; set; }
+}`
+    }
+    ,{
+      num: 2, tur: 'config',
+      baslik: 'WordLearnerDbContext.cs', dosya: 'Infrastructure/Data/WordLearnerDbContext.cs',
+      aciklama: 'EF Core\'un veritabanıyla konuştuğu merkezi DbContext. BaseEntity\'den sonra ikinci yazılır çünkü soft delete filtresi BaseEntity.IsDeleted\'a bağımlıdır. Üç kritik özelliği var: (1) ApplyConfigurationsFromAssembly — yeni entity eklenince bu satır değişmez. (2) Global soft delete query filter — IsDeleted==false filtresi otomatik uygulanır. (3) SaveChangesAsync override — UpdatedAt otomatik güncellenir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// WordLearnerDbContext.cs
+//
+// AMAÇ: EF Core'un veritabanıyla konuştuğu merkezi DbContext sınıfı.
+// NEDEN: Tüm entity konfigürasyonlarını tek yerden yükler; soft delete global filtresi
+//        ile silinmiş kayıtların sorgulara otomatik karışmasını önler; SaveChangesAsync
+//        override'ı UpdatedAt alanını elle set etme zorunluluğunu ortadan kaldırır.
+// BAĞIMLILIKLAR: Microsoft.EntityFrameworkCore, WordLearner.Domain.Entities.BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Infrastructure.Data;
+
+public class WordLearnerDbContext : DbContext
+{
+    // AMAÇ: DI tarafından enjekte edilen seçenekleri (connection string vb.) taban sınıfa iletir.
+    // NEDEN: EF Core'un standart constructor kalıbı; farklı ortamlar (dev/prod/test) için
+    //        farklı seçenek setleri enjekte edilebilir.
+    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options) : base(options) { }
+
+    // AMAÇ: DbSet'ler feature entity'ler eklendikçe buraya yazılır (A-03'ten itibaren).
+    // NEDEN: Şu an A-02 aşamasındayız; DbContext'in temel yapısı hazır, entity'ler henüz yok.
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // AMAÇ: Infrastructure assembly'sindeki tüm IEntityTypeConfiguration<T> sınıflarını
+        //       otomatik olarak tarar ve uygular.
+        // NEDEN: Her entity için tek tek modelBuilder.ApplyConfiguration(...) çağırmak yerine
+        //        assembly taraması yaparız; yeni entity eklendikçe bu satır değişmez.
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+        // AMAÇ: BaseEntity'den türeyen tüm entity'lere global soft delete filtresi uygular.
+        // NEDEN: IsDeleted == true olan kayıtlar hiçbir sorguda görünmez; her sorguda
+        //        .Where(e => !e.IsDeleted) yazmak zorunda kalmayız.
+        //        IgnoreQueryFilters() ile gerektiğinde (admin silinen kayıtları görme) bypass edilir.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                var parameter = System.Linq.Expressions.Expression.Parameter(entityType.ClrType, "e");
+                var property = System.Linq.Expressions.Expression.Property(parameter, nameof(BaseEntity.IsDeleted));
+                var notDeleted = System.Linq.Expressions.Expression.Not(property);
+                var lambda = System.Linq.Expressions.Expression.Lambda(notDeleted, parameter);
+                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+            }
+        }
+
+        base.OnModelCreating(modelBuilder);
+    }
+
+    // AMAÇ: Her kayıt güncellendiğinde UpdatedAt alanını otomatik olarak UTC şimdiki zamana set eder.
+    // NEDEN: Servis veya repository katmanında her entity.UpdatedAt = DateTime.UtcNow yazmak
+    //        kod tekrarına yol açar; bu override ile merkezi olarak yönetilir.
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Modified)
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+
+            // NEDEN: Yeni eklenen entity'lerde CreatedAt/UpdatedAt varsayılan olarak
+            //        DateTime.UtcNow ile başlatılıyor (BaseEntity'de); ekstra set gerekmez.
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+}`
+    }
+    ,{
+      num: 3, tur: 'exception',
+      baslik: 'EntityNotFoundException.cs', dosya: 'Application/Common/Exceptions/EntityNotFoundException.cs',
+      aciklama: 'Entity DB\'de bulunamadığında fırlatılan özel exception. Genel KeyNotFoundException veya Exception yerine özel tip kullanmak, global exception middleware\'inin bu durumu yakalayıp 404 döndürmesini sağlar. Repository<T>.SoftDeleteAsync bu exception\'ı kullanır; diğer feature repository\'ler de XxxNotFoundException yazarken bu sınıfı miras alabilir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// EntityNotFoundException.cs
+//
+// AMAÇ: İstenilen entity DB'de bulunamadığında fırlatılan özel exception.
+// NEDEN: Genel KeyNotFoundException veya Exception yerine özel tip kullanmak,
+//        global exception middleware'inin bu durumu yakalayıp 404 döndürmesini sağlar.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class EntityNotFoundException : Exception
+{
+    public EntityNotFoundException(string message) : base(message) { }
+}`
+    }
+    ,{
+      num: 4, tur: 'repository',
+      baslik: 'IRepository.cs', dosya: 'Application/Interfaces/Repositories/IRepository.cs',
+      aciklama: 'Tüm repository\'lerin uygulaması gereken generic CRUD sözleşmesi. EntityNotFoundException tanımlı olduktan sonra yazılır çünkü GetByIdAsync\'in döndürdüğü null\'u servis katmanı bu exception ile işler. Servis katmanı somut implementasyona değil bu arayüze bağımlıdır — testlerde mock kolayca enjekte edilebilir (Dependency Inversion Principle).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IRepository.cs
+//
+// AMAÇ: Tüm repository'lerin uygulaması gereken generic CRUD sözleşmesi.
+// NEDEN: Servis katmanı somut repository implementasyonuna değil bu arayüze bağımlıdır;
+//        böylece testlerde mock repository kolayca enjekte edilebilir (bağımlılığı tersine çevirme).
+// BAĞIMLILIKLAR: WordLearner.Domain.Entities.BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Interfaces.Repositories;
+
+public interface IRepository<T> where T : BaseEntity
+{
+    // AMAÇ: Birincil anahtara göre tek kayıt getirir. Bulunamazsa null döner.
+    // NEDEN: Nullable dönüş tipi ile "bulunamadı" durumu açıkça ifade edilir;
+    //        servis katmanı null kontrolü yaparak EntityNotFoundException fırlatır.
+    Task<T?> GetByIdAsync(int id, CancellationToken ct = default);
+
+    // AMAÇ: Soft delete filtresi aktifken tüm kayıtları getirir.
+    // NEDEN: Genel liste işlemleri için temel metot; özel filtreler için
+    //        feature repository'ler bu interface'i genişletir.
+    Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default);
+
+    // AMAÇ: Yeni kayıt ekler ve eklenen entity'yi (Id dolu hâliyle) döner.
+    // NEDEN: Dönüş değeri sayesinde controller, oluşturulan kaydın Id'sini
+    //        hemen alıp 201 Created response'una ekleyebilir.
+    Task<T> AddAsync(T entity, CancellationToken ct = default);
+
+    // AMAÇ: Mevcut kaydı günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
+    Task UpdateAsync(T entity, CancellationToken ct = default);
+
+    // AMAÇ: Kaydı fiziksel olarak silmek yerine IsDeleted=true, DeletedAt=UtcNow yapar (soft delete).
+    // NEDEN: Silinen veriler DB'de tutulur; audit trail korunur; admin gerektiğinde geri yükleyebilir.
+    Task SoftDeleteAsync(int id, CancellationToken ct = default);
+
+    // AMAÇ: Birden fazla değişikliği tek seferde kaydetmek gerektiğinde kullanılır.
+    // NEDEN: AddAsync/UpdateAsync zaten SaveChanges çağırır; bu metot yalnızca
+    //        birden fazla işlemi toplu commit etmek için vardır.
+    Task SaveChangesAsync(CancellationToken ct = default);
+}`
+    }
+    ,{
+      num: 5, tur: 'repository',
+      baslik: 'Repository.cs', dosya: 'Infrastructure/Repositories/Repository.cs',
+      aciklama: 'IRepository<T> arayüzünün EF Core tabanlı generic implementasyonu. WordLearnerDbContext ve EntityNotFoundException hazır olduktan sonra yazılır — her ikisine de bağımlıdır. Tüm metotlar virtual olduğu için feature repository\'ler Include() ekleyerek override edebilir. SoftDeleteAsync bulunamazsa EntityNotFoundException fırlatır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// Repository.cs
+//
+// AMAÇ: IRepository<T> arayüzünün EF Core tabanlı generic implementasyonu.
+// NEDEN: Tekrar eden CRUD kodunu tek sınıfta toplar; feature repository'ler
+//        yalnızca ek sorgular için bu sınıfı miras alır, temel işlemleri yeniden yazmaz.
+// BAĞIMLILIKLAR: EF Core, WordLearnerDbContext, IRepository<T>, EntityNotFoundException, BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories;
+
+public class Repository<T> : IRepository<T> where T : BaseEntity
+{
+    protected readonly WordLearnerDbContext _db;
+    protected readonly DbSet<T> _set;
+
+    // AMAÇ: DbContext ve DbSet referanslarını DI aracılığıyla alır.
+    // NEDEN: _set kısayolu sayesinde alt sınıflar her seferinde _db.Set<T>() yazmak zorunda kalmaz.
+    public Repository(WordLearnerDbContext db)
+    {
+        _db = db;
+        _set = db.Set<T>();
+    }
+
+    // AMAÇ: Soft delete filtresi aktifken Id'ye göre kayıt getirir.
+    // NEDEN: virtual — feature repository gerektiğinde Include() ekleyerek override edebilir.
+    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default)
+        => _set.FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    // AMAÇ: Filtresiz tüm (silinmemiş) kayıtları belleğe yükler.
+    // NEDEN: virtual — feature repository sayfalama veya projeksiyon için override edebilir.
+    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
+        => await _set.ToListAsync(ct);
+
+    // AMAÇ: Yeni entity'yi DB'ye ekler ve Id'si dolu hâliyle geri döner.
+    public virtual async Task<T> AddAsync(T entity, CancellationToken ct = default)
+    {
+        await _set.AddAsync(entity, ct);
+        await _db.SaveChangesAsync(ct);
+        return entity;
+    }
+
+    // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
+    public virtual async Task UpdateAsync(T entity, CancellationToken ct = default)
+    {
+        _set.Update(entity);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    // AMAÇ: Kaydı fiziksel silmek yerine IsDeleted ve DeletedAt alanlarını set eder.
+    // NEDEN: Fiziksel silme geri alınamaz; soft delete ile veri kaybı olmaz,
+    //        admin silinmiş kaydı görmek istediğinde IgnoreQueryFilters() kullanır.
+    public virtual async Task SoftDeleteAsync(int id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct)
+            ?? throw new EntityNotFoundException($"{typeof(T).Name} bulunamadı: Id={id}");
+
+        entity.IsDeleted = true;
+        entity.DeletedAt = DateTime.UtcNow;
+        await UpdateAsync(entity, ct);
+    }
+
+    // AMAÇ: Birden fazla değişikliği toplu olarak DB'ye yazar.
+    public Task SaveChangesAsync(CancellationToken ct = default)
+        => _db.SaveChangesAsync(ct);
+}`
+    }
+    ,{
+      num: 6, tur: 'service',
+      baslik: 'InfrastructureServiceExtensions.cs', dosya: 'Infrastructure/Extensions/InfrastructureServiceExtensions.cs',
+      aciklama: 'Infrastructure katmanına ait tüm servisleri DI konteynerine kaydetmek için Program.cs\'den çağrılan tek extension metot. En son yazılır çünkü kaydedeceği DbContext ve repository\'ler hazır olmalı. Program.cs\'i temiz tutar; yeni repository eklenince yalnızca bu dosya değişir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// InfrastructureServiceExtensions.cs
+//
+// AMAÇ: Infrastructure katmanına ait tüm servisleri DI konteynerine kaydetmek için
+//       Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; yeni bir repository veya servis eklenince
+//        yalnızca bu dosya değişir, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: WordLearnerDbContext, Microsoft.EntityFrameworkCore.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Extensions;
+
+public static class InfrastructureServiceExtensions
+{
+    // AMAÇ: DbContext ve infrastructure servislerini IServiceCollection'a ekler.
+    // NEDEN: Program.cs'de tek satır (builder.Services.AddInfrastructureServices(config))
+    //        ile tüm altyapı hazır hâle gelir; composition root temiz kalır.
+    // NASIL: Configuration'dan connection string okunur, DbContext Scoped olarak kaydedilir.
+    //        Yeni repository'ler ilerleyen task'larda (A-03+) buraya eklenir.
+    public static IServiceCollection AddInfrastructureServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // NEDEN Scoped: DbContext request başına bir instance olmalı;
+        //       Singleton olsaydı eş zamanlı istekler aynı context'i paylaşırdı (thread-safety sorunu).
+        services.AddDbContext<WordLearnerDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+        // NOT: Feature repository'ler (IUserRepository, IWordRepository vb.) kendi task'larında
+        //      (A-03, A-05 ...) bu metoda eklenecek.
+
+        return services;
+    }
+}`
+    }
+  ]
+};
+</script>
+<script src="render.js"></script>
+</body>
+</html>

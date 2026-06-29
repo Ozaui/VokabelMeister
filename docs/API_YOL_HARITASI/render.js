@@ -8,6 +8,10 @@
 (function () {
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // NEDEN: Kod bloklarında // ile başlayan yorum satırlarını yeşil span'e sarar;
+  //        esc() sonrası çalışır, dolayısıyla HTML injection riski yoktur.
+  const hlCode = (s) => s.replace(/^([ \t]*\/\/.*)$/gm, '<span class="cmt">$1</span>');
   const mClass = (m) => 'm-' + String(m || 'get').toLowerCase();
 
   // AMAÇ: API objesini #content içine bas.
@@ -41,7 +45,7 @@
         </div>
         <div class="step-body${open}">
           <div class="desc">${esc(a.aciklama)}</div>
-          <pre><code>${esc(a.kod)}</code></pre>
+          <pre><code>${hlCode(esc(a.kod))}</code></pre>
         </div>
       </div>`;
     });
@@ -49,5 +53,7 @@
     el.innerHTML = html;
   }
 
-  if (window.API) render(window.API);
+  // NEDEN: `const API` top-level olsa bile window.API'ye atanmaz (ES6 lexical scope);
+  // typeof guard ile her iki tanım biçimi de (const/var/window.API) çalışır.
+  if (typeof API !== 'undefined') render(API); // eslint-disable-line no-undef
 })();
