@@ -90,20 +90,20 @@ toplu yazmak **yasak**:
 
 # FAZ A — Admin Panel Backend
 
-### A-01 — Proje İskeleti ⬜
+### A-01 — Proje İskeleti ✅
 **Referans:** DEVELOPMENT_SETUP.md §3, ENV.md
-- [ ] Solution + 4 proje (API, Application, Infrastructure, Domain) + referanslar (Domain ← Infra ← App ← API)
-- [ ] NuGet paketleri (TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
+- [x] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
+- [x] NuGet paketleri (TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 
-### A-02 — Ortak Altyapı ⬜
+### A-02 — Ortak Altyapı 🔄
 **Referans:** TECHNICAL_SPECIFICATIONS.md §5-8, §13
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
-- [ ] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt)
+- [x] ➜ **API Yol Haritası'na işle** 
+- [x] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] **Birim testleri:** `RepositoryTests` (in-memory DB ile CRUD + soft delete filtresi — sonraki tüm API'lar bunu kullanır)
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`, `EntityNotFoundException`
@@ -447,7 +447,7 @@ toplu yazmak **yasak**:
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-01 — Proje İskeleti`
+**Sıradaki task:** `A-02 — Ortak Altyapı`
 
 ## Durum Göstergesi
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi
