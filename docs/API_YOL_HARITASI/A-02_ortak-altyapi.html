@@ -36,7 +36,7 @@ window.API = {
     {
       num: 1, tur: 'entity',
       baslik: 'BaseEntity.cs', dosya: 'Domain/Entities/BaseEntity.cs',
-      aciklama: 'Tüm entity\'lerin türeyeceği soyut taban sınıf. Id (PK), CreatedAt/UpdatedAt (audit zaman damgaları), IsDeleted/DeletedAt (soft delete) ve CreatedByUserId/UpdatedByUserId/DeletedByUserId ("kim yaptı" audit alanları, int?) alanlarını tek yerden yönetir. Sonraki her adım bu sınıfa bağımlı olduğu için ilk yazılır.',
+      aciklama: 'Tüm entity\'lerin türeyeceği soyut taban sınıf. Id (PK), CreatedAt/UpdatedAt (audit zaman damgaları), IsDeleted/DeletedAt (soft delete) ve CreatedByUserId/UpdatedByUserId/DeletedByUserId ("kim yaptı" audit alanları, int?) alanlarını tek yerden yönetir. UpdatedAt nullable\'dır (varsayılan değeri yok) — insert sırasında null kalır, yalnızca gerçek bir güncellemede set edilir; böylece "hiç güncellenmedi" ile "CreatedAt anında güncellendi" durumları karışmaz. Sonraki her adım bu sınıfa bağımlı olduğu için ilk yazılır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // BaseEntity.cs
 //
@@ -58,10 +58,11 @@ public abstract class BaseEntity
     // NEDEN: Audit trail ve sıralama için zorunlu; UTC kullanmak zaman dilimi hatalarını önler.
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // AMAÇ: Kaydın son güncellendiği an (UTC).
-    // NEDEN: Repository<T>.UpdateAsync her çağrıda bu alanı otomatik günceller;
-    //        manuel set etmeye gerek kalmaz.
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    // AMAÇ: Kaydın son güncellendiği an (UTC). Hiç güncellenmemişse null.
+    // NEDEN: Nullable olması "hiç güncellenmedi" ile "CreatedAt anında güncellendi" durumlarını
+    //        ayırt eder; WordLearnerDbContext.SaveChangesAsync yalnızca gerçek bir güncelleme
+    //        (EntityState.Modified) olduğunda bu alanı set eder, ekleme sırasında dokunmaz.
+    public DateTime? UpdatedAt { get; set; }
 
     // AMAÇ: Kaydın silinip silinmediğini gösteren bayrak (soft delete).
     // NEDEN: Fiziksel silme yerine bu bayrağı set ederiz; böylece silinmiş kayıtlar
@@ -156,8 +157,9 @@ public class WordLearnerDbContext : DbContext
             if (entry.State == EntityState.Modified)
                 entry.Entity.UpdatedAt = DateTime.UtcNow;
 
-            // NEDEN: Yeni eklenen entity'lerde CreatedAt/UpdatedAt varsayılan olarak
-            //        DateTime.UtcNow ile başlatılıyor (BaseEntity'de); ekstra set gerekmez.
+            // NEDEN: Yeni eklenen entity'lerde CreatedAt varsayılan olarak DateTime.UtcNow ile
+            //        başlatılıyor (BaseEntity'de); UpdatedAt ise burada dokunulmadığı için
+            //        insert sonrası null kalır — "hiç güncellenmedi" bilgisini korur.
         }
 
         return base.SaveChangesAsync(cancellationToken);
@@ -367,7 +369,7 @@ public static class InfrastructureServiceExtensions
     ,{
       num: 7, tur: 'test',
       baslik: 'RepositoryTests.cs', dosya: 'WordLearner.Tests/Repositories/RepositoryTests.cs',
-      aciklama: 'Repository<T> taban sınıfının CRUD işlemlerini, WordLearnerDbContext\'teki global soft delete filtresini ve BaseEntity\'nin userId audit alanlarını (CreatedByUserId/UpdatedByUserId/DeletedByUserId) in-memory EF Core ile doğrulayan 9 test. A-03\'ten itibaren yazılacak her feature repository bu taban sınıfı miras alacağı için hata buradaysa her feature\'a yayılır — bu yüzden hiçbir feature entity\'si yokken bile test edilir (REFERENCE/CODING_STANDARDS.md §7.4). Projede henüz gerçek bir entity olmadığından, testler yalnızca bu dosyaya özel bir TestEntity (BaseEntity\'den türeyen minimal sınıf) ve onu modele ekleyen bir TestDbContext kullanır — hiçbiri production koduna sızmaz. Kapsanan senaryolar: AddAsync mutlu yol (Id atama) + userId verilince CreatedBy/UpdatedBy set edilmesi, GetByIdAsync var/yok, GetAllAsync soft-delete filtresi (en kritik davranış), UpdateAsync ile UpdatedAt otomasyonu + userId verilince UpdatedBy güncellenmesi, SoftDeleteAsync var (IsDeleted/DeletedAt set + sorgudan gizleme) ve yok (EntityNotFoundException) — REFERENCE/CODING_STANDARDS.md §7.5\'teki zorunlu minimum kapsamla (mutlu yol / bulunamadı / uç durum) birebir örtüşür. Test metodu adları §7.2\'deki güncel kurala göre İngilizcedir.',
+      aciklama: 'Repository<T> taban sınıfının CRUD işlemlerini, WordLearnerDbContext\'teki global soft delete filtresini ve BaseEntity\'nin userId audit alanlarını (CreatedByUserId/UpdatedByUserId/DeletedByUserId) in-memory EF Core ile doğrulayan 10 test. A-03\'ten itibaren yazılacak her feature repository bu taban sınıfı miras alacağı için hata buradaysa her feature\'a yayılır — bu yüzden hiçbir feature entity\'si yokken bile test edilir (REFERENCE/CODING_STANDARDS.md §7.4). Projede henüz gerçek bir entity olmadığından, testler yalnızca bu dosyaya özel bir TestEntity (BaseEntity\'den türeyen minimal sınıf) ve onu modele ekleyen bir TestDbContext kullanır — hiçbiri production koduna sızmaz. Kapsanan senaryolar: AddAsync mutlu yol (Id atama) + userId verilince CreatedBy/UpdatedBy set edilmesi + UpdatedAt\'in null kalması (nullable, yalnızca gerçek güncellemede set edilir), GetByIdAsync var/yok, GetAllAsync soft-delete filtresi (en kritik davranış), UpdateAsync ile UpdatedAt otomasyonu + userId verilince UpdatedBy güncellenmesi, SoftDeleteAsync var (IsDeleted/DeletedAt set + sorgudan gizleme) ve yok (EntityNotFoundException) — REFERENCE/CODING_STANDARDS.md §7.5\'teki zorunlu minimum kapsamla (mutlu yol / bulunamadı / uç durum) birebir örtüşür. Test metodu adları §7.2\'deki güncel kurala göre İngilizcedir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // RepositoryTests.cs
 //
@@ -480,6 +482,28 @@ public class RepositoryTests
         userIdIle.UpdatedByUserId.Should().Be(42);
         userIdSiz.CreatedByUserId.Should().BeNull();
         userIdSiz.UpdatedByUserId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// AddAsync_ValidEntity_LeavesUpdatedAtNull
+    ///
+    /// AMAÇ: Yeni bir entity eklendiğinde UpdatedAt alanının null kaldığını doğrulamak.
+    /// NEDEN: BaseEntity.UpdatedAt nullable'dır ve yalnızca gerçek bir güncellemede
+    ///        (WordLearnerDbContext.SaveChangesAsync, EntityState.Modified) set edilir;
+    ///        insert'te CreatedAt'e eşit bir değer atanırsa "hiç güncellenmedi" bilgisi kaybolur.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_ValidEntity_LeavesUpdatedAtNull()
+    {
+        // ARRANGE — temiz context + repository
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — yeni entity ekle
+        var sonuc = await repo.AddAsync(new TestEntity { Name = "Gurke" });
+
+        // ASSERT — UpdatedAt henüz hiç güncelleme olmadığı için null olmalı
+        sonuc.UpdatedAt.Should().BeNull();
     }
 
     /// <summary>

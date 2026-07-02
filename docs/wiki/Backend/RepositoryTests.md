@@ -17,11 +17,12 @@ test etmek için gerçek bir feature entity beklenemez. Bu dosyaya özel iki yar
 
 Bu ikisi **yalnızca test projesinde** yaşar, production koduna hiç dokunulmaz.
 
-## Kapsanan Senaryolar (9 test)
+## Kapsanan Senaryolar (10 test)
 | Test | Ne Doğrular |
 |------|--------------|
 | `AddAsync_ValidEntity_AssignsIdAndSaves` | Mutlu yol — ekleme sonrası Id atanır |
 | `AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser` | `userId` verilirse `CreatedByUserId`/`UpdatedByUserId` aynı kullanıcıya set edilir; verilmezse `null` kalır |
+| `AddAsync_ValidEntity_LeavesUpdatedAtNull` | Insert sonrası `UpdatedAt` (nullable) `null` kalır — yalnızca gerçek güncellemede set edilir |
 | `GetByIdAsync_RecordExists_ReturnsEntity` | Mutlu yol — var olan kayıt getirilir |
 | `GetByIdAsync_RecordNotFound_ReturnsNull` | Bulunamadı — `null` döner, exception fırlatılmaz |
 | `GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords` | **En kritik senaryo** — global query filter silinmiş kaydı listeden çıkarır |
