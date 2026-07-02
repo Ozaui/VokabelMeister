@@ -17,11 +17,11 @@
 - [x] ➜ **API Yol Haritası'na işle** 
 - [x] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
 - [x] ➜ **API Yol Haritası'na işle**
+- [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazıldı)
+- [x] ➜ **API Yol Haritası'na işle**
 - [x] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
 - [x] ➜ **API Yol Haritası'na işle**
-- [x] **Birim testleri:** `RepositoryTests` (in-memory DB ile CRUD + soft delete filtresi — sonraki tüm API'lar bunu kullanır)
-- [x] ➜ **API Yol Haritası'na işle**
-- [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazıldı)
+- [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB ile CRUD + soft delete filtresi + exception mesaj formatı — sonraki tüm API'lar bunu kullanır)
 - [x] ➜ **API Yol Haritası'na işle**
 - [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`
 - [ ] ➜ **API Yol Haritası'na işle**
