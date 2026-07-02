@@ -66,7 +66,7 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct)
-            ?? throw new EntityNotFoundException($"{typeof(T).Name} bulunamadı: Id={id}");
+            ?? throw new EntityNotFoundException(typeof(T), id);
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
