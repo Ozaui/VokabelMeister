@@ -169,7 +169,7 @@ public class WordLearnerDbContext : DbContext
     ,{
       num: 3, tur: 'exception',
       baslik: 'EntityNotFoundException.cs', dosya: 'Application/Common/Exceptions/EntityNotFoundException.cs',
-      aciklama: 'Entity DB\'de bulunamadığında fırlatılan özel exception. Genel KeyNotFoundException veya Exception yerine özel tip kullanmak, global exception middleware\'inin bu durumu yakalayıp 404 döndürmesini sağlar. Repository<T>.SoftDeleteAsync bu exception\'ı kullanır; diğer feature repository\'ler de XxxNotFoundException yazarken bu sınıfı miras alabilir.',
+      aciklama: 'Entity DB\'de bulunamadığında fırlatılan özel exception. Genel KeyNotFoundException veya Exception yerine özel tip kullanmak, global exception middleware\'inin bu durumu yakalayıp 404 döndürmesini sağlar. Repository<T>.SoftDeleteAsync bu exception\'ı kullanır; diğer feature repository\'ler de XxxNotFoundException yazarken bu sınıfı miras alabilir. Type+key overload\'u, her çağıranın "{Entity} bulunamadı: Id={key}" string\'ini elle interpolate etmesini önler — mesaj formatı tek yerden yönetilir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // EntityNotFoundException.cs
 //
@@ -184,6 +184,12 @@ namespace WordLearner.Application.Common.Exceptions;
 public class EntityNotFoundException : Exception
 {
     public EntityNotFoundException(string message) : base(message) { }
+
+    // AMAÇ: Entity tipini ve aranan anahtarı alıp standart formatta mesaj üreten kısayol.
+    // NEDEN: Repository<T> gibi çağıranların "{Entity} bulunamadı: Id={key}" string'ini
+    //        elle interpolate etmesini önler; format tek yerden yönetilir.
+    public EntityNotFoundException(Type entityType, object key)
+        : base($"{entityType.Name} bulunamadı: Id={key}") { }
 }`
     }
     ,{
@@ -309,7 +315,7 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct)
-            ?? throw new EntityNotFoundException($"{typeof(T).Name} bulunamadı: Id={id}");
+            ?? throw new EntityNotFoundException(typeof(T), id);
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
@@ -683,6 +689,53 @@ public class RepositoryTests
         // ASSERT — EntityNotFoundException fırlatılmalı
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
+}`
+    }
+    ,{
+      num: 8, tur: 'test',
+      baslik: 'EntityNotFoundExceptionTests.cs', dosya: 'Tests/Common/Exceptions/EntityNotFoundExceptionTests.cs',
+      aciklama: 'EntityNotFoundException\'ın Type+key overload\'ının "{Entity} bulunamadı: Id={key}" formatını doğru ürettiğini doğrulayan tek test. Repository<T>.SoftDeleteAsync bu overload\'a bağımlı olduğu için format burada bozulursa hata mesajları tüm feature\'larda tutarsızlaşır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// EntityNotFoundExceptionTests.cs
+//
+// AMAÇ: EntityNotFoundException'ın Type+key overload'ının standart mesaj formatını
+//       ürettiğini doğrulamak.
+// NEDEN: Repository<T> ve ileride yazılacak feature servisleri bu overload'a
+//        güveniyor; format burada bozulursa hata mesajları tutarsızlaşır.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, WordLearner.Application.Common.Exceptions.EntityNotFoundException.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Tests.Common.Exceptions;
+
+public class EntityNotFoundExceptionTests
+{
+    /// <summary>
+    /// TypeAndKeyConstructor_ValidEntityTypeAndKey_ProducesStandardMessage
+    ///
+    /// AMAÇ: Type+key constructor'ının "{EntityAdı} bulunamadı: Id={key}" formatını ürettiğini doğrulamak.
+    /// NEDEN: Repository<T>.SoftDeleteAsync bu overload'ı kullanıyor; format burada
+    ///        değişirse loglama/hata standartlaşması bozulur.
+    /// </summary>
+    [Fact]
+    public void TypeAndKeyConstructor_ValidEntityTypeAndKey_ProducesStandardMessage()
+    {
+        // ARRANGE — BaseEntity türeyen bir tip ve örnek bir Id
+        var entityType = typeof(BaseEntityStub);
+
+        // ACT — Type+key overload ile exception oluştur
+        var exception = new EntityNotFoundException(entityType, 5);
+
+        // ASSERT — mesaj standart formatta olmalı
+        exception.Message.Should().Be("BaseEntityStub bulunamadı: Id=5");
+    }
+
+    // AMAÇ: Test için gerçek bir feature entity gerekmeden Type.Name üretmeye yarayan minimal sınıf.
+    // NEDEN: Projede A-02 aşamasında henüz hiçbir feature entity yok.
+    private class BaseEntityStub : BaseEntity;
 }`
     }
   ]

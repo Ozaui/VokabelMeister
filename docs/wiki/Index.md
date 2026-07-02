@@ -139,3 +139,11 @@ davranış değişmedi, sadece insert sonrası artık `null` kalıyor. [[Reposit
 `AddAsync_ValidEntity_LeavesUpdatedAtNull` testi eklendi (9→10 test). `docs/API_YOL_HARITASI/
 A-02_ortak-altyapi.html`'deki BaseEntity/WordLearnerDbContext/RepositoryTests adımları (kod +
 açıklama) buna göre güncellendi.*
+
+*Altıncı INGEST (2026-07-03): [[EntityNotFoundException]]'a `Type`+key alan bir overload eklendi
+(`"{Entity} bulunamadı: Id={key}"` formatını otomatik üretir) — [[Repository]].`SoftDeleteAsync`
+artık elle string interpolasyonu yerine bu overload'ı çağırıyor, format tek yerden yönetiliyor.
+Yeni `EntityNotFoundExceptionTests` sınıfı (`WordLearner.Tests/Common/Exceptions/`) bu formatı
+doğruluyor (10→11 test, bkz. [[WordLearner_Tests]]). `docs/API_YOL_HARITASI/A-02_ortak-altyapi.html`'e
+8. adım (`tur:'test'`) olarak işlendi; ayrıca [[WordLearner_Tests]] ve [[Repository]] wiki
+sayfalarındaki test sayıları (7/9 gibi eski değerler) güncel duruma (11/10) çekildi.*

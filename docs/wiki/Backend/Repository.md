@@ -26,4 +26,4 @@ Henüz generic olarak DI'a kaydedilmedi — [[InfrastructureServiceExtensions]] 
 gibi bir satır A-03+'ta ilk feature repository ile birlikte eklenecek.
 
 ## Test Kapsamı
-[[RepositoryTests]] (in-memory EF Core, 9 test — CRUD + soft delete filtresi + `userId` audit alanları) — yazıldı, bkz. [[WordLearner_Tests]].
+[[RepositoryTests]] (in-memory EF Core, 10 test — CRUD + soft delete filtresi + `UpdatedAt`/`userId` audit alanları) — yazıldı, bkz. [[WordLearner_Tests]].
