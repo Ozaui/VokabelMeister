@@ -21,7 +21,9 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] **Birim testleri:** `RepositoryTests` (in-memory DB ile CRUD + soft delete filtresi — sonraki tüm API'lar bunu kullanır)
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`, `EntityNotFoundException`
+- [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazıldı)
+- [x] ➜ **API Yol Haritası'na işle**
+- [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] Middleware: global exception, security headers, request/response log
 - [ ] ➜ **API Yol Haritası'na işle**

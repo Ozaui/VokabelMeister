@@ -1,6 +1,6 @@
 # Backend Katmanlı Mimari
 
-**Özet:** Backend, klasik katmanlı (layered) mimariyle dört .NET projesine ayrılır ve bağımlılık yönü tek yönlüdür: `Domain ← Infrastructure ← Application ← API`. Her katman yalnızca kendi altındaki katmana referans verir; Domain hiçbir şeye bağımlı değildir. Çalışma yöntemi "dikey dilim"dir — bir API tüm katmanlarıyla bitirilip sonra diğerine geçilir.
+**Özet:** Backend, klasik katmanlı (layered) mimariyle dört .NET projesine ayrılır ve bağımlılık yönü tek yönlüdür: `Domain ← Application ← Infrastructure ← API`. Her katman yalnızca kendi altındaki katmana referans verir; Domain hiçbir şeye bağımlı değildir. Çalışma yöntemi "dikey dilim"dir — bir API tüm katmanlarıyla bitirilip sonra diğerine geçilir.
 **Kütüphaneler:** .NET 9, EF Core 9, ASP.NET Core
 **Bağlantılar:** [[WordLearner_API]] · [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[WordLearner_Domain]] · [[WordLearner_Tests]] · [[Gelistirme_Yol_Haritasi]] · [[Sistem_Mimarisi]]
 

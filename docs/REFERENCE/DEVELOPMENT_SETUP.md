@@ -22,7 +22,7 @@ dotnet new classlib -n WordLearner.Domain         -o backend/WordLearner.Domain
 dotnet new xunit    -n WordLearner.Tests          -o backend/WordLearner.Tests
 dotnet sln add backend/**/*.csproj
 
-# Referanslar: Domain ← Infrastructure ← Application ← API
+# Referanslar: Domain ← Application ← Infrastructure ← API
 dotnet add backend/WordLearner.API reference backend/WordLearner.Application backend/WordLearner.Infrastructure
 dotnet add backend/WordLearner.Application reference backend/WordLearner.Domain
 dotnet add backend/WordLearner.Infrastructure reference backend/WordLearner.Domain

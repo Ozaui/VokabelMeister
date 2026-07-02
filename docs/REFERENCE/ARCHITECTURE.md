@@ -39,7 +39,7 @@ WordLearner.Application     → İş mantığı (Services, DTOs, Validators, Int
 WordLearner.Infrastructure  → Veri erişimi (DbContext, Repositories, Configurations, Logging sink)
 WordLearner.Domain          → Entities, Enums
 ```
-Bağımlılık yönü: `Domain ← Infrastructure ← Application ← API`.
+Bağımlılık yönü: `Domain ← Application ← Infrastructure ← API`.
 
 **Çalışma yöntemi (dikey dilim):** Bir API'ı tüm katmanlarıyla (Entity→…→Controller) bitir, sonra
 diğerine geç. Her parça yazıldıkça `API_YOL_HARITASI/` rehberine işlenir. Detay → `TASK.md`.
