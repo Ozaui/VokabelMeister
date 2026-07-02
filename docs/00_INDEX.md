@@ -52,6 +52,7 @@ gösteren ve junior geliştirici eğiten rehberdir.
 | `ENV.md` | Ortam değişkenleri |
 | `DEVELOPMENT_SETUP.md` | Kurulum, çalıştırma, yayınlama |
 | `GERMAN_LANGUAGE_FEATURES.md` | Almanca gramer referansı (kelime kartları için) |
+| `wiki/` | Obsidian bilgi grafiği (mimari hafıza) — kurallar: `../wiki_schema.md`. Ana harita: `wiki/Index.md` |
 
 ## Temel Kurallar
 
@@ -62,3 +63,6 @@ gösteren ve junior geliştirici eğiten rehberdir.
    `NameEN` vb.) entity/DTO'lara **eklenmez**.
 5. Sistemde **yalnızca iki rol**: `User` ve `Admin`. `Instructor`/`Teacher`/"öğretmen" kavramı **yoktur**.
 6. Yeni servis eklenince `ENV.md` güncellenir; hassas bilgiler asla kaynak koda/`appsettings.json`'a girmez.
+7. **Obsidian Wiki (mimari hafıza):** Yeni bir mimari plan/özellik istenince önce kodu taramak yerine
+   `wiki/Index.md`'den başla (**QUERY**). Projede/son değişikliklerde önemli bir şey değiştiyse ilgili
+   wiki düğümünü güncelle ve `wiki/Index.md`'yi tazele (**INGEST**). Kurallar → `../wiki_schema.md`.
