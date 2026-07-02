@@ -1,6 +1,8 @@
 # Geliştirme Yol Haritası (Faz A→F)
 
-**Özet:** Proje altı fazda ilerler (A: Admin Backend → B: Admin Panel → C: Kullanıcı Backend → D: Web → E: Mobil → F: Test/Yayın) ve her API "dikey dilim" yöntemiyle tüm katmanlarıyla tek seferde bitirilir. Şu an **A-01 tamamlandı, A-02 (Ortak Altyapı) devam ediyor**; hiçbir feature entity, servis veya controller henüz yazılmadı. Kaynak otorite: `docs/TASK.md` — bu düğüm onun özetidir, güncel ilerleme için orijinal dosyaya bakılmalı.
+**Özet:** Proje altı fazda ilerler (A: Admin Backend → B: Admin Panel → C: Kullanıcı Backend → D: Web → E: Mobil → F: Test/Yayın) ve her API "dikey dilim" yöntemiyle tüm katmanlarıyla tek seferde bitirilir. Şu an **A-01 tamamlandı, A-02 (Ortak Altyapı) devam ediyor**; hiçbir feature entity, servis veya controller henüz yazılmadı. Kaynak otorite: `docs/TASK.md` (yöntem/standart — ⭐ Çalışma Yöntemi, Her Parça İçin Döngü) +
+`docs/TASK/` klasörü (faz başına 1 dosya, örn. Faz A → `docs/TASK/A_admin_panel_backend.md`) —
+bu düğüm onların özetidir, güncel ilerleme için orijinal dosyalara bakılmalı.
 **Kütüphaneler:** —
 **Bağlantılar:** [[Backend_Katmanli_Mimari]] · [[Kodlama_Standartlari]] · [[WordLearner_API]] · [[WordLearner_Infrastructure]] · [[API_Yol_Haritasi_Sistemi]] · [[Gelistirme_Kurulumu]]
 

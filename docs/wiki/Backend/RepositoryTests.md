@@ -1,6 +1,6 @@
 # RepositoryTests
 
-**Özet:** [[Repository]] generic taban sınıfının CRUD işlemlerini ve [[WordLearnerDbContext]]'teki global soft delete filtresini in-memory EF Core ile doğrulayan xUnit test sınıfı — A-02'nin son kalan "Birim testleri" adımı. Hiçbir feature entity'si yokken, yalnızca bu dosyaya özel bir `TestEntity`/`TestDbContext` çifti kullanılarak yazıldı.
+**Özet:** [[Repository]] generic taban sınıfının CRUD işlemlerini, [[WordLearnerDbContext]]'teki global soft delete filtresini ve `userId` audit alanlarını (`CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId`) in-memory EF Core ile doğrulayan xUnit test sınıfı — A-02'nin "Birim testleri" adımı. Hiçbir feature entity'si yokken, yalnızca bu dosyaya özel bir `TestEntity`/`TestDbContext` çifti kullanılarak yazıldı. Test metodu adları [[Kodlama_Standartlari]] §7.2'deki güncel kurala göre **İngilizce**dir (`{Metot}_{Senaryo}_{BeklenenSonuç}` yapısı Türkçe kalır, kelimeler İngilizce).
 **Kütüphaneler:** xUnit, FluentAssertions 6.12.0, Microsoft.EntityFrameworkCore.InMemory 9.0.0
 **Bağlantılar:** [[Repository]] · [[IRepository]] · [[WordLearnerDbContext]] · [[BaseEntity]] · [[EntityNotFoundException]] · [[WordLearner_Tests]] · [[Kodlama_Standartlari]]
 
@@ -17,16 +17,18 @@ test etmek için gerçek bir feature entity beklenemez. Bu dosyaya özel iki yar
 
 Bu ikisi **yalnızca test projesinde** yaşar, production koduna hiç dokunulmaz.
 
-## Kapsanan Senaryolar (7 test)
+## Kapsanan Senaryolar (9 test)
 | Test | Ne Doğrular |
 |------|--------------|
-| `AddAsync_GecerliEntity_IdAtarVeKaydeder` | Mutlu yol — ekleme sonrası Id atanır |
-| `GetByIdAsync_KayitVarsa_EntityDoner` | Mutlu yol — var olan kayıt getirilir |
-| `GetByIdAsync_KayitYoksa_NullDoner` | Bulunamadı — `null` döner, exception fırlatılmaz |
-| `GetAllAsync_SoftDeleteFiltresiAktifken_YalnizcaSilinmemisleriDoner` | **En kritik senaryo** — global query filter silinmiş kaydı listeden çıkarır |
-| `UpdateAsync_MevcutEntity_UpdatedAtOtomatikGuncellenir` | `WordLearnerDbContext.SaveChangesAsync` override'ı `UpdatedAt`'i otomatik günceller |
-| `SoftDeleteAsync_KayitVarsa_IsDeletedTrueYaparVeSorgudanGizler` | Soft delete fiziksel silmez, `IsDeleted`/`DeletedAt` set eder + sorgudan gizler |
-| `SoftDeleteAsync_KayitYoksa_EntityNotFoundExceptionFirlatir` | Bulunamadı — [[EntityNotFoundException]] fırlatılır |
+| `AddAsync_ValidEntity_AssignsIdAndSaves` | Mutlu yol — ekleme sonrası Id atanır |
+| `AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser` | `userId` verilirse `CreatedByUserId`/`UpdatedByUserId` aynı kullanıcıya set edilir; verilmezse `null` kalır |
+| `GetByIdAsync_RecordExists_ReturnsEntity` | Mutlu yol — var olan kayıt getirilir |
+| `GetByIdAsync_RecordNotFound_ReturnsNull` | Bulunamadı — `null` döner, exception fırlatılmaz |
+| `GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords` | **En kritik senaryo** — global query filter silinmiş kaydı listeden çıkarır |
+| `UpdateAsync_ExistingEntity_AutoUpdatesUpdatedAt` | `WordLearnerDbContext.SaveChangesAsync` override'ı `UpdatedAt`'i otomatik günceller |
+| `UpdateAsync_UserIdProvided_UpdatesUpdatedByUserId` | `userId` verilirse `UpdatedByUserId` günceller; `CreatedByUserId` değişmez |
+| `SoftDeleteAsync_RecordExists_SetsIsDeletedTrueAndHidesFromQuery` | Soft delete fiziksel silmez, `IsDeleted`/`DeletedAt` set eder + sorgudan gizler |
+| `SoftDeleteAsync_RecordNotFound_ThrowsEntityNotFoundException` | Bulunamadı — [[EntityNotFoundException]] fırlatılır |
 
 Bu kapsam, [[Kodlama_Standartlari]] §7.5'teki zorunlu minimum (mutlu yol / bulunamadı / uç durum)
 ile birebir örtüşür; "yetki/sahiplik" senaryosu bu jenerik taban sınıfa uygulanamaz (kişisel
@@ -34,4 +36,4 @@ içerik olmadığından), sonraki feature repository testlerinde eklenecektir.
 
 ## Roadmap Durumu
 [[API_Yol_Haritasi_Sistemi]]'ndeki A-02 sayfasına 7. adım (`tur: 'test'`) olarak işlendi;
-`TASK.md`'de A-02'nin "Birim testleri" maddesi ✅.
+`docs/TASK/A_admin_panel_backend.md`'de A-02'nin "Birim testleri" maddesi ✅.

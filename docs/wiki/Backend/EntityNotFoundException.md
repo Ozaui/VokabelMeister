@@ -17,5 +17,5 @@ var entity = await GetByIdAsync(id, ct)
 ## Planlanan Genişleme
 Global exception middleware (A-02'nin kalan adımı, henüz yok) bu tipi yakalayıp `404` + standart
 hata formatına çevirecek — bkz. [[API_Sozlesmesi]]. `EntityNotFoundException` yanına ileride
-`DuplicateEntityException` (409 için, `?force=true` akışlarında kullanılıyor — bkz. `API_ENDPOINTS.md`)
+`DuplicateEntityException` (409 için, `?force=true` akışlarında kullanılıyor — bkz. `docs/REFERENCE/API_ENDPOINTS.md`)
 gibi kardeş exception tipleri eklenmesi bekleniyor.

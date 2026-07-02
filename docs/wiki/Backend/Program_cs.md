@@ -28,9 +28,9 @@
 - FluentValidation, MediatR, AutoMapper DI kayıtları
 - Global exception middleware, security headers middleware, request/response log middleware
 
-## Hedef Yapılandırma (TECHNICAL_SPECIFICATIONS.md §10 — tam kod referansı)
+## Hedef Yapılandırma (docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §10 — tam kod referansı)
 
-`docs/TECHNICAL_SPECIFICATIONS.md`'de A-02 sonunda ulaşılması gereken **tam** `Program.cs` kodu
+`docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md`'de A-02 sonunda ulaşılması gereken **tam** `Program.cs` kodu
 tanımlı — sıralama önemli (middleware pipeline order):
 
 ```

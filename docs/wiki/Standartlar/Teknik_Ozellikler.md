@@ -1,6 +1,6 @@
 # Teknik Özellikler (NuGet/npm paketleri + referans kod)
 
-**Özet:** `docs/TECHNICAL_SPECIFICATIONS.md`'nin wiki karşılığı — backend NuGet paket listesi (kurulu + planlanan), frontend npm paket komutları ve ileride yazılacak servislerin (JWT, Şifre, SRS, Serilog) **birebir referans kod örnekleri**. Bu dosya, ilgili task'a gelindiğinde kopyalanacak/uyarlanacak "altın kaynak" niteliğindedir.
+**Özet:** `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md`'nin wiki karşılığı — backend NuGet paket listesi (kurulu + planlanan), frontend npm paket komutları ve ileride yazılacak servislerin (JWT, Şifre, SRS, Serilog) **birebir referans kod örnekleri**. Bu dosya, ilgili task'a gelindiğinde kopyalanacak/uyarlanacak "altın kaynak" niteliğindedir.
 **Kütüphaneler:** bkz. aşağıdaki tablolar
 **Bağlantılar:** [[WordLearner_API]] · [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[WordLearner_Tests]] · [[Program_cs]] · [[SRS_Domain]] · [[Auth_Domain]] · [[Loglama_Domain]] · [[Gelistirme_Kurulumu]] · [[Kodlama_Standartlari]]
 
@@ -87,4 +87,4 @@ Bu, [[Program_cs]]'in **şu anki iskelet hâli değil**, A-02 tamamlandığında
 hedef yapıdır — Serilog host, DbContext + Infrastructure/Application servis kayıtları,
 FluentValidation, JWT Bearer authentication, CORS policy, `SecurityHeadersMiddleware` +
 `ExceptionHandlingMiddleware`, `UseStaticFiles()` (avatar/görsel) sırasıyla eklenir. Tam kod
-`docs/TECHNICAL_SPECIFICATIONS.md §10`'da; adım adım gerekçesiyle [[Program_cs]] düğümünde.
+`docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §10`'da; adım adım gerekçesiyle [[Program_cs]] düğümünde.

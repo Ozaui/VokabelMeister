@@ -29,10 +29,10 @@
 - [[WordLearnerDbContext]] — merkezi DbContext (soft delete filtresi, `UpdatedAt` otomasyonu)
 - [[InfrastructureServiceExtensions]] — DI kayıt extension'ı
 - [[EntityNotFoundException]] — özel exception tipi
-- [[RepositoryTests]] — `Repository<T>` + soft delete filtresi için 7 birim test (hepsi yeşil)
+- [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 9 birim test (hepsi yeşil, İngilizce isimlendirme)
 - [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
 
-## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md`, henüz migration yok)
+## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
 - [[Veritabani_Semasi]] — ERD özeti, genel kurallar
 - [[Auth_Domain]] — `Users`, `RefreshTokens`
@@ -68,11 +68,21 @@
 Detay → [[Gelistirme_Yol_Haritasi]].
 
 ## Kaynak Dokümanlar (`/docs`)
-Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların (00_INDEX, ARCHITECTURE, DATABASE_SCHEMA,
-TASK, SECURITY, CODING_STANDARDS, ENV, GERMAN_LANGUAGE_FEATURES, API_ENDPOINTS,
-TECHNICAL_SPECIFICATIONS, DEVELOPMENT_SETUP, `index.html` + `API_YOL_HARITASI/*`) ve gerçek kaynak
-kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`) taranmasıyla üretildi.
-Çelişki durumunda `docs/` klasörü otorite kaynağıdır; bu wiki onun bağlantılı bir haritasıdır.
+Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların taranmasıyla üretildi. `docs/` artık
+şu klasör yapısındadır (token tasarrufu için bölündü, içerik kaybı yok):
+- `docs/00_INDEX.md`, `docs/index.html`, `docs/CONNECTION_STRING.txt` — giriş noktaları (kökte)
+- `docs/REFERENCE/` — ARCHITECTURE, API_ENDPOINTS, CODING_STANDARDS, DEVELOPMENT_SETUP, ENV,
+  GERMAN_LANGUAGE_FEATURES, SECURITY, TECHNICAL_SPECIFICATIONS
+- `docs/TASK.md` (yöntem/standart + ilerleme) + `docs/TASK/` (faz başına 1 dosya: A_admin_panel_backend,
+  B_admin_panel, C_kullanici_backend, D_web_app, E_mobil, F_test_yayin)
+- `docs/DATABASE_SCHEMA.md` (index: ERD/seed/genel kurallar) + `docs/DATABASE_SCHEMA/` (domain başına
+  1 dosya: Auth, Icerik, Kisisel_Icerik, SRS, Sosyal, Loglama, Sistem)
+- `docs/API_YOL_HARITASI/*` (backend) + `docs/FRONTEND_YOL_HARITASI/*` (Web/Admin/Mobil — aynı
+  sistemin frontend kardeşi, henüz hiçbir feature sayfası yazılmadı)
+
+Ayrıca gerçek kaynak kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`)
+taranmasıyla üretildi. Çelişki durumunda `docs/` klasörü otorite kaynağıdır; bu wiki onun bağlantılı
+bir haritasıdır.
 
 **Bilinçli olarak wiki içeriğine taşınmadı (okundu ama hassas/düşük değerli):**
 - `docs/CONNECTION_STRING.txt` — gerçek DB şifresi içeriyor, **asla** wiki'ye kopyalanmaz
@@ -83,4 +93,40 @@ kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`) t
 
 **Proje dizini şu an %100 taranmış durumda** — okunmamış dosya yok.
 
-*Son INGEST: 2026-07-02 — kapsam: A-02'nin "Birim testleri" adımı (`RepositoryTests.cs`, 7 test) + roadmap işleme (`API_YOL_HARITASI/A-02_ortak-altyapi.html` 7. adım).*
+*Son INGEST: 2026-07-02 — kapsam: [[BaseEntity]]'ye "kim yaptı" audit alanları eklendi
+(`CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId`, `int?`), [[IRepository]]/[[Repository]]
+`AddAsync`/`UpdateAsync`/`SoftDeleteAsync`'e opsiyonel `userId` parametresi eklendi,
+[[RepositoryTests]] 7→9 teste çıktı; ayrıca [[Kodlama_Standartlari]] §7.2 test metodu adlandırma
+kuralı Türkçeden İngilizceye çevrildi (yapı `{Metot}_{Senaryo}_{BeklenenSonuç}` sabit kaldı) ve
+mevcut 9 test bu kurala göre yeniden adlandırıldı. `API_YOL_HARITASI/A-02_ortak-altyapi.html`
+1/4/5/7. adımlar buna göre güncellendi.*
+
+*İkinci INGEST (aynı gün): `docs/` token tüketimini azaltmak için yeniden klasörlendi — hiçbir
+içerik silinmedi, sadece dosyalar/bölümler taşındı. `docs/TASK.md` artık yalnızca yöntem/standart +
+ilerleme tablosu; task checklist'leri `docs/TASK/` altında faz başına 1 dosyaya bölündü.
+`docs/DATABASE_SCHEMA.md` artık yalnızca ERD/seed/genel kurallar; tam `CREATE TABLE` SQL'leri
+`docs/DATABASE_SCHEMA/` altında domain başına 1 dosyaya bölündü. Kökte duran 8 dosya
+(ARCHITECTURE, API_ENDPOINTS, CODING_STANDARDS, DEVELOPMENT_SETUP, ENV, GERMAN_LANGUAGE_FEATURES,
+SECURITY, TECHNICAL_SPECIFICATIONS) `docs/REFERENCE/` klasörüne taşındı; `00_INDEX.md`/`index.html`/
+`CONNECTION_STRING.txt` giriş noktası oldukları için kökte kaldı. Bu wiki'deki tüm `docs/X.md` yol
+referansları yeni konumlara göre güncellendi (bu düğüm dahil).*
+
+*Üçüncü INGEST (aynı gün): Frontend için `docs/API_YOL_HARITASI/` ile birebir aynı mantıkta yeni bir
+sistem eklendi — `docs/FRONTEND_YOL_HARITASI/` (kendi hub'ı, `_TASLAK.html`'i, bağımsız `render.js`
+kopyası; stil `API_YOL_HARITASI/style.css`'i paylaşır, yeni `t-tip/t-api/t-slice/t-hook/t-component/
+t-route/t-style` ve `u-web/u-admin/u-mobile` CSS sınıfları o dosyaya eklendi). `docs/TASK.md`'ye
+backend'deki **⭐ Çalışma Yöntemi**'nin frontend karşılığı olan **⭐ Frontend Çalışma Yöntemi**
+eklendi (adım sırası: tip→api→slice→hook→component→route→test). `docs/TASK/B_admin_panel.md`,
+`D_web_app.md`, `E_mobil.md` — önceden tek satırlık başlıklardan ibaretti; artık backend'deki
+A/C fazlarıyla aynı granülaritede, her feature için alt-adım checklist'i + roadmap işaretçileriyle
+detaylandırıldı. [[API_Yol_Haritasi_Sistemi]] bu yeni sistemi "Frontend Kardeşi" bölümünde anlatıyor.*
+
+*Dördüncü INGEST (aynı gün): İki yol haritası arasında **iki yönlü çapraz link kuralı** eklendi —
+bir API'yi bir frontend feature tüketiyorsa, backend sayfası (`frontendRefs`) "buradan sonrası
+frontend tarafında", frontend sayfasının `api` adımı (`backendRef`) "buradan sonrası backend
+tarafında" bandı gösterip birbirine link verir (`render.js` iki motorda da güncellendi, `.note.xref`
+stili `API_YOL_HARITASI/style.css`'e eklendi, her iki `_TASLAK.html` örnek alanla güncellendi).
+`docs/TASK.md`'nin her iki ⭐ bölümüne kural yazıldı; `docs/TASK/A_admin_panel_backend.md` ve
+`C_kullanici_backend.md`'deki her API task'ının altına **"Frontend karşılığı:"** notu eklenerek
+gelecekteki eşleştirmeler (örn. A-03 ↔ B-02/D-03/E-05, C-04 ↔ D-07/E-09) önceden belgelendi.
+[[API_Yol_Haritasi_Sistemi]]'ne "Çapraz Link Kuralı" bölümü eklendi.*

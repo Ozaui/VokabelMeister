@@ -34,4 +34,19 @@ public abstract class BaseEntity
     // NEDEN: Kullanıcı hesabı 30 günlük grace period sonrası anonimleştirme (A-10)
     //        gibi süre bazlı işlemlerde bu tarih kullanılır.
     public DateTime? DeletedAt { get; set; }
+
+    // AMAÇ: Kaydı oluşturan kullanıcının Id'si.
+    // NEDEN: Repository<T>.AddAsync bu alanı set eder; Auth (A-03) tamamlanana kadar
+    //        çağıran taraf userId geçmediği için null kalır — FK, User entity yazılınca (A-03) bağlanır.
+    public int? CreatedByUserId { get; set; }
+
+    // AMAÇ: Kaydı en son güncelleyen (soft delete dâhil) kullanıcının Id'si.
+    // NEDEN: Repository<T>.UpdateAsync/SoftDeleteAsync her çağrıda bu alanı günceller;
+    //        "son işlemi kim yaptı" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanır.
+    public int? UpdatedByUserId { get; set; }
+
+    // AMAÇ: Kaydı soft delete eden kullanıcının Id'si. Silinmemişse null.
+    // NEDEN: DeletedAt "ne zaman", bu alan "kim" sorusunu cevaplar;
+    //        Repository<T>.SoftDeleteAsync ikisini birlikte set eder.
+    public int? DeletedByUserId { get; set; }
 }
