@@ -26,9 +26,11 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz
 3. `index.html`'deki LİSTE dizisine bir satır ekle
 
 `adim.tur` değerleri: `entity | config | enum | dto | validator | exception | repository | service
-| controller`. **Kod alanları gerçek dosyanın birebir kopyasıdır** — kırpılmaz, `...` ile kapatılmaz.
+| controller | test`. **Kod alanları gerçek dosyanın birebir kopyasıdır** — kırpılmaz, `...` ile kapatılmaz.
+(`test` türü ilk kez A-02'nin 7. adımıyla eklendi; henüz kendi UI sekmesi yok, `aciklama` +
+`kod` alanları [[Kodlama_Standartlari]] §7.6'daki test dokümantasyonunu taşıyor.)
 
-## A-02_ortak-altyapi.html — Mevcut İçerik (6 adım, `durum: 'wip'`)
+## A-02_ortak-altyapi.html — Mevcut İçerik (7 adım, `durum: 'wip'`)
 
 | # | Adım | Dosya | Wiki karşılığı |
 |---|------|-------|-----------------|
@@ -38,10 +40,11 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz
 | 4 | `repository` | `IRepository.cs` | [[IRepository]] |
 | 5 | `repository` | `Repository.cs` | [[Repository]] |
 | 6 | `service` | `InfrastructureServiceExtensions.cs` | [[InfrastructureServiceExtensions]] |
+| 7 | `test` | `RepositoryTests.cs` | [[RepositoryTests]] |
 
-Bu 6 adım, `TASK.md`'deki A-02'nin ilk 3 alt-maddesiyle (BaseEntity, DbContext, IRepository/
-Repository+extension) birebir örtüşüyor. **Henüz roadmap'e işlenmemiş** kalan A-02 adımları:
-`RepositoryTests`, ortak tipler (`ApiResponse<T>`, `PagedResult<T>`), middleware'ler, Program.cs
+Bu 7 adım, `TASK.md`'deki A-02'nin ilk 4 alt-maddesiyle (BaseEntity, DbContext, IRepository/
+Repository+extension, RepositoryTests) birebir örtüşüyor. **Henüz roadmap'e işlenmemiş** kalan
+A-02 adımları: ortak tipler (`ApiResponse<T>`, `PagedResult<T>`), middleware'ler, Program.cs
 genişletme — bu adımlar yazıldıkça buraya (yeni `adimlar` girdisi olarak) ve
 [[Gelistirme_Yol_Haritasi]]'ne işlenmeli.
 

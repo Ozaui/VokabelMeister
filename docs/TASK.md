@@ -104,8 +104,8 @@ toplu yazmak **yasak**:
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `RepositoryTests` (in-memory DB ile CRUD + soft delete filtresi — sonraki tüm API'lar bunu kullanır)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] **Birim testleri:** `RepositoryTests` (in-memory DB ile CRUD + soft delete filtresi — sonraki tüm API'lar bunu kullanır)
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`, `EntityNotFoundException`
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] Middleware: global exception, security headers, request/response log

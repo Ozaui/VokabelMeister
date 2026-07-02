@@ -29,6 +29,7 @@
 - [[WordLearnerDbContext]] — merkezi DbContext (soft delete filtresi, `UpdatedAt` otomasyonu)
 - [[InfrastructureServiceExtensions]] — DI kayıt extension'ı
 - [[EntityNotFoundException]] — özel exception tipi
+- [[RepositoryTests]] — `Repository<T>` + soft delete filtresi için 7 birim test (hepsi yeşil)
 - [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md`, henüz migration yok)
@@ -82,4 +83,4 @@ kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`) t
 
 **Proje dizini şu an %100 taranmış durumda** — okunmamış dosya yok.
 
-*Son INGEST: 2026-07-02 — kapsam: tüm proje (ilk tarama + tamamlama turu: TECHNICAL_SPECIFICATIONS, DEVELOPMENT_SETUP, API_YOL_HARITASI, .sln/.gitignore/launchSettings/CONNECTION_STRING dahil son dosyalar).*
+*Son INGEST: 2026-07-02 — kapsam: A-02'nin "Birim testleri" adımı (`RepositoryTests.cs`, 7 test) + roadmap işleme (`API_YOL_HARITASI/A-02_ortak-altyapi.html` 7. adım).*

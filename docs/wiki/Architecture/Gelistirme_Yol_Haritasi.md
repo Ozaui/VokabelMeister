@@ -20,7 +20,7 @@
 | Task | Başlık | Durum | Not |
 |------|--------|-------|-----|
 | A-01 | Proje İskeleti | ✅ | 5 proje + referanslar + NuGet + `Program.cs` temel |
-| A-02 | Ortak Altyapı | 🔄 | [[BaseEntity]], [[WordLearnerDbContext]], [[IRepository]]/[[Repository]], [[InfrastructureServiceExtensions]], [[EntityNotFoundException]] yazıldı ve [[API_Yol_Haritasi_Sistemi]]'nde 6/9 adım işlendi; `RepositoryTests`, `ApiResponse<T>`, middleware, JWT/CORS/Serilog kaydı **henüz yok** |
+| A-02 | Ortak Altyapı | 🔄 | [[BaseEntity]], [[WordLearnerDbContext]], [[IRepository]]/[[Repository]], [[InfrastructureServiceExtensions]], [[EntityNotFoundException]], [[RepositoryTests]] (7 test, hepsi yeşil) yazıldı ve [[API_Yol_Haritasi_Sistemi]]'nde 7/10 adım işlendi; `ApiResponse<T>`/`PagedResult<T>`, middleware, JWT/CORS/Serilog kaydı **henüz yok** |
 | A-03 | Auth API (User) | ⬜ | `User`/`RefreshToken` entity, JWT, OTP login |
 | A-04 | Loglama Sistemi | ⬜ | `ActivityLog`/`ApplicationLog`/`SecurityLog` |
 | A-05 | Sistem Kelimesi API (Words) | ⬜ | |
@@ -43,7 +43,7 @@ Test felsefesi: birim testler Faz F'ye bırakılmaz — servis katmanı bitince 
 içinde test yazılır (adım 12). Detay → [[Kodlama_Standartlari]] §7.
 
 ## Sonraki Task
-`A-02 — Ortak Altyapı` (kalan: RepositoryTests, ortak tipler, middleware, Program.cs genişletme).
+`A-02 — Ortak Altyapı` (kalan: ortak tipler `ApiResponse<T>`/`PagedResult<T>`, middleware, Program.cs genişletme).
 Detay ve referans kod → [[Teknik_Ozellikler]], kurulum komutları → [[Gelistirme_Kurulumu]].
 
 ## Rehber Sistemi
