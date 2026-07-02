@@ -1,6 +1,6 @@
 # Geliştirme Ortamı Kurulumu
 
-**Özet:** `docs/DEVELOPMENT_SETUP.md`'nin wiki karşılığı — gerekli araçlar, proje iskeletini oluşturan `dotnet` komutları (A-01'de zaten çalıştırıldı), migration/çalıştırma komutları ve IIS yayınlama adımları. [[Gelistirme_Yol_Haritasi]]'ndeki her fazın "nasıl kurulur" kısmı burada.
+**Özet:** `docs/REFERENCE/DEVELOPMENT_SETUP.md`'nin wiki karşılığı — gerekli araçlar, proje iskeletini oluşturan `dotnet` komutları (A-01'de zaten çalıştırıldı), migration/çalıştırma komutları ve IIS yayınlama adımları. [[Gelistirme_Yol_Haritasi]]'ndeki her fazın "nasıl kurulur" kısmı burada.
 **Kütüphaneler:** .NET 9 SDK, Node.js 18.17+ LTS, SQL Server 2019+, Git 2.40+
 **Bağlantılar:** [[Gelistirme_Yol_Haritasi]] · [[Teknik_Ozellikler]] · [[Ortam_Degiskenleri]] · [[WordLearner_API]]
 

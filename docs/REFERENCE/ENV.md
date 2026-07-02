@@ -12,7 +12,7 @@ Uygulamanın ihtiyaç duyduğu tüm ortam değişkenleri. Dış servis sayısı 
 
 ## 1. Veritabanı
 ```
-ConnectionStrings__DefaultConnection=Server=.\SQLEXPRESS;Database=WordLearnerDB;Trusted_Connection=True;TrustServerCertificate=True;
+ConnectionStrings__DefaultConnection=Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;
 ```
 > **Not:** Log tabloları (`ApplicationLog`, `ActivityLog`, `SecurityLog`) aynı veritabanını kullanır —
 > ek bağlantı/değişken **gerekmez**.
@@ -72,7 +72,7 @@ Cors__AllowedOrigins__2=http://localhost:5174     # Web app
 ## appsettings.Development.json Şablonu (`.gitignore`'da)
 ```json
 {
-  "ConnectionStrings": { "DefaultConnection": "Server=.\\SQLEXPRESS;Database=WordLearnerDB;Trusted_Connection=True;TrustServerCertificate=True;" },
+  "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
   "Jwt": { "SecretKey": "gelistirme-icin-en-az-32-karakter", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp", "RefreshTokenExpirationDays": "7" },
   "Google": { "ClientId": "..." },
   "Apple": { "BundleId": "com.vokabelmeister.app" },
@@ -84,7 +84,7 @@ Cors__AllowedOrigins__2=http://localhost:5174     # Web app
 `AES_ENCRYPTION_KEY` → `launchSettings.json` `environmentVariables` altına eklenir (commit edilmez).
 
 ## 9. Güncelleme Kuralı
-Yeni servis eklenince: (1) buraya bölüm ekle, (2) `TASK.md`'ye `→ ENV.md §X` referansı, (3) dev şablonu güncelle.
+Yeni servis eklenince: (1) buraya bölüm ekle, (2) `TASK.md`'ye `→ REFERENCE/ENV.md §X` referansı, (3) dev şablonu güncelle.
 
 ## Özet — Hangi Bilgi Nerede?
 

@@ -26,14 +26,18 @@ public interface IRepository<T> where T : BaseEntity
     // AMAÇ: Yeni kayıt ekler ve eklenen entity'yi (Id dolu hâliyle) döner.
     // NEDEN: Dönüş değeri sayesinde controller, oluşturulan kaydın Id'sini
     //        hemen alıp 201 Created response'una ekleyebilir.
-    Task<T> AddAsync(T entity, CancellationToken ct = default);
+    //        userId verilirse BaseEntity.CreatedByUserId/UpdatedByUserId'ye yazılır
+    //        (Auth/A-03 tamamlanana kadar çağıran taraf null geçer).
+    Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default);
 
     // AMAÇ: Mevcut kaydı günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
-    Task UpdateAsync(T entity, CancellationToken ct = default);
+    // NEDEN: userId verilirse BaseEntity.UpdatedByUserId'ye yazılır.
+    Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default);
 
     // AMAÇ: Kaydı fiziksel olarak silmek yerine IsDeleted=true, DeletedAt=UtcNow yapar (soft delete).
     // NEDEN: Silinen veriler DB'de tutulur; audit trail korunur; admin gerektiğinde geri yükleyebilir.
-    Task SoftDeleteAsync(int id, CancellationToken ct = default);
+    //        userId verilirse BaseEntity.DeletedByUserId/UpdatedByUserId'ye yazılır.
+    Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default);
 
     // AMAÇ: Birden fazla değişikliği tek seferde kaydetmek gerektiğinde kullanılır.
     // NEDEN: AddAsync/UpdateAsync zaten SaveChanges çağırır; bu metot yalnızca

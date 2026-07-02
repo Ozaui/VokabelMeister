@@ -42,7 +42,7 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz
 | 6 | `service` | `InfrastructureServiceExtensions.cs` | [[InfrastructureServiceExtensions]] |
 | 7 | `test` | `RepositoryTests.cs` | [[RepositoryTests]] |
 
-Bu 7 adım, `TASK.md`'deki A-02'nin ilk 4 alt-maddesiyle (BaseEntity, DbContext, IRepository/
+Bu 7 adım, `docs/TASK/A_admin_panel_backend.md`'deki A-02'nin ilk 4 alt-maddesiyle (BaseEntity, DbContext, IRepository/
 Repository+extension, RepositoryTests) birebir örtüşüyor. **Henüz roadmap'e işlenmemiş** kalan
 A-02 adımları: ortak tipler (`ApiResponse<T>`, `PagedResult<T>`), middleware'ler, Program.cs
 genişletme — bu adımlar yazıldıkça buraya (yeni `adimlar` girdisi olarak) ve
@@ -52,3 +52,26 @@ genişletme — bu adımlar yazıldıkça buraya (yeni `adimlar` girdisi olarak)
 `docs/index.html`'deki not: bir API daha önce yazılmış bir kodu/yardımcıyı (örn. [[Repository]],
 `PasswordService.Hash`, ortak DTO) kullanıyorsa, o kodun **tam hâli** de o API'ın kendi sayfasına
 ayrıca eklenir — her API sayfası tek başına baştan sona okunabilir olmalı (kod tekrarı bilinçli).
+
+## Frontend Kardeşi (`docs/FRONTEND_YOL_HARITASI/`)
+Web/Admin/Mobil feature'ları için aynı mantığın frontend'e uyarlanmış hâli — kendi hub'ı
+(`FRONTEND_YOL_HARITASI/index.html`), kendi `_TASLAK.html`'i, kendi `render.js`'i (backend
+motoruna dokunmadan bağımsız kopya) var; `style.css`'i bu klasörden (`API_YOL_HARITASI/style.css`)
+paylaşır. `adim.tur` değerleri farklıdır: `tip | api | slice | hook | component | route | style | test`
+(entity→controller zincirinin frontend karşılığı). Yöntem → `docs/TASK.md` **⭐ Frontend Çalışma
+Yöntemi**; iki hub sayfası birbirine topbar'dan çapraz link verir. Henüz hiçbir feature sayfası
+yazılmadı (`LISTE` boş) — Faz B/D/E başladıkça dolacak.
+
+## Çapraz Link Kuralı (İki Yol Haritası Arasında Geçiş)
+Bir API'yi bir frontend feature tüketiyorsa, iki sayfa **iki yönlü** birbirine bağlanır:
+- Backend sayfası (`API` objesi): en alta `frontendRefs: [{ dosya, baslik }]` eklenir → sayfanın
+  sonunda **"🧩 Buradan sonrası frontend tarafında"** bandı, ilgili `FRONTEND_YOL_HARITASI/*.html`
+  sayfasına link verir (`render.js`'de `api.frontendRefs` render bloğu).
+- Frontend sayfası (`FEATURE` objesi): `tur:'api'` adımına `backendRef: { dosya, baslik }` eklenir →
+  o adımın hemen altında **"⚙️ Buradan sonrası backend tarafında"** bandı, ilgili
+  `API_YOL_HARITASI/*.html` sayfasına link verir (`render.js`'de `a.backendRef` render bloğu).
+- Stil: `.note.xref` sınıfı (`API_YOL_HARITASI/style.css`), her iki motor da paylaşır.
+- **Kural gereği tek yönlü kalması yasak** — bir taraf yazılınca diğerine dönüp link eklenir
+  (bkz. `docs/TASK.md` her iki ⭐ bölümündeki "🧩 Çapraz Link Kuralı"). `docs/TASK/A_admin_panel_backend.md`
+  ve `C_kullanici_backend.md`'deki her API task'ının altına **"Frontend karşılığı:"** notu bu
+  eşleştirmeyi önceden belgeler (örn. A-03 ↔ B-02/D-03/E-05).

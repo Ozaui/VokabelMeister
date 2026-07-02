@@ -83,7 +83,7 @@ yalnızca `Owner`/`Member` (eski Teacher/Student yok).
 | `SecurityLog` | `ISecurityLogger` servisi | Güvenlik: başarısız giriş, rate-limit, yetkisiz erişim |
 
 Hepsi `GET /admin/logs/*` ile filtreli + sayfalı; admin panel B-08'de görüntülenir. Detay →
-`DATABASE_SCHEMA.md §3`, `SECURITY.md §6`.
+`DATABASE_SCHEMA/Loglama.md`, `REFERENCE/SECURITY.md §6`.
 
 ## 7. Entity İlişkileri (özet)
 

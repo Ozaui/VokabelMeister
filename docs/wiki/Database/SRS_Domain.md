@@ -27,9 +27,9 @@ easiness factor, mastery 0-5; quality<3 → sıfırlama, EF alt sınır 1.3) →
 `ProgressService` (XP, streak) → `ProgressController`. Birim test önceliği: `SrsCalculatorTests`.
 
 ## SM-2 Öz Değerlendirme Skalası
-`selfRating`: 🔴0=Bilmedim · 🟠2=Zor · 🟢4=İyi · 🔵5=Çok Kolay — bkz. `docs/API_ENDPOINTS.md §9`.
+`selfRating`: 🔴0=Bilmedim · 🟠2=Zor · 🟢4=İyi · 🔵5=Çok Kolay — bkz. `docs/REFERENCE/API_ENDPOINTS.md §9`.
 
-## SrsCalculator — Referans Kod (henüz yazılmadı, `TECHNICAL_SPECIFICATIONS.md §8`'den)
+## SrsCalculator — Referans Kod (henüz yazılmadı, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §8`'den)
 ```csharp
 public static class SrsCalculator
 {

@@ -40,16 +40,21 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
         => await _set.ToListAsync(ct);
 
     // AMAÇ: Yeni entity'yi DB'ye ekler ve Id'si dolu hâliyle geri döner.
-    public virtual async Task<T> AddAsync(T entity, CancellationToken ct = default)
+    // NEDEN: userId verilirse CreatedByUserId/UpdatedByUserId set edilir (kim oluşturdu).
+    public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)
     {
+        entity.CreatedByUserId = userId;
+        entity.UpdatedByUserId = userId;
         await _set.AddAsync(entity, ct);
         await _db.SaveChangesAsync(ct);
         return entity;
     }
 
     // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
-    public virtual async Task UpdateAsync(T entity, CancellationToken ct = default)
+    // NEDEN: userId verilirse UpdatedByUserId set edilir (kim güncelledi).
+    public virtual async Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default)
     {
+        entity.UpdatedByUserId = userId;
         _set.Update(entity);
         await _db.SaveChangesAsync(ct);
     }
@@ -57,14 +62,16 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     // AMAÇ: Kaydı fiziksel silmek yerine IsDeleted ve DeletedAt alanlarını set eder.
     // NEDEN: Fiziksel silme geri alınamaz; soft delete ile veri kaybı olmaz,
     //        admin silinmiş kaydı görmek istediğinde IgnoreQueryFilters() kullanır.
-    public virtual async Task SoftDeleteAsync(int id, CancellationToken ct = default)
+    //        userId verilirse DeletedByUserId set edilir (kim sildi).
+    public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct)
             ?? throw new EntityNotFoundException($"{typeof(T).Name} bulunamadı: Id={id}");
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
-        await UpdateAsync(entity, ct);
+        entity.DeletedByUserId = userId;
+        await UpdateAsync(entity, userId, ct);
     }
 
     // AMAÇ: Birden fazla değişikliği toplu olarak DB'ye yazar.

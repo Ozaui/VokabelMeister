@@ -30,11 +30,11 @@ dotnet add backend/WordLearner.Infrastructure reference backend/WordLearner.Doma
 dotnet add backend/WordLearner.Tests reference backend/WordLearner.Application backend/WordLearner.Infrastructure
 ```
 > **Klasör yapısı (Tests):** `WordLearner.Tests/{Services, Helpers, Repositories}/XxxServiceTests.cs` —
-> her API task'ının "Birim testleri" adımı bu klasörlere yazılır. Detay → `CODING_STANDARDS.md §8`.
-NuGet listesi → `TECHNICAL_SPECIFICATIONS.md §1`.
+> her API task'ının "Birim testleri" adımı bu klasörlere yazılır. Detay → `REFERENCE/CODING_STANDARDS.md §8`.
+NuGet listesi → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §1`.
 
 ## 4. Veritabanı + Migration
-`appsettings.Development.json`'da bağlantı dizesini ayarla (→ `ENV.md`), sonra:
+`appsettings.Development.json`'da bağlantı dizesini ayarla (→ `REFERENCE/ENV.md`), sonra:
 ```bash
 cd backend
 dotnet ef migrations add InitialCreate --project WordLearner.Infrastructure --startup-project WordLearner.API

@@ -18,13 +18,21 @@ hesap durumu (IsActive/IsEmailVerified/LastLoginAt/LoginCount), hesap silme
 `DeviceInfo`, `IpAddress`. Her refresh'te rotation yapılır; aynı family'den ikinci kullanım =
 replay → tüm family iptal edilir + `SecurityLog: TokenReplay` (bkz. [[Loglama_Domain]]).
 
+## BaseEntity Audit FK'si
+[[BaseEntity]]'ye A-02'de eklenen `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId` (`int?`)
+alanları, `Users` tablosu bu task'ta yazılınca EF config ile `Users(Id)`'ye FK olarak bağlanacak
+(muhtemel `ON DELETE SET NULL`, [[Veritabani_Semasi]]'ndeki `Activity/Security` log FK deseniyle
+tutarlı). `User` entity'sinin kendisi de `BaseEntity`'den türediği için kendine referans (self-FK)
+imkanı vardır — örn. bir admin başka bir kullanıcıyı oluşturursa `CreatedByUserId` o admin'in Id'si
+olur; self-servis kayıtta `null` kalır.
+
 ## Planlanan Kod (A-03)
 `User`, `RefreshToken` entity + `OtpPurpose` enum → `IPasswordService`, `ITokenService`,
 `IAuthService` (register/verify-email/login 2-adım OTP/google/apple/refresh/logout/
 forgot-reset-password/delete-account) → `AuthController` (13 endpoint) — detay [[API_Sozlesmesi]]
-ve `docs/API_ENDPOINTS.md §3`.
+ve `docs/REFERENCE/API_ENDPOINTS.md §3`.
 
-### Referans Kod (henüz yazılmadı, `TECHNICAL_SPECIFICATIONS.md §5-6`'dan)
+### Referans Kod (henüz yazılmadı, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6`'dan)
 - **`ITokenService`/`JwtTokenService`:** `GenerateAccessToken(User)` (claims: NameIdentifier/
   Email/Role/firstName, 15dk, HMAC-SHA256), `GenerateRefreshToken()` (64 byte random → Base64),
   `GetPrincipalFromExpiredToken(token)` — Algorithm Confusion önlemi: `Header.Alg != HmacSha256`

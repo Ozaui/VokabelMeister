@@ -8,7 +8,7 @@ Hedefler: Gizlilik, Bütünlük, Kullanılabilirlik. Uyum: OWASP Top 10, GDPR, K
 Access Token : 15 dakika  ·  Refresh Token: 7 gün  ·  Her refresh'te rotation
 JWT: HMAC-SHA256, payload { sub, email, role, iat, exp, iss }
 ```
-- **Algorithm Confusion önlemi:** Süresi dolmuş token okunurken `alg == HS256` doğrulanır (→ `TECHNICAL_SPECIFICATIONS.md §5`).
+- **Algorithm Confusion önlemi:** Süresi dolmuş token okunurken `alg == HS256` doğrulanır (→ `REFERENCE/TECHNICAL_SPECIFICATIONS.md §5`).
 - ASP.NET Identity KULLANILMAZ — JWT + şifre hashleme manuel.
 
 ### Şifre Kuralları
@@ -46,14 +46,16 @@ tüm family iptal (`SecurityLog: TokenReplay`).
 [Authorize]                   [HttpGet("/api/v1/words")]    // okuma — tüm kullanıcılar
 ```
 **Kaynak yetkisi:** Kullanıcı yalnızca kendi kaydına erişir — servis/repo `UserId` filtresi; başkasının
-kaydı 404/403. (→ `ARCHITECTURE.md §4`)
+kaydı 404/403. (→ `REFERENCE/ARCHITECTURE.md §4`)
 
 ## 3. Şifreleme
+
+### 3.1 Transit ve At Rest
 
 - **Transit:** TLS 1.3 (min). HSTS: `max-age=31536000; includeSubDomains; preload`.
 - **At rest:** MSSQL TDE (AES-256) önerilir. Şifreler bcrypt hash; düz metin yok.
 
-### 3.4 SMTP Kimlik Bilgisi (AES-256)
+### 3.2 SMTP Kimlik Bilgisi (AES-256)
 SMTP şifresi **DB'de AES-256-CBC şifreli**; `appsettings.json`/kaynak koda **asla** yazılmaz.
 ```
 SmtpSettings.PasswordEncrypted = Base64(IV + cipher)   // IV her şifrelemede rastgele 16 byte
@@ -81,7 +83,7 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 
 ## 6. Loglama & İzleme
 
-Üç DB tablosu (→ `DATABASE_SCHEMA.md §3`), hepsi admin panelden görüntülenir (`GET /admin/logs/*`):
+Üç DB tablosu (→ `DATABASE_SCHEMA/Loglama.md`), hepsi admin panelden görüntülenir (`GET /admin/logs/*`):
 
 | Tablo | Kaynak | Ne loglanır |
 |-------|--------|-------------|
@@ -118,7 +120,7 @@ ADIM 2 — POST /auth/reset-password { email, otpCode, newPassword }
 ## 10. Deployment Checklist
 ```
 ☐ HTTPS/TLS · güvenlik başlıkları · CORS tanımlı origin
-☐ JWT/DB/AES anahtarları ortam değişkeninde (kodda değil — ENV.md)
+☐ JWT/DB/AES anahtarları ortam değişkeninde (kodda değil — REFERENCE/ENV.md)
 ☐ Rate limiting açık · loglar PII içermiyor (hash)
 ☐ Dependency güvenlik taraması · DB backup (AES-256, test edilmiş)
 ☐ GDPR: anonimleştirme görevi prod'da çalışıyor · OriginalEmailHash blok testi

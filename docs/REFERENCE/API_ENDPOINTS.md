@@ -7,7 +7,7 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 
 **Rate limiting:** Login 5 hatalı/15dk → kilit · Genel 100/dk (auth), 10/dk (anonim).
 
-## Standart Yanıt
+## 1. Standart Yanıt
 
 ```json
 // Başarılı
@@ -15,6 +15,8 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 // Hatalı
 { "success": false, "error": { "code": "GECERSIZ_KIMLIK", "message": "E-posta veya şifre hatalı" } }
 ```
+
+## 2. HTTP Kodları ve Auth Seviyeleri
 
 **HTTP kodları:** 200 OK · 201 Created · 204 No Content · 400 Geçersiz · 401 Kimlik yok ·
 403 Yetkisiz · 404 Bulunamadı · 409 Çakışma · 429 Çok istek · 500 Sunucu.

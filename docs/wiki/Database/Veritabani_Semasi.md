@@ -1,6 +1,10 @@
 # Veritabanı Şeması (genel bakış)
 
-**Özet:** MS SQL Server üzerinde planlanan tam şema `docs/DATABASE_SCHEMA.md`'de tanımlı — bu düğüm onu domain'lere bölünmüş şekilde bilgi grafiğine bağlar. Henüz **hiçbir migration oluşturulmadı**; tüm tablolar tasarım aşamasında. Tüm tablolar (log tabloları hariç) [[BaseEntity]] alanlarını taşır ve soft delete + (kişisel içerikte) `UserId` filtresi zorunludur.
+**Özet:** MS SQL Server üzerinde planlanan tam şema `docs/DATABASE_SCHEMA.md` (index — ERD, seed data,
+genel kurallar) + `docs/DATABASE_SCHEMA/` klasöründeki domain dosyalarında (`Auth.md`, `Icerik.md`,
+`Kisisel_Icerik.md`, `SRS.md`, `Sosyal.md`, `Loglama.md`, `Sistem.md` — tam `CREATE TABLE` SQL'leri)
+tanımlı — bu düğüm onu domain'lere bölünmüş şekilde bilgi grafiğine bağlar. Henüz **hiçbir migration
+oluşturulmadı**; tüm tablolar tasarım aşamasında. Tüm tablolar (log tabloları hariç) [[BaseEntity]] alanlarını (Id/CreatedAt/UpdatedAt/IsDeleted/DeletedAt + `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId`) taşır ve soft delete + (kişisel içerikte) `UserId` filtresi zorunludur.
 **Kütüphaneler:** MS SQL Server, EF Core 9 (Code-First migrations, henüz kullanılmadı)
 **Bağlantılar:** [[BaseEntity]] · [[WordLearnerDbContext]] · [[Auth_Domain]] · [[Icerik_Domain]] · [[Kisisel_Icerik_Domain]] · [[SRS_Domain]] · [[Sosyal_Domain]] · [[Loglama_Domain]] · [[Roller_ve_Erisim]]
 
@@ -44,6 +48,10 @@ Categories ─ self-ref (ParentCategoryId)
    o kelime için `UserProgress` kaydı varsa, Mixed sınav oturumunda o `UserCard` **atlanır**.
 5. `ClassWords` yalnızca sınıf üyelerine görünür.
 6. Log tabloları değişmezdir (insert-only); soft delete yok, güncellenmez → [[Loglama_Domain]].
+7. `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId` artık [[BaseEntity]]'de standart — A-03+'ta
+   yazılacak tablolarda `docs/DATABASE_SCHEMA/`'daki ad-hoc `CreatedBy`/`UpdatedBy` kolonları
+   (`Words` → `Icerik.md`, `SmtpSettings` → `Sistem.md`, `ClassWords` → `Sosyal.md`) bu standart
+   alanlarla birleştirilmeli, ayrıca tutulmamalı.
 
 ## Seed Data
 12 başlangıç kategorisi (`Menschen/İnsanlar`, `Familie/Aile`, `Essen/Yemek`, ... A1/A2 seviye) —

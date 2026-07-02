@@ -7,7 +7,7 @@
 
 | Türkçe | İngilizce (convention) |
 |--------|------------------------|
-| Tüm yorumlar, XML doc, log mesajları, exception mesajları, console çıktısı | Method / class / property isimleri (C#), DB kolon adları (SQL), JS değişkenleri |
+| Tüm yorumlar, XML doc, log mesajları, exception mesajları, console çıktısı | Method / class / property isimleri (C#), test metodu adları (§7.2), DB kolon adları (SQL), JS değişkenleri |
 
 ```csharp
 // ✅ DOĞRU
@@ -68,7 +68,7 @@ if (userId <= 0 || wordId <= 0)
 var progress = await _progressRepo.GetByUserAndWordAsync(userId, wordId, ct)
     ?? throw new EntityNotFoundException($"İlerleme bulunamadı: kullanıcı {userId}, kelime {wordId}");
 
-// ADIM 3: SM-2 ile sonraki tekrar zamanını hesapla (bkz. TECHNICAL_SPECIFICATIONS.md §8)
+// ADIM 3: SM-2 ile sonraki tekrar zamanını hesapla (bkz. REFERENCE/TECHNICAL_SPECIFICATIONS.md §8)
 var (interval, newLevel, newEF) = SrsCalculator.Calculate(
     progress.CurrentLevel, progress.RepetitionNumber, progress.EasinessFactor, quality);
 progress.NextReviewAt = DateTime.UtcNow.AddDays(interval);
@@ -112,7 +112,7 @@ RuleFor(x => x.Password)
 
 > **Araçlar:** xUnit (test çalıştırıcı) + Moq (repo/dış servis mock) + FluentAssertions (okunabilir
 > assertion) + `Microsoft.EntityFrameworkCore.InMemory` (yalnızca `Repository<T>` gibi DB'ye dokunan
-> testlerde). Paketler → `TECHNICAL_SPECIFICATIONS.md §1`. Proje: `backend/WordLearner.Tests`.
+> testlerde). Paketler → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §1`. Proje: `backend/WordLearner.Tests`.
 
 ### 7.1 Dosya Konumu ve Adlandırma
 
@@ -129,15 +129,21 @@ WordLearner.Tests/
 ```
 {Metot}_{Senaryo}_{BeklenenSonuç}
 ```
+**NOT:** Yapı (3 bölüm) sabit, ama metot **adının kendisi İngilizce** yazılır — method/property
+isimleri gibi test metodu adı da C# tarafında "kod kimliği" sayılır (§1'deki İngilizce sütunu).
+Türkçe kalan tek şey, testin içindeki `// ARRANGE/ACT/ASSERT` yorumları ve `AMAÇ/NEDEN` doc-comment'i.
 ```csharp
 // ✅ DOĞRU
-UpdateProgressAsync_QualityDusukSe_SeviyeyiSifirlar
-UpdateProgressAsync_QualityYuksekSe_IntervaliUzatir
-Register_EmailZatenKayitliyse_DuplicateExceptionFirlatir
+UpdateProgressAsync_QualityIsLow_ResetsLevel
+UpdateProgressAsync_QualityIsHigh_ExtendsInterval
+Register_EmailAlreadyRegistered_ThrowsDuplicateException
 
 // ❌ YANLIŞ — ne test ettiği isimden anlaşılmıyor
 Test1
 UpdateProgress_Test
+
+// ❌ YANLIŞ (eski kural) — test adı Türkçe
+UpdateProgressAsync_QualityDusukSe_SeviyeyiSifirlar
 ```
 
 ### 7.3 AAA Deseni (Arrange / Act / Assert) — her test bu 3 bölümden oluşur
@@ -146,7 +152,7 @@ Türkçe yorumla bölünür, **NEDEN** sadece Assert'te gerekiyorsa eklenir (bek
 
 ```csharp
 /// <summary>
-/// UpdateProgressAsync_QualityDusukSe_SeviyeyiSifirlar
+/// UpdateProgressAsync_QualityIsLow_ResetsLevel
 ///
 /// AMAÇ: Kullanıcı bir kelimeyi "Bilmedim" (quality=0) olarak işaretlediğinde SM-2'nin
 ///       seviyeyi sıfırladığını doğrulamak.
@@ -154,7 +160,7 @@ Türkçe yorumla bölünür, **NEDEN** sadece Assert'te gerekiyorsa eklenir (bek
 ///        çeker — bu davranış UpdateProgressAsync'in doğru çalışması için kritik.
 /// </summary>
 [Fact]
-public async Task UpdateProgressAsync_QualityDusukSe_SeviyeyiSifirlar()
+public async Task UpdateProgressAsync_QualityIsLow_ResetsLevel()
 {
     // ARRANGE — sahte (mock) repository + var olan bir ilerleme kaydı hazırla
     var mockRepo = new Mock<IUserProgressRepository>();
@@ -197,14 +203,14 @@ sırada). Bu alana, kod blokları gibi **birebir kopya** test sınıfı eklenir 
 altına şu 3 satırlık açıklama yazılır (junior'a *neden bu senaryo test edildi* anlatılır):
 
 ```
-Test Adı     : UpdateProgressAsync_QualityDusukSe_SeviyeyiSifirlar
+Test Adı     : UpdateProgressAsync_QualityIsLow_ResetsLevel
 Ne Test Edildi: Quality=0 ("Bilmedim") cevabında SM-2'nin seviyeyi sıfırlaması
 Neden Önemli : Yanlış cevapta mastery kaybı olmazsa kullanıcı kelimeyi öğrenmiş gibi görünür
                ama gerçekte unutmuştur (Ebbinghaus eğrisi) — SRS'in temel amacı bozulur.
 ```
 
 `AMAÇ/NEDEN` zaten test dosyasının XML doc'unda var (§8.3); roadmap'e işlerken bu blok **kod ile
-birlikte** kopyalanır, ayrıca özetlenmez — tekrar yazılan kod kuralı (`CODING_STANDARDS.md`'nin
+birlikte** kopyalanır, ayrıca özetlenmez — tekrar yazılan kod kuralı (`REFERENCE/CODING_STANDARDS.md`'nin
 genel ilkesi) test dosyaları için de geçerlidir.
 
 ## 8. Her Dosya İçin Kontrol Listesi
@@ -213,7 +219,7 @@ genel ilkesi) test dosyaları için de geçerlidir.
 [ ] Dosya başı: AMAÇ / NEDEN / BAĞIMLILIKLAR
 [ ] Her public metot: AMAÇ / NEDEN / NASIL
 [ ] Karmaşık bloklar: ADIM + NEDEN yorumları
-[ ] Tüm yorum/log/exception TÜRKÇE, method/class/property İngilizce
+[ ] Tüm yorum/log/exception TÜRKÇE, method/class/property/test metodu adı İngilizce
 [ ] Servis katmanı için birim test yazıldı (§7 standardına uygun: AAA + isimlendirme + mock) — Faz F'ye bırakılmaz
 [ ] async/await + CancellationToken
 [ ] Yazıldıkça API_YOL_HARITASI/ rehberine işlendi (kod alanı + test alanı, §7.6)

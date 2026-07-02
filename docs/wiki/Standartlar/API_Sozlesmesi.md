@@ -1,6 +1,6 @@
 # API Sözleşmesi (planlanan — henüz hiç endpoint yok)
 
-**Özet:** Tüm endpoint'lerin uyacağı standart response formatı, HTTP kod sözleşmesi ve tam endpoint listesi `docs/API_ENDPOINTS.md`'de tanımlı. Şu an [[WordLearner_API]]'nin `Controllers/` klasörü **boş** — ilk endpoint A-03'te `AuthController` ile gelecek.
+**Özet:** Tüm endpoint'lerin uyacağı standart response formatı, HTTP kod sözleşmesi ve tam endpoint listesi `docs/REFERENCE/API_ENDPOINTS.md`'de tanımlı. Şu an [[WordLearner_API]]'nin `Controllers/` klasörü **boş** — ilk endpoint A-03'te `AuthController` ile gelecek.
 **Kütüphaneler:** ASP.NET Core (Controllers, JWT Bearer auth)
 **Bağlantılar:** [[WordLearner_API]] · [[Auth_Domain]] · [[Roller_ve_Erisim]] · [[Guvenlik_Politikalari]] · [[Gelistirme_Yol_Haritasi]]
 
@@ -46,4 +46,4 @@ Auth seviyeleri: `Anonim` (JWT yok) · `[Authorize]` (JWT) · `[Authorize(Admin)
   detay [[Loglama_Domain]].
 - **Paylaşım önizleme:** `GET /shared-contents/{token}` **Anonim** — giriş gerekmez.
 
-Tam örnekler (request/response JSON) → `docs/API_ENDPOINTS.md`.
+Tam örnekler (request/response JSON) → `docs/REFERENCE/API_ENDPOINTS.md`.

@@ -6,7 +6,7 @@
 
 ## Dil Kuralı
 Türkçe: tüm yorumlar, XML doc, log mesajları, exception mesajları, console çıktısı.
-İngilizce (convention): method/class/property isimleri (C#), DB kolon adları (SQL), JS değişkenleri.
+İngilizce (convention): method/class/property isimleri (C#), test metodu adları, DB kolon adları (SQL), JS değişkenleri.
 
 ## Zorunlu Bloklar
 - **Dosya başı:** `AMAÇ / NEDEN / BAĞIMLILIKLAR` — mevcut kod dosyalarında ([[Program_cs]],
@@ -23,7 +23,9 @@ Türkçe: tüm yorumlar, XML doc, log mesajları, exception mesajları, console 
 
 ## Birim Test Standardı (zorunlu, §7)
 - Konum: `Services/XxxServiceTests.cs`, `Helpers/`, `Repositories/RepositoryTests.cs`.
-- İsimlendirme: `{Metot}_{Senaryo}_{BeklenenSonuç}` (örn. `Register_EmailZatenKayitliyse_DuplicateExceptionFirlatir`).
+- İsimlendirme: `{Metot}_{Senaryo}_{BeklenenSonuç}` — yapı sabit ama **metot adının kendisi İngilizce**
+  (örn. `Register_EmailAlreadyRegistered_ThrowsDuplicateException`); test adı da method/property gibi
+  kod kimliği sayılır (§Dil Kuralı). Yalnızca AAA yorumları ve AMAÇ/NEDEN doc-comment'i Türkçe kalır.
 - AAA deseni (Arrange/Act/Assert), Türkçe yorumla bölünür.
 - Repository ve dış servisler (email, OneSignal, Google/Apple) **her zaman mock'lanır** — gerçek
   DB/HTTP unit testte yasak (F-02'nin işi). Yalnızca [[Repository]] taban sınıfı testinde

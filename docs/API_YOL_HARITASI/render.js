@@ -50,6 +50,17 @@
       </div>`;
     });
 
+    // AMAÇ: Bu API'yi tüketen frontend feature sayfalarına çapraz link.
+    // NEDEN: Backend işi burada biter; devamı (bu endpoint'i çağıran component/ekran) Frontend Yol
+    //        Haritası'nda anlatılır — okuyucu buradan doğrudan oraya geçebilmeli.
+    if ((api.frontendRefs || []).length) {
+      html += `<div class="note xref"><b>🧩 Buradan sonrası frontend tarafında:</b><ul class="xref-list">`;
+      api.frontendRefs.forEach((r) => {
+        html += `<li><a href="${esc(r.dosya)}">${esc(r.baslik)}</a></li>`;
+      });
+      html += `</ul></div>`;
+    }
+
     el.innerHTML = html;
   }
 

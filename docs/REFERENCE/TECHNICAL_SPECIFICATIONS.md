@@ -60,28 +60,23 @@ npm i @react-native-google-signin/google-signin
 ## 3. appsettings.json
 
 > Hassas değerler (`SecretKey`, bağlantı dizesi) dev'de `appsettings.Development.json`'da (`.gitignore`'da),
-> prod'da ortam değişkeninde. Tam liste → `ENV.md`.
+> prod'da ortam değişkeninde. **Gerçek/güncel değer için tek kaynak → `REFERENCE/ENV.md §1` ve `§2`** — buradaki
+> JSON yalnızca yapıyı (hangi anahtar hangi bölümde) gösterir, değerleri kopyalamak için kullanılmaz.
 
 ```json
 {
-  "ConnectionStrings": { "DefaultConnection": "Server=.;Database=WordLearnerDB;Trusted_Connection=true;TrustServerCertificate=true;" },
+  "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
   "Jwt": { "SecretKey": "MIN_32_KARAKTER", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp",
            "ExpirationMinutes": 15, "RefreshTokenExpirationDays": 7 },
   "Cors": { "AllowedOrigins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:8081"] }
 }
 ```
 
-## 4. BaseEntity
-```csharp
-public abstract class BaseEntity
-{
-    public int Id { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-    public bool IsDeleted { get; set; }
-    public DateTime? DeletedAt { get; set; }
-}
-```
+## 4. BaseEntity (tamamlandı — A-02 ✅)
+
+Gerçek kod → `backend/WordLearner.Domain/Entities/BaseEntity.cs`. Alanlar: `Id`, `CreatedAt`,
+`UpdatedAt`, `IsDeleted`, `DeletedAt`, `CreatedByUserId`, `UpdatedByUserId`, `DeletedByUserId`
+(hepsi `int?`, "kim yaptı" alanları). Birebir kopya + gerekçe → `API_YOL_HARITASI/A-02_ortak-altyapi.html` (adım 1).
 
 ## 5. JWT Token Servisi
 ```csharp
@@ -162,40 +157,13 @@ public class PasswordService : IPasswordService
 }
 ```
 
-## 7. Generic Repository
-```csharp
-public interface IRepository<T> where T : BaseEntity
-{
-    Task<T?> GetByIdAsync(int id, CancellationToken ct = default);
-    Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default);
-    Task<T> AddAsync(T entity, CancellationToken ct = default);
-    Task UpdateAsync(T entity, CancellationToken ct = default);
-    Task SoftDeleteAsync(int id, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
-}
+## 7. Generic Repository (tamamlandı — A-02 ✅)
 
-public class Repository<T> : IRepository<T> where T : BaseEntity
-{
-    protected readonly WordLearnerDbContext _db;
-    protected readonly DbSet<T> _set;
-    public Repository(WordLearnerDbContext db) { _db = db; _set = db.Set<T>(); }
-
-    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default)
-        => _set.FirstOrDefaultAsync(e => e.Id == id, ct);
-    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
-        => await _set.ToListAsync(ct);
-    public virtual async Task<T> AddAsync(T entity, CancellationToken ct = default)
-    { await _set.AddAsync(entity, ct); await _db.SaveChangesAsync(ct); return entity; }
-    public virtual async Task UpdateAsync(T entity, CancellationToken ct = default)
-    { entity.UpdatedAt = DateTime.UtcNow; _set.Update(entity); await _db.SaveChangesAsync(ct); }
-    public virtual async Task SoftDeleteAsync(int id, CancellationToken ct = default)
-    {
-        var e = await GetByIdAsync(id, ct) ?? throw new EntityNotFoundException($"{typeof(T).Name} {id} bulunamadı");
-        e.IsDeleted = true; e.DeletedAt = DateTime.UtcNow; await UpdateAsync(e, ct);
-    }
-    public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
-}
-```
+Gerçek kod → `backend/WordLearner.Application/Interfaces/Repositories/IRepository.cs` (sözleşme:
+`GetByIdAsync`, `GetAllAsync`, `AddAsync`, `UpdateAsync`, `SoftDeleteAsync`, `SaveChangesAsync` —
+`AddAsync/UpdateAsync/SoftDeleteAsync` opsiyonel `int? userId` alır, `BaseEntity`'nin "kim yaptı"
+alanlarını set eder) ve `backend/WordLearner.Infrastructure/Repositories/Repository.cs` (EF Core
+implementasyonu). Birebir kopya + gerekçe → `API_YOL_HARITASI/A-02_ortak-altyapi.html` (adım 3).
 
 ## 8. SM-2 SRS Algoritması
 
@@ -239,7 +207,7 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
         columnOptions: ApplicationLogColumns()));   // SourceContext, RequestPath, UserId ek kolonlar
 ```
 > `ActivityLog` ve `SecurityLog` Serilog ile DEĞİL, özel `IActivityLogger`/`ISecurityLogger`
-> servisleriyle yazılır (yapılandırılmış sütunlar + admin filtresi için). Bkz. `DATABASE_SCHEMA.md §3`.
+> servisleriyle yazılır (yapılandırılmış sütunlar + admin filtresi için). Bkz. `DATABASE_SCHEMA/Loglama.md`.
 
 ## 10. Program.cs (özet)
 ```csharp

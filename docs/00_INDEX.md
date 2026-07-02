@@ -41,17 +41,18 @@ gösteren ve junior geliştirici eğiten rehberdir.
 
 | Dosya | İçerik |
 |-------|--------|
-| `TASK.md` | Yapılacaklar listesi, faz sırası, ilerleme tablosu |
-| `API_YOL_HARITASI/` | Junior eğitim rehberi (interaktif HTML) — her API'ın adım adım yazılışı. `index.html` = hub, `_TASLAK.html` = yeni API şablonu |
-| `ARCHITECTURE.md` | Sistem mimarisi, akışlar, entity ilişkileri, roller |
-| `DATABASE_SCHEMA.md` | Tablo yapıları (içerik + sosyal + **log** tabloları) |
-| `API_ENDPOINTS.md` | Endpoint listesi, request/response örnekleri |
-| `TECHNICAL_SPECIFICATIONS.md` | NuGet, BaseEntity, JWT, Repository, SRS kod örnekleri |
-| `CODING_STANDARDS.md` | Türkçe yorum kuralları ve şablonlar |
-| `SECURITY.md` | Güvenlik kuralları (auth, şifreleme, loglama) |
-| `ENV.md` | Ortam değişkenleri |
-| `DEVELOPMENT_SETUP.md` | Kurulum, çalıştırma, yayınlama |
-| `GERMAN_LANGUAGE_FEATURES.md` | Almanca gramer referansı (kelime kartları için) |
+| `TASK.md` | Yöntem/standart (⭐ Çalışma Yöntemi) + ilerleme tablosu — task listeleri `TASK/` klasöründe (faz başına 1 dosya) |
+| `API_YOL_HARITASI/` | Junior eğitim rehberi (interaktif HTML) — her API'ın adım adım yazılışı. Hub sayfası `docs/index.html` (bir üst klasörde), `_TASLAK.html` = yeni API şablonu |
+| `FRONTEND_YOL_HARITASI/` | API_YOL_HARITASI'nın frontend karşılığı — Web/Admin/Mobil feature'larının (tip→api→slice→hook→component→route→test) adım adım yazılışı. Kendi hub'ı (`index.html`), `_TASLAK.html` = yeni feature şablonu, stil `API_YOL_HARITASI/style.css`'i paylaşır |
+| `REFERENCE/ARCHITECTURE.md` | Sistem mimarisi, akışlar, entity ilişkileri, roller |
+| `DATABASE_SCHEMA.md` | ERD + seed data + genel kurallar — tam `CREATE TABLE` SQL'leri `DATABASE_SCHEMA/` klasöründe (domain başına 1 dosya) |
+| `REFERENCE/API_ENDPOINTS.md` | Endpoint listesi, request/response örnekleri |
+| `REFERENCE/TECHNICAL_SPECIFICATIONS.md` | NuGet, BaseEntity, JWT, Repository, SRS kod örnekleri |
+| `REFERENCE/CODING_STANDARDS.md` | Türkçe yorum kuralları ve şablonlar |
+| `REFERENCE/SECURITY.md` | Güvenlik kuralları (auth, şifreleme, loglama) |
+| `REFERENCE/ENV.md` | Ortam değişkenleri |
+| `REFERENCE/DEVELOPMENT_SETUP.md` | Kurulum, çalıştırma, yayınlama |
+| `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` | Almanca gramer referansı (kelime kartları için) |
 | `wiki/` | Obsidian bilgi grafiği (mimari hafıza) — kurallar: `../wiki_schema.md`. Ana harita: `wiki/Index.md` |
 
 ## Temel Kurallar
@@ -62,7 +63,7 @@ gösteren ve junior geliştirici eğiten rehberdir.
 4. Uygulama **yalnızca Türkçe-Almanca** destekler. İngilizce çeviri/isim alanları (`EnglishTranslation`,
    `NameEN` vb.) entity/DTO'lara **eklenmez**.
 5. Sistemde **yalnızca iki rol**: `User` ve `Admin`. `Instructor`/`Teacher`/"öğretmen" kavramı **yoktur**.
-6. Yeni servis eklenince `ENV.md` güncellenir; hassas bilgiler asla kaynak koda/`appsettings.json`'a girmez.
+6. Yeni servis eklenince `REFERENCE/ENV.md` güncellenir; hassas bilgiler asla kaynak koda/`appsettings.json`'a girmez.
 7. **Obsidian Wiki (mimari hafıza):** Yeni bir mimari plan/özellik istenince önce kodu taramak yerine
    `wiki/Index.md`'den başla (**QUERY**). Projede/son değişikliklerde önemli bir şey değiştiyse ilgili
    wiki düğümünü güncelle ve `wiki/Index.md`'yi tazele (**INGEST**). Kurallar → `../wiki_schema.md`.

@@ -63,14 +63,14 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// AddAsync_GecerliEntity_IdAtarVeKaydeder
+    /// AddAsync_ValidEntity_AssignsIdAndSaves
     ///
     /// AMAÇ: Yeni bir entity eklendiğinde DB'ye yazıldığını ve otomatik Id atandığını doğrulamak.
     /// NEDEN: Controller'lar 201 Created response'unda AddAsync'in döndürdüğü Id'yi kullanır;
     ///        Id atanmazsa tüm "oluştur" endpoint'leri hatalı response döner.
     /// </summary>
     [Fact]
-    public async Task AddAsync_GecerliEntity_IdAtarVeKaydeder()
+    public async Task AddAsync_ValidEntity_AssignsIdAndSaves()
     {
         // ARRANGE — temiz context + repository + Id'siz yeni entity
         await using var context = CreateContext();
@@ -86,13 +86,40 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// GetByIdAsync_KayitVarsa_EntityDoner
+    /// AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser
+    ///
+    /// AMAÇ: AddAsync'e userId geçildiğinde BaseEntity.CreatedByUserId ve UpdatedByUserId'nin
+    ///       aynı kullanıcıya set edildiğini doğrulamak.
+    /// NEDEN: "Kim oluşturdu" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanmalı;
+    ///        Auth (A-03) tamamlanana kadar servis katmanı userId geçmeyecek, bu durumda
+    ///        alan null kalmalı — bu yüzden hem dolu hem null senaryo test edilir.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser()
+    {
+        // ARRANGE — temiz context + repository
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — userId ile ekle, userId'siz ekle
+        var userIdIle = await repo.AddAsync(new TestEntity { Name = "Kartoffel" }, userId: 42);
+        var userIdSiz = await repo.AddAsync(new TestEntity { Name = "Zwiebel" });
+
+        // ASSERT — verilen userId her iki alana da yazılmalı; verilmezse null kalmalı
+        userIdIle.CreatedByUserId.Should().Be(42);
+        userIdIle.UpdatedByUserId.Should().Be(42);
+        userIdSiz.CreatedByUserId.Should().BeNull();
+        userIdSiz.UpdatedByUserId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetByIdAsync_RecordExists_ReturnsEntity
     ///
     /// AMAÇ: Var olan bir kaydın Id'sine göre doğru şekilde getirildiğini doğrulamak (mutlu yol).
     /// NEDEN: Servis katmanındaki tüm "detay getir" ve "güncelle" akışları bu metoda dayanır.
     /// </summary>
     [Fact]
-    public async Task GetByIdAsync_KayitVarsa_EntityDoner()
+    public async Task GetByIdAsync_RecordExists_ReturnsEntity()
     {
         // ARRANGE — bir entity ekle
         await using var context = CreateContext();
@@ -108,7 +135,7 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// GetByIdAsync_KayitYoksa_NullDoner
+    /// GetByIdAsync_RecordNotFound_ReturnsNull
     ///
     /// AMAÇ: Olmayan bir Id sorgulandığında exception değil null döndüğünü doğrulamak.
     /// NEDEN: IRepository.cs'teki sözleşme gereği "bulunamadı" durumu null ile ifade edilir;
@@ -116,7 +143,7 @@ public class RepositoryTests
     ///        katmanının kendisi bu exception'ı GetByIdAsync'te fırlatmamalı.
     /// </summary>
     [Fact]
-    public async Task GetByIdAsync_KayitYoksa_NullDoner()
+    public async Task GetByIdAsync_RecordNotFound_ReturnsNull()
     {
         // ARRANGE — boş context (hiç kayıt yok)
         await using var context = CreateContext();
@@ -130,7 +157,7 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// GetAllAsync_SoftDeleteFiltresiAktifken_YalnizcaSilinmemisleriDoner
+    /// GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords
     ///
     /// AMAÇ: WordLearnerDbContext'teki global soft delete query filter'ının GetAllAsync
     ///       sonucundan silinmiş (IsDeleted=true) kayıtları otomatik çıkardığını doğrulamak.
@@ -138,7 +165,7 @@ public class RepositoryTests
     ///        kartları, kelimeler vb. tüm listelerde yanlışlıkla görünmeye devam eder.
     /// </summary>
     [Fact]
-    public async Task GetAllAsync_SoftDeleteFiltresiAktifken_YalnizcaSilinmemisleriDoner()
+    public async Task GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords()
     {
         // ARRANGE — iki kayıt ekle, birini soft-delete et
         await using var context = CreateContext();
@@ -158,7 +185,7 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// UpdateAsync_MevcutEntity_UpdatedAtOtomatikGuncellenir
+    /// UpdateAsync_ExistingEntity_AutoUpdatesUpdatedAt
     ///
     /// AMAÇ: WordLearnerDbContext.SaveChangesAsync override'ının, güncellenen entity'nin
     ///       UpdatedAt alanını elle set edilmeden otomatik olarak günceli tarihe çektiğini doğrulamak.
@@ -166,7 +193,7 @@ public class RepositoryTests
     ///        (BaseEntity.md/WordLearnerDbContext.md kararı) — bu davranış merkezi override'a bağlı.
     /// </summary>
     [Fact]
-    public async Task UpdateAsync_MevcutEntity_UpdatedAtOtomatikGuncellenir()
+    public async Task UpdateAsync_ExistingEntity_AutoUpdatesUpdatedAt()
     {
         // ARRANGE — kaydı ekle, UpdatedAt'i bilinçli olarak eskiye çek (dünkü zaman)
         await using var context = CreateContext();
@@ -183,7 +210,32 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// SoftDeleteAsync_KayitVarsa_IsDeletedTrueYaparVeSorgudanGizler
+    /// UpdateAsync_UserIdProvided_UpdatesUpdatedByUserId
+    ///
+    /// AMAÇ: UpdateAsync'e userId geçildiğinde BaseEntity.UpdatedByUserId'nin o kullanıcıya
+    ///       set edildiğini, önceki (farklı) değerin üzerine yazıldığını doğrulamak.
+    /// NEDEN: "Son güncelleyen kim" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanmalı;
+    ///        her UpdateAsync çağrısı en son işlemi yapan kullanıcıyı yansıtmalı.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_UserIdProvided_UpdatesUpdatedByUserId()
+    {
+        // ARRANGE — kaydı kullanıcı 1 olarak ekle
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var eklenen = await repo.AddAsync(new TestEntity { Name = "Rettich" }, userId: 1);
+
+        // ACT — kaydı kullanıcı 2 olarak güncelle
+        eklenen.Name = "Rettich (güncellendi)";
+        await repo.UpdateAsync(eklenen, userId: 2);
+
+        // ASSERT — UpdatedByUserId son güncelleyeni (2) yansıtmalı, CreatedByUserId (1) değişmemeli
+        eklenen.UpdatedByUserId.Should().Be(2);
+        eklenen.CreatedByUserId.Should().Be(1);
+    }
+
+    /// <summary>
+    /// SoftDeleteAsync_RecordExists_SetsIsDeletedTrueAndHidesFromQuery
     ///
     /// AMAÇ: SoftDeleteAsync'in kaydı fiziksel silmek yerine IsDeleted/DeletedAt alanlarını
     ///       set ettiğini ve bu sayede kaydın sonraki sorgulardan (filtre yüzünden) kaybolduğunu
@@ -192,7 +244,7 @@ public class RepositoryTests
     ///        Repository.cs'in NEDEN yorumunda açıkça belirtilmiş kritik bir davranış.
     /// </summary>
     [Fact]
-    public async Task SoftDeleteAsync_KayitVarsa_IsDeletedTrueYaparVeSorgudanGizler()
+    public async Task SoftDeleteAsync_RecordExists_SetsIsDeletedTrueAndHidesFromQuery()
     {
         // ARRANGE — bir kayıt ekle
         await using var context = CreateContext();
@@ -217,7 +269,7 @@ public class RepositoryTests
     }
 
     /// <summary>
-    /// SoftDeleteAsync_KayitYoksa_EntityNotFoundExceptionFirlatir
+    /// SoftDeleteAsync_RecordNotFound_ThrowsEntityNotFoundException
     ///
     /// AMAÇ: Olmayan bir Id ile SoftDeleteAsync çağrıldığında EntityNotFoundException
     ///       fırlatıldığını doğrulamak (bulunamadı durumu — CODING_STANDARDS.md §7.5 zorunlu senaryo).
@@ -225,7 +277,7 @@ public class RepositoryTests
     ///        yakalayıp 404 döndürecek; yanlış exception tipi fırlatılırsa 500 döner.
     /// </summary>
     [Fact]
-    public async Task SoftDeleteAsync_KayitYoksa_EntityNotFoundExceptionFirlatir()
+    public async Task SoftDeleteAsync_RecordNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE — boş context (hiç kayıt yok)
         await using var context = CreateContext();
