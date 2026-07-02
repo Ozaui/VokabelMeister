@@ -10,7 +10,7 @@
 ## 1. Mimari
 
 - [[Sistem_Mimarisi]] — 3 istemci + tek API + MSSQL, genel akış
-- [[Backend_Katmanli_Mimari]] — Domain ← Infrastructure ← Application ← API bağımlılık zinciri
+- [[Backend_Katmanli_Mimari]] — Domain ← Application ← Infrastructure ← API bağımlılık zinciri
 - [[Roller_ve_Erisim]] — User/Admin rolleri, içerik sahipliği, görünürlük matrisi
 - [[Gelistirme_Yol_Haritasi]] — Faz A→F sırası ve güncel ilerleme durumu
 
