@@ -1,6 +1,6 @@
 # WordLearnerDbContext
 
-**Özet:** [[WordLearner_Infrastructure]] içindeki merkezi EF Core `DbContext` sınıfı — henüz hiçbir `DbSet<T>` içermiyor (feature entity'ler A-03'ten itibaren eklenecek), ama iki önemli global davranışı zaten hazır: tüm [[BaseEntity]] türevlerine soft delete query filter'ı ve `SaveChangesAsync` override'ıyla otomatik `UpdatedAt`.
+**Özet:** [[WordLearner_Infrastructure]] içindeki merkezi EF Core `DbContext` sınıfı — henüz hiçbir `DbSet<T>` içermiyor (feature entity'ler A-03'ten itibaren eklenecek), ama iki önemli global davranışı zaten hazır: tüm [[BaseEntity]] türevlerine soft delete query filter'ı ve `SaveChangesAsync` override'ıyla yalnızca gerçek güncellemede set edilen `UpdatedAt` (nullable — insert'te dokunulmaz, `null` kalır).
 **Kütüphaneler:** Microsoft.EntityFrameworkCore, Microsoft.EntityFrameworkCore.SqlServer
 **Bağlantılar:** [[BaseEntity]] · [[Repository]] · [[InfrastructureServiceExtensions]] · [[Veritabani_Semasi]] · [[WordLearner_Infrastructure]]
 
@@ -19,6 +19,8 @@
 ### 2. `SaveChangesAsync` override
 `ChangeTracker.Entries<BaseEntity>()` üzerinde `EntityState.Modified` olanların `UpdatedAt`'ini
 otomatik `DateTime.UtcNow` yapar — servis/repository katmanında elle set etmeye gerek kalmaz.
+`UpdatedAt` nullable olduğu için `Added` durumundaki entity'lere dokunulmaz; insert sonrası
+`null` kalması, "hiç güncellenmedi" bilgisini `CreatedAt`'ten ayırt edilebilir tutar.
 
 ## Bağlantı Dizesi
 `AddDbContext` çağrısı ve connection string okuma → [[InfrastructureServiceExtensions]] içinde

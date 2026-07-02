@@ -60,8 +60,9 @@ public class WordLearnerDbContext : DbContext
             if (entry.State == EntityState.Modified)
                 entry.Entity.UpdatedAt = DateTime.UtcNow;
 
-            // NEDEN: Yeni eklenen entity'lerde CreatedAt/UpdatedAt varsayılan olarak
-            //        DateTime.UtcNow ile başlatılıyor (BaseEntity'de); ekstra set gerekmez.
+            // NEDEN: Yeni eklenen entity'lerde CreatedAt varsayılan olarak DateTime.UtcNow ile
+            //        başlatılıyor (BaseEntity'de); UpdatedAt ise burada dokunulmadığı için
+            //        insert sonrası null kalır — "hiç güncellenmedi" bilgisini korur.
         }
 
         return base.SaveChangesAsync(cancellationToken);

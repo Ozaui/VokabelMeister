@@ -19,10 +19,11 @@ public abstract class BaseEntity
     // NEDEN: Audit trail ve sıralama için zorunlu; UTC kullanmak zaman dilimi hatalarını önler.
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // AMAÇ: Kaydın son güncellendiği an (UTC).
-    // NEDEN: Repository<T>.UpdateAsync her çağrıda bu alanı otomatik günceller;
-    //        manuel set etmeye gerek kalmaz.
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    // AMAÇ: Kaydın son güncellendiği an (UTC). Hiç güncellenmemişse null.
+    // NEDEN: Nullable olması "hiç güncellenmedi" ile "CreatedAt anında güncellendi" durumlarını
+    //        ayırt eder; WordLearnerDbContext.SaveChangesAsync yalnızca gerçek bir güncelleme
+    //        (EntityState.Modified) olduğunda bu alanı set eder, ekleme sırasında dokunmaz.
+    public DateTime? UpdatedAt { get; set; }
 
     // AMAÇ: Kaydın silinip silinmediğini gösteren bayrak (soft delete).
     // NEDEN: Fiziksel silme yerine bu bayrağı set ederiz; böylece silinmiş kayıtlar

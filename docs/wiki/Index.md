@@ -130,3 +130,12 @@ stili `API_YOL_HARITASI/style.css`'e eklendi, her iki `_TASLAK.html` örnek alan
 `C_kullanici_backend.md`'deki her API task'ının altına **"Frontend karşılığı:"** notu eklenerek
 gelecekteki eşleştirmeler (örn. A-03 ↔ B-02/D-03/E-05, C-04 ↔ D-07/E-09) önceden belgelendi.
 [[API_Yol_Haritasi_Sistemi]]'ne "Çapraz Link Kuralı" bölümü eklendi.*
+
+*Beşinci INGEST (2026-07-02): [[BaseEntity]].`UpdatedAt` non-nullable `DateTime` (varsayılan
+`DateTime.UtcNow`) iken insert anında `CreatedAt`'e eşit bir değer alıyordu — "hiç güncellenmedi"
+durumu ayırt edilemiyordu. `UpdatedAt` → `DateTime?` (varsayılansız) yapıldı;
+[[WordLearnerDbContext]].`SaveChangesAsync` zaten yalnızca `EntityState.Modified`'ta set ettiği için
+davranış değişmedi, sadece insert sonrası artık `null` kalıyor. [[RepositoryTests]]'e
+`AddAsync_ValidEntity_LeavesUpdatedAtNull` testi eklendi (9→10 test). `docs/API_YOL_HARITASI/
+A-02_ortak-altyapi.html`'deki BaseEntity/WordLearnerDbContext/RepositoryTests adımları (kod +
+açıklama) buna göre güncellendi.*

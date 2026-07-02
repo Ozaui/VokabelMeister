@@ -113,6 +113,28 @@ public class RepositoryTests
     }
 
     /// <summary>
+    /// AddAsync_ValidEntity_LeavesUpdatedAtNull
+    ///
+    /// AMAÇ: Yeni bir entity eklendiğinde UpdatedAt alanının null kaldığını doğrulamak.
+    /// NEDEN: BaseEntity.UpdatedAt nullable'dır ve yalnızca gerçek bir güncellemede
+    ///        (WordLearnerDbContext.SaveChangesAsync, EntityState.Modified) set edilir;
+    ///        insert'te CreatedAt'e eşit bir değer atanırsa "hiç güncellenmedi" bilgisi kaybolur.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_ValidEntity_LeavesUpdatedAtNull()
+    {
+        // ARRANGE — temiz context + repository
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — yeni entity ekle
+        var sonuc = await repo.AddAsync(new TestEntity { Name = "Gurke" });
+
+        // ASSERT — UpdatedAt henüz hiç güncelleme olmadığı için null olmalı
+        sonuc.UpdatedAt.Should().BeNull();
+    }
+
+    /// <summary>
     /// GetByIdAsync_RecordExists_ReturnsEntity
     ///
     /// AMAÇ: Var olan bir kaydın Id'sine göre doğru şekilde getirildiğini doğrulamak (mutlu yol).

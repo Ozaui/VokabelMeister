@@ -1,6 +1,6 @@
 # BaseEntity
 
-**Özet:** [[WordLearner_Domain]] içinde tanımlı, tüm entity'lerin türeyeceği soyut taban sınıf — Id, oluşturma/güncelleme zaman damgaları, soft delete ve "kim yaptı" (audit actor) alanlarını tek yerden yönetir. `IsDeleted`/`DeletedAt` alanları [[WordLearnerDbContext]]'teki global query filter tarafından otomatik uygulanır, `UpdatedAt` ise [[Repository]]/`SaveChangesAsync` tarafından otomatik güncellenir. `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId` [[Repository]]'nin `AddAsync`/`UpdateAsync`/`SoftDeleteAsync` metotlarına geçilen (opsiyonel) `userId` parametresiyle set edilir.
+**Özet:** [[WordLearner_Domain]] içinde tanımlı, tüm entity'lerin türeyeceği soyut taban sınıf — Id, oluşturma/güncelleme zaman damgaları, soft delete ve "kim yaptı" (audit actor) alanlarını tek yerden yönetir. `IsDeleted`/`DeletedAt` alanları [[WordLearnerDbContext]]'teki global query filter tarafından otomatik uygulanır, `UpdatedAt` (nullable) ise yalnızca gerçek bir güncellemede [[WordLearnerDbContext]].`SaveChangesAsync` tarafından set edilir — insert sonrası null kalır. `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId` [[Repository]]'nin `AddAsync`/`UpdateAsync`/`SoftDeleteAsync` metotlarına geçilen (opsiyonel) `userId` parametresiyle set edilir.
 **Kütüphaneler:** Saf C# — dış bağımlılık yok
 **Bağlantılar:** [[WordLearner_Domain]] · [[WordLearnerDbContext]] · [[Repository]] · [[IRepository]] · [[Veritabani_Semasi]] · [[Auth_Domain]] · [[Loglama_Domain]]
 
@@ -12,7 +12,7 @@
 |------|-----|------|
 | `Id` | `int` | Birincil anahtar — EF Core otomatik PK olarak tanır |
 | `CreatedAt` | `DateTime` (UTC) | Audit trail, varsayılan `DateTime.UtcNow` |
-| `UpdatedAt` | `DateTime` (UTC) | [[Repository]].`UpdateAsync` / [[WordLearnerDbContext]].`SaveChangesAsync` her çağrıda otomatik günceller |
+| `UpdatedAt` | `DateTime?` (UTC) | Varsayılan değeri yok — insert'te `null` kalır; [[WordLearnerDbContext]].`SaveChangesAsync` yalnızca gerçek güncellemede (`EntityState.Modified`) set eder |
 | `IsDeleted` | `bool` | Soft delete bayrağı — global query filter bunu kullanır |
 | `DeletedAt` | `DateTime?` | Soft delete anı; hesap silme grace period (A-10) gibi süre bazlı işlemlerde kullanılır |
 | `CreatedByUserId` | `int?` | Kaydı oluşturan kullanıcının Id'si — [[Repository]].`AddAsync` set eder |
