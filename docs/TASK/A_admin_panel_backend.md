@@ -33,7 +33,7 @@
 - [x] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR, AutoMapper kayıtları
 - [x] ➜ **API Yol Haritası'na işle**
 
-### A-03 — Auth API (User) ⬜
+### A-03 — Auth API (User) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, REFERENCE/SECURITY.md §2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
 **Frontend karşılığı:** B-02 (Admin — sade giriş+OTP), D-03 (Web — tam akış+Google), E-05 (Mobil — tam akış+Google+Apple)
 > 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e B-02/D-03/E-05'in dosyaları eklenir;

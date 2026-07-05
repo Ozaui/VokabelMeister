@@ -9,15 +9,17 @@
 |-------|------|
 | `docs/index.html` | **Hub** — kurallar + `LISTE` dizisindeki tüm API'ların kart listesi (klasörün bir üstünde durur, `API_YOL_HARITASI/style.css`'e görece referans verir) |
 | `API_YOL_HARITASI/_TASLAK.html` | Yeni API şablonu — kopyalanıp doldurulur |
-| `API_YOL_HARITASI/A-02_ortak-altyapi.html` | A-02 (Ortak Altyapı) rehberi — **tek gerçek API sayfası, şu an `durum: 'wip'`** |
+| `API_YOL_HARITASI/A-02_ortak-altyapi.html` | A-02 (Ortak Altyapı) rehberi — 11 adım, `durum: 'done'` |
+| `API_YOL_HARITASI/A-03_auth-api.html` | A-03 (Auth API) rehberi — 36 adım, `durum: 'done'` |
 | `API_YOL_HARITASI/render.js` | `window.API`/`const API` objesini okuyup `#content`'e basan paylaşımlı render motoru (kod bloklarını `esc()` ile XSS'e karşı güvenli işler) |
 | `API_YOL_HARITASI/style.css` | Hem hub hem her API sayfasının ortak koyu-tema stili |
 
-`docs/index.html`'in `LISTE` dizisi şu an tek satır içeriyor:
+`API_YOL_HARITASI/index.html`'in (backend hub) `LISTE` dizisi şu an iki satır içeriyor:
 ```js
-{ faz: 'A-02', metot: '-', yol: '-', baslik: 'Ortak Altyapı', durum: 'wip', dosya: 'API_YOL_HARITASI/A-02_ortak-altyapi.html' }
+{ faz: 'A-02', metot: '-', yol: '-', baslik: 'Ortak Altyapı', durum: 'done', dosya: 'A-02_ortak-altyapi.html' },
+{ faz: 'A-03', metot: '-', yol: '/auth/*', baslik: 'Auth API', durum: 'done', dosya: 'A-03_auth-api.html' },
 ```
-Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz hiçbir API `done` işaretli değil.
+Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02/A-03 durumuyla birebir tutarlı — ikisi de tamamlandı.
 
 ## Yeni API Ekleme Kuralı (3 adım)
 1. `_TASLAK.html`'i kopyala → `<faz>_<id>.html` adıyla kaydet (örn. `A-03_auth-login.html`)
@@ -30,7 +32,7 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz
 (`test` türü ilk kez A-02'nin 7. adımıyla eklendi; henüz kendi UI sekmesi yok, `aciklama` +
 `kod` alanları [[Kodlama_Standartlari]] §7.6'daki test dokümantasyonunu taşıyor.)
 
-## A-02_ortak-altyapi.html — Mevcut İçerik (7 adım, `durum: 'wip'`)
+## A-02_ortak-altyapi.html — Mevcut İçerik (11 adım, `durum: 'done'`)
 
 | # | Adım | Dosya | Wiki karşılığı |
 |---|------|-------|-----------------|
@@ -40,13 +42,23 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02 durumuyla birebir tutarlı — henüz
 | 4 | `repository` | `IRepository.cs` | [[IRepository]] |
 | 5 | `repository` | `Repository.cs` | [[Repository]] |
 | 6 | `service` | `InfrastructureServiceExtensions.cs` | [[InfrastructureServiceExtensions]] |
-| 7 | `test` | `RepositoryTests.cs` | [[RepositoryTests]] |
+| 7 | `test` | `RepositoryTests.cs` (10 test) | [[RepositoryTests]] |
+| 8 | `test` | `EntityNotFoundExceptionTests.cs` (1 test) | — |
+| 9 | `dto` | `ApiErrorResponse.cs` | [[ApiErrorResponse]] |
+| 10 | `service` | Middleware (Exception/SecurityHeaders/RequestResponseLogging) | [[Middleware]] |
+| 11 | `config` | `Program.cs` (JWT/CORS/Serilog/FluentValidation kaydı) | [[Program_cs]] |
 
-Bu 7 adım, `docs/TASK/A_admin_panel_backend.md`'deki A-02'nin ilk 4 alt-maddesiyle (BaseEntity, DbContext, IRepository/
-Repository+extension, RepositoryTests) birebir örtüşüyor. **Henüz roadmap'e işlenmemiş** kalan
-A-02 adımları: ortak tipler (`ApiResponse<T>`, `PagedResult<T>`), middleware'ler, Program.cs
-genişletme — bu adımlar yazıldıkça buraya (yeni `adimlar` girdisi olarak) ve
-[[Gelistirme_Yol_Haritasi]]'ne işlenmeli.
+## A-03_auth-api.html — Mevcut İçerik (36 adım, `durum: 'done'`)
+
+A-02'den farklı olarak tek bir tabloya sığmayacak kadar büyük — 36 adım şu kategorilerde gruplanır:
+entity/config/migration (1-4) → `IPasswordService`/`ITokenService` (5-8) → DTO'lar (9) →
+`AppException`/`ErrorMessages` + 7 exception alt tipi (10-17, mimari karar: tr+de dile göre,
+log/DB İngilizce) → repository'ler (18-20) → `IEmailService`/`DevEmailService`/Google-Apple
+validator'ları (21-24) → `IAuthService`/`AuthService` (25-27) → FluentValidation validator'ları
+(28-29) → `RequestLanguageResolver`/`ValidationFilter` (30-31) → `AuthController` (32) →
+`Program.cs` rate limiting (33) → birim testler (34-36: `PasswordServiceTests`,
+`JwtTokenServiceTests`, `AuthServiceTests`). Detay ve gerekçeler → sayfanın kendisi (her adım
+`aciklama` alanında junior'a açıklanır) ve [[Auth_Domain]].
 
 ## Yeniden Kullanılan Kod Kuralı
 `docs/index.html`'deki not: bir API daha önce yazılmış bir kodu/yardımcıyı (örn. [[Repository]],

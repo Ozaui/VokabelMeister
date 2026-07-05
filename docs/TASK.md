@@ -193,7 +193,7 @@ Detay ve `adım.tur` değerleri (`tip`/`api`/`slice`/`hook`/`component`/`route`/
 | E | E-01…E-14 | Mobil | ⬜ | `TASK/E_mobil.md` |
 | F | F-01…F-04 | Test & Yayın | ⬜ | `TASK/F_test_yayin.md` |
 
-**Sıradaki task:** `A-03 — Auth API (User)` → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-03.1 — QR Kod ile Giriş` (A-03 ✅ tamamlandı) → `TASK/A_admin_panel_backend.md`
 
 ## Durum Göstergesi
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi
