@@ -29,6 +29,23 @@
 - [ ] **Birim testleri:** `LoginPage.test.tsx`, `RegisterPage.test.tsx` (mutlu yol + validasyon hataları), `authSlice.test.ts`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
+### D-03.1 — QR Kod ile Giriş ⬜
+**Referans:** A-03.1 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3.1
+> `LoginPage`'e eklenen "QR ile giriş" sekmesi/linki — mobil uygulaması olan ama şifresini
+> hatırlamayan ya da yalnızca Google/Apple ile kayıtlı (`PasswordHash` yok) kullanıcılar için.
+- [ ] **Tip:** `QrGenerateResponse`, `QrStatusResponse` (`auth.types.ts`'e eklenir)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **RTK Query:** `authApi`'ye eklenir — `generateQr` (mutation), `getQrStatus` (polling query, `pollingInterval: 2000`)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Hook:** `useQrLoginPolling` (durum `Confirmed` olunca `authSlice`'a token yaz + yönlendir; `Expired`/410 olunca QR'ı otomatik yenile)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Component:** `QrLoginPage` (`qrcode.react` ile QR görseli + `pairingCode` gösterimi + "süresi doldu, yenile" durumu)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Route:** `/login/qr` (`App.tsx`, `LoginPage`'den link)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Birim testleri:** `QrLoginPage.test.tsx` (polling mock — Pending→Confirmed geçişi, Expired yenileme)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+
 ### D-04 — Kelime Kartı Komponenti ⬜
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
 > Yeniden kullanılan ortak component — D-05/D-07'de import edilir; kendi RTK Query/route'u yok,

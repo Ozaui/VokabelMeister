@@ -25,6 +25,18 @@ Adım 2 (`/auth/login/verify-otp`): OTP doğrula (3 yanlış → geçersiz) → 
 Eski refresh tek kullanımlık; aynı family'den ikinci kullanım = **replay** → tüm family iptal +
 `SecurityLog: TokenReplay` (bkz. [[Loglama_Domain]]).
 
+### Sosyal Giriş — Apple Platformlar Arası Tutarlılık (not)
+Apple `sub` client bazlı üretilir; web'e Apple girişi eklenirse Apple Developer Console'da web
+Services ID'si mobil Bundle ID'ye **gruplanmalı** (Primary App ID), yoksa aynı kişi için iki ayrı
+hesap açılır. Bugün web'de Apple girişi yok, bu yüzden şimdilik yapılacak kod yok — detay [[Auth_Domain]].
+
+### QR Kod ile Giriş (Steam benzeri, A-03.1 — planlı)
+Ayrı bir kimlik doğrulama sistemi **değil** — zaten mobilde giriş yapmış kullanıcının web/masaüstü
+oturumunu onaylamasıdır; onaylanınca yukarıdaki **aynı** `ITokenService`/`RefreshTokens` akışı
+çalışır. `QrTokenHash` (SHA-256, ham token DB'de tutulmaz) + `PairingCode` (4 haneli, kullanıcı
+gözle karşılaştırır — relay/phishing savunması, DB sızıntısından bağımsız). Süre: 2dk, rate limit:
+IP başına 20/saat. `SecurityLog: QrLoginConfirmed/QrLoginDenied`. Detay → [[Auth_Domain]].
+
 ## Yetkilendirme (RBAC)
 İki rol: `User`/`Admin`. `[Authorize(Roles="Admin")]` sistem içeriği CRUD'unda, `[Authorize]`
 okuma/genel erişimde. Kaynak yetkisi: `UserId` filtresiyle — detay [[Roller_ve_Erisim]].

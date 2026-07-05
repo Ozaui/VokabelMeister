@@ -27,10 +27,27 @@ imkanı vardır — örn. bir admin başka bir kullanıcıyı oluşturursa `Crea
 olur; self-servis kayıtta `null` kalır.
 
 ## Planlanan Kod (A-03)
-`User`, `RefreshToken` entity + `OtpPurpose` enum → `IPasswordService`, `ITokenService`,
-`IAuthService` (register/verify-email/login 2-adım OTP/google/apple/refresh/logout/
-forgot-reset-password/delete-account) → `AuthController` (13 endpoint) — detay [[API_Sozlesmesi]]
-ve `docs/REFERENCE/API_ENDPOINTS.md §3`.
+`User`, `RefreshToken` entity (**yazıldı**, A-03'ün ilk parçası — bkz. `API_YOL_HARITASI/A-03_auth-api.html`)
++ `OtpPurpose` enum → `IPasswordService`, `ITokenService`, `IAuthService` (register/verify-email/
+login 2-adım OTP/google/apple/refresh/logout/forgot-reset-password/delete-account) → `AuthController`
+(13 endpoint) — detay [[API_Sozlesmesi]] ve `docs/REFERENCE/API_ENDPOINTS.md §3`.
+
+## QrLoginSessions (A-03.1 — planlı, henüz kod yok)
+Steam benzeri "QR kod ile giriş": mobilde zaten giriş yapmış kullanıcı, web/masaüstünde gösterilen
+QR'ı okutup onaylar. **Ayrı bir kimlik doğrulama sistemi değildir** — onaylanınca yukarıdaki
+`ITokenService` çağrılır, `RefreshTokens`'a aynı şekilde yazılır. Alanlar: `QrTokenHash` (SHA-256,
+`RefreshTokens.TokenHash` ile aynı desen), `PairingCode` (4 haneli, DB'den bağımsız relay/phishing
+savunması — mobil onay ekranında gösterilip web ekranındakiyle gözle karşılaştırılır), `Status`
+(`Pending→Scanned→Confirmed→Consumed` veya `Denied`/`Expired`). Detay → `DATABASE_SCHEMA/Auth.md`,
+[[Guvenlik_Politikalari]].
+
+## Apple Sosyal Giriş — Platformlar Arası Tutarlılık (not, kod değişikliği gerektirmiyor)
+Apple `sub` (AppleId) client bazında (Bundle ID/Services ID) farklı üretilir. Mobil ve ileride
+eklenecek web Apple girişi Apple Developer Console'da **gruplanmadan** (web Services ID'nin
+Primary App ID'si mobil Bundle ID olarak seçilmeden) eklenirse, aynı kişi için iki ayrı hesap
+açılır. Bu bir Apple Developer portal ayarıdır, `User`/`RefreshToken` şemasında hiçbir karşılığı
+yok. Şu an web'de Apple girişi zaten **yok** (bkz. [[Sistem_Mimarisi]]); mobilde Apple ile kayıt
+olan biri bugün web'e (a) `forgot-password` ile şifre belirleyip veya (b) QR ile giriş yapabilir.
 
 ### Referans Kod (henüz yazılmadı, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6`'dan)
 - **`ITokenService`/`JwtTokenService`:** `GenerateAccessToken(User)` (claims: NameIdentifier/

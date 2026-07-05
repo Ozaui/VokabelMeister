@@ -54,6 +54,35 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 //         "user": { "id": 1, "currentLevel": "A1" }, "accountWasRecovered": false }
 ```
 
+### 3.1 QR Kod ile Giriş
+
+> Steam benzeri akış: web/masaüstü tarafı QR üretir, zaten mobilde giriş yapmış kullanıcı okutup
+> onaylar. **Ayrı bir kimlik doğrulama mekanizması değildir** — onaylanınca `/auth/login/verify-otp`
+> ile aynı `ITokenService` çalışır, aynı `RefreshTokens` tablosuna yazılır (bkz. `REFERENCE/SECURITY.md §1.3`).
+
+| Metot | Yol | Auth | Açıklama |
+|-------|-----|------|----------|
+| POST | `/auth/qr/generate` | Anonim | Web/masaüstü çağırır → `{ qrToken, pairingCode, expiresIn }` |
+| GET | `/auth/qr/{token}/status` | Anonim | Polling (~2sn); `Confirmed` ilk okunduğunda tek seferlik `{ accessToken, refreshToken, user }` döner, sonra `Consumed` |
+| POST | `/auth/qr/{token}/scan` | [Authorize] | Mobil kamerayla okuyunca çağırır → `{ requesterDeviceInfo, requesterIp, pairingCode }` (onay ekranı için) |
+| POST | `/auth/qr/{token}/confirm` | [Authorize] | Kullanıcı mobilde "Onayla" der |
+| POST | `/auth/qr/{token}/deny` | [Authorize] | Kullanıcı mobilde "Reddet" der |
+
+```json
+// POST /auth/qr/generate → 200
+{ "qrToken": "b64-rastgele-64byte", "pairingCode": "4821", "expiresIn": 120 }
+// Web bu qrToken'ı bir deep-link'e gömüp QR görseline çevirir: vokabelmeister://qr-login?token=...
+
+// POST /auth/qr/{token}/scan → 200 (mobil onay ekranını doldurur)
+{ "requesterDeviceInfo": "Chrome 126 / Windows", "requesterIp": "88.12.34.56", "pairingCode": "4821" }
+// Mobil ekranda "4821" gösterilir — kullanıcı web ekranındaki kodla KARŞILAŞTIRIR, eşleşmiyorsa reddeder.
+
+// GET /auth/qr/{token}/status → 200 (Confirmed olduğunda, TEK SEFERLİK)
+{ "status": "Confirmed", "accessToken": "eyJ...", "refreshToken": "eyJ...", "expiresIn": 900,
+  "user": { "id": 1, "currentLevel": "A1" } }
+// Sonraki sorguda: 410 Gone (zaten tüketildi)
+```
+
 ---
 
 ## 4. Kullanıcı (`/users/me`)

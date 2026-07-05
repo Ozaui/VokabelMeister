@@ -17,7 +17,7 @@
 
 | Domain | Ana Tablolar | Dosya |
 |--------|--------------|-------|
-| Kimlik doğrulama | `Users`, `RefreshTokens` | `DATABASE_SCHEMA/Auth.md` |
+| Kimlik doğrulama | `Users`, `RefreshTokens`, `QrLoginSessions` | `DATABASE_SCHEMA/Auth.md` |
 | Sistem içeriği | `Languages`, `WordConcepts`, `Words`, `WordDetails`, `WordExamples`, `Categories`, `CategoryTranslations`, `WordCategories` | `DATABASE_SCHEMA/Icerik.md` |
 | Kişisel içerik | `UserCards`, `UserCardExamples`, `UserCategories`, ara tablolar | `DATABASE_SCHEMA/Kisisel_Icerik.md` |
 | SRS / ilerleme | `UserProgress`, `UserCardProgress`, `LearningSessions`, `LearningHistory`, `Achievements` | `DATABASE_SCHEMA/SRS.md` |
@@ -29,6 +29,7 @@
 
 ```
 Users ─┬─ RefreshTokens (1:N)
+       ├─ QrLoginSessions (1:N, SET NULL — taranmadan önce UserId boş olabilir)
        ├─ UserProgress (1:N) ── Words
        ├─ UserCards (1:N) ─┬─ UserCardProgress (1:N)
        │                   ├─ UserCardExamples (1:N)

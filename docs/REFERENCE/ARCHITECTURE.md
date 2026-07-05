@@ -20,9 +20,9 @@
 ```
 
 **Üç istemci, tek API:**
-- **Mobil (`/mobile`):** Google + Apple + e-posta. Token → Expo Secure Store.
-- **Web (`/web`):** Google + e-posta (Apple ileriye bırakıldı). Token → localStorage.
-- **Admin (`/admin`):** Yalnızca e-posta + şifre (Google/Apple yok). Yalnızca `Admin` rolü.
+- **Mobil (`/mobile`):** Google + Apple + e-posta + **QR tarayıcı** (web/masaüstü oturumu onaylama). Token → Expo Secure Store.
+- **Web (`/web`):** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. `SECURITY.md §1.2`). Token → localStorage.
+- **Admin (`/admin`):** Yalnızca e-posta + şifre (Google/Apple/QR yok — küçük/güvenilir kullanıcı tabanı). Yalnızca `Admin` rolü.
 
 ## 2. Geliştirme Sırası
 
@@ -102,6 +102,12 @@ Tam tablo listesi → `DATABASE_SCHEMA.md`.
 ## 8. Kullanım Akışları (özet)
 
 **İlk kayıt:** Kayıt (e-posta+şifre) → e-posta doğrulama OTP → seviye seçimi → ana ekran.
+
+**QR ile giriş (web/masaüstü):** Web `/auth/qr/generate` çağırır, QR gösterir → mobilde zaten giriş
+yapmış kullanıcı kamerayla okutur (`/auth/qr/{token}/scan`) → mobil ekranda cihaz bilgisi + eşleşme
+kodu görüp onaylar (`/auth/qr/{token}/confirm`) → web arka planda `status` sorgulayıp (polling) aynı
+`ITokenService`'in ürettiği access+refresh token'ı alır, normal login ile birebir aynı şekilde oturum
+açılır. Ayrıntı → `REFERENCE/SECURITY.md §1.3`, `DATABASE_SCHEMA/Auth.md` (`QrLoginSessions`).
 
 **Öğrenme:** "Öğren" → filtre (seviye/kategori/tür) → SRS sıralaması → kart → cevap → XP → sonraki
 review hesaplanır.

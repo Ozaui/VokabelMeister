@@ -39,6 +39,13 @@ Apple__BundleId=com.vokabelmeister.app
 ```
 Apple Developer → Identifiers → Bundle ID. JWKS `https://appleid.apple.com/auth/keys`'ten dinamik çekilir.
 
+> **İleride web/masaüstüne Apple girişi eklenirse (şu an YOK, bkz. `ARCHITECTURE.md §1`):** Yeni bir
+> `Apple__ServicesId` değişkeni gerekecek — ama önce Apple Developer Console'da bu Services ID,
+> "Sign in with Apple → Configure" adımında mobil uygulamanın Bundle ID'sine **Primary App ID**
+> olarak gruplanmalı. Aksi halde Apple aynı gerçek kullanıcı için mobil ve web'de **farklı `sub`**
+> (kullanıcı kimliği) döner ve iki ayrı hesap açılır (bkz. `REFERENCE/SECURITY.md §1.2`). Bugün için
+> yapılacak bir şey yok — bu not yalnızca o iş başladığında unutulmaması için.
+
 ## 5. SMTP Şifreleme Anahtarı (AES)
 ```
 AES_ENCRYPTION_KEY=K5v2XmP9qR8nW3jL6tH1cB4yE7uA0oD+N2sF5gM=    # 32 byte, Base64

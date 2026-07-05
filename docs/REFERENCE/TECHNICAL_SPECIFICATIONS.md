@@ -42,9 +42,10 @@
 # Web (/web)
 npm create vite@latest web -- --template react-ts && cd web
 npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom @react-oauth/google
+npm i qrcode.react   # QR kod ile giriş — web tarafı QR görselini bundan üretir
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
-# Admin (/admin) — Google/Apple yok
+# Admin (/admin) — Google/Apple yok, QR ile giriş de yok (küçük/güvenilir kullanıcı tabanı)
 npm create vite@latest admin -- --template react-ts && cd admin
 npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
@@ -52,9 +53,10 @@ npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 # Mobil (/mobile)
 npx create-expo-app mobile --template expo-template-blank-typescript && cd mobile
 npm i @reduxjs/toolkit react-redux axios react-hook-form i18next react-i18next
-npx expo install expo-secure-store expo-av expo-image-picker expo-apple-authentication
+npx expo install expo-secure-store expo-av expo-image-picker expo-apple-authentication expo-camera
 npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/stack
 npm i @react-native-google-signin/google-signin
+# expo-camera: QR ile giriş — mobil taraf web'de gösterilen QR'ı bununla okur (barcode scanning)
 ```
 
 ## 3. appsettings.json
@@ -68,9 +70,12 @@ npm i @react-native-google-signin/google-signin
   "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
   "Jwt": { "SecretKey": "MIN_32_KARAKTER", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp",
            "ExpirationMinutes": 15, "RefreshTokenExpirationDays": 7 },
-  "Cors": { "AllowedOrigins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:8081"] }
+  "Cors": { "AllowedOrigins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:8081"] },
+  "QrLogin": { "ExpirationSeconds": 120 }
 }
 ```
+> **Not:** `QrLogin.ExpirationSeconds` hassas değil (gizli anahtar değil) — bu yüzden `ENV.md`'ye değil
+> doğrudan `appsettings.json`'a yazılır, ortama göre değişmesi gerekirse override edilir.
 
 ## 4. BaseEntity (tamamlandı — A-02 ✅)
 

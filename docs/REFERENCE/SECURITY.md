@@ -37,6 +37,68 @@ ADIM 2 — POST /auth/login/verify-otp { email, otpCode }
 Eski refresh tek kullanımlık → kullanılınca geçersiz. Aynı family'den ikinci kullanım = **replay** →
 tüm family iptal (`SecurityLog: TokenReplay`).
 
+### 1.2 Sosyal Giriş (Google/Apple) — Platformlar Arası Tutarlılık
+
+Google/Apple girişinde `PasswordHash` NULL kalır; `AuthProvider` ilgili değere set edilir, `GoogleId`/
+`AppleId` benzersiz kullanıcı kimliğini tutar.
+
+**Apple'a özgü risk:** Apple, kullanıcı kimliğini (`sub`) **client bazında** (Bundle ID/Services ID)
+farklı üretir. Mobil uygulama (Bundle ID) ile ileride eklenecek web (Services ID) gruplanmazsa, aynı
+gerçek kişi için Apple iki farklı `sub` döner → sistemde yanlışlıkla iki ayrı hesap açılır.
+**Önlem (kod değil, Apple Developer Console ayarı):** Web için Services ID oluşturulurken
+"Sign in with Apple → Configure" adımında mobil uygulamanın App ID'si **Primary App ID** olarak
+seçilmeli (grouping) — bu adım atılmadan web'e Apple girişi asla eklenmemeli. Şu an
+(`REFERENCE/ARCHITECTURE.md §1`) Apple girişi **kasıtlı olarak yalnızca mobilde** var; bu grouping
+işlemi yalnızca web/masaüstüne Apple girişi eklendiğinde gerekli olacak, bugün yapılacak bir kod
+değişikliği yok.
+
+**Peki mobilde Apple ile kayıt olan biri bugün web'e nasıl girer?** İki yol:
+1. `forgot-password` akışı (`§7`) `PasswordHash`'in önceden var olup olmadığına bakmaz — sosyal
+   girişli bir hesap da OTP doğrulayıp yeni şifre belirleyebilir, ardından web'de e-posta+şifre ile
+   girer. **Bu davranış kasıtlıdır** — ileride biri "AuthProvider != Local ise forgot-password'u
+   reddet" gibi bir kısıtlama eklemeye kalkarsa bu köprü kırılır, eklenmemeli.
+2. Aşağıdaki **QR Kod ile Giriş** — hiç şifre belirlemeden, zaten mobilde açık olan oturumla web'e girer.
+
+### 1.3 QR Kod ile Giriş (Steam benzeri — "aynı token sistemine bağlanan yeni bir giriş yöntemi")
+
+QR girişi ayrı bir kimlik doğrulama mekanizması **DEĞİLDİR** — yalnızca kullanıcının kimliğini
+kanıtlama yöntemidir (şifre/OTP yerine "zaten mobilde giriş yapmış olmak"). Onaylandığında normal
+login'deki **AYNI** `ITokenService`/`RefreshTokens` akışı çalışır (Token Family Pattern dahil).
+
+```
+ADIM 1 — POST /auth/qr/generate (Anonim, web/masaüstü çağırır)
+   ├─ Rastgele token (RefreshToken üretimiyle aynı yöntem) + SHA-256 hash'i DB'ye
+   ├─ 4 haneli PairingCode üretilir (kullanıcı gözle karşılaştırsın diye)
+   ├─ ExpiresAt = +2 dakika · Rate limit: IP başına 20/saat
+   └─ Yanıt: { qrToken, pairingCode, expiresIn: 120 }  (qrToken QR görsel/deep-link içine gömülür, DB'de yalnızca hash'i durur)
+
+ADIM 2 — Mobil kamerayla QR'ı okur → POST /auth/qr/{token}/scan  [Authorize]
+   ├─ Token hash + süre doğrula · Status Pending değilse 410 Gone
+   ├─ Status → Scanned, UserId = mevcut JWT'deki kullanıcı, ScannedAt
+   └─ Yanıt: { requesterDeviceInfo, requesterIp, pairingCode } ← mobil ekranda gösterilir, kullanıcı web ekranındakiyle KARŞILAŞTIRIR
+
+ADIM 3a — Kullanıcı mobilde onaylar → POST /auth/qr/{token}/confirm  [Authorize]
+   ├─ Bu QR'ın Status=Scanned + UserId = çağıran kullanıcı mı doğrula
+   └─ Status → Confirmed, ConfirmedAt · SecurityLog: QrLoginConfirmed
+ADIM 3b — Kullanıcı reddeder → POST /auth/qr/{token}/deny  [Authorize]
+   └─ Status → Denied · SecurityLog: QrLoginDenied (tekrarlıysa phishing sinyali)
+
+ADIM 4 — Web taraf ~2 saniyede bir GET /auth/qr/{token}/status (Anonim, polling)
+   ├─ Status='Confirmed' İLK okunduğunda: normal login'deki AYNI TokenService ile access+refresh
+   │  token üretilir, RefreshTokens tablosuna yazılır — QR girişi burada normal login'le birleşir,
+   │  ayrı bir token mekanizması YOKTUR
+   ├─ Bu okumadan sonra Status → Consumed (token'lar yalnızca BİR kez döner)
+   └─ Consumed sonrası tekrar sorgulanırsa 410 Gone
+```
+**Güvenlik notları:**
+- `QrTokenHash` DB sızıntısına karşı (ham token asla saklanmaz — `PasswordService.HashToken` ile aynı yöntem).
+- `PairingCode`, DB sızıntısından bağımsız bir savunma hattı: saldırgan kendi ürettiği bir QR'ı
+  kurbana okutup (relay/phishing saldırısı) oturumu ele geçirmeye çalışırsa, web ekranındaki kod
+  mobildeki onay ekranında gösterilenle **eşleşmez** — kullanıcı fark edip reddeder.
+- Onay **otomatik değildir**: tarama (scan) ile onay (confirm) iki ayrı adımdır; kullanıcı cihaz/IP
+  bilgisini görüp bilinçli onaylar (Steam mobil uygulamasının kullandığı desen).
+- `SecurityLog` yeni event tipleri: `QrLoginConfirmed`, `QrLoginDenied` (bkz. `§6`).
+
 ## 2. Yetkilendirme (RBAC)
 
 İki rol: `User` (varsayılan, herkes) ve `Admin` (elle atanır). Hiçbir public endpoint rol yükseltemez.
@@ -89,7 +151,7 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 |-------|--------|-------------|
 | `ApplicationLog` | Serilog (`_logger`) + MSSqlServer sink | Hata/uyarı/info (teknik) — konsol + dosya + DB |
 | `ActivityLog` | `IActivityLogger` servisi | Audit: login, register, kelime/kart oluştur-sil, rol değiştir, hesap dondur (old/new JSON) |
-| `SecurityLog` | `ISecurityLogger` servisi | LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess, TokenReplay |
+| `SecurityLog` | `ISecurityLogger` servisi | LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess, TokenReplay, QrLoginConfirmed, QrLoginDenied |
 
 **PII kuralı:** Loglarda ham e-posta saklanmaz → `SHA-256(email)` (EmailHash). Şifre/token asla loglanmaz.
 Gerçek zamanlı uyarı gereken olaylar (çoklu başarısız giriş, admin erişimi) ayrıca Serilog warning'i tetikleyebilir.

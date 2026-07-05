@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı — sıradaki A-03 Auth API); henüz hiçbir feature entity/Controller yazılmadı. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `User`/`RefreshToken` entity yazıldı, sırada `IPasswordService`). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -34,6 +34,12 @@
 - [[Middleware]] — `ExceptionHandlingMiddleware` / `SecurityHeadersMiddleware` / `RequestResponseLoggingMiddleware`
 - [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 10 birim test (hepsi yeşil, İngilizce isimlendirme)
 - [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
+
+### Yazılmış Kod Düğümleri (A-03 — devam ediyor)
+- `User`/`RefreshToken` entity + `OtpPurpose` enum, `UserConfiguration`/`RefreshTokenConfiguration`
+  (Fluent API), `AddUserAndRefreshToken` migration (VokabelMeisterDB'ye uygulandı) — detay bir kod
+  sayfası yerine [[Auth_Domain]]'de (şema açıklaması zaten birebir bu koda karşılık geliyor) ve
+  `API_YOL_HARITASI/A-03_auth-api.html`'de (birebir kod + junior açıklaması). Sırada `IPasswordService`.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
@@ -233,3 +239,24 @@ notu güncellendi (artık üç dilin de kaynağına işaret ediyor). Wiki: yeni 
 [[Alman_Dili_Ozellikleri]]'ndeki çapraz linkler güncellendi. Mimari değişiklik yok — `GrammarData`
 zaten `Words.LanguageId`'ye göre şekil değiştiren bir JSON alanıydı (dokuzuncu INGEST'te kuruldu), bu
 yalnızca eksik olan dil içeriğini (Türkçe/İngilizce şeması) tamamladı.*
+
+*On birinci INGEST (2026-07-05) — A-03 başladı (`User`/`RefreshToken` entity + migration) + iki yeni
+tasarım kararı: **(1) Apple platformlar arası tutarlılık:** Kullanıcı "mobilde Apple ile kayıt olan
+biri web'de nasıl giriş yapar?" sorusunu sordu — Apple'ın kullanıcı kimliğini (`sub`) client bazında
+(Bundle ID/Services ID) ürettiği, gruplanmazsa aynı kişi için iki hesap açılacağı ortaya çıktı.
+Çözüm bir Apple Developer Console ayarı (web Services ID'yi mobil Bundle ID'ye Primary App ID olarak
+gruplama) — kod tarafında hiçbir karşılığı yok, `REFERENCE/ENV.md §4`'e ileriye dönük not eklendi.
+Bugünkü pratik cevap: (a) `forgot-password` akışı `PasswordHash`'in var olup olmadığına bakmaz, sosyal
+girişli hesaplar da şifre belirleyip web'de girebilir (kasıtlı davranış, bozulmamalı) — (b) aşağıdaki
+QR girişi. **(2) QR Kod ile Giriş (Steam benzeri) eklendi — yeni task A-03.1:** Ayrı bir kimlik
+doğrulama sistemi değil, A-03'teki `ITokenService`'e bağlanan yeni bir "kimliği kanıtlama yöntemi".
+Yeni tablo `QrLoginSessions` (`QrTokenHash` SHA-256 + `PairingCode` 4 haneli — ikinci bir savunma
+katmanı, DB sızıntısından bağımsız relay/phishing önlemi; `Status`: Pending→Scanned→Confirmed→Consumed
+veya Denied/Expired) `DATABASE_SCHEMA/Auth.md`'ye eklendi. 5 yeni endpoint (`REFERENCE/API_ENDPOINTS.md
+§3.1`), güvenlik akışı (`REFERENCE/SECURITY.md §1.2-1.3`), `SecurityLog` yeni event tipleri
+(`QrLoginConfirmed`/`QrLoginDenied`, `DATABASE_SCHEMA/Loglama.md`), npm paketleri (`qrcode.react` web,
+`expo-camera` mobil, `REFERENCE/TECHNICAL_SPECIFICATIONS.md`), `docs/TASK/A_admin_panel_backend.md`
+(yeni A-03.1 bölümü), `docs/TASK/D_web_app.md` (D-03.1), `docs/TASK/E_mobil.md` (E-05.1). Henüz hiç
+kod yazılmadı (yalnızca tasarım/dokümantasyon) — mevcut `User`/`RefreshToken`/migration kodunda hiçbir
+değişiklik gerekmedi, ikisi de tamamen ek/yeni. [[Auth_Domain]], [[Guvenlik_Politikalari]],
+[[Sistem_Mimarisi]] güncellendi.*

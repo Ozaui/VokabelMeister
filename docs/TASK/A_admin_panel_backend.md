@@ -59,6 +59,29 @@
 > loglama altyapısı hazır olduktan **sonra** eklenir — A-03 bu adıma kadar log'suz tamamlanmış sayılır,
 > A-04 bitince AuthService'e kısa bir entegrasyon dönüşü yapılır (tek istisna, kuralın bilinçli ihlali).
 
+### A-03.1 — QR Kod ile Giriş ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3, DATABASE_SCHEMA/Auth.md (`QrLoginSessions`)
+**Frontend karşılığı:** D-03 (Web — QR ekranı, `qrcode.react` ile görselleştirme), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
+> 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e D-03/E-05'in dosyaları eklenir (iki yönlü).
+> **A-03 tamamlandıktan sonra** yapılır çünkü `User`/`ITokenService`/`IAuthService` (özellikle token
+> üretim mantığı) buna bağımlı — QR girişi **ayrı bir kimlik doğrulama sistemi değil**, onaylandığında
+> A-03'te yazılan `ITokenService`'i çağıran yeni bir "kimliği kanıtlama yöntemi"dir (bkz. `SECURITY.md §1.3`).
+> Admin panelde (Faz B) **yok** — yalnızca Web (D) ve Mobil (E).
+- [ ] **Entity:** `QrLoginSession` + `QrLoginStatus` enum + EF config + migration
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] `IQrLoginService` + `QrLoginService`: `GenerateAsync` (token+hash+pairingCode+expiry), `ScanAsync`
+      (Pending→Scanned, UserId set), `ConfirmAsync`/`DenyAsync` (sahiplik kontrolü), `GetStatusAsync`
+      (Confirmed→ITokenService ile token üret→Consumed'a geçir, tek seferlik döndür)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] `QrLoginController`: `POST /auth/qr/generate` (Anonim), `GET /auth/qr/{token}/status` (Anonim,
+      polling), `POST /auth/qr/{token}/scan` `/confirm` `/deny` ([Authorize]) + rate limiting (generate: IP başına 20/saat)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] **Birim testleri:** `QrLoginServiceTests` (mutlu yol, süresi dolmuş token, yanlış kullanıcı
+      confirm denemesi 403, Consumed sonrası tekrar okuma 410, pairingCode üretimi)
+- [ ] ➜ **API Yol Haritası'na işle**
+> **Not:** `SecurityLog` (QrLoginConfirmed/QrLoginDenied) entegrasyonu A-03'teki auth akışlarıyla aynı
+> sebeple A-04'ten sonra eklenir (bkz. A-03'ün notu).
+
 ### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
 **Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)

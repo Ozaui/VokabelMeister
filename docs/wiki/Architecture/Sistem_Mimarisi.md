@@ -12,9 +12,9 @@ React Web App (/web)    ─┼─ HTTPS/TLS 1.3 → .NET 9 Web API → MS SQL Se
 React Admin (/admin)    ─┘
 ```
 
-- **Mobil:** Google + Apple + e-posta girişi. Token → Expo Secure Store.
-- **Web:** Google + e-posta (Apple ileriye bırakıldı). Token → localStorage.
-- **Admin:** Yalnızca e-posta + şifre (sosyal giriş yok). Yalnızca `Admin` rolü erişebilir.
+- **Mobil:** Google + Apple + e-posta + **QR tarayıcı** (web/masaüstü oturumunu onaylama). Token → Expo Secure Store.
+- **Web:** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. [[Guvenlik_Politikalari]]). Token → localStorage.
+- **Admin:** Yalnızca e-posta + şifre (sosyal giriş/QR yok). Yalnızca `Admin` rolü erişebilir.
 
 Backend içi katman akışı: `Controllers → Services → Repositories` → detay [[Backend_Katmanli_Mimari]].
 

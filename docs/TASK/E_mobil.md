@@ -37,6 +37,21 @@
 - [ ] **Birim testleri:** `LoginScreen.test.tsx`, `authSlice.test.ts`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
+### E-05.1 — QR Kod Tarayıcı (Web/Masaüstü Oturumu Onaylama) ⬜
+**Referans:** A-03.1 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3.1
+> `LoginScreen`'e (veya profil menüsüne) eklenen "QR ile giriş yap" girişi — kullanıcı zaten mobilde
+> giriş yapmış olmalı ([Authorize] gerektirir), web/masaüstünde açılan QR'ı okutup onaylar.
+- [ ] **Tip:** `QrScanResponse` (`types/auth.ts`'e eklenir)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **RTK Query:** `authApi`'ye eklenir — `scanQr`, `confirmQr`, `denyQr` mutation'ları
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Component (Ekran):** `QrScannerScreen` (`expo-camera` barcode scanning — deep link'ten token çıkarır, `scanQr` çağırır), `QrConfirmScreen` (cihaz bilgisi + `pairingCode` gösterimi, "Onayla"/"Reddet")
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Route:** `MainTabNavigator`'a ekran kaydı (profil menüsünden erişim)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+- [ ] **Birim testleri:** `QrConfirmScreen.test.tsx` (pairingCode render, onayla/reddet akışı)
+- [ ] ➜ **Frontend Yol Haritası'na işle**
+
 ### E-06 — Kelime Kartı Komponenti ⬜ *(+ ses/görsel/IPA)*
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
 > Web'deki D-04 `SystemWordCard`/`PersonalCard` ile aynı veri şekli; mobil'e özgü ek: ses çalma

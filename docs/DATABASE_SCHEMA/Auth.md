@@ -74,3 +74,41 @@ CREATE TABLE RefreshTokens (
     INDEX IX_RefreshTokens_TokenHash (TokenHash), INDEX IX_RefreshTokens_TokenFamily (TokenFamily)
 );
 ```
+
+### QrLoginSessions
+
+> **Amaç:** Steam benzeri "QR kod ile giriş" — zaten mobilde giriş yapmış bir kullanıcı, web/masaüstü
+> tarafında gösterilen QR kodu telefonundan okutup onaylayarak o cihazda giriş yapar. Web tarafı hiç
+> şifre/OTP görmez; mobil taraf zaten JWT'siyle `[Authorize]` olduğu için işlemi onaylar.
+> Ayrıca yalnızca Google/Apple ile kayıt olmuş (`PasswordHash IS NULL`) bir kullanıcının web'de giriş
+> yapabilmesinin **şifresiz** yolu budur (bkz. `REFERENCE/SECURITY.md §1.3`).
+
+```sql
+CREATE TABLE QrLoginSessions (
+    Id INT PRIMARY KEY IDENTITY,
+    QrTokenHash VARCHAR(88) NOT NULL,        -- SHA-256(token) — ham token yalnızca QR/URL içinde, DB'de asla saklanmaz
+    PairingCode CHAR(4) NOT NULL,            -- web ekranında + mobil onay ekranında gösterilir; kullanıcı gözle karşılaştırır (relay/phishing önlemi)
+    Status NVARCHAR(20) NOT NULL DEFAULT 'Pending',  -- Pending|Scanned|Confirmed|Consumed|Denied|Expired
+    UserId INT NULL,                         -- taranana kadar boş; QR'ı okutan kullanıcı ile doldurulur
+    RequesterIp VARCHAR(45) NULL,            -- QR'ı isteyen (web/masaüstü) tarafın IP'si
+    RequesterDeviceInfo NVARCHAR(500) NULL,  -- QR'ı isteyen tarafın User-Agent'ı (ör. "Chrome 126 / Windows")
+    ScannedAt DATETIME2 NULL,
+    ConfirmedAt DATETIME2 NULL,
+    ExpiresAt DATETIME2 NOT NULL,             -- kısa ömür (2 dakika) — REFERENCE/SECURITY.md §1.3
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME2 NULL,
+    IsDeleted BIT NOT NULL DEFAULT 0,
+    DeletedAt DATETIME2 NULL,
+    CreatedByUserId INT NULL, UpdatedByUserId INT NULL, DeletedByUserId INT NULL,
+    FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL,
+    CONSTRAINT CK_QrLoginSessions_Status CHECK (Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')),
+    INDEX IX_QrLoginSessions_QrTokenHash (QrTokenHash), INDEX IX_QrLoginSessions_ExpiresAt (ExpiresAt)
+);
+```
+> **`QrLoginStatus` enum (Domain/Enums):** `Pending, Scanned, Confirmed, Consumed, Denied, Expired`.
+> **Neden hash + pairing code ikisi birden:** `QrTokenHash` DB sızıntısına karşı (RefreshToken'daki
+> `TokenHash` ile aynı mantık); `PairingCode` ise DB'ye hiç bağlı olmayan bir saldırıya karşı —
+> saldırgan kendi ürettiği bir QR'ı kurbana okutup (relay/phishing) oturumunu onaylatmaya çalışırsa,
+> web ekranındaki 4 haneli kod mobildeki onay ekranında gösterilenle **eşleşmez**, kullanıcı fark eder.
+> **Kalıcılık:** Süresi dolan/kullanılan kayıtlar silinmez (audit); `ExpiresAt` geçmişse okuma anında
+> `Expired` olarak yorumlanır — ayrı bir temizlik görevi şimdilik yazılmaz (YAGNI, ihtiyaç doğarsa F fazında eklenir).

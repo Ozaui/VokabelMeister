@@ -60,4 +60,4 @@ CREATE TABLE SecurityLog (
 ```
 
 **`LogEventType` enum (Domain/Enums):** `LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess,
-TokenReplay, PasswordReset, AccountDeletion, AdminAction`.
+TokenReplay, PasswordReset, AccountDeletion, AdminAction, QrLoginConfirmed, QrLoginDenied`.
