@@ -13,5 +13,5 @@ namespace WordLearner.Application.Common.Exceptions;
 public class AccountNotActiveException : AppException
 {
     public AccountNotActiveException()
-        : base("HESAP_DONDURULMUS", "Login denemesi: hesap dondurulmuş (IsActive=false).") { }
+        : base("ACCOUNT_SUSPENDED", "Login attempt: account suspended (IsActive=false).") { }
 }

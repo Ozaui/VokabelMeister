@@ -48,11 +48,11 @@ public class ExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları Türkçe; exception detayı
+            // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları İngilizce; exception detayı
             //        (stack trace) yalnızca ApplicationLog'a (A-04'te DB sink) gider, istemciye asla.
             _logger.LogError(
                 ex,
-                "İşlenmemiş hata yakalandı: {Method} {Path}",
+                "Unhandled exception caught: {Method} {Path}",
                 context.Request.Method,
                 context.Request.Path
             );
@@ -74,15 +74,15 @@ public class ExceptionHandlingMiddleware
     {
         var (statusCode, code) = ex switch
         {
-            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI"),
+            EntityNotFoundException => (HttpStatusCode.NotFound, "NOT_FOUND"),
             AppException appEx => (StatusCodeFor(appEx), appEx.Code),
-            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI"),
+            _ => (HttpStatusCode.InternalServerError, "INTERNAL_SERVER_ERROR"),
         };
 
         // NEDEN: EntityNotFoundException'ın mesajı dinamiktir (entity adı içerir),
         //        doğrudan ex.Message kullanılır. AppException'lar Code üzerinden
-        //        isteğin diline göre çözülür. SUNUCU_HATASI ise hiçbir zaman gerçek
-        //        exception mesajını sızdırmaz, sabit bir metin döner.
+        //        isteğin diline göre çözülür. INTERNAL_SERVER_ERROR ise hiçbir zaman
+        //        gerçek exception mesajını sızdırmaz, sabit bir metin döner.
         var message = ex switch
         {
             EntityNotFoundException => ex.Message,

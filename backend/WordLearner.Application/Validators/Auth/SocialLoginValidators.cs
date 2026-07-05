@@ -17,7 +17,7 @@ public class GoogleLoginRequestValidator : AbstractValidator<GoogleLoginRequest>
 {
     public GoogleLoginRequestValidator()
     {
-        RuleFor(x => x.IdToken).NotEmpty().WithMessage("Token boş olamaz.").WithErrorCode("TOKEN_ZORUNLU");
+        RuleFor(x => x.IdToken).NotEmpty().WithMessage("Token must not be empty.").WithErrorCode("TOKEN_REQUIRED");
     }
 }
 
@@ -27,7 +27,7 @@ public class AppleLoginRequestValidator : AbstractValidator<AppleLoginRequest>
     {
         RuleFor(x => x.IdentityToken)
             .NotEmpty()
-            .WithMessage("Token boş olamaz.")
-            .WithErrorCode("TOKEN_ZORUNLU");
+            .WithMessage("Token must not be empty.")
+            .WithErrorCode("TOKEN_REQUIRED");
     }
 }

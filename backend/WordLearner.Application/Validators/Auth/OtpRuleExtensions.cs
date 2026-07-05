@@ -17,9 +17,9 @@ public static class OtpRuleExtensions
     public static IRuleBuilderOptions<T, string> ValidOtpCode<T>(this IRuleBuilder<T, string> ruleBuilder) =>
         ruleBuilder
             .NotEmpty()
-            .WithMessage("Doğrulama kodu boş olamaz.")
-            .WithErrorCode("OTP_ZORUNLU")
+            .WithMessage("Verification code must not be empty.")
+            .WithErrorCode("OTP_REQUIRED")
             .Matches(@"^\d{6}$")
-            .WithMessage("Doğrulama kodu 6 haneli olmalı.")
-            .WithErrorCode("OTP_FORMAT_GECERSIZ");
+            .WithMessage("Verification code must be 6 digits.")
+            .WithErrorCode("OTP_INVALID_FORMAT");
 }

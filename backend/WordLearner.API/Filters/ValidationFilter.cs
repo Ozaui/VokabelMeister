@@ -11,9 +11,9 @@
 //        çağrısını elle yazmasına gerek kalmaz (ince katman kuralı, CODING_STANDARDS.md §5).
 //        KRİTİK: İstemciye giden mesaj her validation hatasının ErrorMessage'ı
 //        DEĞİL, ErrorCode'udur — ErrorMessage yalnızca validator'ın WithMessage()
-//        ile verdiği sabit TÜRKÇE log/geliştirici açıklamasıdır (AppException.Message
+//        ile verdiği sabit İNGİLİZCE log/DB açıklamasıdır (AppException.Message
 //        ile birebir aynı ayrım). ErrorCode, ErrorMessages sözlüğünden isteğin
-//        Accept-Language'ına göre çözülür — aksi hâlde hata mesajları hep Türkçe
+//        Accept-Language'ına göre çözülür — aksi hâlde hata mesajları hep tek dile
 //        kilitli kalırdı.
 // BAĞIMLILIKLAR: FluentValidation, WordLearner.Application.Common.Localization.ErrorMessages,
 //                WordLearner.Application.Common.Models.ApiErrorResponse.
@@ -65,7 +65,7 @@ public class ValidationFilter : IAsyncActionFilter
 
             if (!result.IsValid)
             {
-                // NEDEN: e.ErrorMessage KULLANILMAZ (sabit Türkçe log metni) — e.ErrorCode
+                // NEDEN: e.ErrorMessage KULLANILMAZ (sabit İngilizce log metni) — e.ErrorCode
                 //        üzerinden ErrorMessages.Resolve ile isteğin diline göre çözülür.
                 var messages = result
                     .Errors.Select(e => ErrorMessages.Resolve(e.ErrorCode, language))
@@ -73,7 +73,7 @@ public class ValidationFilter : IAsyncActionFilter
                 var combinedMessage = string.Join(" ", messages);
 
                 context.Result = new BadRequestObjectResult(
-                    new ApiErrorResponse("GECERSIZ_ISTEK", combinedMessage)
+                    new ApiErrorResponse("INVALID_REQUEST", combinedMessage)
                 );
                 return;
             }

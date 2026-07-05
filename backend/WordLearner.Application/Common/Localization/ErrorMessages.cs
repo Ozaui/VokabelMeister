@@ -24,104 +24,104 @@ public static class ErrorMessages
 
     private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
     {
-        ["GECERSIZ_KIMLIK"] = new()
+        ["INVALID_CREDENTIALS"] = new()
         {
             ["tr"] = "E-posta veya şifre hatalı.",
             ["de"] = "E-Mail oder Passwort ist falsch.",
         },
-        ["GECERSIZ_OTP"] = new()
+        ["INVALID_OTP"] = new()
         {
             ["tr"] = "Girilen kod geçersiz veya süresi dolmuş.",
             ["de"] = "Der eingegebene Code ist ungültig oder abgelaufen.",
         },
-        ["EPOSTA_KAYITLI"] = new()
+        ["EMAIL_ALREADY_REGISTERED"] = new()
         {
             ["tr"] = "Bu e-posta adresi zaten kayıtlı.",
             ["de"] = "Diese E-Mail-Adresse ist bereits registriert.",
         },
-        ["HESAP_DONDURULMUS"] = new()
+        ["ACCOUNT_SUSPENDED"] = new()
         {
             ["tr"] = "Hesabınız dondurulmuş. Lütfen destekle iletişime geçin.",
             ["de"] = "Ihr Konto wurde gesperrt. Bitte wenden Sie sich an den Support.",
         },
-        ["HESAP_SILINMIS"] = new()
+        ["ACCOUNT_DELETED"] = new()
         {
             ["tr"] = "Bu hesap kalıcı olarak silinmiş.",
             ["de"] = "Dieses Konto wurde dauerhaft gelöscht.",
         },
-        ["GECERSIZ_REFRESH_TOKEN"] = new()
+        ["INVALID_REFRESH_TOKEN"] = new()
         {
             ["tr"] = "Oturumunuzun süresi dolmuş. Lütfen tekrar giriş yapın.",
             ["de"] = "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
         },
-        ["GECERSIZ_SOSYAL_TOKEN"] = new()
+        ["INVALID_SOCIAL_TOKEN"] = new()
         {
             ["tr"] = "Sosyal giriş doğrulanamadı.",
             ["de"] = "Die soziale Anmeldung konnte nicht verifiziert werden.",
         },
 
         // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
-        //       WithMessage() ile yalnızca sabit Türkçe bir LOG mesajı taşır — istemciye
+        //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye
         //       giden gerçek mesaj, her kuralın WithErrorCode() ile taşıdığı bu kodlar
         //       üzerinden ValidationFilter tarafından buradan çözülür (AppException ile
-        //       birebir aynı ayrım: log=sabit Türkçe, API yanıtı=dile göre).
-        ["EMAIL_ZORUNLU"] = new()
+        //       birebir aynı ayrım: log=sabit İngilizce, API yanıtı=dile göre).
+        ["EMAIL_REQUIRED"] = new()
         {
             ["tr"] = "E-posta adresi zorunludur.",
             ["de"] = "E-Mail-Adresse ist erforderlich.",
         },
-        ["EMAIL_GECERSIZ"] = new()
+        ["EMAIL_INVALID"] = new()
         {
             ["tr"] = "Geçerli bir e-posta adresi girin.",
             ["de"] = "Geben Sie eine gültige E-Mail-Adresse ein.",
         },
-        ["SIFRE_ZORUNLU"] = new()
+        ["PASSWORD_REQUIRED"] = new()
         {
             ["tr"] = "Şifre zorunludur.",
             ["de"] = "Passwort ist erforderlich.",
         },
-        ["SIFRE_KISA"] = new()
+        ["PASSWORD_TOO_SHORT"] = new()
         {
             ["tr"] = "Şifre en az 12 karakter olmalı.",
             ["de"] = "Das Passwort muss mindestens 12 Zeichen lang sein.",
         },
-        ["SIFRE_BUYUK_HARF_EKSIK"] = new()
+        ["PASSWORD_MISSING_UPPERCASE"] = new()
         {
             ["tr"] = "Şifre en az 1 büyük harf içermeli.",
             ["de"] = "Das Passwort muss mindestens 1 Großbuchstaben enthalten.",
         },
-        ["SIFRE_KUCUK_HARF_EKSIK"] = new()
+        ["PASSWORD_MISSING_LOWERCASE"] = new()
         {
             ["tr"] = "Şifre en az 1 küçük harf içermeli.",
             ["de"] = "Das Passwort muss mindestens 1 Kleinbuchstaben enthalten.",
         },
-        ["SIFRE_RAKAM_EKSIK"] = new()
+        ["PASSWORD_MISSING_DIGIT"] = new()
         {
             ["tr"] = "Şifre en az 1 rakam içermeli.",
             ["de"] = "Das Passwort muss mindestens 1 Ziffer enthalten.",
         },
-        ["SIFRE_OZEL_KARAKTER_EKSIK"] = new()
+        ["PASSWORD_MISSING_SPECIAL_CHAR"] = new()
         {
             ["tr"] = "Şifre en az 1 özel karakter içermeli (!@#$%^&*).",
             ["de"] = "Das Passwort muss mindestens 1 Sonderzeichen enthalten (!@#$%^&*).",
         },
-        ["OTP_ZORUNLU"] = new()
+        ["OTP_REQUIRED"] = new()
         {
             ["tr"] = "Doğrulama kodu zorunludur.",
             ["de"] = "Bestätigungscode ist erforderlich.",
         },
-        ["OTP_FORMAT_GECERSIZ"] = new()
+        ["OTP_INVALID_FORMAT"] = new()
         {
             ["tr"] = "Doğrulama kodu 6 haneli olmalı.",
             ["de"] = "Der Bestätigungscode muss 6-stellig sein.",
         },
-        ["AD_ZORUNLU"] = new() { ["tr"] = "Ad zorunludur.", ["de"] = "Vorname ist erforderlich." },
-        ["SOYAD_ZORUNLU"] = new()
+        ["FIRST_NAME_REQUIRED"] = new() { ["tr"] = "Ad zorunludur.", ["de"] = "Vorname ist erforderlich." },
+        ["LAST_NAME_REQUIRED"] = new()
         {
             ["tr"] = "Soyad zorunludur.",
             ["de"] = "Nachname ist erforderlich.",
         },
-        ["TOKEN_ZORUNLU"] = new()
+        ["TOKEN_REQUIRED"] = new()
         {
             ["tr"] = "Token zorunludur.",
             ["de"] = "Token ist erforderlich.",

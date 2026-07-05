@@ -13,7 +13,7 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 // Başarılı
 { "success": true, "data": {}, "message": "İşlem başarılı", "timestamp": "2026-01-15T10:30:00Z" }
 // Hatalı
-{ "success": false, "error": { "code": "GECERSIZ_KIMLIK", "message": "E-posta veya şifre hatalı" } }
+{ "success": false, "error": { "code": "INVALID_CREDENTIALS", "message": "E-posta veya şifre hatalı" } }
 ```
 
 **Hata mesajı dil desteği:** `error.code` sabit/dilden bağımsızdır (frontend bu koda göre özel

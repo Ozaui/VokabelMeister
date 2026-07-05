@@ -11,7 +11,7 @@
 namespace WordLearner.Application.Common.Models;
 
 // AMAÇ: Hata kodunu (makine tarafından okunabilir) ve mesajı (kullanıcıya gösterilebilir) taşır.
-// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. GECERSIZ_KIMLIK, BULUNAMADI) —
+// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. INVALID_CREDENTIALS, NOT_FOUND) —
 //        frontend, mesajı doğrudan göstermek yerine "code"a göre özel davranış (yönlendirme,
 //        özel ikon) tetikleyebilir; "message" ise her durumda insan-okunur açıklamadır.
 public record ApiErrorDetail(string Code, string Message);

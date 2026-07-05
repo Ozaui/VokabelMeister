@@ -103,14 +103,14 @@ ADIM 4 — Web taraf ~2 saniyede bir GET /auth/qr/{token}/status (Anonim, pollin
 
 Bilinen iş kuralı hataları (login/register/OTP/refresh vb.) tek bir taban sınıftan türer:
 `AppException` (`Application/Common/Exceptions/AppException.cs`) — yalnızca dilden bağımsız bir
-**`Code`** taşır (ör. `GECERSIZ_KIMLIK`), mesajı KENDİ İÇİNDE SABİTLEMEZ.
+**`Code`** taşır (ör. `INVALID_CREDENTIALS`), mesajı KENDİ İÇİNDE SABİTLEMEZ.
 
 ```
-1. AuthService  → throw new InvalidCredentialsException()  (parametre yok, yalnızca Code=GECERSIZ_KIMLIK)
+1. AuthService  → throw new InvalidCredentialsException()  (parametre yok, yalnızca Code=INVALID_CREDENTIALS)
 2. ExceptionHandlingMiddleware → HTTP durum kodunu Code'a göre eşler (StatusCodeFor)
 3. Middleware → isteğin Accept-Language header'ından dili çıkarır (GetRequestLanguage, ör. "en-US"→"en")
 4. ErrorMessages.Resolve(code, dil) → sözlükten (tr/en) o dildeki metni döner, dil yoksa "tr"ye düşer
-5. İstemciye: { "error": { "code": "GECERSIZ_KIMLIK", "message": "<dile göre metin>" } }
+5. İstemciye: { "error": { "code": "INVALID_CREDENTIALS", "message": "<dile göre metin>" } }
 ```
 
 **Neden iki ayrı kanal var:**

@@ -1,6 +1,6 @@
 # AppException
 
-**Özet:** Bilinen iş kuralı hatalarının (Auth: `DuplicateEmailException`, `InvalidCredentialsException`, `InvalidOtpException`, `AccountNotActiveException`, `AccountAnonymizedException`, `InvalidRefreshTokenException`, `InvalidSocialTokenException`) türediği taban sınıf. Mesajı kendi içinde SABİTLEMEZ — yalnızca dilden bağımsız bir `Code` (ör. `GECERSIZ_KIMLIK`) taşır. İstemciye giden gerçek mesaj, isteğin `Accept-Language` header'ına göre [[ErrorMessages]] sözlüğünden [[Middleware|ExceptionHandlingMiddleware]] tarafından çözülür.
+**Özet:** Bilinen iş kuralı hatalarının (Auth: `DuplicateEmailException`, `InvalidCredentialsException`, `InvalidOtpException`, `AccountNotActiveException`, `AccountAnonymizedException`, `InvalidRefreshTokenException`, `InvalidSocialTokenException`) türediği taban sınıf. Mesajı kendi içinde SABİTLEMEZ — yalnızca dilden bağımsız bir `Code` (ör. `INVALID_CREDENTIALS`) taşır. İstemciye giden gerçek mesaj, isteğin `Accept-Language` header'ına göre [[ErrorMessages]] sözlüğünden [[Middleware|ExceptionHandlingMiddleware]] tarafından çözülür.
 **Kütüphaneler:** Yok — saf C#.
 **Bağlantılar:** [[ErrorMessages]] · [[Middleware]] · [[ApiErrorResponse]] · [[EntityNotFoundException]] · [[Guvenlik_Politikalari]] · [[Auth_Domain]]
 
@@ -25,7 +25,7 @@ public abstract class AppException : Exception
 public class InvalidCredentialsException : AppException
 {
     public InvalidCredentialsException()
-        : base("GECERSIZ_KIMLIK", "Login denemesi: kimlik bilgileri geçersiz.") { }
+        : base("INVALID_CREDENTIALS", "Login denemesi: kimlik bilgileri geçersiz.") { }
 }
 ```
 

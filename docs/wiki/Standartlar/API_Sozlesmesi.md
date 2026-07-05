@@ -16,7 +16,7 @@ Rate limiting: Login 5 hatalı/15dk → kilit · Genel 100/dk (auth), 10/dk (ano
 // Başarılı
 { "success": true, "data": {}, "message": "İşlem başarılı", "timestamp": "..." }
 // Hatalı
-{ "success": false, "error": { "code": "GECERSIZ_KIMLIK", "message": "E-posta veya şifre hatalı" } }
+{ "success": false, "error": { "code": "INVALID_CREDENTIALS", "message": "E-posta veya şifre hatalı" } }
 ```
 HTTP kodları: 200/201/204 başarı · 400/401/403/404/409/429/500 hata.
 Auth seviyeleri: `Anonim` (JWT yok) · `[Authorize]` (JWT) · `[Authorize(Admin)]`.

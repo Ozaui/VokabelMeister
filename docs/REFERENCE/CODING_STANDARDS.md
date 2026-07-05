@@ -7,15 +7,28 @@
 
 | Türkçe | İngilizce (convention) |
 |--------|------------------------|
-| Tüm yorumlar, XML doc, log mesajları, exception mesajları, console çıktısı | Method / class / property isimleri (C#), test metodu adları (§7.2), DB kolon adları (SQL), JS değişkenleri |
+| Tüm kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, API Yol Haritası | Method / class / property isimleri (C#), test metodu adları (§7.2), DB kolon adları (SQL), JS değişkenleri, **log mesajları (`_logger.Log*`), exception `.Message`'ları, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`)** |
+
+> **NEDEN (A-03'te değişti):** Log/exception mesajları ve hata kodları **DB'ye ve geliştiriciye** giden
+> içeriktir — bu proje tek bir gerçek dile (İngilizce) kilitlenmeli ki loglar/DB kayıtları tutarlı,
+> aranabilir ve gelecekteki herhangi bir dilde çalışan bir geliştirici tarafından okunabilir olsun.
+> Kod yorumları ise **geliştiriciye öğretim** amaçlı olduğu için Türkçe kalır — bu ikisi ayrı kanallardır.
+>
+> **İSTİSNA — istemciye (API yanıtı) giden mesaj:** `AppException.Code` veya FluentValidation
+> `ErrorCode`'u, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden (şu an tr+de)
+> çözülüp kullanıcıya o dilde gösterilir (bkz. [[ErrorMessages]], `ValidationFilter`,
+> `ExceptionHandlingMiddleware`). Yani: **kullanıcı ne dil seçtiyse onu görür, DB/log/geliştirici
+> İngilizce görür.**
 
 ```csharp
-// ✅ DOĞRU
-_logger.LogInformation("Kullanıcı {UserId} giriş yaptı. IP: {Ip}", userId, ip);
-throw new EntityNotFoundException($"Kullanıcı {userId} bulunamadı.");
+// ✅ DOĞRU — yorum Türkçe, log/exception mesajı İngilizce
+// AMAÇ: Kullanıcı girişini loglar.
+_logger.LogInformation("User {UserId} logged in. IP: {Ip}", userId, ip);
+throw new EntityNotFoundException($"User not found: Id={userId}");
 
-// ❌ YANLIŞ — İngilizce yorum/mesaj, Türkçe-İngilizce karışık
-// throw new Exception("User not found");
+// ❌ YANLIŞ — log/exception mesajı Türkçe (DB'ye/geliştiriciye Türkçe gitmemeli)
+// _logger.LogInformation("Kullanıcı {UserId} giriş yaptı.", userId);
+// throw new Exception("Kullanıcı bulunamadı");
 ```
 
 ## 2. Dosya Başı Bloğu (zorunlu)
@@ -62,11 +75,11 @@ Adım adım `// ADIM N:` + `// NEDEN:` ile:
 ```csharp
 // ADIM 1: Girdi validasyonu — geçersiz veri işlenmez
 if (userId <= 0 || wordId <= 0)
-    throw new ArgumentException("ID'ler pozitif olmalıdır");
+    throw new ArgumentException("IDs must be positive");
 
 // ADIM 2: Mevcut ilerlemeyi çek — SM-2 için önceki durum gerekli
 var progress = await _progressRepo.GetByUserAndWordAsync(userId, wordId, ct)
-    ?? throw new EntityNotFoundException($"İlerleme bulunamadı: kullanıcı {userId}, kelime {wordId}");
+    ?? throw new EntityNotFoundException($"Progress not found: user {userId}, word {wordId}");
 
 // ADIM 3: SM-2 ile sonraki tekrar zamanını hesapla (bkz. REFERENCE/TECHNICAL_SPECIFICATIONS.md §8)
 var (interval, newLevel, newEF) = SrsCalculator.Calculate(
@@ -90,11 +103,12 @@ public class UserProgress : BaseEntity
 
 **DTO** — neden Entity değil: hassas alan gizleme + sözleşme + sadece gerekli alanlar.
 
-**Validator** — her kuralın üstünde `// NEDEN:`:
+**Validator** — her kuralın üstünde `// NEDEN:`. `WithMessage` İngilizce (log/DB'ye gider),
+`WithErrorCode` ile istemciye giden mesaj `ErrorMessages`'ten dile göre çözülür (bkz. §1):
 ```csharp
 RuleFor(x => x.Password)
-    .MinimumLength(12).WithMessage("Şifre en az 12 karakter olmalı")   // NEDEN: brute-force direnci
-    .Matches(@"[A-Z]").WithMessage("En az 1 büyük harf");
+    .MinimumLength(12).WithMessage("Password must be at least 12 characters").WithErrorCode("PASSWORD_TOO_SHORT")   // NEDEN: brute-force direnci
+    .Matches(@"[A-Z]").WithMessage("Must contain at least 1 uppercase letter").WithErrorCode("PASSWORD_MISSING_UPPERCASE");
 ```
 
 **Repository** — async + CancellationToken + Include (N+1 önle) + soft delete filtresi.
@@ -104,7 +118,7 @@ RuleFor(x => x.Password)
 ## 6. Genel En İyi Pratikler
 
 - `async/await` + `CancellationToken` her I/O metodunda.
-- Null kontrolü / guard clauses; exception + Türkçe loglama.
+- Null kontrolü / guard clauses; exception + İngilizce loglama (bkz. §1).
 - SOLID, DRY, KISS. Repository sorgularında soft delete + (kişiselde) UserId filtresi.
 - Parametreli sorgular (SQL injection yok); EF Core LINQ tercih.
 
@@ -219,7 +233,7 @@ genel ilkesi) test dosyaları için de geçerlidir.
 [ ] Dosya başı: AMAÇ / NEDEN / BAĞIMLILIKLAR
 [ ] Her public metot: AMAÇ / NEDEN / NASIL
 [ ] Karmaşık bloklar: ADIM + NEDEN yorumları
-[ ] Tüm yorum/log/exception TÜRKÇE, method/class/property/test metodu adı İngilizce
+[ ] Tüm yorum TÜRKÇE; log/exception .Message/Code sabitleri + method/class/property/test metodu adı İngilizce (§1)
 [ ] Servis katmanı için birim test yazıldı (§7 standardına uygun: AAA + isimlendirme + mock) — Faz F'ye bırakılmaz
 [ ] async/await + CancellationToken
 [ ] Yazıldıkça API_YOL_HARITASI/ rehberine işlendi (kod alanı + test alanı, §7.6)

@@ -15,8 +15,9 @@ public class EntityNotFoundException : Exception
         : base(message) { }
 
     // AMAÇ: Entity tipini ve aranan anahtarı alıp standart formatta mesaj üreten kısayol.
-    // NEDEN: Repository<T> gibi çağıranların "{Entity} bulunamadı: Id={key}" string'ini
-    //        elle interpolate etmesini önler; format tek yerden yönetilir.
+    // NEDEN: Repository<T> gibi çağıranların "{Entity} not found: Id={key}" string'ini
+    //        elle interpolate etmesini önler; format tek yerden yönetilir. Mesaj İngilizce
+    //        yazılır (CODING_STANDARDS.md §1 — log/exception .Message İngilizce kuralı).
     public EntityNotFoundException(Type entityType, object key)
-        : base($"{entityType.Name} bulunamadı: Id={key}") { }
+        : base($"{entityType.Name} not found: Id={key}") { }
 }

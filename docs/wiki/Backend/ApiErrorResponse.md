@@ -18,8 +18,8 @@ public class ApiErrorResponse
     public ApiErrorResponse(string code, string message) { Error = new ApiErrorDetail(code, message); }
 }
 ```
-`code` alanı sabit, dilden bağımsız bir sözlük gibi davranır (`BULUNAMADI`, `GECERSIZ_KIMLIK`,
-`SUNUCU_HATASI` — bkz. [[Middleware]]); frontend, "message"i doğrudan göstermek yerine "code"a göre
+`code` alanı sabit, dilden bağımsız bir sözlük gibi davranır (`NOT_FOUND`, `INVALID_CREDENTIALS`,
+`INTERNAL_SERVER_ERROR` — bkz. [[Middleware]]); frontend, "message"i doğrudan göstermek yerine "code"a göre
 özel davranış tetikleyebilir. **`message` alanı artık `Accept-Language` header'ına göre değişir**
 (A-03'te eklendi) — detay → [[AppException]].
 

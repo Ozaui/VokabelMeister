@@ -26,18 +26,18 @@ public class DevEmailService : IEmailService
         string toEmail,
         string otpCode,
         CancellationToken ct = default
-    ) => LogEmailAsync(toEmail, "E-posta Doğrulama", $"Doğrulama kodunuz: {otpCode}");
+    ) => LogEmailAsync(toEmail, "Email Verification", $"Your verification code: {otpCode}");
 
     // AMAÇ: Login adım 1 sonrası 2FA OTP kodunu loglar.
     public Task SendLoginOtpAsync(string toEmail, string otpCode, CancellationToken ct = default) =>
-        LogEmailAsync(toEmail, "Giriş Doğrulama Kodu", $"Giriş kodunuz: {otpCode}");
+        LogEmailAsync(toEmail, "Login Verification Code", $"Your login code: {otpCode}");
 
     // AMAÇ: Şifre sıfırlama isteği sonrası OTP kodunu loglar.
     public Task SendPasswordResetOtpAsync(
         string toEmail,
         string otpCode,
         CancellationToken ct = default
-    ) => LogEmailAsync(toEmail, "Şifre Sıfırlama", $"Şifre sıfırlama kodunuz: {otpCode}");
+    ) => LogEmailAsync(toEmail, "Password Reset", $"Your password reset code: {otpCode}");
 
     // AMAÇ: Şifre değiştirildiğinde bilgilendirme e-postasını loglar.
     public Task SendPasswordChangedNotificationAsync(
@@ -46,8 +46,8 @@ public class DevEmailService : IEmailService
     ) =>
         LogEmailAsync(
             toEmail,
-            "Şifreniz Değiştirildi",
-            "Hesabınızın şifresi az önce değiştirildi."
+            "Your Password Was Changed",
+            "Your account password was just changed."
         );
 
     // AMAÇ: Hesap silme isteği sonrası onay OTP kodunu loglar.
@@ -55,7 +55,7 @@ public class DevEmailService : IEmailService
         string toEmail,
         string otpCode,
         CancellationToken ct = default
-    ) => LogEmailAsync(toEmail, "Hesap Silme Onayı", $"Hesap silme onay kodunuz: {otpCode}");
+    ) => LogEmailAsync(toEmail, "Account Deletion Confirmation", $"Your account deletion confirmation code: {otpCode}");
 
     // AMAÇ: Tüm e-posta türleri için ortak loglama noktası.
     // NEDEN: PII kuralı (SECURITY.md §6) — ham e-posta yalnızca geliştirme ortamı
@@ -65,7 +65,7 @@ public class DevEmailService : IEmailService
     private Task LogEmailAsync(string toEmail, string subject, string body)
     {
         _logger.LogInformation(
-            "[DEV E-POSTA] Alıcı: {ToEmail} | Konu: {Subject} | İçerik: {Body}",
+            "[DEV EMAIL] To: {ToEmail} | Subject: {Subject} | Body: {Body}",
             toEmail,
             subject,
             body

@@ -1,12 +1,16 @@
 # Kodlama Standartları
 
-**Özet:** Proje junior eğitimi amaçlı yazılıyor — tüm yorum/log/exception mesajları Türkçe, method/class/property isimleri İngilizce; her dosya başında AMAÇ/NEDEN/BAĞIMLILIKLAR, her public metotta AMAÇ/NEDEN/NASIL bloğu zorunlu. Birim testler Faz F'ye bırakılmaz — her servis katmanı bitince aynı task içinde yazılır.
+**Özet:** Proje junior eğitimi amaçlı yazılıyor — tüm kod yorumları Türkçe; log mesajları, exception `.Message`'ları ve hata `Code` sabitleri İngilizce (DB/geliştirici tarafı), method/class/property isimleri İngilizce; her dosya başında AMAÇ/NEDEN/BAĞIMLILIKLAR, her public metotta AMAÇ/NEDEN/NASIL bloğu zorunlu. İstemciye giden hata mesajı isteğin diline göre ayrı bir kanaldan ([[ErrorMessages]]) çözülür — bkz. [[AppException]]. Birim testler Faz F'ye bırakılmaz — her servis katmanı bitince aynı task içinde yazılır.
 **Kütüphaneler:** xUnit, Moq, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory (yalnızca Repository&lt;T&gt; testinde)
 **Bağlantılar:** [[Gelistirme_Yol_Haritasi]] · [[WordLearner_Tests]] · [[Repository]] · [[Backend_Katmanli_Mimari]]
 
 ## Dil Kuralı
-Türkçe: tüm yorumlar, XML doc, log mesajları, exception mesajları, console çıktısı.
-İngilizce (convention): method/class/property isimleri (C#), test metodu adları, DB kolon adları (SQL), JS değişkenleri.
+Türkçe: tüm kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, API Yol Haritası.
+İngilizce (convention): method/class/property isimleri (C#), test metodu adları, DB kolon adları (SQL),
+JS değişkenleri, **log mesajları (`_logger.Log*`), exception `.Message`'ları, hata `Code` sabitleri**
+(A-03'te değişti — DB'ye/geliştiriciye giden her şey tek bir gerçek dile kilitlenir).
+**İstisna:** istemciye giden hata mesajı isteğin `Accept-Language`'ına göre [[ErrorMessages]]
+sözlüğünden (tr+de) çözülür — kullanıcı ne dil seçtiyse onu görür, DB/log İngilizce görür.
 
 ## Zorunlu Bloklar
 - **Dosya başı:** `AMAÇ / NEDEN / BAĞIMLILIKLAR` — mevcut kod dosyalarında ([[Program_cs]],

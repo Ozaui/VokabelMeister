@@ -21,14 +21,14 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 
         RuleFor(x => x.FirstName)
             .NotEmpty()
-            .WithMessage("Ad boş olamaz.")
-            .WithErrorCode("AD_ZORUNLU")
+            .WithMessage("First name must not be empty.")
+            .WithErrorCode("FIRST_NAME_REQUIRED")
             .MaximumLength(50);
 
         RuleFor(x => x.LastName)
             .NotEmpty()
-            .WithMessage("Soyad boş olamaz.")
-            .WithErrorCode("SOYAD_ZORUNLU")
+            .WithMessage("Last name must not be empty.")
+            .WithErrorCode("LAST_NAME_REQUIRED")
             .MaximumLength(50);
     }
 }

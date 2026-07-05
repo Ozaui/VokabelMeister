@@ -20,9 +20,9 @@ public static class EmailRuleExtensions
     ) =>
         ruleBuilder
             .NotEmpty()
-            .WithMessage("E-posta boş olamaz.")
-            .WithErrorCode("EMAIL_ZORUNLU")
+            .WithMessage("Email must not be empty.")
+            .WithErrorCode("EMAIL_REQUIRED")
             .EmailAddress()
-            .WithMessage("Geçerli bir e-posta adresi girin.")
-            .WithErrorCode("EMAIL_GECERSIZ");
+            .WithMessage("Enter a valid email address.")
+            .WithErrorCode("EMAIL_INVALID");
 }

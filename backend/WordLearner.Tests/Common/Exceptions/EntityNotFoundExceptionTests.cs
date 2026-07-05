@@ -19,7 +19,7 @@ public class EntityNotFoundExceptionTests
     /// <summary>
     /// TypeAndKeyConstructor_ValidEntityTypeAndKey_ProducesStandardMessage
     ///
-    /// AMAÇ: Type+key constructor'ının "{EntityAdı} bulunamadı: Id={key}" formatını ürettiğini doğrulamak.
+    /// AMAÇ: Type+key constructor'ının "{EntityAdı} not found: Id={key}" formatını ürettiğini doğrulamak.
     /// NEDEN: Repository<T>.SoftDeleteAsync bu overload'ı kullanıyor; format burada
     ///        değişirse loglama/hata standartlaşması bozulur.
     /// </summary>
@@ -33,7 +33,7 @@ public class EntityNotFoundExceptionTests
         var exception = new EntityNotFoundException(entityType, 5);
 
         // ASSERT — mesaj standart formatta olmalı
-        exception.Message.Should().Be("BaseEntityStub bulunamadı: Id=5");
+        exception.Message.Should().Be("BaseEntityStub not found: Id=5");
     }
 
     // AMAÇ: Test için gerçek bir feature entity gerekmeden Type.Name üretmeye yarayan minimal sınıf.

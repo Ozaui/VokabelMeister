@@ -24,8 +24,8 @@ public static class ErrorMessages
 ```
 
 ## Şu An Tanımlı Kodlar (tr + en)
-`GECERSIZ_KIMLIK`, `GECERSIZ_OTP`, `EPOSTA_KAYITLI`, `HESAP_DONDURULMUS`, `HESAP_SILINMIS`,
-`GECERSIZ_REFRESH_TOKEN`, `GECERSIZ_SOSYAL_TOKEN` — her biri A-03'teki bir [[AppException]] alt
+`INVALID_CREDENTIALS`, `INVALID_OTP`, `EMAIL_ALREADY_REGISTERED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED`,
+`INVALID_REFRESH_TOKEN`, `INVALID_SOCIAL_TOKEN` — her biri A-03'teki bir [[AppException]] alt
 tipine karşılık gelir.
 
 ## Güvenli Varsayılan Davranış

@@ -5,7 +5,7 @@
 //       paylaşan FluentValidation extension metodu.
 // NEDEN: RegisterRequestValidator ve ResetPasswordRequestValidator AYNI şifre
 //        kurallarını uyguluyor — kural tekrarını önlemek için ortak metoda alındı.
-//        Her kural hem WithMessage (sabit Türkçe, yalnızca log/geliştirici içindir)
+//        Her kural hem WithMessage (sabit İngilizce, yalnızca log/DB içindir)
 //        hem WithErrorCode (ValidationFilter'ın ErrorMessages'ten dile göre
 //        çözeceği kod) taşır — AppException ile birebir aynı ayrım.
 // BAĞIMLILIKLAR: FluentValidation.
@@ -23,21 +23,21 @@ public static class PasswordRuleExtensions
     ) =>
         ruleBuilder
             .NotEmpty()
-            .WithMessage("Şifre boş olamaz.")
-            .WithErrorCode("SIFRE_ZORUNLU")
+            .WithMessage("Password must not be empty.")
+            .WithErrorCode("PASSWORD_REQUIRED")
             .MinimumLength(12) // NEDEN: brute-force direnci
-            .WithMessage("Şifre en az 12 karakter olmalı.")
-            .WithErrorCode("SIFRE_KISA")
+            .WithMessage("Password must be at least 12 characters long.")
+            .WithErrorCode("PASSWORD_TOO_SHORT")
             .Matches(@"[A-Z]")
-            .WithMessage("Şifre en az 1 büyük harf içermeli.")
-            .WithErrorCode("SIFRE_BUYUK_HARF_EKSIK")
+            .WithMessage("Password must contain at least 1 uppercase letter.")
+            .WithErrorCode("PASSWORD_MISSING_UPPERCASE")
             .Matches(@"[a-z]")
-            .WithMessage("Şifre en az 1 küçük harf içermeli.")
-            .WithErrorCode("SIFRE_KUCUK_HARF_EKSIK")
+            .WithMessage("Password must contain at least 1 lowercase letter.")
+            .WithErrorCode("PASSWORD_MISSING_LOWERCASE")
             .Matches(@"[0-9]")
-            .WithMessage("Şifre en az 1 rakam içermeli.")
-            .WithErrorCode("SIFRE_RAKAM_EKSIK")
+            .WithMessage("Password must contain at least 1 digit.")
+            .WithErrorCode("PASSWORD_MISSING_DIGIT")
             .Matches(@"[!@#$%^&*]")
-            .WithMessage("Şifre en az 1 özel karakter içermeli (!@#$%^&*).")
-            .WithErrorCode("SIFRE_OZEL_KARAKTER_EKSIK");
+            .WithMessage("Password must contain at least 1 special character (!@#$%^&*).")
+            .WithErrorCode("PASSWORD_MISSING_SPECIAL_CHAR");
 }

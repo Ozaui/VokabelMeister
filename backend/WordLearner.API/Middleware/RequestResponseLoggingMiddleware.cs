@@ -31,7 +31,7 @@ public class RequestResponseLoggingMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var stopwatch = Stopwatch.StartNew();
-        _logger.LogInformation("İstek başladı: {Method} {Path}",
+        _logger.LogInformation("Request started: {Method} {Path}",
             context.Request.Method, context.Request.Path);
 
         try
@@ -41,7 +41,7 @@ public class RequestResponseLoggingMiddleware
         finally
         {
             stopwatch.Stop();
-            _logger.LogInformation("İstek bitti: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
+            _logger.LogInformation("Request finished: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
                 context.Request.Method, context.Request.Path,
                 context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
         }

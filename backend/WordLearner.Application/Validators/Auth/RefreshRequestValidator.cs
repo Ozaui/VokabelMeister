@@ -17,7 +17,7 @@ public class RefreshRequestValidator : AbstractValidator<RefreshRequest>
     {
         RuleFor(x => x.RefreshToken)
             .NotEmpty()
-            .WithMessage("Token boş olamaz.")
-            .WithErrorCode("TOKEN_ZORUNLU");
+            .WithMessage("Token must not be empty.")
+            .WithErrorCode("TOKEN_REQUIRED");
     }
 }

@@ -13,5 +13,5 @@ namespace WordLearner.Application.Common.Exceptions;
 public class InvalidRefreshTokenException : AppException
 {
     public InvalidRefreshTokenException()
-        : base("GECERSIZ_REFRESH_TOKEN", "Refresh denemesi: token geçersiz/süresi dolmuş/iptal edilmiş.") { }
+        : base("INVALID_REFRESH_TOKEN", "Refresh attempt: token invalid/expired/revoked.") { }
 }

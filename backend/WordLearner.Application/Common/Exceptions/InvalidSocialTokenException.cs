@@ -14,5 +14,5 @@ namespace WordLearner.Application.Common.Exceptions;
 public class InvalidSocialTokenException : AppException
 {
     public InvalidSocialTokenException()
-        : base("GECERSIZ_SOSYAL_TOKEN", "Sosyal giriş denemesi: token doğrulanamadı.") { }
+        : base("INVALID_SOCIAL_TOKEN", "Social login attempt: token could not be verified.") { }
 }

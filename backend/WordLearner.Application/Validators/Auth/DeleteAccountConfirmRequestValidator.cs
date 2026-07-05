@@ -17,6 +17,6 @@ public class DeleteAccountConfirmRequestValidator : AbstractValidator<DeleteAcco
     public DeleteAccountConfirmRequestValidator()
     {
         RuleFor(x => x.OtpCode).ValidOtpCode();
-        RuleFor(x => x.Password).NotEmpty().WithMessage("Şifre boş olamaz.").WithErrorCode("SIFRE_ZORUNLU");
+        RuleFor(x => x.Password).NotEmpty().WithMessage("Password must not be empty.").WithErrorCode("PASSWORD_REQUIRED");
     }
 }

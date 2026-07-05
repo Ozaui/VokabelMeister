@@ -183,7 +183,7 @@ public class WordLearnerDbContext : DbContext
     ,{
       num: 3, tur: 'exception',
       baslik: 'EntityNotFoundException.cs', dosya: 'Application/Common/Exceptions/EntityNotFoundException.cs',
-      aciklama: 'Entity DB\'de bulunamadığında fırlatılan özel exception. Genel KeyNotFoundException veya Exception yerine özel tip kullanmak, global exception middleware\'inin bu durumu yakalayıp 404 döndürmesini sağlar. Repository<T>.SoftDeleteAsync bu exception\'ı kullanır; diğer feature repository\'ler de XxxNotFoundException yazarken bu sınıfı miras alabilir. Type+key overload\'u, her çağıranın "{Entity} bulunamadı: Id={key}" string\'ini elle interpolate etmesini önler — mesaj formatı tek yerden yönetilir.',
+      aciklama: 'Entity DB\'de bulunamadığında fırlatılan özel exception. Genel KeyNotFoundException veya Exception yerine özel tip kullanmak, global exception middleware\'inin bu durumu yakalayıp 404 döndürmesini sağlar. Repository<T>.SoftDeleteAsync bu exception\'ı kullanır; diğer feature repository\'ler de XxxNotFoundException yazarken bu sınıfı miras alabilir. Type+key overload\'u, her çağıranın "{Entity} not found: Id={key}" string\'ini elle interpolate etmesini önler — mesaj formatı tek yerden yönetilir. Mesaj İngilizce yazılır çünkü log/exception .Message DB\'ye ve geliştiriciye gider (CODING_STANDARDS.md §1); kod yorumları Türkçe kalır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // EntityNotFoundException.cs
 //
@@ -200,10 +200,11 @@ public class EntityNotFoundException : Exception
     public EntityNotFoundException(string message) : base(message) { }
 
     // AMAÇ: Entity tipini ve aranan anahtarı alıp standart formatta mesaj üreten kısayol.
-    // NEDEN: Repository<T> gibi çağıranların "{Entity} bulunamadı: Id={key}" string'ini
-    //        elle interpolate etmesini önler; format tek yerden yönetilir.
+    // NEDEN: Repository<T> gibi çağıranların "{Entity} not found: Id={key}" string'ini
+    //        elle interpolate etmesini önler; format tek yerden yönetilir. Mesaj İngilizce
+    //        yazılır (CODING_STANDARDS.md §1 — log/exception .Message İngilizce kuralı).
     public EntityNotFoundException(Type entityType, object key)
-        : base($"{entityType.Name} bulunamadı: Id={key}") { }
+        : base($"{entityType.Name} not found: Id={key}") { }
 }`
     }
     ,{
@@ -708,7 +709,7 @@ public class RepositoryTests
     ,{
       num: 8, tur: 'test',
       baslik: 'EntityNotFoundExceptionTests.cs', dosya: 'Tests/Common/Exceptions/EntityNotFoundExceptionTests.cs',
-      aciklama: 'EntityNotFoundException\'ın Type+key overload\'ının "{Entity} bulunamadı: Id={key}" formatını doğru ürettiğini doğrulayan tek test. Repository<T>.SoftDeleteAsync bu overload\'a bağımlı olduğu için format burada bozulursa hata mesajları tüm feature\'larda tutarsızlaşır.',
+      aciklama: 'EntityNotFoundException\'ın Type+key overload\'ının "{Entity} not found: Id={key}" formatını doğru ürettiğini doğrulayan tek test. Repository<T>.SoftDeleteAsync bu overload\'a bağımlı olduğu için format burada bozulursa hata mesajları tüm feature\'larda tutarsızlaşır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // EntityNotFoundExceptionTests.cs
 //
@@ -730,7 +731,7 @@ public class EntityNotFoundExceptionTests
     /// <summary>
     /// TypeAndKeyConstructor_ValidEntityTypeAndKey_ProducesStandardMessage
     ///
-    /// AMAÇ: Type+key constructor'ının "{EntityAdı} bulunamadı: Id={key}" formatını ürettiğini doğrulamak.
+    /// AMAÇ: Type+key constructor'ının "{EntityAdı} not found: Id={key}" formatını ürettiğini doğrulamak.
     /// NEDEN: Repository<T>.SoftDeleteAsync bu overload'ı kullanıyor; format burada
     ///        değişirse loglama/hata standartlaşması bozulur.
     /// </summary>
@@ -744,7 +745,7 @@ public class EntityNotFoundExceptionTests
         var exception = new EntityNotFoundException(entityType, 5);
 
         // ASSERT — mesaj standart formatta olmalı
-        exception.Message.Should().Be("BaseEntityStub bulunamadı: Id=5");
+        exception.Message.Should().Be("BaseEntityStub not found: Id=5");
     }
 
     // AMAÇ: Test için gerçek bir feature entity gerekmeden Type.Name üretmeye yarayan minimal sınıf.
@@ -769,7 +770,7 @@ public class EntityNotFoundExceptionTests
 namespace WordLearner.Application.Common.Models;
 
 // AMAÇ: Hata kodunu (makine tarafından okunabilir) ve mesajı (kullanıcıya gösterilebilir) taşır.
-// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. GECERSIZ_KIMLIK, BULUNAMADI) —
+// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. INVALID_CREDENTIALS, NOT_FOUND) —
 //        frontend, mesajı doğrudan göstermek yerine "code"a göre özel davranış (yönlendirme,
 //        özel ikon) tetikleyebilir; "message" ise her durumda insan-okunur açıklamadır.
 public record ApiErrorDetail(string Code, string Message);
@@ -838,7 +839,7 @@ public class ExceptionHandlingMiddleware
         {
             // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları Türkçe; exception detayı
             //        (stack trace) yalnızca ApplicationLog'a (A-04'te DB sink) gider, istemciye asla.
-            _logger.LogError(ex, "İşlenmemiş hata yakalandı: {Method} {Path}",
+            _logger.LogError(ex, "Unhandled exception caught: {Method} {Path}",
                 context.Request.Method, context.Request.Path);
 
             await WriteErrorResponseAsync(context, ex);
@@ -854,8 +855,8 @@ public class ExceptionHandlingMiddleware
     {
         var (statusCode, code, message) = ex switch
         {
-            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI", ex.Message),
-            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI", "Beklenmeyen bir hata oluştu.")
+            EntityNotFoundException => (HttpStatusCode.NotFound, "NOT_FOUND", ex.Message),
+            _ => (HttpStatusCode.InternalServerError, "INTERNAL_SERVER_ERROR", "An unexpected error occurred.")
         };
 
         context.Response.ContentType = "application/json";
@@ -948,7 +949,7 @@ public class RequestResponseLoggingMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var stopwatch = Stopwatch.StartNew();
-        _logger.LogInformation("İstek başladı: {Method} {Path}",
+        _logger.LogInformation("Request started: {Method} {Path}",
             context.Request.Method, context.Request.Path);
 
         try
@@ -958,7 +959,7 @@ public class RequestResponseLoggingMiddleware
         finally
         {
             stopwatch.Stop();
-            _logger.LogInformation("İstek bitti: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
+            _logger.LogInformation("Request finished: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
                 context.Request.Method, context.Request.Path,
                 context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
         }

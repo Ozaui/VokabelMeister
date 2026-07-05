@@ -22,7 +22,7 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
         // NEDEN: Login'de şifre GÜCÜ değil yalnızca doluluğu kontrol edilir —
         //        zaten kayıtlı bir şifrenin bugünkü kurallara uyup uymadığını
         //        burada yeniden zorlamak yanlış (kural sonradan sıkılaşmış olabilir).
-        RuleFor(x => x.Password).NotEmpty().WithMessage("Şifre boş olamaz.").WithErrorCode("SIFRE_ZORUNLU");
+        RuleFor(x => x.Password).NotEmpty().WithMessage("Password must not be empty.").WithErrorCode("PASSWORD_REQUIRED");
     }
 }
 

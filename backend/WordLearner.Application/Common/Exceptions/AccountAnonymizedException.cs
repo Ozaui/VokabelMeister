@@ -13,5 +13,5 @@ namespace WordLearner.Application.Common.Exceptions;
 public class AccountAnonymizedException : AppException
 {
     public AccountAnonymizedException()
-        : base("HESAP_SILINMIS", "Login denemesi: hesap kalıcı olarak anonimleştirilmiş.") { }
+        : base("ACCOUNT_DELETED", "Login attempt: account permanently anonymized.") { }
 }

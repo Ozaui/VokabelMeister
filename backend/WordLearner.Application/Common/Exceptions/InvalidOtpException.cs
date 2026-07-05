@@ -14,5 +14,5 @@ namespace WordLearner.Application.Common.Exceptions;
 public class InvalidOtpException : AppException
 {
     public InvalidOtpException()
-        : base("GECERSIZ_OTP", "OTP doğrulama: kod geçersiz veya süresi dolmuş.") { }
+        : base("INVALID_OTP", "OTP verification: code invalid or expired.") { }
 }

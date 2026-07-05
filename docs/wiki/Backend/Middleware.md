@@ -13,9 +13,9 @@ Türkçe loglar (`_logger.LogError`) ve exception tipine göre eşler:
 
 | Exception | HTTP Kodu | code | message |
 |-----------|-----------|------|---------|
-| [[EntityNotFoundException]] | 404 | `BULUNAMADI` | `ex.Message` (gerçek mesaj, dinamik — henüz çok dilli değil) |
+| [[EntityNotFoundException]] | 404 | `NOT_FOUND` | `ex.Message` (gerçek mesaj, dinamik — henüz çok dilli değil) |
 | [[AppException]] alt tipleri (A-03) | `StatusCodeFor(appEx)` ile Code'a göre (401/403/409/400) | `appEx.Code` | [[ErrorMessages]].`Resolve(code, dil)` — `Accept-Language`'a göre |
-| Diğer her şey | 500 | `SUNUCU_HATASI` | Sabit "Beklenmeyen bir hata oluştu." (gerçek mesaj **sızdırılmaz**) |
+| Diğer her şey | 500 | `INTERNAL_SERVER_ERROR` | Sabit "Beklenmeyen bir hata oluştu." (gerçek mesaj **sızdırılmaz**) |
 
 Yanıt [[ApiErrorResponse]] olarak `System.Text.Json` ile camelCase serileştirilir
 (`PropertyNamingPolicy = JsonNamingPolicy.CamelCase`). `GetRequestLanguage` yardımcı metodu
