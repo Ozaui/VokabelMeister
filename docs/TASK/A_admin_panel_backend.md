@@ -50,8 +50,9 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] `AuthController` (13 endpoint) + FluentValidation + rate limiting (login 5/15dk, OTP 3 yanlış)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] `AuthController` (13 endpoint) + FluentValidation + rate limiting (genel 100/dk, 10/dk anonim —
+      "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme sayaçları SecurityLog'a bağımlı, A-04 sonrası eklenecek)
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] **Birim testleri:** `AuthServiceTests` (register, login 2-adım, OTP doğrula, refresh, forgot/reset,
       delete-account grace), `TokenServiceTests`, `PasswordServiceTests` (repo/email mock'lanır)
 - [ ] ➜ **API Yol Haritası'na işle**

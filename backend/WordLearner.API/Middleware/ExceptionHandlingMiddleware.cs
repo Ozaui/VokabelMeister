@@ -7,11 +7,13 @@
 //        kodu ve JSON şekli tek bir dosyadan yönetilir (REFERENCE/API_ENDPOINTS.md §1).
 // BAĞIMLILIKLAR: WordLearner.Application.Common.Exceptions.EntityNotFoundException/AppException,
 //                WordLearner.Application.Common.Localization.ErrorMessages,
-//                WordLearner.Application.Common.Models.ApiErrorResponse.
+//                WordLearner.Application.Common.Models.ApiErrorResponse,
+//                WordLearner.API.Common.RequestLanguageResolver.
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Net;
 using System.Text.Json;
+using WordLearner.API.Common;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Common.Models;
@@ -84,7 +86,7 @@ public class ExceptionHandlingMiddleware
         var message = ex switch
         {
             EntityNotFoundException => ex.Message,
-            AppException appEx => ErrorMessages.Resolve(appEx.Code, GetRequestLanguage(context)),
+            AppException appEx => ErrorMessages.Resolve(appEx.Code, RequestLanguageResolver.Resolve(context)),
             _ => "Beklenmeyen bir hata oluştu.",
         };
 
@@ -115,17 +117,4 @@ public class ExceptionHandlingMiddleware
             InvalidSocialTokenException => HttpStatusCode.Unauthorized,
             _ => HttpStatusCode.BadRequest,
         };
-
-    // AMAÇ: İsteğin Accept-Language header'ından ilk dil kodunu (ör. "en-US" → "en") çıkarır.
-    // NEDEN: Header yoksa/parse edilemezse null döner; ErrorMessages.Resolve bu durumda
-    //        varsayılan Türkçe'ye düşer (proje Türkçe öncelikli, 00_INDEX.md kuralı).
-    private static string? GetRequestLanguage(HttpContext context)
-    {
-        var header = context.Request.Headers.AcceptLanguage.ToString();
-        if (string.IsNullOrWhiteSpace(header))
-            return null;
-
-        var firstLanguage = header.Split(',')[0].Split(';')[0].Trim();
-        return firstLanguage.Length >= 2 ? firstLanguage[..2].ToLowerInvariant() : null;
-    }
 }

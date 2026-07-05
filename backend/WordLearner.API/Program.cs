@@ -17,10 +17,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using WordLearner.API.Filters;
 using WordLearner.API.Middleware;
 using WordLearner.Application.Extensions;
 using WordLearner.Infrastructure.Extensions;
@@ -43,7 +46,10 @@ builder.Host.UseSerilog((context, configuration) => configuration
     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
 
 // ADIM 2: Controller'ları ekle — API uç noktaları controller sınıflarında tanımlanır.
-builder.Services.AddControllers();
+// NEDEN ValidationFilter: FluentValidation.AspNetCore paketi kullanılmıyor
+//       (TECHNICAL_SPECIFICATIONS.md §1'de yok) — bu global filter, DI'a kayıtlı
+//       IValidator<T>'leri action çalışmadan önce otomatik çalıştırır (A-03).
+builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());
 
 // ADIM 3: Swagger/OpenAPI — yazılan endpoint'ler geliştirme ortamında otomatik
 // belgelenir ve http://localhost:5001/swagger adresinden test edilir.
@@ -99,9 +105,33 @@ builder.Services.AddCors(options => options.AddPolicy("Default", policy =>
           .AllowAnyMethod()
           .AllowAnyHeader()));
 
+// ADIM 7: Rate Limiting — REFERENCE/SECURITY.md §4: genel 100/dk (kimliği doğrulanmış
+// istekler), 10/dk (anonim istekler). Controller/action'lar [EnableRateLimiting("...")]
+// ile bu isimli policy'lerden birini seçer (A-03 — AuthController).
+// NEDEN sabit pencere (FixedWindow): basit ve öngörülebilir; "login 5/15dk" ve
+//       "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları bundan ayrıdır — SecurityLog'a
+//       bağımlı oldukları için A-04'ten sonraya bırakıldı (bkz. TASK/A_admin_panel_backend.md).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddFixedWindowLimiter("anonymous", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 10;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueLimit = 0;
+    });
+    options.AddFixedWindowLimiter("authenticated", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 100;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueLimit = 0;
+    });
+});
+
 var app = builder.Build();
 
-// ADIM 7: İstek hattı (pipeline) — yalnızca geliştirmede Swagger arayüzü açılır.
+// ADIM 8: İstek hattı (pipeline) — yalnızca geliştirmede Swagger arayüzü açılır.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -120,6 +150,11 @@ app.UseHttpsRedirection();
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();
+
+// NEDEN UseAuthorization'dan SONRA: Rate limiter, [EnableRateLimiting] öznitelikli
+// endpoint'e ulaşmadan hemen önce devreye girmeli — kimlik/yetki kontrolünden sonra,
+// controller'dan hemen önce (A-03).
+app.UseRateLimiter();
 
 app.MapControllers();
 

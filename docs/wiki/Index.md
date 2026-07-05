@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `User`/`RefreshToken` entity yazıldı, sırada `IPasswordService`). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `AuthController` (13 endpoint) + `AuthService` + tüm bağımlılıkları yazıldı ve gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, sırada yalnızca birim testleri kaldı). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -44,10 +44,29 @@
   sayfası yok (kod zaten [[Auth_Domain]]'in "Referans Kod" bölümünde özetlenmişti), tam hâli
   `API_YOL_HARITASI/A-03_auth-api.html`'de.
 - [[AppException]] + [[ErrorMessages]] — Auth exception'ları (`DuplicateEmailException` vb.) için
-  yeni taban sınıf + dil sözlüğü; [[EntityNotFoundException]] ve [[ApiErrorResponse]] güncellendi,
+  yeni taban sınıf + dil sözlüğü (şu an **tr+de** — DE↔TR gerçek hedef kitlesi, İngilizce YAGNI
+  gerekçesiyle eklenmedi); [[EntityNotFoundException]] ve [[ApiErrorResponse]] güncellendi,
   [[Middleware]] (`ExceptionHandlingMiddleware`) `Accept-Language`'a göre mesaj çözecek şekilde
   değiştirildi. Bu A-03'e özel değil, mimari bir karar — tüm gelecekteki iş kuralı exception'ları
-  bundan türeyecek. Sırada `IAuthService`/`AuthService`.
+  bundan türeyecek.
+- `IUserRepository`/`UserRepository`, `IRefreshTokenRepository`/`RefreshTokenRepository`,
+  `IEmailService`/`DevEmailService`, `IGoogleTokenValidator`/`GoogleTokenValidator`,
+  `IAppleTokenValidator`/`AppleTokenValidator` (JWKS tabanlı, elle RS256 doğrulama) — hepsi
+  `IAuthService`/`AuthService`'in bağımlılıkları, ayrı wiki sayfası yok, tam hâli roadmap'te.
+- **`IAuthService`/`AuthService` tamamlandı** — 13 akışın (register/login 2-adım/Google/Apple/
+  refresh/logout/forgot-reset-password/delete-account) tüm iş mantığı. Öne çıkan kararlar: timing
+  attack önlemi (`FakePasswordHashForTiming`), grace period kurtarma (`accountWasRecovered`),
+  Google/Apple account linking, Token Family Pattern replay tespiti.
+- **FluentValidation validator'ları** (10 dosya, `Application/Validators/Auth/`) — her kural hem
+  sabit Türkçe `WithMessage` (log) hem `WithErrorCode` (istemciye giden, [[ErrorMessages]]'ten
+  dile göre çözülür) taşır.
+- **`AuthController` (13 endpoint) tamamlandı** — `ValidationFilter` (yeni, global action filter,
+  `API/Filters/`) DI'a kayıtlı `IValidator<T>`'leri otomatik çalıştırır; `RequestLanguageResolver`
+  (yeni, `API/Common/`) `Accept-Language` çıkarma mantığını `Middleware` ile paylaşır. `Program.cs`'e
+  rate limiting eklendi (genel 100/dk, 10/dk anonim — "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme
+  sayaçları SecurityLog'a bağımlı olduğu için A-04 sonrasına bırakıldı). Gerçek bir sunucu
+  çalıştırılıp curl ile uçtan uca doğrulandı: register→login→verify-otp gerçek token döndü,
+  Almanca `Accept-Language` ile hata mesajı gerçekten Almanca döndü. Sırada birim testleri.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
