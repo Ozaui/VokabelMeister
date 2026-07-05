@@ -54,6 +54,17 @@
       <h1 style="margin-top:.3rem">${esc(api.baslik)}</h1>
       <p class="lead">${esc(api.ozet)}</p>`;
 
+    // AMAÇ: Bu API için yeni eklenen NuGet paketlerini (varsa) adımlardan önce listeler.
+    // NEDEN: Her API tek başına baştan sona okunabilir/kurulabilir olmalı — okuyucu kodu
+    //        çalıştırmadan önce hangi paketleri eklemesi gerektiğini görmeli (TASK.md kuralı).
+    if ((api.paketler || []).length) {
+      html += `<div class="note"><b>📦 Bu API için eklenen paketler:</b><ul class="xref-list">`;
+      api.paketler.forEach((p) => {
+        html += `<li><code>${esc(p.paket)}</code> <span class="badge">${esc(p.versiyon)}</span> <span class="badge">${esc(p.proje)}</span> — ${esc(p.neden)}</li>`;
+      });
+      html += `</ul></div>`;
+    }
+
     (api.adimlar || []).forEach((a, i) => {
       const open = i === 0 ? ' open' : '';
       html += `

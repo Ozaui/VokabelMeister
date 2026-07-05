@@ -33,6 +33,13 @@ window.API = {
   baslik: 'Auth API (Kayıt, 2 Adımlı Login, Sosyal Giriş, Token Yenileme, Hesap Silme)',
   durum: 'wip',
   ozet: 'Kullanıcı kimlik doğrulamasının tüm akışları: kayıt + e-posta doğrulama, 2 adımlı OTP login, Google/Apple girişi, refresh token (Token Family Pattern), şifre sıfırlama ve 30 gün grace periyotlu hesap silme. 13 endpoint, tek AuthController altında toplanır.',
+  paketler: [
+    { paket: 'Microsoft.EntityFrameworkCore.Design', versiyon: '9.0.0', proje: 'API', neden: 'dotnet ef migrations add/database update komutları için gerekli — startup projesinde bulunmalı.' },
+    { paket: 'BCrypt.Net-Next', versiyon: '4.0.3', proje: 'Application', neden: 'PasswordService — şifre hash/verify (work factor 12).' },
+    { paket: 'System.IdentityModel.Tokens.Jwt', versiyon: '7.1.0', proje: 'Application', neden: 'JwtTokenService — access token üretimi/doğrulaması (HMAC-SHA256).' },
+    { paket: 'Microsoft.Extensions.Configuration.Abstractions', versiyon: '9.0.0', proje: 'Application', neden: 'JwtTokenService\'in appsettings.json (Jwt:SecretKey vb.) okuması için IConfiguration.' },
+    { paket: 'Microsoft.Extensions.Configuration.Binder', versiyon: '9.0.0', proje: 'Application', neden: 'IConfiguration.GetValue<T>() extension metodu (ör. Jwt:ExpirationMinutes okurken).' }
+  ],
   adimlar: [
     {
       num: 1, tur: 'enum',
@@ -717,6 +724,232 @@ public static class ApplicationServiceExtensions
 ##NEW##        //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
 ##NEW##        //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
 ##NEW##        services.AddScoped<IPasswordService, PasswordService>();
+
+        return services;
+    }
+}`
+    },
+    {
+      num: 11, tur: 'service',
+      baslik: 'ITokenService.cs', dosya: 'Application/Interfaces/Services/ITokenService.cs',
+      aciklama: 'AuthService (bir sonraki adım) somut JwtTokenService implementasyonuna değil bu arayüze bağımlı olacak. Üç metot: GenerateAccessToken (login sonrası JWT üretir), GenerateRefreshToken (JWT DEĞİL — düz rastgele veri, RefreshTokenResult record\'u ile birlikte), GetPrincipalFromExpiredToken (/auth/refresh akışında eski token\'ı doğrular). RefreshTokenResult, PasswordService.HashToken\'ın gerçek tüketicisi olacak (Token alanı DB\'ye yazılmadan önce hash\'lenir).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ITokenService.cs
+//
+// AMAÇ: JWT access token + refresh token üretimi ve süresi dolmuş token'dan
+//       kimlik bilgisi (claims) çıkarma sözleşmesi.
+// NEDEN: AuthService (A-03) somut JwtTokenService implementasyonuna değil bu
+//        arayüze bağımlı olmalı — testlerde mock enjekte edilebilir.
+// BAĞIMLILIKLAR: WordLearner.Domain.Entities.User, System.Security.Claims.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Claims;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+// AMAÇ: GenerateRefreshToken'ın ürettiği ham token + geçerlilik süresini bir arada taşır.
+// NEDEN: AuthService bu ikisini ayrı ayrı hesaplamak yerine tek çağrıda alır;
+//        Token, RefreshTokens.TokenHash'e yazılmadan önce IPasswordService.HashToken'dan geçer.
+public record RefreshTokenResult(string Token, DateTime ExpiresAt);
+
+public interface ITokenService
+{
+    // AMAÇ: Kullanıcı bilgilerinden (Id/Email/Role/FirstName) imzalı bir JWT access token üretir.
+    // NEDEN: Access token kısa ömürlüdür (Jwt:ExpirationMinutes) — her istekte [Authorize]
+    //        middleware'i bu token'ı doğrular, DB'ye gitmeden kullanıcı kimliğini claim'lerden okur.
+    string GenerateAccessToken(User user);
+
+    // AMAÇ: Rastgele, yüksek entropili bir refresh token üretir (JWT DEĞİL — düz rastgele veri).
+    // NEDEN: Refresh token'ın kendisi bir kimlik taşımaz, yalnızca DB'deki RefreshTokens
+    //        kaydıyla eşleştirilen bir sırdır (bkz. Token Family Pattern, SECURITY.md §1).
+    RefreshTokenResult GenerateRefreshToken();
+
+    // AMAÇ: Süresi dolmuş (expired) bir access token'dan, imzası hâlâ geçerliyse claims çıkarır.
+    // NEDEN: /auth/refresh akışında yeni token üretmeden önce "bu access token gerçekten bu
+    //        kullanıcıya mı aitti" doğrulanır — ValidateLifetime=false ile süre kontrolü
+    //        bilerek atlanır (zaten dolmuş olması beklenir), ama imza + algoritma kontrolü
+    //        (Algorithm Confusion önlemi) atlanmaz.
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
+}`
+    },
+    {
+      num: 12, tur: 'service',
+      baslik: 'JwtTokenService.cs', dosya: 'Application/Services/JwtTokenService.cs',
+      aciklama: 'ASP.NET Identity kullanılmadığı için JWT üretimi/doğrulaması manuel yazıldı. GenerateAccessToken, Program.cs\'teki JwtBearer doğrulama ayarlarıyla AYNI Jwt:SecretKey/Issuer/Audience\'ı appsettings.json\'dan okur (tek kaynak). GetPrincipalFromExpiredToken\'daki algoritma kontrolü kritik: ValidateToken çağrısı imzayı doğrular ama saldırganın "alg" header\'ını değiştirip değiştirmediğini KENDİLİĞİNDEN reddetmez — bu yüzden doğrulanan token\'ın header\'ında gerçekten HS256 kullanıldığı elle teyit edilir (Algorithm Confusion Attack önlemi, TECHNICAL_SPECIFICATIONS.md §5).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// JwtTokenService.cs
+//
+// AMAÇ: ITokenService'in JWT (HMAC-SHA256) tabanlı implementasyonu.
+// NEDEN: ASP.NET Identity kullanılmadığı için (SECURITY.md §1) JWT üretimi/doğrulaması
+//        manuel yazılır; Algorithm Confusion saldırısına karşı imzalanan algoritmanın
+//        gerçekten HS256 olduğu her seferinde elle doğrulanır.
+// BAĞIMLILIKLAR: System.IdentityModel.Tokens.Jwt, Microsoft.Extensions.Configuration,
+//                WordLearner.Domain.Entities.User.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Services;
+
+public class JwtTokenService : ITokenService
+{
+    private readonly IConfiguration _configuration;
+
+    public JwtTokenService(IConfiguration configuration) => _configuration = configuration;
+
+    // AMAÇ: Kullanıcı bilgilerinden imzalı bir JWT access token üretir.
+    // NEDEN: [Authorize] middleware'i her istekte bu claim'leri okuyup DB'ye gitmeden
+    //        kimlik/rol doğrular; süre appsettings.json Jwt:ExpirationMinutes'ten okunur
+    //        (Program.cs'teki JwtBearer doğrulama ayarlarıyla aynı anahtarı paylaşır).
+    // NASIL: 1) SecretKey'den simetrik imza anahtarı oluştur  2) NameIdentifier/Email/Role/
+    //        firstName claim'lerini ekle  3) HMAC-SHA256 ile imzala  4) string'e serileştir.
+    public string GenerateAccessToken(User user)
+    {
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
+        );
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim("firstName", user.FirstName),
+        };
+        var expirationMinutes = _configuration.GetValue("Jwt:ExpirationMinutes", 15);
+
+        var token = new JwtSecurityToken(
+            issuer: _configuration["Jwt:Issuer"],
+            audience: _configuration["Jwt:Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+        );
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    // AMAÇ: Rastgele, yüksek entropili (64 byte) bir refresh token üretir.
+    // NEDEN: 64 byte, brute-force ile tahmin edilemeyecek kadar büyük bir arama uzayı
+    //        sağlar; JWT değildir çünkü kendi başına hiçbir kimlik bilgisi taşımaz,
+    //        yalnızca DB'deki RefreshTokens kaydıyla (hash'i üzerinden) eşleştirilir.
+    public RefreshTokenResult GenerateRefreshToken()
+    {
+        var bytes = new byte[64];
+        RandomNumberGenerator.Fill(bytes);
+        var days = _configuration.GetValue("Jwt:RefreshTokenExpirationDays", 7);
+        return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));
+    }
+
+    // AMAÇ: Süresi dolmuş bir access token'dan, imzası hâlâ geçerliyse ClaimsPrincipal döner.
+    // NEDEN: /auth/refresh akışında yeni token üretmeden önce eski access token'ın gerçekten
+    //        bu sunucu tarafından üretildiği doğrulanır — ValidateLifetime=false bilerek
+    //        atlanır (zaten süresi dolmuş olması beklenir).
+    // NASIL: 1) Aynı SecretKey ile ValidateToken çağır (süre kontrolü kapalı)  2) Doğrulanan
+    //        token'ın header'ındaki algoritmanın gerçekten HS256 olduğunu kontrol et
+    //        (Algorithm Confusion önlemi — TECHNICAL_SPECIFICATIONS.md §5)  3) Geçersizse null dön.
+    public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+    {
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
+        );
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = key,
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = false,
+        };
+
+        try
+        {
+            var principal = new JwtSecurityTokenHandler().ValidateToken(
+                token,
+                validationParameters,
+                out var validatedToken
+            );
+
+            // NEDEN: Saldırgan "alg: none" veya asimetrik bir algoritmaya geçirilmiş bir token
+            //        sunarsa, ValidateToken bunu SecretKey ile doğrulamadan geçirebilir —
+            //        bu yüzden doğrulanan token'ın header'ında GERÇEKTEN HS256 kullanıldığı
+            //        elle teyit edilir (Algorithm Confusion Attack önlemi).
+            if (
+                validatedToken is not JwtSecurityToken jwtToken
+                || !jwtToken.Header.Alg.Equals(
+                    SecurityAlgorithms.HmacSha256,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                return null;
+
+            return principal;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}`
+    },
+    {
+      num: 13, tur: 'config',
+      baslik: 'ApplicationServiceExtensions.cs (ITokenService DI kaydı eklendi)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs',
+      aciklama: 'Adım 10\'da IPasswordService kaydedilen extension\'a şimdi ITokenService → JwtTokenService kaydı eklendi. Aynı Scoped gerekçesi geçerli. Bu dosya A-03 boyunca AuthService/IEmailService/IAppleTokenValidator eklendikçe tekrar tekrar bu şekilde büyüyecek — her seferinde yalnızca o anki gerçek yeni satır vurgulanır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationServiceExtensions.cs
+//
+// AMAÇ: Application katmanına ait tüm servisleri (MediatR, AutoMapper, FluentValidation)
+//       DI konteynerine kaydetmek için Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; InfrastructureServiceExtensions'ın Application
+//        katmanındaki karşılığıdır — yeni bir validator/handler/mapping profili
+//        eklenince yalnızca assembly taraması sayesinde otomatik kaydolur, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: MediatR, AutoMapper, FluentValidation.DependencyInjectionExtensions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Application.Extensions;
+
+public static class ApplicationServiceExtensions
+{
+    // AMAÇ: MediatR handler'larını, AutoMapper profillerini ve FluentValidation
+    //       validator'larını Application katmanı assembly'sinden tarayıp kaydeder.
+    // NEDEN: Henüz (A-02) hiçbir feature command/handler/validator yazılmadığı için
+    //        somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
+    //        A-03'ten itibaren eklenecek her CreateWordCommand/CreateWordCommandValidator
+    //        vb. otomatik olarak bulunur, tek tek kayıt gerekmez.
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+
+        // NEDEN MediatR: Controller'lar servisleri doğrudan çağırmak yerine
+        //       IMediator.Send(command/query) ile çağırır; controller ince katman kalır.
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+
+        // NEDEN AutoMapper: Entity ↔ DTO dönüşümlerini elle yazmak yerine profil
+        //       sınıflarına (Profile) devreder; her feature kendi profilini ekler.
+        services.AddAutoMapper(applicationAssembly);
+
+        // NEDEN FluentValidation: Request DTO'larının doğrulama kuralları (RuleFor)
+        //       controller'a girmeden, ASP.NET Core'un model binding aşamasında çalışır.
+        services.AddValidatorsFromAssembly(applicationAssembly);
+
+        // NEDEN Scoped: Stateless bir servis olduğu için Singleton da olabilirdi, ama
+        //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
+        //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
+        services.AddScoped<IPasswordService, PasswordService>();
+##NEW##        services.AddScoped<ITokenService, JwtTokenService>();
 
         return services;
     }

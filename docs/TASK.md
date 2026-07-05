@@ -86,6 +86,16 @@ toplu yazmak **yasak**:
   bu API'ın yol haritası sayfasına da eklenir — her API tek başına, baştan sona okunabilir olmalı.
 - **Birebir kopya:** Kod blokları gerçek dosyanın aynısıdır; kırpılmaz, `...` ile kapatılmaz. Enum
   kullanılıyorsa ayrı bir adım (`tur: 'enum'`) olarak doc-comment'leriyle yazılır.
+- **🟩🟥 Yeni/eski satır vurgusu:** Yukarıdaki "yeniden kullanılan kod" kuralı gereği tam dosya tekrar
+  gösterilirken, bu API için gerçekten **değişen** satırlar ham `kod` string'inde (escape'ten önce)
+  `##NEW##` (eklendi → yeşil) veya `##OLD##` (kaldırıldı/değişti → kırmızı, üstü çizili) marker'ıyla
+  işaretlenir — render.js bunu git diff gibi gösterir. Reused kısım işaretsiz kalır; tamamı yeni bir
+  dosyaysa hiç marker kullanılmaz (detay → `API_YOL_HARITASI/_TASLAK.html`).
+- **📦 Paket Kuralı:** Bu API için `dotnet add` ile eklenen **her yeni** NuGet paketi, sayfanın
+  `paketler: [{ paket, versiyon, proje, neden }]` dizisine yazılır (adımlardan önce görünür şekilde
+  gösterilir). Paket daha önceki bir API'de zaten eklenmişse burada **tekrar yazılmaz** — yalnızca bu
+  API'nin ilk kez eklettiği paketler listelenir. NEDEN: Her API tek başına baştan sona kurulabilir
+  olmalı; okuyucu kodu çalıştırmadan önce hangi paketi eklemesi gerektiğini görmeli.
 - **Test Alanı:** Her API'ın yol haritası sayfasında kod adımlarından ayrı, kendi **"Test"** bölümü
   olur. Test sınıfı da birebir kopyalanır + her test metoduna `REFERENCE/CODING_STANDARDS.md §7.6`'daki
   3 satırlık (Test Adı / Ne Test Edildi / Neden Önemli) açıklama eklenir.
@@ -154,6 +164,11 @@ sonra tüm component'ler) **DEĞİL**. Bu kural Faz B (Admin Panel), D (Web App)
 - **Yeniden kullanılan kod tekrar yazılır:** Bu feature daha önce yazılmış bir component/hook/slice
   kullanıyorsa (örn. ortak `Button`, `useAuth`), o kodun **tam hâli** bu feature'ın sayfasına da eklenir.
 - **Birebir kopya:** Kod blokları gerçek dosyanın aynısıdır; kırpılmaz, `...` ile kapatılmaz.
+- **🟩🟥 Yeni/eski satır vurgusu:** Reused kodda bu feature için gerçekten değişen satırlar
+  `##NEW##`/`##OLD##` marker'ıyla işaretlenir (bkz. yukarıdaki ⭐ Çalışma Yöntemi — birebir aynı kural).
+- **📦 Paket Kuralı:** Bu feature için `npm i` ile eklenen **her yeni** paket, sayfanın
+  `paketler: [{ paket, versiyon, neden }]` dizisine yazılır (paket daha önce başka bir feature'da
+  eklenmişse tekrar yazılmaz — bkz. yukarıdaki ⭐ Çalışma Yöntemi).
 - **🧩 Çapraz Link Kuralı (Frontend ↔ Backend):** `tur:'api'` adımı (RTK Query — backend'e istek
   atılan tam nokta) bir `backendRef: { dosya, baslik }` alanı alır — o adımın hemen altında
   **"Buradan sonrası backend tarafında"** bandı gösterilir ve ilgili `API_YOL_HARITASI/*.html`

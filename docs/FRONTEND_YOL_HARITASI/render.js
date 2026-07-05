@@ -54,6 +54,17 @@
       <h1 style="margin-top:.3rem">${esc(feature.baslik)}</h1>
       <p class="lead">${esc(feature.ozet)}</p>`;
 
+    // AMAÇ: Bu feature için yeni eklenen npm paketlerini (varsa) adımlardan önce listeler.
+    // NEDEN: Her feature tek başına baştan sona okunabilir/kurulabilir olmalı — okuyucu kodu
+    //        çalıştırmadan önce hangi paketleri eklemesi gerektiğini görmeli (TASK.md kuralı).
+    if ((feature.paketler || []).length) {
+      html += `<div class="note"><b>📦 Bu feature için eklenen paketler:</b><ul class="xref-list">`;
+      feature.paketler.forEach((p) => {
+        html += `<li><code>${esc(p.paket)}</code> <span class="badge">${esc(p.versiyon)}</span> — ${esc(p.neden)}</li>`;
+      });
+      html += `</ul></div>`;
+    }
+
     (feature.adimlar || []).forEach((a, i) => {
       const open = i === 0 ? ' open' : '';
       html += `
