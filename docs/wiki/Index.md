@@ -39,7 +39,15 @@
 - `User`/`RefreshToken` entity + `OtpPurpose` enum, `UserConfiguration`/`RefreshTokenConfiguration`
   (Fluent API), `AddUserAndRefreshToken` migration (VokabelMeisterDB'ye uygulandı) — detay bir kod
   sayfası yerine [[Auth_Domain]]'de (şema açıklaması zaten birebir bu koda karşılık geliyor) ve
-  `API_YOL_HARITASI/A-03_auth-api.html`'de (birebir kod + junior açıklaması). Sırada `IPasswordService`.
+  `API_YOL_HARITASI/A-03_auth-api.html`'de (birebir kod + junior açıklaması).
+- `IPasswordService`/`PasswordService` ve `ITokenService`/`JwtTokenService` yazıldı — ayrı wiki
+  sayfası yok (kod zaten [[Auth_Domain]]'in "Referans Kod" bölümünde özetlenmişti), tam hâli
+  `API_YOL_HARITASI/A-03_auth-api.html`'de.
+- [[AppException]] + [[ErrorMessages]] — Auth exception'ları (`DuplicateEmailException` vb.) için
+  yeni taban sınıf + dil sözlüğü; [[EntityNotFoundException]] ve [[ApiErrorResponse]] güncellendi,
+  [[Middleware]] (`ExceptionHandlingMiddleware`) `Accept-Language`'a göre mesaj çözecek şekilde
+  değiştirildi. Bu A-03'e özel değil, mimari bir karar — tüm gelecekteki iş kuralı exception'ları
+  bundan türeyecek. Sırada `IAuthService`/`AuthService`.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 

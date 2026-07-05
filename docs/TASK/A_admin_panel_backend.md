@@ -48,8 +48,8 @@
 - [ ] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,
       google, apple, refresh, logout, forgot/reset-password, delete-account (request/confirm, 30 gün grace)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] `AuthController` (13 endpoint) + FluentValidation + rate limiting (login 5/15dk, OTP 3 yanlış)
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] **Birim testleri:** `AuthServiceTests` (register, login 2-adım, OTP doğrula, refresh, forgot/reset,

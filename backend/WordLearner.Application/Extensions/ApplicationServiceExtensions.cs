@@ -46,6 +46,14 @@ public static class ApplicationServiceExtensions
         //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<ITokenService, JwtTokenService>();
+        services.AddScoped<IEmailService, DevEmailService>();
+        services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+
+        // NEDEN AddHttpClient<T>: AppleTokenValidator her doğrulamada Apple'ın JWKS'sini
+        //       (https://appleid.apple.com/auth/keys) HTTP ile çeker — tek tek `new HttpClient()`
+        //       yerine IHttpClientFactory kullanmak soket tükenmesi (socket exhaustion) riskini
+        //       önler ve testlerde HttpClient'ın mock'lanmasını kolaylaştırır.
+        services.AddHttpClient<IAppleTokenValidator, AppleTokenValidator>();
 
         return services;
     }

@@ -11,7 +11,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Infrastructure.Data;
+using WordLearner.Infrastructure.Repositories;
 
 namespace WordLearner.Infrastructure.Extensions;
 
@@ -33,8 +35,13 @@ public static class InfrastructureServiceExtensions
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
         );
 
-        // NOT: Feature repository'ler (IUserRepository, IWordRepository vb.) kendi task'larında
-        //      (A-03, A-05 ...) bu metoda eklenecek.
+        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı (bir request boyunca
+        //       aynı context'i paylaşırlar); A-03 — Auth API.
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+        // NOT: Sonraki feature repository'ler (IWordRepository vb.) kendi task'larında
+        //      (A-05 ...) bu metoda eklenecek.
 
         return services;
     }

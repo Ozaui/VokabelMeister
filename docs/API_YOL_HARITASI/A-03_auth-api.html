@@ -38,7 +38,9 @@ window.API = {
     { paket: 'BCrypt.Net-Next', versiyon: '4.0.3', proje: 'Application', neden: 'PasswordService — şifre hash/verify (work factor 12).' },
     { paket: 'System.IdentityModel.Tokens.Jwt', versiyon: '7.1.0', proje: 'Application', neden: 'JwtTokenService — access token üretimi/doğrulaması (HMAC-SHA256).' },
     { paket: 'Microsoft.Extensions.Configuration.Abstractions', versiyon: '9.0.0', proje: 'Application', neden: 'JwtTokenService\'in appsettings.json (Jwt:SecretKey vb.) okuması için IConfiguration.' },
-    { paket: 'Microsoft.Extensions.Configuration.Binder', versiyon: '9.0.0', proje: 'Application', neden: 'IConfiguration.GetValue<T>() extension metodu (ör. Jwt:ExpirationMinutes okurken).' }
+    { paket: 'Microsoft.Extensions.Configuration.Binder', versiyon: '9.0.0', proje: 'Application', neden: 'IConfiguration.GetValue<T>() extension metodu (ör. Jwt:ExpirationMinutes okurken).' },
+    { paket: 'Google.Apis.Auth', versiyon: '1.67.0', proje: 'Application', neden: 'GoogleTokenValidator — GoogleJsonWebSignature.ValidateAsync ile Google ID token doğrulaması.' },
+    { paket: 'Microsoft.Extensions.Http', versiyon: '9.0.0', proje: 'Application', neden: 'AppleTokenValidator için AddHttpClient<T> tabanlı IHttpClientFactory kaydı (Apple JWKS\'ini HTTP ile çeker).' }
   ],
   adimlar: [
     {
@@ -950,6 +952,941 @@ public static class ApplicationServiceExtensions
         //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
         services.AddScoped<IPasswordService, PasswordService>();
 ##NEW##        services.AddScoped<ITokenService, JwtTokenService>();
+
+        return services;
+    }
+}`
+    },
+    {
+      num: 14, tur: 'dto',
+      baslik: 'Auth DTO\'ları (9 dosya)', dosya: 'Application/DTOs/Auth/*.cs',
+      aciklama: 'AuthService\'in 13 akışının girdi/çıktı şekilleri. Entity (User) doğrudan dışarı verilmez — PasswordHash gibi hassas alanlar gizlenir. İlişkili request/response çiftleri tek dosyada gruplandı (ör. RegisterRequest+RegisterResponse aynı akışın parçası), tamamen ilgisiz DTO\'lar ayrı dosyada kaldı. MessageResponse ve AuthTokenResponse/AuthUserDto birden fazla endpoint tarafından paylaşılıyor — spekülatif değil, hepsinin bu görevdeki gerçek tüketicisi var (YAGNI istisnası, bkz. TASK.md).',
+      kod: `// ═══ RegisterDtos.cs — Application/DTOs/Auth/RegisterDtos.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Kayıt formunun gönderdiği ham girdi.
+public record RegisterRequest(string Email, string Password, string FirstName, string LastName);
+
+// AMAÇ: Kayıt sonrası dönen minimal kullanıcı bilgisi (REFERENCE/API_ENDPOINTS.md §3).
+// NEDEN: Token dönmez — kayıt sonrası e-posta doğrulaması gerekir, hemen giriş yapılmaz.
+public record RegisterResponse(int Id, string Email, string FirstName, string CurrentLevel);
+
+
+// ═══ EmailVerificationDtos.cs — Application/DTOs/Auth/EmailVerificationDtos.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Kayıt sonrası e-postaya gelen 6 haneli kodu doğrular.
+public record VerifyEmailRequest(string Email, string OtpCode);
+
+// AMAÇ: Doğrulama kodunun süresi dolduysa/gelmediyse yenisini ister.
+public record ResendVerificationRequest(string Email);
+
+
+// ═══ LoginDtos.cs — Application/DTOs/Auth/LoginDtos.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Login adım 1 — şifre doğrulanır, başarılıysa OTP gönderilir.
+public record LoginRequest(string Email, string Password);
+
+// AMAÇ: Login adım 2 (ve QR/sosyal giriş sonrası paylaşılan OTP şekli) — e-postaya
+//       gelen 6 haneli kodu doğrular, başarılıysa token üretilir.
+public record VerifyOtpRequest(string Email, string OtpCode);
+
+
+// ═══ SocialLoginDtos.cs — Application/DTOs/Auth/SocialLoginDtos.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Google Sign-In SDK'sının istemcide ürettiği ID token'ı taşır.
+public record GoogleLoginRequest(string IdToken);
+
+// AMAÇ: Apple Sign-In'in istemcide ürettiği identity token'ı taşır (yalnızca iOS).
+public record AppleLoginRequest(string IdentityToken);
+
+
+// ═══ AuthTokenResponse.cs — Application/DTOs/Auth/AuthTokenResponse.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Yanıttaki minimal kullanıcı özeti. Tam profil için GET /users/me kullanılır (C-fazı).
+public record AuthUserDto(int Id, string CurrentLevel);
+
+// AMAÇ: Başarılı girişin standart yanıtı — tüm giriş yöntemleri (OTP/Google/Apple/refresh/QR)
+//       aynı ITokenService'i çağırıp aynı şekilde token ürettiği için tek DTO yeterli.
+public record AuthTokenResponse(
+    string AccessToken,
+    string RefreshToken,
+    int ExpiresIn,
+    AuthUserDto User,
+    bool AccountWasRecovered
+);
+
+
+// ═══ RefreshRequest.cs — Application/DTOs/Auth/RefreshRequest.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: POST /auth/refresh ve POST /auth/logout girdi şekli — ikisi de yalnızca ham refresh token'ı taşır.
+public record RefreshRequest(string RefreshToken);
+
+
+// ═══ PasswordResetDtos.cs — Application/DTOs/Auth/PasswordResetDtos.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Adım 1 — kullanıcı yoksa bile aynı yanıt döner (e-posta numaralandırma önlemi).
+public record ForgotPasswordRequest(string Email);
+
+// AMAÇ: Adım 2 — OTP + yeni şifre. Başarılıysa tüm cihazlardan çıkış yapılır.
+public record ResetPasswordRequest(string Email, string OtpCode, string NewPassword);
+
+
+// ═══ DeleteAccountConfirmRequest.cs — Application/DTOs/Auth/DeleteAccountConfirmRequest.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Hesap silme geri alınamaz bir işlem olduğu için OTP'ye ek olarak şifre de istenir (çift onay).
+//       /auth/delete-account/request girdi almaz (JWT'deki kullanıcıyı kullanır), bu yüzden ayrı DTO'su yok.
+public record DeleteAccountConfirmRequest(string OtpCode, string Password);
+
+
+// ═══ MessageResponse.cs — Application/DTOs/Auth/MessageResponse.cs ═══
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Token dönmeyen auth endpoint'lerinin (login adım 1, resend-verification, forgot-password,
+//       delete-account/request vb.) ortak yanıt şekli — REFERENCE/API_ENDPOINTS.md §3'teki
+//       "OTP gönderildi" örneğiyle birebir eşleşir.
+public record MessageResponse(string Message);`
+    },
+    {
+      num: 15, tur: 'exception',
+      baslik: 'AppException.cs + ErrorMessages.cs (mimari karar)', dosya: 'Application/Common/Exceptions/AppException.cs, Application/Common/Localization/ErrorMessages.cs',
+      aciklama: 'Bu adım A-03\'e özel değil — proje genelinde geçerli bir mimari karar: hata mesajlarının API yanıtında isteğin diline (Accept-Language) göre değişebilmesi gerektiği fark edildi. AppException, mesajı kendi içinde sabitlemez — yalnızca bir Code taşır; gerçek mesaj ErrorMessages sözlüğünden dile göre çözülür. Exception\'ın kendi .Message\'ı yalnızca log/geliştirici için sabit Türkçedir (CODING_STANDARDS.md §1), istemciye asla gitmez. EntityNotFoundException bilinçli olarak bundan TÜRETİLMEDİ çünkü mesajı dinamik veri (entity adı) içerir. Bundan sonraki tüm iş kuralı exception\'ları AppException\'dan türeyecek.',
+      kod: `// ═══ AppException.cs — Application/Common/Exceptions/AppException.cs ═══
+// ─────────────────────────────────────────────────────────────────────────────
+// AppException.cs
+//
+// AMAÇ: İstemciye dönecek mesajı kendi içinde SABİTLEMEYEN, yalnızca dil bağımsız
+//       bir hata kodu (Code) taşıyan taban exception.
+// NEDEN: Bir hata kodunun (ör. GECERSIZ_KIMLIK) istemciye gösterilecek metni,
+//        isteğin diline göre değişebilmeli (Accept-Language). Bu yüzden mesaj
+//        exception'ın kendisinde değil, WordLearner.Application.Common.Localization.
+//        ErrorMessages sözlüğünde durur; ExceptionHandlingMiddleware Code'u bu
+//        sözlükten çözer. .Message yalnızca log/geliştirici için sabit Türkçe açıklamadır
+//        (CODING_STANDARDS.md §1 — tüm log/exception mesajları Türkçe kuralı budur;
+//        istemciye giden metin ayrı bir kanaldan, ErrorMessages'ten gelir).
+//        EntityNotFoundException bilinçli olarak bundan TÜRETİLMEZ — mesajı entity
+//        adı gibi dinamik veri içerir, sabit kod sözlüğüne uymaz.
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public abstract class AppException : Exception
+{
+    // AMAÇ: İstemciye dönecek, dilden bağımsız hata kodu (ör. "GECERSIZ_KIMLIK").
+    // NEDEN: ErrorMessages sözlüğünün anahtarıdır; ExceptionHandlingMiddleware bu kodu
+    //        isteğin diline göre insan-okunur bir mesaja çevirir.
+    public string Code { get; }
+
+    // AMAÇ: Alt sınıfların kod + sabit Türkçe log mesajını taban sınıfa iletmesini sağlar.
+    protected AppException(string code, string developerMessage)
+        : base(developerMessage)
+    {
+        Code = code;
+    }
+}
+
+
+// ═══ ErrorMessages.cs — Application/Common/Localization/ErrorMessages.cs ═══
+// ─────────────────────────────────────────────────────────────────────────────
+// ErrorMessages.cs
+//
+// AMAÇ: AppException.Code değerlerinin her dildeki karşılığını tutan merkezi sözlük.
+// NEDEN: Exception'lar mesajı kendi içinde sabitlemez — aynı kod, isteğin diline
+//        göre farklı bir metne çevrilebilsin diye (REFERENCE/API_ENDPOINTS.md §1).
+//        Yeni bir dil eklemek (ör. de) yalnızca buraya bir sütun eklemekle olur,
+//        hiçbir exception sınıfına dokunulmaz.
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Localization;
+
+public static class ErrorMessages
+{
+    // NEDEN varsayılan "tr": İstekte Accept-Language yoksa veya bilinmeyen bir dilse,
+    //        proje Türkçe öncelikli olduğu için Türkçe'ye düşülür (00_INDEX.md kuralı).
+    private const string DefaultLanguage = "tr";
+
+    private static readonly Dictionary<string, Dictionary<string, string>> Messages =
+        new()
+        {
+            ["GECERSIZ_KIMLIK"] = new()
+            {
+                ["tr"] = "E-posta veya şifre hatalı.",
+                ["en"] = "Invalid email or password.",
+            },
+            ["GECERSIZ_OTP"] = new()
+            {
+                ["tr"] = "Girilen kod geçersiz veya süresi dolmuş.",
+                ["en"] = "The code you entered is invalid or has expired.",
+            },
+            ["EPOSTA_KAYITLI"] = new()
+            {
+                ["tr"] = "Bu e-posta adresi zaten kayıtlı.",
+                ["en"] = "This email address is already registered.",
+            },
+            ["HESAP_DONDURULMUS"] = new()
+            {
+                ["tr"] = "Hesabınız dondurulmuş. Lütfen destekle iletişime geçin.",
+                ["en"] = "Your account has been suspended. Please contact support.",
+            },
+            ["HESAP_SILINMIS"] = new()
+            {
+                ["tr"] = "Bu hesap kalıcı olarak silinmiş.",
+                ["en"] = "This account has been permanently deleted.",
+            },
+            ["GECERSIZ_REFRESH_TOKEN"] = new()
+            {
+                ["tr"] = "Oturumunuzun süresi dolmuş. Lütfen tekrar giriş yapın.",
+                ["en"] = "Your session has expired. Please sign in again.",
+            },
+            ["GECERSIZ_SOSYAL_TOKEN"] = new()
+            {
+                ["tr"] = "Sosyal giriş doğrulanamadı.",
+                ["en"] = "Social sign-in could not be verified.",
+            },
+        };
+
+    // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
+    // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir AppException
+    //        eklenip buraya çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi
+    //        döner; API asla yalnızca çeviri eksik diye 500'e düşmemeli.
+    public static string Resolve(string code, string? language)
+    {
+        if (!Messages.TryGetValue(code, out var translations))
+            return code;
+
+        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
+        return translations.TryGetValue(lang, out var message) ? message : translations[DefaultLanguage];
+    }
+}`
+    },
+    {
+      num: 16, tur: 'exception',
+      baslik: 'Auth Exception\'ları (7 dosya)', dosya: 'Application/Common/Exceptions/{DuplicateEmail,InvalidCredentials,InvalidOtp,AccountNotActive,AccountAnonymized,InvalidRefreshToken,InvalidSocialToken}Exception.cs',
+      aciklama: 'AuthService\'in fırlattığı 7 bilinen iş kuralı hatası, hepsi AppException\'dan türer ve parametresizdir (sabit Code + sabit Türkçe log mesajı taşır — istemciye giden gerçek mesaj bir önceki adımdaki ErrorMessages\'ten gelir). InvalidCredentialsException özellikle üç farklı durumda (kullanıcı yok, şifre yanlış, sosyal hesapla yerel login) AYNI kodu kullanır — bilgi sızıntısını önlemek için.',
+      kod: `// ═══ DuplicateEmailException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class DuplicateEmailException : AppException
+{
+    public DuplicateEmailException()
+        : base("EPOSTA_KAYITLI", "Kayıt denemesi: e-posta adresi zaten kullanımda.") { }
+}
+
+
+// ═══ InvalidCredentialsException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class InvalidCredentialsException : AppException
+{
+    public InvalidCredentialsException()
+        : base("GECERSIZ_KIMLIK", "Login denemesi: kimlik bilgileri geçersiz.") { }
+}
+
+
+// ═══ InvalidOtpException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class InvalidOtpException : AppException
+{
+    public InvalidOtpException()
+        : base("GECERSIZ_OTP", "OTP doğrulama: kod geçersiz veya süresi dolmuş.") { }
+}
+
+
+// ═══ AccountNotActiveException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class AccountNotActiveException : AppException
+{
+    public AccountNotActiveException()
+        : base("HESAP_DONDURULMUS", "Login denemesi: hesap dondurulmuş (IsActive=false).") { }
+}
+
+
+// ═══ AccountAnonymizedException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class AccountAnonymizedException : AppException
+{
+    public AccountAnonymizedException()
+        : base("HESAP_SILINMIS", "Login denemesi: hesap kalıcı olarak anonimleştirilmiş.") { }
+}
+
+
+// ═══ InvalidRefreshTokenException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class InvalidRefreshTokenException : AppException
+{
+    public InvalidRefreshTokenException()
+        : base("GECERSIZ_REFRESH_TOKEN", "Refresh denemesi: token geçersiz/süresi dolmuş/iptal edilmiş.") { }
+}
+
+
+// ═══ InvalidSocialTokenException.cs ═══
+namespace WordLearner.Application.Common.Exceptions;
+
+public class InvalidSocialTokenException : AppException
+{
+    public InvalidSocialTokenException()
+        : base("GECERSIZ_SOSYAL_TOKEN", "Sosyal giriş denemesi: token doğrulanamadı.") { }
+}`
+    },
+    {
+      num: 17, tur: 'config',
+      baslik: 'ExceptionHandlingMiddleware.cs (AppException/ErrorMessages entegrasyonu)', dosya: 'API/Middleware/ExceptionHandlingMiddleware.cs',
+      aciklama: 'A-02\'de yazılan middleware, yukarıdaki mimari karar (AppException + ErrorMessages) doğrultusunda güncellendi — bu değişiklik A-03\'e özel bir ekleme değil, tüm projeyi etkileyen bir mimari revizyon olduğu için satır satır vurgulanmadı (##NEW## kullanılmadı), dosyanın YENİ hâli baştan sona gösteriliyor. StatusCodeFor ile her AppException alt tipi kendi HTTP koduna eşlenir; GetRequestLanguage, Accept-Language header\'ından dili çıkarır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ExceptionHandlingMiddleware.cs
+//
+// AMAÇ: İstek hattında (pipeline) yakalanmayan tüm exception'ları tek yerden
+//       yakalayıp standart ApiErrorResponse JSON'ına çevirmek.
+// NEDEN: Controller'larda try/catch tekrar etmeyi önler; her hatanın HTTP durum
+//        kodu ve JSON şekli tek bir dosyadan yönetilir (REFERENCE/API_ENDPOINTS.md §1).
+// BAĞIMLILIKLAR: WordLearner.Application.Common.Exceptions.EntityNotFoundException/AppException,
+//                WordLearner.Application.Common.Localization.ErrorMessages,
+//                WordLearner.Application.Common.Models.ApiErrorResponse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Net;
+using System.Text.Json;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
+using WordLearner.Application.Common.Models;
+
+namespace WordLearner.API.Middleware;
+
+public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+    // AMAÇ: Pipeline'daki bir sonraki middleware'i ve loglama servisini enjekte eder.
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger
+    )
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    // AMAÇ: İsteği bir sonraki middleware'e iletir; sırasında fırlatılan her
+    //       exception'ı yakalayıp standart hata yanıtına çevirir.
+    // NEDEN: try/catch burada tek bir noktada olduğu için controller'lar yalnızca
+    //        "mutlu yol" veya bilinen iş kuralı exception'larına (EntityNotFoundException
+    //        vb.) odaklanır; beklenmeyen her şey burada 500'e düşer.
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları Türkçe; exception detayı
+            //        (stack trace) yalnızca ApplicationLog'a (A-04'te DB sink) gider, istemciye asla.
+            _logger.LogError(
+                ex,
+                "İşlenmemiş hata yakalandı: {Method} {Path}",
+                context.Request.Method,
+                context.Request.Path
+            );
+
+            await WriteErrorResponseAsync(context, ex);
+        }
+    }
+
+    // AMAÇ: Exception tipine göre HTTP durum kodu + hata kodu eşlemesi yapıp
+    //       ApiErrorResponse'u JSON olarak yanıta yazar.
+    // NEDEN: EntityNotFoundException bilinen bir iş kuralı olduğu için 404 + kendi
+    //        (dinamik entity adı içeren) mesajıyla döner. AppException'dan türeyen
+    //        Auth vb. exception'ların istemciye giden mesajı ise ex.Message DEĞİL —
+    //        Code'un isteğin diline (Accept-Language) göre ErrorMessages'ten çözülmüş
+    //        hâlidir (bkz. AppException.cs NEDEN açıklaması). Bilinmeyen her exception'ın
+    //        gerçek mesajı istemciye sızdırılmaz (bilgi ifşası riski) — sabit, güvenli
+    //        bir mesaj döner.
+    private static Task WriteErrorResponseAsync(HttpContext context, Exception ex)
+    {
+        var (statusCode, code) = ex switch
+        {
+            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI"),
+            AppException appEx => (StatusCodeFor(appEx), appEx.Code),
+            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI"),
+        };
+
+        // NEDEN: EntityNotFoundException'ın mesajı dinamiktir (entity adı içerir),
+        //        doğrudan ex.Message kullanılır. AppException'lar Code üzerinden
+        //        isteğin diline göre çözülür. SUNUCU_HATASI ise hiçbir zaman gerçek
+        //        exception mesajını sızdırmaz, sabit bir metin döner.
+        var message = ex switch
+        {
+            EntityNotFoundException => ex.Message,
+            AppException appEx => ErrorMessages.Resolve(appEx.Code, GetRequestLanguage(context)),
+            _ => "Beklenmeyen bir hata oluştu.",
+        };
+
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = (int)statusCode;
+
+        var response = new ApiErrorResponse(code, message);
+        var json = JsonSerializer.Serialize(
+            response,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }
+        );
+
+        return context.Response.WriteAsync(json);
+    }
+
+    // AMAÇ: Her AppException alt tipini kendi HTTP durum koduna eşler.
+    // NEDEN: Kod (Code) ile HTTP durumu ayrı kavramlar — aynı Code farklı senaryoda
+    //        farklı statü dönebilir ihtimaline karşı, statü ayrı bir switch'te tutulur.
+    private static HttpStatusCode StatusCodeFor(AppException ex) =>
+        ex switch
+        {
+            DuplicateEmailException => HttpStatusCode.Conflict,
+            InvalidCredentialsException => HttpStatusCode.Unauthorized,
+            InvalidOtpException => HttpStatusCode.BadRequest,
+            AccountNotActiveException => HttpStatusCode.Forbidden,
+            AccountAnonymizedException => HttpStatusCode.Forbidden,
+            InvalidRefreshTokenException => HttpStatusCode.Unauthorized,
+            InvalidSocialTokenException => HttpStatusCode.Unauthorized,
+            _ => HttpStatusCode.BadRequest,
+        };
+
+    // AMAÇ: İsteğin Accept-Language header'ından ilk dil kodunu (ör. "en-US" → "en") çıkarır.
+    // NEDEN: Header yoksa/parse edilemezse null döner; ErrorMessages.Resolve bu durumda
+    //        varsayılan Türkçe'ye düşer (proje Türkçe öncelikli, 00_INDEX.md kuralı).
+    private static string? GetRequestLanguage(HttpContext context)
+    {
+        var header = context.Request.Headers.AcceptLanguage.ToString();
+        if (string.IsNullOrWhiteSpace(header))
+            return null;
+
+        var firstLanguage = header.Split(',')[0].Split(';')[0].Trim();
+        return firstLanguage.Length >= 2 ? firstLanguage[..2].ToLowerInvariant() : null;
+    }
+}`
+    },
+    {
+      num: 18, tur: 'repository',
+      baslik: 'IUserRepository / UserRepository', dosya: 'Application/Interfaces/Repositories/IUserRepository.cs, Infrastructure/Repositories/UserRepository.cs',
+      aciklama: 'IRepository<T>\'nin genel CRUD\'una User\'a özgü aramaları ekler. GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync bilinçli olarak IgnoreQueryFilters() kullanır — global soft delete filtresi olmadan grace period içindeki (30 gün, soft-delete\'li) bir hesap login/register akışlarında hiç bulunamazdı; IsDeleted/IsAnonymized kontrolü artık repository\'de değil AuthService\'te yapılıyor. OriginalEmailHashExistsAsync, anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını engeller (SECURITY.md §9).',
+      kod: `// ═══ IUserRepository.cs — Application/Interfaces/Repositories/IUserRepository.cs ═══
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Interfaces.Repositories;
+
+public interface IUserRepository : IRepository<User>
+{
+    // AMAÇ: E-postaya göre kullanıcı bulur — soft delete filtresini YOK SAYAR.
+    // NEDEN: Grace period (30 gün) içindeki soft-delete'li bir hesap login/register
+    //        akışlarında hâlâ görülebilmeli (hesap kurtarma, tekrar kayıt engeli için) —
+    //        global soft delete filtresi bu senaryoda bilerek bypass edilir; IsDeleted/
+    //        IsAnonymized kontrolü çağıran (AuthService) tarafında yapılır.
+    Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
+
+    // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
+    Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default);
+
+    // AMAÇ: Apple Sign-In sub (AppleId) değerine göre kullanıcı bulur.
+    Task<User?> GetByAppleIdAsync(string appleId, CancellationToken ct = default);
+
+    // AMAÇ: Verilen SHA-256 e-posta hash'i, daha önce anonimleştirilmiş bir hesabın
+    //       OriginalEmailHash'iyle eşleşiyor mu kontrol eder.
+    // NEDEN: Silinip anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını
+    //        engellemek için (REFERENCE/SECURITY.md §9).
+    Task<bool> OriginalEmailHashExistsAsync(string emailHash, CancellationToken ct = default);
+}
+
+
+// ═══ UserRepository.cs — Infrastructure/Repositories/UserRepository.cs ═══
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories;
+
+public class UserRepository : Repository<User>, IUserRepository
+{
+    public UserRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    // AMAÇ: E-postaya göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
+    // NEDEN: IgnoreQueryFilters() olmadan grace period içindeki (soft-delete'li) bir
+    //        hesap login/register akışlarında hiç görünmez — hesap kurtarma ve
+    //        "e-posta zaten kullanımda" kontrolü bu satır olmadan çalışamaz.
+    public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
+
+    // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
+    public Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.GoogleId == googleId, ct);
+
+    // AMAÇ: Apple Sign-In sub (AppleId) değerine göre kullanıcı bulur.
+    public Task<User?> GetByAppleIdAsync(string appleId, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.AppleId == appleId, ct);
+
+    // AMAÇ: Anonimleştirilmiş bir hesabın OriginalEmailHash'i verilen hash ile eşleşiyor mu bakar.
+    public Task<bool> OriginalEmailHashExistsAsync(
+        string emailHash,
+        CancellationToken ct = default
+    ) => _set.IgnoreQueryFilters().AnyAsync(u => u.OriginalEmailHash == emailHash, ct);
+}`
+    },
+    {
+      num: 19, tur: 'repository',
+      baslik: 'IRefreshTokenRepository / RefreshTokenRepository', dosya: 'Application/Interfaces/Repositories/IRefreshTokenRepository.cs, Infrastructure/Repositories/RefreshTokenRepository.cs',
+      aciklama: 'Token Family Pattern (SECURITY.md §1) için gereken sorgular: GetByTokenHashAsync (refresh/replay doğrulama), RevokeFamilyAsync (replay tespitinde TÜM family iptal), RevokeAllForUserAsync (şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış", SECURITY.md §7). İkisi de RefreshTokens tablosunda soft delete kullanılmadığı için IgnoreQueryFilters gerektirmiyor.',
+      kod: `// ═══ IRefreshTokenRepository.cs — Application/Interfaces/Repositories/IRefreshTokenRepository.cs ═══
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Interfaces.Repositories;
+
+public interface IRefreshTokenRepository : IRepository<RefreshToken>
+{
+    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
+    // NEDEN: İstemciden gelen ham token asla saklanmadığı için, doğrulama her zaman
+    //        hash üzerinden yapılır (IPasswordService.HashToken).
+    Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default);
+
+    // AMAÇ: Aynı TokenFamily'e ait tüm refresh token'ları iptal eder (RevokedAt=UtcNow).
+    // NEDEN: Replay tespit edildiğinde (kullanılmış bir token tekrar geldiğinde) o
+    //        family'nin tamamı güvenli kabul edilmez, hepsi iptal edilir.
+    Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default);
+
+    // AMAÇ: Bir kullanıcının TÜM refresh token'larını iptal eder (family'den bağımsız).
+    // NEDEN: Şifre sıfırlama ve hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi
+    //        (REFERENCE/SECURITY.md §7) — o kullanıcıya ait her token, hangi family'den
+    //        olursa olsun geçersiz kılınır.
+    Task RevokeAllForUserAsync(int userId, CancellationToken ct = default);
+}
+
+
+// ═══ RefreshTokenRepository.cs — Infrastructure/Repositories/RefreshTokenRepository.cs ═══
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories;
+
+public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRepository
+{
+    public RefreshTokenRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
+    public Task<RefreshToken?> GetByTokenHashAsync(
+        string tokenHash,
+        CancellationToken ct = default
+    ) => _set.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
+
+    // AMAÇ: Aynı TokenFamily'e ait, henüz iptal edilmemiş tüm token'ları RevokedAt=UtcNow yapar.
+    // NEDEN: Replay tespitinde tüm family güvensiz sayılır — tek bir token değil, hepsi iptal edilir.
+    public async Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default)
+    {
+        var tokens = await _set.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
+            .ToListAsync(ct);
+
+        foreach (var token in tokens)
+            token.RevokedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    // AMAÇ: Bir kullanıcının, hangi family'den olursa olsun, henüz iptal edilmemiş
+    //       tüm refresh token'larını RevokedAt=UtcNow yapar.
+    // NEDEN: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi.
+    public async Task RevokeAllForUserAsync(int userId, CancellationToken ct = default)
+    {
+        var tokens = await _set.Where(t => t.UserId == userId && t.RevokedAt == null)
+            .ToListAsync(ct);
+
+        foreach (var token in tokens)
+            token.RevokedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+    }
+}`
+    },
+    {
+      num: 20, tur: 'config',
+      baslik: 'InfrastructureServiceExtensions.cs (repository DI kaydı eklendi)', dosya: 'Infrastructure/Extensions/InfrastructureServiceExtensions.cs',
+      aciklama: 'A-02\'de yalnızca DbContext kaydeden bu extension\'a, A-03\'ün ilk repository kayıtları eklendi. Scoped seçildi çünkü DbContext ile aynı yaşam süresinde olmalılar (bir HTTP isteği boyunca aynı context\'i paylaşırlar).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// InfrastructureServiceExtensions.cs
+//
+// AMAÇ: Infrastructure katmanına ait tüm servisleri DI konteynerine kaydetmek için
+//       Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; yeni bir repository veya servis eklenince
+//        yalnızca bu dosya değişir, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: WordLearnerDbContext, Microsoft.EntityFrameworkCore.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Infrastructure.Data;
+using WordLearner.Infrastructure.Repositories;
+
+namespace WordLearner.Infrastructure.Extensions;
+
+public static class InfrastructureServiceExtensions
+{
+    // AMAÇ: DbContext ve infrastructure servislerini IServiceCollection'a ekler.
+    // NEDEN: Program.cs'de tek satır (builder.Services.AddInfrastructureServices(config))
+    //        ile tüm altyapı hazır hâle gelir; composition root temiz kalır.
+    // NASIL: Configuration'dan connection string okunur, DbContext Scoped olarak kaydedilir.
+    //        Yeni repository'ler ilerleyen task'larda (A-03+) buraya eklenir.
+    public static IServiceCollection AddInfrastructureServices(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        // NEDEN Scoped: DbContext request başına bir instance olmalı;
+        //       Singleton olsaydı eş zamanlı istekler aynı context'i paylaşırdı (thread-safety sorunu).
+        services.AddDbContext<WordLearnerDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
+        );
+
+##NEW##        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı (bir request boyunca
+##NEW##        //       aynı context'i paylaşırlar); A-03 — Auth API.
+##NEW##        services.AddScoped<IUserRepository, UserRepository>();
+##NEW##        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+        // NOT: Sonraki feature repository'ler (IWordRepository vb.) kendi task'larında
+        //      (A-05 ...) bu metoda eklenecek.
+
+        return services;
+    }
+}`
+    },
+    {
+      num: 21, tur: 'service',
+      baslik: 'IEmailService.cs + DevEmailService.cs', dosya: 'Application/Interfaces/Services/IEmailService.cs, Application/Services/DevEmailService.cs',
+      aciklama: 'AuthService dış bir e-posta sağlayıcısına doğrudan bağımlı olmasın diye sözleşme yazıldı (CODING_STANDARDS.md §7.4 — dış servisler her zaman mock\'lanır). Gerçek SMTP implementasyonu (SmtpEmailService, MailKit) A-10\'da yazılacak — SMTP ayarları A-09\'da DB\'ye AES-256 şifreli kaydedilecek, henüz yok. DevEmailService bu implementasyon olmadan A-03\'teki hiçbir OTP akışının test edilemeyeceği için yazıldı: e-postayı Serilog üzerinden konsola loglar, geliştirici OTP kodunu görüp akışı uçtan uca deneyebilir.',
+      kod: `// ═══ IEmailService.cs — Application/Interfaces/Services/IEmailService.cs ═══
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface IEmailService
+{
+    // AMAÇ: Kayıt/yeniden gönderme sonrası e-posta doğrulama OTP kodunu gönderir.
+    Task SendEmailVerificationOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+
+    // AMAÇ: Login adım 1 sonrası 2FA OTP kodunu gönderir.
+    Task SendLoginOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+
+    // AMAÇ: Şifre sıfırlama isteği sonrası OTP kodunu gönderir.
+    Task SendPasswordResetOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+
+    // AMAÇ: Şifre başarıyla değiştirildiğinde bilgilendirme e-postası gönderir.
+    // NEDEN: Kullanıcı kendisi değiştirmediyse (hesabı ele geçirilmişse) fark etmesi için.
+    Task SendPasswordChangedNotificationAsync(string toEmail, CancellationToken ct = default);
+
+    // AMAÇ: Hesap silme isteği sonrası onay OTP kodunu gönderir.
+    Task SendAccountDeletionOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+}
+
+
+// ═══ DevEmailService.cs — Application/Services/DevEmailService.cs ═══
+using Microsoft.Extensions.Logging;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class DevEmailService : IEmailService
+{
+    private readonly ILogger<DevEmailService> _logger;
+
+    public DevEmailService(ILogger<DevEmailService> logger) => _logger = logger;
+
+    // AMAÇ: Kayıt/yeniden gönderme sonrası e-posta doğrulama OTP kodunu loglar.
+    public Task SendEmailVerificationOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "E-posta Doğrulama", $"Doğrulama kodunuz: {otpCode}");
+
+    // AMAÇ: Login adım 1 sonrası 2FA OTP kodunu loglar.
+    public Task SendLoginOtpAsync(string toEmail, string otpCode, CancellationToken ct = default) =>
+        LogEmailAsync(toEmail, "Giriş Doğrulama Kodu", $"Giriş kodunuz: {otpCode}");
+
+    // AMAÇ: Şifre sıfırlama isteği sonrası OTP kodunu loglar.
+    public Task SendPasswordResetOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "Şifre Sıfırlama", $"Şifre sıfırlama kodunuz: {otpCode}");
+
+    // AMAÇ: Şifre değiştirildiğinde bilgilendirme e-postasını loglar.
+    public Task SendPasswordChangedNotificationAsync(
+        string toEmail,
+        CancellationToken ct = default
+    ) =>
+        LogEmailAsync(
+            toEmail,
+            "Şifreniz Değiştirildi",
+            "Hesabınızın şifresi az önce değiştirildi."
+        );
+
+    // AMAÇ: Hesap silme isteği sonrası onay OTP kodunu loglar.
+    public Task SendAccountDeletionOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "Hesap Silme Onayı", $"Hesap silme onay kodunuz: {otpCode}");
+
+    // AMAÇ: Tüm e-posta türleri için ortak loglama noktası.
+    // NEDEN: PII kuralı (SECURITY.md §6) — ham e-posta yalnızca geliştirme ortamı
+    //        konsol logunda görünür. A-10'da SmtpEmailService yazılınca DI kaydı
+    //        ortama göre koşullu hâle getirilecek (dev→Dev, prod→Smtp); o güne kadar
+    //        IEmailService her ortamda bu implementasyona çözülür.
+    private Task LogEmailAsync(string toEmail, string subject, string body)
+    {
+        _logger.LogInformation(
+            "[DEV E-POSTA] Alıcı: {ToEmail} | Konu: {Subject} | İçerik: {Body}",
+            toEmail,
+            subject,
+            body
+        );
+        return Task.CompletedTask;
+    }
+}`
+    },
+    {
+      num: 22, tur: 'service',
+      baslik: 'IGoogleTokenValidator.cs + GoogleTokenValidator.cs', dosya: 'Application/Interfaces/Services/IGoogleTokenValidator.cs, Application/Services/GoogleTokenValidator.cs',
+      aciklama: 'Google Sign-In doğrulaması Google.Apis.Auth kütüphanesinin GoogleJsonWebSignature.ValidateAsync\'ine sarılır (backend yalnızca ID token doğrular, client secret gerekmez — REFERENCE/ENV.md §3). Arayüz olması, AuthService testlerinde gerçek bir Google sunucu çağrısı yapılmadan mock enjekte edilebilmesini sağlar. Audience kontrolü (Google:ClientId) olmadan başka bir uygulama için üretilmiş bir token da kabul edilirdi.',
+      kod: `// ═══ IGoogleTokenValidator.cs — Application/Interfaces/Services/IGoogleTokenValidator.cs ═══
+namespace WordLearner.Application.Interfaces.Services;
+
+// AMAÇ: Doğrulanmış Google token'ından çıkarılan, AuthService'in ihtiyaç duyduğu alanlar.
+public record GoogleTokenPayload(string GoogleId, string Email, string? FirstName, string? LastName);
+
+public interface IGoogleTokenValidator
+{
+    // AMAÇ: Ham ID token'ı doğrular; geçersizse (imza/audience/süre) null döner.
+    // NEDEN: AuthService, doğrulama başarısız olursa InvalidSocialTokenException fırlatır —
+    //        bu metot exception fırlatmaz, yalnızca null/dolu döner (akış kontrolü servise ait).
+    Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken ct = default);
+}
+
+
+// ═══ GoogleTokenValidator.cs — Application/Services/GoogleTokenValidator.cs ═══
+using Google.Apis.Auth;
+using Microsoft.Extensions.Configuration;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class GoogleTokenValidator : IGoogleTokenValidator
+{
+    private readonly IConfiguration _configuration;
+
+    public GoogleTokenValidator(IConfiguration configuration) => _configuration = configuration;
+
+    // AMAÇ: Google ID token'ını doğrular, geçerliyse kullanıcı bilgilerini döner.
+    // NEDEN: GoogleJsonWebSignature.ValidateAsync Google'ın JWKS'sinden anahtarları
+    //        kendi indirir/önbellekler; biz yalnızca audience'ın bizim Client Id'mize
+    //        eşit olduğunu doğrulatırız (aksi hâlde başka bir uygulama için üretilmiş
+    //        bir token da kabul edilirdi).
+    public async Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken ct = default)
+    {
+        try
+        {
+            var settings = new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = new[] { _configuration["Google:ClientId"]! },
+            };
+            var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+
+            return new GoogleTokenPayload(payload.Subject, payload.Email, payload.GivenName, payload.FamilyName);
+        }
+        catch (InvalidJwtException)
+        {
+            // NEDEN: İmza geçersiz, süre dolmuş veya audience uyuşmuyor — hepsi bu tek
+            //        exception tipinde toplanır; AuthService'e null dönüp karar verdiririz.
+            return null;
+        }
+    }
+}`
+    },
+    {
+      num: 23, tur: 'service',
+      baslik: 'IAppleTokenValidator.cs + AppleTokenValidator.cs', dosya: 'Application/Interfaces/Services/IAppleTokenValidator.cs, Application/Services/AppleTokenValidator.cs',
+      aciklama: 'Google\'ın aksine Apple için resmi bir .NET doğrulama kütüphanesi yok — Apple\'ın herkese açık anahtarlarını (JWKS) https://appleid.apple.com/auth/keys\'ten çekip identity token\'ın imzasını, issuer\'ını (https://appleid.apple.com) ve audience\'ını (Apple:BundleId) elle doğrularız. JwtTokenService.GetPrincipalFromExpiredToken\'daki Algorithm Confusion önlemiyle aynı gerekçeyle, doğrulanan token\'ın header\'ında gerçekten RS256 kullanıldığı elle teyit edilir. Email yalnızca İLK yetkilendirmede gelir (Apple\'ın bilinen kısıtı) — AuthService bu durumda DB\'deki mevcut email\'i korumalı.',
+      kod: `// ═══ IAppleTokenValidator.cs — Application/Interfaces/Services/IAppleTokenValidator.cs ═══
+namespace WordLearner.Application.Interfaces.Services;
+
+// AMAÇ: Doğrulanmış Apple token'ından çıkarılan, AuthService'in ihtiyaç duyduğu alanlar.
+// NEDEN: Email yalnızca İLK yetkilendirmede gelir (Apple'ın bilinen kısıtı) — sonraki
+//        girişlerde null olabilir, AuthService bu durumda DB'deki mevcut email'i korur.
+public record AppleTokenPayload(string AppleId, string? Email);
+
+public interface IAppleTokenValidator
+{
+    // AMAÇ: Ham identity token'ı doğrular; geçersizse (imza/issuer/audience/süre) null döner.
+    Task<AppleTokenPayload?> ValidateAsync(string identityToken, CancellationToken ct = default);
+}
+
+
+// ═══ AppleTokenValidator.cs — Application/Services/AppleTokenValidator.cs ═══
+using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class AppleTokenValidator : IAppleTokenValidator
+{
+    // NEDEN sabit: Apple'ın kimlik sağlayıcı adresi hiç değişmez, appsettings'e taşımaya gerek yok.
+    private const string AppleIssuer = "https://appleid.apple.com";
+    private const string AppleJwksUrl = "https://appleid.apple.com/auth/keys";
+
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
+
+    public AppleTokenValidator(HttpClient httpClient, IConfiguration configuration)
+    {
+        _httpClient = httpClient;
+        _configuration = configuration;
+    }
+
+    // AMAÇ: Apple identity token'ını doğrular, geçerliyse kullanıcı bilgilerini döner.
+    // NEDEN: Apple e-postayı yalnızca İLK yetkilendirmede identity token'ın içine koyar;
+    //        sonraki girişlerde "email" claim'i olmayabilir — bu normaldir, AuthService
+    //        bu durumda DB'deki mevcut Users.Email'i korur, üzerine yazmaz.
+    // NASIL: 1) Apple'ın JWKS'sini çek  2) Token'ı bu anahtarlarla + issuer/audience'a
+    //        göre doğrula  3) "sub" (AppleId) ve varsa "email" claim'lerini çıkar.
+    public async Task<AppleTokenPayload?> ValidateAsync(
+        string identityToken,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            var jwks = await _httpClient.GetFromJsonAsync<JsonWebKeySet>(AppleJwksUrl, ct);
+            if (jwks is null)
+                return null;
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = AppleIssuer,
+                ValidateAudience = true,
+                ValidAudience = _configuration["Apple:BundleId"],
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKeys = jwks.Keys,
+            };
+
+            var principal = new JwtSecurityTokenHandler().ValidateToken(
+                identityToken,
+                validationParameters,
+                out var validatedToken
+            );
+
+            // NEDEN: JwtTokenService.GetPrincipalFromExpiredToken'daki Algorithm Confusion
+            //        önlemiyle aynı gerekçe — imzalanan algoritmanın gerçekten Apple'ın
+            //        kullandığı RS256 olduğu elle teyit edilir.
+            if (
+                validatedToken is not JwtSecurityToken jwtToken
+                || !jwtToken.Header.Alg.Equals(
+                    SecurityAlgorithms.RsaSha256,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                return null;
+
+            var appleId = principal.FindFirst("sub")?.Value;
+            if (string.IsNullOrEmpty(appleId))
+                return null;
+
+            var email = principal.FindFirst("email")?.Value;
+            return new AppleTokenPayload(appleId, email);
+        }
+        catch
+        {
+            // NEDEN: JWKS çekilemezse (ağ hatası) veya token doğrulama başarısız olursa
+            //        (imza/issuer/audience/süre) AuthService'e null dönüp karar verdiririz.
+            return null;
+        }
+    }
+}`
+    },
+    {
+      num: 24, tur: 'config',
+      baslik: 'ApplicationServiceExtensions.cs (email + sosyal doğrulayıcı DI kaydı eklendi)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs',
+      aciklama: 'IEmailService/IGoogleTokenValidator Scoped kaydedildi (diğer Application servisleriyle tutarlı). IAppleTokenValidator ise AddHttpClient&lt;T&gt; ile kaydedildi — her doğrulamada Apple\'ın JWKS\'sini HTTP ile çektiği için tek tek `new HttpClient()` yerine IHttpClientFactory kullanmak soket tükenmesi (socket exhaustion) riskini önler ve testlerde HttpClient\'ın mock\'lanmasını kolaylaştırır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationServiceExtensions.cs
+//
+// AMAÇ: Application katmanına ait tüm servisleri (MediatR, AutoMapper, FluentValidation)
+//       DI konteynerine kaydetmek için Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; InfrastructureServiceExtensions'ın Application
+//        katmanındaki karşılığıdır — yeni bir validator/handler/mapping profili
+//        eklenince yalnızca assembly taraması sayesinde otomatik kaydolur, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: MediatR, AutoMapper, FluentValidation.DependencyInjectionExtensions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Application.Extensions;
+
+public static class ApplicationServiceExtensions
+{
+    // AMAÇ: MediatR handler'larını, AutoMapper profillerini ve FluentValidation
+    //       validator'larını Application katmanı assembly'sinden tarayıp kaydeder.
+    // NEDEN: Henüz (A-02) hiçbir feature command/handler/validator yazılmadığı için
+    //        somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
+    //        A-03'ten itibaren eklenecek her CreateWordCommand/CreateWordCommandValidator
+    //        vb. otomatik olarak bulunur, tek tek kayıt gerekmez.
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+
+        // NEDEN MediatR: Controller'lar servisleri doğrudan çağırmak yerine
+        //       IMediator.Send(command/query) ile çağırır; controller ince katman kalır.
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+
+        // NEDEN AutoMapper: Entity ↔ DTO dönüşümlerini elle yazmak yerine profil
+        //       sınıflarına (Profile) devreder; her feature kendi profilini ekler.
+        services.AddAutoMapper(applicationAssembly);
+
+        // NEDEN FluentValidation: Request DTO'larının doğrulama kuralları (RuleFor)
+        //       controller'a girmeden, ASP.NET Core'un model binding aşamasında çalışır.
+        services.AddValidatorsFromAssembly(applicationAssembly);
+
+        // NEDEN Scoped: Stateless bir servis olduğu için Singleton da olabilirdi, ama
+        //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
+        //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
+        services.AddScoped<IPasswordService, PasswordService>();
+        services.AddScoped<ITokenService, JwtTokenService>();
+##NEW##        services.AddScoped<IEmailService, DevEmailService>();
+##NEW##        services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+##NEW##
+##NEW##        // NEDEN AddHttpClient<T>: AppleTokenValidator her doğrulamada Apple'ın JWKS'sini
+##NEW##        //       (https://appleid.apple.com/auth/keys) HTTP ile çeker — tek tek \`new HttpClient()\`
+##NEW##        //       yerine IHttpClientFactory kullanmak soket tükenmesi (socket exhaustion) riskini
+##NEW##        //       önler ve testlerde HttpClient'ın mock'lanmasını kolaylaştırır.
+##NEW##        services.AddHttpClient<IAppleTokenValidator, AppleTokenValidator>();
 
         return services;
     }
