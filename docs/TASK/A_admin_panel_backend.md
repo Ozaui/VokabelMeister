@@ -45,9 +45,9 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,
+- [x] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,
       google, apple, refresh, logout, forgot/reset-password, delete-account (request/confirm, 30 gün grace)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **API Yol Haritası'na işle**
 - [x] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
 - [x] ➜ **API Yol Haritası'na işle**
 - [ ] `AuthController` (13 endpoint) + FluentValidation + rate limiting (login 5/15dk, OTP 3 yanlış)

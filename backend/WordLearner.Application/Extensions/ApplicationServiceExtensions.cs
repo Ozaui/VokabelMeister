@@ -55,6 +55,11 @@ public static class ApplicationServiceExtensions
         //       önler ve testlerde HttpClient'ın mock'lanmasını kolaylaştırır.
         services.AddHttpClient<IAppleTokenValidator, AppleTokenValidator>();
 
+        // NEDEN Scoped: Yukarıdaki tüm bağımlılıklarıyla (repository'ler DbContext'e
+        //       bağımlı) aynı yaşam süresinde olmalı — AuthService'in kendisi de A-03'ün
+        //       ana servisi.
+        services.AddScoped<IAuthService, AuthService>();
+
         return services;
     }
 }
