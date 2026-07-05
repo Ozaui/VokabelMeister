@@ -9,9 +9,32 @@
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // NEDEN: Kod bloklarında // ile başlayan yorum satırlarını yeşil span'e sarar;
-  //        esc() sonrası çalışır, dolayısıyla HTML injection riski yoktur.
-  const hlCode = (s) => s.replace(/^([ \t]*\/\/.*)$/gm, '<span class="cmt">$1</span>');
+  // AMAÇ: Bir kod bloğunun satır satır işlenip HTML'e çevrilmesi (git diff benzeri vurgulama).
+  // NEDEN: "Yeniden kullanılan kod tekrar yazılır" kuralı gereği reused bir dosyanın (ör.
+  //        WordLearnerDbContext.cs) TAM hâli her API sayfasında tekrar gösterilir — ama okuyucu
+  //        "bu API için asıl değişen satır hangisi?" sorusunu satırlarca eski koddan ayırt edemez.
+  //        Kod string'inin ham hâlinde (escape'ten ÖNCE) satır başına iki marker konabilir:
+  //        `##NEW##` = bu API'de eklenen satır (yeşil), `##OLD##` = bu API'de kaldırılan/değişen
+  //        eski satır (kırmızı + üstü çizili — dosyada artık YOK, yalnızca "neyin yerine geçtiğini"
+  //        göstermek için burada tutuluyor). Marker'lar satırdan sökülüp farklı renkte gösterilir.
+  //        esc() önce çalışır (HTML injection riski yok), marker'lar ASCII olduğu için escape'ten etkilenmez.
+  const NEW_MARKER = '##NEW##';
+  const OLD_MARKER = '##OLD##';
+  function renderKod(rawKod) {
+    return String(rawKod == null ? '' : rawKod)
+      .split('\n')
+      .map((rawLine) => {
+        const isNew = rawLine.startsWith(NEW_MARKER);
+        const isOld = !isNew && rawLine.startsWith(OLD_MARKER);
+        const marker = isNew ? NEW_MARKER : isOld ? OLD_MARKER : '';
+        const rawContent = marker ? rawLine.slice(marker.length) : rawLine;
+        let line = esc(rawContent).replace(/^([ \t]*\/\/.*)$/, '<span class="cmt">$1</span>');
+        if (isNew) return `<span class="line-new">${line}</span>`;
+        if (isOld) return `<span class="line-old">${line}</span>`;
+        return line;
+      })
+      .join('\n');
+  }
   const mClass = (m) => 'm-' + String(m || 'get').toLowerCase();
 
   // AMAÇ: API objesini #content içine bas.
@@ -45,7 +68,7 @@
         </div>
         <div class="step-body${open}">
           <div class="desc">${esc(a.aciklama)}</div>
-          <pre><code>${hlCode(esc(a.kod))}</code></pre>
+          <pre><code>${renderKod(a.kod)}</code></pre>
         </div>
       </div>`;
     });
