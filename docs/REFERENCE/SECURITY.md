@@ -99,6 +99,33 @@ ADIM 4 — Web taraf ~2 saniyede bir GET /auth/qr/{token}/status (Anonim, pollin
   bilgisini görüp bilinçli onaylar (Steam mobil uygulamasının kullandığı desen).
 - `SecurityLog` yeni event tipleri: `QrLoginConfirmed`, `QrLoginDenied` (bkz. `§6`).
 
+### 1.4 Hata Mesajlarında Dil Desteği (Code + Sözlük)
+
+Bilinen iş kuralı hataları (login/register/OTP/refresh vb.) tek bir taban sınıftan türer:
+`AppException` (`Application/Common/Exceptions/AppException.cs`) — yalnızca dilden bağımsız bir
+**`Code`** taşır (ör. `GECERSIZ_KIMLIK`), mesajı KENDİ İÇİNDE SABİTLEMEZ.
+
+```
+1. AuthService  → throw new InvalidCredentialsException()  (parametre yok, yalnızca Code=GECERSIZ_KIMLIK)
+2. ExceptionHandlingMiddleware → HTTP durum kodunu Code'a göre eşler (StatusCodeFor)
+3. Middleware → isteğin Accept-Language header'ından dili çıkarır (GetRequestLanguage, ör. "en-US"→"en")
+4. ErrorMessages.Resolve(code, dil) → sözlükten (tr/en) o dildeki metni döner, dil yoksa "tr"ye düşer
+5. İstemciye: { "error": { "code": "GECERSIZ_KIMLIK", "message": "<dile göre metin>" } }
+```
+
+**Neden iki ayrı kanal var:**
+- `AppException.Message` (exception'ın kendi .NET `.Message` özelliği) → yalnızca **log/geliştirici**
+  içindir, her zaman **sabit Türkçe** kalır (`REFERENCE/CODING_STANDARDS.md §1` kuralı — tüm log
+  mesajları Türkçe). İstemciye ASLA gönderilmez.
+- `ErrorMessages.Resolve()`'un döndürdüğü metin → **istemciye giden**, isteğin diline göre değişen metindir.
+
+**`EntityNotFoundException` bilinçli olarak `AppException`'dan türemez** — mesajı entity adı gibi
+dinamik veri içerir (ör. "User bulunamadı: Id=5"), sabit kod sözlüğüne uymaz; 404 için hâlâ doğrudan
+`ex.Message` kullanılır (yalnızca Türkçe, henüz çok dilli değil).
+
+Yeni bir dil eklemek (ör. `de`) yalnızca `ErrorMessages.cs`'teki sözlüğe bir sütun eklemekle olur —
+hiçbir exception sınıfına dokunulmaz. Detay → `REFERENCE/API_ENDPOINTS.md §1`.
+
 ## 2. Yetkilendirme (RBAC)
 
 İki rol: `User` (varsayılan, herkes) ve `Admin` (elle atanır). Hiçbir public endpoint rol yükseltemez.

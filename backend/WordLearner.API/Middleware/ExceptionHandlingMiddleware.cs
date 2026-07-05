@@ -5,13 +5,15 @@
 //       yakalayıp standart ApiErrorResponse JSON'ına çevirmek.
 // NEDEN: Controller'larda try/catch tekrar etmeyi önler; her hatanın HTTP durum
 //        kodu ve JSON şekli tek bir dosyadan yönetilir (REFERENCE/API_ENDPOINTS.md §1).
-// BAĞIMLILIKLAR: WordLearner.Application.Common.Exceptions.EntityNotFoundException,
+// BAĞIMLILIKLAR: WordLearner.Application.Common.Exceptions.EntityNotFoundException/AppException,
+//                WordLearner.Application.Common.Localization.ErrorMessages,
 //                WordLearner.Application.Common.Models.ApiErrorResponse.
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Net;
 using System.Text.Json;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Common.Models;
 
 namespace WordLearner.API.Middleware;
@@ -22,7 +24,10 @@ public class ExceptionHandlingMiddleware
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
     // AMAÇ: Pipeline'daki bir sonraki middleware'i ve loglama servisini enjekte eder.
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger
+    )
     {
         _next = next;
         _logger = logger;
@@ -43,33 +48,84 @@ public class ExceptionHandlingMiddleware
         {
             // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları Türkçe; exception detayı
             //        (stack trace) yalnızca ApplicationLog'a (A-04'te DB sink) gider, istemciye asla.
-            _logger.LogError(ex, "İşlenmemiş hata yakalandı: {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+            _logger.LogError(
+                ex,
+                "İşlenmemiş hata yakalandı: {Method} {Path}",
+                context.Request.Method,
+                context.Request.Path
+            );
 
             await WriteErrorResponseAsync(context, ex);
         }
     }
 
-    // AMAÇ: Exception tipine göre HTTP durum kodu + hata kodu + mesaj eşlemesi yapıp
+    // AMAÇ: Exception tipine göre HTTP durum kodu + hata kodu eşlemesi yapıp
     //       ApiErrorResponse'u JSON olarak yanıta yazar.
     // NEDEN: EntityNotFoundException bilinen bir iş kuralı olduğu için 404 + kendi
-    //        mesajıyla döner; bilinmeyen her exception'ın gerçek mesajı istemciye
-    //        sızdırılmaz (bilgi ifşası riski) — yerine sabit, güvenli bir mesaj döner.
+    //        (dinamik entity adı içeren) mesajıyla döner. AppException'dan türeyen
+    //        Auth vb. exception'ların istemciye giden mesajı ise ex.Message DEĞİL —
+    //        Code'un isteğin diline (Accept-Language) göre ErrorMessages'ten çözülmüş
+    //        hâlidir (bkz. AppException.cs NEDEN açıklaması). Bilinmeyen her exception'ın
+    //        gerçek mesajı istemciye sızdırılmaz (bilgi ifşası riski) — sabit, güvenli
+    //        bir mesaj döner.
     private static Task WriteErrorResponseAsync(HttpContext context, Exception ex)
     {
-        var (statusCode, code, message) = ex switch
+        var (statusCode, code) = ex switch
         {
-            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI", ex.Message),
-            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI", "Beklenmeyen bir hata oluştu.")
+            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI"),
+            AppException appEx => (StatusCodeFor(appEx), appEx.Code),
+            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI"),
+        };
+
+        // NEDEN: EntityNotFoundException'ın mesajı dinamiktir (entity adı içerir),
+        //        doğrudan ex.Message kullanılır. AppException'lar Code üzerinden
+        //        isteğin diline göre çözülür. SUNUCU_HATASI ise hiçbir zaman gerçek
+        //        exception mesajını sızdırmaz, sabit bir metin döner.
+        var message = ex switch
+        {
+            EntityNotFoundException => ex.Message,
+            AppException appEx => ErrorMessages.Resolve(appEx.Code, GetRequestLanguage(context)),
+            _ => "Beklenmeyen bir hata oluştu.",
         };
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)statusCode;
 
         var response = new ApiErrorResponse(code, message);
-        var json = JsonSerializer.Serialize(response,
-            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        var json = JsonSerializer.Serialize(
+            response,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }
+        );
 
         return context.Response.WriteAsync(json);
+    }
+
+    // AMAÇ: Her AppException alt tipini kendi HTTP durum koduna eşler.
+    // NEDEN: Kod (Code) ile HTTP durumu ayrı kavramlar — aynı Code farklı senaryoda
+    //        farklı statü dönebilir ihtimaline karşı, statü ayrı bir switch'te tutulur.
+    private static HttpStatusCode StatusCodeFor(AppException ex) =>
+        ex switch
+        {
+            DuplicateEmailException => HttpStatusCode.Conflict,
+            InvalidCredentialsException => HttpStatusCode.Unauthorized,
+            InvalidOtpException => HttpStatusCode.BadRequest,
+            AccountNotActiveException => HttpStatusCode.Forbidden,
+            AccountAnonymizedException => HttpStatusCode.Forbidden,
+            InvalidRefreshTokenException => HttpStatusCode.Unauthorized,
+            InvalidSocialTokenException => HttpStatusCode.Unauthorized,
+            _ => HttpStatusCode.BadRequest,
+        };
+
+    // AMAÇ: İsteğin Accept-Language header'ından ilk dil kodunu (ör. "en-US" → "en") çıkarır.
+    // NEDEN: Header yoksa/parse edilemezse null döner; ErrorMessages.Resolve bu durumda
+    //        varsayılan Türkçe'ye düşer (proje Türkçe öncelikli, 00_INDEX.md kuralı).
+    private static string? GetRequestLanguage(HttpContext context)
+    {
+        var header = context.Request.Headers.AcceptLanguage.ToString();
+        if (string.IsNullOrWhiteSpace(header))
+            return null;
+
+        var firstLanguage = header.Split(',')[0].Split(';')[0].Trim();
+        return firstLanguage.Length >= 2 ? firstLanguage[..2].ToLowerInvariant() : null;
     }
 }

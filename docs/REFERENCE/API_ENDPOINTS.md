@@ -16,6 +16,13 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 { "success": false, "error": { "code": "GECERSIZ_KIMLIK", "message": "E-posta veya şifre hatalı" } }
 ```
 
+**Hata mesajı dil desteği:** `error.code` sabit/dilden bağımsızdır (frontend bu koda göre özel
+davranış tetikleyebilir); `error.message` ise **`Accept-Language` header'ına göre** değişir (`tr`
+varsayılan, `en` destekleniyor — yeni dil eklemek `Application/Common/Localization/ErrorMessages.cs`
+sözlüğüne bir sütun eklemekle olur). Bu yalnızca **istemciye giden** mesajdır; sunucu loglarındaki
+(`ApplicationLog`) exception mesajı her zaman Türkçe kalır (`REFERENCE/CODING_STANDARDS.md §1`) —
+ikisi birbirinden bağımsız kanallardır. Detay → `REFERENCE/SECURITY.md §1.4`.
+
 ## 2. HTTP Kodları ve Auth Seviyeleri
 
 **HTTP kodları:** 200 OK · 201 Created · 204 No Content · 400 Geçersiz · 401 Kimlik yok ·

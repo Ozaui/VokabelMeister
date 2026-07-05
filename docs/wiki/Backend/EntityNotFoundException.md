@@ -25,7 +25,9 @@ var entity = await GetByIdAsync(id, ct)
 standart mesaj formatını ürettiğini doğrulayan 1 test, bkz. [[WordLearner_Tests]].
 
 ## Planlanan Genişleme
-Global exception middleware (A-02'nin kalan adımı, henüz yok) bu tipi yakalayıp `404` + standart
-hata formatına çevirecek — bkz. [[API_Sozlesmesi]]. `EntityNotFoundException` yanına ileride
-`DuplicateEntityException` (409 için, `?force=true` akışlarında kullanılıyor — bkz. `docs/REFERENCE/API_ENDPOINTS.md`)
-gibi kardeş exception tipleri eklenmesi bekleniyor.
+Global exception middleware A-02'de yazıldı ([[Middleware]]), bu tipi yakalayıp `404` + standart
+hata formatına çeviriyor — bkz. [[API_Sozlesmesi]]. A-03'te [[AppException]] taban sınıfı eklendi
+(Auth exception'ları için, ör. `DuplicateEmailException`) — **`EntityNotFoundException` bilinçli
+olarak ondan türemez**, çünkü mesajı entity adı gibi dinamik veri içerir (`Type`+key overload'ı),
+`AppException`'ın sabit kod+sözlük modeline uymaz. 404 yanıtının `message`'ı hâlâ doğrudan
+`ex.Message`'tır (henüz çok dilli değil, yalnızca Türkçe).

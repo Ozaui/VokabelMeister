@@ -1,0 +1,24 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// AuthTokenResponse.cs
+//
+// AMAÇ: Başarılı bir girişin (OTP doğrulama, Google, Apple, refresh, QR) ortak
+//       yanıt şekli.
+// NEDEN: Tüm giriş yöntemleri aynı ITokenService'i çağırıp aynı şekilde token
+//        ürettiği için tek bir yanıt DTO'su yeterli — her akış kendi DTO'sunu
+//        icat etmez (REFERENCE/API_ENDPOINTS.md §3 örneğiyle birebir eşleşir).
+// BAĞIMLILIKLAR: Yok — saf DTO.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.DTOs.Auth;
+
+// AMAÇ: Yanıttaki minimal kullanıcı özeti. Tam profil için GET /users/me kullanılır (C-fazı).
+public record AuthUserDto(int Id, string CurrentLevel);
+
+// AMAÇ: Başarılı girişin standart yanıtı.
+public record AuthTokenResponse(
+    string AccessToken,
+    string RefreshToken,
+    int ExpiresIn,
+    AuthUserDto User,
+    bool AccountWasRecovered
+);

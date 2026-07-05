@@ -18,8 +18,10 @@ public class ApiErrorResponse
     public ApiErrorResponse(string code, string message) { Error = new ApiErrorDetail(code, message); }
 }
 ```
-`code` alanı sabit bir sözlük gibi davranır (`BULUNAMADI`, `SUNUCU_HATASI` — bkz. [[Middleware]]);
-frontend, "message"i doğrudan göstermek yerine "code"a göre özel davranış tetikleyebilir.
+`code` alanı sabit, dilden bağımsız bir sözlük gibi davranır (`BULUNAMADI`, `GECERSIZ_KIMLIK`,
+`SUNUCU_HATASI` — bkz. [[Middleware]]); frontend, "message"i doğrudan göstermek yerine "code"a göre
+özel davranış tetikleyebilir. **`message` alanı artık `Accept-Language` header'ına göre değişir**
+(A-03'te eklendi) — detay → [[AppException]].
 
 ## YAGNI Düzeltmesi (2026-07-03) — Neden ApiResponse&lt;T&gt; ve PagedResult&lt;T&gt; Burada Yok
 A-02'de ilk yazımda bu dosyanın yanında `ApiResponse<T>` (başarı zarfı: success/data/message/timestamp)

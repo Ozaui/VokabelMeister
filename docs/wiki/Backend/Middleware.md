@@ -2,7 +2,7 @@
 
 **Özet:** A-02'nin son ortak parçası — `WordLearner.API/Middleware/` altında [[Program_cs]]'in HTTP pipeline'ına taktığı 3 middleware sınıfı. `ExceptionHandlingMiddleware` yakalanmayan tüm exception'ları [[ApiErrorResponse]] JSON'ına çevirir; `SecurityHeadersMiddleware` her yanıta 5 güvenlik başlığı ekler; `RequestResponseLoggingMiddleware` her isteğin metot/yol/durum kodu/süresini Serilog ile loglar. Gerçek bir istekle (404 dahil) doğrulandı: başlıklar mevcut, Türkçe loglar konsola düşüyor.
 **Kütüphaneler:** ASP.NET Core (`HttpContext`, `RequestDelegate`), Microsoft.Extensions.Logging (Serilog sağlayıcı olarak), `System.Text.Json`, `System.Diagnostics.Stopwatch`
-**Bağlantılar:** [[Program_cs]] · [[EntityNotFoundException]] · [[ApiErrorResponse]] · [[Guvenlik_Politikalari]]
+**Bağlantılar:** [[Program_cs]] · [[EntityNotFoundException]] · [[AppException]] · [[ErrorMessages]] · [[ApiErrorResponse]] · [[Guvenlik_Politikalari]]
 
 ## Konum
 `backend/WordLearner.API/Middleware/{ExceptionHandlingMiddleware,SecurityHeadersMiddleware,RequestResponseLoggingMiddleware}.cs`
@@ -13,11 +13,14 @@ Türkçe loglar (`_logger.LogError`) ve exception tipine göre eşler:
 
 | Exception | HTTP Kodu | code | message |
 |-----------|-----------|------|---------|
-| [[EntityNotFoundException]] | 404 | `BULUNAMADI` | `ex.Message` (gerçek mesaj — güvenli) |
+| [[EntityNotFoundException]] | 404 | `BULUNAMADI` | `ex.Message` (gerçek mesaj, dinamik — henüz çok dilli değil) |
+| [[AppException]] alt tipleri (A-03) | `StatusCodeFor(appEx)` ile Code'a göre (401/403/409/400) | `appEx.Code` | [[ErrorMessages]].`Resolve(code, dil)` — `Accept-Language`'a göre |
 | Diğer her şey | 500 | `SUNUCU_HATASI` | Sabit "Beklenmeyen bir hata oluştu." (gerçek mesaj **sızdırılmaz**) |
 
-Yanıt [[ApiErrorResponse]] olarak `System.Text.Json` ile camelCase
-serileştirilir (`PropertyNamingPolicy = JsonNamingPolicy.CamelCase`).
+Yanıt [[ApiErrorResponse]] olarak `System.Text.Json` ile camelCase serileştirilir
+(`PropertyNamingPolicy = JsonNamingPolicy.CamelCase`). `GetRequestLanguage` yardımcı metodu
+`Accept-Language` header'ının ilk 2 harfini (ör. `en-US`→`en`) çıkarır; header yoksa/tanınmıyorsa
+[[ErrorMessages]] varsayılan Türkçe'ye düşer.
 
 ## 2. SecurityHeadersMiddleware
 `_next(context)` çağrısından **önce** 5 başlığı ekler (yanıt başlamadan eklenmeli):
