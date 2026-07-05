@@ -53,9 +53,11 @@
 - [x] `AuthController` (13 endpoint) + FluentValidation + rate limiting (genel 100/dk, 10/dk anonim —
       "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme sayaçları SecurityLog'a bağımlı, A-04 sonrası eklenecek)
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `AuthServiceTests` (register, login 2-adım, OTP doğrula, refresh, forgot/reset,
-      delete-account grace), `TokenServiceTests`, `PasswordServiceTests` (repo/email mock'lanır)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] **Birim testleri:** `AuthServiceTests` (39 test — register, e-posta doğrulama, login 2-adım,
+      Google/Apple + account linking, refresh/replay tespiti, logout sahiplik, forgot/reset,
+      delete-account grace), `JwtTokenServiceTests` (6 test — claim'ler, Algorithm Confusion),
+      `PasswordServiceTests` (5 test — hash/verify/salt). Toplam 61/61 yeşil.
+- [x] ➜ **API Yol Haritası'na işle**
 > **Not:** Bu API'daki `SecurityLog` (LoginFailed/OtpFailed/RateLimitHit) entegrasyonu A-04'te
 > loglama altyapısı hazır olduktan **sonra** eklenir — A-03 bu adıma kadar log'suz tamamlanmış sayılır,
 > A-04 bitince AuthService'e kısa bir entegrasyon dönüşü yapılır (tek istisna, kuralın bilinçli ihlali).

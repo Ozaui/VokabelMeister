@@ -3472,6 +3472,1435 @@ app.MapControllers();
 
 app.Run();`
     }
+    ,{
+      num: 34, tur: 'test',
+      baslik: 'PasswordServiceTests.cs', dosya: 'WordLearner.Tests/Services/PasswordServiceTests.cs',
+      aciklama: 'PasswordService\'in BCrypt (şifre) + SHA-256 (token) davranışlarını doğrulayan 5 test. BCrypt\'in her çağrıda farklı salt üretip yine de aynı şifreyi doğrulayabildiği (Hash_SamePasswordCalledTwice), ve SHA-256\'nın deterministik olduğu (HashToken_SameInputCalledTwice — RefreshTokens.TokenHash/Users.PendingOtpCodeHash DB\'de bu değeri arayarak eşleştirir, deterministik olmasaydı hiçbir OTP/refresh doğrulaması eşleşmezdi) özellikle test edilir. Mock gerekmez — gerçek BCrypt/SHA-256 çağrılır (CODING_STANDARDS.md §7.4 — yalnızca repository/dış servisler mock\'lanır, bu servis saf algoritma implementasyonudur).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// PasswordServiceTests.cs
+//
+// AMAÇ: PasswordService'in BCrypt (şifre) + SHA-256 (token) davranışlarını doğrulamak.
+// NEDEN: Auth API'nin tüm login/register/OTP akışları bu servise dayanır; hash/verify
+//        arasında bir tutarsızlık olursa hiçbir kullanıcı giriş yapamaz hâle gelir.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, WordLearner.Application.Services.PasswordService.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Tests.Services;
+
+public class PasswordServiceTests
+{
+    /// <summary>
+    /// Hash_ValidPassword_ProducesHashThatVerifyAccepts
+    ///
+    /// AMAÇ: Hash edilen bir şifrenin, aynı servisin Verify metoduyla doğru kabul edildiğini doğrulamak.
+    /// NEDEN: Hash/Verify arasındaki uyumsuzluk, register'da hash'lenen şifreyle login'de
+    ///        hiçbir kullanıcının giriş yapamaması anlamına gelir — en kritik mutlu yol.
+    /// </summary>
+    [Fact]
+    public void Hash_ValidPassword_ProducesHashThatVerifyAccepts()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var sifre = "Deneme123!@#";
+
+        // ACT
+        var hash = servis.Hash(sifre);
+
+        // ASSERT — hash BCrypt formatında olmalı ve orijinal şifreyle doğrulanabilmeli
+        hash.Should().NotBe(sifre);
+        servis.Verify(sifre, hash).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Hash_SamePasswordCalledTwice_ProducesDifferentHashes
+    ///
+    /// AMAÇ: Aynı şifrenin iki kez hash'lenmesinin farklı sonuç ürettiğini doğrulamak.
+    /// NEDEN: BCrypt her çağrıda rastgele bir salt üretir — aynı hash çıkarsa salt
+    ///        üretilmiyor demektir, bu da rainbow table saldırılarına karşı korumayı yok eder.
+    /// </summary>
+    [Fact]
+    public void Hash_SamePasswordCalledTwice_ProducesDifferentHashes()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var sifre = "Deneme123!@#";
+
+        // ACT
+        var hash1 = servis.Hash(sifre);
+        var hash2 = servis.Hash(sifre);
+
+        // ASSERT — farklı salt yüzünden hash'ler farklı olmalı, ikisi de aynı şifreyi doğrulamalı
+        hash1.Should().NotBe(hash2);
+        servis.Verify(sifre, hash1).Should().BeTrue();
+        servis.Verify(sifre, hash2).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verify_WrongPassword_ReturnsFalse
+    ///
+    /// AMAÇ: Yanlış bir şifrenin doğru hash'e karşı false döndüğünü doğrulamak.
+    /// NEDEN: AuthService.LoginAsync bu false değerine göre InvalidCredentialsException fırlatır.
+    /// </summary>
+    [Fact]
+    public void Verify_WrongPassword_ReturnsFalse()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var hash = servis.Hash("DogruSifre123!@#");
+
+        // ACT
+        var sonuc = servis.Verify("YanlisSifre123!@#", hash);
+
+        // ASSERT
+        sonuc.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// HashToken_SameInputCalledTwice_ProducesSameHash
+    ///
+    /// AMAÇ: Aynı token/OTP kodunun iki kez hash'lenmesinin AYNI sonucu ürettiğini doğrulamak.
+    /// NEDEN: BCrypt'in aksine SHA-256 deterministik olmalı — RefreshTokens.TokenHash ve
+    ///        Users.PendingOtpCodeHash bu değeri DB'de arayarak eşleştirir (GetByTokenHashAsync);
+    ///        deterministik olmasaydı hiçbir refresh/OTP doğrulaması eşleşmezdi.
+    /// </summary>
+    [Fact]
+    public void HashToken_SameInputCalledTwice_ProducesSameHash()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var token = "123456";
+
+        // ACT
+        var hash1 = servis.HashToken(token);
+        var hash2 = servis.HashToken(token);
+
+        // ASSERT
+        hash1.Should().Be(hash2);
+    }
+
+    /// <summary>
+    /// HashToken_DifferentInputs_ProducesDifferentHashes
+    ///
+    /// AMAÇ: Farklı iki token'ın farklı hash ürettiğini doğrulamak.
+    /// NEDEN: Aksi hâlde farklı OTP kodları/refresh token'lar DB'de çakışıp yanlış kayıtla eşleşebilir.
+    /// </summary>
+    [Fact]
+    public void HashToken_DifferentInputs_ProducesDifferentHashes()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+
+        // ACT
+        var hash1 = servis.HashToken("111111");
+        var hash2 = servis.HashToken("222222");
+
+        // ASSERT
+        hash1.Should().NotBe(hash2);
+    }
+}`
+    }
+    ,{
+      num: 35, tur: 'test',
+      baslik: 'JwtTokenServiceTests.cs', dosya: 'WordLearner.Tests/Services/JwtTokenServiceTests.cs',
+      aciklama: 'JwtTokenService\'in access/refresh token üretimini ve Algorithm Confusion önlemli expired-token doğrulamasını test eden 6 test. IConfiguration Moq ile değil gerçek bir in-memory ConfigurationBuilder ile kurulur (GetValue<T> extension metodunun gerçek davranışını test etmek için). En kritik test GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull — farklı bir SecretKey ile imzalanmış (yani başka bir sunucu/saldırgan tarafından üretilmiş) bir token\'ın kesinlikle reddedildiğini doğrular; bu kontrol olmadan /auth/refresh sahte bir token ile kandırılabilirdi.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// JwtTokenServiceTests.cs
+//
+// AMAÇ: JwtTokenService'in access/refresh token üretimini ve Algorithm Confusion
+//       önlemli expired-token doğrulamasını test etmek.
+// NEDEN: Bu servis, tüm Auth API'nin kimlik doğrulama omurgasıdır — claim'ler yanlış
+//        üretilirse [Authorize] middleware'i kullanıcıyı hiç tanımaz; Algorithm
+//        Confusion kontrolü atlanırsa saldırgan sahte bir token ile kimlik doğrulayabilir.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.Extensions.Configuration,
+//                System.IdentityModel.Tokens.Jwt, WordLearner.Application.Services.JwtTokenService.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Tests.Services;
+
+public class JwtTokenServiceTests
+{
+    // AMAÇ: Testlerde gerçek appsettings.json okumadan sabit bir Jwt yapılandırması sağlar.
+    // NEDEN: JwtTokenService IConfiguration["Jwt:SecretKey"] gibi indeksleyicileri kullanır;
+    //        bunu Moq ile sahtelemek yerine gerçek bir in-memory IConfiguration kurmak
+    //        hem daha az kırılgan hem de GetValue<T> extension metodunun gerçek davranışını test eder.
+    private static IConfiguration CreateConfiguration(
+        string secretKey = "test-secret-key-en-az-32-karakter-olmali!!"
+    ) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Jwt:SecretKey"] = secretKey,
+                    ["Jwt:Issuer"] = "WordLearnerApp",
+                    ["Jwt:Audience"] = "WordLearnerApp",
+                    ["Jwt:ExpirationMinutes"] = "15",
+                    ["Jwt:RefreshTokenExpirationDays"] = "7",
+                }
+            )
+            .Build();
+
+    private static User CreateUser() =>
+        new()
+        {
+            Id = 1,
+            Email = "test@example.com",
+            FirstName = "Test",
+            Role = "User",
+        };
+
+    /// <summary>
+    /// GenerateAccessToken_ValidUser_ProducesTokenWithExpectedClaims
+    ///
+    /// AMAÇ: Üretilen JWT'nin kullanıcının Id/Email/Role/FirstName bilgilerini claim
+    ///       olarak doğru taşıdığını doğrulamak.
+    /// NEDEN: [Authorize] middleware'i DB'ye gitmeden bu claim'lerden kullanıcı kimliğini
+    ///        okur — yanlış/eksik claim, AuthController'daki CurrentUserId gibi alanların yanlış çalışmasına yol açar.
+    /// </summary>
+    [Fact]
+    public void GenerateAccessToken_ValidUser_ProducesTokenWithExpectedClaims()
+    {
+        // ARRANGE
+        var servis = new JwtTokenService(CreateConfiguration());
+        var kullanici = CreateUser();
+
+        // ACT
+        var token = servis.GenerateAccessToken(kullanici);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+
+        // ASSERT — her claim doğru değeri taşımalı
+        jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "1");
+        jwt.Claims.Should()
+            .Contain(c => c.Type == ClaimTypes.Email && c.Value == "test@example.com");
+        jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "User");
+        jwt.Claims.Should().Contain(c => c.Type == "firstName" && c.Value == "Test");
+    }
+
+    /// <summary>
+    /// GenerateAccessToken_ValidUser_SetsExpirationFromConfiguration
+    ///
+    /// AMAÇ: Token'ın geçerlilik süresinin Jwt:ExpirationMinutes ayarına göre üretildiğini doğrulamak.
+    /// NEDEN: Program.cs'teki JwtBearer doğrulaması ve bu üretim AYNI süreyi kullanmalı;
+    ///        biri değişip diğeri değişmezse token beklenenden erken/geç geçersiz olur.
+    /// </summary>
+    [Fact]
+    public void GenerateAccessToken_ValidUser_SetsExpirationFromConfiguration()
+    {
+        // ARRANGE
+        var servis = new JwtTokenService(CreateConfiguration());
+        var kullanici = CreateUser();
+
+        // ACT
+        var token = servis.GenerateAccessToken(kullanici);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+
+        // ASSERT — 15 dakikalık pencereye (küçük bir tolerans ile) yakın olmalı
+        jwt.ValidTo.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(15), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// GenerateRefreshToken_Called_ProducesHighEntropyUniqueTokens
+    ///
+    /// AMAÇ: Art arda üretilen iki refresh token'ın birbirinden farklı olduğunu doğrulamak.
+    /// NEDEN: Aynı token iki kez üretilirse iki farklı oturum aynı sırra sahip olur —
+    ///        biri iptal edildiğinde diğeri de etkilenir, oturum izolasyonu bozulur.
+    /// </summary>
+    [Fact]
+    public void GenerateRefreshToken_Called_ProducesHighEntropyUniqueTokens()
+    {
+        // ARRANGE
+        var servis = new JwtTokenService(CreateConfiguration());
+
+        // ACT
+        var token1 = servis.GenerateRefreshToken();
+        var token2 = servis.GenerateRefreshToken();
+
+        // ASSERT
+        token1.Token.Should().NotBe(token2.Token);
+        token1.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// GetPrincipalFromExpiredToken_ValidSignatureButExpired_ReturnsPrincipal
+    ///
+    /// AMAÇ: Süresi dolmuş ama imzası geçerli bir token'dan ClaimsPrincipal döndüğünü doğrulamak.
+    /// NEDEN: /auth/refresh akışı tam olarak bu senaryoya dayanır — access token süresi
+    ///        dolmuş olmasına rağmen kullanıcı kimliği hâlâ okunabilmeli.
+    /// </summary>
+    [Fact]
+    public void GetPrincipalFromExpiredToken_ValidSignatureButExpired_ReturnsPrincipal()
+    {
+        // ARRANGE — normal üretilen bir access token (süresi henüz dolmamış ama imza geçerli)
+        var servis = new JwtTokenService(CreateConfiguration());
+        var token = servis.GenerateAccessToken(CreateUser());
+
+        // ACT
+        var principal = servis.GetPrincipalFromExpiredToken(token);
+
+        // ASSERT — ValidateLifetime=false olduğu için süresi dolmamış bir token da kabul edilir,
+        //          burada asıl doğrulanan imza + algoritma kontrolünün çalıştığıdır.
+        principal.Should().NotBeNull();
+        principal!.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be("1");
+    }
+
+    /// <summary>
+    /// GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull
+    ///
+    /// AMAÇ: Farklı bir SecretKey ile imzalanmış (yani bu sunucu tarafından üretilmemiş)
+    ///       bir token'ın null döndüğünü doğrulamak.
+    /// NEDEN: Bir saldırganın kendi ürettiği sahte bir token ile /auth/refresh'i
+    ///        kandırabilmesinin önüne geçen tek kontrol budur.
+    /// </summary>
+    [Fact]
+    public void GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull()
+    {
+        // ARRANGE — biri farklı bir gizli anahtarla token üretir, diğeri kendi anahtarıyla doğrular
+        var saldirganServisi = new JwtTokenService(
+            CreateConfiguration("baska-bir-gizli-anahtar-32-karakter!!!!")
+        );
+        var sahteToken = saldirganServisi.GenerateAccessToken(CreateUser());
+        var gercekServis = new JwtTokenService(CreateConfiguration());
+
+        // ACT
+        var principal = gercekServis.GetPrincipalFromExpiredToken(sahteToken);
+
+        // ASSERT
+        principal.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetPrincipalFromExpiredToken_MalformedToken_ReturnsNull
+    ///
+    /// AMAÇ: Geçersiz formatlı (JWT bile olmayan) bir string verildiğinde exception
+    ///       fırlamadan null döndüğünü doğrulamak.
+    /// NEDEN: /auth/refresh endpoint'ine rastgele bir string gönderilmesi 500'e değil,
+    ///        AuthService'in InvalidRefreshTokenException'ına (kontrollü 401'e) düşmeli.
+    /// </summary>
+    [Fact]
+    public void GetPrincipalFromExpiredToken_MalformedToken_ReturnsNull()
+    {
+        // ARRANGE
+        var servis = new JwtTokenService(CreateConfiguration());
+
+        // ACT
+        var principal = servis.GetPrincipalFromExpiredToken("bu-bir-jwt-degil");
+
+        // ASSERT
+        principal.Should().BeNull();
+    }
+}`
+    }
+    ,{
+      num: 36, tur: 'test',
+      baslik: 'AuthServiceTests.cs', dosya: 'WordLearner.Tests/Services/AuthServiceTests.cs',
+      aciklama: 'AuthService\'in 13 akışının tamamını ve altında yatan güvenlik kararlarını doğrulayan 39 test. Repository/dış servisler (IUserRepository, IRefreshTokenRepository, IEmailService, IGoogleTokenValidator, IAppleTokenValidator) hepsi Moq ile mock\'lanır (CODING_STANDARDS.md §7.4) — gerçek DB/HTTP çağrısı yapılmaz. Öne çıkan senaryolar: LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety (timing attack önlemi — kullanıcı yok/var fark etmeksizin Verify çağrılmalı), ResendVerificationAsync/ForgotPasswordAsync\'in UserNotFound durumunda e-posta GÖNDERMEDİĞİNİ ama AYNI mesajı döndürdüğünü doğrulayan testler (e-posta numaralandırma saldırısı önlemi), RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows (Token Family Pattern\'in replay tespiti — projenin en kritik güvenlik davranışı), LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount (account linking), LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly (Apple\'ın yalnızca ilk yetkilendirmede email vermesi kısıtı) ve VerifyLoginOtpAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse (30 günlük grace period içinde otomatik hesap kurtarma). Her AppException alt tipi için en az bir mutlu-yol + bir hata-dalı testi vardır (CODING_STANDARDS.md §7.5 minimum kapsam kuralı).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// AuthServiceTests.cs
+//
+// AMAÇ: AuthService'in 13 akışını (register, e-posta doğrulama, 2 adımlı OTP login,
+//       Google/Apple girişi, refresh/replay tespiti, logout, şifre sıfırlama, hesap
+//       silme) ve bunların altında yatan güvenlik kararlarını (bilgi sızıntısı
+//       önleme, hesap bağlama, grace period kurtarma) doğrulamak.
+// NEDEN: Bu servis projenin en güvenlik-kritik parçasıdır — repository/dış servisler
+//        her zaman mock'lanır (CODING_STANDARDS.md §7.4), gerçek DB/HTTP çağrısı yapılmaz.
+// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions, Microsoft.Extensions.Configuration,
+//                WordLearner.Application.Services.AuthService.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.Extensions.Configuration;
+using FluentAssertions;
+using Moq;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities;
+using WordLearner.Domain.Enums;
+
+namespace WordLearner.Tests.Services;
+
+public class AuthServiceTests
+{
+    private readonly Mock<IUserRepository> _userRepo = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepo = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<ITokenService> _tokenService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+    private readonly Mock<IGoogleTokenValidator> _googleValidator = new();
+    private readonly Mock<IAppleTokenValidator> _appleValidator = new();
+
+    // AMAÇ: Testlerde gerçek appsettings.json okumadan sabit bir Jwt:ExpirationMinutes sağlar.
+    // NEDEN: AuthService.ExpiresInSeconds bu değeri IConfiguration'dan okur (AuthTokenResponse.ExpiresIn için).
+    private static IConfiguration CreateConfiguration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:ExpirationMinutes"] = "15" })
+            .Build();
+
+    private AuthService CreateService() =>
+        new(
+            _userRepo.Object,
+            _refreshTokenRepo.Object,
+            _passwordService.Object,
+            _tokenService.Object,
+            _emailService.Object,
+            _googleValidator.Object,
+            _appleValidator.Object,
+            CreateConfiguration()
+        );
+
+    private static User CreateActiveUser(int id = 1, string email = "test@example.com", string? passwordHash = "hash") =>
+        new()
+        {
+            Id = id,
+            Email = email,
+            PasswordHash = passwordHash,
+            IsActive = true,
+            IsEmailVerified = true,
+        };
+
+    // AMAÇ: ITokenService mock'unun her testte tutarlı bir access/refresh token üretmesini sağlar.
+    private void SetupTokenService()
+    {
+        _tokenService.Setup(t => t.GenerateAccessToken(It.IsAny<User>())).Returns("access-token");
+        _tokenService
+            .Setup(t => t.GenerateRefreshToken())
+            .Returns(new RefreshTokenResult("refresh-token", DateTime.UtcNow.AddDays(7)));
+    }
+
+    // ═══ RegisterAsync ═══
+
+    /// <summary>
+    /// RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp
+    ///
+    /// AMAÇ: Daha önce kayıtlı olmayan bir e-postayla kayıt olunduğunda kullanıcının
+    ///       oluşturulduğunu ve doğrulama e-postasının gönderildiğini doğrulamak.
+    /// NEDEN: Register akışının mutlu yolu — şifre hash'lenmeli, OTP üretilmeli, e-posta atılmalı.
+    /// </summary>
+    [Fact]
+    public async Task RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("new@example.com", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.OriginalEmailHashExistsAsync(It.IsAny<string>(), default)).ReturnsAsync(false);
+        _passwordService.Setup(p => p.Hash("Deneme123!@#")).Returns("hashed-password");
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        _userRepo
+            .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+            .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+        var servis = CreateService();
+        var request = new RegisterRequest("new@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+        // ACT
+        var sonuc = await servis.RegisterAsync(request);
+
+        // ASSERT
+        sonuc.Email.Should().Be("new@example.com");
+        _userRepo.Verify(r => r.AddAsync(It.Is<User>(u => u.PasswordHash == "hashed-password"), null, default), Times.Once);
+        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("new@example.com", It.IsAny<string>(), default), Times.Once);
+    }
+
+    /// <summary>
+    /// RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException
+    ///
+    /// AMAÇ: Aktif bir kullanıcının e-postasıyla tekrar kayıt denendiğinde
+    ///       DuplicateEmailException fırlatıldığını doğrulamak.
+    /// NEDEN: E-posta benzersizliği DB constraint'i değil, servis katmanında zorlanır.
+    /// </summary>
+    [Fact]
+    public async Task RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("var@example.com", default)).ReturnsAsync(CreateActiveUser());
+        var servis = CreateService();
+        var request = new RegisterRequest("var@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+        // ACT
+        var act = () => servis.RegisterAsync(request);
+
+        // ASSERT
+        await act.Should().ThrowAsync<DuplicateEmailException>();
+    }
+
+    /// <summary>
+    /// RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException
+    ///
+    /// AMAÇ: Daha önce anonimleştirilmiş bir hesabın orijinal e-postasıyla kayıt
+    ///       denendiğinde de DuplicateEmailException fırlatıldığını doğrulamak.
+    /// NEDEN: REFERENCE/SECURITY.md §9 — anonimleştirilmiş bir e-posta tekrar kullanılamaz;
+    ///        bu kontrol GetByEmailAsync'in bulamadığı (anonimleştirme sonrası e-posta
+    ///        değiştiği için) durumları OriginalEmailHash üzerinden yakalar.
+    /// </summary>
+    [Fact]
+    public async Task RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("eski@example.com", default)).ReturnsAsync((User?)null);
+        _passwordService.Setup(p => p.HashToken("eski@example.com")).Returns("email-hash");
+        _userRepo.Setup(r => r.OriginalEmailHashExistsAsync("email-hash", default)).ReturnsAsync(true);
+        var servis = CreateService();
+        var request = new RegisterRequest("eski@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+        // ACT
+        var act = () => servis.RegisterAsync(request);
+
+        // ASSERT
+        await act.Should().ThrowAsync<DuplicateEmailException>();
+    }
+
+    // ═══ VerifyEmailAsync ═══
+
+    /// <summary>
+    /// VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp
+    ///
+    /// AMAÇ: Doğru OTP kodu girildiğinde IsEmailVerified'ın true'ya çekildiğini ve
+    ///       bekleyen OTP alanlarının temizlendiğini doğrulamak.
+    /// NEDEN: Bu adım tamamlanmadan hesap login akışında (IsActive kontrolü ayrı, ama
+    ///        onboarding vb. akışlarda) doğrulanmamış olarak kalır.
+    /// </summary>
+    [Fact]
+    public async Task VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp()
+    {
+        // ARRANGE
+        var user = new User
+        {
+            Email = "test@example.com",
+            PendingOtpCodeHash = "otp-hash",
+            PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            PendingOtpCodePurpose = OtpPurpose.EmailVerification,
+        };
+        _userRepo.Setup(r => r.GetByEmailAsync("test@example.com", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("123456")).Returns("otp-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.VerifyEmailAsync(new VerifyEmailRequest("test@example.com", "123456"));
+
+        // ASSERT
+        user.IsEmailVerified.Should().BeTrue();
+        user.PendingOtpCodeHash.Should().BeNull();
+        _userRepo.Verify(r => r.UpdateAsync(user, null, default), Times.Once);
+    }
+
+    /// <summary>
+    /// VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException
+    ///
+    /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
+    /// NEDEN: ValidateOtp'nin hash karşılaştırması EmailVerification akışında da geçerli olmalı.
+    /// </summary>
+    [Fact]
+    public async Task VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = new User
+        {
+            Email = "test@example.com",
+            PendingOtpCodeHash = "dogru-hash",
+            PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            PendingOtpCodePurpose = OtpPurpose.EmailVerification,
+        };
+        _userRepo.Setup(r => r.GetByEmailAsync("test@example.com", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("999999")).Returns("yanlis-hash");
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.VerifyEmailAsync(new VerifyEmailRequest("test@example.com", "999999"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    // ═══ ResendVerificationAsync ═══
+
+    /// <summary>
+    /// ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp
+    ///
+    /// AMAÇ: Doğrulanmamış bir kullanıcı için yeni OTP üretilip e-posta gönderildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp()
+    {
+        // ARRANGE
+        var user = new User { Email = "test@example.com", IsEmailVerified = false };
+        _userRepo.Setup(r => r.GetByEmailAsync("test@example.com", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.ResendVerificationAsync(new ResendVerificationRequest("test@example.com"));
+
+        // ASSERT
+        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("test@example.com", It.IsAny<string>(), default), Times.Once);
+    }
+
+    /// <summary>
+    /// ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    ///
+    /// AMAÇ: Kayıtlı olmayan bir e-posta için de aynı mesajın döndüğünü ama e-posta
+    ///       GÖNDERİLMEDİĞİNİ doğrulamak.
+    /// NEDEN: E-posta numaralandırma (enumeration) saldırısını önlemek için — yanıt
+    ///        farklı olsaydı bir saldırgan hangi e-postaların kayıtlı olduğunu anlayabilirdi.
+    /// </summary>
+    [Fact]
+    public async Task ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.ResendVerificationAsync(new ResendVerificationRequest("yok@example.com"));
+
+        // ASSERT
+        sonuc.Message.Should().NotBeNullOrEmpty();
+        _emailService.Verify(e => e.SendEmailVerificationOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default), Times.Never);
+    }
+
+    // ═══ LoginAsync ═══
+
+    /// <summary>
+    /// LoginAsync_ValidCredentials_SendsLoginOtp
+    ///
+    /// AMAÇ: Doğru şifre ile login adım 1'in OTP gönderdiğini (token DÖNMEDİĞİNİ) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginAsync_ValidCredentials_SendsLoginOtp()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("Deneme123!@#", "hash")).Returns(true);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.LoginAsync(new LoginRequest(user.Email, "Deneme123!@#"));
+
+        // ASSERT
+        _emailService.Verify(e => e.SendLoginOtpAsync(user.Email, It.IsAny<string>(), default), Times.Once);
+    }
+
+    /// <summary>
+    /// LoginAsync_WrongPassword_ThrowsInvalidCredentialsException
+    ///
+    /// AMAÇ: Yanlış şifre girildiğinde InvalidCredentialsException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("YanlisSifre", "hash")).Returns(false);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginAsync(new LoginRequest(user.Email, "YanlisSifre"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+    }
+
+    /// <summary>
+    /// LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
+    ///
+    /// AMAÇ: Kullanıcı bulunamadığında bile PasswordService.Verify'ın (FakePasswordHashForTiming
+    ///       ile) ÇAĞRILDIĞINI ve InvalidCredentialsException fırlatıldığını doğrulamak.
+    /// NEDEN: Timing attack önlemi — kullanıcı var/yok fark etmeksizin aynı süre harcanmalı;
+    ///        Verify çağrılmazsa "kullanıcı yok" yanıtı ölçülebilir şekilde daha hızlı döner,
+    ///        bu da bir saldırganın e-posta numaralandırması yapmasına izin verir.
+    /// </summary>
+    [Fact]
+    public async Task LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
+        _passwordService.Setup(p => p.Verify(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginAsync(new LoginRequest("yok@example.com", "HerhangiBirSifre123!"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+        _passwordService.Verify(p => p.Verify("HerhangiBirSifre123!", It.IsAny<string>()), Times.Once);
+    }
+
+    /// <summary>
+    /// LoginAsync_AccountNotActive_ThrowsAccountNotActiveException
+    ///
+    /// AMAÇ: Şifre doğru olsa bile dondurulmuş (IsActive=false) bir hesapla login
+    ///       denendiğinde AccountNotActiveException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.IsActive = false;
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("Deneme123!@#", "hash")).Returns(true);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginAsync(new LoginRequest(user.Email, "Deneme123!@#"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountNotActiveException>();
+    }
+
+    // ═══ VerifyLoginOtpAsync ═══
+
+    /// <summary>
+    /// VerifyLoginOtpAsync_ValidOtp_ReturnsAccessAndRefreshTokens
+    ///
+    /// AMAÇ: Doğru OTP kodu girildiğinde access+refresh token içeren yanıtın döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task VerifyLoginOtpAsync_ValidOtp_ReturnsAccessAndRefreshTokens()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "otp-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("123456")).Returns("otp-hash");
+        _passwordService.Setup(p => p.HashToken("refresh-token")).Returns("refresh-token-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.VerifyLoginOtpAsync(new VerifyOtpRequest(user.Email, "123456"), "1.2.3.4");
+
+        // ASSERT
+        sonuc.AccessToken.Should().Be("access-token");
+        sonuc.RefreshToken.Should().Be("refresh-token");
+        sonuc.AccountWasRecovered.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException
+    ///
+    /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "dogru-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("999999")).Returns("yanlis-hash");
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.VerifyLoginOtpAsync(new VerifyOtpRequest(user.Email, "999999"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// VerifyLoginOtpAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse
+    ///
+    /// AMAÇ: Soft-delete'li (IsDeleted=true) ama grace period içindeki bir hesabın OTP
+    ///       doğrulaması sırasında otomatik kurtarıldığını ve yanıtta accountWasRecovered=true
+    ///       döndüğünü doğrulamak.
+    /// NEDEN: REFERENCE/SECURITY.md §1 — kullanıcı 30 gün içinde tekrar login olursa
+    ///        hesap silme işlemi geri alınır; bu davranış CompleteLoginAsync'in kritik dalı.
+    /// </summary>
+    [Fact]
+    public async Task VerifyLoginOtpAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "otp-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
+        user.IsDeleted = true;
+        user.DeletedAt = DateTime.UtcNow.AddDays(-10);
+        user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(20);
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.VerifyLoginOtpAsync(new VerifyOtpRequest(user.Email, "123456"), null);
+
+        // ASSERT
+        sonuc.AccountWasRecovered.Should().BeTrue();
+        user.IsDeleted.Should().BeFalse();
+        user.ScheduledDeletionAt.Should().BeNull();
+    }
+
+    // ═══ LoginWithGoogleAsync ═══
+
+    /// <summary>
+    /// LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
+    ///
+    /// AMAÇ: GoogleId ile eşleşen bir kullanıcı bulunduğunda yeni hesap açılmadan
+    ///       doğrudan token döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
+    {
+        // ARRANGE
+        var user = CreateActiveUser(passwordHash: null);
+        _googleValidator
+            .Setup(g => g.ValidateAsync("id-token", default))
+            .ReturnsAsync(new GoogleTokenPayload("google-123", user.Email, "Test", "Kullanici"));
+        _userRepo.Setup(r => r.GetByGoogleIdAsync("google-123", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.LoginWithGoogleAsync(new GoogleLoginRequest("id-token"), null);
+
+        // ASSERT
+        sonuc.AccessToken.Should().Be("access-token");
+        _userRepo.Verify(r => r.AddAsync(It.IsAny<User>(), null, default), Times.Never);
+    }
+
+    /// <summary>
+    /// LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser
+    ///
+    /// AMAÇ: Ne GoogleId ne de e-posta ile eşleşen bir kullanıcı bulunmadığında yeni
+    ///       hesap oluşturulduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser()
+    {
+        // ARRANGE
+        _googleValidator
+            .Setup(g => g.ValidateAsync("id-token", default))
+            .ReturnsAsync(new GoogleTokenPayload("google-999", "yeni@example.com", "Yeni", "Kullanici"));
+        _userRepo.Setup(r => r.GetByGoogleIdAsync("google-999", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.GetByEmailAsync("yeni@example.com", default)).ReturnsAsync((User?)null);
+        _userRepo
+            .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+            .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        await servis.LoginWithGoogleAsync(new GoogleLoginRequest("id-token"), null);
+
+        // ASSERT
+        _userRepo.Verify(
+            r => r.AddAsync(It.Is<User>(u => u.GoogleId == "google-999" && u.AuthProvider == "Google"), null, default),
+            Times.Once
+        );
+    }
+
+    /// <summary>
+    /// LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
+    ///
+    /// AMAÇ: Google'dan gelen e-posta, mevcut bir yerel (Local) hesapla eşleştiğinde
+    ///       yeni hesap açmak yerine GoogleId'nin o hesaba bağlandığını (account linking)
+    ///       doğrulamak.
+    /// NEDEN: Aksi hâlde aynı kişi aynı e-posta için iki ayrı hesaba sahip olur —
+    ///        "user register olurken hangi hesaba giriyor" tasarım kararının kalbi.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
+    {
+        // ARRANGE
+        var mevcutYerelHesap = CreateActiveUser(email: "ortak@example.com");
+        _googleValidator
+            .Setup(g => g.ValidateAsync("id-token", default))
+            .ReturnsAsync(new GoogleTokenPayload("google-777", "ortak@example.com", "Ortak", "Kullanici"));
+        _userRepo.Setup(r => r.GetByGoogleIdAsync("google-777", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.GetByEmailAsync("ortak@example.com", default)).ReturnsAsync(mevcutYerelHesap);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        await servis.LoginWithGoogleAsync(new GoogleLoginRequest("id-token"), null);
+
+        // ASSERT — yeni kayıt AÇILMAMALI, mevcut hesaba GoogleId bağlanmalı
+        mevcutYerelHesap.GoogleId.Should().Be("google-777");
+        _userRepo.Verify(r => r.AddAsync(It.IsAny<User>(), null, default), Times.Never);
+    }
+
+    /// <summary>
+    /// LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException
+    ///
+    /// AMAÇ: Google token doğrulaması null döndüğünde InvalidSocialTokenException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException()
+    {
+        // ARRANGE
+        _googleValidator.Setup(g => g.ValidateAsync("gecersiz-token", default)).ReturnsAsync((GoogleTokenPayload?)null);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginWithGoogleAsync(new GoogleLoginRequest("gecersiz-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidSocialTokenException>();
+    }
+
+    /// <summary>
+    /// LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException
+    ///
+    /// AMAÇ: Google ile eşleşen hesap dondurulmuşsa (IsActive=false) login'in reddedildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser(passwordHash: null);
+        user.IsActive = false;
+        _googleValidator
+            .Setup(g => g.ValidateAsync("id-token", default))
+            .ReturnsAsync(new GoogleTokenPayload("google-123", user.Email, null, null));
+        _userRepo.Setup(r => r.GetByGoogleIdAsync("google-123", default)).ReturnsAsync(user);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginWithGoogleAsync(new GoogleLoginRequest("id-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountNotActiveException>();
+    }
+
+    // ═══ LoginWithAppleAsync ═══
+
+    /// <summary>
+    /// LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens
+    ///
+    /// AMAÇ: AppleId ile eşleşen mevcut bir kullanıcı için token döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens()
+    {
+        // ARRANGE
+        var user = CreateActiveUser(passwordHash: null);
+        _appleValidator
+            .Setup(a => a.ValidateAsync("identity-token", default))
+            .ReturnsAsync(new AppleTokenPayload("apple-123", null));
+        _userRepo.Setup(r => r.GetByAppleIdAsync("apple-123", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.LoginWithAppleAsync(new AppleLoginRequest("identity-token"), null);
+
+        // ASSERT
+        sonuc.AccessToken.Should().Be("access-token");
+    }
+
+    /// <summary>
+    /// LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount
+    ///
+    /// AMAÇ: İlk yetkilendirmede (e-posta dolu) ne AppleId ne de e-posta eşleşmesi
+    ///       olmadığında yeni hesap açıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount()
+    {
+        // ARRANGE
+        _appleValidator
+            .Setup(a => a.ValidateAsync("identity-token", default))
+            .ReturnsAsync(new AppleTokenPayload("apple-999", "yeni@example.com"));
+        _userRepo.Setup(r => r.GetByAppleIdAsync("apple-999", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.GetByEmailAsync("yeni@example.com", default)).ReturnsAsync((User?)null);
+        _userRepo
+            .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+            .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        await servis.LoginWithAppleAsync(new AppleLoginRequest("identity-token"), null);
+
+        // ASSERT
+        _userRepo.Verify(
+            r => r.AddAsync(It.Is<User>(u => u.AppleId == "apple-999" && u.AuthProvider == "Apple"), null, default),
+            Times.Once
+        );
+    }
+
+    /// <summary>
+    /// LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
+    ///
+    /// AMAÇ: Apple'ın yalnızca İLK yetkilendirmede e-posta verdiği, sonraki girişlerde
+    ///       payload.Email'in null geldiği senaryoda AppleId ile hâlâ doğru kullanıcının
+    ///       bulunduğunu ve mevcut e-postanın ÜZERİNE YAZILMADIĞINI doğrulamak.
+    /// NEDEN: AppleTokenValidator.cs'in NEDEN açıklamasındaki kritik kısıt — email
+    ///        yoksa DB'deki mevcut e-posta korunmalı.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
+    {
+        // ARRANGE
+        var user = CreateActiveUser(email: "korunan@example.com", passwordHash: null);
+        _appleValidator
+            .Setup(a => a.ValidateAsync("identity-token", default))
+            .ReturnsAsync(new AppleTokenPayload("apple-123", null));
+        _userRepo.Setup(r => r.GetByAppleIdAsync("apple-123", default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        await servis.LoginWithAppleAsync(new AppleLoginRequest("identity-token"), null);
+
+        // ASSERT — e-posta hiç değişmemeli, GetByEmailAsync hiç çağrılmamalı (email null olduğu için)
+        user.Email.Should().Be("korunan@example.com");
+        _userRepo.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), default), Times.Never);
+    }
+
+    /// <summary>
+    /// LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
+    ///
+    /// AMAÇ: Ne AppleId ile eşleşme ne de e-posta (savunmacı/teorik olarak beklenmeyen
+    ///       bir durum) varken yeni hesap açılamayacağını, InvalidSocialTokenException
+    ///       fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
+    {
+        // ARRANGE
+        _appleValidator
+            .Setup(a => a.ValidateAsync("identity-token", default))
+            .ReturnsAsync(new AppleTokenPayload("apple-000", null));
+        _userRepo.Setup(r => r.GetByAppleIdAsync("apple-000", default)).ReturnsAsync((User?)null);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LoginWithAppleAsync(new AppleLoginRequest("identity-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidSocialTokenException>();
+    }
+
+    // ═══ RefreshAsync ═══
+
+    /// <summary>
+    /// RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair
+    ///
+    /// AMAÇ: Geçerli bir refresh token ile yeni bir access+refresh token çifti
+    ///       üretildiğini ve eski token'ın kullanıldı (IsUsed=true) olarak işaretlendiğini
+    ///       doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        var mevcutToken = new RefreshToken
+        {
+            UserId = user.Id,
+            TokenFamily = "family-1",
+            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            IsUsed = false,
+        };
+        _passwordService.Setup(p => p.HashToken("eski-refresh-token")).Returns("eski-hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("eski-hash", default)).ReturnsAsync(mevcutToken);
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("refresh-token")).Returns("yeni-hash");
+        SetupTokenService();
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.RefreshAsync(new RefreshRequest("eski-refresh-token"), "1.2.3.4");
+
+        // ASSERT
+        sonuc.AccessToken.Should().Be("access-token");
+        mevcutToken.IsUsed.Should().BeTrue();
+        _refreshTokenRepo.Verify(
+            r => r.AddAsync(It.Is<RefreshToken>(t => t.TokenFamily == "family-1"), null, default),
+            Times.Once
+        );
+    }
+
+    /// <summary>
+    /// RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException
+    ///
+    /// AMAÇ: DB'de bulunamayan bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync((RefreshToken?)null);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.RefreshAsync(new RefreshRequest("gecersiz-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    /// <summary>
+    /// RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException
+    ///
+    /// AMAÇ: Süresi dolmuş bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE
+        var suresiGecmisToken = new RefreshToken { ExpiresAt = DateTime.UtcNow.AddDays(-1) };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(suresiGecmisToken);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.RefreshAsync(new RefreshRequest("suresi-gecmis-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    /// <summary>
+    /// RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
+    ///
+    /// AMAÇ: Zaten kullanılmış (IsUsed=true) bir refresh token TEKRAR kullanıldığında
+    ///       (replay saldırısı) aynı TokenFamily'deki TÜM token'ların iptal edildiğini
+    ///       ve InvalidRefreshTokenException fırlatıldığını doğrulamak.
+    /// NEDEN: Token Family Pattern'in en kritik davranışı — bir token çalınıp kullanılmışsa
+    ///        gerçek kullanıcı bir sonraki refresh'te bunu (replay) tetikler ve tüm
+    ///        family (dolayısıyla saldırganın elindeki token da) iptal edilir.
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
+    {
+        // ARRANGE
+        var kullanilmisToken = new RefreshToken
+        {
+            TokenFamily = "family-replay",
+            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            IsUsed = true,
+        };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(kullanilmisToken);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.RefreshAsync(new RefreshRequest("kullanilmis-token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+        _refreshTokenRepo.Verify(r => r.RevokeFamilyAsync("family-replay", default), Times.Once);
+    }
+
+    /// <summary>
+    /// RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException
+    ///
+    /// AMAÇ: Token geçerli olsa bile ait olduğu kullanıcı anonimleştirilmişse
+    ///       (IsAnonymized=true) refresh'in reddedildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.IsAnonymized = true;
+        var token = new RefreshToken { UserId = user.Id, TokenFamily = "family-1", ExpiresAt = DateTime.UtcNow.AddDays(1) };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(token);
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.RefreshAsync(new RefreshRequest("token"), null);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    // ═══ LogoutAsync ═══
+
+    /// <summary>
+    /// LogoutAsync_OwnToken_RevokesToken
+    ///
+    /// AMAÇ: Kullanıcının kendi refresh token'ını iptal edebildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task LogoutAsync_OwnToken_RevokesToken()
+    {
+        // ARRANGE
+        var token = new RefreshToken { UserId = 1 };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(token);
+        var servis = CreateService();
+
+        // ACT
+        await servis.LogoutAsync(userId: 1, new RefreshRequest("token"));
+
+        // ASSERT
+        token.RevokedAt.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
+    ///
+    /// AMAÇ: Başka bir kullanıcıya ait refresh token'ı iptal etmeye çalışıldığında
+    ///       reddedildiğini doğrulamak.
+    /// NEDEN: Sahiplik kontrolü olmazsa bir kullanıcı başka birinin oturumunu kapatabilirdi.
+    /// </summary>
+    [Fact]
+    public async Task LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE
+        var baskasininTokeni = new RefreshToken { UserId = 2 };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(baskasininTokeni);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.LogoutAsync(userId: 1, new RefreshRequest("baskasinin-tokeni"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    // ═══ ForgotPasswordAsync ═══
+
+    /// <summary>
+    /// ForgotPasswordAsync_ExistingUser_SendsResetOtp
+    ///
+    /// AMAÇ: Kayıtlı bir kullanıcı için şifre sıfırlama OTP'sinin gönderildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ForgotPasswordAsync_ExistingUser_SendsResetOtp()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.ForgotPasswordAsync(new ForgotPasswordRequest(user.Email));
+
+        // ASSERT
+        _emailService.Verify(e => e.SendPasswordResetOtpAsync(user.Email, It.IsAny<string>(), default), Times.Once);
+    }
+
+    /// <summary>
+    /// ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    ///
+    /// AMAÇ: Kayıtlı olmayan bir e-posta için de e-posta GÖNDERİLMEDİĞİNİ ama aynı
+    ///       mesajın döndüğünü doğrulamak (e-posta numaralandırma önlemi).
+    /// </summary>
+    [Fact]
+    public async Task ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
+        var servis = CreateService();
+
+        // ACT
+        var sonuc = await servis.ForgotPasswordAsync(new ForgotPasswordRequest("yok@example.com"));
+
+        // ASSERT
+        sonuc.Message.Should().NotBeNullOrEmpty();
+        _emailService.Verify(e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default), Times.Never);
+    }
+
+    // ═══ ResetPasswordAsync ═══
+
+    /// <summary>
+    /// ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
+    ///
+    /// AMAÇ: Doğru OTP ile şifrenin güncellendiğini ve kullanıcının TÜM refresh
+    ///       token'larının iptal edildiğini (tüm cihazlardan çıkış) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "otp-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.PasswordReset;
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("123456")).Returns("otp-hash");
+        _passwordService.Setup(p => p.Hash("YeniSifre123!@#")).Returns("yeni-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.ResetPasswordAsync(new ResetPasswordRequest(user.Email, "123456", "YeniSifre123!@#"));
+
+        // ASSERT
+        user.PasswordHash.Should().Be("yeni-hash");
+        _refreshTokenRepo.Verify(r => r.RevokeAllForUserAsync(user.Id, default), Times.Once);
+    }
+
+    /// <summary>
+    /// ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException
+    ///
+    /// AMAÇ: Yanlış OTP ile şifre sıfırlama denendiğinde InvalidOtpException fırlatıldığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "dogru-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.PasswordReset;
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("999999")).Returns("yanlis-hash");
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.ResetPasswordAsync(new ResetPasswordRequest(user.Email, "999999", "YeniSifre123!@#"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    // ═══ RequestAccountDeletionAsync ═══
+
+    /// <summary>
+    /// RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp
+    ///
+    /// AMAÇ: Var olan bir kullanıcı için hesap silme onay OTP'sinin gönderildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("otp-hash");
+        var servis = CreateService();
+
+        // ACT
+        await servis.RequestAccountDeletionAsync(user.Id);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendAccountDeletionOtpAsync(user.Email, It.IsAny<string>(), default), Times.Once);
+    }
+
+    /// <summary>
+    /// RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException
+    ///
+    /// AMAÇ: Var olmayan bir userId ile hesap silme talebi oluşturulduğunda
+    ///       EntityNotFoundException fırlatıldığını doğrulamak.
+    /// NEDEN: Bu userId [Authorize] token'ından geldiği için normalde her zaman var
+    ///        olmalı, ama hesap bu arada silinmiş olabilir — savunmacı kontrol.
+    /// </summary>
+    [Fact]
+    public async Task RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByIdAsync(999, default)).ReturnsAsync((User?)null);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.RequestAccountDeletionAsync(999);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    // ═══ ConfirmAccountDeletionAsync ═══
+
+    /// <summary>
+    /// ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
+    ///
+    /// AMAÇ: Doğru OTP + doğru şifre ile hesabın soft-delete edildiğini ve 30 gün
+    ///       sonrasına anonimleştirme zamanlandığını doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "otp-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("123456")).Returns("otp-hash");
+        _passwordService.Setup(p => p.Verify("Deneme123!@#", "hash")).Returns(true);
+        var servis = CreateService();
+
+        // ACT
+        await servis.ConfirmAccountDeletionAsync(user.Id, new DeleteAccountConfirmRequest("123456", "Deneme123!@#"));
+
+        // ASSERT
+        user.IsDeleted.Should().BeTrue();
+        user.ScheduledDeletionAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(30), TimeSpan.FromMinutes(1));
+        _refreshTokenRepo.Verify(r => r.RevokeAllForUserAsync(user.Id, default), Times.Once);
+    }
+
+    /// <summary>
+    /// ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException
+    ///
+    /// AMAÇ: OTP doğru olsa bile yanlış şifre ile hesap silmenin onaylanamadığını doğrulamak.
+    /// NEDEN: Geri alınamaz bir işlem olduğu için çift onay (OTP + şifre) zorunlu.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "otp-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("123456")).Returns("otp-hash");
+        _passwordService.Setup(p => p.Verify("YanlisSifre", "hash")).Returns(false);
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.ConfirmAccountDeletionAsync(user.Id, new DeleteAccountConfirmRequest("123456", "YanlisSifre"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+    }
+
+    /// <summary>
+    /// ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException
+    ///
+    /// AMAÇ: Yanlış OTP ile hesap silme onayının reddedildiğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        user.PendingOtpCodeHash = "dogru-hash";
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.HashToken("999999")).Returns("yanlis-hash");
+        var servis = CreateService();
+
+        // ACT
+        var act = () => servis.ConfirmAccountDeletionAsync(user.Id, new DeleteAccountConfirmRequest("999999", "Deneme123!@#"));
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+}`
+    }
   ],
   frontendRefs: [
     { dosya: '../FRONTEND_YOL_HARITASI/B-02_giris.html', baslik: 'Admin — Sade Giriş + OTP' },

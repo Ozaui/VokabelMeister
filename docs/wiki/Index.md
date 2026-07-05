@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `AuthController` (13 endpoint) + `AuthService` + tüm bağımlılıkları yazıldı ve gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, sırada yalnızca birim testleri kaldı). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `AuthController` (13 endpoint) + `AuthService` + tüm bağımlılıkları yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 50 yeni birim testi (61/61 toplam yeşil) yazıldı; sırada yalnızca A-03'ün wiki senkronizasyonu son adımı kaldı). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
