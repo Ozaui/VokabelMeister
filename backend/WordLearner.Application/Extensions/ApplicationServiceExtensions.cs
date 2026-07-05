@@ -45,6 +45,7 @@ public static class ApplicationServiceExtensions
         //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
         //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
         services.AddScoped<IPasswordService, PasswordService>();
+        services.AddScoped<ITokenService, JwtTokenService>();
 
         return services;
     }

@@ -43,8 +43,8 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,
       google, apple, refresh, logout, forgot/reset-password, delete-account (request/confirm, 30 gün grace)
 - [ ] ➜ **API Yol Haritası'na işle**
