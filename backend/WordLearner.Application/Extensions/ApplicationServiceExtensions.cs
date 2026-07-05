@@ -12,6 +12,8 @@
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
 
 namespace WordLearner.Application.Extensions;
 
@@ -38,6 +40,11 @@ public static class ApplicationServiceExtensions
         // NEDEN FluentValidation: Request DTO'larının doğrulama kuralları (RuleFor)
         //       controller'a girmeden, ASP.NET Core'un model binding aşamasında çalışır.
         services.AddValidatorsFromAssembly(applicationAssembly);
+
+        // NEDEN Scoped: Stateless bir servis olduğu için Singleton da olabilirdi, ama
+        //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
+        //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
+        services.AddScoped<IPasswordService, PasswordService>();
 
         return services;
     }

@@ -41,8 +41,8 @@
 *Dikey dilim: `User` + `RefreshToken` entity → servisler → controller → yol haritası.*
 - [x] **Entity:** `User`, `RefreshToken` + `OtpPurpose` enum + EF config + migration
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,

@@ -587,6 +587,140 @@ namespace WordLearner.Infrastructure.Data.Migrations
         }
     }
 }`
+    },
+    {
+      num: 8, tur: 'service',
+      baslik: 'IPasswordService.cs', dosya: 'Application/Interfaces/Services/IPasswordService.cs',
+      aciklama: 'AuthService (bir sonraki adım) somut BCrypt implementasyonuna değil bu arayüze bağımlı olacak — testlerde mock enjekte edilebilir, ileride hash algoritması değişirse (ör. Argon2) çağıran kod etkilenmez. Üç metot: Hash/Verify (şifre) + HashToken (refresh/OTP token'ları için, RefreshToken/OtpPurpose adımlarındaki TokenHash/PendingOtpCodeHash alanlarının gerçek tüketicisi).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IPasswordService.cs
+//
+// AMAÇ: Şifre hash'leme/doğrulama ve token hash'leme sözleşmesi.
+// NEDEN: AuthService (A-03) somut BCrypt implementasyonuna değil bu arayüze
+//        bağımlı olmalı — testlerde mock enjekte edilebilir, ileride hash
+//        algoritması değişirse (ör. Argon2) çağıran kod etkilenmez.
+// BAĞIMLILIKLAR: Yok — saf sözleşme.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface IPasswordService
+{
+    // AMAÇ: Düz metin şifreyi BCrypt ile hash'ler.
+    // NEDEN: PasswordHash sütununa yalnızca hash yazılır, plaintext asla saklanmaz
+    //        (REFERENCE/SECURITY.md §1 — Şifre Kuralları).
+    string Hash(string password);
+
+    // AMAÇ: Düz metin şifreyi mevcut hash ile karşılaştırır.
+    // NEDEN: BCrypt.Verify constant-time çalışır; timing attack riskini azaltır.
+    bool Verify(string password, string hash);
+
+    // AMAÇ: Refresh token / OTP kodu gibi rastgele üretilen token'ları SHA-256 ile hash'ler.
+    // NEDEN: RefreshTokens.TokenHash ve Users.PendingOtpCodeHash DB'de yalnızca hash
+    //        tutar — ham token/OTP sızıntı durumunda bile kullanılamaz.
+    string HashToken(string token);
+}`
+    },
+    {
+      num: 9, tur: 'service',
+      baslik: 'PasswordService.cs', dosya: 'Application/Services/PasswordService.cs',
+      aciklama: 'ASP.NET Identity kullanılmadığı için (SECURITY.md §1) şifre hash\'leme manuel yazıldı. Work factor 12, TECHNICAL_SPECIFICATIONS.md §6\'da pinlenen değer — 10\'dan güvenli, 14+\'ten hızlı; her login isteğinde kabul edilebilir bir gecikme (~200-300ms) verir. HashToken şifre değil (zaten yüksek entropili rastgele veri) olduğu için BCrypt yerine hızlı SHA-256 kullanır — RefreshToken ve OTP kodları için aynı metot paylaşılır (kod tekrarı yok). ApplicationServiceExtensions\'a Scoped olarak kaydedildi.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// PasswordService.cs
+//
+// AMAÇ: IPasswordService'in BCrypt (şifre) + SHA-256 (token) tabanlı implementasyonu.
+// NEDEN: ASP.NET Identity kullanılmadığı için (REFERENCE/SECURITY.md §1) şifre
+//        hash'leme manuel yazılır; work factor 12, saldırganın brute-force
+//        maliyetini kabul edilebilir ölçüde artırırken login gecikmesini makul tutar.
+// BAĞIMLILIKLAR: BCrypt.Net-Next, System.Security.Cryptography (SHA256).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Cryptography;
+using System.Text;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class PasswordService : IPasswordService
+{
+    // NEDEN 12: REFERENCE/TECHNICAL_SPECIFICATIONS.md §6'da pinlenen değer — 10'dan güvenli,
+    //        14+'ten hızlı; her login isteğinde kabul edilebilir bir gecikme (~200-300ms) verir.
+    private const int WorkFactor = 12;
+
+    // AMAÇ: Düz metin şifreyi BCrypt ile hash'ler (60 karakter, otomatik rastgele salt).
+    public string Hash(string password) =>
+        BCrypt.Net.BCrypt.HashPassword(password, workFactor: WorkFactor);
+
+    // AMAÇ: Düz metin şifreyi mevcut hash ile constant-time karşılaştırır.
+    // NEDEN: BCrypt.Verify salt'ı hash içinden kendi çıkarır, work factor'e bakılmaksızın çalışır.
+    public bool Verify(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);
+
+    // AMAÇ: Refresh token / OTP kodu gibi rastgele üretilen değerleri SHA-256 ile hash'ler.
+    // NEDEN: Bu değerler şifre değildir (zaten yüksek entropili rastgele veridir), bu yüzden
+    //        BCrypt'in yavaş/salt'lı tasarımına ihtiyaç yoktur — SHA-256 hızlı ve yeterlidir;
+    //        RefreshTokens.TokenHash ve Users.PendingOtpCodeHash bu metotla üretilir.
+    public string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToBase64String(bytes);
+    }
+}`
+    },
+    {
+      num: 10, tur: 'config',
+      baslik: 'ApplicationServiceExtensions.cs (DI kaydı eklendi)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs',
+      aciklama: 'A-02\'de MediatR/AutoMapper/FluentValidation kaydını yapan bu extension\'a, A-03\'ün ilk gerçek servis kaydı (IPasswordService → PasswordService) eklendi. Scoped seçildi: servis şu an stateless olduğu için Singleton da olurdu, ama ileride DbContext\'e bağımlı olacak diğer Application servisleriyle (AuthService gibi) tutarlı yaşam süresi için Scoped tercih edildi.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationServiceExtensions.cs
+//
+// AMAÇ: Application katmanına ait tüm servisleri (MediatR, AutoMapper, FluentValidation)
+//       DI konteynerine kaydetmek için Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; InfrastructureServiceExtensions'ın Application
+//        katmanındaki karşılığıdır — yeni bir validator/handler/mapping profili
+//        eklenince yalnızca assembly taraması sayesinde otomatik kaydolur, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: MediatR, AutoMapper, FluentValidation.DependencyInjectionExtensions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Application.Extensions;
+
+public static class ApplicationServiceExtensions
+{
+    // AMAÇ: MediatR handler'larını, AutoMapper profillerini ve FluentValidation
+    //       validator'larını Application katmanı assembly'sinden tarayıp kaydeder.
+    // NEDEN: Henüz (A-02) hiçbir feature command/handler/validator yazılmadığı için
+    //        somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
+    //        A-03'ten itibaren eklenecek her CreateWordCommand/CreateWordCommandValidator
+    //        vb. otomatik olarak bulunur, tek tek kayıt gerekmez.
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+
+        // NEDEN MediatR: Controller'lar servisleri doğrudan çağırmak yerine
+        //       IMediator.Send(command/query) ile çağırır; controller ince katman kalır.
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+
+        // NEDEN AutoMapper: Entity ↔ DTO dönüşümlerini elle yazmak yerine profil
+        //       sınıflarına (Profile) devreder; her feature kendi profilini ekler.
+        services.AddAutoMapper(applicationAssembly);
+
+        // NEDEN FluentValidation: Request DTO'larının doğrulama kuralları (RuleFor)
+        //       controller'a girmeden, ASP.NET Core'un model binding aşamasında çalışır.
+        services.AddValidatorsFromAssembly(applicationAssembly);
+
+        // NEDEN Scoped: Stateless bir servis olduğu için Singleton da olabilirdi, ama
+        //       diğer Application servisleriyle (DbContext'e bağımlı olacaklar) tutarlı
+        //       yaşam süresi için Scoped seçildi (A-03 — Auth API).
+        services.AddScoped<IPasswordService, PasswordService>();
+
+        return services;
+    }
+}`
     }
   ],
   frontendRefs: [
