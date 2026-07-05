@@ -18,10 +18,14 @@ public class WordLearnerDbContext : DbContext
     // AMAÇ: DI tarafından enjekte edilen seçenekleri (connection string vb.) taban sınıfa iletir.
     // NEDEN: EF Core'un standart constructor kalıbı; farklı ortamlar (dev/prod/test) için
     //        farklı seçenek setleri enjekte edilebilir.
-    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options) : base(options) { }
+    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options)
+        : base(options) { }
 
-    // AMAÇ: DbSet'ler feature entity'ler eklendikçe buraya yazılır (A-03'ten itibaren).
-    // NEDEN: Şu an A-02 aşamasındayız; DbContext'in temel yapısı hazır, entity'ler henüz yok.
+    // AMAÇ: Kullanıcı hesapları (A-03 — Auth API).
+    public DbSet<User> Users => Set<User>();
+
+    // AMAÇ: Kullanıcıların refresh token geçmişi (A-03 — Auth API).
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,8 +43,14 @@ public class WordLearnerDbContext : DbContext
         {
             if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
             {
-                var parameter = System.Linq.Expressions.Expression.Parameter(entityType.ClrType, "e");
-                var property = System.Linq.Expressions.Expression.Property(parameter, nameof(BaseEntity.IsDeleted));
+                var parameter = System.Linq.Expressions.Expression.Parameter(
+                    entityType.ClrType,
+                    "e"
+                );
+                var property = System.Linq.Expressions.Expression.Property(
+                    parameter,
+                    nameof(BaseEntity.IsDeleted)
+                );
                 var notDeleted = System.Linq.Expressions.Expression.Not(property);
                 var lambda = System.Linq.Expressions.Expression.Lambda(notDeleted, parameter);
                 modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);

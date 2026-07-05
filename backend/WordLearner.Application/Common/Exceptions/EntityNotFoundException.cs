@@ -11,7 +11,8 @@ namespace WordLearner.Application.Common.Exceptions;
 
 public class EntityNotFoundException : Exception
 {
-    public EntityNotFoundException(string message) : base(message) { }
+    public EntityNotFoundException(string message)
+        : base(message) { }
 
     // AMAÇ: Entity tipini ve aranan anahtarı alıp standart formatta mesaj üreten kısayol.
     // NEDEN: Repository<T> gibi çağıranların "{Entity} bulunamadı: Id={key}" string'ini

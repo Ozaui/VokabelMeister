@@ -11,7 +11,8 @@ using WordLearner.Domain.Entities;
 
 namespace WordLearner.Application.Interfaces.Repositories;
 
-public interface IRepository<T> where T : BaseEntity
+public interface IRepository<T>
+    where T : BaseEntity
 {
     // AMAÇ: Birincil anahtara göre tek kayıt getirir. Bulunamazsa null döner.
     // NEDEN: Nullable dönüş tipi ile "bulunamadı" durumu açıkça ifade edilir;

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!--
+  AMAÇ: A-03 Auth API — kayıt, 2 adımlı OTP login, sosyal giriş, token yenileme,
+        şifre sıfırlama ve GDPR/KVKK uyumlu hesap silme akışlarının tamamı.
+  NEDEN: Kimlik doğrulama olmadan hiçbir kişisel/korumalı endpoint yazılamaz;
+         sonraki tüm API'lar (A-05+) [Authorize] için bu API'ya bağımlı.
+  BAĞIMLILIKLAR: style.css, render.js.
+-->
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Yol Haritası — A-03 Auth API</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="logo">🗺️</span>
+  <div><strong>VokabelMeister</strong> <small>API Yol Haritası</small></div>
+  <span class="sp"></span>
+  <a class="back" href="index.html">← Tüm API'lar</a>
+</div>
+
+<div class="wrap"><div id="content"></div></div>
+
+<script>
+window.API = {
+  id: 'auth-api',
+  faz: 'A-03',
+  metot: '-',
+  yol: '/auth/*',
+  auth: 'Anonim + JWT',
+  baslik: 'Auth API (Kayıt, 2 Adımlı Login, Sosyal Giriş, Token Yenileme, Hesap Silme)',
+  durum: 'wip',
+  ozet: 'Kullanıcı kimlik doğrulamasının tüm akışları: kayıt + e-posta doğrulama, 2 adımlı OTP login, Google/Apple girişi, refresh token (Token Family Pattern), şifre sıfırlama ve 30 gün grace periyotlu hesap silme. 13 endpoint, tek AuthController altında toplanır.',
+  adimlar: [
+    {
+      num: 1, tur: 'enum',
+      baslik: 'OtpPurpose.cs', dosya: 'Domain/Enums/OtpPurpose.cs',
+      aciklama: 'User tablosunda tek bir OTP alan seti (PendingOtpCodeHash/ExpiresAt) e-posta doğrulama, login 2FA, şifre sıfırlama ve hesap silme gibi birden fazla akışta paylaşılır. Bu enum olmadan "bu kod hangi işlem içindi" sorusu cevaplanamaz — biri diğerinin yerine kullanılabilir, güvenlik açığına yol açar. User entity\'den önce yazıldı çünkü User.PendingOtpCodePurpose alanı buna bağımlı.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// OtpPurpose.cs
+//
+// AMAÇ: Kullanıcıya gönderilen tek kullanımlık (OTP) kodunun hangi işlem için
+//       üretildiğini ayırt eden enum.
+// NEDEN: User tablosunda tek bir OTP alan seti (PendingOtpCodeHash/ExpiresAt)
+//        e-posta doğrulama, login 2FA, şifre sıfırlama ve hesap silme gibi
+//        birden fazla akışta paylaşılır; bu enum olmadan hangi kodun hangi
+//        işlem için üretildiği ayırt edilemez (biri diğeri yerine kullanılabilir).
+// BAĞIMLILIKLAR: Yok — saf C# enum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Enums;
+
+public enum OtpPurpose
+{
+    // AMAÇ: Kayıt sonrası e-posta adresinin doğrulanması.
+    EmailVerification,
+
+    // AMAÇ: 2 adımlı login akışının ikinci adımı (şifre doğrulandıktan sonra).
+    LoginOtp,
+
+    // AMAÇ: "Şifremi unuttum" akışında yeni şifre belirlemeden önceki doğrulama.
+    PasswordReset,
+
+    // AMAÇ: Hesap silme isteğinin (soft delete) onaylanması.
+    AccountDeletion,
+}`
+    },
+    {
+      num: 2, tur: 'entity',
+      baslik: 'User.cs', dosya: 'Domain/Entities/User.cs',
+      aciklama: 'DATABASE_SCHEMA/Auth.md\'deki Users şemasının kod karşılığı. Kimlik doğrulama (yerel şifre + Google/Apple), 2 adımlı OTP akışları, öğrenme istatistikleri (DailyWordGoal, CurrentLevel, XP, StreakDays) ve GDPR/KVKK uyumlu hesap silme (ScheduledDeletionAt, IsAnonymized, OriginalEmailHash) tek tabloda toplanır. AuthProvider ve Role bilinçli olarak enum değil string — Role doğrudan JWT claim\'ine (ClaimTypes.Role) yazılır ve [Authorize(Roles="Admin")] zaten string karşılaştırması yapar; enum\'a çevirmek gereksiz bir dönüşüm katmanı eklerdi.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// User.cs
+//
+// AMAÇ: Uygulamaya kayıtlı her kullanıcının hesap bilgilerini tutan entity.
+// NEDEN: Kimlik doğrulama (yerel şifre + Google/Apple), 2 adımlı OTP akışları,
+//        öğrenme istatistikleri ve GDPR/KVKK uyumlu hesap silme süreci tek bir
+//        tabloda toplanır — DATABASE_SCHEMA/Auth.md'deki Users şemasının kod karşılığı.
+// BAĞIMLILIKLAR: BaseEntity, OtpPurpose enum, RefreshToken (1:N ilişki).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Enums;
+
+namespace WordLearner.Domain.Entities;
+
+public class User : BaseEntity
+{
+    // AMAÇ: Kullanıcının benzersiz giriş adresi.
+    public string Email { get; set; } = string.Empty;
+
+    // AMAÇ: BCrypt hash'i (60 karakter). Sosyal girişte (Google/Apple) null kalır.
+    public string? PasswordHash { get; set; }
+
+    // AMAÇ: Google Sign-In ile eşleşen benzersiz kullanıcı kimliği.
+    public string? GoogleId { get; set; }
+
+    // AMAÇ: Apple Sign-In ile eşleşen benzersiz kullanıcı kimliği.
+    public string? AppleId { get; set; }
+
+    // AMAÇ: Hesabın hangi yöntemle oluşturulduğu — geçerli değerler: Local, Google, Apple.
+    // NEDEN: Enum yerine string tutulur çünkü [Authorize] claim'leri gibi doğrudan
+    //        dışarıya (JWT/DTO) yansıyan bir alan değil, yalnızca DB CHECK constraint'i var.
+    public string AuthProvider { get; set; } = "Local";
+
+    // AMAÇ: Kullanıcının adı.
+    public string FirstName { get; set; } = string.Empty;
+
+    // AMAÇ: Kullanıcının soyadı.
+    public string LastName { get; set; } = string.Empty;
+
+    // AMAÇ: Profilde gösterilecek takma ad (opsiyonel).
+    public string? DisplayName { get; set; }
+
+    // AMAÇ: Profil fotoğrafının URL'i.
+    public string? AvatarUrl { get; set; }
+
+    // AMAÇ: Günlük hedeflenen kelime tekrar/öğrenme sayısı.
+    public int DailyWordGoal { get; set; } = 10;
+
+    // AMAÇ: Günlük öğrenilecek YENİ kelime limiti (kalanı SRS tekrarına ayrılır).
+    public int DailyNewWordLimit { get; set; } = 5;
+
+    // AMAÇ: Kullanıcının mevcut seviyesi — geçerli değerler: A1, A2, B1, B2, C1, C2.
+    public string CurrentLevel { get; set; } = "A1";
+
+    // AMAÇ: Mevcut seviye içindeki toplanan XP.
+    public int TotalXP { get; set; }
+
+    // AMAÇ: Hesap boyunca kazanılan toplam XP (seviye sıfırlansa bile azalmaz).
+    public int LifetimeXP { get; set; }
+
+    // AMAÇ: Art arda kaç gündür aktif olunduğu (streak).
+    public int StreakDays { get; set; }
+
+    // AMAÇ: Streak'in en son arttığı gün — bir sonraki günün streak'i bozup bozmadığını belirler.
+    public DateTime? LastStreakDate { get; set; }
+
+    // AMAÇ: Bekleyen OTP kodunun SHA-256 hash'i. Plaintext asla saklanmaz.
+    public string? PendingOtpCodeHash { get; set; }
+
+    // AMAÇ: Bekleyen OTP kodunun geçerlilik süresinin dolacağı an (UTC).
+    public DateTime? PendingOtpCodeExpiresAt { get; set; }
+
+    // AMAÇ: Bekleyen OTP kodunun hangi işlem için üretildiği.
+    // NEDEN: Aynı alan seti (hash/expiry) tüm OTP akışlarında paylaşıldığı için
+    //        "bu kod neyi doğrulamak içindi" sorusu bu alan olmadan cevaplanamaz.
+    public OtpPurpose? PendingOtpCodePurpose { get; set; }
+
+    // AMAÇ: İlk kurulum (onboarding) akışının tamamlanıp tamamlanmadığı.
+    public bool IsOnboardingCompleted { get; set; }
+
+    // AMAÇ: Hesabın dondurulup dondurulmadığı (admin tarafından).
+    public bool IsActive { get; set; } = true;
+
+    // AMAÇ: E-posta adresinin doğrulanıp doğrulanmadığı.
+    public bool IsEmailVerified { get; set; }
+
+    // AMAÇ: E-postanın doğrulandığı an (UTC).
+    public DateTime? EmailVerifiedAt { get; set; }
+
+    // AMAÇ: En son başarılı girişin yapıldığı an (UTC).
+    public DateTime? LastLoginAt { get; set; }
+
+    // AMAÇ: En son başarılı girişin yapıldığı IP adresi.
+    public string? LastLoginIP { get; set; }
+
+    // AMAÇ: Toplam başarılı giriş sayısı.
+    public int LoginCount { get; set; }
+
+    // AMAÇ: Hesap silme isteği onaylandığında, kalıcı anonimleştirmenin planlandığı an
+    //       (istek anından 30 gün sonrası — AccountCleanupBackgroundService bu tarihi kullanır).
+    public DateTime? ScheduledDeletionAt { get; set; }
+
+    // AMAÇ: 30 günlük grace period sonunda PII'nin gerçekten anonimleştirilip anonimleştirilmediği.
+    public bool IsAnonymized { get; set; }
+
+    // AMAÇ: Anonimleştirilmeden önceki e-postanın SHA-256 hash'i.
+    // NEDEN: Silinen bir e-posta ile tekrar kayıt açılmasını engellemek için —
+    //        gerçek e-posta anonimleştirildikten sonra bu hash tek referans kalır.
+    public string? OriginalEmailHash { get; set; }
+
+    // AMAÇ: OneSignal push bildirim hedefleme kimliği.
+    public string? OneSignalPlayerId { get; set; }
+
+    // AMAÇ: Yetkilendirme rolü — geçerli değerler: User, Admin.
+    // NEDEN: JWT claim'ine (ClaimTypes.Role) doğrudan string olarak yazılır;
+    //        [Authorize(Roles="Admin")] ASP.NET Core'da string karşılaştırması yapar.
+    public string Role { get; set; } = "User";
+
+    // AMAÇ: Kullanıcının refresh token geçmişi (login/refresh/logout akışlarında kullanılır).
+    public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+}`
+    },
+    {
+      num: 3, tur: 'entity',
+      baslik: 'RefreshToken.cs', dosya: 'Domain/Entities/RefreshToken.cs',
+      aciklama: 'Access token 15 dakika gibi kısa ömürlü olduğu için kullanıcı oturumu bu tablo sayesinde uzun süre açık kalır. Token Family Pattern uygular: TokenFamily aynı login oturumundan türeyen tüm token\'ları gruplar; bir token kullanılınca (IsUsed=true) tekrar geldiğinde bu replay saldırısı sayılır ve REFERENCE/SECURITY.md §1 gereği tüm family iptal edilir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RefreshToken.cs
+//
+// AMAÇ: Kullanıcının access token'ı yenilemek için kullandığı uzun ömürlü token kaydı.
+// NEDEN: Token Family Pattern uygular — her refresh'te eski token tek kullanımlık
+//        hâle gelir (IsUsed); aynı family'den ikinci kullanım replay saldırısı
+//        sayılır ve tüm family iptal edilir (bkz. REFERENCE/SECURITY.md §1).
+// BAĞIMLILIKLAR: BaseEntity, User (N:1 ilişki).
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Entities;
+
+public class RefreshToken : BaseEntity
+{
+    // AMAÇ: Token'ın ait olduğu kullanıcı.
+    public int UserId { get; set; }
+
+    // AMAÇ: Navigation property — EF Core Include() ile kullanıcı bilgisine erişim sağlar.
+    public User User { get; set; } = null!;
+
+    // AMAÇ: Refresh token'ın SHA-256 hash'i. Plaintext asla saklanmaz.
+    public string TokenHash { get; set; } = string.Empty;
+
+    // AMAÇ: Aynı login oturumundan türeyen tüm refresh token'ları gruplayan GUID.
+    // NEDEN: Replay tespiti bu alan üzerinden yapılır — kullanılmış bir token
+    //        tekrar geldiğinde aynı family'deki TÜM token'lar iptal edilir.
+    public string TokenFamily { get; set; } = string.Empty;
+
+    // AMAÇ: Token'ın geçerlilik süresinin dolacağı an (UTC).
+    public DateTime ExpiresAt { get; set; }
+
+    // AMAÇ: Bu token'ın bir refresh işleminde zaten kullanılıp kullanılmadığı.
+    // NEDEN: Refresh token tek kullanımlıktır; ikinci kullanım replay sayılır.
+    public bool IsUsed { get; set; }
+
+    // AMAÇ: Token'ın elle iptal edildiği an (logout veya replay tespiti sonucu).
+    public DateTime? RevokedAt { get; set; }
+
+    // AMAÇ: Token'ın üretildiği cihazın bilgisi (user-agent vb.) — audit amaçlı.
+    public string? DeviceInfo { get; set; }
+
+    // AMAÇ: Token'ın üretildiği IP adresi — audit amaçlı.
+    public string? IpAddress { get; set; }
+}`
+    },
+    {
+      num: 4, tur: 'config',
+      baslik: 'WordLearnerDbContext.cs (DbSet eklendi)', dosya: 'Infrastructure/Data/WordLearnerDbContext.cs',
+      aciklama: 'A-02\'de boş bırakılan DbContext\'e (bkz. API_YOL_HARITASI/A-02_ortak-altyapi.html adım 2) ilk feature entity\'leri eklendi: Users ve RefreshTokens. Dosyanın geri kalanı (soft delete filtresi, UpdatedAt otomasyonu) değişmedi; her API tek başına baştan sona okunabilir olsun diye tam dosya burada da gösteriliyor.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// WordLearnerDbContext.cs
+//
+// AMAÇ: EF Core'un veritabanıyla konuştuğu merkezi DbContext sınıfı.
+// NEDEN: Tüm entity konfigürasyonlarını tek yerden yükler; soft delete global filtresi
+//        ile silinmiş kayıtların sorgulara otomatik karışmasını önler; SaveChangesAsync
+//        override'ı UpdatedAt alanını elle set etme zorunluluğunu ortadan kaldırır.
+// BAĞIMLILIKLAR: Microsoft.EntityFrameworkCore, WordLearner.Domain.Entities.BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Infrastructure.Data;
+
+public class WordLearnerDbContext : DbContext
+{
+    // AMAÇ: DI tarafından enjekte edilen seçenekleri (connection string vb.) taban sınıfa iletir.
+    // NEDEN: EF Core'un standart constructor kalıbı; farklı ortamlar (dev/prod/test) için
+    //        farklı seçenek setleri enjekte edilebilir.
+    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options)
+        : base(options) { }
+
+    // AMAÇ: Kullanıcı hesapları (A-03 — Auth API).
+    public DbSet<User> Users => Set<User>();
+
+    // AMAÇ: Kullanıcıların refresh token geçmişi (A-03 — Auth API).
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // AMAÇ: Infrastructure assembly'sindeki tüm IEntityTypeConfiguration<T> sınıflarını
+        //       otomatik olarak tarar ve uygular.
+        // NEDEN: Her entity için tek tek modelBuilder.ApplyConfiguration(...) çağırmak yerine
+        //        assembly taraması yaparız; yeni entity eklendikçe bu satır değişmez.
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+        // AMAÇ: BaseEntity'den türeyen tüm entity'lere global soft delete filtresi uygular.
+        // NEDEN: IsDeleted == true olan kayıtlar hiçbir sorguda görünmez; her sorguda
+        //        .Where(e => !e.IsDeleted) yazmak zorunda kalmayız.
+        //        IgnoreQueryFilters() ile gerektiğinde (admin silinen kayıtları görme) bypass edilir.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                var parameter = System.Linq.Expressions.Expression.Parameter(
+                    entityType.ClrType,
+                    "e"
+                );
+                var property = System.Linq.Expressions.Expression.Property(
+                    parameter,
+                    nameof(BaseEntity.IsDeleted)
+                );
+                var notDeleted = System.Linq.Expressions.Expression.Not(property);
+                var lambda = System.Linq.Expressions.Expression.Lambda(notDeleted, parameter);
+                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+            }
+        }
+
+        base.OnModelCreating(modelBuilder);
+    }
+
+    // AMAÇ: Her kayıt güncellendiğinde UpdatedAt alanını otomatik olarak UTC şimdiki zamana set eder.
+    // NEDEN: Servis veya repository katmanında her entity.UpdatedAt = DateTime.UtcNow yazmak
+    //        kod tekrarına yol açar; bu override ile merkezi olarak yönetilir.
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Modified)
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+
+            // NEDEN: Yeni eklenen entity'lerde CreatedAt varsayılan olarak DateTime.UtcNow ile
+            //        başlatılıyor (BaseEntity'de); UpdatedAt ise burada dokunulmadığı için
+            //        insert sonrası null kalır — "hiç güncellenmedi" bilgisini korur.
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+}`
+    },
+    {
+      num: 5, tur: 'config',
+      baslik: 'UserConfiguration.cs', dosya: 'Infrastructure/Data/Configurations/UserConfiguration.cs',
+      aciklama: 'Fluent API ile yazıldı (alternatifi: entity property\'lerinin üzerine [Required]/[MaxLength] gibi Data Annotations attribute\'ları koymak — ama CHECK constraint gibi gelişmiş kurallar yalnızca Fluent API\'de mümkün, bu yüzden Fluent API tercih edildi). DATABASE_SCHEMA/Auth.md\'deki Users şemasıyla birebir eşleşen kısıtları uygular: Email UNIQUE index, Role/CurrentLevel/AuthProvider CHECK constraint\'leri (bu üç alan C# tarafında enum değil string olduğu için DB seviyesinde son savunma hattı).',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// UserConfiguration.cs
+//
+// AMAÇ: User entity'sinin EF Core tablo eşlemesini (kolon uzunlukları, index'ler,
+//       CHECK constraint'leri) tanımlar.
+// NEDEN: DATABASE_SCHEMA/Auth.md'deki Users şemasıyla birebir eşleşen kısıtları
+//        kod tarafında da uygulamak için — ör. Email UNIQUE, Role/CurrentLevel/
+//        AuthProvider yalnızca izinli değerleri alabilir.
+// BAĞIMLILIKLAR: EF Core, User entity, OtpPurpose enum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Infrastructure.Data.Configurations;
+
+public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.Property(u => u.Email).HasMaxLength(254).IsRequired();
+        // NEDEN: Aynı e-posta ile birden fazla hesap açılmasını DB seviyesinde engeller.
+        builder.HasIndex(u => u.Email).IsUnique();
+
+        builder.Property(u => u.PasswordHash).HasMaxLength(60);
+        builder.Property(u => u.GoogleId).HasMaxLength(255);
+        builder.Property(u => u.AppleId).HasMaxLength(255);
+        builder.Property(u => u.AuthProvider).HasMaxLength(20).HasDefaultValue("Local");
+
+        builder.Property(u => u.FirstName).HasMaxLength(50).IsRequired();
+        builder.Property(u => u.LastName).HasMaxLength(50).IsRequired();
+        builder.Property(u => u.DisplayName).HasMaxLength(100);
+        builder.Property(u => u.AvatarUrl).HasMaxLength(500);
+
+        builder.Property(u => u.DailyWordGoal).HasDefaultValue(10);
+        builder.Property(u => u.DailyNewWordLimit).HasDefaultValue(5);
+        builder.Property(u => u.CurrentLevel).HasMaxLength(2).HasDefaultValue("A1");
+
+        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(88);
+        // NEDEN: Enum DB'de okunabilir bir string olarak tutulur (sayısal index'e bağımlı kalmaz).
+        builder.Property(u => u.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
+
+        builder.Property(u => u.IsActive).HasDefaultValue(true);
+        builder.Property(u => u.LastLoginIP).HasMaxLength(45);
+        builder.Property(u => u.OriginalEmailHash).HasMaxLength(88);
+        builder.Property(u => u.OneSignalPlayerId).HasMaxLength(100);
+        builder.Property(u => u.Role).HasMaxLength(20).HasDefaultValue("User");
+
+        builder.HasIndex(u => u.Role);
+        builder.HasIndex(u => u.GoogleId);
+        builder.HasIndex(u => u.AppleId);
+
+        // NEDEN: Bu üç alan, C# tarafında enum yerine string tutulduğu için
+        //        geçersiz değer yazılmasını DB seviyesinde engelleyen son savunma hattı.
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
+            t.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
+            t.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+        });
+    }
+}`
+    },
+    {
+      num: 6, tur: 'config',
+      baslik: 'RefreshTokenConfiguration.cs', dosya: 'Infrastructure/Data/Configurations/RefreshTokenConfiguration.cs',
+      aciklama: 'TokenHash ve TokenFamily üzerine index eklendi çünkü her refresh/logout isteğinde bu alanlara göre arama yapılır; replay tespitinde tüm family tek sorguda bulunmalı. User silindiğinde (gerçekte hiç olmaz çünkü soft delete var, ama FK bütünlüğü için) token\'ların da silinmesi CASCADE ile sağlanır.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RefreshTokenConfiguration.cs
+//
+// AMAÇ: RefreshToken entity'sinin EF Core tablo eşlemesini tanımlar.
+// NEDEN: TokenHash/TokenFamily üzerinde arama sık yapılır (refresh/replay tespiti);
+//        User silindiğinde token'ların da silinmesi (CASCADE) veri bütünlüğünü korur.
+// BAĞIMLILIKLAR: EF Core, RefreshToken entity, User entity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Infrastructure.Data.Configurations;
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        builder.Property(r => r.TokenHash).HasMaxLength(88).IsRequired();
+        builder.Property(r => r.TokenFamily).HasMaxLength(36).IsRequired();
+        builder.Property(r => r.DeviceInfo).HasMaxLength(500);
+        builder.Property(r => r.IpAddress).HasMaxLength(45);
+
+        // NEDEN: Her refresh/logout isteğinde token hash'e göre arama yapılır.
+        builder.HasIndex(r => r.TokenHash);
+        // NEDEN: Replay tespitinde aynı family'deki tüm token'lar tek sorguda bulunur.
+        builder.HasIndex(r => r.TokenFamily);
+
+        builder
+            .HasOne(r => r.User)
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`
+    },
+    {
+      num: 7, tur: 'config',
+      baslik: 'Migration: AddUserAndRefreshToken', dosya: 'Infrastructure/Data/Migrations/20260705150743_AddUserAndRefreshToken.cs',
+      aciklama: '"dotnet ef migrations add AddUserAndRefreshToken" ile entity + config\'ten otomatik üretildi, sonra "dotnet ef database update" ile VokabelMeisterDB\'ye uygulandı (Users + RefreshTokens tabloları, CHECK constraint\'ler, tüm index\'ler gerçek DB\'de doğrulandı). Bu adım "migration" ayrı bir tur olarak değil config\'in bir parçası olarak işlendi çünkü elle yazılan kod değil, entity/config adımlarından araç tarafından üretilen çıktı.',
+      kod: `using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace WordLearner.Infrastructure.Data.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddUserAndRefreshToken : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Email = table.Column<string>(type: "nvarchar(254)", maxLength: 254, nullable: false),
+                    PasswordHash = table.Column<string>(type: "nvarchar(60)", maxLength: 60, nullable: true),
+                    GoogleId = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    AppleId = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    AuthProvider = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "Local"),
+                    FirstName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    LastName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    AvatarUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    DailyWordGoal = table.Column<int>(type: "int", nullable: false, defaultValue: 10),
+                    DailyNewWordLimit = table.Column<int>(type: "int", nullable: false, defaultValue: 5),
+                    CurrentLevel = table.Column<string>(type: "nvarchar(2)", maxLength: 2, nullable: false, defaultValue: "A1"),
+                    TotalXP = table.Column<int>(type: "int", nullable: false),
+                    LifetimeXP = table.Column<int>(type: "int", nullable: false),
+                    StreakDays = table.Column<int>(type: "int", nullable: false),
+                    LastStreakDate = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    PendingOtpCodeHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: true),
+                    PendingOtpCodeExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    PendingOtpCodePurpose = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    IsOnboardingCompleted = table.Column<bool>(type: "bit", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                    IsEmailVerified = table.Column<bool>(type: "bit", nullable: false),
+                    EmailVerifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    LastLoginIP = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
+                    LoginCount = table.Column<int>(type: "int", nullable: false),
+                    ScheduledDeletionAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    IsAnonymized = table.Column<bool>(type: "bit", nullable: false),
+                    OriginalEmailHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: true),
+                    OneSignalPlayerId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Role = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "User"),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "int", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.CheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+                    table.CheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
+                    table.CheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RefreshTokens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    TokenHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: false),
+                    TokenFamily = table.Column<string>(type: "nvarchar(36)", maxLength: 36, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsUsed = table.Column<bool>(type: "bit", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeviceInfo = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    IpAddress = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "int", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_TokenFamily",
+                table: "RefreshTokens",
+                column: "TokenFamily");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_TokenHash",
+                table: "RefreshTokens",
+                column: "TokenHash");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_UserId",
+                table: "RefreshTokens",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_AppleId",
+                table: "Users",
+                column: "AppleId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_GoogleId",
+                table: "Users",
+                column: "GoogleId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Role",
+                table: "Users",
+                column: "Role");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+        }
+    }
+}`
+    }
+  ],
+  frontendRefs: [
+    { dosya: '../FRONTEND_YOL_HARITASI/B-02_giris.html', baslik: 'Admin — Sade Giriş + OTP' },
+    { dosya: '../FRONTEND_YOL_HARITASI/D-03_giris.html', baslik: 'Web — Tam Akış + Google' },
+    { dosya: '../FRONTEND_YOL_HARITASI/E-05_giris.html', baslik: 'Mobil — Tam Akış + Google + Apple' }
+  ]
+};
+</script>
+<script src="render.js"></script>
+</body>
+</html>

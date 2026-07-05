@@ -39,8 +39,8 @@
 > 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e B-02/D-03/E-05'in dosyaları eklenir;
 > o üç feature sayfasındaki `api` adımına da bu sayfaya `backendRef` eklenir (iki yönlü).
 *Dikey dilim: `User` + `RefreshToken` entity → servisler → controller → yol haritası.*
-- [ ] **Entity:** `User`, `RefreshToken` + `OtpPurpose` enum + EF config + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] **Entity:** `User`, `RefreshToken` + `OtpPurpose` enum + EF config + migration
+- [x] ➜ **API Yol Haritası'na işle**
 - [ ] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)

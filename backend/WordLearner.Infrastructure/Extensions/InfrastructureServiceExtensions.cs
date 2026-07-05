@@ -24,12 +24,14 @@ public static class InfrastructureServiceExtensions
     //        Yeni repository'ler ilerleyen task'larda (A-03+) buraya eklenir.
     public static IServiceCollection AddInfrastructureServices(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         // NEDEN Scoped: DbContext request başına bir instance olmalı;
         //       Singleton olsaydı eş zamanlı istekler aynı context'i paylaşırdı (thread-safety sorunu).
         services.AddDbContext<WordLearnerDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
+        );
 
         // NOT: Feature repository'ler (IUserRepository, IWordRepository vb.) kendi task'larında
         //      (A-03, A-05 ...) bu metoda eklenecek.

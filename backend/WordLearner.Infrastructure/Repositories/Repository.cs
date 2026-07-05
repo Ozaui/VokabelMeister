@@ -16,7 +16,8 @@ using WordLearner.Infrastructure.Data;
 
 namespace WordLearner.Infrastructure.Repositories;
 
-public class Repository<T> : IRepository<T> where T : BaseEntity
+public class Repository<T> : IRepository<T>
+    where T : BaseEntity
 {
     protected readonly WordLearnerDbContext _db;
     protected readonly DbSet<T> _set;
@@ -31,17 +32,21 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     // AMAÇ: Soft delete filtresi aktifken Id'ye göre kayıt getirir.
     // NEDEN: virtual — feature repository gerektiğinde Include() ekleyerek override edebilir.
-    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default)
-        => _set.FirstOrDefaultAsync(e => e.Id == id, ct);
+    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
+        _set.FirstOrDefaultAsync(e => e.Id == id, ct);
 
     // AMAÇ: Filtresiz tüm (silinmemiş) kayıtları belleğe yükler.
     // NEDEN: virtual — feature repository sayfalama veya projeksiyon için override edebilir.
-    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
-        => await _set.ToListAsync(ct);
+    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>
+        await _set.ToListAsync(ct);
 
     // AMAÇ: Yeni entity'yi DB'ye ekler ve Id'si dolu hâliyle geri döner.
     // NEDEN: userId verilirse CreatedByUserId/UpdatedByUserId set edilir (kim oluşturdu).
-    public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)
+    public virtual async Task<T> AddAsync(
+        T entity,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
         entity.CreatedByUserId = userId;
         entity.UpdatedByUserId = userId;
@@ -52,7 +57,11 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
     // NEDEN: userId verilirse UpdatedByUserId set edilir (kim güncelledi).
-    public virtual async Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default)
+    public virtual async Task UpdateAsync(
+        T entity,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
         entity.UpdatedByUserId = userId;
         _set.Update(entity);
@@ -63,10 +72,13 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     // NEDEN: Fiziksel silme geri alınamaz; soft delete ile veri kaybı olmaz,
     //        admin silinmiş kaydı görmek istediğinde IgnoreQueryFilters() kullanır.
     //        userId verilirse DeletedByUserId set edilir (kim sildi).
-    public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
+    public virtual async Task SoftDeleteAsync(
+        int id,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
-        var entity = await GetByIdAsync(id, ct)
-            ?? throw new EntityNotFoundException(typeof(T), id);
+        var entity = await GetByIdAsync(id, ct) ?? throw new EntityNotFoundException(typeof(T), id);
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
@@ -75,6 +87,5 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     }
 
     // AMAÇ: Birden fazla değişikliği toplu olarak DB'ye yazar.
-    public Task SaveChangesAsync(CancellationToken ct = default)
-        => _db.SaveChangesAsync(ct);
+    public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }
