@@ -10,7 +10,7 @@
 - [x] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
 - [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 
-### A-02 — Ortak Altyapı 🔄
+### A-02 — Ortak Altyapı ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
 - [x] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
@@ -23,12 +23,15 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB ile CRUD + soft delete filtresi + exception mesaj formatı — sonraki tüm API'lar bunu kullanır)
 - [x] ➜ **API Yol Haritası'na işle**
-- [ ] Ortak tipler: `ApiResponse<T>`, `ApiErrorResponse`, `PagedResult<T>`
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] Middleware: global exception, security headers, request/response log
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR, AutoMapper kayıtları
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] Ortak hata tipi: `ApiErrorResponse` (`ExceptionHandlingMiddleware`'in gerçek tüketicisi olduğu
+      için burada yazıldı; `ApiResponse<T>`/`PagedResult<T>` hiçbir controller yokken spekülatif
+      olarak yazılmıştı → YAGNI kuralına göre geri alındı, ilk gerçek controller'ın ihtiyaç duyduğu
+      anda o task içinde yazılacak — bkz. `../TASK.md` "Spekülatif ortak tip yazılmaz" kuralı)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] Middleware: global exception, security headers, request/response log
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR, AutoMapper kayıtları
+- [x] ➜ **API Yol Haritası'na işle**
 
 ### A-03 — Auth API (User) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, REFERENCE/SECURITY.md §2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
@@ -79,9 +82,12 @@
 **Referans:** REFERENCE/API_ENDPOINTS.md §5
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
 > 🧩 `frontendRefs` ↔ B-03 `backendRef` (iki yönlü).
-- [ ] **Entity:** `Word`, `WordDetail`, `WordExample` + EF config + migration
+- [ ] **Entity:** `Language`, `WordConcept`, `Word`, `WordDetail`, `WordExample` + EF config + migration
+      + `Language` seed (`de`, `tr`) — bkz. `DATABASE_SCHEMA/Icerik.md` (çoklu dile açık şema:
+      kategori/seviye `WordConcept` üzerinde, gramer `WordDetail.GrammarData` JSON'da dile göre değişir)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin, duplikat 409 + `?force=true`)
+- [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — bir kelime tüm dilleriyle
+      (`translations[]`) tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`)
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD)
 - [ ] ➜ **API Yol Haritası'na işle**
@@ -92,7 +98,8 @@
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin — Kategori Yönetimi), D-06 (Web — Kategoriler Sayfası), E-08 (Mobil — Kategoriler Ekranı)
 > 🧩 `frontendRefs` ↔ B-04/D-06/E-08 `backendRef` (iki yönlü).
-- [ ] **Entity:** `Category` (self-ref hiyerarşi), `WordCategory` ara tablo + EF config + migration
+- [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation` (dil başına ad), `WordCategory`
+      ara tablo (`WordConceptId`↔`CategoryId`) + EF config + migration
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] `ICategoryService` + `CategoryService` (hiyerarşik liste, kategoriye ait kelimeler, CRUD Admin)
 - [ ] ➜ **API Yol Haritası'na işle**

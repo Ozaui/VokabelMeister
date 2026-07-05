@@ -1,57 +1,46 @@
 # Program.cs
 
-**Özet:** `WordLearner.API`'nin .NET 9 minimal hosting modeliyle yazılmış composition root'u — servisleri DI konteynerine kaydeder ve HTTP middleware pipeline'ını kurar. Şu an yalnızca **iskelet** hâlinde: Controller + Swagger + `UseAuthorization()` yer tutucusu var; DbContext kaydı, JWT auth, CORS, Serilog, FluentValidation, MediatR, AutoMapper ve global exception middleware'i **A-02'de eklenecek**.
-**Kütüphaneler:** ASP.NET Core, Swashbuckle.AspNetCore (Swagger UI)
-**Bağlantılar:** [[WordLearner_API]] · [[InfrastructureServiceExtensions]] · [[Gelistirme_Yol_Haritasi]] · [[Teknik_Ozellikler]]
+**Özet:** `WordLearner.API`'nin .NET 9 minimal hosting modeliyle yazılmış composition root'u — servisleri DI konteynerine kaydeder ve HTTP middleware pipeline'ını kurar. **A-02 tamamlandı** — artık tam yapılandırma: Serilog (konsol+dosya), `AddInfrastructureServices`+`AddApplicationServices`, JWT Bearer authentication, CORS ve 3 özel middleware (loglama → güvenlik başlıkları → exception handling) sırayla kurulu. Gerçek bir `/api/v1/*` isteğiyle (404 dahil) doğrulandı: güvenlik başlıkları her yanıtta mevcut, Türkçe istek/yanıt logları konsola düşüyor.
+**Kütüphaneler:** ASP.NET Core, Swashbuckle.AspNetCore (Swagger UI), Serilog.AspNetCore, Microsoft.AspNetCore.Authentication.JwtBearer, MediatR, AutoMapper, FluentValidation
+**Bağlantılar:** [[WordLearner_API]] · [[InfrastructureServiceExtensions]] · [[ApplicationServiceExtensions]] · [[Middleware]] · [[ApiErrorResponse]] · [[Gelistirme_Yol_Haritasi]] · [[Teknik_Ozellikler]]
 
 ## Konum
 `backend/WordLearner.API/Program.cs`
 
-## Mevcut Pipeline (adım adım)
+## Tam Pipeline (adım adım — A-02 sonu)
 ```
-1. builder.Services.AddControllers()
-2. builder.Services.AddEndpointsApiExplorer() + AddSwaggerGen(...)
-   → SwaggerDoc "v1": Title "VokabelMeister API", Description "Almanca-Türkçe kelime öğrenme uygulaması Web API'si"
-3. app.Environment.IsDevelopment() ise → UseSwagger() + UseSwaggerUI() (http://localhost:5001/swagger)
-4. app.UseHttpsRedirection()
-5. app.UseAuthorization()   ← auth henüz yapılandırılmadı (A-03'te JWT eklenecek); pipeline'daki
-   doğru konumunu korumak için şimdiden eklendi
-6. app.MapControllers()
-7. app.Run()
-```
-
-## A-02'de Eklenecekler (henüz yok)
-- `builder.Services.AddInfrastructureServices(builder.Configuration)` çağrısı (bkz. [[InfrastructureServiceExtensions]])
-- JWT Bearer authentication kaydı
-- CORS policy (`Cors:AllowedOrigins` — bkz. [[WordLearner_API]])
-- Serilog host builder entegrasyonu
-- FluentValidation, MediatR, AutoMapper DI kayıtları
-- Global exception middleware, security headers middleware, request/response log middleware
-
-## Hedef Yapılandırma (docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §10 — tam kod referansı)
-
-`docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md`'de A-02 sonunda ulaşılması gereken **tam** `Program.cs` kodu
-tanımlı — sıralama önemli (middleware pipeline order):
-
-```
-builder.Host.UseSerilog(...)
-builder.Services.AddControllers() / AddEndpointsApiExplorer() / AddSwaggerGen()
-builder.Services.AddDbContext<WordLearnerDbContext>(...) / AddInfrastructureServices(...) / AddApplicationServices(...)
-builder.Services.AddValidatorsFromAssembly(...)
-builder.Services.AddAuthentication(JwtBearerDefaults...).AddJwtBearer(...)   // ClockSkew = Zero
-builder.Services.AddCors(...)
+1. builder.Host.UseSerilog(...)                         → konsol + dosya (logs/app-.txt, günlük rotasyon)
+   NEDEN Override: appsettings.json'daki Logging:LogLevel:Microsoft.AspNetCore=Warning
+   yalnızca ASP.NET Core'un builtin logger'ı içindir; Serilog kod tabanlı yapılandırıldığından
+   aynı susturma MinimumLevel.Override("Microsoft.AspNetCore", Warning) ile elle tekrarlanır.
+2. builder.Services.AddControllers()
+3. builder.Services.AddEndpointsApiExplorer() + AddSwaggerGen(...)
+4. builder.Services.AddInfrastructureServices(builder.Configuration)  → bkz. [[InfrastructureServiceExtensions]]
+   builder.Services.AddApplicationServices()                          → bkz. [[ApplicationServiceExtensions]]
+5. builder.Services.AddAuthentication(JwtBearerDefaults...).AddJwtBearer(...)  → ClockSkew = Zero
+   builder.Services.AddAuthorization()
+6. builder.Services.AddCors("Default", ... Cors:AllowedOrigins ...)
 ─────────────────────────────────────────
-app.UseSwagger()/UseSwaggerUI()   (yalnızca Development)
-app.UseMiddleware<SecurityHeadersMiddleware>()
-app.UseMiddleware<ExceptionHandlingMiddleware>()
-app.UseHttpsRedirection()
-app.UseStaticFiles()              // avatar/görsel — A-08
-app.UseCors("Default")
-app.UseAuthentication()
-app.UseAuthorization()
-app.MapControllers()
+7. app.Environment.IsDevelopment() ise → UseSwagger()/UseSwaggerUI() (http://localhost:5001/swagger)
+8. app.UseMiddleware<RequestResponseLoggingMiddleware>()   ← en dışta (bkz. [[Middleware]])
+   app.UseMiddleware<SecurityHeadersMiddleware>()
+   app.UseMiddleware<ExceptionHandlingMiddleware>()        ← en içte
+9. app.UseHttpsRedirection()
+10. app.UseCors("Default")
+11. app.UseAuthentication() / app.UseAuthorization()
+12. app.MapControllers()
+13. app.Run()
 ```
 
-Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → [[Teknik_Ozellikler]] §7.
-Bu, mevcut minimal `Program.cs`'in ulaşacağı hedef; adım adım A-02/A-03/A-04/A-08 task'larında
-parça parça eklenecek — tek seferde yazılmayacak (dikey dilim kuralı).
+## Middleware Sıralama Kararı
+Loglama en dışta durur ki bir exception fırlasa bile (ExceptionHandlingMiddleware onu 500'e çevirse
+bile) gerçek süre ve nihai durum kodu `try/finally` ile ölçülüp loglanabilsin. Güvenlik başlıkları,
+hata yanıtı dâhil her yanıta eklenmesi için exception middleware'inden önce (dışında) durur —
+başlıklar response gövdesi yazılmadan eklendiği için sorun çıkarmaz.
+
+## Henüz Eksik (sonraki fazlarda gelecek)
+- Serilog'un `Serilog.Sinks.MSSqlServer` (`ApplicationLog`) sink'i → **A-04** (tablo migration'ı henüz yok)
+- `AddValidatorsFromAssembly` somut bir feature validator'ı bulamıyor henüz (assembly boş) → **A-03+** otomatik dolacak
+- `UseStaticFiles()` (avatar/görsel) → **A-08**
+
+Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `docs/API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 11, ayrıca [[Teknik_Ozellikler]] §10.

@@ -30,7 +30,7 @@ window.API = {
   yol: '-',
   auth: '-',
   baslik: 'Ortak Altyapı',
-  durum: 'wip',
+  durum: 'done',
   ozet: 'Tüm API\'ların paylaştığı temel yapı taşları: BaseEntity, DbContext, Repository<T>, ortak response/exception tipleri, middleware\'ler ve Program.cs tam yapılandırması. Hiçbir feature entity içermez.',
   adimlar: [
     {
@@ -737,6 +737,395 @@ public class EntityNotFoundExceptionTests
     // NEDEN: Projede A-02 aşamasında henüz hiçbir feature entity yok.
     private class BaseEntityStub : BaseEntity;
 }`
+    }
+    ,{
+      num: 9, tur: 'dto',
+      baslik: 'ApiErrorResponse.cs', dosya: 'Application/Common/Models/ApiErrorResponse.cs',
+      aciklama: 'REFERENCE/API_ENDPOINTS.md §1\'deki "Standart Yanıt" sözleşmesinin hata kolunun kod karşılığı — ExceptionHandlingMiddleware her exception\'ı bu tipe çevirip döner. NOT (YAGNI düzeltmesi): Bu adımda başlangıçta ApiResponse&lt;T&gt; (başarı zarfı) ve PagedResult&lt;T&gt; de yazılmıştı, ama hiçbir controller/endpoint henüz yokken bu iki tipin gerçek şekli spekülatifti (bkz. ../TASK.md "Spekülatif ortak tip yazılmaz" kuralı) — geri alındı. ApiErrorResponse burada KALDI çünkü gerçek, kanıtlanmış bir tüketicisi var: ExceptionHandlingMiddleware (adım 10) onu doğrudan kullanıyor. ApiResponse&lt;T&gt;/PagedResult&lt;T&gt;, ilk gerçek controller (muhtemelen A-03 Auth veya A-05 Words) o an neye ihtiyaç duyduğunu görünce, o task içinde yazılacak.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApiErrorResponse.cs
+//
+// AMAÇ: Tüm hatalı endpoint yanıtlarının sarıldığı standart zarf (envelope).
+// NEDEN: REFERENCE/API_ENDPOINTS.md §1'deki "Standart Yanıt" sözleşmesinin hata
+//        kolunu somutlaştırır; ExceptionHandlingMiddleware her exception'ı bu
+//        tipe çevirip döner — istemci hata objesinin şeklini her zaman bilir.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Models;
+
+// AMAÇ: Hata kodunu (makine tarafından okunabilir) ve mesajı (kullanıcıya gösterilebilir) taşır.
+// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. GECERSIZ_KIMLIK, BULUNAMADI) —
+//        frontend, mesajı doğrudan göstermek yerine "code"a göre özel davranış (yönlendirme,
+//        özel ikon) tetikleyebilir; "message" ise her durumda insan-okunur açıklamadır.
+public record ApiErrorDetail(string Code, string Message);
+
+public class ApiErrorResponse
+{
+    // AMAÇ: İşlemin başarısız olduğunu belirtir. Bu tip yalnızca hata yolunda
+    //       kullanıldığı için sabit false'dur.
+    public bool Success { get; } = false;
+
+    // AMAÇ: Hatanın kodu ve mesajını taşıyan detay objesi.
+    public ApiErrorDetail Error { get; set; }
+
+    public ApiErrorResponse(string code, string message)
+    {
+        Error = new ApiErrorDetail(code, message);
+    }
+}`
+    }
+    ,{
+      num: 10, tur: 'service',
+      baslik: 'Middleware (ExceptionHandling / SecurityHeaders / RequestResponseLogging)', dosya: 'API/Middleware/ExceptionHandlingMiddleware.cs, SecurityHeadersMiddleware.cs, RequestResponseLoggingMiddleware.cs',
+      aciklama: 'A-02\'nin son ortak parçası: istek hattına (pipeline) takılan 3 middleware. ExceptionHandlingMiddleware yakalanmayan tüm exception\'ları ApiErrorResponse JSON\'ına çevirir (EntityNotFoundException → 404, diğerleri → 500 + sabit güvenli mesaj, gerçek exception istemciye asla sızmaz). SecurityHeadersMiddleware REFERENCE/SECURITY.md §5\'teki 5 güvenlik başlığını (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP, Permissions-Policy) her yanıta ekler. RequestResponseLoggingMiddleware her isteğin metot/yol/durum kodu/süresini Serilog üzerinden loglar (Stopwatch + try/finally, exception durumunda da doğru süre/kod loglanır). Program.cs\'te sıralama önemlidir: loglama en dışta (exception olsa bile süre/kod ölçülsün), sonra güvenlik başlıkları, en içte exception handling.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ExceptionHandlingMiddleware.cs
+//
+// AMAÇ: İstek hattında (pipeline) yakalanmayan tüm exception'ları tek yerden
+//       yakalayıp standart ApiErrorResponse JSON'ına çevirmek.
+// NEDEN: Controller'larda try/catch tekrar etmeyi önler; her hatanın HTTP durum
+//        kodu ve JSON şekli tek bir dosyadan yönetilir (REFERENCE/API_ENDPOINTS.md §1).
+// BAĞIMLILIKLAR: WordLearner.Application.Common.Exceptions.EntityNotFoundException,
+//                WordLearner.Application.Common.Models.ApiErrorResponse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Net;
+using System.Text.Json;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Models;
+
+namespace WordLearner.API.Middleware;
+
+public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+    // AMAÇ: Pipeline'daki bir sonraki middleware'i ve loglama servisini enjekte eder.
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    // AMAÇ: İsteği bir sonraki middleware'e iletir; sırasında fırlatılan her
+    //       exception'ı yakalayıp standart hata yanıtına çevirir.
+    // NEDEN: try/catch burada tek bir noktada olduğu için controller'lar yalnızca
+    //        "mutlu yol" veya bilinen iş kuralı exception'larına (EntityNotFoundException
+    //        vb.) odaklanır; beklenmeyen her şey burada 500'e düşer.
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            // NEDEN: CODING_STANDARDS.md §1 — tüm log mesajları Türkçe; exception detayı
+            //        (stack trace) yalnızca ApplicationLog'a (A-04'te DB sink) gider, istemciye asla.
+            _logger.LogError(ex, "İşlenmemiş hata yakalandı: {Method} {Path}",
+                context.Request.Method, context.Request.Path);
+
+            await WriteErrorResponseAsync(context, ex);
+        }
+    }
+
+    // AMAÇ: Exception tipine göre HTTP durum kodu + hata kodu + mesaj eşlemesi yapıp
+    //       ApiErrorResponse'u JSON olarak yanıta yazar.
+    // NEDEN: EntityNotFoundException bilinen bir iş kuralı olduğu için 404 + kendi
+    //        mesajıyla döner; bilinmeyen her exception'ın gerçek mesajı istemciye
+    //        sızdırılmaz (bilgi ifşası riski) — yerine sabit, güvenli bir mesaj döner.
+    private static Task WriteErrorResponseAsync(HttpContext context, Exception ex)
+    {
+        var (statusCode, code, message) = ex switch
+        {
+            EntityNotFoundException => (HttpStatusCode.NotFound, "BULUNAMADI", ex.Message),
+            _ => (HttpStatusCode.InternalServerError, "SUNUCU_HATASI", "Beklenmeyen bir hata oluştu.")
+        };
+
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = (int)statusCode;
+
+        var response = new ApiErrorResponse(code, message);
+        var json = JsonSerializer.Serialize(response,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+        return context.Response.WriteAsync(json);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SecurityHeadersMiddleware.cs
+//
+// AMAÇ: Her HTTP yanıtına OWASP tarafından önerilen standart güvenlik başlıklarını ekler.
+// NEDEN: REFERENCE/SECURITY.md §5 — clickjacking (X-Frame-Options), MIME sniffing
+//        (X-Content-Type-Options), referrer sızıntısı ve XSS gibi tarayıcı taraflı
+//        saldırıları middleware seviyesinde, her endpoint'te tekrar yazmadan engeller.
+// BAĞIMLILIKLAR: Yok — yalnızca ASP.NET Core HttpContext.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.API.Middleware;
+
+public class SecurityHeadersMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public SecurityHeadersMiddleware(RequestDelegate next) => _next = next;
+
+    // AMAÇ: Yanıt başlıklarını, gövde yazılmadan önce ekleyip pipeline'ı devam ettirir.
+    // NEDEN: Başlıklar response başlamadan (headers gönderilmeden) eklenmelidir;
+    //        bu yüzden _next(context) çağrısından ÖNCE set edilir.
+    public async Task InvokeAsync(HttpContext context)
+    {
+        // NEDEN: Sayfanın başka bir sitede <iframe> içine alınmasını (clickjacking) engeller.
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+
+        // NEDEN: Tarayıcının Content-Type'ı görmezden gelip dosyayı "tahmin ederek"
+        //        çalıştırmasını (MIME sniffing) engeller.
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+        // NEDEN: Farklı origin'e giden isteklerde tam URL yerine yalnızca origin'i gönderir;
+        //        query string'deki hassas verilerin (token, id) sızmasını azaltır.
+        context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+
+        // NEDEN: Yalnızca kendi origin'inden script/stil yüklenmesine izin vererek
+        //        XSS ile enjekte edilen dış kaynaklı script'leri engeller.
+        context.Response.Headers["Content-Security-Policy"] = "default-src 'self'";
+
+        // NEDEN: Uygulama konum/mikrofon/kamera kullanmadığı için tarayıcı bu
+        //        API'lere erişimi baştan reddeder (izin istenemez).
+        context.Response.Headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+
+        await _next(context);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RequestResponseLoggingMiddleware.cs
+//
+// AMAÇ: Gelen her HTTP isteğini ve verilen yanıtı (metot, yol, durum kodu, süre)
+//       Serilog üzerinden loglamak.
+// NEDEN: REFERENCE/SECURITY.md §6 — ApplicationLog kaynağı olan Serilog'un temel
+//        istek/yanıt izini burada üretiriz; ileride A-04'te DB sink'e bağlanınca
+//        bu satırlar otomatik olarak ApplicationLog tablosuna da düşer.
+// BAĞIMLILIKLAR: Microsoft.Extensions.Logging (Serilog Program.cs'te sağlayıcı olarak takılı).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Diagnostics;
+
+namespace WordLearner.API.Middleware;
+
+public class RequestResponseLoggingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
+
+    public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    // AMAÇ: İsteğin başlangıcını, bitişini ve geçen süreyi (ms) loglar.
+    // NEDEN: Stopwatch, exception fırlasa bile try/finally ile durdurulur; böylece
+    //        hata durumunda da gerçek süre ve nihai durum kodu (ExceptionHandlingMiddleware
+    //        tarafından set edilmiş 500 vb.) doğru şekilde loglanır.
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        _logger.LogInformation("İstek başladı: {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+
+        try
+        {
+            await _next(context);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            _logger.LogInformation("İstek bitti: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
+                context.Request.Method, context.Request.Path,
+                context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
+        }
+    }
+}`
+    }
+    ,{
+      num: 11, tur: 'config',
+      baslik: 'Program.cs (tam yapılandırma)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs, API/Program.cs',
+      aciklama: 'A-02\'yi kapatan son adım: composition root\'un tam hâli. ApplicationServiceExtensions.cs, InfrastructureServiceExtensions.cs\'in Application katmanındaki karşılığıdır — MediatR/AutoMapper/FluentValidation\'ı bu extension\'ın bulunduğu assembly\'den tarayıp kaydeder (henüz hiçbir feature command/validator olmadığı için somut bir tip yerine kendi assembly\'si referans alınır; A-03\'ten itibaren otomatik bulunur). Program.cs artık: (1) Serilog konsol+dosya (appsettings\'teki Microsoft.AspNetCore=Warning ayarı kod tabanlı Serilog\'da elle Override edilir, aksi halde framework\'ün kendi "Request starting/finished" logları RequestResponseLoggingMiddleware ile çakışıp konsolu ikiye katlar), (2) AddInfrastructureServices+AddApplicationServices, (3) JWT Bearer authentication (TECHNICAL_SPECIFICATIONS.md §5 ile aynı doğrulama parametreleri), (4) CORS (yalnızca appsettings\'teki tanımlı origin\'ler), (5) pipeline sıralaması: Swagger (yalnızca dev) → RequestResponseLoggingMiddleware (en dışta, süre/kodu her koşulda ölçer) → SecurityHeadersMiddleware → ExceptionHandlingMiddleware → HttpsRedirection → Cors → Authentication → Authorization → MapControllers. Gerçek bir SQL Server + `/api/v1/*` isteğiyle (404 dahil) doğrulandı: güvenlik başlıkları her yanıtta mevcut, Türkçe istek/yanıt logları konsola düşüyor, framework gürültüsü susturulmuş.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApplicationServiceExtensions.cs
+//
+// AMAÇ: Application katmanına ait tüm servisleri (MediatR, AutoMapper, FluentValidation)
+//       DI konteynerine kaydetmek için Program.cs'den çağrılan tek extension metot.
+// NEDEN: Program.cs'i temiz tutar; InfrastructureServiceExtensions'ın Application
+//        katmanındaki karşılığıdır — yeni bir validator/handler/mapping profili
+//        eklenince yalnızca assembly taraması sayesinde otomatik kaydolur, Program.cs'e dokunulmaz.
+// BAĞIMLILIKLAR: MediatR, AutoMapper, FluentValidation.DependencyInjectionExtensions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace WordLearner.Application.Extensions;
+
+public static class ApplicationServiceExtensions
+{
+    // AMAÇ: MediatR handler'larını, AutoMapper profillerini ve FluentValidation
+    //       validator'larını Application katmanı assembly'sinden tarayıp kaydeder.
+    // NEDEN: Henüz (A-02) hiçbir feature command/handler/validator yazılmadığı için
+    //        somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
+    //        A-03'ten itibaren eklenecek her CreateWordCommand/CreateWordCommandValidator
+    //        vb. otomatik olarak bulunur, tek tek kayıt gerekmez.
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+
+        // NEDEN MediatR: Controller'lar servisleri doğrudan çağırmak yerine
+        //       IMediator.Send(command/query) ile çağırır; controller ince katman kalır.
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+
+        // NEDEN AutoMapper: Entity ↔ DTO dönüşümlerini elle yazmak yerine profil
+        //       sınıflarına (Profile) devreder; her feature kendi profilini ekler.
+        services.AddAutoMapper(applicationAssembly);
+
+        // NEDEN FluentValidation: Request DTO'larının doğrulama kuralları (RuleFor)
+        //       controller'a girmeden, ASP.NET Core'un model binding aşamasında çalışır.
+        services.AddValidatorsFromAssembly(applicationAssembly);
+
+        return services;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Program.cs
+//
+// AMAÇ: Uygulamanın giriş noktası (composition root). Servisleri DI konteynerine
+//       kaydeder ve HTTP istek hattını (middleware pipeline) kurar.
+// NEDEN: .NET 9 minimal hosting modelinde tüm başlangıç yapılandırması tek dosyada
+//        toplanır; her API/altyapı parçası buraya bağlanır.
+// BAĞIMLILIKLAR: ASP.NET Core, Swashbuckle (Swagger UI), Serilog, JWT Bearer,
+//                WordLearner.Infrastructure/Application service extension'ları,
+//                WordLearner.API.Middleware (SecurityHeaders/ExceptionHandling/RequestResponseLogging).
+//
+// NOT (A-02 — Ortak Altyapı, tamamlandı): DbContext, JWT auth, CORS, Serilog
+//   (konsol+dosya), FluentValidation, MediatR, AutoMapper kayıtları ve güvenlik
+//   başlıkları/global exception/istek-yanıt log middleware'leri burada kuruldu.
+//   Serilog'un MSSqlServer (ApplicationLog) sink'i A-04'te eklenecek — o tablo
+//   henüz bir migration ile oluşturulmadı (bkz. TASK/A_admin_panel_backend.md A-04).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using Serilog;
+using WordLearner.API.Middleware;
+using WordLearner.Application.Extensions;
+using WordLearner.Infrastructure.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ADIM 1: Serilog — konsol + dosya sink. DB (ApplicationLog) sink'i A-04'te eklenir.
+// NEDEN: _logger.LogInformation/.LogError çağrıları artık ASP.NET Core'un varsayılan
+//        konsol logger'ı yerine Serilog üzerinden akar; ileride tek satırla DB sink eklenebilir.
+// NEDEN Override: appsettings.json'daki Logging:LogLevel:Microsoft.AspNetCore=Warning
+//        ayarı yalnızca ASP.NET Core'un kendi builtin logger'ı içindir; Serilog kod
+//        üzerinden yapılandırıldığı için aynı susturma burada elle tekrarlanır —
+//        aksi halde framework'ün "Request starting/finished" logları RequestResponseLoggingMiddleware
+//        ile çakışıp konsolu ikiye katlar.
+builder.Host.UseSerilog((context, configuration) => configuration
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+// ADIM 2: Controller'ları ekle — API uç noktaları controller sınıflarında tanımlanır.
+builder.Services.AddControllers();
+
+// ADIM 3: Swagger/OpenAPI — yazılan endpoint'ler geliştirme ortamında otomatik
+// belgelenir ve http://localhost:5001/swagger adresinden test edilir.
+// NEDEN: Junior geliştirici ve manuel test için canlı API dokümantasyonu sağlar.
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc(
+        "v1",
+        new OpenApiInfo
+        {
+            Title = "VokabelMeister API",
+            Version = "v1",
+            Description = "Almanca-Türkçe kelime öğrenme uygulaması Web API'si.",
+        }
+    );
+});
+
+// ADIM 4: Infrastructure (DbContext + repository) ve Application (MediatR,
+// AutoMapper, FluentValidation) servislerini tek satırla kaydet.
+// NEDEN: Program.cs'i temiz tutar; yeni repository/handler/validator eklenince
+//        bu iki extension metodun içeriği değişir, burası değişmez.
+builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddApplicationServices();
+
+// ADIM 5: JWT Authentication — REFERENCE/SECURITY.md §1, TECHNICAL_SPECIFICATIONS.md §5.
+// NEDEN: Auth (A-03) henüz yazılmadı ama pipeline'ın doğru yerinde durması ve
+//        [Authorize] öznitelikli endpoint'lerin ileride çalışması için burada kurulur.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            // NEDEN: Sunucu saatleri arasında tolerans tanımamak için sıfırlanır;
+            //        access token 15dk gibi kısa ömürlü olduğundan gevşek tolerans gerekmez.
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+builder.Services.AddAuthorization();
+
+// ADIM 6: CORS — yalnızca appsettings'teki tanımlı origin'lere izin verir, "*" yok.
+// NEDEN: REFERENCE/SECURITY.md §5 — tarayıcıdan yalnızca bilinen Web/Admin/Mobil
+//        (Expo) adresleri istek atabilir.
+builder.Services.AddCors(options => options.AddPolicy("Default", policy =>
+    policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+          .AllowAnyMethod()
+          .AllowAnyHeader()));
+
+var app = builder.Build();
+
+// ADIM 7: İstek hattı (pipeline) — yalnızca geliştirmede Swagger arayüzü açılır.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "VokabelMeister API v1"));
+}
+
+// NEDEN SIRALAMA: Loglama en dışta durur ki exception fırlasa bile (ExceptionHandlingMiddleware
+// onu yakalayıp 500'e çevirse bile) gerçek süre ve nihai durum kodu loglanabilsin.
+// Güvenlik başlıkları, hata yanıtı da dahil her yanıta eklenmesi için exception
+// middleware'inden önce (dışında) durur.
+app.UseMiddleware<RequestResponseLoggingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+app.UseHttpsRedirection();
+app.UseCors("Default");
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();`
     }
   ]
 };

@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 tamamlandı, A-02 devam ediyor); henüz hiçbir Controller veya feature entity yazılmadı. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı — sıradaki A-03 Auth API); henüz hiçbir feature entity/Controller yazılmadı. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -22,21 +22,24 @@
 - [[WordLearner_Domain]] — Entity'ler (şu an yalnızca `BaseEntity`)
 - [[WordLearner_Tests]] — xUnit test projesi (henüz test yok)
 
-### Yazılmış Kod Düğümleri (A-01/A-02)
-- [[Program_cs]] — composition root (mevcut iskelet + hedef tam yapılandırma)
+### Yazılmış Kod Düğümleri (A-01/A-02 — A-02 tamamlandı)
+- [[Program_cs]] — composition root (**tam yapılandırma:** Serilog, JWT, CORS, MediatR/AutoMapper/FluentValidation, middleware pipeline)
 - [[BaseEntity]] — tüm entity'lerin taban sınıfı
 - [[IRepository]] / [[Repository]] — generic CRUD sözleşmesi + EF Core implementasyonu
 - [[WordLearnerDbContext]] — merkezi DbContext (soft delete filtresi, `UpdatedAt` otomasyonu)
-- [[InfrastructureServiceExtensions]] — DI kayıt extension'ı
+- [[InfrastructureServiceExtensions]] — DI kayıt extension'ı (Infrastructure)
+- [[ApplicationServiceExtensions]] — DI kayıt extension'ı (Application — MediatR/AutoMapper/FluentValidation)
 - [[EntityNotFoundException]] — özel exception tipi
-- [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 9 birim test (hepsi yeşil, İngilizce isimlendirme)
+- [[ApiErrorResponse]] — hata yanıtı zarfı (`ApiResponse<T>`/`PagedResult<T>` YAGNI kuralıyla ertelendi)
+- [[Middleware]] — `ExceptionHandlingMiddleware` / `SecurityHeadersMiddleware` / `RequestResponseLoggingMiddleware`
+- [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 10 birim test (hepsi yeşil, İngilizce isimlendirme)
 - [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
 - [[Veritabani_Semasi]] — ERD özeti, genel kurallar
 - [[Auth_Domain]] — `Users`, `RefreshTokens`
-- [[Icerik_Domain]] — `Words`, `WordDetails`, `WordExamples`, `Categories`, `WordCategories`
+- [[Icerik_Domain]] — `Languages`, `WordConcepts`, `Words`, `WordDetails`, `WordExamples`, `Categories`, `CategoryTranslations`, `WordCategories`
 - [[Kisisel_Icerik_Domain]] — `UserCards`, `UserCategories` ve ara tablolar
 - [[SRS_Domain]] — `UserProgress`, `UserCardProgress`, `LearningSessions`, `LearningHistory`, `Achievements`
 - [[Sosyal_Domain]] — `Classes`, `ClassWords`, `Friendships`, `SharedContents`
@@ -46,7 +49,9 @@
 
 - [[Kodlama_Standartlari]] — Türkçe yorum kuralı, AMAÇ/NEDEN/NASIL blokları, test standardı
 - [[Guvenlik_Politikalari]] — JWT, RBAC, şifreleme, rate limiting
-- [[Alman_Dili_Ozellikleri]] — cinsiyet/artikel/hâl/çoğul referansı (`WordDetail` alanlarının kaynağı)
+- [[Alman_Dili_Ozellikleri]] — cinsiyet/artikel/hâl/çoğul referansı (`GrammarData` şeması, dil=`de`)
+- [[Turkce_Dili_Ozellikleri]] — ünlü uyumu/hâl eki/iyelik referansı (`GrammarData` şeması, dil=`tr`, öncelikli)
+- [[Ingilizce_Dili_Ozellikleri]] — çoğul/fiil/karşılaştırma referansı (`GrammarData` şeması, dil=`en`, henüz kullanılmıyor)
 - [[Ortam_Degiskenleri]] — ENV değişkenleri listesi
 - [[API_Sozlesmesi]] — standart response formatı, endpoint listesi özeti
 - [[Teknik_Ozellikler]] — NuGet/npm paket listeleri + JWT/Şifre/SRS/Serilog referans kod örnekleri
@@ -58,7 +63,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 🔄) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, sıradaki A-03) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -72,7 +77,8 @@ Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların taranmasıyla
 şu klasör yapısındadır (token tasarrufu için bölündü, içerik kaybı yok):
 - `docs/00_INDEX.md`, `docs/index.html`, `docs/CONNECTION_STRING.txt` — giriş noktaları (kökte)
 - `docs/REFERENCE/` — ARCHITECTURE, API_ENDPOINTS, CODING_STANDARDS, DEVELOPMENT_SETUP, ENV,
-  GERMAN_LANGUAGE_FEATURES, SECURITY, TECHNICAL_SPECIFICATIONS
+  GERMAN_LANGUAGE_FEATURES, TURKISH_LANGUAGE_FEATURES, ENGLISH_LANGUAGE_FEATURES (henüz kullanılmıyor),
+  SECURITY, TECHNICAL_SPECIFICATIONS
 - `docs/TASK.md` (yöntem/standart + ilerleme) + `docs/TASK/` (faz başına 1 dosya: A_admin_panel_backend,
   B_admin_panel, C_kullanici_backend, D_web_app, E_mobil, F_test_yayin)
 - `docs/DATABASE_SCHEMA.md` (index: ERD/seed/genel kurallar) + `docs/DATABASE_SCHEMA/` (domain başına
@@ -147,3 +153,83 @@ Yeni `EntityNotFoundExceptionTests` sınıfı (`WordLearner.Tests/Common/Excepti
 doğruluyor (10→11 test, bkz. [[WordLearner_Tests]]). `docs/API_YOL_HARITASI/A-02_ortak-altyapi.html`'e
 8. adım (`tur:'test'`) olarak işlendi; ayrıca [[WordLearner_Tests]] ve [[Repository]] wiki
 sayfalarındaki test sayıları (7/9 gibi eski değerler) güncel duruma (11/10) çekildi.*
+
+*Yedinci INGEST (2026-07-03): **A-02 (Ortak Altyapı) tamamlandı.** Kalan 3 checklist maddesi
+yazıldı: (1) `ApiResponse<T>`/`ApiErrorResponse`/`PagedResult<T>` (`Application/Common/Models/`),
+REFERENCE/API_ENDPOINTS.md §1'deki "Standart Yanıt" sözleşmesinin kod karşılığı — **NOT: `ApiResponse<T>`
+ve `PagedResult<T>` sonradan (Sekizinci INGEST'te) YAGNI kuralıyla geri alındı, yalnızca
+[[ApiErrorResponse]] kaldı.** (2) [[Middleware]] — `ExceptionHandlingMiddleware` (exception → `ApiErrorResponse`
+JSON, `EntityNotFoundException`→404 diğerleri→500), `SecurityHeadersMiddleware` (5 güvenlik başlığı,
+REFERENCE/SECURITY.md §5), `RequestResponseLoggingMiddleware` (Stopwatch + try/finally ile istek/yanıt
+logu) — `API/Middleware/` altında. (3) [[Program_cs]] tam yapılandırıldı: Serilog (konsol+dosya;
+DB/`ApplicationLog` sink'i A-04'e bırakıldı çünkü tablo migration'ı henüz yok), yeni
+[[ApplicationServiceExtensions]] (`AddApplicationServices()` — MediatR/AutoMapper/FluentValidation,
+kendi assembly'sinden reflection taraması), JWT Bearer authentication, CORS, ve middleware pipeline
+sıralaması (loglama en dışta → güvenlik başlıkları → exception handling en içte). Bu iş için
+`WordLearner.Application.csproj`'a 4 NuGet paketi eklendi: `MediatR` 12.1.1, `AutoMapper` 13.0.1,
+`FluentValidation`+`FluentValidation.DependencyInjectionExtensions` 11.9.2 (AutoMapper 13.0.1'in
+NU1903 güvenlik uyarısı var — REFERENCE/TECHNICAL_SPECIFICATIONS.md §1'de pinlenen sürüm olduğu için
+bilinçli olarak korundu). Gerçek bir çalıştırmayla doğrulandı: uygulama ayağa kalkıyor, güvenlik
+başlıkları her yanıtta mevcut, Türkçe istek/yanıt logları konsola düşüyor, mevcut 11 test hâlâ yeşil.
+`docs/API_YOL_HARITASI/A-02_ortak-altyapi.html`'e 9/10/11. adımlar eklendi (A-02 artık 11 adımlı,
+sayfa `durum: 'done'`). `docs/TASK/A_admin_panel_backend.md`'de A-02 ✅ işaretlendi,
+`docs/TASK.md`'de sıradaki task A-03 olarak güncellendi. [[WordLearner_API]] ve
+[[WordLearner_Application]] sayfaları yeni dosya/klasörleri yansıtacak şekilde güncellendi.*
+
+*Sekizinci INGEST (2026-07-03) — YAGNI düzeltmesi: Kullanıcı, A-02'de `ApiResponse<T>` ve
+`PagedResult<T>`'ın **hiçbir controller/endpoint yokken spekülatif olarak** yazıldığını fark etti
+("bir yazılımcı AI olmadan bu sıraya göre mi yazardı?" sorusu) — REFERENCE/API_ENDPOINTS.md'deki
+somut örnekler (`GET /words`, `POST /auth/register`) zaten bu zarfı kullanmıyor, yani tahmin edilen
+şekil dokümanla bile örtüşmüyordu. Karar: `docs/TASK.md`'ye **"Spekülatif ortak tip yazılmaz (YAGNI)"**
+kuralı eklendi — bir ortak tip yalnızca gerçek bir tüketicisi (o an yazılmakta olan başka bir kod
+parçası) varken yazılır; istisna, o tipin zaten kanıtlanmış bir tüketicisi varsa (`ApiErrorResponse`'un
+`ExceptionHandlingMiddleware` tarafından kullanılması gibi). Uygulama: `ApiResponse.cs` ve
+`PagedResult.cs` silindi (`ApiErrorResponse.cs` kaldı); `docs/API_YOL_HARITASI/A-02_ortak-altyapi.html`
+adım 9 yalnızca `ApiErrorResponse`'u içerecek şekilde daraltıldı (11 adım sayısı değişmedi, içerik
+daraldı); `docs/TASK/A_admin_panel_backend.md`'deki A-02 "Ortak tipler" maddesi bu kararı açıklayan
+bir nota dönüştürüldü. Wiki: [[ApiResponseModels]] silindi, yerine yalnızca [[ApiErrorResponse]]
+düğümü kondu (içinde "YAGNI Düzeltmesi" başlıklı bir bölümle *neden* `ApiResponse<T>`/`PagedResult<T>`
+burada olmadığı açıklanıyor — gelecekte biri bunları "zaten yazılmıştı" sanıp yanlışlıkla tekrar
+eklemesin diye). [[Middleware]], [[Program_cs]], [[WordLearner_Application]] sayfalarındaki
+`[[ApiResponseModels]]` linkleri `[[ApiErrorResponse]]`'a güncellendi. Build + 11 test tekrar
+doğrulandı, hiçbir regresyon yok (bu iki tipin hiçbir gerçek tüketicisi olmadığı için silinmeleri
+derlemeyi bozmadı — spekülatif olduklarının kanıtı).*
+
+*Dokuzuncu INGEST (2026-07-05) — Çoklu dil altyapısı (WordConcept redesign): Kullanıcı ileride
+İngilizce eklemek istediğini belirtti (DE-EN/EN-DE/TR-EN/EN-TR — yön fark etmeksizin); henüz A-05/A-06
+kodlanmadığı için `docs/DATABASE_SCHEMA/Icerik.md` şeması koda geçmeden yeniden tasarlandı. **Seçilen
+model: WordConcept** — dilden bağımsız bir kavram (`WordConcepts`: `PartOfSpeech`/`DifficultyLevel`/
+`ImageUrl`) + her dildeki karşılığı için ayrı bir `Words` satırı (`WordConceptId`+`LanguageId`+`Text`),
+yeni `Languages` tablosu (seed: yalnızca `de`+`tr`). Bir kelime tüm dilleriyle (şu an DE+TR) **aynı
+işlemde** girilir/düzenlenir, sıralı değil. `WordDetails`'teki Almanca'ya özgü gramer alanları
+(`Gender`, artikeller, `ConjugationData` vb.) tek bir `GrammarData` JSON kolonuna taşındı (şekli
+`LanguageId`'ye göre değişir — trade-off: `Gender` üzerindeki DB-level `CHECK`/`INDEX` kayboldu).
+`WordExamples` basitleştirildi (`SentenceDE`+`SentenceTR` yerine tek `SentenceText`). `Categories` aynı
+mantıkla `Categories` (çekirdek) + yeni `CategoryTranslations` (dil başına ad) olarak ayrıldı;
+`WordCategories` artık `WordId` yerine `WordConceptId`↔`CategoryId` (kategori kavram üzerinden bir kez
+etiketlenir, tüm diller otomatik kapsanır). Bilinçli olarak kapsam dışı bırakıldı: `UserCards`
+(kişisel kartlar) ve `ClassWords` (sınıf ad-hoc kelimeleri) — bunlar sistem sözlüğü değil, serbest
+metin olarak kalıyor. Etkilenen dosyalar: `docs/DATABASE_SCHEMA.md` (domain haritası/ERD/seed/Kural 4),
+`docs/REFERENCE/API_ENDPOINTS.md` §5-6 (`translations[]` şekli), `docs/REFERENCE/
+GERMAN_LANGUAGE_FEATURES.md` (artık yalnızca Almanca'nın `GrammarData` şemasını tanımladığı netleşti),
+`docs/REFERENCE/ARCHITECTURE.md` (`GermanWord`→`Words.Text`), `docs/00_INDEX.md` §4 ("yalnızca
+Almanca-Türkçe" kuralı "şema çoklu dile açık, şu an DE-TR içerik" olarak güncellendi),
+`docs/TASK/A_admin_panel_backend.md` (A-05/A-06 entity adımları `Language`/`WordConcept`/
+`CategoryTranslation` içerecek şekilde güncellendi). Kontrol edildi: mevcut backend kodunda
+(`backend/`) `Word`/`Category` ile ilgili hiçbir entity/alan yoktu, yani bu redesign hiçbir gerçek kodu
+etkilemedi — yalnızca A-05/A-06 başlamadan önceki tasarım dokümanı düzeltildi. [[Icerik_Domain]] ve
+[[Alman_Dili_Ozellikleri]] bu yeni modele göre güncellendi.*
+
+*Onuncu INGEST (2026-07-05) — Türkçe ve İngilizce dil özellikleri referansları eklendi: Kullanıcı
+`GrammarData`'nın yalnızca Almanca için tanımlı olmasının, "bir Almanın Türkçe öğrenmesi" senaryosunda
+eksik kalacağını fark etti (önceki tasarımda Türkçe `GrammarData=NULL` varsayılmıştı — bu, Türkçe'nin
+her zaman "bilinen dil/çeviri" olacağı, hiç "öğrenilecek hedef" olmayacağı varsayımına dayanıyordu, ki
+yön-bağımsız eşleştirme hedefiyle çelişiyordu). Yeni dosyalar: `docs/REFERENCE/
+TURKISH_LANGUAGE_FEATURES.md` (öncelikli, aktif içerik — ünlü uyumu, 6 hâl eki, çoğul, iyelik ekleri,
+ünsüz yumuşaması, fiil çekimi) ve `docs/REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` (şema hazır, henüz
+kullanılmıyor — `Languages`'de `en` satırı yok). `docs/DATABASE_SCHEMA/Icerik.md`'deki `GrammarData`
+notu güncellendi (artık üç dilin de kaynağına işaret ediyor). Wiki: yeni düğümler
+[[Turkce_Dili_Ozellikleri]] ve [[Ingilizce_Dili_Ozellikleri]] eklendi, [[Icerik_Domain]] ve
+[[Alman_Dili_Ozellikleri]]'ndeki çapraz linkler güncellendi. Mimari değişiklik yok — `GrammarData`
+zaten `Words.LanguageId`'ye göre şekil değiştiren bir JSON alanıydı (dokuzuncu INGEST'te kuruldu), bu
+yalnızca eksik olan dil içeriğini (Türkçe/İngilizce şeması) tamamladı.*

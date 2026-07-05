@@ -96,7 +96,20 @@ toplu yazmak **yasak**:
   Karşılığı zorunludur: o feature sayfasındaki `tur:'api'` adımına da `backendRef` eklenir (bkz.
   aşağıdaki ⭐ Frontend Çalışma Yöntemi). Feature henüz yazılmadıysa `frontendRefs` boş bırakılır,
   feature yazılınca **geri dönüp** hem oraya hem buraya link eklenir (tek yönlü kalması yasak).
-- Bir API, yol haritasına işlenmeden **tamamlandı sayılmaz.**
+- **Spekülatif ortak tip yazılmaz (YAGNI):** "Ortak Altyapı" (A-02) dâhil hiçbir task'ta, bir
+  ortak/paylaşılan tip (DTO, response zarfı, yardımcı sınıf vb.) **gerçek bir tüketicisi olmadan**
+  önceden yazılmaz. "İleride lazım olur" varsayımıyla yazılan kod, gerçek ihtiyaç doğduğunda
+  yanlış şekilde tasarlanmış çıkabilir (örn. bir controller yazılmadan tahmin edilen response şekli).
+  Bunun yerine: bir tip, onu **fiilen kullanan** ilk somut kod parçası (bir middleware, bir controller,
+  bir servis) yazılırken, o parçanın gerçek ihtiyacına göre yazılır — **bu ilk tüketici commit'inin
+  parçası olarak**, ayrı bir "ortak altyapı" adımı olarak değil.
+  **İstisna:** Bir tipin o an yazılmakta olan başka bir koddan (aynı task içinde) gerçek, somut bir
+  tüketicisi varsa (örn. `ExceptionHandlingMiddleware`'in `ApiErrorResponse`'u kullanması) erken
+  yazılabilir — çünkü bu artık spekülatif değil, kanıtlanmış bir ihtiyaçtır.
+  **Örnek (A-02 düzeltmesi):** `ApiErrorResponse` A-02'de kaldı çünkü `ExceptionHandlingMiddleware`
+  onu gerçekten kullanıyordu; `ApiResponse<T>` ve `PagedResult<T>` hiçbir controller yokken
+  yazılmıştı (spekülatifti) — bu yüzden A-02'den çıkarıldı, ilk gerçek controller'ın (muhtemelen
+  A-03 veya A-05) o parçayı gerçekten yazdığı anda, o anki gerçek ihtiyaca göre yazılacak.
 
 ---
 
@@ -158,14 +171,14 @@ Detay ve `adım.tur` değerleri (`tip`/`api`/`slice`/`hook`/`component`/`route`/
 
 | Faz | Task Aralığı | Başlık | Durum | Dosya |
 |-----|--------------|--------|-------|-------|
-| A | A-01…A-10 | Admin Panel Backend | ⬜ | `TASK/A_admin_panel_backend.md` |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 | `TASK/A_admin_panel_backend.md` |
 | B | B-01…B-09 | Admin Panel | ⬜ | `TASK/B_admin_panel.md` |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ | `TASK/C_kullanici_backend.md` |
 | D | D-01…D-12 | Web App | ⬜ | `TASK/D_web_app.md` |
 | E | E-01…E-14 | Mobil | ⬜ | `TASK/E_mobil.md` |
 | F | F-01…F-04 | Test & Yayın | ⬜ | `TASK/F_test_yayin.md` |
 
-**Sıradaki task:** `A-02 — Ortak Altyapı` → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-03 — Auth API (User)` → `TASK/A_admin_panel_backend.md`
 
 ## Durum Göstergesi
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi
