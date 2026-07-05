@@ -106,8 +106,8 @@ Tam tablo listesi → `DATABASE_SCHEMA.md`.
 **Öğrenme:** "Öğren" → filtre (seviye/kategori/tür) → SRS sıralaması → kart → cevap → XP → sonraki
 review hesaplanır.
 
-**Kişisel kart:** FrontText sistem `GermanWord` ile eşleşirse → "Bu kelime sistemde var, öğrenme
-listene ekleyelim mi?" → Evet ise `learn-system-word` (UserProgress, UserCard YOK) / Hayır ise UserCard.
+**Kişisel kart:** FrontText sistem `Words.Text` ile (aynı dilde) eşleşirse → "Bu kelime sistemde var,
+öğrenme listene ekleyelim mi?" → Evet ise `learn-system-word` (UserProgress, UserCard YOK) / Hayır ise UserCard.
 
 **Paylaşım:** "Paylaş" → UUID link → arkadaş açar (anonim önizleme) → giriş yapıp "listeme ekle".
 

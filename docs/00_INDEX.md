@@ -52,7 +52,9 @@ gösteren ve junior geliştirici eğiten rehberdir.
 | `REFERENCE/SECURITY.md` | Güvenlik kuralları (auth, şifreleme, loglama) |
 | `REFERENCE/ENV.md` | Ortam değişkenleri |
 | `REFERENCE/DEVELOPMENT_SETUP.md` | Kurulum, çalıştırma, yayınlama |
-| `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` | Almanca gramer referansı (kelime kartları için) |
+| `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` | Almanca gramer referansı (kelime kartları için) — `WordDetail.GrammarData` şeması, dil=`de` |
+| `REFERENCE/TURKISH_LANGUAGE_FEATURES.md` | Türkçe gramer referansı — `GrammarData` şeması, dil=`tr` (öncelikli, aktif içerik) |
+| `REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` | İngilizce gramer referansı — `GrammarData` şeması, dil=`en` (şema hazır, henüz kullanılmıyor) |
 | `wiki/` | Obsidian bilgi grafiği (mimari hafıza) — kurallar: `../wiki_schema.md`. Ana harita: `wiki/Index.md` |
 
 ## Temel Kurallar
@@ -60,8 +62,11 @@ gösteren ve junior geliştirici eğiten rehberdir.
 1. Her zaman **Türkçe** konuş.
 2. Tüm yorum/log/exception mesajları **Türkçe**; method/class/property isimleri **İngilizce**.
 3. Her dosya başında `AMAÇ / NEDEN / BAĞIMLILIKLAR`, her public metot üstünde `AMAÇ / NEDEN / NASIL` bloğu.
-4. Uygulama **yalnızca Türkçe-Almanca** destekler. İngilizce çeviri/isim alanları (`EnglishTranslation`,
-   `NameEN` vb.) entity/DTO'lara **eklenmez**.
+4. Sistem kelimesi/kategori şeması çoklu dile açık tasarlandı (`Languages`/`WordConcept` — bkz.
+   `DATABASE_SCHEMA/Icerik.md`); yeni dil eklemek yeni migration gerektirmez. **Şu an yalnızca
+   Almanca-Türkçe içerik yazılır** — entity/DTO'lara dile özel ad-hoc alan (`EnglishTranslation`,
+   `NameEN` vb.) **eklenmez**, yeni dil her zaman `Languages` tablosuna satır + ilgili kavramlara
+   `Words`/`CategoryTranslations` satırı olarak eklenir.
 5. Sistemde **yalnızca iki rol**: `User` ve `Admin`. `Instructor`/`Teacher`/"öğretmen" kavramı **yoktur**.
 6. Yeni servis eklenince `REFERENCE/ENV.md` güncellenir; hassas bilgiler asla kaynak koda/`appsettings.json`'a girmez.
 7. **Obsidian Wiki (mimari hafıza):** Yeni bir mimari plan/özellik istenince önce kodu taramak yerine

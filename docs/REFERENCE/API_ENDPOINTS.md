@@ -77,19 +77,37 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 
 ## 5. Sistem Kelimeleri
 
+> **Çoklu dil:** Bir kelime (`WordConcept`) her zaman **tüm dilleriyle birlikte** oluşturulur/düzenlenir
+> — `POST`/`PUT` gövdesinde `translations[]` dizisi olur (şu an `de`+`tr` birlikte gönderilir; ayrı ayrı
+> "önce Almanca ekle" endpoint'i yoktur). İngilizce eklendiğinde `translations[]`'a yeni bir eleman
+> (`languageCode: "en"`) eklenerek mevcut kelime `PUT` ile güncellenir. Bkz. `DATABASE_SCHEMA/Icerik.md`.
+
 | Metot | Yol | Auth | Açıklama |
 |-------|-----|------|----------|
 | GET | `/words` | [Authorize] | Liste (level, categoryId, partOfSpeech, search, page, pageSize) |
-| GET | `/words/{id}` | [Authorize] | Detay (WordDetail + örnekler) |
-| POST | `/words` | Admin | Oluştur (GermanWord varsa 409; `?force=true` ile geç) |
-| PUT | `/words/{id}` | Admin | Güncelle |
-| DELETE | `/words/{id}` | Admin | Soft delete |
+| GET | `/words/{id}` | [Authorize] | Detay (tüm dillerdeki `translations` + her birinin WordDetail/örnekleri) |
+| POST | `/words` | Admin | Oluştur (`WordConcept` + `translations[]` tek istekte; aynı dilde `Text` varsa 409, `?force=true` ile geç) |
+| PUT | `/words/{id}` | Admin | Güncelle (`translations[]` — mevcut diller güncellenir, yeni dil eklenirse o dile yeni satır açılır) |
+| DELETE | `/words/{id}` | Admin | Soft delete (`WordConcept` + tüm dillerdeki `Words` satırları) |
 
 ```json
+// POST /words
+{ "partOfSpeech": "Noun", "difficultyLevel": "A1", "imageUrl": "...", "categoryIds": [1],
+  "translations": [
+    { "languageCode": "de", "text": "Mann",
+      "wordDetail": { "grammarData": { "gender": "Masculine", "articleDefiniteNom": "der", "pluralForm": "Männer" } },
+      "examples": [ { "sentenceText": "Der Mann ist hier.", "level": "A1" } ] },
+    { "languageCode": "tr", "text": "Erkek",
+      "examples": [ { "sentenceText": "Adam burada.", "level": "A1" } ] }
+  ] }
+
 // GET /words → 200
-{ "data": [ { "id": 1, "germanWord": "Mann", "turkishTranslation": "Erkek", "partOfSpeech": "Noun",
-  "difficultyLevel": "A1", "wordDetail": { "gender": "Masculine", "articleDefiniteNom": "der", "pluralForm": "Männer" },
-  "categories": [ { "id": 1, "nameTR": "İnsanlar" } ],
+{ "data": [ { "wordConceptId": 1, "partOfSpeech": "Noun", "difficultyLevel": "A1",
+  "translations": [
+    { "languageCode": "de", "text": "Mann", "wordDetail": { "grammarData": { "gender": "Masculine", "articleDefiniteNom": "der", "pluralForm": "Männer" } } },
+    { "languageCode": "tr", "text": "Erkek" }
+  ],
+  "categories": [ { "id": 1, "name": "İnsanlar" } ],
   "userProgress": { "currentLevel": 2, "successRate": 75.0, "nextReviewAt": "2026-01-18T10:00:00Z" } } ],
   "pagination": { "currentPage": 1, "totalPages": 10, "totalItems": 200 } }
 ```
@@ -98,11 +116,14 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 
 ## 6. Kategoriler
 
+> Kategori adı da çoklu dile açık: `Categories` (çekirdek) + `CategoryTranslations` (dil başına ad).
+> `POST`/`PUT` gövdesinde aynı şekilde `translations: [{languageCode, name}, ...]` gönderilir.
+
 | Metot | Yol | Auth | Açıklama |
 |-------|-----|------|----------|
 | GET | `/categories` | [Authorize] | Hiyerarşik liste (level, includeWordCount) |
 | GET | `/categories/{id}/words` | [Authorize] | Kategoriye ait kelimeler (sayfalı) |
-| POST/PUT/DELETE | `/categories[/{id}]` | Admin | CRUD (alt kategori/aktif kelime varsa silme 409) |
+| POST/PUT/DELETE | `/categories[/{id}]` | Admin | CRUD (`translations[]` ile; alt kategori/aktif kelime varsa silme 409) |
 
 ---
 
@@ -147,7 +168,7 @@ Format   : JSON (UTF-8)   ·   Auth: JWT Bearer   ·   Versiyon: URL (/api/v1/)
 // POST /learning-sessions
 { "sessionType": "MultipleChoice", "sourceType": "Mixed", "levelFilter": "A1",
   "categoryIds": [1,3], "userCategoryIds": [1], "wordCount": 10 }
-// Mixed: UserProgress + UserCardProgress sorgulanır; FrontText==GermanWord eşleşmesinde UserCard atlanır.
+// Mixed: UserProgress + UserCardProgress sorgulanır; FrontText==Words.Text eşleşmesinde UserCard atlanır.
 // → 201 { "id": 1, "status": "Active", "items": [...], "totalItems": 10 }
 
 // POST /learning-sessions/{id}/answer

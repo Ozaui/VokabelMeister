@@ -1,6 +1,6 @@
 # InfrastructureServiceExtensions
 
-**Özet:** [[WordLearner_Infrastructure]] içindeki tek statik extension sınıfı — `AddInfrastructureServices(IServiceCollection, IConfiguration)` metoduyla infrastructure servislerini DI konteynerine kaydeder, böylece [[Program_cs]] tek satırla altyapıyı hazırlayabilir (henüz o satır Program.cs'e eklenmedi). Şu an yalnızca [[WordLearnerDbContext]]'i `Scoped` olarak kaydediyor.
+**Özet:** [[WordLearner_Infrastructure]] içindeki tek statik extension sınıfı — `AddInfrastructureServices(IServiceCollection, IConfiguration)` metoduyla infrastructure servislerini DI konteynerine kaydeder. [[Program_cs]] artık bu metodu çağırıyor (A-02 tamamlandı). Şu an yalnızca [[WordLearnerDbContext]]'i `Scoped` olarak kaydediyor.
 **Kütüphaneler:** Microsoft.EntityFrameworkCore, Microsoft.Extensions.DependencyInjection, Microsoft.Extensions.Configuration
 **Bağlantılar:** [[WordLearnerDbContext]] · [[Program_cs]] · [[WordLearner_Infrastructure]] · [[Ortam_Degiskenleri]]
 
@@ -16,6 +16,5 @@ services.AddDbContext<WordLearnerDbContext>(options =>
 istekler aynı context'i paylaşır, thread-safety sorunu çıkardı.
 
 ## Henüz Eksik
-- [[Program_cs]] içinde bu metodun çağrılması (`builder.Services.AddInfrastructureServices(builder.Configuration)`)
 - Feature repository kayıtları (`IUserRepository` → `UserRepository` vb., A-03+'ta eklenecek)
-- Generic `IRepository<>` → `Repository<>` DI kaydı
+- Generic `IRepository<>` → `Repository<>` DI kaydı (ilk somut kullanım A-03'te)

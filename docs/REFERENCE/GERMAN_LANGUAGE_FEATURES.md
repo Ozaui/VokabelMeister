@@ -1,6 +1,11 @@
 # ALMANCA DİL ÖZELLİKLERİ
 
-Kelime kartı (`WordDetail`) ve sınav türleri yazılırken referans. Uygulama yalnızca Türkçe-Almanca destekler.
+Kelime kartı ve sınav türleri yazılırken referans. Bu dosya, `WordDetail.GrammarData` JSON alanının
+**yalnızca Almanca (`de`) diline özel** şemasını tanımlar — şema çoklu dile açık tasarlandı
+(`DATABASE_SCHEMA/Icerik.md` → `Languages`/`WordConcept`), şu an yalnızca Almanca-Türkçe içerik
+yazılıyor. İleride eklenecek her dilin (örn. İngilizce) kendi gramer şekli, kendi `GrammarData` içeriği
+olacak — bu dosyadaki alanlar (`Gender`, artikeller, `ConjugationData` vb.) yalnızca Almanca'daki
+`Words` satırlarının `WordDetail.GrammarData`'sında bulunur.
 
 ## 1. Cinsiyet (Gender) ve Renk Sistemi
 
@@ -67,9 +72,9 @@ aufstehen (kalkmak) → Ich stehe um 6 Uhr auf. · Perfekt: Ich bin früh aufges
 fernsehen (TV izle) → Ich sehe jeden Abend fern.
 ```
 Yaygın ön ekler: ab-, an-, auf-, aus-, ein-, mit-, vor-, weg-, zu-, zurück-, zusammen-.
-`WordDetail`: `IsSeparableVerb = true`, `SeparablePrefix = "an"`.
+`WordDetail.GrammarData`: `isSeparableVerb: true`, `separablePrefix: "an"`.
 
-## 6. Fiil Çekimi (ConjugationData JSON)
+## 6. Fiil Çekimi (GrammarData.conjugationData)
 
 ```json
 {
@@ -103,7 +108,8 @@ seviyesine göre) + seviye + kategoriler + ses/IPA.
 
 ## 10. Geliştirme Notları
 
-- WordDetail alanları validasyondan geçer; artikeller cinsiyetle tutarlı olmalı.
+- `WordDetail.GrammarData` (JSON) uygulama katmanında validasyondan geçer; artikeller cinsiyetle
+  tutarlı olmalı (DB-seviyesi `CHECK` yok, bkz. `DATABASE_SCHEMA/Icerik.md` trade-off notu).
 - Cinsiyet renkle gösterilir (mavi/kırmızı/yeşil), artikel başlıkta belirgin.
 - Unicode tam destek: ö, ü, ä, ß, Ä, Ö, Ü. Çoğullarda umlaut'a dikkat.
 - Örnek cümleler kullanıcı seviyesine göre filtrelenir (`WordExamples.Level`).

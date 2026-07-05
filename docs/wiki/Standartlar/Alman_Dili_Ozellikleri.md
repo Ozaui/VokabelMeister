@@ -1,8 +1,13 @@
 # Almanca Dil Özellikleri (WordDetail referansı)
 
-**Özet:** [[Icerik_Domain]]'deki `WordDetail` alanlarının ve Almancaya özgü sınav türlerinin doğrudan kaynağı — cinsiyet/renk sistemi, 4 hâl artikelleri, çoğul kalıpları, ayrılabilir fiiller ve fiil çekim JSON'u burada tanımlanır. Uygulama **yalnızca Türkçe-Almanca** destekler; İngilizce alan eklenmez.
+**Özet:** [[Icerik_Domain]]'deki `WordDetail.GrammarData` JSON alanının **yalnızca Almanca (`de`)
+diline özel** şemasının kaynağı — cinsiyet/renk sistemi, 4 hâl artikelleri, çoğul kalıpları, ayrılabilir
+fiiller ve fiil çekim JSON'u burada tanımlanır. Şema çoklu dile açık tasarlandı (`Languages`/
+`WordConcept`); şu an yalnızca Almanca-Türkçe içerik yazılıyor. İleride eklenecek her dilin (örn.
+İngilizce) kendi `GrammarData` şekli olacak — buradaki alanlar yalnızca Almanca `Words` satırlarının
+`GrammarData`'sında bulunur, ayrı bir flat kolon/entity alanı değil.
 **Kütüphaneler:** —
-**Bağlantılar:** [[Icerik_Domain]] · [[Kodlama_Standartlari]]
+**Bağlantılar:** [[Icerik_Domain]] · [[Turkce_Dili_Ozellikleri]] · [[Ingilizce_Dili_Ozellikleri]] · [[Kodlama_Standartlari]]
 
 ## Cinsiyet ve Renk Sistemi
 | Cinsiyet | Belirli | Belirsiz | Çoğul | Kart Rengi |
@@ -19,8 +24,8 @@ FEMININ     die  die  der  der         FEMININ    eine  eine   einer  einer
 NEUTRUM     das  das  dem  des         NEUTRUM    ein   ein    einem  eines
 ÇOĞUL       die  die  den  der
 ```
-Bu 8+4 alan → `WordDetail.ArticleDefinite{Nom,Acc,Dat,Gen}` / `ArticleIndefinite{Nom,Acc,Dat,Gen}`
-(bkz. [[Icerik_Domain]]).
+Bu 8+4 alan → `WordDetail.GrammarData.articleDefinite{Nom,Acc,Dat,Gen}` /
+`articleIndefinite{Nom,Acc,Dat,Gen}` (JSON alanları, flat kolon değil — bkz. [[Icerik_Domain]]).
 
 ## Dört Hâl (Cases)
 Nominativ (Wer?/Özne) · Akkusativ (Wen?/Düz nesne) · Dativ (Wem?/Dolaylı nesne, çoğulda ekstra `-n`)
@@ -32,7 +37,7 @@ Nominativ (Wer?/Özne) · Akkusativ (Wen?/Düz nesne) · Dativ (Wem?/Dolaylı ne
 
 ## Ayrılabilir Fiiller
 Ön ek cümle sonuna gider: `anrufen → Ich rufe dich an.` (Perfekt: `Ich habe dich angerufen.`)
-`WordDetail.IsSeparableVerb=true`, `SeparablePrefix="an"`.
+`WordDetail.GrammarData.isSeparableVerb=true`, `separablePrefix="an"`.
 
 ## ConjugationData JSON Şeması
 ```json
