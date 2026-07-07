@@ -59,17 +59,32 @@
 
 ### D-05 — Öğrenme / Sınav Sayfası ⬜
 **Referans:** C-05, C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §9
-- [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult` (`learning.types.ts`)
+> **Not (2026-07-07 SRS tasarım kararları, bkz. `wiki/Index.md` On ikinci INGEST):** İstemci artık
+> `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
+> gerçek formatı (MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse) backend'de
+> rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.
+- [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
+  `MasteryBand` (`Weak|Medium|Good`) (`learning.types.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **RTK Query:** `learningApi` — `startSession`, `submitAnswer`, `completeSession`, `abandonSession`
+- [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
+  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu (istemci tarafı ilerleme)
+- [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu (istemci tarafı ilerleme),
+  aktif sorunun rastgele atanmış tipi, ipucu/zaman bazlı `selfRating` tavan kilidi
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component:** `LearningStartPage` (filtre: seviye/kategori/tür seçimi), `FlashcardScreen` (4'lü öz değerlendirme + D-04 `SystemWordCard`), `MultipleChoiceScreen`, `ArticleQuizScreen`, `PluralQuizScreen`, `SessionSummaryPage` (özet + XP)
+- [ ] **Component:** `HomePage` (streak, günlük hedef ilerleme çubuğu, pasif due rozeti, hedef
+  tamamlanınca opsiyonel "tekrar edelim mi" teklifi, "Bugün Öğrendiklerim"/"Bugün Test Ettiklerim"
+  listeleri — seviyesiz vs. `masteryBefore→masteryAfter` yüzdelik), `FlashcardScreen` (4'lü öz
+  değerlendirme + ipucu butonu + zaman/ipucu bazlı seçenek kilitleme + D-04 `SystemWordCard`),
+  `MultipleChoiceScreen`, `TranslationQuizScreen`, `ArticleQuizScreen`, `PluralQuizScreen`,
+  `TrueFalseScreen`, `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et),
+  `SessionSummaryPage` (özet + XP + "Aynı Kelimelerle Tekrar Et" butonu)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `/learn`, `/learn/session/:id` (`App.tsx`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Birim testleri:** `FlashcardScreen.test.tsx` (öz değerlendirme akışı), `learningSessionSlice.test.ts`
+- [ ] **Birim testleri:** `FlashcardScreen.test.tsx` (öz değerlendirme akışı + ipucu/zaman tavan
+  kilidi), `learningSessionSlice.test.ts`, `HomePage.test.tsx` (streak yalnızca New'e bağlı,
+  due rozeti render), `SessionSummaryPage.test.tsx` (repeat akışı)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
 ### D-06 — Kategoriler Sayfası ⬜
@@ -139,15 +154,24 @@
 
 ### D-11 — İlerleme Sayfası ⬜
 **Referans:** C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §10
-- [ ] **Tip:** `WordProgress`, `UserCardProgress` (`progress.types.ts`)
+> **Not (2026-07-07 SRS tasarım kararları):** Bant eşiği `Mastery` yüzdesine göre (🔴 Zayıf 0-40 ·
+> 🟡 Orta 40-70 · 🟢 İyi 70-100), `CurrentLevel` değil.
+- [ ] **Tip:** `WordProgress`, `UserCardProgress`, `ProgressSummary` (`weak/medium/good/dueNow` sayıları),
+  `Achievement`, `SuspendedWord` (`progress.types.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`
+- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
+  `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, başarı oranı grafiği)
+- [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, başarı oranı
+  grafiği), bant kartları (🔴🟡🟢, tıklanınca `BandWordListPage` — **İncele** salt okunur liste ve
+  **Sına** butonu ile D-05 `mode: Band` oturumunu başlatma; leech kelimeler 🩹 işaretli),
+  `SuspendedWordsPage` (askıya alınmışlar, geri getir butonu), `AchievementsSection` (rozet
+  grid'i, `Icon` resim URL'i + `Rarity` renk kodu)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Route:** `/progress` (`App.tsx`)
+- [ ] **Route:** `/progress`, `/progress/band/:band`, `/progress/suspended` (`App.tsx`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Birim testleri:** `ProgressPage.test.tsx` (veri render)
+- [ ] **Birim testleri:** `ProgressPage.test.tsx` (veri render, bant kartı sayıları), `BandWordListPage.test.tsx`
+  (İncele/Sına geçişi), `SuspendedWordsPage.test.tsx` (geri getir akışı), `AchievementsSection.test.tsx` (rozet render)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
 ### D-12 — Profil Sayfası ⬜ *(avatar, şifre değiştir, hesap sil OTP)*

@@ -194,23 +194,48 @@ ikisi birbirinden bağımsız kanallardır. Detay → `REFERENCE/SECURITY.md §1
 
 | Metot | Yol | Açıklama |
 |-------|-----|----------|
-| POST | `/learning-sessions` | Oturum başlat |
+| POST | `/learning-sessions` | Oturum başlat (`mode` bazlı, `sessionType` istemciden gelmez) |
 | POST | `/learning-sessions/{id}/answer` | Cevap işle |
+| POST | `/learning-sessions/{id}/hint` | İpucu iste (örnek cümle / şık eleme / ilk harf) — `quality` tavanını düşürür |
 | POST | `/learning-sessions/{id}/complete` | Tamamla (XP + rozet) |
 | POST | `/learning-sessions/{id}/abandon` | Bırak |
+| POST | `/learning-sessions/{id}/repeat` | Aynı kelime listesiyle yeni bir oturum aç (`IsExtraPractice=true`, SM-2 güncellenmez) |
 | GET | `/learning-sessions/history` | Geçmiş (sayfalı) |
 
 ```json
-// POST /learning-sessions
-{ "sessionType": "MultipleChoice", "sourceType": "Mixed", "levelFilter": "A1",
+// POST /learning-sessions — mode: New|Due|Band|Mixed (sessionType artık gönderilmez)
+{ "mode": "New", "sourceType": "Mixed" }
+// → günlük yeni kelime oturumu, sayı dailyWordGoal'e sabit, sessionType=Flashcard (gösterim, quiz yok)
+
+{ "mode": "Due", "sourceType": "Mixed", "wordCount": 20 }
+// → NextReviewAt<=now olanlar, varsayılan üst sınırla (config); her soru için backend
+//   MultipleChoice|TranslationQuiz|ArticleQuiz|PluralQuiz|TrueFalse arasından rastgele format seçer
+
+{ "mode": "Band", "band": "Weak", "sourceType": "Mixed", "levelFilter": "A1",
   "categoryIds": [1,3], "userCategoryIds": [1], "wordCount": 10 }
+// → bant bazlı opsiyonel pratik (Weak|Medium|Good), günlük hedefe saymaz, resmi review sayılır (SM-2 günceller)
 // Mixed: UserProgress + UserCardProgress sorgulanır; FrontText==Words.Text eşleşmesinde UserCard atlanır.
 // → 201 { "id": 1, "status": "Active", "items": [...], "totalItems": 10 }
 
+// POST /learning-sessions/{id}/hint
+{ "itemId": 1 }
+// → 200 { "hint": "Die Katze schläft auf dem Sofa.", "qualityCap": 4 }
+
 // POST /learning-sessions/{id}/answer
-{ "itemId": 1, "itemType": "SystemWord", "wordId": 5, "selfRating": 4, "timeSpentSeconds": 4 }
-// selfRating (SM-2 quality): 0=Bilmedim 2=Zor 4=İyi 5=Çok Kolay
-// → 200 { "feedback": {...}, "xpEarned": 10, "progress": { "currentLevel": 2, "nextReviewAt": "..." } }
+// Flashcard (yeni kelime): kullanıcı kendi selfRating seçer (gecikme/ipucu tavanı düşürmüşse UI'da o seçenekler kapalı)
+{ "itemId": 1, "itemType": "SystemWord", "wordId": 5, "selfRating": 4, "timeSpentSeconds": 4, "hintUsed": false }
+// Objektif tipler (MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse): selfRating gönderilmez,
+// quality sunucuda isCorrect+responseTime+hintUsed'dan otomatik hesaplanır
+{ "itemId": 2, "itemType": "SystemWord", "wordId": 8, "userAnswer": "die Katze", "timeSpentSeconds": 6, "hintUsed": true }
+// selfRating (SM-2 quality): 0=Bilmedim 2=Zor 4=İyi 5=Çok Kolay (TrueFalse'ta doğru cevap tavanı max 4)
+// → 200 { "feedback": {...}, "xpEarned": 10, "progress": { "currentLevel": 2, "nextReviewAt": "...", "mastery": 78.00 },
+//   "leechDetected": false }
+// consecutiveIncorrect >= 5 olduğunda leechDetected=true döner, itemType'a göre
+// POST /words/{wordId}/leech-action veya POST /user-cards/{cardId}/leech-action çağrılması beklenir
+
+// POST /learning-sessions/{id}/repeat
+// → 201 { "id": 9, "status": "Active", "items": [...aynı kelimeler...] }
+// Bu oturumdaki her answer otomatik IsExtraPractice=true — SM-2/NextReviewAt/Mastery güncellenmez, sadece istatistik.
 ```
 
 ---
@@ -221,6 +246,42 @@ ikisi birbirinden bağımsız kanallardır. Detay → `REFERENCE/SECURITY.md §1
 |-------|-----|----------|
 | GET | `/words/{wordId}/progress` | Sistem kelimesi ilerlemesi |
 | GET | `/user-cards/{cardId}/progress` | Kişisel kart ilerlemesi (sahibi) |
+| GET | `/progress/summary` | Bant sayıları + due sayısı (ana ekran rozetleri) |
+| GET | `/progress/words` | Bant bazlı kelime listesi (İncele ekranı, quiz'siz) |
+| GET | `/progress/suspended` | Askıya alınmış (leech) kelimeler listesi |
+| GET | `/learning-history/today/learned` | Bugün öğrenilenler (seviye/bant gösterilmez) |
+| GET | `/learning-history/today/tested` | Bugün test edilenler (`masteryBefore`→`masteryAfter` yüzdelik) |
+| POST | `/words/{wordId}/leech-action` | Leech aksiyonu uygula (sistem kelimesi) |
+| POST | `/user-cards/{cardId}/leech-action` | Leech aksiyonu uygula (kişisel kart) |
+| GET | `/achievements/me` | Kazanılan rozetler |
+
+```json
+// GET /progress/summary → 200
+{ "weak": 12, "medium": 34, "good": 50, "dueNow": 14 }
+
+// GET /progress/words?band=Weak&source=Mixed&page=1&pageSize=20 → 200
+{ "items": [{ "wordId": 5, "text": "Katze", "translation": "kedi", "mastery": 32.50, "lastReviewedAt": "..." }], "totalItems": 12 }
+
+// GET /learning-history/today/learned → 200
+{ "items": [{ "wordId": 5, "text": "Katze", "translation": "kedi" }] }
+// Not: currentLevel/mastery alanı yok — bilinçli olarak gösterilmiyor
+
+// GET /learning-history/today/tested → 200
+{ "items": [{ "wordId": 8, "text": "Hund", "translation": "köpek", "masteryBefore": 62.00, "masteryAfter": 78.00 }] }
+// IsExtraPractice=1 olan cevaplar bu listeye girmez (masteryBefore/After NULL olduğu için)
+
+// GET /progress/suspended → 200
+{ "items": [{ "wordId": 12, "text": "schwierig", "translation": "zor", "consecutiveIncorrect": 6 }] }
+
+// POST /words/{wordId}/leech-action
+{ "action": "Suspend" }   // Suspend|Reset|Continue
+// Suspend → 200 { "isSuspended": true }
+// Reset   → 200 { "currentLevel": 0, "nextReviewAt": null }  (yeni kelime havuzuna geri döner)
+// Continue → 200 { "acknowledged": true }  (hiçbir alan değişmez)
+
+// GET /achievements/me → 200
+{ "items": [{ "name": "7 Gün", "description": "...", "icon": "https://.../streak7.png", "rarity": "Rare", "unlockedAt": "..." }] }
+```
 
 ---
 

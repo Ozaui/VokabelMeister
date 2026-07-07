@@ -120,6 +120,8 @@ toplu yazmak **yasak**:
   onu gerçekten kullanıyordu; `ApiResponse<T>` ve `PagedResult<T>` hiçbir controller yokken
   yazılmıştı (spekülatifti) — bu yüzden A-02'den çıkarıldı, ilk gerçek controller'ın (muhtemelen
   A-03 veya A-05) o parçayı gerçekten yazdığı anda, o anki gerçek ihtiyaca göre yazılacak.
+- **API tamamlandığında** git commit/push + durum güncelleme adımları için → aşağıdaki
+  **⭐ Bir API/Feature Tamamlandığında** bölümü.
 
 ---
 
@@ -139,10 +141,16 @@ sonra tüm component'ler) **DEĞİL**. Bu kural Faz B (Admin Panel), D (Web App)
 5. Component          → components/Xxx.tsx     (JSX + mantık; component'in kendisi)
 6. Route/Import       → App.tsx veya XxxPage.tsx (component nereye/nasıl import edildi)
 7. Birim Test         → Xxx.test.tsx           (RTL; component/hook/slice testi — hemen)
-8. ➜ FRONTEND YOL HARİTASI → bu feature için HTML sayfası oluştur
-   (FRONTEND_YOL_HARITASI/_TASLAK.html kopyala), her parçayı yazar yazmaz objesine ekle,
-   FRONTEND_YOL_HARITASI/index.html LISTE'ye satır ekle
+8. ➜ FRONTEND YOL HARİTASI → bu feature için HTML sayfası oluştur, ilgili projenin roadmap
+   klasöründe (`_TASLAK.html` kopyala), her parçayı yazar yazmaz objesine ekle, o klasörün
+   `index.html` LISTE'sine satır ekle
 ```
+
+> **Hangi roadmap klasörü?** Admin (Faz B) → `docs/ADMIN_YOL_HARITASI/`, Web (Faz D) →
+> `docs/WEB_YOL_HARITASI/`, Mobil (Faz E) → `docs/MOBILE_YOL_HARITASI/`. Üçü ayrı projeler
+> olduğu için (kod paylaşımı yok, bkz. [[Sistem_Mimarisi]]) eskiden tek olan
+> `FRONTEND_YOL_HARITASI/` üçe ayrıldı (2026-07-07) — her birinin kendi hub'ı, `_TASLAK.html`'i,
+> `render.js` kopyası var.
 
 > **Mobil (Faz E) farkı:** Adım 6 `React Navigation` route tanımıdır (`App.tsx` yerine
 > `navigation/*Navigator.tsx`), state/veri katmanı (1-4) aynıdır — web ve mobil aynı backend API'sini
@@ -175,10 +183,38 @@ sonra tüm component'ler) **DEĞİL**. Bu kural Faz B (Admin Panel), D (Web App)
   sayfasına link verir. Karşılığı zorunludur: o API'nın backend sayfasındaki `frontendRefs`
   dizisine de bu feature eklenir (iki yönlü link — bkz. yukarıdaki ⭐ Çalışma Yöntemi). Backend API'ı
   henüz yazılmadıysa `backendRef` boş bırakılır, API yazılınca **geri dönüp** her iki tarafa da eklenir.
+  (Bu kural üç roadmap klasörünün — `ADMIN_YOL_HARITASI`/`WEB_YOL_HARITASI`/`MOBILE_YOL_HARITASI` —
+  hepsinde birebir aynı şekilde işler.)
 - Bir feature, yol haritasına işlenmeden **tamamlandı sayılmaz.**
+- **Feature tamamlandığında** git commit/push + durum güncelleme adımları için → aşağıdaki
+  **⭐ Bir API/Feature Tamamlandığında** bölümü (backend ile birebir aynı).
 
 Detay ve `adım.tur` değerleri (`tip`/`api`/`slice`/`hook`/`component`/`route`/`test`) →
 `FRONTEND_YOL_HARITASI/_TASLAK.html` içindeki yorum bloğu.
+
+---
+
+## ⭐ Bir API/Feature Tamamlandığında — Git + Durum Güncelleme
+
+Yukarıdaki "Her Parça İçin Döngü" (backend ve frontend, ikisi de) yalnızca kod↔roadmap↔TASK
+işaretleme döngüsünü kapsar — alt-adım başına tekrarlanır. Bir API/feature'ın **tamamı** bitince
+(tüm alt-adımlar `[x]`, roadmap sayfası eksiksiz, testler yeşil) ek olarak bu 4 adım işletilir
+(2026-07-07 itibariyle eklendi — daha önce hiçbir yerde yazılı değildi):
+
+1. **Git commit** — anlamlı, Türkçe, task numarasıyla başlayan mesaj (mevcut commit geçmişiyle aynı
+   format, örn. `"A-03: AuthController (13 endpoint) + FluentValidation + rate limiting"`). Alt-adım
+   başına değil, **API/feature başına** (veya mantıklı alt-gruplar hâlinde) commit atılır — her
+   DTO/entity/component için ayrı commit açılmaz.
+2. **Git push (GitHub'a gönder)** — bu adım her seferinde kullanıcı onayıyla yapılır (git safety
+   protokolü gereği otomatik/sorulmadan push yapılmaz); ama task tamamlanınca push'un **sorulması**
+   standart akışın bir parçasıdır, unutulmamalıdır.
+3. **`docs/TASK.md` güncelle** — aşağıdaki İlerleme Durumu tablosundaki faz durumunu (⬜→🔄→✅) ve
+   "Sıradaki task" satırını güncelle.
+4. **(Varsa) `docs/wiki/Index.md`'ye yeni INGEST kaydı** — `wiki_schema.md` kuralı gereği.
+
+> Not: "Route/Import" (backend'de Controller kaydı, frontend'de `App.tsx`/Navigator'a ekleme) adımı
+> zaten tüm alt-parçaları (tip/api/slice/hook/component) **tek bir çalışan bütüne birleştiren**
+> adımdır — ayrı bir "birleştirme" adımına gerek yok, mevcut sıradaki son adım budur.
 
 ---
 

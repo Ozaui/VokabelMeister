@@ -30,15 +30,29 @@
 > 🧩 `frontendRefs` ↔ D-11/E-13 `backendRef` (iki yönlü).
 > **Not:** Sıra değişti (eski C-04). `POST /user-cards/learn-system-word` (C-04'te yazılacak) bu
 > entity'yi (`UserProgress`) kullanır; o yüzden Kişisel Kart API'sından **önce** bitirilmesi gerekir.
-- [ ] **Entity:** `UserProgress`, `UserCardProgress`, `LearningHistory` + migration
+- [ ] **Entity:** `UserProgress`, `UserCardProgress` (`NextReviewAt` **nullable** — NULL=yeni kelime
+  havuzu, + `ConsecutiveIncorrect`/`IsSuspended` leech alanları), `LearningHistory` (+ `HintUsed`/
+  `IsExtraPractice`/`MasteryBefore`/`MasteryAfter` alanları), `Achievements`/`UserAchievements` + migration
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5)
+- [ ] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5 + `CalculateMastery` yüzdelik formülü)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları)
+- [ ] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları, Mastery formülü)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `IProgressService` + `ProgressService` (XP, streak), `ProgressController`
+- [ ] `IProgressService` + `ProgressService` (XP, streak **yalnızca günlük yeni kelime hedefine bağlı**,
+  Mastery bantları Zayıf/Orta/İyi 0-40/40-70/70-100, yeni kelime seçim sorgusu — `DifficultyLevel` +
+  `WordConceptId ASC` + `NextReviewAt IS NULL`, leech tespiti `ConsecutiveIncorrect>=5` →
+  Suspend/Reset/Continue aksiyonları), `ProgressController` (`GET /progress/summary`,
+  `GET /progress/words`, `GET /progress/suspended`, `POST /words/{id}/leech-action`,
+  `POST /user-cards/{id}/leech-action`)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `ProgressServiceTests` (XP/streak güncelleme, NextReviewAt hesaplama)
+- [ ] `IAchievementService` + `AchievementService` (başlangıç seti: streak 3/7/30, kelime sayısı
+  50/200/500, ilk `CurrentLevel=5`, 100 kelime İyi bantta, hatasız oturum, leech kurtarma —
+  tetikleme `ProgressService`/`LearningSessionService` sonrası basit kural kontrolü),
+  `GET /achievements/me` (seed data migration ile, admin CRUD yok — YAGNI)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] **Birim testleri:** `ProgressServiceTests` (XP/streak güncelleme, NextReviewAt hesaplama, bant
+  eşikleri, yeni kelime seçim sorgusu — sıfırlanan kelimenin geri dönmesi, leech eşiği/aksiyonları),
+  `AchievementServiceTests` (her kural için tetiklenme senaryosu)
 - [ ] ➜ **API Yol Haritası'na işle**
 
 ### C-04 — Kişisel Kart API ⬜
@@ -62,13 +76,20 @@
 **Referans:** REFERENCE/API_ENDPOINTS.md §9
 **Frontend karşılığı:** D-05 (Web — Öğrenme/Sınav Sayfası), E-07 (Mobil — Öğrenme/Sınav Ekranı)
 > 🧩 `frontendRefs` ↔ D-05/E-07 `backendRef` (iki yönlü).
-- [ ] **Entity:** `LearningSession` + migration
+- [ ] **Entity:** `LearningSession` (+ `TrueFalse` dahil 6 `SessionType`) + migration
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `ILearningSessionService` + `LearningSessionService` (başlat, kelime seçim önceliği, Mixed dedup, cevap, tamamla, bırak)
+- [ ] `ILearningSessionService` + `LearningSessionService` (başlat — `mode: New|Due|Band|Mixed`,
+  kelime seçim önceliği, Mixed dedup —, her review sorusu için rastgele format seçimi
+  [`sessionType` istemciden gelmez], ipucu → quality tavanı düşürme, cevap işleme
+  [Flashcard=selfRating, objektif tipler=otomatik quality, TrueFalse max tavan 4], "günde tek
+  resmi review" kuralı [`IsExtraPractice`], tamamla, bırak, `repeat` [aynı kelimelerle SM-2
+  güncellemeden tekrar])
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `LearningSessionController`
+- [ ] `LearningSessionController` (+ `GET /learning-history/today/learned`, `GET /learning-history/today/tested`)
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `LearningSessionServiceTests` (Mixed dedup, SRS önceliği, tamamla/bırak)
+- [ ] **Birim testleri:** `LearningSessionServiceTests` (Mixed dedup, SRS önceliği, tamamla/bırak,
+  rastgele format ataması, ipucu/zaman bazlı quality tavanı, TrueFalse tavanı, repeat'in SM-2'yi
+  etkilememesi)
 - [ ] ➜ **API Yol Haritası'na işle**
 
 ### C-06 — Paylaşım API ⬜
@@ -115,10 +136,19 @@
 - [ ] ➜ **API Yol Haritası'na işle**
 
 ### C-10 — Push Notification (OneSignal) ⬜
-**Referans:** REFERENCE/ENV.md §6
+**Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire)
 **Frontend karşılığı:** E-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok)
 > 🧩 `frontendRefs` ↔ E-14 `backendRef` (iki yönlü).
+> **Not (2026-07-07):** Zamanlama altyapısı **Hangfire** (SQL Server storage) — Quartz.NET/elle
+> `IHostedService` yerine tercih edildi (gerekçe → `wiki/Database/SRS_Domain.md` "Bildirim
+> Tetikleyicileri (C-10)").
 - [ ] `INotificationService` + `OneSignalNotificationService`, `User.OneSignalPlayerId` + migration, `PUT /users/me/device-token`
 - [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock'lanır, hata yönetimi)
+- [ ] Hangfire kurulumu (`AddHangfire`/`AddHangfireServer`, SQL Server storage, dashboard) +
+  recurring job'lar: günlük hatırlatma (hedef tamamlanmadıysa, config saat), due hatırlatması
+  (due sayısı eşiği geçince günde 1 kez), streak riski (gün sonuna yaklaşırken hedef eksikse);
+  achievement bildirimi event-driven (`AchievementService` tetikleyince anlık)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock'lanır, hata yönetimi),
+  `NotificationTriggerJobTests` (her tetikleyici koşulunun doğru kullanıcıları seçmesi)
 - [ ] ➜ **API Yol Haritası'na işle**

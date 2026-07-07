@@ -67,17 +67,29 @@
 
 ### E-07 — Öğrenme / Sınav Ekranı ⬜
 **Referans:** C-05, C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §9
-- [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult` (`types/learning.ts`)
+> **Not (2026-07-07 SRS tasarım kararları, bkz. `wiki/Index.md` On ikinci INGEST):** İstemci artık
+> `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
+> gerçek formatı backend'de rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.
+- [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
+  `MasteryBand` (`Weak|Medium|Good`) (`types/learning.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **RTK Query:** `learningApi` — `startSession`, `submitAnswer`, `completeSession`, `abandonSession`
+- [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
+  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu
+- [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu, aktif sorunun rastgele
+  atanmış tipi, ipucu/zaman bazlı `selfRating` tavan kilidi
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component (Ekran):** `LearningStartScreen`, `FlashcardScreen` (+ E-06 `SystemWordCard`), `MultipleChoiceScreen`, `SessionSummaryScreen`
+- [ ] **Component (Ekran):** `HomeScreen` (streak, günlük hedef ilerleme çubuğu, pasif due rozeti,
+  hedef tamamlanınca opsiyonel "tekrar edelim mi" teklifi, "Bugün Öğrendiklerim"/"Bugün Test
+  Ettiklerim" listeleri), `FlashcardScreen` (+ E-06 `SystemWordCard`, ipucu butonu + zaman/ipucu
+  bazlı seçenek kilitleme), `MultipleChoiceScreen`, `TranslationQuizScreen`, `TrueFalseScreen`,
+  `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et),
+  `SessionSummaryScreen` (+ "Aynı Kelimelerle Tekrar Et")
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `MainTabNavigator` içine `LearningStackNavigator`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Birim testleri:** `FlashcardScreen.test.tsx`, `learningSessionSlice.test.ts`
+- [ ] **Birim testleri:** `FlashcardScreen.test.tsx` (ipucu/zaman tavan kilidi), `learningSessionSlice.test.ts`,
+  `HomeScreen.test.tsx` (streak yalnızca New'e bağlı), `SessionSummaryScreen.test.tsx` (repeat akışı)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
 ### E-08 — Kategoriler Ekranı ⬜
@@ -147,15 +159,23 @@
 
 ### E-13 — İlerleme Ekranı ⬜
 **Referans:** C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §10
-- [ ] **Tip:** `WordProgress`, `UserCardProgress` (`types/progress.ts`)
+> **Not (2026-07-07 SRS tasarım kararları):** Bant eşiği `Mastery` yüzdesine göre (🔴 Zayıf 0-40 ·
+> 🟡 Orta 40-70 · 🟢 İyi 70-100), `CurrentLevel` değil.
+- [ ] **Tip:** `WordProgress`, `UserCardProgress`, `ProgressSummary` (`weak/medium/good/dueNow` sayıları),
+  `Achievement`, `SuspendedWord` (`types/progress.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`
+- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
+  `getBandWords`, `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component (Ekran):** `ProgressScreen` (mastery listesi, grafik)
+- [ ] **Component (Ekran):** `ProgressScreen` (mastery listesi, grafik, bant kartları 🔴🟡🟢),
+  `BandWordListScreen` (tıklanınca — **İncele** salt okunur liste, **Sına** butonu E-07 `mode: Band`
+  oturumunu başlatır; leech kelimeler 🩹 işaretli), `SuspendedWordsScreen` (geri getir butonu),
+  `AchievementsSection` (rozet grid'i, `Icon` resim URL'i + `Rarity` renk kodu)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `MainTabNavigator`'a ekran kaydı
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Birim testleri:** `ProgressScreen.test.tsx`
+- [ ] **Birim testleri:** `ProgressScreen.test.tsx` (bant kartı sayıları), `BandWordListScreen.test.tsx`
+  (İncele/Sına geçişi), `SuspendedWordsScreen.test.tsx` (geri getir akışı), `AchievementsSection.test.tsx` (rozet render)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
 ### E-14 — Profil Ekranı ⬜

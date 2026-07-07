@@ -105,6 +105,110 @@
 
 Detay → [[Gelistirme_Yol_Haritasi]].
 
+*On ikinci INGEST (2026-07-07) — SRS/İlerleme tasarım kararları (C-03/C-05 henüz kodlanmadı, saf
+tasarım): Kullanıcı "eskiden öğrendiğim kelimeleri unuttum mu, ne zaman test edilecek" sorusundan
+başlayarak bir dizi karar netleşti. **(1) Mastery formülü** (şemada alan vardı, formülü yoktu):
+`Mastery = (CurrentLevel/5)*80 + (SuccessRate/100)*20` (yüzdelik, 0-100). **(2) Mastery bantları**
+`CurrentLevel` değil bu yüzdelik üzerinden: 🔴 Zayıf 0-40 · 🟡 Orta 40-70 · 🟢 İyi 70-100 (aynı
+metrik hem bant gösterimini hem günlük özet yüzdesini besliyor). **(3) Streak yalnızca günlük yeni
+kelime hedefine (`dailyWordGoal`) bağlı** — due review/bant pratiği yapılsın yapılmasın streak
+etkilenmez; due sayısı ana ekranda pasif bir rozet olarak durur, hedef tamamlanınca opsiyonel bir
+"tekrar edelim mi" teklifi çıkar. **(4) Bant ekranları** (🔴🟡🟢) iki modlu: İncele (salt okunur
+liste) ve Sına (review akışı, kaynak o bant). **(5) Quiz formatı artık istemciden seçilmiyor** —
+yeni kelime tanıtımı her zaman `Flashcard`, review'da her soru için backend
+`MultipleChoice|TranslationQuiz|ArticleQuiz|PluralQuiz|TrueFalse` (yeni 6. tip) arasından rastgele
+seçim yapıyor. **(6) Quality (0-5) üretimi ayrıştı:** Flashcard'da kullanıcı `selfRating` seçer ama
+gecikme/ipucu kullanımı üst seçenekleri kilitler (ipucu→"İyi" kapanır, "Cevabı Göster"→otomatik 0);
+objektif tiplerde `quality` kullanıcıya sorulmadan `IsCorrect`+`ResponseTime`+`HintUsed`'dan
+otomatik hesaplanır; `TrueFalse`'ta şans başarı ihtimali (%50) yüksek olduğu için doğru cevapta
+otomatik tavan 4 (asla 5 verilmez — LLM'in kendi önerdiği, kullanıcının onayladığı bir düzeltme).
+**(7) "Günde tek resmi review" kuralı:** bir kelime bir günde ilk cevaplandığında SM-2 günceller;
+"Aynı Kelimelerle Tekrar Et" ile tekrar oynanırsa `IsExtraPractice=1` ile sadece istatistiğe yazılır,
+SM-2/`Mastery` bir daha güncellenmez — bu kural hem bant pratiğinin hem tekrar oynamanın SM-2'yi
+bozmasını tek seferde engelliyor. **(8) Günlük özet listeleri:** "Bugün Öğrendiklerim" (seviyesiz,
+salt liste) ve "Bugün Test Ettiklerim" (`masteryBefore`→`masteryAfter` yüzdelik, ekstra pratik
+satırları hariç). Şema: `LearningHistory`'ye `HintUsed`/`IsExtraPractice`/`MasteryBefore`/
+`MasteryAfter` eklendi, `SessionType` enumlarına `TrueFalse` eklendi. API: `POST /learning-sessions`
+artık `mode: New|Due|Band|Mixed` alıyor (`sessionType` kalktı), yeni `POST .../hint`,
+`POST .../repeat`, `GET /progress/summary`, `GET /progress/words`,
+`GET /learning-history/today/learned`, `GET /learning-history/today/tested` endpoint'leri eklendi.
+Etkilenen dosyalar: `docs/wiki/Database/SRS_Domain.md` (en detaylı hâli), `docs/DATABASE_SCHEMA/
+SRS.md`, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §8`, `docs/REFERENCE/API_ENDPOINTS.md §9-10`,
+`docs/TASK/C_kullanici_backend.md` (C-03/C-05 checklist'leri). Henüz hiç kod yazılmadı — C-03/C-05
+sıraya geldiğinde bu kararlara göre uygulanacak.*
+
+*On üçüncü INGEST (2026-07-07, aynı gün) — frontend task'ları senkronize edildi: yukarıdaki SRS
+kararları backend'e (C-03/C-05) özel işlenmişti, kullanıcı frontend tarafının da bu kararlara göre
+güncellenmesini istedi (kod yazılmadan önce, patlamayı önlemek için). `docs/TASK/D_web_app.md`
+D-05 (Öğrenme/Sınav Sayfası) → `LearningStartPage` artık `HomePage` (streak, günlük hedef çubuğu,
+pasif due rozeti, "Bugün Öğrendiklerim"/"Bugün Test Ettiklerim" listeleri), `sessionType` seçimi
+kalktı (`mode: New|Due|Band|Mixed`), `FlashcardScreen`'e ipucu/zaman tavan kilidi, eksik olan
+`TranslationQuizScreen` + yeni `TrueFalseScreen` eklendi, `SessionSummaryPage`'e "Aynı Kelimelerle
+Tekrar Et" butonu. D-11 (İlerleme Sayfası) → bant kartları (🔴🟡🟢, `Mastery` yüzdesine göre) +
+`BandWordListPage` (İncele/Sına iki modlu), yeni route `/progress/band/:band`. `E_mobil.md`'de
+E-07/E-13 aynı mantıkla mobil karşılıklarıyla (`HomeScreen`, `BandWordListScreen`) güncellendi.
+`B_admin_panel.md`'deki `DashboardPage` (B-07, admin istatistik özeti) kontrol edildi — bu kararlardan
+etkilenmiyor çünkü ayrı bir agregat istatistik endpoint'i kullanıyor, `learning-sessions` sözleşmesine
+bağımlı değil, değiştirilmedi.*
+
+*On dördüncü INGEST (2026-07-07, aynı gün) — Leech tespiti, achievement tetikleme kuralları,
+bildirim tetikleyicileri (yine saf tasarım, kod yok): **(1) Leech:** yeni `ConsecutiveIncorrect`/
+`IsSuspended` alanları (`UserProgress`/`UserCardProgress`), eşik **5 ardışık yanlış** (Anki'nin
+kümülatif 8'ine göre — bizimki ardışık olduğu için daha düşük). Eşik aşılınca üç aksiyon: Askıya Al
+(`IsSuspended=1`, due sorgusundan hariç), Sıfırla (`CurrentLevel`/`EF`/`RepetitionNumber`/
+`ConsecutiveIncorrect` sıfırlanır, **`NextReviewAt=NULL`** — geçmiş istatistik `TimesCorrect` vb.
+korunur), Devam Et (no-op). **(2) Yeni kelime seçim algoritması netleşti ve bir hata düzeltildi:**
+filtre `CurrentLevel=0` değil **`NextReviewAt IS NULL`** olmalı — aksi halde normal bir due-review
+başarısızlığı (SM-2 zaten `CurrentLevel`'ı 0'a döndürür ama `NextReviewAt`'i yarına ayarlar)
+yanlışlıkla yeni kelime sanılırdı. Bu düzeltme **şema değişikliği gerektirdi**: `NextReviewAt`
+`NOT NULL DEFAULT GETUTCDATE()` iken artık **nullable** (`NULL`=zamanlanmadı/sıfırlandı). Sorgu:
+`WHERE DifficultyLevel=userLevel AND (UserProgress yok OR NextReviewAt IS NULL) ORDER BY
+WordConceptId ASC` — sıfırlanan kelime böylece `WordConceptId` sırasındaki eski (aradaki)
+pozisyonundan doğal olarak geri döner. **(3) Achievements:** mevcut `Icon` alanı emoji değil resim
+URL'i olarak kullanılacak (admin CRUD yok, seed migration ile — YAGNI); başlangıç seti (streak
+3/7/30, kelime sayısı 50/200/500, ilk ustalaşma, 100 kelime İyi bantta, hatasız oturum, leech
+kurtarma) ve tetikleme noktaları (`ProgressService`/`LearningSessionService` sonrası) belirlendi.
+**(4) Bildirim scheduler'ı için Hangfire seçildi** (SQL Server storage — mevcut MSSQL'e ek altyapı
+gerektirmiyor, dashboard'u var, job'lar persist olur) Quartz.NET/elle `IHostedService` yerine;
+somut tetikleyiciler: günlük hatırlatma, due hatırlatması, streak riski, achievement bildirimi
+(event-driven). Etkilenen dosyalar: `docs/wiki/Database/SRS_Domain.md`, `docs/DATABASE_SCHEMA/
+SRS.md` (`NextReviewAt` nullable + yeni kolonlar + `Achievements.Icon` notu),
+`docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md` (Hangfire paketleri + leech eşiği), `docs/REFERENCE/
+API_ENDPOINTS.md §10` (leech-action, suspended, achievements/me endpoint'leri), `docs/TASK/
+C_kullanici_backend.md` (C-03 leech/achievement, C-10 Hangfire+tetikleyiciler), `docs/TASK/
+D_web_app.md`/`E_mobil.md` (D-05/E-07 `LeechActionModal`, D-11/E-13 `SuspendedWordsPage/Screen` +
+`AchievementsSection`). Henüz hiç kod yazılmadı.*
+
+*On beşinci INGEST (2026-07-07, aynı gün) — `docs/TASK.md` metodolojisine eksik olan tek gerçek
+adım eklendi: **git commit/push hiçbir yerde yazılı değildi.** Roadmap'e işleme ve detaylı
+açıklama kuralları zaten backend/frontend'de birebir mirror'lanmış durumdaydı (kontrol edildi,
+eksik değildi) — asıl boşluk "API/feature bitince ne yapılır" listesinde git adımının hiç
+geçmemesiydi. Yeni **⭐ Bir API/Feature Tamamlandığında** bölümü eklendi (commit format örneği,
+push'un her seferinde kullanıcı onayıyla yapılacağı notu — git safety protokolü gereği otomatik
+değil —, `TASK.md` İlerleme Durumu güncelleme, gerekirse wiki INGEST). Ayrıca "Route/Import"
+adımının zaten alt-parçaları birleştiren adım olduğu netleştirildi (ayrı bir "birleştirme" adımına
+gerek yok). Backend ⭐ Çalışma Yöntemi ve Frontend ⭐ Çalışma Yöntemi'nin kurallar listelerine bu
+yeni bölüme çapraz link eklendi.*
+
+*On altıncı INGEST (2026-07-07, aynı gün) — `docs/FRONTEND_YOL_HARITASI/` üçe bölündü:
+`docs/ADMIN_YOL_HARITASI/` (Faz B), `docs/WEB_YOL_HARITASI/` (Faz D), `docs/MOBILE_YOL_HARITASI/`
+(Faz E). Sebep: kullanıcı admin panelin ve web app'in (ve zaten planlı olan mobilin) **ayrı
+projeler** olarak açılacağını netleştirdi (`/admin`, `/web`, `/mobile` — kod paylaşımı yok, bu
+zaten [[Sistem_Mimarisi]]'nde vardı ama roadmap sistemine yansımamıştı); tek bir
+`FRONTEND_YOL_HARITASI` + `uygulama` tag'i yaklaşımı yerine üç bağımsız hub tercih edildi. Hiçbir
+gerçek feature sayfası yazılmamışken (yalnızca `_TASLAK.html`/`index.html`/`render.js` şablonları
+vardı) yapıldığı için içerik kaybı yok — güvenli bir restructuring'di. Her yeni klasör kendi
+`_TASLAK.html`/`index.html`/`render.js` kopyasını aldı (render.js değişmeden kopyalandı, zaten
+generic). Etkilenen dosyalar: `docs/index.html` (4 roadmap kartı: API/Admin/Web/Mobil),
+`docs/API_YOL_HARITASI/index.html` (topbar'daki ölü `FRONTEND_YOL_HARITASI` linki 3 linke
+bölündü — kullanıcı bunu ekran görüntüsüyle yakaladı), `docs/API_YOL_HARITASI/_TASLAK.html` (çapraz
+link yorumu + örnek `frontendRefs`), `docs/API_YOL_HARITASI/A-03_auth-api.html` (gerçek
+`frontendRefs` verisi B-02/D-03/E-05 için doğru klasörlere güncellendi), `docs/TASK.md` (adım 8 +
+Çapraz Link Kuralı notu), `docs/00_INDEX.md`, `docs/wiki/Backend/API_Yol_Haritasi_Sistemi.md`
+("Frontend Kardeşi" tekil → "Frontend Kardeşleri" üç ayrı sistem). `docs/REFERENCE/ARCHITECTURE.md`
+ve [[Sistem_Mimarisi]]'ye dokunulmadı — ikisi zaten "ayrı proje, kod paylaşımı yok" diyordu, yalnızca
+roadmap dokümantasyon sistemi bunu yansıtmıyordu.*
+
 ## Kaynak Dokümanlar (`/docs`)
 Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların taranmasıyla üretildi. `docs/` artık
 şu klasör yapısındadır (token tasarrufu için bölündü, içerik kaybı yok):
@@ -116,8 +220,9 @@ Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların taranmasıyla
   B_admin_panel, C_kullanici_backend, D_web_app, E_mobil, F_test_yayin)
 - `docs/DATABASE_SCHEMA.md` (index: ERD/seed/genel kurallar) + `docs/DATABASE_SCHEMA/` (domain başına
   1 dosya: Auth, Icerik, Kisisel_Icerik, SRS, Sosyal, Loglama, Sistem)
-- `docs/API_YOL_HARITASI/*` (backend) + `docs/FRONTEND_YOL_HARITASI/*` (Web/Admin/Mobil — aynı
-  sistemin frontend kardeşi, henüz hiçbir feature sayfası yazılmadı)
+- `docs/API_YOL_HARITASI/*` (backend) + `docs/ADMIN_YOL_HARITASI/*` / `docs/WEB_YOL_HARITASI/*` /
+  `docs/MOBILE_YOL_HARITASI/*` (aynı sistemin frontend kardeşleri — Admin/Web/Mobil ayrı proje
+  oldukları için ayrı klasör, henüz hiçbir feature sayfası yazılmadı)
 
 Ayrıca gerçek kaynak kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`)
 taranmasıyla üretildi. Çelişki durumunda `docs/` klasörü otorite kaynağıdır; bu wiki onun bağlantılı

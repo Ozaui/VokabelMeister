@@ -43,7 +43,7 @@ gösteren ve junior geliştirici eğiten rehberdir.
 |-------|--------|
 | `TASK.md` | Yöntem/standart (⭐ Çalışma Yöntemi) + ilerleme tablosu — task listeleri `TASK/` klasöründe (faz başına 1 dosya) |
 | `API_YOL_HARITASI/` | Junior eğitim rehberi (interaktif HTML) — her API'ın adım adım yazılışı. Hub sayfası `API_YOL_HARITASI/index.html`, `_TASLAK.html` = yeni API şablonu. `docs/index.html` — Backend/Frontend'e yönlendiren ana karşılama sayfası |
-| `FRONTEND_YOL_HARITASI/` | API_YOL_HARITASI'nın frontend karşılığı — Web/Admin/Mobil feature'larının (tip→api→slice→hook→component→route→test) adım adım yazılışı. Kendi hub'ı (`index.html`), `_TASLAK.html` = yeni feature şablonu, stil `API_YOL_HARITASI/style.css`'i paylaşır |
+| `ADMIN_YOL_HARITASI/` / `WEB_YOL_HARITASI/` / `MOBILE_YOL_HARITASI/` | API_YOL_HARITASI'nın frontend karşılığı — Admin/Web/Mobil **ayrı projeler** olduğu için (kod paylaşımı yok) üçünün ayrı roadmap'i var, her biri feature'ların (tip→api→slice→hook→component→route→test) adım adım yazılışını gösterir. Her birinin kendi hub'ı (`index.html`), `_TASLAK.html` = yeni feature şablonu, stil `API_YOL_HARITASI/style.css`'i paylaşır |
 | `REFERENCE/ARCHITECTURE.md` | Sistem mimarisi, akışlar, entity ilişkileri, roller |
 | `DATABASE_SCHEMA.md` | ERD + seed data + genel kurallar — tam `CREATE TABLE` SQL'leri `DATABASE_SCHEMA/` klasöründe (domain başına 1 dosya) |
 | `REFERENCE/API_ENDPOINTS.md` | Endpoint listesi, request/response örnekleri |

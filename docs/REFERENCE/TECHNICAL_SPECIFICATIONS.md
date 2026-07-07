@@ -24,6 +24,8 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
 <PackageReference Include="MailKit" Version="4.3.0" />                     <!-- SMTP e-posta -->
+<PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- C-10 bildirim scheduler'ı -->
+<PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist eder, dashboard'u var -->
 
 <!-- WordLearner.Tests (xUnit) -->
 <PackageReference Include="xunit" Version="2.7.0" />
@@ -194,8 +196,32 @@ public static class SrsCalculator
         newEF = Math.Max(1.3m, newEF);
         return (interval, Math.Min(currentLevel + 1, 5), newEF);
     }
+
+    // Mastery: yüzdelik (0-100), CurrentLevel baskın sinyal + SuccessRate ince ayar
+    public static decimal CalculateMastery(int currentLevel, decimal successRate) =>
+        Math.Round((currentLevel / 5.0m) * 80 + (successRate / 100.0m) * 20, 2);
 }
 ```
+
+**Mastery bantları** (`Mastery` yüzdesine göre, config değeri — yapısal değil):
+🔴 Zayıf 0-40 · 🟡 Orta 40-70 · 🟢 İyi 70-100.
+
+**Quality (0-5) kim tarafından üretiliyor:**
+- `Flashcard` (yeni kelime tanıtımı): kullanıcı `selfRating` seçer, ama gecikme/ipucu kullanımı
+  üst seçenekleri kilitler (detay → `docs/wiki/Database/SRS_Domain.md`).
+- Objektif tipler (`MultipleChoice`/`TranslationQuiz`/`ArticleQuiz`/`PluralQuiz`): `quality`
+  kullanıcıya sorulmadan `IsCorrect`+`ResponseTime`+`HintUsed`'dan otomatik hesaplanır.
+- `TrueFalse`: şans başarı ihtimali yüksek olduğu için doğru cevapta otomatik tavan **4**
+  (asla 5 verilmez).
+
+**Quiz formatı seçimi:** İstemci `sessionType` göndermez. Yeni kelime oturumu her zaman
+`Flashcard`; review oturumlarında her soru için backend `MultipleChoice|TranslationQuiz|
+ArticleQuiz|PluralQuiz|TrueFalse` arasından rastgele seçim yapar.
+
+**Leech eşiği:** `ConsecutiveIncorrect >= 5` (config). Anki'nin varsayılanı 8 ama o kümülatif lapse
+sayısıdır (aralarda doğru gelse de sıfırlanmaz); bizimki ardışık (bir doğru gelince 0'a döner) —
+daha katı bir metrik olduğu için denk hassasiyet için daha düşük bir eşik seçildi. Detay (üç
+aksiyon: Askıya Al/Sıfırla/Devam Et) → `docs/wiki/Database/SRS_Domain.md`.
 
 ## 9. Serilog + ApplicationLog (DB sink)
 

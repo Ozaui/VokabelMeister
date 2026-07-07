@@ -65,23 +65,33 @@ validator'ları (21-24) → `IAuthService`/`AuthService` (25-27) → FluentValid
 `PasswordService.Hash`, ortak DTO) kullanıyorsa, o kodun **tam hâli** de o API'ın kendi sayfasına
 ayrıca eklenir — her API sayfası tek başına baştan sona okunabilir olmalı (kod tekrarı bilinçli).
 
-## Frontend Kardeşi (`docs/FRONTEND_YOL_HARITASI/`)
-Web/Admin/Mobil feature'ları için aynı mantığın frontend'e uyarlanmış hâli — kendi hub'ı
-(`FRONTEND_YOL_HARITASI/index.html`), kendi `_TASLAK.html`'i, kendi `render.js`'i (backend
-motoruna dokunmadan bağımsız kopya) var; `style.css`'i bu klasörden (`API_YOL_HARITASI/style.css`)
-paylaşır. `adim.tur` değerleri farklıdır: `tip | api | slice | hook | component | route | style | test`
-(entity→controller zincirinin frontend karşılığı). Yöntem → `docs/TASK.md` **⭐ Frontend Çalışma
-Yöntemi**; iki hub sayfası birbirine topbar'dan çapraz link verir. Henüz hiçbir feature sayfası
-yazılmadı (`LISTE` boş) — Faz B/D/E başladıkça dolacak.
+## Frontend Kardeşleri — Üç Ayrı Sistem (2026-07-07'de ayrıldı)
+Admin (`docs/ADMIN_YOL_HARITASI/`, Faz B), Web (`docs/WEB_YOL_HARITASI/`, Faz D) ve Mobil
+(`docs/MOBILE_YOL_HARITASI/`, Faz E) için aynı mantığın frontend'e uyarlanmış hâli — **üçü de
+bağımsız sistem**, tek bir "Frontend Yol Haritası" değil. Sebep: admin panel, web app ve mobil
+uygulama **ayrı projeler** olarak açılacak (`/admin`, `/web`, `/mobile` — kod paylaşımı yok, bkz.
+[[Sistem_Mimarisi]]), bu yüzden roadmap'leri de ayrı. Eskiden tek bir `FRONTEND_YOL_HARITASI/`
+(uygulama tag'iyle web/admin/mobile ayrımı yapan) sistemdi; hiç gerçek feature sayfası
+yazılmamışken (yalnızca şablonlar vardı) üçe bölündü.
+
+Her klasörün kendi hub'ı (`index.html`), kendi `_TASLAK.html`'i, kendi `render.js`'i (backend
+motoruna dokunmadan bağımsız kopya) var; `style.css`'i hepsi `API_YOL_HARITASI/style.css`'ten
+paylaşır. `adim.tur` değerleri üçünde de aynı: `tip | api | slice | hook | component | route |
+style | test` (entity→controller zincirinin frontend karşılığı). Yöntem → `docs/TASK.md`
+**⭐ Frontend Çalışma Yöntemi** (hangi fazın hangi klasöre yazacağı orada net). Dört hub sayfası
+(`API_YOL_HARITASI` + üçü) birbirine topbar'dan çapraz link verir. Henüz hiçbir feature sayfası
+yazılmadı (`LISTE`'ler boş) — Faz B/D/E başladıkça dolacak.
 
 ## Çapraz Link Kuralı (İki Yol Haritası Arasında Geçiş)
 Bir API'yi bir frontend feature tüketiyorsa, iki sayfa **iki yönlü** birbirine bağlanır:
 - Backend sayfası (`API` objesi): en alta `frontendRefs: [{ dosya, baslik }]` eklenir → sayfanın
-  sonunda **"🧩 Buradan sonrası frontend tarafında"** bandı, ilgili `FRONTEND_YOL_HARITASI/*.html`
-  sayfasına link verir (`render.js`'de `api.frontendRefs` render bloğu).
-- Frontend sayfası (`FEATURE` objesi): `tur:'api'` adımına `backendRef: { dosya, baslik }` eklenir →
-  o adımın hemen altında **"⚙️ Buradan sonrası backend tarafında"** bandı, ilgili
-  `API_YOL_HARITASI/*.html` sayfasına link verir (`render.js`'de `a.backendRef` render bloğu).
+  sonunda **"🧩 Buradan sonrası frontend tarafında"** bandı, ilgili `ADMIN_/WEB_/MOBILE_YOL_HARITASI/*.html`
+  sayfasına link verir (`render.js`'de `api.frontendRefs` render bloğu) — bir API üç projeden birden
+  fazlası tarafından tüketiliyorsa (örn. Auth) `frontendRefs` içine hepsi ayrı satır olarak eklenir.
+- Frontend sayfası (`FEATURE` objesi, üç klasörden hangisiyse): `tur:'api'` adımına
+  `backendRef: { dosya, baslik }` eklenir → o adımın hemen altında **"⚙️ Buradan sonrası backend
+  tarafında"** bandı, ilgili `API_YOL_HARITASI/*.html` sayfasına link verir (`render.js`'de
+  `a.backendRef` render bloğu).
 - Stil: `.note.xref` sınıfı (`API_YOL_HARITASI/style.css`), her iki motor da paylaşır.
 - **Kural gereği tek yönlü kalması yasak** — bir taraf yazılınca diğerine dönüp link eklenir
   (bkz. `docs/TASK.md` her iki ⭐ bölümündeki "🧩 Çapraz Link Kuralı"). `docs/TASK/A_admin_panel_backend.md`
