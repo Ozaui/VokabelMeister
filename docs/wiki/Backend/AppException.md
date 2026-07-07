@@ -30,7 +30,7 @@ public class InvalidCredentialsException : AppException
 ```
 
 ## Middleware Akışı
-1. `AuthService` → `throw new InvalidCredentialsException()`
+1. Bir Command Handler (ör. `LoginCommandHandler`) → `throw new InvalidCredentialsException()`
 2. [[Middleware]] → `StatusCodeFor(appEx)` ile Code'a göre HTTP durumu belirler (ör. 401)
 3. [[Middleware]] → isteğin `Accept-Language` header'ından dili çıkarır (`GetRequestLanguage`)
 4. [[ErrorMessages]].`Resolve(code, dil)` → sözlükten metni döner, dil yoksa `tr`'ye düşer

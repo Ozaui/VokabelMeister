@@ -8,13 +8,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using FluentValidation;
-using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
 
-public class DeleteAccountConfirmRequestValidator : AbstractValidator<DeleteAccountConfirmRequest>
+public class ConfirmAccountDeletionCommandValidator : AbstractValidator<ConfirmAccountDeletionCommand>
 {
-    public DeleteAccountConfirmRequestValidator()
+    public ConfirmAccountDeletionCommandValidator()
     {
         RuleFor(x => x.OtpCode).ValidOtpCode();
         RuleFor(x => x.Password).NotEmpty().WithMessage("Password must not be empty.").WithErrorCode("PASSWORD_REQUIRED");

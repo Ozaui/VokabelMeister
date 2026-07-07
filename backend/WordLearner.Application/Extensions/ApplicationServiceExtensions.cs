@@ -21,10 +21,10 @@ public static class ApplicationServiceExtensions
 {
     // AMAÇ: MediatR handler'larını, AutoMapper profillerini ve FluentValidation
     //       validator'larını Application katmanı assembly'sinden tarayıp kaydeder.
-    // NEDEN: Henüz (A-02) hiçbir feature command/handler/validator yazılmadığı için
-    //        somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
-    //        A-03'ten itibaren eklenecek her CreateWordCommand/CreateWordCommandValidator
-    //        vb. otomatik olarak bulunur, tek tek kayıt gerekmez.
+    // NEDEN: Somut bir tip yerine bu extension'ın bulunduğu assembly referans alınır;
+    //        A-03'teki 13 Auth Command+Handler'ı (Application/Features/Auth/) ve
+    //        gelecekteki her yeni CreateWordCommand/CreateWordCommandValidator vb.
+    //        otomatik olarak bulunur, tek tek kayıt gerekmez.
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
@@ -55,10 +55,11 @@ public static class ApplicationServiceExtensions
         //       önler ve testlerde HttpClient'ın mock'lanmasını kolaylaştırır.
         services.AddHttpClient<IAppleTokenValidator, AppleTokenValidator>();
 
-        // NEDEN Scoped: Yukarıdaki tüm bağımlılıklarıyla (repository'ler DbContext'e
-        //       bağımlı) aynı yaşam süresinde olmalı — AuthService'in kendisi de A-03'ün
-        //       ana servisi.
-        services.AddScoped<IAuthService, AuthService>();
+        // NEDEN Scoped: Auth Command Handler'larının (Application/Features/Auth/) paylaştığı
+        //       OTP üretimi/doğrulanması ve login tamamlama mantığı — handler'lar MediatR
+        //       üzerinden birbirini çağıramadığı için bu iki servise çıkarıldı.
+        services.AddScoped<IOtpService, OtpService>();
+        services.AddScoped<ILoginCompletionService, LoginCompletionService>();
 
         return services;
     }

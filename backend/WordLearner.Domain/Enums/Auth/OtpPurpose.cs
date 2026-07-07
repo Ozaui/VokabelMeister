@@ -10,7 +10,7 @@
 // BAĞIMLILIKLAR: Yok — saf C# enum.
 // ─────────────────────────────────────────────────────────────────────────────
 
-namespace WordLearner.Domain.Enums;
+namespace WordLearner.Domain.Enums.Auth;
 
 public enum OtpPurpose
 {

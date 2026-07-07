@@ -26,11 +26,13 @@ tutarlı). `User` entity'sinin kendisi de `BaseEntity`'den türediği için kend
 imkanı vardır — örn. bir admin başka bir kullanıcıyı oluşturursa `CreatedByUserId` o admin'in Id'si
 olur; self-servis kayıtta `null` kalır.
 
-## Planlanan Kod (A-03)
-`User`, `RefreshToken` entity (**yazıldı**, A-03'ün ilk parçası — bkz. `API_YOL_HARITASI/A-03_auth-api.html`)
-+ `OtpPurpose` enum → `IPasswordService`, `ITokenService`, `IAuthService` (register/verify-email/
-login 2-adım OTP/google/apple/refresh/logout/forgot-reset-password/delete-account) → `AuthController`
-(13 endpoint) — detay [[API_Sozlesmesi]] ve `docs/REFERENCE/API_ENDPOINTS.md §3`.
+## Yazılmış Kod (A-03)
+`User`, `RefreshToken` entity + `OtpPurpose` enum → `IPasswordService`, `ITokenService`,
+`IOtpService`/`ILoginCompletionService` (paylaşılan OTP/giriş-tamamlama mantığı) → 13 Auth
+Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`: register/verify-email/login
+2-adım OTP/google/apple/refresh/logout/forgot-reset-password/delete-account) → `AuthController`
+(13 endpoint, `IMediator.Send(command)` ile) — detay [[API_Sozlesmesi]] ve
+`docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `API_YOL_HARITASI/A-03_auth-api.html`.
 
 ## QrLoginSessions (A-03.1 — planlı, henüz kod yok)
 Steam benzeri "QR kod ile giriş": mobilde zaten giriş yapmış kullanıcı, web/masaüstünde gösterilen

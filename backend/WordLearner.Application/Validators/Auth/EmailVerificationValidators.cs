@@ -9,22 +9,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using FluentValidation;
-using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
 
-public class VerifyEmailRequestValidator : AbstractValidator<VerifyEmailRequest>
+public class VerifyEmailCommandValidator : AbstractValidator<VerifyEmailCommand>
 {
-    public VerifyEmailRequestValidator()
+    public VerifyEmailCommandValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
         RuleFor(x => x.OtpCode).ValidOtpCode();
     }
 }
 
-public class ResendVerificationRequestValidator : AbstractValidator<ResendVerificationRequest>
+public class ResendVerificationCommandValidator : AbstractValidator<ResendVerificationCommand>
 {
-    public ResendVerificationRequestValidator()
+    public ResendVerificationCommandValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
     }

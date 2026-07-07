@@ -8,12 +8,14 @@
 
 | Proje | Paket | Durum |
 |-------|-------|-------|
-| API | `Microsoft.AspNetCore.Authentication.JwtBearer` 9.0.0, `Serilog.AspNetCore` 8.0.1 (+Console/File/MSSqlServer sink), `Swashbuckle.AspNetCore` 7.2.0 | ✅ kurulu ([[WordLearner_API]]) |
-| Application | `MediatR` 12.1.1, `AutoMapper` 13.0.1, `FluentValidation` 11.9.2 (+DI extensions), `BCrypt.Net-Next` 4.0.3, `System.IdentityModel.Tokens.Jwt` 7.1.0, `Google.Apis.Auth` 1.67.0 | ⬜ **henüz kurulmadı** — A-03'te eklenecek |
+| API | `Microsoft.AspNetCore.Authentication.JwtBearer` 9.0.0, `Serilog.AspNetCore` 8.0.1 (+Console/File sink), `Swashbuckle.AspNetCore` 7.2.0 | ✅ kurulu ve kullanımda ([[WordLearner_API]]) |
+| API | `Serilog.Sinks.MSSqlServer` 6.6.0 | ⚠️ **kurulu, henüz bağlı değil — hedef: A-04.** `Program.cs`'te tek bir `WriteTo.MSSqlServer(...)` çağrısı yok, yalnızca yorum var (bkz. TASK.md §5 "Kurulu-ama-kullanılmayan paket taraması", 2026-07-07'de MediatR/AutoMapper retrofit'i sırasında fark edildi). A-04'e başlarken bu satır kontrol edilip sink fiilen bağlanacak, aksi halde kaldırılacak. |
+| Application | `MediatR` 12.1.1, `AutoMapper` 13.0.1, `FluentValidation` 11.9.2 (+DI extensions) | ✅ kurulu (A-02) — MediatR A-03'te 13 Auth Command+Handler, AutoMapper A-03'te [[AuthProfile]] ile ilk gerçek kullanımına kavuştu |
+| Application | `BCrypt.Net-Next` 4.0.3, `System.IdentityModel.Tokens.Jwt` 7.1.0, `Google.Apis.Auth` 1.67.0 | ✅ kurulu ve kullanımda (A-03) |
 | Infrastructure | `Microsoft.EntityFrameworkCore(.SqlServer/.Tools)` 9.0.0 | ✅ kurulu |
 | Infrastructure | `MailKit` 4.3.0 (SMTP e-posta) | ⬜ henüz kurulmadı — A-10 |
 | Tests | `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector` | ✅ kurulu (farklı versiyonlarla — bkz. [[WordLearner_Tests]]) |
-| Tests | `Moq` 4.20.70, `FluentAssertions` 6.12.0, `Microsoft.EntityFrameworkCore.InMemory` 9.0.0 | ⬜ henüz kurulmadı — A-02'nin `RepositoryTests` adımıyla gelecek |
+| Tests | `Moq` 4.20.70, `FluentAssertions` 6.12.0, `Microsoft.EntityFrameworkCore.InMemory` 9.0.0 | ✅ kurulu ve kullanımda (A-02'nin `RepositoryTests`'iyle geldi; bu satır bayattı, 2026-07-07'de düzeltildi) |
 
 ## 2. npm Paketleri (frontend — henüz hiçbiri kurulmadı, klasörler yok)
 

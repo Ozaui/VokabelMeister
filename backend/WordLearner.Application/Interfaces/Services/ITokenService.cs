@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Security.Claims;
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Interfaces.Services;
 

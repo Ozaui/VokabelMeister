@@ -16,7 +16,7 @@ using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using WordLearner.Application.Interfaces.Services;
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Services;
 

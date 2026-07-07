@@ -8,13 +8,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using FluentValidation;
-using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
 
-public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
+public class RegisterCommandValidator : AbstractValidator<RegisterCommand>
 {
-    public RegisterRequestValidator()
+    public RegisterCommandValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
         RuleFor(x => x.Password).ValidPassword();

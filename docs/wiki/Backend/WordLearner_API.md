@@ -1,6 +1,6 @@
 # WordLearner.API
 
-**Özet:** Solution'ın HTTP giriş noktası (composition root) — Controller'lar, middleware pipeline ve Swagger burada tanımlanır. [[Program_cs]] artık **A-02 itibarıyla tam yapılandırılmış** (JWT auth, CORS, Serilog, MediatR/AutoMapper/FluentValidation kayıtları); `Middleware/` klasöründe 3 sınıf var (bkz. [[Middleware]]). `Controllers/` klasörü hâlâ boş, ilk endpoint A-03 (`AuthController`) ile gelecek. `Microsoft.NET.Sdk.Web` SDK'sı kullanır, hedef framework `net9.0`.
+**Özet:** Solution'ın HTTP giriş noktası (composition root) — Controller'lar, middleware pipeline ve Swagger burada tanımlanır. [[Program_cs]] artık **A-02 itibarıyla tam yapılandırılmış** (JWT auth, CORS, Serilog, MediatR/AutoMapper/FluentValidation kayıtları); `Middleware/` klasöründe 3 sınıf var (bkz. [[Middleware]]). `Controllers/` klasöründe ilk (ve tek) controller `AuthController` (A-03, 13 endpoint) var — `IMediator.Send(command)` ile `Application/Features/Auth/`'taki Command Handler'ları çağırır, kendisi iş mantığı içermez. `Microsoft.NET.Sdk.Web` SDK'sı kullanır, hedef framework `net9.0`.
 **Kütüphaneler:** ASP.NET Core, Microsoft.AspNetCore.Authentication.JwtBearer 9.0.0 (aktif — JWT doğrulama kurulu), Serilog.AspNetCore 8.0.1 (+ Console/File sink aktif, MSSqlServer sink A-04'te), Swashbuckle.AspNetCore 7.2.0
 **Bağlantılar:** [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[Program_cs]] · [[Middleware]] · [[Backend_Katmanli_Mimari]]
 
@@ -8,7 +8,7 @@
 `WordLearner.API.csproj` → [[WordLearner_Application]], [[WordLearner_Infrastructure]]
 
 ## NuGet Paketleri
-- `Microsoft.AspNetCore.Authentication.JwtBearer` — JWT auth (**pipeline'da kurulu**, ilk gerçek kullanım A-03 login)
+- `Microsoft.AspNetCore.Authentication.JwtBearer` — JWT auth (**aktif**, A-03 login/refresh akışlarında gerçek kullanımda)
 - `Serilog.AspNetCore` + `Serilog.Sinks.Console/File` — loglama (**aktif**); `Serilog.Sinks.MSSqlServer` paketi kurulu ama sink bağlantısı A-04'te
 - `Swashbuckle.AspNetCore` — Swagger/OpenAPI (aktif, `/swagger`)
 
@@ -19,7 +19,9 @@
 | `Middleware/` | 3 sınıf: ExceptionHandling/SecurityHeaders/RequestResponseLogging (bkz. [[Middleware]]) |
 | `appsettings.json` | Genel config (gizli değer yok — bkz. [[Ortam_Degiskenleri]]) |
 | `appsettings.Development.json` | Dev secrets (`.gitignore`'da) |
-| `Controllers/` | **Boş** — ilk controller A-03 (`AuthController`) ile gelecek |
+| `Controllers/` | `AuthController.cs` (A-03, 13 endpoint, `IMediator` üzerinden çağırır) |
+| `Filters/` | `ValidationFilter.cs` — global action filter, `IValidator<T>`'leri otomatik çalıştırır |
+| `Common/` | `RequestLanguageResolver.cs` — `Accept-Language` çıkarma mantığı |
 | `Properties/launchSettings.json` | Dev başlatma profili |
 
 ## appsettings.json Yapılandırma Blokları

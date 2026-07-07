@@ -8,7 +8,7 @@
 // BAĞIMLILIKLAR: BaseEntity, User (N:1 ilişki).
 // ─────────────────────────────────────────────────────────────────────────────
 
-namespace WordLearner.Domain.Entities;
+namespace WordLearner.Domain.Entities.Auth;
 
 public class RefreshToken : BaseEntity
 {

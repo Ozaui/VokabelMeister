@@ -45,33 +45,60 @@
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
 - [x] ➜ **API Yol Haritası'na işle**
-- [x] `IAuthService` akışları: register, verify-email, resend, login (2-adım OTP), login/verify-otp,
-      google, apple, refresh, logout, forgot/reset-password, delete-account (request/confirm, 30 gün grace)
+- [x] `IOtpService`/`OtpService` (OTP üretimi/doğrulanması/temizlenmesi — Register/Login/
+      ResetPassword/AccountDeletion akışlarının paylaştığı ortak servis) ve
+      `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple girişlerinin ortak son
+      adımı: grace period kurtarma, giriş istatistikleri, token üretimi)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] 13 Auth Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`): `RegisterCommand`,
+      `VerifyEmailCommand`, `ResendVerificationCommand`, `LoginCommand`, `VerifyLoginOtpCommand`,
+      `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `RefreshCommand`, `LogoutCommand`,
+      `ForgotPasswordCommand`, `ResetPasswordCommand`, `RequestAccountDeletionCommand`,
+      `ConfirmAccountDeletionCommand` — her biri kendi dosyasında Command+Handler birlikte
+      (dikey dilim). `RefreshCommand`/`LogoutCommand` eskiden tek bir `RefreshRequest` DTO'sunu
+      paylaşırdı; MediatR'da bir `IRequest<T>` tek dönüş tipine bağlı olduğundan (Refresh
+      `AuthTokenResponse`, Logout dönüşsüz) ayrı Command'lara bölündüler.
 - [x] ➜ **API Yol Haritası'na işle**
 - [x] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
 - [x] ➜ **API Yol Haritası'na işle**
-- [x] `AuthController` (13 endpoint) + FluentValidation + rate limiting (genel 100/dk, 10/dk anonim —
+- [x] `AuthController` (13 endpoint, `IMediator.Send(command)` ile) + FluentValidation (Command
+      tiplerine retarget edilmiş validator'lar) + rate limiting (genel 100/dk, 10/dk anonim —
       "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme sayaçları SecurityLog'a bağımlı, A-04 sonrası eklenecek)
 - [x] ➜ **API Yol Haritası'na işle**
-- [x] **Birim testleri:** `AuthServiceTests` (39 test — register, e-posta doğrulama, login 2-adım,
+- [x] **Birim testleri:** 13 Command Handler'ın her biri için ayrı test dosyası
+      (`WordLearner.Tests/Features/Auth/`, 38 test — register, e-posta doğrulama, login 2-adım,
       Google/Apple + account linking, refresh/replay tespiti, logout sahiplik, forgot/reset,
-      delete-account grace), `JwtTokenServiceTests` (6 test — claim'ler, Algorithm Confusion),
-      `PasswordServiceTests` (5 test — hash/verify/salt). Toplam 61/61 yeşil.
+      delete-account grace), `OtpServiceTests` (7 test) + `LoginCompletionServiceTests` (5 test —
+      grace period kurtarma dahil, `WordLearner.Tests/Services/`), `JwtTokenServiceTests` (6 test —
+      claim'ler, Algorithm Confusion), `PasswordServiceTests` (5 test — hash/verify/salt).
+      Toplam 72/72 yeşil.
 - [x] ➜ **API Yol Haritası'na işle**
 > **Not:** Bu API'daki `SecurityLog` (LoginFailed/OtpFailed/RateLimitHit) entegrasyonu A-04'te
 > loglama altyapısı hazır olduktan **sonra** eklenir — A-03 bu adıma kadar log'suz tamamlanmış sayılır,
-> A-04 bitince AuthService'e kısa bir entegrasyon dönüşü yapılır (tek istisna, kuralın bilinçli ihlali).
+> A-04 bitince ilgili Command Handler'lara (LoginCommandHandler, VerifyLoginOtpCommandHandler vb.)
+> kısa bir entegrasyon dönüşü yapılır (tek istisna, kuralın bilinçli ihlali).
+> **Not (lokalizasyon):** `MessageResponse` metinleri (ör. "OTP gönderildi.", "Hesabınız silindi...")
+> şu an hardcode Türkçe — hata mesajlarının aksine (`ErrorMessages.Resolve` + `Accept-Language`)
+> başarı mesajları dile göre çözülmüyor. Kullanıcı bu eksikliği fark etti (2026-07-07); kapsam
+> büyüteceği için ayrı bir task olarak bırakıldı → bkz. **A-03.2** aşağıda.
 
 ### A-03.1 — QR Kod ile Giriş ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3, DATABASE_SCHEMA/Auth.md (`QrLoginSessions`)
 **Frontend karşılığı:** D-03 (Web — QR ekranı, `qrcode.react` ile görselleştirme), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
 > 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e D-03/E-05'in dosyaları eklenir (iki yönlü).
-> **A-03 tamamlandıktan sonra** yapılır çünkü `User`/`ITokenService`/`IAuthService` (özellikle token
-> üretim mantığı) buna bağımlı — QR girişi **ayrı bir kimlik doğrulama sistemi değil**, onaylandığında
-> A-03'te yazılan `ITokenService`'i çağıran yeni bir "kimliği kanıtlama yöntemi"dir (bkz. `SECURITY.md §1.3`).
+> **A-03 tamamlandıktan sonra** yapılır çünkü `User`/`ITokenService`/`ILoginCompletionService`
+> (özellikle token üretim mantığı) buna bağımlı — QR girişi **ayrı bir kimlik doğrulama sistemi
+> değil**, onaylandığında A-03'te yazılan `ITokenService`'i çağıran yeni bir "kimliği kanıtlama
+> yöntemi"dir (bkz. `SECURITY.md §1.3`).
 > Admin panelde (Faz B) **yok** — yalnızca Web (D) ve Mobil (E).
-- [ ] **Entity:** `QrLoginSession` + `QrLoginStatus` enum + EF config + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] **Entity:** `QrLoginSession` + `QrLoginStatus` enum + EF config + migration
+- [x] ➜ **API Yol Haritası'na işle**
+> ⚠️ **Kural güncellemesi (bkz. `TASK.md` "Bir API'ın Yazım Sırası" notu):** Aşağıdaki
+> `IQrLoginService`/`QrLoginService` ifadesi eski desendir, **geçersiz**. A-03'ün retrofit'inden
+> sonraki her task gibi bu da MediatR Command+Handler (+ koşullu AutoMapper Profile) deseniyle
+> yazılır — `GenerateAsync/ScanAsync/ConfirmAsync/DenyAsync/GetStatusAsync` her biri ayrı bir
+> `IRequest<TResponse>` Command'ı olur (`Application/Features/QrLogin/XxxCommand.cs`, Handler aynı
+> dosyada); paylaşılan mantık varsa `IOtpService` örneğindeki gibi ayrı bir servise çıkarılır.
 - [ ] `IQrLoginService` + `QrLoginService`: `GenerateAsync` (token+hash+pairingCode+expiry), `ScanAsync`
       (Pending→Scanned, UserId set), `ConfirmAsync`/`DenyAsync` (sahiplik kontrolü), `GetStatusAsync`
       (Confirmed→ITokenService ile token üret→Consumed'a geçir, tek seferlik döndür)
@@ -84,6 +111,25 @@
 - [ ] ➜ **API Yol Haritası'na işle**
 > **Not:** `SecurityLog` (QrLoginConfirmed/QrLoginDenied) entegrasyonu A-03'teki auth akışlarıyla aynı
 > sebeple A-04'ten sonra eklenir (bkz. A-03'ün notu).
+
+### A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu ⬜
+**Referans:** REFERENCE/SECURITY.md, `ErrorMessages.cs` (mevcut hata mesajı lokalizasyon deseni)
+> **Neden ayrı task:** A-03'ün 13 `MessageResponse` metni (ör. "OTP gönderildi.", "Hesabınız
+> silindi...") şu an hardcode Türkçe — kullanıcı doğrudan görüyor (web/mobil bunu aynen
+> gösteriyor), bu yüzden log/DB sabitleri gibi İngilizce kalması gereken bir şey DEĞİL, "istemci
+> mesajı dile göre kalır" mimari kararının kapsamına giriyor. Hata mesajları zaten
+> `ErrorMessages.Resolve(code, language)` + `RequestLanguageResolver` (`Accept-Language`) ile
+> çözülüyor; başarı mesajları bu sisteme hiç girmemiş. MediatR CQRS refactor'u sırasında (2026-07-07)
+> fark edildi, kapsamı büyüteceği için o refactor'dan ayrı bir task olarak bırakıldı.
+- [ ] Her `MessageResponse`'a bir kod ekle (ör. `"OTP_SENT"`, `"ACCOUNT_DELETED"`) — `ErrorMessages.cs`
+      deseniyle aynı: sabit dosyada dil→kod→metin sözlüğü (en az tr+de, İngilizce YAGNI ile ertelenebilir)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] 13 Command Handler'ın `MessageResponse` üretim noktalarını kod+`RequestLanguageResolver`
+      çözümüne geçir (`ValidationFilter`'ın zaten yaptığı dil çözme mantığıyla aynı desen)
+- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] **Birim testleri:** ilgili handler testlerine dil parametresi verildiğinde doğru dilde
+      mesaj döndüğünü doğrulayan senaryolar eklenir
+- [ ] ➜ **API Yol Haritası'na işle**
 
 ### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md

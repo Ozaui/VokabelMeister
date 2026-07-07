@@ -11,9 +11,9 @@
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
-namespace WordLearner.Infrastructure.Data.Configurations;
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
 
 public class UserConfiguration : IEntityTypeConfiguration<User>
 {

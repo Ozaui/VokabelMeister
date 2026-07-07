@@ -9,21 +9,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using FluentValidation;
-using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
 
-public class ForgotPasswordRequestValidator : AbstractValidator<ForgotPasswordRequest>
+public class ForgotPasswordCommandValidator : AbstractValidator<ForgotPasswordCommand>
 {
-    public ForgotPasswordRequestValidator()
+    public ForgotPasswordCommandValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
     }
 }
 
-public class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequest>
+public class ResetPasswordCommandValidator : AbstractValidator<ResetPasswordCommand>
 {
-    public ResetPasswordRequestValidator()
+    public ResetPasswordCommandValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
         RuleFor(x => x.OtpCode).ValidOtpCode();

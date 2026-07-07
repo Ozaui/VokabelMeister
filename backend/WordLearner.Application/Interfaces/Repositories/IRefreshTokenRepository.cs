@@ -8,7 +8,7 @@
 // BAĞIMLILIKLAR: IRepository<T>, WordLearner.Domain.Entities.RefreshToken.
 // ─────────────────────────────────────────────────────────────────────────────
 
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Interfaces.Repositories;
 

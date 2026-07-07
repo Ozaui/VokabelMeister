@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<!--
+  AMAÇ: A-03.1 QR Kod ile Giriş — web/desktop tarafın ürettiği bir QR oturumunun
+        mobil cihazda taranıp onaylanması sonucu A-03'teki ITokenService ile
+        token üretimine bağlanması.
+  NEDEN: QR girişi ayrı bir kimlik doğrulama sistemi değil, A-03'e bağımlı yeni bir
+        "kimliği kanıtlama yöntemi" (bkz. REFERENCE/SECURITY.md §1.3) — bu yüzden
+        A-03 tamamlandıktan sonra, ayrı bir sayfada işlenir (bkz. _TASLAK.html
+        "✂️ BÜYÜK ALT-GÖREV = AYRI DOSYA" notu).
+  BAĞIMLILIKLAR: style.css, render.js.
+-->
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Yol Haritası — A-03.1 QR Kod ile Giriş</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="logo">🗺️</span>
+  <div><strong>VokabelMeister</strong> <small>API Yol Haritası</small></div>
+  <span class="sp"></span>
+  <a class="back" href="index.html">← Tüm API'lar</a>
+</div>
+
+<div class="wrap"><div id="content"></div></div>
+
+<script>
+window.API = {
+  id: 'qr-login',
+  faz: 'A-03.1',
+  metot: '-',
+  yol: '/auth/qr/*',
+  auth: 'Anonim + JWT',
+  baslik: 'QR Kod ile Giriş',
+  durum: 'wip',
+  ozet: 'Web/desktop tarafın ürettiği bir QR oturumunun mobil cihazda taranıp onaylanması sonucu A-03\'teki ITokenService ile token üretimine bağlandığı akış. Şu an yalnızca veri modeli (entity + config + migration) tamamlandı; Command/Handler + Controller adımları henüz yazılmadı.',
+  adimlar: [
+    {
+      num: 1, tur: 'enum',
+      baslik: 'QrLoginStatus.cs', dosya: 'Domain/Enums/Auth/QrLoginStatus.cs',
+      aciklama: 'Enum (enumeration) nedir: bir alanın alabileceği değerleri sabit, isimlendirilmiş bir listeyle sınırlayan C# yapısıdır. Status alanı serbest bir string ("beklemede", "onaylandı" gibi) olsaydı, birisi kod içinde "Onaylandı" ile "onaylandı" yazabilir, derleyici bunu yakalamaz, hata ancak DB\'de veya production\'da fark edilirdi. Enum kullanınca derleyici geçersiz bir değeri (ör. yazım hatası) daha yazarken engeller. Neden bu 6 değer seçildi: QR ile giriş akışında aynı kaydı 3 farklı taraf (web QR üretir, mobil tarar/onaylar, web tekrar tekrar "durum ne oldu" diye sorar/polling) farklı anlarda okuyup güncelliyor — yalnızca "onaylandı mı: evet/hayır" gibi bir bool olsaydı, "hiç taranmadı" ile "tarandı ama henüz onaylanmadı" durumları ayırt edilemezdi; bu da güvenlik açısından tehlikelidir (ör. süresi dolmuş bir oturumu tekrar aktif gibi göstermek). Neden entity\'den önce yazıldı: aşağıdaki QrLoginSession.Status alanı bu enum\'un tipini kullanıyor — C#\'ta bir tipi kullanabilmek için önce onun tanımlanmış olması gerekir, bu yüzden yazım sırası her zaman enum → entity.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// QrLoginStatus.cs
+//
+// AMAÇ: QrLoginSession kaydının hangi aşamada olduğunu gösteren durum enum'u.
+// NEDEN: QR ile giriş akışı (generate→scan→confirm/deny→status) 4 farklı client'ın
+//        (web, mobil, polling) aynı kaydı farklı anlarda okuyup yazması üzerine kurulu;
+//        bu enum olmadan "şu an hangi adımdayız" sorusu güvenli şekilde cevaplanamaz.
+// BAĞIMLILIKLAR: Yok — saf C# enum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Enums.Auth;
+
+public enum QrLoginStatus
+{
+    // AMAÇ: Oturum oluşturuldu, henüz hiçbir mobil cihaz taramadı.
+    Pending,
+
+    // AMAÇ: Mobil cihaz QR'ı taradı, kullanıcı henüz onaylamadı/reddetmedi.
+    Scanned,
+
+    // AMAÇ: Kullanıcı mobil cihazda girişi onayladı — token üretimi bekleniyor.
+    Confirmed,
+
+    // AMAÇ: Web tarafı token'ları bir kez okudu; oturum artık tekrar kullanılamaz.
+    Consumed,
+
+    // AMAÇ: Kullanıcı mobil cihazda girişi reddetti.
+    Denied,
+
+    // AMAÇ: Oturum süresi (ExpiresAt) doldu, hiçbir işlem yapılmadan geçersizleşti.
+    Expired,
+}`
+    },
+    {
+      num: 2, tur: 'entity',
+      baslik: 'QrLoginSession.cs', dosya: 'Domain/Entities/Auth/QrLoginSession.cs',
+      aciklama: 'Entity nedir: EF Core\'un bir veritabanı tablosuyla birebir eşlediği sıradan bir C# sınıfı — her property bir kolona karşılık gelir. Entity\'nin kendisi hiç SQL barındırmaz; "hangi kolon ne kadar uzun, hangi alan unique" gibi kurallar ayrı bir Configuration sınıfında (adım 4) yazılır, entity yalnızca "veride hangi bilgiler var" sorusuna cevap verir. Bu entity DATABASE_SCHEMA/Auth.md\'deki QrLoginSessions şemasının kod karşılığıdır. İki tasarım kararı: (1) UserId neden nullable (int?) — bir oturum ilk oluştuğunda (Pending) web tarafı henüz kimin taradığını bilmez, yalnızca mobil cihaz QR\'ı taradığında (Scanned) bu alan doldurulur; "henüz bilinmiyor" durumunu ifade etmenin C#\'taki yolu nullable yapmaktır. (2) User navigation neden tek yönlü — User sınıfında "bu kullanıcının QR oturumları" diye bir liste YOK, çünkü hiçbir ekran şu an böyle bir listeyi göstermiyor (YAGNI: olmayan bir ihtiyaç için önceden kod yazmak, kullanılmayan karmaşıklık ekler ve bakımı zorlaştırır) — ihtiyaç doğarsa tek satırla eklenebilir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// QrLoginSession.cs
+//
+// AMAÇ: "QR kod ile giriş" akışının tek bir denemesini tutan kayıt.
+// NEDEN: QR girişi ayrı bir kimlik doğrulama sistemi değildir — web/desktop tarafın
+//        ürettiği bir oturumu, mobil cihazın taraması ve onaylaması sonucunda
+//        A-03'te yazılan ITokenService'e bağlar (bkz. REFERENCE/SECURITY.md §1.3).
+//        Tek kullanımlıktır: Confirmed durumu bir kez okunduktan sonra Consumed'a
+//        geçer, token'lar tekrar döndürülmez.
+// BAĞIMLILIKLAR: BaseEntity, QrLoginStatus enum, User (N:1, opsiyonel ilişki).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Domain.Entities.Auth;
+
+public class QrLoginSession : BaseEntity
+{
+    // AMAÇ: Ham QR token'ının SHA-256 hash'i. Plaintext asla saklanmaz.
+    public string QrTokenHash { get; set; } = string.Empty;
+
+    // AMAÇ: Web ve mobil ekranda yan yana gösterilen 4 haneli görsel karşılaştırma kodu.
+    // NEDEN: TokenHash yalnızca DB sızıntısına karşı korur; PairingCode ise bir saldırganın
+    //        kurbanı kendi QR'ını taratmaya kandırdığı relay/phishing saldırısına karşı
+    //        bağımsız bir savunma katmanıdır (kodlar görsel olarak eşleşmez).
+    public string PairingCode { get; set; } = string.Empty;
+
+    // AMAÇ: Oturumun şu anki aşaması (Pending→Scanned→Confirmed→Consumed, veya Denied/Expired).
+    public QrLoginStatus Status { get; set; } = QrLoginStatus.Pending;
+
+    // AMAÇ: Oturumu tarayıp onaylayan/reddeden kullanıcı. Yalnızca Scanned'e geçince set edilir.
+    public int? UserId { get; set; }
+
+    // AMAÇ: Navigation property — EF Core Include() ile kullanıcı bilgisine erişim sağlar.
+    // NEDEN: Tek yönlü ilişki — User tarafında karşılık gelen bir koleksiyon eklenmedi çünkü
+    //        şu an hiçbir akış "kullanıcının QR oturumları" listesini istemiyor (YAGNI).
+    public User? User { get; set; }
+
+    // AMAÇ: Taramayı yapan cihazın IP adresi — audit ve onay ekranında karşılaştırma amaçlı.
+    public string? RequesterIp { get; set; }
+
+    // AMAÇ: Taramayı yapan cihazın bilgisi (user-agent vb.) — mobil onay ekranında gösterilir.
+    public string? RequesterDeviceInfo { get; set; }
+
+    // AMAÇ: Mobil cihazın QR'ı taradığı an (UTC). Taranmadıysa null.
+    public DateTime? ScannedAt { get; set; }
+
+    // AMAÇ: Kullanıcının girişi onayladığı an (UTC). Onaylanmadıysa null.
+    public DateTime? ConfirmedAt { get; set; }
+
+    // AMAÇ: Oturumun geçerlilik süresinin dolacağı an (UTC).
+    public DateTime ExpiresAt { get; set; }
+}`
+    },
+    {
+      num: 3, tur: 'config',
+      baslik: 'WordLearnerDbContext.cs (DbSet eklendi)', dosya: 'Infrastructure/Data/WordLearnerDbContext.cs',
+      aciklama: 'DbContext/DbSet nedir: DbContext, uygulamanın veritabanıyla konuştuğu tek merkezi kapı; her `DbSet<T>` property EF Core\'a "bu tip artık sorgulanabilir/kaydedilebilir bir tablo" der. Bu satır eklenmeden bir entity\'ye asla `_context.QrLoginSessions.Where(...)` gibi bir sorgu yazılamaz — EF Core onu hiç tanımaz, derleme bile geçmez. Bu yüzden her yeni entity için DbContext\'e bir DbSet eklemek zorunludur (A-03\'te Users/RefreshTokens eklenirken izlenen kalıp burada tekrarlanıyor). Dosyanın geri kalanı (soft delete global filtresi, UpdatedAt otomasyonu) neden hiç değişmedi: OnModelCreating zaten `ApplyConfigurationsFromAssembly` ile assembly\'deki TÜM `IEntityTypeConfiguration<T>` sınıflarını otomatik tarayıp buluyor — yeni bir Configuration dosyası (adım 4) eklemek bu taramayı hiç etkilemiyor, yalnızca "bu entity de var" demek (DbSet satırı) yeterli. Her API tek başına baştan sona okunabilir olsun diye tam dosya burada da gösteriliyor.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// WordLearnerDbContext.cs
+//
+// AMAÇ: EF Core'un veritabanıyla konuştuğu merkezi DbContext sınıfı.
+// NEDEN: Tüm entity konfigürasyonlarını tek yerden yükler; soft delete global filtresi
+//        ile silinmiş kayıtların sorgulara otomatik karışmasını önler; SaveChangesAsync
+//        override'ı UpdatedAt alanını elle set etme zorunluluğunu ortadan kaldırır.
+// BAĞIMLILIKLAR: Microsoft.EntityFrameworkCore, WordLearner.Domain.Entities.BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Infrastructure.Data;
+
+public class WordLearnerDbContext : DbContext
+{
+    // AMAÇ: DI tarafından enjekte edilen seçenekleri (connection string vb.) taban sınıfa iletir.
+    // NEDEN: EF Core'un standart constructor kalıbı; farklı ortamlar (dev/prod/test) için
+    //        farklı seçenek setleri enjekte edilebilir.
+    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options)
+        : base(options) { }
+
+    // AMAÇ: Kullanıcı hesapları (A-03 — Auth API).
+    public DbSet<User> Users => Set<User>();
+
+    // AMAÇ: Kullanıcıların refresh token geçmişi (A-03 — Auth API).
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+##NEW##    // AMAÇ: QR kod ile giriş oturumları (A-03.1 — QR Kod ile Giriş).
+##NEW##    public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // AMAÇ: Infrastructure assembly'sindeki tüm IEntityTypeConfiguration<T> sınıflarını
+        //       otomatik olarak tarar ve uygular.
+        // NEDEN: Her entity için tek tek modelBuilder.ApplyConfiguration(...) çağırmak yerine
+        //        assembly taraması yaparız; yeni entity eklendikçe bu satır değişmez.
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+        // AMAÇ: BaseEntity'den türeyen tüm entity'lere global soft delete filtresi uygular.
+        // NEDEN: IsDeleted == true olan kayıtlar hiçbir sorguda görünmez; her sorguda
+        //        .Where(e => !e.IsDeleted) yazmak zorunda kalmayız.
+        //        IgnoreQueryFilters() ile gerektiğinde (admin silinen kayıtları görme) bypass edilir.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                var parameter = System.Linq.Expressions.Expression.Parameter(
+                    entityType.ClrType,
+                    "e"
+                );
+                var property = System.Linq.Expressions.Expression.Property(
+                    parameter,
+                    nameof(BaseEntity.IsDeleted)
+                );
+                var notDeleted = System.Linq.Expressions.Expression.Not(property);
+                var lambda = System.Linq.Expressions.Expression.Lambda(notDeleted, parameter);
+                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+            }
+        }
+
+        base.OnModelCreating(modelBuilder);
+    }
+
+    // AMAÇ: Her kayıt güncellendiğinde UpdatedAt alanını otomatik olarak UTC şimdiki zamana set eder.
+    // NEDEN: Servis veya repository katmanında her entity.UpdatedAt = DateTime.UtcNow yazmak
+    //        kod tekrarına yol açar; bu override ile merkezi olarak yönetilir.
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Modified)
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+
+            // NEDEN: Yeni eklenen entity'lerde CreatedAt varsayılan olarak DateTime.UtcNow ile
+            //        başlatılıyor (BaseEntity'de); UpdatedAt ise burada dokunulmadığı için
+            //        insert sonrası null kalır — "hiç güncellenmedi" bilgisini korur.
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+}`
+    },
+    {
+      num: 4, tur: 'config',
+      baslik: 'QrLoginSessionConfiguration.cs', dosya: 'Infrastructure/Data/Configurations/Auth/QrLoginSessionConfiguration.cs',
+      aciklama: '`IEntityTypeConfiguration<T>` (Fluent API) nedir: bir entity\'nin veritabanı tablosuna NASIL eşleneceğini (kolon uzunluğu, hangi alan zorunlu, index, foreign key davranışı, CHECK constraint) C# koduyla anlatma yöntemi. Bunu entity sınıfının kendisine [MaxLength(88)] gibi attribute\'larla yazmak yerine ayrı bir dosyada toplamamızın sebebi: CHECK constraint gibi bazı kurallar attribute ile hiç ifade edilemez, Fluent API bunun tek yolu. Neden index eklendi: `HasIndex(QrTokenHash)` — her scan/confirm/deny/status isteği bu alana göre satır arar; index olmadan EF Core/SQL Server tablodaki HER satırı tek tek kontrol etmek zorunda kalır (tam tablo taraması), tablo büyüdükçe bu çok yavaşlar. `HasIndex(ExpiresAt)` da aynı sebeple, süresi dolmuş oturumları ayıklayan sorgular için. SET NULL neden CASCADE değil (RefreshTokenConfiguration.cs\'te CASCADE kullanılmıştı): orada kullanıcı silinince token\'larının da silinmesi mantıklıydı, ama burada kullanıcı silinse bile "kim, ne zaman, hangi IP\'den QR girişi denedi" audit kaydının kalması isteniyor — bu yüzden UserId sütunu null\'a çekiliyor (SET NULL), satırın kendisi silinmiyor. CHECK constraint neden var: Status C# tarafında enum olsa da veritabanında düz bir metin (nvarchar) olarak saklanıyor; biri EF Core\'u atlayıp doğrudan SQL ile "Foo" gibi geçersiz bir değer yazmaya kalkarsa, bu kısıt veritabanı seviyesinde bunu reddeder — enum\'un derleme zamanında verdiği güvenliğin veritabanı tarafındaki son savunma hattı.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// QrLoginSessionConfiguration.cs
+//
+// AMAÇ: QrLoginSession entity'sinin EF Core tablo eşlemesini tanımlar.
+// NEDEN: QrTokenHash üzerinde her scan/status isteğinde arama yapılır; ExpiresAt
+//        üzerindeki index süresi dolmuş kayıtları ayrıştıran sorguları hızlandırır
+//        (temizlik job'ı yok — süre lazy olarak okuma anında yorumlanır, bkz. TASK).
+//        UserId nullable olduğu için (henüz taranmamış oturumlarda null) FK CASCADE
+//        yerine SET NULL kullanılır — kullanıcı silinse bile oturum kaydı audit için kalır.
+// BAĞIMLILIKLAR: EF Core, QrLoginSession entity, QrLoginStatus enum, User entity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
+
+public class QrLoginSessionConfiguration : IEntityTypeConfiguration<QrLoginSession>
+{
+    public void Configure(EntityTypeBuilder<QrLoginSession> builder)
+    {
+        builder.Property(q => q.QrTokenHash).HasMaxLength(88).IsRequired();
+        builder.Property(q => q.PairingCode).HasMaxLength(4).IsRequired();
+
+        // NEDEN: Enum DB'de okunabilir bir string olarak tutulur (sayısal index'e bağımlı kalmaz).
+        builder
+            .Property(q => q.Status)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(QrLoginStatus.Pending);
+
+        builder.Property(q => q.RequesterIp).HasMaxLength(45);
+        builder.Property(q => q.RequesterDeviceInfo).HasMaxLength(500);
+
+        // NEDEN: Her scan/confirm/deny/status isteğinde token hash'e göre arama yapılır.
+        builder.HasIndex(q => q.QrTokenHash);
+        // NEDEN: Süresi dolmuş oturumları ayrıştıran sorgular bu index'i kullanır.
+        builder.HasIndex(q => q.ExpiresAt);
+
+        builder
+            .HasOne(q => q.User)
+            .WithMany()
+            .HasForeignKey(q => q.UserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // NEDEN: Status C# tarafında enum olsa da DB'de string tutulduğu için,
+        //        geçersiz bir değer yazılmasını DB seviyesinde engelleyen son savunma hattı.
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint(
+                "CK_QrLoginSessions_Status",
+                "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')"
+            );
+        });
+    }
+}`
+    },
+    {
+      num: 5, tur: 'config',
+      baslik: 'Migration: AddQrLoginSessions', dosya: 'Infrastructure/Data/Migrations/20260707144550_AddQrLoginSessions.cs',
+      aciklama: 'Migration nedir: EF Core\'un `Up` (uygula) ve `Down` (geri al) metotlarıyla, C# tarafındaki entity/config değişikliklerini gerçek SQL DDL komutlarına (CREATE TABLE, CREATE INDEX...) çeviren, sırayla numaralanan ve versiyonlanan bir dosya. Bunun var olma sebebi: veritabanı şemasının kod ile birlikte, adım adım ve geri alınabilir şekilde evrilmesini sağlamak — başka bir geliştirici (veya bir sunucu) projeyi ilk kez çektiğinde tüm migration\'ları sırayla çalıştırarak (`dotnet ef database update`) aynı veritabanı şemasına tek komutla ulaşabilir, elle "şu tabloyu oluştur, şu index\'i ekle" diye SQL yazmaz. Bu dosya ELLE YAZILMAZ: `dotnet ef migrations add AddQrLoginSessions` komutu adım 2 (entity) ve adım 4\'teki (config) bilgileri okuyup bu kodu kendisi üretir; bizim işimiz üretilen SQL\'in beklediğimizle eşleştiğini gözden geçirmek. `dotnet ef database update` ise bu dosyayı gerçekten çalıştırıp VokabelMeisterDB\'ye uygular — bu komuttan ÖNCE C# tarafında yalnızca bir "niyet" vardır, sonrasında tablo gerçekten var olur (QrLoginSessions tablosu, CHECK constraint, 3 index gerçek DB\'de doğrulandı). "migration" bu yüzden ayrı bir `tur` değil, `config`\'in bir uzantısı olarak işlendi — elle yazılan bir kod parçası değil, önceki adımlardan araç tarafından üretilen bir çıktı.',
+      kod: `using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace WordLearner.Infrastructure.Data.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddQrLoginSessions : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "QrLoginSessions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    QrTokenHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: false),
+                    PairingCode = table.Column<string>(type: "nvarchar(4)", maxLength: 4, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "Pending"),
+                    UserId = table.Column<int>(type: "int", nullable: true),
+                    RequesterIp = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
+                    RequesterDeviceInfo = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    ScannedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ConfirmedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "int", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "int", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_QrLoginSessions", x => x.Id);
+                    table.CheckConstraint("CK_QrLoginSessions_Status", "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')");
+                    table.ForeignKey(
+                        name: "FK_QrLoginSessions_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_QrLoginSessions_ExpiresAt",
+                table: "QrLoginSessions",
+                column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_QrLoginSessions_QrTokenHash",
+                table: "QrLoginSessions",
+                column: "QrTokenHash");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_QrLoginSessions_UserId",
+                table: "QrLoginSessions",
+                column: "UserId");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "QrLoginSessions");
+        }
+    }
+}`
+    }
+  ],
+  // Aynı katmandaki (backend↔backend) kardeş API sayfası — A-03'e bağımlı olduğu için bağlanır.
+  relatedRefs: [
+    { dosya: 'A-03_auth-api.html', baslik: 'A-03 — Auth API' }
+  ],
+  // D-03.1 (Web) ve E-05.1 (Mobil) henüz yazılmadı; yazılınca buraya eklenecek.
+  frontendRefs: []
+};
+</script>
+<script src="render.js"></script>
+</body>
+</html>

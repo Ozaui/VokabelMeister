@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅ tamamlandı; A-03 Auth API 🔄 devam ediyor — `AuthController` (13 endpoint) + `AuthService` + tüm bağımlılıkları yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 50 yeni birim testi (61/61 toplam yeşil) yazıldı; sırada yalnızca A-03'ün wiki senkronizasyonu son adımı kaldı). A-03'ün ardından **A-03.1 (QR Kod ile Giriş)** planlandı, henüz kod yok. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST). Sırada **A-03.1 (QR Kod ile Giriş)** var, henüz kod yok; ayrıca **A-03.2 (Auth başarı mesajlarının lokalizasyonu)** yeni bir follow-up task olarak eklendi (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -35,7 +35,7 @@
 - [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 10 birim test (hepsi yeşil, İngilizce isimlendirme)
 - [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
 
-### Yazılmış Kod Düğümleri (A-03 — devam ediyor)
+### Yazılmış Kod Düğümleri (A-03 — tamamlandı)
 - `User`/`RefreshToken` entity + `OtpPurpose` enum, `UserConfiguration`/`RefreshTokenConfiguration`
   (Fluent API), `AddUserAndRefreshToken` migration (VokabelMeisterDB'ye uygulandı) — detay bir kod
   sayfası yerine [[Auth_Domain]]'de (şema açıklaması zaten birebir bu koda karşılık geliyor) ve
@@ -51,22 +51,35 @@
   bundan türeyecek.
 - `IUserRepository`/`UserRepository`, `IRefreshTokenRepository`/`RefreshTokenRepository`,
   `IEmailService`/`DevEmailService`, `IGoogleTokenValidator`/`GoogleTokenValidator`,
-  `IAppleTokenValidator`/`AppleTokenValidator` (JWKS tabanlı, elle RS256 doğrulama) — hepsi
-  `IAuthService`/`AuthService`'in bağımlılıkları, ayrı wiki sayfası yok, tam hâli roadmap'te.
-- **`IAuthService`/`AuthService` tamamlandı** — 13 akışın (register/login 2-adım/Google/Apple/
-  refresh/logout/forgot-reset-password/delete-account) tüm iş mantığı. Öne çıkan kararlar: timing
-  attack önlemi (`FakePasswordHashForTiming`), grace period kurtarma (`accountWasRecovered`),
-  Google/Apple account linking, Token Family Pattern replay tespiti.
-- **FluentValidation validator'ları** (10 dosya, `Application/Validators/Auth/`) — her kural hem
-  sabit Türkçe `WithMessage` (log) hem `WithErrorCode` (istemciye giden, [[ErrorMessages]]'ten
-  dile göre çözülür) taşır.
-- **`AuthController` (13 endpoint) tamamlandı** — `ValidationFilter` (yeni, global action filter,
-  `API/Filters/`) DI'a kayıtlı `IValidator<T>`'leri otomatik çalıştırır; `RequestLanguageResolver`
-  (yeni, `API/Common/`) `Accept-Language` çıkarma mantığını `Middleware` ile paylaşır. `Program.cs`'e
-  rate limiting eklendi (genel 100/dk, 10/dk anonim — "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme
-  sayaçları SecurityLog'a bağımlı olduğu için A-04 sonrasına bırakıldı). Gerçek bir sunucu
-  çalıştırılıp curl ile uçtan uca doğrulandı: register→login→verify-otp gerçek token döndü,
-  Almanca `Accept-Language` ile hata mesajı gerçekten Almanca döndü. Sırada birim testleri.
+  `IAppleTokenValidator`/`AppleTokenValidator` (JWKS tabanlı, elle RS256 doğrulama) — hepsi Auth
+  Command Handler'larının bağımlılıkları, ayrı wiki sayfası yok, tam hâli roadmap'te.
+- **`IOtpService`/`OtpService`** (OTP üretimi/doğrulanması/temizlenmesi) ve
+  **`ILoginCompletionService`/`LoginCompletionService`** (OTP/Google/Apple girişlerinin ortak son
+  adımı — grace period kurtarma, giriş istatistikleri, token üretimi) — birden fazla Command
+  Handler'ın paylaştığı, MediatR handler'ların birbirini çağıramaması nedeniyle çıkarılan servisler.
+- **13 Auth Command+Handler'ı tamamlandı** (`Application/Features/Auth/`, MediatR CQRS —
+  register/login 2-adım/Google/Apple/refresh/logout/forgot-reset-password/delete-account). Her
+  Command kendi dosyasında Handler'ıyla birlikte (dikey dilim). Öne çıkan kararlar: timing attack
+  önlemi (`FakePasswordHashForTiming`, Login ve ConfirmAccountDeletion handler'larında bilinçli
+  olarak ikişer kez tekrarlanan küçük bir sabit — paylaşılan servise çıkarılmadı), grace period
+  kurtarma (`accountWasRecovered`), Google/Apple account linking, Token Family Pattern replay
+  tespiti. `RefreshCommand`/`LogoutCommand` ayrı tipler — eskiden tek bir `RefreshRequest` DTO'sunu
+  paylaşırlardı, ama MediatR'da bir `IRequest<T>` tek dönüş tipine bağlı olduğundan (Refresh
+  `AuthTokenResponse`, Logout dönüşsüz) ayrılmaları gerekti.
+- **FluentValidation validator'ları** (`Application/Validators/Auth/`, Command tiplerini doğrular)
+  — her kural hem sabit Türkçe `WithMessage` (log) hem `WithErrorCode` (istemciye giden,
+  [[ErrorMessages]]'ten dile göre çözülür) taşır. `ValidationFilter` tip-agnostik çalıştığı için
+  (controller action parametresinin runtime tipine göre `IValidator<T>` arar) Command'ların Request
+  DTO'larının yerini almasıyla hiçbir değişiklik gerekmedi.
+- **`AuthController` (13 endpoint) tamamlandı** — `IMediator.Send(command)` ile çağırır, iş mantığı
+  içermez. `ValidationFilter` (global action filter, `API/Filters/`) DI'a kayıtlı `IValidator<T>`'leri
+  otomatik çalıştırır; `RequestLanguageResolver` (`API/Common/`) `Accept-Language` çıkarma mantığını
+  `Middleware` ile paylaşır. `Program.cs`'e rate limiting eklendi (genel 100/dk, 10/dk anonim —
+  "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme sayaçları SecurityLog'a bağımlı olduğu için A-04
+  sonrasına bırakıldı). Gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı:
+  register→verify-email→login→verify-otp→refresh→logout gerçek token/204 döndü. 72/72 birim testi
+  yeşil (`WordLearner.Tests/Features/Auth/` — 13 handler test dosyası, `Services/` — `OtpServiceTests`
+  + `LoginCompletionServiceTests`). Detay → On yedinci INGEST.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
@@ -96,7 +109,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, sıradaki A-03) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, sıradaki A-03.1) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -392,3 +405,128 @@ veya Denied/Expired) `DATABASE_SCHEMA/Auth.md`'ye eklendi. 5 yeni endpoint (`REF
 kod yazılmadı (yalnızca tasarım/dokümantasyon) — mevcut `User`/`RefreshToken`/migration kodunda hiçbir
 değişiklik gerekmedi, ikisi de tamamen ek/yeni. [[Auth_Domain]], [[Guvenlik_Politikalari]],
 [[Sistem_Mimarisi]] güncellendi.*
+
+*On yedinci INGEST (2026-07-07, aynı gün) — A-03'ün MediatR CQRS'e refactor'ü: A-02'de MediatR paketi
+kurulup DI'a kaydedilmişti ("ileride lazım olur" varsayımıyla) ama A-03 yazılırken hiç kullanılmadı —
+`AuthController` doğrudan `IAuthService`'i çağırdı. Kullanıcı bu tutarsızlığı fark etti ("MediatR'ı
+neden yazıp kullanmadık?") ve A-03'ün MediatR best-practice ile en baştan yazılıyormuş gibi retrofit
+edilmesini istedi — A-03 çalışıyordu/doğruydu, bu saf bir mimari tutarlılık kararıydı, bug fix değil.
+**Tasarım kararları:** (1) 13 endpoint = 13 Command (Auth'ta hepsi state değiştiriyor, Query yok),
+her biri kendi dosyasında Command record + Handler class (dikey dilim, `Application/Features/Auth/`).
+(2) Paylaşılan mantık iki yeni servise çıktı — handler'lar MediatR üzerinden birbirini çağıramadığı
+için: `IOtpService`/`OtpService` (OTP üretimi/doğrulanması/temizlenmesi, 8 handler'ın paylaştığı) ve
+`ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple girişlerinin ortak son adımı +
+`ExpiresInSeconds()` — bu ikincisini `RefreshCommandHandler` da paylaşıyor, `CompleteLoginAsync`
+çağırmadan). (3) **En kritik tasarım sorunu:** `RefreshRequest` eskiden hem Refresh (`AuthTokenResponse`
+döner) hem Logout (dönüşsüz) tarafından paylaşılıyordu — MediatR'da bir `IRequest<T>` tek dönüş tipine
+bağlı olduğu için bu artık mümkün değildi. Çözüm: `RefreshCommand`/`LogoutCommand` ayrı tipler oldu,
+ortak validator dosyası (`RefreshRequestValidator.cs`) silinip yerine 2 sınıflı
+`RefreshAndLogoutValidators.cs` + paylaşılan kuralı taşıyan yeni `RefreshTokenRuleExtensions.cs`
+geldi. (4) `FakePasswordHashForTiming` (Login+ConfirmAccountDeletion, 2 kullanım) ve
+`AccountDeletionGraceDays` (1 kullanım) bilinçli olarak paylaşılan servise çıkarılmadı — aşırı
+soyutlama olmasın diye, ilgili handler'da kaldı. **Sonuç — sıfır davranış değişikliği:** `IAuthService`/
+`AuthService` silindi, 13 Command+Handler dosyası + `OtpService`/`LoginCompletionService` yazıldı,
+`AuthController` artık yalnızca `IMediator.Send(command)` çağırıyor (ClientIp/UserId gibi gövdede
+olmayan veriler `command with { ... }` ile model binding sonrası ekleniyor). `AuthServiceTests.cs`
+(39 test) 13 handler test dosyası + `OtpServiceTests`/`LoginCompletionServiceTests`'e bölündü (72
+test toplamda, kapsam kaybı yok — grace period/anonimleştirme testleri artık 3 kez değil tek yerde,
+`LoginCompletionServiceTests`'te). `dotnet build`/`dotnet test` (72/72 yeşil) + gerçek sunucuyla
+uçtan uca curl doğrulaması (register→verify-email→login→verify-otp→refresh→logout, hepsi eski
+davranışla birebir) yapıldı. **Ayrıca fark edilen ayrı bir eksiklik:** `MessageResponse` metinleri
+(“OTP gönderildi.” vb.) hardcode Türkçe — hata mesajlarının aksine (`ErrorMessages`+`Accept-Language`)
+dile göre çözülmüyor; kullanıcı doğrudan görüyor, bu yüzden gerçek bir eksiklik (log/DB sabiti değil).
+Kapsamı büyüteceği için bu refactor'a dahil edilmedi, `A_admin_panel_backend.md`'ye yeni bir
+**A-03.2** task'ı olarak eklendi. **Etkilenen dosyalar:** `Application/Features/Auth/*` (13 yeni),
+`Application/Services/OtpService.cs`+`LoginCompletionService.cs` (+ arayüzleri, yeni),
+`Application/Validators/Auth/RefreshAndLogoutValidators.cs`+`RefreshTokenRuleExtensions.cs` (yeni,
+eski `RefreshRequestValidator.cs` silindi), diğer 6 validator dosyası (Command'a retarget),
+`Application/DTOs/Auth/*` (6 dosya silindi — Request yarısı Command'a taşındı), `AuthController.cs`,
+`ApplicationServiceExtensions.cs`, `IAuthService.cs`+`AuthService.cs` (silindi),
+`WordLearner.Tests/Features/Auth/*` (13 yeni test dosyası) + `Services/OtpServiceTests.cs`+
+`LoginCompletionServiceTests.cs` (yeni), eski `AuthServiceTests.cs` (silindi). Roadmap:
+`API_YOL_HARITASI/_TASLAK.html` (`tur` listesine `handler` eklendi), `A-03_auth-api.html` (36→63 adım,
+adım 25-26/27-39/40/41-42/45/49-63 yeni veya güncellendi, geri kalanı — 1-24, 30-31→43-44, 33→46,
+34-35→47-48 — birebir korundu, otomatik script ile üretilip diff doğrulandı). Doküman:
+`docs/TASK/A_admin_panel_backend.md` (A-03 checkbox'ları değişmedi — davranış regresyonu yok,
+yalnızca mimari not eklendi + yeni A-03.2), `docs/wiki/Backend/WordLearner_Application.md`,
+`ApplicationServiceExtensions.md`, `API_Yol_Haritasi_Sistemi.md`, `WordLearner_API.md`,
+`docs/wiki/Database/Auth_Domain.md`, `docs/wiki/Backend/AppException.md`,
+`docs/wiki/Standartlar/Teknik_Ozellikler.md` (MediatR/BCrypt/JWT/Google.Auth paket durumları
+güncellendi — "A-03'te eklenecek" artık "kurulu ve kullanımda").*
+
+*On sekizinci INGEST (2026-07-07, aynı gün) — AutoMapper retrofit'i: On yedinci INGEST'teki MediatR
+retrofit'iyle birebir aynı desen tekrar ortaya çıktı. A-02'de AutoMapper paketi kurulup DI'a
+kaydedilmişti ("ileride Entity↔DTO dönüşümü için Profile sınıfları eklenecek" varsayımıyla) ama
+A-03'ün MediatR'a taşınmış hâlinde de (on yedinci INGEST) hiç kullanılmadı — 13 Command Handler'ın
+hepsi Entity→DTO dönüşümünü elle yapıyordu. Kullanıcı bunu kontrol edip aynı YAGNI tutarsızlığını
+fark etti; farklı olarak burada "kaldır mı, kullan mı" gerçek bir seçimdi (MediatR'da kullanmamak
+mimari kayıptı, AutoMapper'da değildi — DTO'lar 3-5 alanlı, elle mapping zaten okunaklıydı). İki
+seçenek sunuldu (paket kaldırılsın / gerçekten kullanılsın); kullanıcı ikincisini seçti — paketi
+öğrenmek ve kullanmak istediğini belirtti. **Uygulama:** Repo'da gerçek Entity→DTO dönüşümü yalnızca
+iki yerde vardı: `RegisterCommandHandler` → `RegisterResponse(user.Id, user.Email, user.FirstName,
+user.CurrentLevel)` ve `LoginCompletionService`+`RefreshCommandHandler` → `AuthUserDto(user.Id,
+user.CurrentLevel)` (ikisi bağımsız, aynı satırı iki yerde tekrarlıyordu — `RefreshCommandHandler`
+`CompleteLoginAsync`'i çağırmadığı için). Geri kalan 9 handler yalnızca sabit `MessageResponse("...")`
+string'i döndüğü için (entity kaynaklı değil) AutoMapper'a konu olmadı — `AuthTokenResponse`'un
+tamamı da (token'lar+expiresIn+accountWasRecovered) tek kaynaktan gelmediği için elle inşa edilmeye
+devam ediyor, yalnızca içindeki `AuthUserDto` alt-nesnesi mapping'e taşındı. Yeni
+`Features/Auth/AuthProfile.cs` (`CreateMap<User,RegisterResponse>()`, `CreateMap<User,AuthUserDto>()`
+— alan adları birebir eşleştiği için `ForMember` gerekmedi) `ApplicationServiceExtensions`'taki
+mevcut `AddAutoMapper(applicationAssembly)` tarafından otomatik bulunuyor, DI değişikliği gerekmedi.
+Üç sınıfa (`RegisterCommandHandler`, `LoginCompletionService`, `RefreshCommandHandler`) `IMapper`
+enjekte edildi. Testler mock `IMapper` yerine gerçek `AuthProfile`'dan kurulmuş bir `IMapper`
+(`new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper()`) kullanacak şekilde
+güncellendi — bu hem handler'ı besliyor hem de profil konfigürasyonunun geçerli olduğunu (AutoMapper
+`AssertConfigurationIsValid` mantığına paralel) doğruluyor. **Sonuç — sıfır davranış değişikliği:**
+`dotnet build` (0 hata) + `dotnet test` (72/72 yeşil, test sayısı değişmedi). **Etkilenen dosyalar:**
+`Application/Features/Auth/AuthProfile.cs` (yeni), `RegisterCommand.cs`, `RefreshCommand.cs`,
+`Application/Services/LoginCompletionService.cs`, `WordLearner.Tests/Features/Auth/
+RegisterCommandHandlerTests.cs`+`RefreshCommandHandlerTests.cs`,
+`WordLearner.Tests/Services/LoginCompletionServiceTests.cs` (3 test dosyasının BAĞIMLILIKLAR
+yorumuna da AutoMapper eklendi — roadmap'le birebir diff karşılaştırması bu eksikliği ortaya
+çıkardı). Doküman: `docs/wiki/Backend/AuthProfile.md` (yeni), `ApplicationServiceExtensions.md`
+(AutoMapper artık "henüz kullanılmadı" değil, `AuthProfile`'a link), `Teknik_Ozellikler.md`
+(paket tablosu satırı güncellendi). **Roadmap:** Kullanıcı roadmap'in gerçek koddan sapmasını
+kabul etmedi ("api yol haritasını güncelle... bizim güncel apilarımız ile aynı olmalı tamamen tam
+olarak") — `API_YOL_HARITASI/A-03_auth-api.html` 63→64 adıma çıkarıldı: yeni adım 27 olarak
+`AuthProfile.cs` eklendi (27\'den itibaren tüm adımlar +1 kaydı, on yedinci INGEST\'teki
+36→63 genişlemesiyle aynı desen), adım 26/28/35/51/52/59'un (LoginCompletionService/
+RegisterCommand/RefreshCommand + 3 test dosyası) kod bloklarına AutoMapper notu ve gerçek kod
+işlendi. Doğrulama otomatikti: bir Node script `window.API.adimlar` dizisini `eval` ile ayrıştırıp
+her ilgili adımın `kod` alanını gerçek dosya içeriğiyle karakter karakter kıyasladı (6/6 `MATCH`)
+ve `num` dizisinin 1..64 ardışık olduğunu doğruladı.*
+
+*On dokuzuncu INGEST (2026-07-07, aynı gün) — [[API_Yol_Haritasi_Sistemi]]'ne iki seviyeli adım
+gruplama eklendi: A-03'ün 64 adımı tek düz akordiyon listesiydi, kullanıcı bunun okunamaz hâle
+geldiğini ve gelecekte A-03.1 (QR Kod ile Giriş, henüz yazılmadı — bkz. `TASK/A_admin_panel_backend.md`)
+eklendiğinde daha da büyüyeceğini fark etti. **Karar (kullanıcıya 3 seçenek sunuldu, "ayrı dosya +
+gruplama" seçildi):** iki bağımsız mekanizma birleştirildi — (1) **dosyalar arası şişme:** kendi
+entity/service/controller'ı olan büyük alt-görevler (ör. A-03.1) `adimlar[]`'a eklenmek yerine
+kendi `<faz>.<alt>_<id>.html` dosyasını açar, iki sayfa yeni `relatedRefs` alanıyla (aynı
+`frontendRefs` deseninde, çift yönlü) birbirine bağlanır — `_TASLAK.html`'e "✂️ BÜYÜK ALT-GÖREV =
+AYRI DOSYA" kuralı olarak yazıldı (ayırt edici soru: yeni entity/controller var mı? A-03.1 evet,
+gelecekteki A-03.2 mesaj lokalizasyonu hayır — o yüzden A-03.2 kendi dosyasını AÇMAYACAK, A-03'e
+16. bir `grup` olarak eklenecek); (2) **tek dosya içinde şişme:** `render.js`'e opsiyonel
+`adim.grup` (adımları bölüm başlığına ayırır) + `API.katmanlar` (`grup`'ları mimari katmana toplayan
+üst seviye, `[{ad, gruplar:[...]}]`) eklendi — ikisi de `kod` alanına DOKUNMAZ, yalnızca üstte bir
+İçindekiler kutusu ve adımların arasına başlık basar; kullanıcı ilk turda gruplamayı onayladıktan
+sonra "daha da kategorilendirebilir miyiz" diye sorunca `katmanlar` (2. seviye) de eklendi.
+**Uygulama:** `A-03_auth-api.html`'in 64 adımı 15 `grup`'a (Veri Modeli, Şifre Servisi, Token
+Servisi, DTO'lar, Hata Yönetimi, Repository'ler, E-posta & Sosyal Login Doğrulayıcılar, Paylaşılan
+Servisler, 13 Command+Handler, DI Kaydı, Validator'lar, Dil Çözümleme & Doğrulama Filtresi,
+Controller, Rate Limiting, Birim Testler), bu 15 grup da 4 `katman`'a (Domain & Altyapı,
+Application — Servisler, Application — CQRS, API & Test) bölündü — Python regex script'iyle her
+adımın `num: N, tur: 'X',` satırının SONUNA `grup: '...'` eklendi (tek satırlık ekleme, yeni satır
+açmadı), `katmanlar` dizisi `adimlar[]`'dan önce elle eklendi. **Doğrulama:** `node --check` (JS
+sözdizimi bozulmadı — bir `kod:` template literal'ı yanlışlıkla bozulsaydı `eval` anında patlardı),
+adım/grup/katman eşlemesi script ile çapraz kontrol edildi (15/15 grup + 15/15 katman eşleşti, ne
+eksik ne fazla), dosya 6370→6389 satır (+19, tam olarak eklenen `katmanlar` bloğu kadar — hiçbir
+`kod` bloğu satır kaymadı), A-02 (grup/katman kullanmayan sayfa) render çıktısı öncekiyle birebir
+aynı kaldı (geriye dönük uyumluluk). **Etkilenen dosyalar:** `API_YOL_HARITASI/render.js` (`slug()`,
+İçindekiler + `.step-group`/`.step-katman` render mantığı, `relatedRefs` bandı — hepsi opsiyonel,
+alan yoksa davranış değişmez), `style.css` (`.toc`, `.toc-katmanlar`, `.step-group`, `.step-katman`
+stilleri), `_TASLAK.html` (🗂️ ADIM GRUPLAMA, 🗃️ KATMAN GRUPLAMA, ✂️ BÜYÜK ALT-GÖREV, 🔗 İLGİLİ API
+kuralları eklendi), `A-03_auth-api.html` (`grup`+`katmanlar` eklendi, `kod` alanları değişmedi),
+`API_Yol_Haritasi_Sistemi.md` (yeni "Adım Gruplama" ve "İkinci Seviye: Katman Gruplama" bölümleri,
+63→64 adım düzeltmesi). A-03.1 henüz yazılmadığı için `relatedRefs` şu an boş — A-03.1 gerçekten
+yazıldığında iki yönlü doldurulacak.*

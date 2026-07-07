@@ -15,7 +15,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using WordLearner.Application.Services;
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Tests.Services;
 

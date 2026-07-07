@@ -9,21 +9,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using FluentValidation;
-using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
 
-public class GoogleLoginRequestValidator : AbstractValidator<GoogleLoginRequest>
+public class LoginWithGoogleCommandValidator : AbstractValidator<LoginWithGoogleCommand>
 {
-    public GoogleLoginRequestValidator()
+    public LoginWithGoogleCommandValidator()
     {
         RuleFor(x => x.IdToken).NotEmpty().WithMessage("Token must not be empty.").WithErrorCode("TOKEN_REQUIRED");
     }
 }
 
-public class AppleLoginRequestValidator : AbstractValidator<AppleLoginRequest>
+public class LoginWithAppleCommandValidator : AbstractValidator<LoginWithAppleCommand>
 {
-    public AppleLoginRequestValidator()
+    public LoginWithAppleCommandValidator()
     {
         RuleFor(x => x.IdentityToken)
             .NotEmpty()

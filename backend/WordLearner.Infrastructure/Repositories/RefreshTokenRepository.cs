@@ -9,7 +9,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Interfaces.Repositories;
-using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 using WordLearner.Infrastructure.Data;
 
 namespace WordLearner.Infrastructure.Repositories;

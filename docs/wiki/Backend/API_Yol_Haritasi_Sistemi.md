@@ -10,7 +10,7 @@
 | `docs/index.html` | **Hub** — kurallar + `LISTE` dizisindeki tüm API'ların kart listesi (klasörün bir üstünde durur, `API_YOL_HARITASI/style.css`'e görece referans verir) |
 | `API_YOL_HARITASI/_TASLAK.html` | Yeni API şablonu — kopyalanıp doldurulur |
 | `API_YOL_HARITASI/A-02_ortak-altyapi.html` | A-02 (Ortak Altyapı) rehberi — 11 adım, `durum: 'done'` |
-| `API_YOL_HARITASI/A-03_auth-api.html` | A-03 (Auth API) rehberi — 36 adım, `durum: 'done'` |
+| `API_YOL_HARITASI/A-03_auth-api.html` | A-03 (Auth API) rehberi — 64 adım, 15 `grup`'a bölünmüş (MediatR CQRS refactor sonrası), `durum: 'done'` |
 | `API_YOL_HARITASI/render.js` | `window.API`/`const API` objesini okuyup `#content`'e basan paylaşımlı render motoru (kod bloklarını `esc()` ile XSS'e karşı güvenli işler) |
 | `API_YOL_HARITASI/style.css` | Hem hub hem her API sayfasının ortak koyu-tema stili |
 
@@ -24,13 +24,53 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02/A-03 durumuyla birebir tutarlı — i
 ## Yeni API Ekleme Kuralı (3 adım)
 1. `_TASLAK.html`'i kopyala → `<faz>_<id>.html` adıyla kaydet (örn. `A-03_auth-login.html`)
 2. `window.API` objesini doldur: `id`, `faz`, `metot`, `yol`, `auth`, `baslik`, `durum`
-   (`wip`/`done`), `ozet`, `adimlar[]` (her adımda `num`, `tur`, `baslik`, `dosya`, `aciklama`, `kod`)
+   (`wip`/`done`), `ozet`, `adimlar[]` (her adımda `num`, `tur`, `baslik`, `dosya`, `aciklama`, `kod`,
+   opsiyonel `grup`), opsiyonel `relatedRefs[]`
 3. `index.html`'deki LİSTE dizisine bir satır ekle
 
 `adim.tur` değerleri: `entity | config | enum | dto | validator | exception | repository | service
-| controller | test`. **Kod alanları gerçek dosyanın birebir kopyasıdır** — kırpılmaz, `...` ile kapatılmaz.
+| handler | controller | test`. **Kod alanları gerçek dosyanın birebir kopyasıdır** — kırpılmaz, `...` ile kapatılmaz.
 (`test` türü ilk kez A-02'nin 7. adımıyla eklendi; henüz kendi UI sekmesi yok, `aciklama` +
-`kod` alanları [[Kodlama_Standartlari]] §7.6'daki test dokümantasyonunu taşıyor.)
+`kod` alanları [[Kodlama_Standartlari]] §7.6'daki test dokümantasyonunu taşıyor. `handler` türü
+A-03'ün MediatR CQRS refactor'ünde eklendi — bir Command record + Handler class'ı aynı dosyada
+barındıran adımlar için, klasik `service` türünden ayrı bir kategori.)
+
+## Adım Gruplama (`adim.grup`) — Büyük API'larda Okunabilirlik (2026-07-07'de eklendi)
+**Sorun:** A-03 63→64 adıma çıkınca (MediatR CQRS refactor) tek düz akordiyon listesi okunamaz
+hâle geldi; A-03.1 (QR Kod ile Giriş, henüz yazılmadı) aynı sayfaya eklenirse daha da büyüyecekti.
+**Çözüm (iki parça, birbirinden bağımsız):**
+1. **`adim.grup` (görsel bölümleme, tek dosya içinde):** Her adıma aynı metinli bir `grup: '...'`
+   alanı eklenir (ör. `"13 Auth Command + Handler (MediatR CQRS)"`). `render.js` bunu görünce
+   sayfanın üstüne tıklanabilir bir **İçindekiler** kutusu, adımların arasına da bölüm başlığı
+   (`.step-group`, anchor'lı) basar. `kod` alanına DOKUNMAZ — hiçbir adım kırpılmaz/gizlenmez,
+   yalnızca görsel bir ayraçtır. `grup` boşsa (ör. A-02'nin 11 adımı) render.js eskisiyle birebir
+   aynı davranır — geriye dönük uyumlu.
+2. **Ayrı dosya (dosyalar arası şişmeyi çözer, `grup` bunu ÇÖZMEZ):** Bir alt-task kendi
+   entity/service/controller'ına sahipse (başlı başına bir "API"), `adimlar[]`'a eklenmek yerine
+   kendi `<faz>.<alt>_<id>.html` dosyasını açar (örn. `A-03.1_qr-login.html`). İki sayfa
+   `relatedRefs: [{dosya, baslik}]` ile **çift yönlü** birbirine bağlanır (aynı `frontendRefs`
+   kuralı — tek yönlü kalması yasak) → sayfada **"🔗 İlgili API'lar"** bandı. `index.html`'in
+   LİSTE'sine alt-task için ayrı bir satır eklenir (`faz: 'A-03.1'`).
+**A-03_auth-api.html'in mevcut 15 grubu** (64 adım şu sırayla bölünür): Veri Modeli (1-7) →
+Şifre Servisi (8-10) → Token Servisi (11-13) → DTO'lar (14) → Hata Yönetimi (15-17) →
+Repository'ler (18-20) → E-posta & Sosyal Login Doğrulayıcılar (21-24) → Paylaşılan Servisler:
+OTP/LoginCompletion/AutoMapper (25-27) → 13 Auth Command + Handler (28-40) → DI Kaydı (41) →
+Validator'lar (42-43) → Dil Çözümleme & Doğrulama Filtresi (44-45) → Controller (46) →
+Rate Limiting (47) → Birim Testler (48-64).
+**A-03.1 henüz yazılmadı** (`docs/TASK/A_admin_panel_backend.md`'de tüm alt-maddeleri ⬜) —
+yazıldığında bu kurala göre kendi dosyasını açacak, `relatedRefs` A-03↔A-03.1 arasında eklenecek.
+
+## İkinci Seviye: Katman Gruplama (`API.katmanlar`) — Aynı Gün Eklendi
+15 grup bile TOC'ta uzun bir liste oluşturunca (A-03), bir üst seviye eklendi: `katmanlar:
+[{ad, gruplar:[...]}]` — grup adlarını mimari katmana göre toplar. `adim`'a değil `API` objesine
+yazılır çünkü bir katman birden çok grubu kapsar (adım başına yazmak 64 satırı tekrar değiştirmek
+demekti); `render.js` bu eşlemeyi tek yerde okuyup hem İçindekiler'i (katman → grup → sayı,
+3 seviyeli) hem adım listesindeki büyük `.step-katman` başlığını üretir. **A-03'ün 4 katmanı**
+(15 grubu şöyle toplar): Domain & Altyapı (Veri Modeli) → Application — Servisler (Şifre/Token/
+DTO/Hata/Repository/Email-Sosyal/Paylaşılan, 7 grup) → Application — CQRS (13 Command+Handler/
+DI/Validator, 3 grup) → API & Test (Dil Çözümleme/Controller/Rate Limiting/Testler, 4 grup).
+`katmanlar` boşsa (ör. A-02, veya `grup` kullanıp `katmanlar` kullanmayan bir sayfa) davranış
+tek seviyeli `grup` sistemiyle birebir aynı kalır — tamamen opsiyonel, geriye dönük uyumlu.
 
 ## A-02_ortak-altyapi.html — Mevcut İçerik (11 adım, `durum: 'done'`)
 
@@ -48,17 +88,14 @@ Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02/A-03 durumuyla birebir tutarlı — i
 | 10 | `service` | Middleware (Exception/SecurityHeaders/RequestResponseLogging) | [[Middleware]] |
 | 11 | `config` | `Program.cs` (JWT/CORS/Serilog/FluentValidation kaydı) | [[Program_cs]] |
 
-## A-03_auth-api.html — Mevcut İçerik (36 adım, `durum: 'done'`)
+## A-03_auth-api.html — Mevcut İçerik (64 adım, `durum: 'done'`, MediatR CQRS refactor sonrası)
 
-A-02'den farklı olarak tek bir tabloya sığmayacak kadar büyük — 36 adım şu kategorilerde gruplanır:
-entity/config/migration (1-4) → `IPasswordService`/`ITokenService` (5-8) → DTO'lar (9) →
-`AppException`/`ErrorMessages` + 7 exception alt tipi (10-17, mimari karar: tr+de dile göre,
-log/DB İngilizce) → repository'ler (18-20) → `IEmailService`/`DevEmailService`/Google-Apple
-validator'ları (21-24) → `IAuthService`/`AuthService` (25-27) → FluentValidation validator'ları
-(28-29) → `RequestLanguageResolver`/`ValidationFilter` (30-31) → `AuthController` (32) →
-`Program.cs` rate limiting (33) → birim testler (34-36: `PasswordServiceTests`,
-`JwtTokenServiceTests`, `AuthServiceTests`). Detay ve gerekçeler → sayfanın kendisi (her adım
-`aciklama` alanında junior'a açıklanır) ve [[Auth_Domain]].
+A-02'den farklı olarak tek bir tabloya sığmayacak kadar büyük — bu yüzden A-03 artık kendi
+`grup`/`katmanlar` alanlarıyla (bkz. aşağıdaki "Adım Gruplama" ve "İkinci Seviye: Katman Gruplama"
+bölümleri) 4 katman → 15 grup → 64 adıma bölünmüş durumda; sayfanın kendisi bunu tıklanabilir bir
+İçindekiler kutusu olarak gösteriyor. Detay ve gerekçeler → sayfanın kendisi (her adım `aciklama`
+alanında junior'a açıklanır) ve [[Auth_Domain]]. Geçmiş adım-sayısı artışları (36→63→64) ve
+nedenleri → wiki `Index.md` On yedinci/On sekizinci/On dokuzuncu INGEST kayıtları.
 
 ## Yeniden Kullanılan Kod Kuralı
 `docs/index.html`'deki not: bir API daha önce yazılmış bir kodu/yardımcıyı (örn. [[Repository]],

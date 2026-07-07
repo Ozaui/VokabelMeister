@@ -22,6 +22,86 @@ namespace WordLearner.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("WordLearner.Domain.Entities.QrLoginSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PairingCode")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<string>("QrTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(88)
+                        .HasColumnType("nvarchar(88)");
+
+                    b.Property<string>("RequesterDeviceInfo")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RequesterIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<DateTime?>("ScannedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("QrTokenHash");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("QrLoginSessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_QrLoginSessions_Status", "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')");
+                        });
+                });
+
             modelBuilder.Entity("WordLearner.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -89,7 +169,7 @@ namespace WordLearner.Infrastructure.Data.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("RefreshTokens");
+                    b.ToTable("RefreshTokens", (string)null);
                 });
 
             modelBuilder.Entity("WordLearner.Domain.Entities.User", b =>
@@ -259,7 +339,7 @@ namespace WordLearner.Infrastructure.Data.Migrations
 
                     b.HasIndex("Role");
 
-                    b.ToTable("Users", t =>
+                    b.ToTable("Users", null, t =>
                         {
                             t.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
 
@@ -267,6 +347,16 @@ namespace WordLearner.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
                         });
+                });
+
+            modelBuilder.Entity("WordLearner.Domain.Entities.QrLoginSession", b =>
+                {
+                    b.HasOne("WordLearner.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("WordLearner.Domain.Entities.RefreshToken", b =>

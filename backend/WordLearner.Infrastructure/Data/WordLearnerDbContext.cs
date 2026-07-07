@@ -10,6 +10,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Infrastructure.Data;
 
@@ -26,6 +27,9 @@ public class WordLearnerDbContext : DbContext
 
     // AMAÇ: Kullanıcıların refresh token geçmişi (A-03 — Auth API).
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    // AMAÇ: QR kod ile giriş oturumları (A-03.1 — QR Kod ile Giriş).
+    public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -8,9 +8,9 @@
 // BAĞIMLILIKLAR: BaseEntity, OtpPurpose enum, RefreshToken (1:N ilişki).
 // ─────────────────────────────────────────────────────────────────────────────
 
-using WordLearner.Domain.Enums;
+using WordLearner.Domain.Enums.Auth;
 
-namespace WordLearner.Domain.Entities;
+namespace WordLearner.Domain.Entities.Auth;
 
 public class User : BaseEntity
 {
