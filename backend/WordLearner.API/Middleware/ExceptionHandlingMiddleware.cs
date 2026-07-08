@@ -115,6 +115,8 @@ public class ExceptionHandlingMiddleware
             AccountAnonymizedException => HttpStatusCode.Forbidden,
             InvalidRefreshTokenException => HttpStatusCode.Unauthorized,
             InvalidSocialTokenException => HttpStatusCode.Unauthorized,
+            QrSessionGoneException => HttpStatusCode.Gone,
+            QrSessionForbiddenException => HttpStatusCode.Forbidden,
             _ => HttpStatusCode.BadRequest,
         };
 }

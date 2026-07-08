@@ -127,6 +127,24 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.Window = TimeSpan.FromMinutes(1);
         limiterOptions.QueueLimit = 0;
     });
+
+    // NEDEN IP başına PARTITIONED (yukarıdaki ikisinin aksine): QR generate
+    // kötüye kullanılırsa (ör. toplu oturum açıp DB şişirme) tek bir saldırgan
+    // IP'si TÜM kullanıcıların anonim limitini tüketmemeli — her IP kendi
+    // 20/saat penceresine sahip olur (TASK/A_admin_panel_backend.md A-03.1).
+    options.AddPolicy(
+        "qrGenerate",
+        context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 20,
+                    Window = TimeSpan.FromHours(1),
+                    QueueLimit = 0,
+                }
+            )
+    );
 });
 
 var app = builder.Build();

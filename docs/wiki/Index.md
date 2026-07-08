@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST). Sırada **A-03.1 (QR Kod ile Giriş)** var, henüz kod yok; ayrıca **A-03.2 (Auth başarı mesajlarının lokalizasyonu)** yeni bir follow-up task olarak eklendi (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST). Sırada **A-03.2 (Auth başarı mesajlarının lokalizasyonu)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -109,7 +109,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, sıradaki A-03.1) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, sıradaki A-03.2) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -530,3 +530,34 @@ kuralları eklendi), `A-03_auth-api.html` (`grup`+`katmanlar` eklendi, `kod` ala
 `API_Yol_Haritasi_Sistemi.md` (yeni "Adım Gruplama" ve "İkinci Seviye: Katman Gruplama" bölümleri,
 63→64 adım düzeltmesi). A-03.1 henüz yazılmadığı için `relatedRefs` şu an boş — A-03.1 gerçekten
 yazıldığında iki yönlü doldurulacak.*
+
+*Yirminci INGEST (2026-07-08) — A-03.1 (QR Kod ile Giriş) tamamlandı ✅: bir önceki oturumda yalnızca
+veri modeli (entity+config+migration) vardı, bu oturumda geri kalan her şey yazıldı — `IQrLoginSessionRepository`/
+`QrLoginSessionRepository`, `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403) +
+`ExceptionHandlingMiddleware`/`ErrorMessages` entegrasyonu, `QrLoginDtos.cs`, paylaşılan
+`QrLoginSessionExpiryExtensions` (lazy expire — ayrı temizlik job'ı yok), 5 MediatR Command+Handler
+(`GenerateQrLoginCommand`/`ScanQrLoginCommand`/`ConfirmQrLoginCommand`/`DenyQrLoginCommand`/
+`GetQrLoginStatusCommand`, `Application/Features/QrLogin/`), `QrLoginController` (4 endpoint,
+`/auth/qr/*`), Program.cs'e IP-partitioned `qrGenerate` rate limit policy'si (20/saat), 5 test dosyası
+(18 test). Onaylanınca token üretimi A-03'teki AYNI `ILoginCompletionService.CompleteLoginAsync`'i
+çağırıyor — QR ayrı bir kimlik doğrulama sistemi değil (bkz. SECURITY.md §1.3). **Tasarım kararı
+(kullanıcıyla netleştirildi):** RequesterIp/RequesterDeviceInfo `generate` adımında (web'in isteğinden)
+yazılıyor, `scan`'de değil — mobil ekranda "seni İSTEYEN taraf" gösterilip kullanıcı gözle doğruluyor
+(relay/phishing önlemi); `GetQrLoginStatusCommand`'daki `ClientIp` de aynı sebeple web'in IP'si, telefonun değil.
+**Roadmap:** `A-03.1_qr-login.html` 5→26 adıma çıktı (`grup` eklendi: Veri Modeli/Repository/Hata
+Yönetimi & Yardımcılar/DTO'lar/5 QR Command+Handler/DI Kaydı/Controller & Rate Limiting/Birim Testler),
+`durum: 'wip'→'done'`, `index.html`'de aynı satır güncellendi, `TASK/A_admin_panel_backend.md` A-03.1 ⬜→✅.
+**Yan iş — roadmap'e yeni bir özellik eklendi (kullanıcı isteği):** `adim.sonuclar` alanı — her
+`tur:'test'` adımının kodun altına, varsayılan KAPALI bir "Sonuç" dropdown'u basıyor;
+`dotnet test --logger trx` çıktısından (GERÇEK çalıştırma, uydurma değil) alınan `{test, durum, sure}`
+üçlüleriyle dolduruluyor, opsiyonel `hata` alanı yalnızca Failed'de dolar. Bu alan yalnızca A-03.1'e
+değil **geriye dönük olarak A-02 ve A-03'e de** eklendi (kullanıcı "şu ana kadar yazılmış olanlar da
+dahil" dedi) — tek bir `dotnet test --logger trx` koşusundan (90/90 yeşil) Python ile trx XML parse
+edilip, `tur:'test'` adımının `dosya:` alanındaki sınıf adıyla eşleştirilerek 24 test dosyasının hepsine
+otomatik enjekte edildi (elle yazılmadı). **Etkilenen dosyalar:** `render.js` (`renderTestResults()`,
+escape-güvenli — `esc()` içeriği önce işler), `style.css` (`.test-results*`, `.tr-hata`),
+`_TASLAK.html` (yeni "✅ TEST SONUÇLARI" kuralı), bu dosya + `API_Yol_Haritasi_Sistemi.md` (yeni bölüm),
+`A-02_ortak-altyapi.html`/`A-03_auth-api.html`/`A-03.1_qr-login.html` (toplam 24 `sonuclar` bloğu).
+**Doğrulama:** `node vm.Script` ile 3 dosyanın da JS sözdizimi bozulmadığı, `adimlar` sayısı ve toplam
+test sayısı (11+61+18=90, gerçek `dotnet test` çıktısıyla birebir) script ile çapraz kontrol edildi.
+**Sıradaki task:** A-03.2 (Auth başarı mesajlarının lokalizasyonu).*

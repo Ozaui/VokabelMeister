@@ -59,6 +59,16 @@ public static class ErrorMessages
             ["tr"] = "Sosyal giriş doğrulanamadı.",
             ["de"] = "Die soziale Anmeldung konnte nicht verifiziert werden.",
         },
+        ["QR_SESSION_GONE"] = new()
+        {
+            ["tr"] = "QR kodunun süresi doldu veya zaten kullanıldı. Lütfen yeni bir kod oluşturun.",
+            ["de"] = "Der QR-Code ist abgelaufen oder wurde bereits verwendet. Bitte erstellen Sie einen neuen Code.",
+        },
+        ["QR_SESSION_FORBIDDEN"] = new()
+        {
+            ["tr"] = "Bu QR oturumunu yalnızca onu tarayan cihaz onaylayabilir/reddedebilir.",
+            ["de"] = "Diese QR-Sitzung kann nur von dem Gerät bestätigt/abgelehnt werden, das sie gescannt hat.",
+        },
 
         // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
         //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye

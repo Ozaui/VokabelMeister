@@ -82,7 +82,7 @@
 > başarı mesajları dile göre çözülmüyor. Kullanıcı bu eksikliği fark etti (2026-07-07); kapsam
 > büyüteceği için ayrı bir task olarak bırakıldı → bkz. **A-03.2** aşağıda.
 
-### A-03.1 — QR Kod ile Giriş ⬜
+### A-03.1 — QR Kod ile Giriş ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3, DATABASE_SCHEMA/Auth.md (`QrLoginSessions`)
 **Frontend karşılığı:** D-03 (Web — QR ekranı, `qrcode.react` ile görselleştirme), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
 > 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e D-03/E-05'in dosyaları eklenir (iki yönlü).
@@ -99,16 +99,20 @@
 > yazılır — `GenerateAsync/ScanAsync/ConfirmAsync/DenyAsync/GetStatusAsync` her biri ayrı bir
 > `IRequest<TResponse>` Command'ı olur (`Application/Features/QrLogin/XxxCommand.cs`, Handler aynı
 > dosyada); paylaşılan mantık varsa `IOtpService` örneğindeki gibi ayrı bir servise çıkarılır.
-- [ ] `IQrLoginService` + `QrLoginService`: `GenerateAsync` (token+hash+pairingCode+expiry), `ScanAsync`
-      (Pending→Scanned, UserId set), `ConfirmAsync`/`DenyAsync` (sahiplik kontrolü), `GetStatusAsync`
-      (Confirmed→ITokenService ile token üret→Consumed'a geçir, tek seferlik döndür)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] `QrLoginController`: `POST /auth/qr/generate` (Anonim), `GET /auth/qr/{token}/status` (Anonim,
-      polling), `POST /auth/qr/{token}/scan` `/confirm` `/deny` ([Authorize]) + rate limiting (generate: IP başına 20/saat)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** `QrLoginServiceTests` (mutlu yol, süresi dolmuş token, yanlış kullanıcı
-      confirm denemesi 403, Consumed sonrası tekrar okuma 410, pairingCode üretimi)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [x] 5 MediatR Command+Handler (`Application/Features/QrLogin/`): `GenerateQrLoginCommand`
+      (token+hash+pairingCode+expiry), `ScanQrLoginCommand` (Pending→Scanned, UserId set),
+      `ConfirmQrLoginCommand`/`DenyQrLoginCommand` (sahiplik kontrolü), `GetQrLoginStatusCommand`
+      (Confirmed→ILoginCompletionService ile token üret→Consumed'a geçir, tek seferlik döndür) +
+      paylaşılan `QrLoginSessionExpiryExtensions` (lazy expire) + `IQrLoginSessionRepository`/
+      `QrLoginSessionRepository` + `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] `QrLoginController`: `POST /auth/qr/generate` (Anonim), `GET /auth/qr/{token}/status` (Anonim,
+      polling), `POST /auth/qr/{token}/scan` `/confirm` `/deny` ([Authorize]) + rate limiting (generate: IP başına 20/saat, partitioned)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] **Birim testleri:** 5 dosya, 18 test (`WordLearner.Tests/Features/QrLogin/`) — mutlu yol, süresi
+      dolmuş token, yanlış kullanıcı confirm/deny denemesi 403, Consumed sonrası tekrar okuma 410,
+      Expired'ın 410 DEĞİL 200 dönmesi, pairingCode/token üretimi. Toplam 90/90 yeşil (A-03 72 + A-03.1 18).
+- [x] ➜ **API Yol Haritası'na işle**
 > **Not:** `SecurityLog` (QrLoginConfirmed/QrLoginDenied) entegrasyonu A-03'teki auth akışlarıyla aynı
 > sebeple A-04'ten sonra eklenir (bkz. A-03'ün notu).
 

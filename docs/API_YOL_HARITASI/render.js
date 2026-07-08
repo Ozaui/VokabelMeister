@@ -37,6 +37,56 @@
   }
   const mClass = (m) => 'm-' + String(m || 'get').toLowerCase();
 
+  // AMAÇ: Bir test adımının (`adim.sonuclar`) gerçek `dotnet test` çalıştırma sonucunu,
+  //       kodun altına AYRI, kapalı başlayan bir "Sonuç" alanı olarak render eder.
+  // NEDEN: Roadmap şu ana kadar yalnızca "bu test ne test ediyor" (aciklama) ve kodun
+  //        kendisini gösteriyordu — testin GERÇEKTEN çalışıp geçtiğini kanıtlayan hiçbir
+  //        şey yoktu. `sonuclar` alanı `dotnet test --logger trx` çıktısından (gerçek
+  //        çalıştırma, uydurma değil) alınan { test, durum, sure } üçlülerinin dizisidir.
+  //        Kod bloğu gibi HER ZAMAN açık değil — 90+ test tek sayfada varsayılan açık
+  //        olsaydı sayfa kullanılamaz hâle gelirdi; bu yüzden `kod` alanından FARKLI olarak
+  //        varsayılan KAPALI, kendi başlığına tıklanınca açılır (aynı step-head/step-body
+  //        toggle deseni, iç içe bir kopyası).
+  // NASIL: `sonuclar` boşsa/yoksa hiçbir şey render edilmez (geriye dönük uyumlu — eski
+  //        test adımları bu alanı eklemeden de çalışmaya devam eder). Her test öğesi
+  //        opsiyonel bir `hata` alanı taşıyabilir — yalnızca test BAŞARISIZ olduğunda
+  //        (trx'te FailedTest mesajı/stack trace) dolar; bugün 90/90 testin hepsi geçtiği
+  //        için bu alan boş, ama şema ileride bir test kırılırsa hata mesajını aynı
+  //        satırın altında göstermeye hazır — o an yalnızca veri eklenir, render.js'e dokunulmaz.
+  function renderTestResults(sonuclar) {
+    if (!sonuclar || !sonuclar.length) return '';
+    const gecen = sonuclar.filter((s) => s.durum === 'Passed').length;
+    const toplam = sonuclar.length;
+    const hepsiGecti = gecen === toplam;
+    const rows = sonuclar
+      .map((s) => {
+        const ok = s.durum === 'Passed';
+        const hataRow = !ok && s.hata
+          ? `<tr class="tr-hata-row"><td colspan="3"><pre class="tr-hata">${esc(s.hata)}</pre></td></tr>`
+          : '';
+        return `<tr>
+          <td class="tr-name">${esc(s.test)}</td>
+          <td><span class="test-badge ${ok ? 'ok' : 'fail'}">${ok ? '✓ Başarılı' : '✗ Başarısız'}</span></td>
+          <td class="tr-sure">${esc(s.sure)}</td>
+        </tr>${hataRow}`;
+      })
+      .join('');
+    return `
+      <div class="test-results">
+        <div class="test-results-head" onclick="this.nextElementSibling.classList.toggle('open')">
+          <span class="test-results-caret">▸</span>
+          <span>Sonuç</span>
+          <span class="test-results-summary ${hepsiGecti ? 'ok' : 'fail'}">${gecen}/${toplam} başarılı</span>
+        </div>
+        <div class="test-results-body">
+          <table class="test-results-table">
+            <thead><tr><th>Test</th><th>Sonuç</th><th>Süre</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
   // AMAÇ: `adim.grup` metnini anchor id'sine çevirir (İçindekiler linki ↔ bölüm başlığı eşleşsin).
   // NEDEN: Türkçe karakterler/boşluklar ham haliyle geçerli bir HTML id değil; dönüşüm kusurlu olsa
   //        bile TEK bir fonksiyondan geçtiği için üretici ve tüketici id'si her zaman birebir eşleşir.
@@ -146,6 +196,7 @@
         <div class="step-body${open}">
           <div class="desc">${esc(a.aciklama)}</div>
           <pre><code>${renderKod(a.kod)}</code></pre>
+          ${a.tur === 'test' ? renderTestResults(a.sonuclar) : ''}
         </div>
       </div>`;
     });

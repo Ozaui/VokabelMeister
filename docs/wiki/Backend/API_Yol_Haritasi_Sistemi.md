@@ -97,6 +97,21 @@ bölümleri) 4 katman → 15 grup → 64 adıma bölünmüş durumda; sayfanın 
 alanında junior'a açıklanır) ve [[Auth_Domain]]. Geçmiş adım-sayısı artışları (36→63→64) ve
 nedenleri → wiki `Index.md` On yedinci/On sekizinci/On dokuzuncu INGEST kayıtları.
 
+## Test Sonuçları (`adim.sonuclar`) — Gerçek Çalıştırma Kanıtı (2026-07-08'de eklendi)
+**Sorun:** `tur: 'test'` adımları yalnızca `aciklama` (ne test edildiği) + `kod` (test dosyasının
+kendisi) gösteriyordu — testin GERÇEKTEN çalışıp geçtiğine dair sayfada hiçbir kanıt yoktu.
+**Çözüm:** Her `tur: 'test'` adımına `sonuclar: [{ test, durum, sure }]` dizisi eklenir —
+`dotnet test --logger "trx;LogFileName=x.trx"` çalıştırılıp trx XML'indeki (`UnitTestResult`
+testName/outcome/duration) gerçek verilerden doldurulur, **elle "Passed" yazmak yasak**. `render.js`
+bunu kodun altına, varsayılan **KAPALI**, kendi başlığına (`▸ Sonuç · N/N başarılı`) tıklanınca açılan
+ayrı bir dropdown olarak basar (`step-head`/`step-body` toggle'ının iç içe bir kopyası — 90+ test tek
+sayfada varsayılan açık olsaydı sayfa kullanılamaz hâle gelirdi). Opsiyonel `hata` alanı yalnızca
+`durum:'Failed'` olduğunda trx'teki hata mesajıyla doldurulur, o satırın altında kırmızı bir kutuda
+gösterilir — testler geçerken hiç yazılmaz. `sonuclar` boş/yoksa render.js hiçbir şey basmaz (geriye
+dönük uyumlu — eski sayfalar bu alanı eklemeden çalışmaya devam eder).
+**Uygulandığı yer:** `A-02_ortak-altyapi.html` (2 adım/11 test), `A-03_auth-api.html` (17 adım/61
+test), `A-03.1_qr-login.html` (5 adım/18 test) — toplam 90/90 yeşil, tek bir `dotnet test` koşusundan.
+
 ## Yeniden Kullanılan Kod Kuralı
 `docs/index.html`'deki not: bir API daha önce yazılmış bir kodu/yardımcıyı (örn. [[Repository]],
 `PasswordService.Hash`, ortak DTO) kullanıyorsa, o kodun **tam hâli** de o API'ın kendi sayfasına

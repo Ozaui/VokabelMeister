@@ -39,6 +39,7 @@ public static class InfrastructureServiceExtensions
         //       aynı context'i paylaşırlar); A-03 — Auth API.
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
 
         // NOT: Sonraki feature repository'ler (IWordRepository vb.) kendi task'larında
         //      (A-05 ...) bu metoda eklenecek.
