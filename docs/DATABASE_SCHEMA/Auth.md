@@ -1,6 +1,6 @@
 # Auth Domain — Kimlik Doğrulama Tabloları
 
-> Genel kurallar (BaseEntity alanları, soft delete, UserId filtresi) → `../DATABASE_SCHEMA.md`.
+> Genel kurallar → `../CLAUDE.md §1`. QR giriş akışının tamamı → `REFERENCE/SECURITY.md §1.3` + `REFERENCE/API_ENDPOINTS.md §3.1`.
 
 ### Users
 ```sql
@@ -40,15 +40,12 @@ CREATE TABLE Users (
     ScheduledDeletionAt DATETIME2 NULL,
     IsAnonymized BIT NOT NULL DEFAULT 0,
     OriginalEmailHash VARCHAR(88) NULL,         -- SHA-256(eski email) — silinen e-posta ile tekrar kaydı blokla
-    -- Push
-    OneSignalPlayerId NVARCHAR(100) NULL,
-    -- Rol
+    OneSignalPlayerId NVARCHAR(100) NULL,       -- Push
     Role NVARCHAR(20) NOT NULL DEFAULT 'User',  -- User|Admin
     IsDeleted BIT NOT NULL DEFAULT 0,
     DeletedAt DATETIME2 NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-
     CONSTRAINT CK_Users_Level CHECK (CurrentLevel IN ('A1','A2','B1','B2','C1','C2')),
     CONSTRAINT CK_Users_Role CHECK (Role IN ('User','Admin')),
     CONSTRAINT CK_Users_AuthProvider CHECK (AuthProvider IN ('Local','Google','Apple')),
@@ -77,24 +74,22 @@ CREATE TABLE RefreshTokens (
 
 ### QrLoginSessions
 
-> **Amaç:** Steam benzeri "QR kod ile giriş" — zaten mobilde giriş yapmış bir kullanıcı, web/masaüstü
-> tarafında gösterilen QR kodu telefonundan okutup onaylayarak o cihazda giriş yapar. Web tarafı hiç
-> şifre/OTP görmez; mobil taraf zaten JWT'siyle `[Authorize]` olduğu için işlemi onaylar.
-> Ayrıca yalnızca Google/Apple ile kayıt olmuş (`PasswordHash IS NULL`) bir kullanıcının web'de giriş
-> yapabilmesinin **şifresiz** yolu budur (bkz. `REFERENCE/SECURITY.md §1.3`).
+> Steam benzeri QR ile giriş: mobilde zaten giriş yapmış kullanıcı, web'de gösterilen QR'ı okutup onaylar.
+> `QrTokenHash` DB sızıntısına karşı (ham token yalnızca QR/URL'de). `PairingCode` relay/phishing'e karşı:
+> web ekranındaki 4 hane mobil onay ekranındakiyle eşleşmezse kullanıcı fark eder. Süre 2dk.
 
 ```sql
 CREATE TABLE QrLoginSessions (
     Id INT PRIMARY KEY IDENTITY,
-    QrTokenHash VARCHAR(88) NOT NULL,        -- SHA-256(token) — ham token yalnızca QR/URL içinde, DB'de asla saklanmaz
-    PairingCode CHAR(4) NOT NULL,            -- web ekranında + mobil onay ekranında gösterilir; kullanıcı gözle karşılaştırır (relay/phishing önlemi)
+    QrTokenHash VARCHAR(88) NOT NULL,        -- SHA-256(token) — ham token DB'de asla saklanmaz
+    PairingCode CHAR(4) NOT NULL,            -- web + mobil onay ekranında gösterilir, gözle karşılaştırılır
     Status NVARCHAR(20) NOT NULL DEFAULT 'Pending',  -- Pending|Scanned|Confirmed|Consumed|Denied|Expired
     UserId INT NULL,                         -- taranana kadar boş; QR'ı okutan kullanıcı ile doldurulur
-    RequesterIp VARCHAR(45) NULL,            -- QR'ı isteyen (web/masaüstü) tarafın IP'si
-    RequesterDeviceInfo NVARCHAR(500) NULL,  -- QR'ı isteyen tarafın User-Agent'ı (ör. "Chrome 126 / Windows")
+    RequesterIp VARCHAR(45) NULL,
+    RequesterDeviceInfo NVARCHAR(500) NULL,  -- QR'ı isteyen tarafın User-Agent'ı
     ScannedAt DATETIME2 NULL,
     ConfirmedAt DATETIME2 NULL,
-    ExpiresAt DATETIME2 NOT NULL,             -- kısa ömür (2 dakika) — REFERENCE/SECURITY.md §1.3
+    ExpiresAt DATETIME2 NOT NULL,            -- +2 dakika
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 NULL,
     IsDeleted BIT NOT NULL DEFAULT 0,
@@ -105,10 +100,5 @@ CREATE TABLE QrLoginSessions (
     INDEX IX_QrLoginSessions_QrTokenHash (QrTokenHash), INDEX IX_QrLoginSessions_ExpiresAt (ExpiresAt)
 );
 ```
-> **`QrLoginStatus` enum (Domain/Enums):** `Pending, Scanned, Confirmed, Consumed, Denied, Expired`.
-> **Neden hash + pairing code ikisi birden:** `QrTokenHash` DB sızıntısına karşı (RefreshToken'daki
-> `TokenHash` ile aynı mantık); `PairingCode` ise DB'ye hiç bağlı olmayan bir saldırıya karşı —
-> saldırgan kendi ürettiği bir QR'ı kurbana okutup (relay/phishing) oturumunu onaylatmaya çalışırsa,
-> web ekranındaki 4 haneli kod mobildeki onay ekranında gösterilenle **eşleşmez**, kullanıcı fark eder.
-> **Kalıcılık:** Süresi dolan/kullanılan kayıtlar silinmez (audit); `ExpiresAt` geçmişse okuma anında
-> `Expired` olarak yorumlanır — ayrı bir temizlik görevi şimdilik yazılmaz (YAGNI, ihtiyaç doğarsa F fazında eklenir).
+> `QrLoginStatus` enum (Domain/Enums): `Pending, Scanned, Confirmed, Consumed, Denied, Expired`.
+> Süresi dolan/kullanılan kayıt silinmez (audit); `ExpiresAt` geçmişse okuma anında `Expired` yorumlanır (ayrı temizlik görevi yok — YAGNI).

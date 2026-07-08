@@ -1,7 +1,7 @@
 # Sosyal Domain — Sınıflar, Arkadaşlar, Paylaşım
 
-> Genel kurallar (BaseEntity alanları, soft delete) → `../DATABASE_SCHEMA.md`. FK hedefi `Users` →
-> `Auth.md`, `Categories` → `Icerik.md`, `UserCategories` → `Kisisel_Icerik.md`.
+> Genel kurallar → `../CLAUDE.md §1`. FK: `Users`→`Auth.md`, `Categories`→`Icerik.md`, `UserCategories`→`Kisisel_Icerik.md`.
+> Sınıf içi rol yok; sahiplik `Classes.OwnerId` ile (eski Teacher/Student yok).
 
 ### Classes
 ```sql
@@ -16,7 +16,7 @@ CREATE TABLE Classes (
 );
 ```
 
-### ClassWords (sınıfa özel kelimeler — yalnızca üyeler görür)
+### ClassWords (sınıfa özel kelimeler — kendi ad-hoc DE/TR alanlarıyla, sistem sözlüğüne bağlı değil)
 ```sql
 CREATE TABLE ClassWords (
     Id INT PRIMARY KEY IDENTITY, ClassId INT NOT NULL, CreatedBy INT NOT NULL,
@@ -37,7 +37,6 @@ CREATE TABLE ClassWords (
 CREATE TABLE ClassMemberships (
     Id INT PRIMARY KEY IDENTITY, ClassId INT NOT NULL, UserId INT NOT NULL,
     JoinedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), IsActive BIT NOT NULL DEFAULT 1,
-    -- Sınıf içi alt rol YOK; sahiplik Classes.OwnerId ile belirlenir
     FOREIGN KEY (ClassId) REFERENCES Classes(Id) ON DELETE CASCADE,
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE,
     CONSTRAINT UQ_ClassMemberships UNIQUE (ClassId, UserId)

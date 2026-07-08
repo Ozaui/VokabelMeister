@@ -1,5 +1,7 @@
 # TEKNİK SPESİFİKASYONLAR
 
+> Kod örnekleri gerçek dosyaların referansıdır — birebir kullanılır. ENV değerleri → `ENV.md`.
+
 ## 1. NuGet Paketleri (Backend)
 
 ```xml
@@ -25,17 +27,16 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
 <PackageReference Include="MailKit" Version="4.3.0" />                     <!-- SMTP e-posta -->
 <PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- C-10 bildirim scheduler'ı -->
-<PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist eder, dashboard'u var -->
+<PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist -->
 
 <!-- WordLearner.Tests (xUnit) -->
 <PackageReference Include="xunit" Version="2.7.0" />
 <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7" />
 <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-<PackageReference Include="Moq" Version="4.20.70" />                        <!-- Repository/dış servis mock -->
-<PackageReference Include="FluentAssertions" Version="6.12.0" />           <!-- Okunabilir assertion sözdizimi -->
-<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />  <!-- Repository<T> testleri -->
-<PackageReference Include="coverlet.collector" Version="6.0.2" />          <!-- Coverage raporu (F-01) -->
-
+<PackageReference Include="Moq" Version="4.20.70" />
+<PackageReference Include="FluentAssertions" Version="6.12.0" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />   <!-- Repository<T> testleri -->
+<PackageReference Include="coverlet.collector" Version="6.0.2" />          <!-- Coverage (F-01) -->
 ```
 
 ## 2. npm Paketleri
@@ -44,10 +45,10 @@
 # Web (/web)
 npm create vite@latest web -- --template react-ts && cd web
 npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom @react-oauth/google
-npm i qrcode.react   # QR kod ile giriş — web tarafı QR görselini bundan üretir
+npm i qrcode.react   # QR ile giriş — web QR görselini bundan üretir
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
-# Admin (/admin) — Google/Apple yok, QR ile giriş de yok (küçük/güvenilir kullanıcı tabanı)
+# Admin (/admin) — Google/Apple/QR yok
 npm create vite@latest admin -- --template react-ts && cd admin
 npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
@@ -58,32 +59,25 @@ npm i @reduxjs/toolkit react-redux axios react-hook-form i18next react-i18next
 npx expo install expo-secure-store expo-av expo-image-picker expo-apple-authentication expo-camera
 npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/stack
 npm i @react-native-google-signin/google-signin
-# expo-camera: QR ile giriş — mobil taraf web'de gösterilen QR'ı bununla okur (barcode scanning)
+# expo-camera: QR ile giriş — mobil web'deki QR'ı bununla okur
 ```
 
-## 3. appsettings.json
-
-> Hassas değerler (`SecretKey`, bağlantı dizesi) dev'de `appsettings.Development.json`'da (`.gitignore`'da),
-> prod'da ortam değişkeninde. **Gerçek/güncel değer için tek kaynak → `REFERENCE/ENV.md §1` ve `§2`** — buradaki
-> JSON yalnızca yapıyı (hangi anahtar hangi bölümde) gösterir, değerleri kopyalamak için kullanılmaz.
+## 3. appsettings.json (yapı — değerler `ENV.md`)
 
 ```json
 {
-  "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
+  "ConnectionStrings": { "DefaultConnection": "..." },
   "Jwt": { "SecretKey": "MIN_32_KARAKTER", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp",
            "ExpirationMinutes": 15, "RefreshTokenExpirationDays": 7 },
   "Cors": { "AllowedOrigins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:8081"] },
   "QrLogin": { "ExpirationSeconds": 120 }
 }
 ```
-> **Not:** `QrLogin.ExpirationSeconds` hassas değil (gizli anahtar değil) — bu yüzden `ENV.md`'ye değil
-> doğrudan `appsettings.json`'a yazılır, ortama göre değişmesi gerekirse override edilir.
+> `QrLogin.ExpirationSeconds` hassas değil → ENV değil, doğrudan appsettings (gerekirse override).
 
-## 4. BaseEntity (tamamlandı — A-02 ✅)
+## 4. BaseEntity (A-02 ✅)
 
-Gerçek kod → `backend/WordLearner.Domain/Entities/BaseEntity.cs`. Alanlar: `Id`, `CreatedAt`,
-`UpdatedAt`, `IsDeleted`, `DeletedAt`, `CreatedByUserId`, `UpdatedByUserId`, `DeletedByUserId`
-(hepsi `int?`, "kim yaptı" alanları). Birebir kopya + gerekçe → `API_YOL_HARITASI/A-02_ortak-altyapi.html` (adım 1).
+`Domain/Entities/BaseEntity.cs`: `Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId` (hepsi `int?` "kim yaptı" alanları). Birebir → `API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 1.
 
 ## 5. JWT Token Servisi
 ```csharp
@@ -164,13 +158,9 @@ public class PasswordService : IPasswordService
 }
 ```
 
-## 7. Generic Repository (tamamlandı — A-02 ✅)
+## 7. Generic Repository (A-02 ✅)
 
-Gerçek kod → `backend/WordLearner.Application/Interfaces/Repositories/IRepository.cs` (sözleşme:
-`GetByIdAsync`, `GetAllAsync`, `AddAsync`, `UpdateAsync`, `SoftDeleteAsync`, `SaveChangesAsync` —
-`AddAsync/UpdateAsync/SoftDeleteAsync` opsiyonel `int? userId` alır, `BaseEntity`'nin "kim yaptı"
-alanlarını set eder) ve `backend/WordLearner.Infrastructure/Repositories/Repository.cs` (EF Core
-implementasyonu). Birebir kopya + gerekçe → `API_YOL_HARITASI/A-02_ortak-altyapi.html` (adım 3).
+`Application/Interfaces/Repositories/IRepository.cs` (`GetByIdAsync, GetAllAsync, AddAsync, UpdateAsync, SoftDeleteAsync, SaveChangesAsync` — `Add/Update/SoftDelete` opsiyonel `int? userId` alır, BaseEntity "kim yaptı" alanlarını set eder) + `Infrastructure/Repositories/Repository.cs` (EF Core). Birebir → `API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 3.
 
 ## 8. SM-2 SRS Algoritması
 
@@ -197,34 +187,24 @@ public static class SrsCalculator
         return (interval, Math.Min(currentLevel + 1, 5), newEF);
     }
 
-    // Mastery: yüzdelik (0-100), CurrentLevel baskın sinyal + SuccessRate ince ayar
+    // Mastery: yüzdelik (0-100), CurrentLevel baskın + SuccessRate ince ayar
     public static decimal CalculateMastery(int currentLevel, decimal successRate) =>
         Math.Round((currentLevel / 5.0m) * 80 + (successRate / 100.0m) * 20, 2);
 }
 ```
 
-**Mastery bantları** (`Mastery` yüzdesine göre, config değeri — yapısal değil):
-🔴 Zayıf 0-40 · 🟡 Orta 40-70 · 🟢 İyi 70-100.
+**Mastery bantları** (config, yapısal değil): 🔴 Zayıf 0-40 · 🟡 Orta 40-70 · 🟢 İyi 70-100.
 
-**Quality (0-5) kim tarafından üretiliyor:**
-- `Flashcard` (yeni kelime tanıtımı): kullanıcı `selfRating` seçer, ama gecikme/ipucu kullanımı
-  üst seçenekleri kilitler (detay → `docs/wiki/Database/SRS_Domain.md`).
-- Objektif tipler (`MultipleChoice`/`TranslationQuiz`/`ArticleQuiz`/`PluralQuiz`): `quality`
-  kullanıcıya sorulmadan `IsCorrect`+`ResponseTime`+`HintUsed`'dan otomatik hesaplanır.
-- `TrueFalse`: şans başarı ihtimali yüksek olduğu için doğru cevapta otomatik tavan **4**
-  (asla 5 verilmez).
+**Quality (0-5) kaynağı:**
+- `Flashcard` (yeni kelime): kullanıcı `selfRating` seçer; gecikme/ipucu üst seçenekleri kilitler.
+- Objektif tipler (`MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz`): `quality` otomatik (`IsCorrect`+`ResponseTime`+`HintUsed`).
+- `TrueFalse`: şans yüksek → doğru cevapta tavan **4** (asla 5).
 
-**Quiz formatı seçimi:** İstemci `sessionType` göndermez. Yeni kelime oturumu her zaman
-`Flashcard`; review oturumlarında her soru için backend `MultipleChoice|TranslationQuiz|
-ArticleQuiz|PluralQuiz|TrueFalse` arasından rastgele seçim yapar.
+**Quiz formatı:** İstemci `sessionType` göndermez. Yeni kelime = `Flashcard`; review'da her soru backend'de `MultipleChoice|TranslationQuiz|ArticleQuiz|PluralQuiz|TrueFalse` arasından rastgele.
 
-**Leech eşiği:** `ConsecutiveIncorrect >= 5` (config). Anki'nin varsayılanı 8 ama o kümülatif lapse
-sayısıdır (aralarda doğru gelse de sıfırlanmaz); bizimki ardışık (bir doğru gelince 0'a döner) —
-daha katı bir metrik olduğu için denk hassasiyet için daha düşük bir eşik seçildi. Detay (üç
-aksiyon: Askıya Al/Sıfırla/Devam Et) → `docs/wiki/Database/SRS_Domain.md`.
+**Leech eşiği:** `ConsecutiveIncorrect >= 5` (config, ardışık — bir doğru gelince 0'a döner; Anki'nin kümülatif 8'inden daha katı metrik olduğu için düşük). Üç aksiyon (Askıya Al/Sıfırla/Devam) → `wiki/Database/SRS_Domain.md`.
 
 ## 9. Serilog + ApplicationLog (DB sink)
-
 ```csharp
 // Program.cs — _logger çağrıları konsol + dosya + ApplicationLog tablosuna gider
 builder.Host.UseSerilog((ctx, cfg) => cfg
@@ -237,8 +217,7 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
         sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLog", AutoCreateSqlTable = false },
         columnOptions: ApplicationLogColumns()));   // SourceContext, RequestPath, UserId ek kolonlar
 ```
-> `ActivityLog` ve `SecurityLog` Serilog ile DEĞİL, özel `IActivityLogger`/`ISecurityLogger`
-> servisleriyle yazılır (yapılandırılmış sütunlar + admin filtresi için). Bkz. `DATABASE_SCHEMA/Loglama.md`.
+> `ActivityLog`/`SecurityLog` Serilog ile DEĞİL, özel `IActivityLogger`/`ISecurityLogger` ile yazılır.
 
 ## 10. Program.cs (özet)
 ```csharp
@@ -249,7 +228,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<WordLearnerDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddInfrastructureServices();   // repo + logging + DbContext yardımcıları
+builder.Services.AddInfrastructureServices();   // repo + logging + DbContext
 builder.Services.AddApplicationServices();       // servisler
 builder.Services.AddValidatorsFromAssembly(typeof(CreateWordCommand).Assembly);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(opt =>

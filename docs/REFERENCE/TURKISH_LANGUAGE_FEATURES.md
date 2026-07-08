@@ -1,87 +1,54 @@
 # TÜRKÇE DİL ÖZELLİKLERİ
 
-Kelime kartı ve sınav türleri yazılırken referans. Bu dosya, `WordDetail.GrammarData` JSON alanının
-**yalnızca Türkçe (`tr`) diline özel** şemasını tanımlar — şema çoklu dile açık tasarlandı
-(`DATABASE_SCHEMA/Icerik.md` → `Languages`/`WordConcept`). Almanca'nın karşılığı →
-`GERMAN_LANGUAGE_FEATURES.md`. **Öncelik:** şu an gerçek içerik Türkçe için yazılıyor (bir Almanın
-Türkçe öğrenmesi senaryosu için) — İngilizce şeması da tanımlı (`ENGLISH_LANGUAGE_FEATURES.md`) ama
-henüz kullanılmıyor (`Languages` tablosunda `en` satırı yok).
+> Türkçe (`tr`) `WordDetail.GrammarData` JSON şeması. Çoklu dil yapısı → `CLAUDE.md §1`.
+> **Öncelik:** gerçek içerik şu an tr için yazılıyor (Almanın Türkçe öğrenmesi senaryosu). DB CHECK yok, doğrulama uygulama katmanında.
 
 ## 1. Ünlü Uyumu (Vowel Harmony)
 
-Türkçe eklerin hangi ünlüyü alacağını belirleyen kural — ekler kelimenin **son ünlüsüne** göre şekil
-değiştirir (agglutinatif/eklemeli yapı).
+Ekler kelimenin **son ünlüsüne** göre şekil değiştirir (agglutinatif).
+Büyük uyum: `a,ı,o,u`→kalın; `e,i,ö,ü`→ince. Küçük uyum: `a/e`→`ı/i/u/ü`.
 
-**Büyük ünlü uyumu** (kalın/ince): `a, ı, o, u` → kalın; `e, i, ö, ü` → ince.
-**Küçük ünlü uyumu** (düz/yuvarlak): ek seçimi 4 varyanta çıkar (`a/e` → `ı/i/u/ü`).
-
-| Kök son ünlüsü | Grup | Örnek ek varyantı (çoğul `-lAr`) |
-|----------------|------|-----------------------------------|
+| Son ünlü | Grup | Çoğul `-lAr` |
+|----------|------|--------------|
 | a, ı | Kalın | masa**lar**, kız**lar** |
 | e, i | İnce | ev**ler**, ip**ler** |
 | o, u | Kalın (yuvarlak) | kol**lar**, kutu**lar** |
 | ö, ü | İnce (yuvarlak) | göz**ler**, süt**ler** |
 
-`WordDetail.GrammarData.vowelHarmony`: `"kalın"` veya `"ince"` — ek üretiminde/doğrulamasında kullanılır.
+`GrammarData.vowelHarmony`: `"kalın"` | `"ince"`.
 
-## 2. Çoğul (Plural)
-
-Tek ek: `-lar` (kalın) / `-ler` (ince) — ünlü uyumuna göre otomatik seçilir.
-```
-masa → masalar    ev → evler    kitap → kitaplar    göz → gözler
-```
-Düzensiz çoğul yoktur (Almanca'nın aksine); tek istisna bazı alıntı kelimelerde (örn. "hayvanat" gibi
-Arapça kökenli çoğullar) — bunlar `GrammarData.pluralForm` alanında elle override edilir.
+## 2. Çoğul
+Tek ek `-lar`/`-ler` (ünlü uyumu). Düzensiz yok; alıntı istisnalar `GrammarData.pluralForm`'da override.
 
 ## 3. Hâl Ekleri (6 Hâl)
 
-| Hâl | Ek (kalın/ince) | Soru | Örnek (masa) |
-|-----|-----------------|------|--------------|
-| **Yalın** (Nominative) | — | Kim? Ne? | masa |
-| **Belirtme** (Accusative) | -(y)ı / -(y)i / -(y)u / -(y)ü | Kimi? Neyi? | masa**yı** |
-| **Yönelme** (Dative) | -(y)a / -(y)e | Kime? Nereye? | masa**ya** |
-| **Bulunma** (Locative) | -da / -de / -ta / -te | Kimde? Nerede? | masa**da** |
-| **Ayrılma** (Ablative) | -dan / -den / -tan / -ten | Kimden? Nereden? | masa**dan** |
-| **Tamlayan** (Genitive) | -(n)ın / -(n)in / -(n)un / -(n)ün | Kimin? | masa**nın** |
+| Hâl | Ek | Soru | Örnek (masa) |
+|-----|-----|------|--------------|
+| **Yalın** (Nom) | — | Ne? | masa |
+| **Belirtme** (Acc) | -(y)ı/i/u/ü | Neyi? | masa**yı** |
+| **Yönelme** (Dat) | -(y)a/e | Nereye? | masa**ya** |
+| **Bulunma** (Loc) | -da/de/ta/te | Nerede? | masa**da** |
+| **Ayrılma** (Abl) | -dan/den/tan/ten | Nereden? | masa**dan** |
+| **Tamlayan** (Gen) | -(n)ın/in/un/ün | Kimin? | masa**nın** |
 
-**Kaynaştırma harfleri** (buffer): kök ünlüyle bitiyorsa ek başına `y`/`n`/`s`/`ş` araya girer —
-`araba` + `-ı` → araba**y**ı (Belirtme), `masa` + `-ın` → masa**n**ın (Tamlayan).
-**Ünsüz sertleşmesi** (-da/-ta): kök sert ünsüzle (`p,ç,t,k,f,h,s,ş`) bitiyorsa `-da/-de` → `-ta/-te`
-olur — `kitap` + `-da` → kitap**ta**.
-
+Kaynaştırma harfleri (y/n/s/ş): `araba`+`-ı` → araba**y**ı. Ünsüz sertleşmesi: sert ünsüz (`p,ç,t,k,f,h,s,ş`) sonrası `-da/de`→`-ta/te` (kitap**ta**).
 ```json
-"cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya",
-           "locative": "masada", "ablative": "masadan", "genitive": "masanın" }
+"cases": { "nominative":"masa", "accusative":"masayı", "dative":"masaya",
+           "locative":"masada", "ablative":"masadan", "genitive":"masanın" }
 ```
 
-## 4. İyelik Ekleri (Possessive Suffixes)
-
-| Kişi | Ek | Örnek (masa) |
-|------|-----|--------------|
-| ben | -(i)m | masa**m** |
-| sen | -(i)n | masa**n** |
-| o | -(s)i | masa**sı** |
-| biz | -(i)mız/-(i)miz | masa**mız** |
-| siz | -(i)nız/-(i)niz | masa**nız** |
-| onlar | -(s)i / -ları | masa**sı** (tekil sahiplik) |
-
+## 4. İyelik Ekleri
 ```json
 "possessive": { "ben":"masam", "sen":"masan", "o":"masası",
                 "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
 ```
+Ekler: ben -(i)m · sen -(i)n · o -(s)i · biz -(i)mIz · siz -(i)nIz · onlar -(s)i/-lArI.
 
-## 5. Ünsüz Yumuşaması (Consonant Mutation)
+## 5. Ünsüz Yumuşaması
+Sert ünsüz (`p,ç,t,k`) + ünlüyle başlayan ek → `p→b, ç→c, t→d, k→ğ`: kitap→kitab**ı**, ağaç→ağac**ı**, kanat→kanad**ı**. (İstisna: bazı tek heceliler yumuşamaz, at→at**ı**.)
+`GrammarData.consonantMutation`: `{ "hasChange": true, "pattern": "p→b", "example": "kitap→kitabı" }`.
 
-Sert ünsüzle (`p, ç, t, k`) biten kökler, ünlüyle başlayan ek aldığında yumuşar: `p→b, ç→c, t→d, k→ğ`.
-```
-kitap → kitabı (Belirtme)    ağaç → ağacı    kanat → kanadı    kitap+lık → kitaplık (istisna: bazı tek heceli kelimeler yumuşamaz, örn. "at→atı")
-```
-`WordDetail.GrammarData.consonantMutation`: `{ "hasChange": true, "pattern": "p→b", "example": "kitap→kitabı" }`.
-
-## 6. Fiil Çekimi (GrammarData.conjugationData)
-
-Türkçe fiil çekimi de eklemeli: kip/zaman eki + kişi eki. En sık kullanılan 4 zaman:
-
+## 6. Fiil Çekimi (conjugationData)
 ```json
 {
   "presentContinuous": { "ben":"geliyorum", "sen":"geliyorsun", "o":"geliyor", "biz":"geliyoruz", "siz":"geliyorsunuz", "onlar":"geliyorlar" },
@@ -90,31 +57,12 @@ Türkçe fiil çekimi de eklemeli: kip/zaman eki + kişi eki. En sık kullanıla
   "future":            { "ben":"geleceğim", "sen":"geleceksin", "o":"gelecek", "biz":"geleceğiz", "siz":"geleceksiniz", "onlar":"gelecekler" }
 }
 ```
-Olumsuz ek `-me/-ma` her zamanda kişi ekinden önce gelir (örn. gel**me**yeceğim).
+Olumsuz `-me/-ma` kişi ekinden önce (gel**me**yeceğim).
 
-## 7. Kelime Kartı Tasarımı
+## 7. Kart Tasarımı
+- **İsim:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik + Almanca + örnek + kategoriler + ses/IPA.
+- **Fiil:** mastar (`-mek/-mak`) + ünsüz yumuşaması göstergesi + çekim (şimdiki/geniş/geçmiş/gelecek) + Almanca + örnek.
 
-**İsim kartı:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik ekleri + Almanca + örnek
-cümle (kullanıcı seviyesine göre) + seviye + kategoriler + ses/IPA.
-
-**Fiil kartı:** mastar (`-mek/-mak`) + ünsüz yumuşaması göstergesi + çekim tablosu
-(şimdiki/geniş/geçmiş/gelecek) + Almanca + örnek.
-
-## 8. Türkçeye Özgü Sınav Türleri
-
-1. **Hâl eki quiz:** "Ben ___ gidiyorum." (okul) → okul**a** ✓
-2. **Çoğul quiz:** kitap → kitap**lar** ✓ (ünlü uyumu doğru mu)
-3. **İyelik quiz:** "benim ___" (araba) → araba**m** ✓
-4. **Ünsüz yumuşaması quiz:** kitap + Belirtme → kitab**ı** ✓
-5. **Çeviri / dikte:** Türkçe cümle → Almanca veya yazım kontrolü.
-
-## 9. Geliştirme Notları
-
-- `WordDetail.GrammarData` (JSON) uygulama katmanında validasyondan geçer; ek seçimi
-  `vowelHarmony` alanıyla tutarlı olmalı (DB-seviyesi `CHECK` yok, bkz. `DATABASE_SCHEMA/Icerik.md`
-  trade-off notu).
-- Unicode tam destek: ç, ğ, ı, ö, ş, ü, İ (noktalı/noktasız I ayrımına dikkat — `ı` ≠ `i`).
-- Örnek cümleler kullanıcı seviyesine göre filtrelenir (`WordExamples.Level`).
-- Bu şema önceliği: TR-DE çiftinde bir Almanın Türkçe öğrenmesi senaryosu — önceden yalnızca
-  Türkçe→çeviri (`GrammarData=NULL`) varsayılmıştı, artık yön fark etmeksizin her iki taraf da
-  gramer içeriğine sahip.
+## 8. Sınav Türleri
+Hâl eki quiz ("Ben ___ gidiyorum" okul→okul**a**) · Çoğul quiz · İyelik quiz · Ünsüz yumuşaması quiz · Çeviri/dikte.
+Unicode: ç ğ ı ö ş ü İ (`ı`≠`i` dikkat). Örnekler `WordExamples.Level`'e göre filtrelenir.

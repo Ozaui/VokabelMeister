@@ -1,44 +1,32 @@
 # İçerik Domain — Sistem Kelimeleri ve Kategoriler
 
-> Genel kurallar (BaseEntity alanları, soft delete) → `../DATABASE_SCHEMA.md`. FK hedefi `Users` → `Auth.md`.
+> Genel + çoklu dil kuralları → `../CLAUDE.md §1`. Bu dosyadaki tüm tablolar **yalnızca Admin yazar**,
+> giriş yapmış herkes salt-okur. Kullanıcının kendi kartları ayrı → `Kisisel_Icerik.md`.
+> Bir kelime `WordConcept` (kavram) + her dile bir `Words` satırıdır; `de`+`tr` **aynı işlemde** girilir.
 
-> **Sistem kelimesi vs. kullanıcı kelimesi:** Bu dosyadaki tüm tablolar (`WordConcepts`, `Words`,
-> `WordDetails`, `WordExamples`, `Categories`, `CategoryTranslations`, `WordCategories`) **yalnızca
-> Admin tarafından yazılır**, tüm giriş yapmış kullanıcılar salt-okunur erişir. Kullanıcının kendi
-> oluşturduğu kişisel kartlar (`UserCards`) tamamen ayrı bir tablodur ve bu dosyanın kapsamı dışındadır
-> → `Kisisel_Icerik.md`. Bu redesign yalnızca sistem kelimelerini (Admin içeriği) kapsar.
-
-> **Çoklu dil altyapısı:** Bir kelime, dilden bağımsız bir `WordConcepts` kaydına (kavram) ve o kavrama
-> bağlı, her biri kendi dilindeki bir `Languages` satırına işaret eden N adet `Words` satırına ayrılır.
-> Şu an yalnızca `de`+`tr` içerik yazılıyor (bir kelime oluşturulurken/düzenlenirken Almanca ve Türkçe
-> karşılığı — kendi gramer/örnek cümleleriyle birlikte — **aynı işlemde** girilir/güncellenir). Yeni bir
-> dil (örn. `en`) eklemek yalnızca `Languages`'e bir satır + ilgili kavramlara birer `Words` satırı
-> eklemek demektir — **şema/migration değişmez**. Eşleştirme yönsüzdür: DE-TR, DE-EN, TR-EN hepsi aynı
-> `WordConceptId` üzerinden otomatik geçerlidir.
-
-### Languages (desteklenen diller)
+### Languages
 ```sql
 CREATE TABLE Languages (
     Id INT PRIMARY KEY IDENTITY,
     Code NVARCHAR(5) NOT NULL,           -- ISO 639-1: 'de','tr','en'...
-    Name NVARCHAR(50) NOT NULL,          -- İngilizce ad: 'German','Turkish'
-    NativeName NVARCHAR(50) NOT NULL,    -- Kendi dilinde ad: 'Deutsch','Türkçe'
+    Name NVARCHAR(50) NOT NULL,          -- 'German','Turkish'
+    NativeName NVARCHAR(50) NOT NULL,    -- 'Deutsch','Türkçe'
     IsActive BIT NOT NULL DEFAULT 1,
     DisplayOrder INT NOT NULL DEFAULT 0,
     CONSTRAINT UQ_Languages_Code UNIQUE (Code)
 );
--- Seed: yalnızca de+tr. Üçüncü dil eklenmesi tek satırlık bir INSERT'tir, migration gerekmez.
+-- Seed: yalnızca de+tr. Üçüncü dil = tek satırlık INSERT, migration gerekmez.
 INSERT INTO Languages (Code, Name, NativeName, DisplayOrder) VALUES
-('de', 'German', 'Deutsch', 1), ('tr', 'Turkish', 'Türkçe', 2);
+('de','German','Deutsch',1), ('tr','Turkish','Türkçe',2);
 ```
 
-### WordConcepts (dilden bağımsız kavram — kategori/seviye burada tutulur, yalnızca Admin ekler)
+### WordConcepts (dilden bağımsız kavram — kategori/seviye burada)
 ```sql
 CREATE TABLE WordConcepts (
     Id INT PRIMARY KEY IDENTITY,
     PartOfSpeech NVARCHAR(20) NOT NULL,   -- Noun|Verb|Adjective|Adverb|Conjunction|Preposition|Pronoun|Other
     DifficultyLevel NVARCHAR(2) NOT NULL, -- A1..C2
-    ImageUrl NVARCHAR(500) NULL,          -- görsel dilden bağımsızdır (bir "masa" resmi tüm dillerde aynı)
+    ImageUrl NVARCHAR(500) NULL,          -- görsel dilden bağımsız
     IsActive BIT NOT NULL DEFAULT 1,
     CreatedBy INT NULL, UpdatedBy INT NULL,
     IsDeleted BIT NOT NULL DEFAULT 0, DeletedAt DATETIME2 NULL,
@@ -49,20 +37,20 @@ CREATE TABLE WordConcepts (
 );
 ```
 
-### Words (bir kavramın tek bir dildeki karşılığı — yalnızca Admin ekler)
+### Words (bir kavramın tek dildeki karşılığı)
 ```sql
 CREATE TABLE Words (
     Id INT PRIMARY KEY IDENTITY,
     WordConceptId INT NOT NULL,
     LanguageId INT NOT NULL,
-    Text NVARCHAR(255) NOT NULL,          -- örn. 'Tisch' (de) / 'masa' (tr)
+    Text NVARCHAR(255) NOT NULL,          -- 'Tisch' (de) / 'masa' (tr)
     Definition NVARCHAR(MAX) NULL,
     IsActive BIT NOT NULL DEFAULT 1,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (WordConceptId) REFERENCES WordConcepts(Id) ON DELETE CASCADE,
     FOREIGN KEY (LanguageId) REFERENCES Languages(Id),
     CONSTRAINT UQ_Words_Concept_Language UNIQUE (WordConceptId, LanguageId),
-    INDEX IX_Words_LanguageId_Text (LanguageId, Text)   -- duplikat kontrolü + dil bazlı arama
+    INDEX IX_Words_LanguageId_Text (LanguageId, Text)
 );
 ```
 
@@ -71,33 +59,23 @@ CREATE TABLE Words (
 CREATE TABLE WordDetails (
     Id INT PRIMARY KEY IDENTITY,
     WordId INT NOT NULL UNIQUE,
-    Pronunciation NVARCHAR(500) NULL,        -- IPA, dile özel
+    Pronunciation NVARCHAR(500) NULL,        -- IPA
     AudioUrl NVARCHAR(500) NULL,
     Notes NVARCHAR(MAX) NULL, CommonMistakes NVARCHAR(MAX) NULL,
-    GrammarData NVARCHAR(MAX) NULL,          -- JSON — şekli Words.LanguageId'ye göre değişir (bkz. alt not)
+    GrammarData NVARCHAR(MAX) NULL,          -- JSON — şekli Words.LanguageId'ye göre değişir
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (WordId) REFERENCES Words(Id) ON DELETE CASCADE
 );
 ```
-**GrammarData JSON (dil bazında farklı şema):** Almanca (`de`) için şekil ve alan kaynağı →
-`REFERENCE/GERMAN_LANGUAGE_FEATURES.md` (`gender`, 4 hâlde 8 artikel, `pluralForm`/`pluralFormDative`,
-`conjugationData`, `isSeparableVerb`/`separablePrefix`). Türkçe (`tr`) için →
-`REFERENCE/TURKISH_LANGUAGE_FEATURES.md` (`vowelHarmony`, 6 hâl eki, `pluralForm`, `possessive`,
-`consonantMutation`, fiil çekimi) — yön fark etmeksizin (bir Almanın Türkçe öğrenmesi dâhil) gramer
-içeriği sağlanır. İngilizce (`en`) için şema tanımlı ama **henüz kullanılmıyor** →
-`REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` (`article`, `pluralForm`, `verbForms`,
-`comparative`/`superlative`); `Languages`'e satır eklenip gerçek `Words` girilene kadar bu şekil boşta
-bekler — yeni bir sütun gerekmez.
-**Trade-off:** Önceki tasarımdaki `Gender` üzerindeki `CHECK`/`INDEX` (DB-seviyesi) kayboldu; "tüm
-maskülin isimleri getir" gibi filtreler artık uygulama katmanında (`JSON_VALUE`) yapılır. Bu ölçekteki
-bir kelime dağarcığı için performans sorunu yaratmaz.
+> **GrammarData JSON şeması dil bazında:** de → `REFERENCE/GERMAN_LANGUAGE_FEATURES.md`, tr → `REFERENCE/TURKISH_LANGUAGE_FEATURES.md`, en → `REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` (tanımlı ama henüz kullanılmıyor).
+> **Trade-off:** `Gender` üzerinde DB `CHECK`/`INDEX` yok; "tüm maskülinleri getir" gibi filtreler uygulama katmanında (`JSON_VALUE`). Bu ölçekte sorun değil.
 
-### WordExamples (seviyeli örnek cümleler — 1:N Words, dile özel)
+### WordExamples (seviyeli örnek cümleler — 1:N Words)
 ```sql
 CREATE TABLE WordExamples (
     Id INT PRIMARY KEY IDENTITY,
     WordId INT NOT NULL,
-    SentenceText NVARCHAR(MAX) NOT NULL,   -- bu Word'ün dilinde tek bir örnek cümle
+    SentenceText NVARCHAR(MAX) NOT NULL,   -- bu Word'ün dilinde tek örnek cümle
     Level NVARCHAR(2) NOT NULL DEFAULT 'A1',
     ExampleType NVARCHAR(20) NOT NULL DEFAULT 'Normal',  -- Normal|Idiom|Formal|Colloquial
     DisplayOrder INT NOT NULL DEFAULT 0, IsActive BIT NOT NULL DEFAULT 1,
@@ -109,7 +87,7 @@ CREATE TABLE WordExamples (
 );
 ```
 
-### Categories (sistem kategorileri — hiyerarşik, dilden bağımsız çekirdek)
+### Categories (hiyerarşik, dilden bağımsız çekirdek)
 ```sql
 CREATE TABLE Categories (
     Id INT PRIMARY KEY IDENTITY,
@@ -125,7 +103,7 @@ CREATE TABLE Categories (
 );
 ```
 
-### CategoryTranslations (kategori adı/açıklaması — dil başına 1 satır)
+### CategoryTranslations (dil başına 1 satır)
 ```sql
 CREATE TABLE CategoryTranslations (
     Id INT PRIMARY KEY IDENTITY,
@@ -137,7 +115,7 @@ CREATE TABLE CategoryTranslations (
 );
 ```
 
-### WordCategories (WordConcept ↔ Category M:N — kavram üzerinden bir kez etiketlenir)
+### WordCategories (WordConcept ↔ Category M:N)
 ```sql
 CREATE TABLE WordCategories (
     Id INT PRIMARY KEY IDENTITY, WordConceptId INT NOT NULL, CategoryId INT NOT NULL,

@@ -1,9 +1,8 @@
 # Kişisel İçerik Domain — Kullanıcı Kartları ve Kategorileri
 
-> Genel kurallar (BaseEntity alanları, soft delete, UserId filtresi) → `../DATABASE_SCHEMA.md`.
-> FK hedefi `Users` → `Auth.md`, `Categories` → `Icerik.md`.
+> Genel kurallar (BaseEntity, soft delete, UserId filtresi) → `../CLAUDE.md §1`. FK: `Users`→`Auth.md`, `Categories`→`Icerik.md`.
 
-### UserCards + UserCardExamples (kişisel kartlar)
+### UserCards + UserCardExamples
 ```sql
 CREATE TABLE UserCards (
     Id INT PRIMARY KEY IDENTITY,
@@ -44,9 +43,8 @@ CREATE TABLE UserCardCategories (
     CONSTRAINT UQ_UserCardCategories UNIQUE (UserCardId, CategoryId)
 );
 -- UserCard ↔ kişisel UserCategory
--- NOT: UserCategoryId FK'si bilinçli olarak NO ACTION (varsayılan) — Users silindiğinde
--- hem UserCards hem UserCategories üzerinden bu tabloya CASCADE ile ulaşılıyor olsaydı,
--- SQL Server "multiple cascade paths" hatası verirdi. UserCardId zaten cascade zincirini taşır.
+-- NOT: UserCategoryId FK bilinçli NO ACTION — Users silindiğinde hem UserCards hem UserCategories
+-- üzerinden CASCADE ulaşılsaydı "multiple cascade paths" hatası olurdu. UserCardId cascade zincirini taşır.
 CREATE TABLE UserCardUserCategories (
     Id INT PRIMARY KEY IDENTITY, UserCardId INT NOT NULL, UserCategoryId INT NOT NULL,
     FOREIGN KEY (UserCardId) REFERENCES UserCards(Id) ON DELETE CASCADE,

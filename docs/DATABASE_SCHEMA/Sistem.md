@@ -1,8 +1,8 @@
 # Sistem Domain — Uygulama Ayarları
 
-> Genel kurallar (BaseEntity alanları) → `../DATABASE_SCHEMA.md`. FK hedefi `Users` → `Auth.md`.
+> Genel kurallar → `../CLAUDE.md §1`. FK: `Users`→`Auth.md`. AES şifreleme detayı → `REFERENCE/SECURITY.md §3.2`.
 
-### SmtpSettings (tekil — admin yönetir, AES şifreli)
+### SmtpSettings (tekil — admin yönetir, şifre AES-256 ile DB'de şifreli)
 ```sql
 CREATE TABLE SmtpSettings (
     Id INT PRIMARY KEY IDENTITY,
@@ -15,4 +15,3 @@ CREATE TABLE SmtpSettings (
     FOREIGN KEY (UpdatedByUserId) REFERENCES Users(Id)
 );
 ```
-Şifreleme detayı → `REFERENCE/SECURITY.md §3.2`.

@@ -1,141 +1,72 @@
 # MİMARİ TASARIM
 
+> Roller, yöntem (dikey dilim), yazım sırası → `CLAUDE.md`. Bu dosya: sistem yapısı, istemci farkları,
+> görünürlük matrisi, akışlar.
+
 ## 1. Sistem Mimarisi
 
 ```
-┌────────────────┐  ┌────────────────┐  ┌────────────────┐
-│ React Native   │  │ React Web App  │  │ React Admin    │
-│ /mobile        │  │ /web           │  │ /admin         │
-└───────┬────────┘  └───────┬────────┘  └───────┬────────┘
-        └──────────────────┬┴───────────────────┘
-                           │ HTTPS / TLS 1.3
-                           ▼
-              ┌────────────────────────┐
-              │   .NET 9 Web API       │  Controllers → Services → Repositories
-              └───────────┬────────────┘
-                          ▼
-              ┌────────────────────────┐
-              │   MS SQL Server        │  (içerik + sosyal + log tabloları)
-              └────────────────────────┘
+[React Native /mobile] [React Web /web] [React Admin /admin]
+            └──────────────┬──────────────┘
+                    HTTPS / TLS 1.3
+              ┌────────────▼────────────┐
+              │  .NET 9 Web API         │  Controllers → (MediatR) Handlers → Repositories
+              └────────────┬────────────┘
+              ┌────────────▼────────────┐
+              │  MS SQL Server          │  (içerik + sosyal + log tabloları)
+              └─────────────────────────┘
 ```
 
 **Üç istemci, tek API:**
-- **Mobil (`/mobile`):** Google + Apple + e-posta + **QR tarayıcı** (web/masaüstü oturumu onaylama). Token → Expo Secure Store.
-- **Web (`/web`):** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. `SECURITY.md §1.2`). Token → localStorage.
-- **Admin (`/admin`):** Yalnızca e-posta + şifre (Google/Apple/QR yok — küçük/güvenilir kullanıcı tabanı). Yalnızca `Admin` rolü.
+- **Mobil:** Google + Apple + e-posta + **QR tarayıcı** (web oturumu onaylar). Token → Expo Secure Store.
+- **Web:** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. `SECURITY.md §1.2`). Token → localStorage.
+- **Admin:** Yalnızca e-posta+şifre (Google/Apple/QR yok). Yalnızca `Admin` rolü.
 
-## 2. Geliştirme Sırası
-
-`A) Admin BE → B) Admin Panel → C) Kullanıcı BE → D) Web → E) Mobil → F) Test`
-
-Admin önce: içerik girilmeden kullanıcı tarafı test edilemez. Web mobilden önce: tarayıcıda test
-hızlı, mobile referans olur. Detay → `TASK.md`.
-
-## 3. Backend Katmanlı Mimari
+## 2. Backend Katmanlı Mimari
 
 ```
 WordLearner.API            → HTTP (Controllers, Middleware, Program.cs)
-WordLearner.Application     → İş mantığı (Services, DTOs, Validators, Interfaces)
-WordLearner.Infrastructure  → Veri erişimi (DbContext, Repositories, Configurations, Logging sink)
-WordLearner.Domain          → Entities, Enums
+WordLearner.Application    → İş mantığı (Features/Handlers, DTOs, Validators, Interfaces, Services)
+WordLearner.Infrastructure → Veri erişimi (DbContext, Repositories, Configurations, Serilog sink)
+WordLearner.Domain         → Entities, Enums
 ```
-Bağımlılık yönü: `Domain ← Application ← Infrastructure ← API`.
+Bağımlılık: `Domain ← Application ← Infrastructure ← API`.
 
-**Çalışma yöntemi (dikey dilim):** Bir API'ı tüm katmanlarıyla (Entity→…→Controller) bitir, sonra
-diğerine geç. Her parça yazıldıkça `API_YOL_HARITASI/` rehberine işlenir. Detay → `TASK.md`.
+## 3. İçerik Sahipliği ve Görünürlük
 
-## 4. Roller ve İçerik Sahipliği
+| İçerik | Entity | Oluşturan | Gören |
+|--------|--------|-----------|-------|
+| Sistem içeriği | `Word`, `Category` | Admin | Tüm giriş yapmışlar (okuma) |
+| Kişisel içerik | `UserCard`, `UserCategory` | Sahibi (UserId) | Sahibi (+ sınıfa atanırsa üyeler) |
+| Sınıf kelimesi | `ClassWord` | Sınıf sahibi | Yalnızca sınıf üyeleri |
 
-Sistemde **yalnızca iki rol:** `User` ve `Admin`. (`Instructor`/`Teacher`/"öğretmen" kavramı YOK.)
+**Görünürlük:** Sistem kelimeleri → herkese açık. Sınıf kelimeleri → yalnızca üyeler (public/link yok).
+Kullanıcı kartı/kategorisi → varsayılan sahibi; paylaşım linki olan görebilir; sınıfa atanırsa üyeler.
+**Admin onayı/global görünürlük YOK** (şema ve API'de karşılığı yok).
 
-| İçerik | Entity | Oluşturan/düzenleyen | Gören |
-|--------|--------|----------------------|-------|
-| Sistem içeriği | `Word`, `Category` | Yalnızca **Admin** | Tüm giriş yapmışlar (okuma) |
-| Kişisel içerik | `UserCard`, `UserCategory` | Yalnızca **sahibi** (UserId) | Yalnızca sahibi (+ sınıfa atanırsa üyeler) |
-| Sınıf kelimesi | `ClassWord` | Yalnızca **sınıf sahibi** | Yalnızca sınıf üyeleri |
+**Sınıflar:** Herhangi bir `User` sınıf oluşturabilir (sahip = `OwnerId`). Sahip: ad güncelle, kelime/kategori ata, sil. Davet koduyla katılım; sınıf içi rol yalnızca Owner/Member.
 
-- **Herkes `User` kayıt olur.** `Admin` yalnızca elle atanır; hiçbir public endpoint rol yükseltemez.
-- **Sahiplik kuralı:** Kişisel kayda yalnızca yazan kullanıcı erişir; sorgularda `UserId` filtresi
-  zorunlu, başkasının kaydı 404/403.
-- Sistem içeriği CRUD → `[Authorize(Roles="Admin")]`; okuma → `[Authorize]`.
-
-### Sınıflar
-Herhangi bir `User` sınıf (`Class`) oluşturabilir; sahip `Class.OwnerId`. Sahip: ad/bilgi güncelle,
-kelime/kategori ata, sınıfı sil. Kullanıcılar davet koduyla katılır, ayrılabilir. Sınıf içi rol
-yalnızca `Owner`/`Member` (eski Teacher/Student yok).
-
-## 5. İçerik Görünürlük Matrisi
-
-| İçerik | Kim ekler | Varsayılan | Herkese açık | Paylaşım linki | Sınıf |
-|--------|-----------|-----------|--------------|----------------|-------|
-| Sistem kelimeleri | Admin | ✅ herkes | — | — | — |
-| Sınıf kelimeleri | Sınıf sahibi | 🔒 üyeler | ❌ | ❌ | — |
-| Kullanıcı kartı/kategorisi | Her user | 🔒 sahibi | ❌ (admin onayı/global görünürlük YOK — şema ve API'de karşılığı yok) | ✅ linki olan | ✅ üyeler |
-
-## 6. Loglama Mimarisi
-
-Üç hedef, tek amaç değişmez kayıt + admin görünürlüğü:
+## 4. Loglama Mimarisi
 
 | Tablo | Kim yazar | İçerik |
 |-------|-----------|--------|
-| `ApplicationLog` | **Serilog** (`_logger`) + MSSqlServer sink | Teknik log (hata/uyarı/info) — konsol + dosya + DB |
-| `ActivityLog` | `IActivityLogger` servisi | Audit: kim ne yaptı (rol değişti, kelime silindi; old/new JSON) |
-| `SecurityLog` | `ISecurityLogger` servisi | Güvenlik: başarısız giriş, rate-limit, yetkisiz erişim |
+| `ApplicationLog` | Serilog (`_logger`) + MSSqlServer sink | Teknik log — konsol+dosya+DB |
+| `ActivityLog` | `IActivityLogger` | Audit: kim ne yaptı (old/new JSON) |
+| `SecurityLog` | `ISecurityLogger` | Güvenlik: başarısız giriş, rate-limit, yetkisiz erişim |
 
-Hepsi `GET /admin/logs/*` ile filtreli + sayfalı; admin panel B-08'de görüntülenir. Detay →
-`DATABASE_SCHEMA/Loglama.md`, `REFERENCE/SECURITY.md §6`.
+Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECURITY.md §6`.
 
-## 7. Entity İlişkileri (özet)
+## 5. Kullanım Akışları
 
-```
-User ─┬ RefreshToken · UserProgress·UserCard·UserCategory·UserCardProgress
-      ├ LearningSession·LearningHistory·UserAchievement
-      └ Class(owner)·ClassMembership·Friendship·SharedContent
-Word ── WordDetail(1:1)·WordExample(1:N)·Category(M:N)·UserProgress
-UserCard ── UserCardExample·Category(M:N)·UserCategory(M:N)·UserCardProgress
-Category ── self-ref(ParentCategoryId)·Word(M:N)·UserCard(M:N)
-Class ── ClassMembership·ClassWord·Category(M:N)·UserCategory(M:N)
-SharedContent ── ContentType: UserCard|UserCategory|Class + ContentId
-```
-Tam tablo listesi → `DATABASE_SCHEMA.md`.
+- **İlk kayıt:** Kayıt (e-posta+şifre) → e-posta doğrulama OTP → seviye seçimi → ana ekran.
+- **QR ile giriş:** Web `/auth/qr/generate` → QR gösterir → mobilde giriş yapmış kullanıcı okutur (`.../scan`) → cihaz bilgisi + eşleşme kodunu görüp onaylar (`.../confirm`) → web polling ile aynı `ITokenService` token'ını alır (normal login ile birebir). Detay → `SECURITY.md §1.3`.
+- **Öğrenme:** "Öğren" → filtre (seviye/kategori/tür) → SRS sıralaması → kart → cevap → XP → sonraki review.
+- **Kişisel kart:** FrontText sistem `Words.Text` ile (aynı dilde) eşleşirse → "sisteme ekleyelim mi?" → Evet: `learn-system-word` (UserProgress, UserCard yok) / Hayır: UserCard.
+- **Paylaşım:** "Paylaş" → UUID link → arkadaş anonim önizler → giriş yapıp "listeme ekle".
+- **Sınıf:** Oluştur (davet kodu) → içerik ata → öğrenci katılır → sahip istatistik görür.
 
-## 8. Kullanım Akışları (özet)
+## 6. Teknolojiler
 
-**İlk kayıt:** Kayıt (e-posta+şifre) → e-posta doğrulama OTP → seviye seçimi → ana ekran.
-
-**QR ile giriş (web/masaüstü):** Web `/auth/qr/generate` çağırır, QR gösterir → mobilde zaten giriş
-yapmış kullanıcı kamerayla okutur (`/auth/qr/{token}/scan`) → mobil ekranda cihaz bilgisi + eşleşme
-kodu görüp onaylar (`/auth/qr/{token}/confirm`) → web arka planda `status` sorgulayıp (polling) aynı
-`ITokenService`'in ürettiği access+refresh token'ı alır, normal login ile birebir aynı şekilde oturum
-açılır. Ayrıntı → `REFERENCE/SECURITY.md §1.3`, `DATABASE_SCHEMA/Auth.md` (`QrLoginSessions`).
-
-**Öğrenme:** "Öğren" → filtre (seviye/kategori/tür) → SRS sıralaması → kart → cevap → XP → sonraki
-review hesaplanır.
-
-**Kişisel kart:** FrontText sistem `Words.Text` ile (aynı dilde) eşleşirse → "Bu kelime sistemde var,
-öğrenme listene ekleyelim mi?" → Evet ise `learn-system-word` (UserProgress, UserCard YOK) / Hayır ise UserCard.
-
-**Paylaşım:** "Paylaş" → UUID link → arkadaş açar (anonim önizleme) → giriş yapıp "listeme ekle".
-
-**Sınıf:** Oluştur (davet kodu) → içerik (kategori/kişisel kategori/sınıf kelimesi) → öğrenci katılır →
-içerik öğrencinin ekranında → sahip istatistik görür.
-
-## 9. Klasör Yapısı
-
-```
-WordLearner/
-├── CLAUDE.md · docs/ · "new md"/
-├── backend/{WordLearner.API, .Application, .Infrastructure, .Domain}
-├── admin/   ← React + Vite (Admin paneli)
-├── web/     ← React + Vite (Kullanıcı web)
-├── mobile/  ← React Native Expo
-└── WordLearner.sln
-```
-
-## 10. Teknolojiler
-
-**Backend:** .NET 9, EF Core 9, FluentValidation 11, BCrypt.Net-Next 4, Serilog 3
-(+ `Serilog.Sinks.MSSqlServer`), MediatR 12, AutoMapper 13.
-**Web/Admin:** React + Vite, TypeScript, TailwindCSS, Redux Toolkit + RTK Query, React Hook Form,
-Axios; Web ayrıca React Router v6 + `@react-oauth/google`.
+**Backend:** .NET 9, EF Core 9, FluentValidation 11, BCrypt.Net-Next 4, Serilog 3 (+MSSqlServer sink), MediatR 12, AutoMapper 13.
+**Web/Admin:** React+Vite, TS, TailwindCSS, Redux Toolkit + RTK Query, React Hook Form, Axios; Web ayrıca React Router v6 + `@react-oauth/google`.
 **Mobil:** React Native + Expo, Redux Toolkit + RTK Query, React Navigation, Axios, i18next, Expo Secure Store.

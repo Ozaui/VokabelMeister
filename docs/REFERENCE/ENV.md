@@ -1,73 +1,53 @@
 # Ortam Değişkenleri (ENV)
 
-Uygulamanın ihtiyaç duyduğu tüm ortam değişkenleri. Dış servis sayısı kasıtlı düşük tutulur.
+> Genel kural (hassas değer asla appsettings/koda girmez, yeni servis → bu dosyayı güncelle) → `CLAUDE.md §1`.
+> ASP.NET Core'da `__` = nested ayırıcı (`Jwt__SecretKey` → `IConfiguration["Jwt:SecretKey"]`).
+> Dev: `appsettings.Development.json` + `launchSettings.json` (ikisi `.gitignore`'da). Prod: IIS ortam değişkenleri.
 
-## Genel Kurallar
-
-- Hassas değerler `appsettings.json` veya kaynak koduna **asla** yazılmaz.
-- ASP.NET Core'da `__` (çift alt çizgi) nested config ayırıcısıdır: `Jwt__SecretKey` → `IConfiguration["Jwt:SecretKey"]`.
-- Dev: `appsettings.Development.json` / `launchSettings.json` (ikisi de `.gitignore`'da).
-- Prod: IIS sunucu ortam değişkenleri.
-- **Yeni servis eklenince bu dosyayı güncelle** (§9).
-
-## 1. Veritabanı
+## 1. Veritabanı (log tabloları da aynı DB — ek değişken yok)
 ```
 ConnectionStrings__DefaultConnection=Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;
 ```
-> **Not:** Log tabloları (`ApplicationLog`, `ActivityLog`, `SecurityLog`) aynı veritabanını kullanır —
-> ek bağlantı/değişken **gerekmez**.
 
 ## 2. JWT
 ```
-Jwt__SecretKey=en-az-32-karakter-rastgele-anahtar      # HMAC-SHA256, min 32 karakter
+Jwt__SecretKey=en-az-32-karakter-rastgele        # HMAC-SHA256, min 32 karakter (openssl rand -base64 48)
 Jwt__Issuer=WordLearnerApp
 Jwt__Audience=WordLearnerApp
 Jwt__RefreshTokenExpirationDays=7
 ```
-Üretme: `openssl rand -base64 48`
 
 ## 3. Google Sign In
 ```
 Google__ClientId=123456789-abc.apps.googleusercontent.com
 ```
-Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID. Backend yalnızca
-`GoogleJsonWebSignature.ValidateAsync` ile audience doğrular; client secret gerekmez.
+Backend yalnızca `GoogleJsonWebSignature.ValidateAsync` ile audience doğrular; client secret gerekmez.
 
 ## 4. Apple Sign In
 ```
 Apple__BundleId=com.vokabelmeister.app
 ```
-Apple Developer → Identifiers → Bundle ID. JWKS `https://appleid.apple.com/auth/keys`'ten dinamik çekilir.
-
-> **İleride web/masaüstüne Apple girişi eklenirse (şu an YOK, bkz. `ARCHITECTURE.md §1`):** Yeni bir
-> `Apple__ServicesId` değişkeni gerekecek — ama önce Apple Developer Console'da bu Services ID,
-> "Sign in with Apple → Configure" adımında mobil uygulamanın Bundle ID'sine **Primary App ID**
-> olarak gruplanmalı. Aksi halde Apple aynı gerçek kullanıcı için mobil ve web'de **farklı `sub`**
-> (kullanıcı kimliği) döner ve iki ayrı hesap açılır (bkz. `REFERENCE/SECURITY.md §1.2`). Bugün için
-> yapılacak bir şey yok — bu not yalnızca o iş başladığında unutulmaması için.
+JWKS `https://appleid.apple.com/auth/keys`'ten dinamik çekilir.
+> **İleride web'e Apple eklenirse (şu an YOK):** `Apple__ServicesId` gerekir + Apple Console'da bu Services ID mobil Bundle ID'ye "Primary App ID" olarak gruplanmalı, yoksa aynı kişi için iki `sub` → iki hesap (`SECURITY.md §1.2`).
 
 ## 5. SMTP Şifreleme Anahtarı (AES)
 ```
-AES_ENCRYPTION_KEY=K5v2XmP9qR8nW3jL6tH1cB4yE7uA0oD+N2sF5gM=    # 32 byte, Base64
+AES_ENCRYPTION_KEY=K5v2XmP9qR8nW3jL6tH1cB4yE7uA0oD+N2sF5gM=    # 32 byte Base64 (openssl rand -base64 32)
 ```
-SMTP ayarları admin panel üzerinden DB'ye kaydedilir; şifre AES-256 ile DB'de şifreli tutulur.
-Anahtar DB'de saklanamaz → daima ENV'de. Üretme: `openssl rand -base64 32`.
-> **Kritik:** Kaybolursa DB'deki şifreli SMTP şifreleri çözülemez. Güvenli sakla.
+SMTP şifresi DB'de AES-256 şifreli; anahtar DB'de saklanamaz → daima ENV. **Kaybolursa DB'deki SMTP şifreleri çözülemez.**
 
 ## 6. OneSignal (Push)
 ```
-OneSignal__AppId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-OneSignal__RestApiKey=os_v2_app_xxxxxxxxxxxxxxxxxxxxx     # YALNIZCA backend — asla mobil koda girmez
+OneSignal__AppId=xxxxxxxx-...      # mobilde de kullanılır (hassas değil)
+OneSignal__RestApiKey=os_v2_...    # YALNIZCA backend — asla mobil koda girmez
 ```
-OneSignal Dashboard → Settings → Keys & IDs. `AppId` mobilde de `.env`'de kullanılır (hassas değil);
-`RestApiKey` yalnızca backend'de.
 
-## 7. Dosya Depolama (yerel sunucu — avatar/görsel)
+## 7. Dosya Depolama (avatar/görsel)
 ```
 FileStorage__UploadPath=/var/app/uploads
 FileStorage__BaseUrl=https://api.vokabelmeister.com/uploads
 ```
-`UseStaticFiles()` ile public servis edilir. Dev: `wwwroot/uploads` + `https://localhost:7001/uploads`.
+`UseStaticFiles()` ile public. Dev: `wwwroot/uploads` + `https://localhost:7001/uploads`.
 
 ## 8. CORS
 ```
@@ -88,18 +68,12 @@ Cors__AllowedOrigins__2=http://localhost:5174     # Web app
   "Cors": { "AllowedOrigins": ["http://localhost:8081", "http://localhost:5173", "http://localhost:5174"] }
 }
 ```
-`AES_ENCRYPTION_KEY` → `launchSettings.json` `environmentVariables` altına eklenir (commit edilmez).
+`AES_ENCRYPTION_KEY` → `launchSettings.json` `environmentVariables` altına (commit edilmez).
 
-## 9. Güncelleme Kuralı
-Yeni servis eklenince: (1) buraya bölüm ekle, (2) `TASK.md`'ye `→ REFERENCE/ENV.md §X` referansı, (3) dev şablonu güncelle.
+## Hangi Bilgi Nerede?
 
-## Özet — Hangi Bilgi Nerede?
-
-| Bilgi | Yer | Neden |
-|-------|-----|-------|
-| DB bağlantısı, JWT anahtarı, AES anahtarı | ENV | Hassas / kaynak koda girmemeli |
-| Google ClientId, Apple BundleId | ENV | Ortama göre değişir |
-| OneSignal RestApiKey | ENV (yalnızca backend) | Asla mobil koda girmez |
-| Dosya yükleme yolu | ENV | Sunucuya göre değişir |
-| SMTP host/port/kullanıcı/şifre | **Database** (şifre AES) | Admin panelden yönetilir |
-| Log verileri | **Database** (ana DB) | Ek değişken gerekmez |
+| Bilgi | Yer |
+|-------|-----|
+| DB bağlantısı, JWT/AES anahtarı, Google ClientId, Apple BundleId, OneSignal RestApiKey, dosya yolu | ENV |
+| SMTP host/port/kullanıcı/şifre (şifre AES) | Database (admin panelden) |
+| Log verileri | Database (ana DB) |

@@ -1,20 +1,18 @@
 # Loglama Domain — Log Tabloları (admin panelden görüntülenir)
 
-> Üç ayrı tablo, üç farklı amaç. Soft delete **yok**; loglar değişmez (immutable) kayıtlardır.
-> Tümü `GET /admin/logs/*` ile filtreli + sayfalı listelenir (yalnızca Admin). FK hedefi `Users` → `Auth.md`.
+> Üç tablo, üç amaç. Soft delete **yok**, loglar değişmez (insert-only). Tümü `GET /admin/logs/*` ile
+> filtreli+sayfalı (yalnızca Admin). FK: `Users`→`Auth.md`. Mimari → `REFERENCE/ARCHITECTURE.md §6`, `REFERENCE/SECURITY.md §6`.
 
-### ActivityLog (audit — kim ne yaptı)
-İş/audit kaydı: kullanıcı ve admin eylemleri. Özel `IActivityLogger` servisi yazar.
+### ActivityLog (audit — kim ne yaptı; `IActivityLogger` yazar)
 ```sql
 CREATE TABLE ActivityLog (
     Id BIGINT PRIMARY KEY IDENTITY,
     UserId INT NULL,                       -- eylemi yapan (anonim ise NULL)
     ActorRole NVARCHAR(20) NULL,           -- User|Admin (kayıt anındaki rol)
-    Action NVARCHAR(100) NOT NULL,         -- LOGIN|REGISTER|CREATE_WORD|DELETE_USER_CARD|CHANGE_ROLE|FREEZE_ACCOUNT...
+    Action NVARCHAR(100) NOT NULL,         -- LOGIN|REGISTER|CREATE_WORD|DELETE_USER_CARD|CHANGE_ROLE...
     EntityType NVARCHAR(50) NULL,          -- Word|UserCard|User|Category...
     EntityId INT NULL,
-    OldValue NVARCHAR(MAX) NULL,           -- JSON (değişiklik öncesi)
-    NewValue NVARCHAR(MAX) NULL,           -- JSON (değişiklik sonrası)
+    OldValue NVARCHAR(MAX) NULL, NewValue NVARCHAR(MAX) NULL,   -- JSON (öncesi/sonrası)
     IpAddress VARCHAR(45) NULL, UserAgent NVARCHAR(500) NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL,
@@ -23,8 +21,7 @@ CREATE TABLE ActivityLog (
 );
 ```
 
-### ApplicationLog (teknik log — Serilog DB sink)
-Serilog `Serilog.Sinks.MSSqlServer` ile yazar. Kodda `_logger.LogX(...)` → konsol + dosya + bu tablo.
+### ApplicationLog (teknik log — Serilog MSSqlServer sink; kurulum → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §9`)
 ```sql
 CREATE TABLE ApplicationLog (
     Id BIGINT PRIMARY KEY IDENTITY,
@@ -39,11 +36,9 @@ CREATE TABLE ApplicationLog (
     INDEX IX_ApplicationLog_Level (Level), INDEX IX_ApplicationLog_TimeStamp (TimeStamp DESC)
 );
 ```
-> **Not:** Serilog MSSqlServer sink kolon adlarını (`Level`, `Message`, `Exception`, `TimeStamp`,
-> `Properties`) `ColumnOptions` ile eşler. `SourceContext`/`RequestPath`/`UserId` ek kolon olarak tanımlanır.
+> Serilog sink kolonları (`Level`, `Message`, `Exception`, `TimeStamp`, `Properties`) `ColumnOptions` ile eşlenir; `SourceContext`/`RequestPath`/`UserId` ek kolon.
 
-### SecurityLog (güvenlik olayları)
-Özel `ISecurityLogger` yazar. Başarısız giriş, rate-limit, yetkisiz erişim, OTP hataları.
+### SecurityLog (güvenlik olayları — `ISecurityLogger` yazar)
 ```sql
 CREATE TABLE SecurityLog (
     Id BIGINT PRIMARY KEY IDENTITY,
@@ -58,6 +53,4 @@ CREATE TABLE SecurityLog (
     INDEX IX_SecurityLog_CreatedAt (CreatedAt DESC)
 );
 ```
-
-**`LogEventType` enum (Domain/Enums):** `LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess,
-TokenReplay, PasswordReset, AccountDeletion, AdminAction, QrLoginConfirmed, QrLoginDenied`.
+> `LogEventType` enum (Domain/Enums): `LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess, TokenReplay, PasswordReset, AccountDeletion, AdminAction, QrLoginConfirmed, QrLoginDenied`.
