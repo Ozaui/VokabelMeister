@@ -25,8 +25,8 @@ public static class ErrorMessages
 
 ## Şu An Tanımlı Kodlar (tr + en)
 `INVALID_CREDENTIALS`, `INVALID_OTP`, `EMAIL_ALREADY_REGISTERED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED`,
-`INVALID_REFRESH_TOKEN`, `INVALID_SOCIAL_TOKEN` — her biri A-03'teki bir [[AppException]] alt
-tipine karşılık gelir.
+`INVALID_REFRESH_TOKEN`, `INVALID_SOCIAL_TOKEN` (A-03) + `QR_SESSION_GONE`, `QR_SESSION_FORBIDDEN`
+(A-03.1) — her biri bir [[AppException]] alt tipine karşılık gelir.
 
 ## Güvenli Varsayılan Davranış
 Sözlükte olmayan bir kod gelirse (yeni bir `AppException` eklenip çevirisi unutulmuşsa) exception

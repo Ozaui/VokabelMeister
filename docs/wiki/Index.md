@@ -222,9 +222,13 @@ link yorumu + örnek `frontendRefs`), `docs/API_YOL_HARITASI/A-03_auth-api.html`
 ve [[Sistem_Mimarisi]]'ye dokunulmadı — ikisi zaten "ayrı proje, kod paylaşımı yok" diyordu, yalnızca
 roadmap dokümantasyon sistemi bunu yansıtmıyordu.*
 
-## Kaynak Dokümanlar (`/docs`)
-Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların taranmasıyla üretildi. `docs/` artık
-şu klasör yapısındadır (token tasarrufu için bölündü, içerik kaybı yok):
+## Kaynak Dokümanlar (`/docs` + kök `CLAUDE.md`)
+Bu wiki, `docs/` altındaki **tüm** insan-yazımı dokümanların ve kök `CLAUDE.md`'nin taranmasıyla
+üretildi. **`/CLAUDE.md` (proje köku, 2026-07-08'den beri) artık tek gerçek kaynak** — dil kuralı,
+roller/sahiplik, çoklu dil, veri katmanı, kimlik&güvenlik, test, wiki, backend/frontend yazım sırası,
+klasör/namespace ve roadmap kuralları burada toplu; `docs/DATABASE_SCHEMA*` ve `docs/REFERENCE/*`
+artık bu kuralları tekrarlamak yerine `CLAUDE.md`'ye referans verir (bkz. Yirmi birinci INGEST).
+`docs/` şu klasör yapısındadır (token tasarrufu için bölündü, içerik kaybı yok):
 - `docs/00_INDEX.md`, `docs/index.html`, `docs/CONNECTION_STRING.txt` — giriş noktaları (kökte)
 - `docs/REFERENCE/` — ARCHITECTURE, API_ENDPOINTS, CODING_STANDARDS, DEVELOPMENT_SETUP, ENV,
   GERMAN_LANGUAGE_FEATURES, TURKISH_LANGUAGE_FEATURES, ENGLISH_LANGUAGE_FEATURES (henüz kullanılmıyor),
@@ -561,3 +565,35 @@ escape-güvenli — `esc()` içeriği önce işler), `style.css` (`.test-results
 **Doğrulama:** `node vm.Script` ile 3 dosyanın da JS sözdizimi bozulmadığı, `adimlar` sayısı ve toplam
 test sayısı (11+61+18=90, gerçek `dotnet test` çıktısıyla birebir) script ile çapraz kontrol edildi.
 **Sıradaki task:** A-03.2 (Auth başarı mesajlarının lokalizasyonu).*
+
+*Yirmi birinci INGEST (2026-07-08) — İki ayrı kapsam: **(1) Dokümantasyon: ortak kurallar
+`CLAUDE.md`'de merkezileştirildi** (kod değişikliği yok, saf dokümantasyon commit'i, `f39d993`).
+Her `docs/REFERENCE/*` ve `docs/DATABASE_SCHEMA*` dosyasında tekrar eden "genel kurallar" blokları
+(dil kuralı, roller/sahiplik, çoklu dil, veri katmanı, kimlik&güvenlik, test standardı özeti) tek
+bir kök `/CLAUDE.md`'ye toplandı; o dosyalar artık yalnızca kendi **özgün** içeriklerini (yorum
+şablonları, sistem akışları, ERD, JWT detayları vb.) taşıyıp genel kural için `CLAUDE.md §N`'e
+referans veriyor — hiçbir bilgi kaybı yok, yalnızca tekilleştirme (`docs/REFERENCE/*` toplamda
+~550 satır küçüldü). Kullanılmayan Obsidian taslak dosyası (`docs/wiki/Başlıksız.base`) kaldırıldı.
+Wiki: [[Index]]'in "Kaynak Dokümanlar" bölümüne `CLAUDE.md` kök kaynak olarak eklendi.
+**(2) Wiki senkronizasyon açığı kapatıldı** (kullanıcı "son pushladıklarımızdan eksik var mı bak"
+diye sordu, kontrol edildi): On yedinci/On sekizinci/Yirminci INGEST'lerin "Etkilenen dosyalar"
+listesi bazı Backend wiki düğümlerini "güncellendi" olarak işaretlemişti ama gerçek dosya içeriği
+hâlâ A-02/A-03-öncesi durumu yansıtıyordu — INGEST kaydı ile gerçek içerik arasında sapma vardı.
+Düzeltilen düğümler: [[WordLearner_Application]] (Klasör Yapısı hâlâ yalnızca A-02'yi gösteriyordu,
+`Features/Auth`/`Features/QrLogin`/`Validators/Auth`/`DTOs/Auth`/`Services/` hiç yoktu; BCrypt/JWT/
+Google.Apis.Auth hâlâ "planlanan, kurulmamış" deniyordu — hepsi aktif), [[WordLearner_Infrastructure]]
+(`QrLoginSessionRepository` eksikti), [[WordLearner_API]] (`QrLoginController`, 5 endpoint, hiç
+anılmıyordu — sayfa hâlâ "ilk ve tek controller AuthController" diyordu), [[WordLearner_Tests]]
+(toplam 72 diyordu, gerçek 90 — 18 QrLogin testi eksikti), [[Auth_Domain]] (QrLoginSessions bölümü
+hâlâ "planlı, henüz kod yok" diyordu, oysa A-03.1 tamamlanmıştı; "Referans Kod" bölümü hâlâ "henüz
+yazılmadı" diyordu), [[AppException]]/[[ErrorMessages]] (QR_SESSION_GONE/QR_SESSION_FORBIDDEN kod
+listesinde yoktu). Ayrıca **CLAUDE.md commit'inden bağımsız, daha eski bir tutarsızlık** bulundu:
+[[Backend_Katmanli_Mimari]] hâlâ "yalnızca A-01/A-02 yazıldı, feature entity/servis/controller
+henüz yok" diyordu (A-03/A-03.1'i hiç yansıtmıyordu) ve katman şeması hâlâ eski "Servis Arayüzü/
+Servis" desenini gösteriyordu; [[Sistem_Mimarisi]]'nde de `Controllers → Services → Repositories`
+satırı MediatR retrofit'ini (on yedinci INGEST) yansıtmıyordu — ikisi de düzeltildi
+(`Controllers → (MediatR) Command/Handler → Repositories`). **Kök neden:** geçmiş INGEST'ler
+domain'e özgü sayfaları (ör. [[Auth_Domain]] bir istisna dışında) güncellerken, üst-seviye
+proje-yapısı/mimari özet sayfalarını (Backend/*, Architecture/*) atlamış — bundan sonraki her
+INGEST'te bu iki kategori de kontrol edilmeli. Kod tarafında hiçbir değişiklik yapılmadı, yalnızca
+wiki gerçek koda/dokümana yeniden hizalandı.*

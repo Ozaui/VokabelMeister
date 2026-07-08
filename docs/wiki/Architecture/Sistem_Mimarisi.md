@@ -16,7 +16,7 @@ React Admin (/admin)    ─┘
 - **Web:** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. [[Guvenlik_Politikalari]]). Token → localStorage.
 - **Admin:** Yalnızca e-posta + şifre (sosyal giriş/QR yok). Yalnızca `Admin` rolü erişebilir.
 
-Backend içi katman akışı: `Controllers → Services → Repositories` → detay [[Backend_Katmanli_Mimari]].
+Backend içi katman akışı: `Controllers → (MediatR) Command/Handler → Repositories` → detay [[Backend_Katmanli_Mimari]].
 
 ## Klasör Yapısı (hedef)
 

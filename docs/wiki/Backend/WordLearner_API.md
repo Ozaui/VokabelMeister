@@ -1,6 +1,6 @@
 # WordLearner.API
 
-**Özet:** Solution'ın HTTP giriş noktası (composition root) — Controller'lar, middleware pipeline ve Swagger burada tanımlanır. [[Program_cs]] artık **A-02 itibarıyla tam yapılandırılmış** (JWT auth, CORS, Serilog, MediatR/AutoMapper/FluentValidation kayıtları); `Middleware/` klasöründe 3 sınıf var (bkz. [[Middleware]]). `Controllers/` klasöründe ilk (ve tek) controller `AuthController` (A-03, 13 endpoint) var — `IMediator.Send(command)` ile `Application/Features/Auth/`'taki Command Handler'ları çağırır, kendisi iş mantığı içermez. `Microsoft.NET.Sdk.Web` SDK'sı kullanır, hedef framework `net9.0`.
+**Özet:** Solution'ın HTTP giriş noktası (composition root) — Controller'lar, middleware pipeline ve Swagger burada tanımlanır. [[Program_cs]] artık **A-02 itibarıyla tam yapılandırılmış** (JWT auth, CORS, Serilog, MediatR/AutoMapper/FluentValidation kayıtları) + A-03.1'de eklenen IP-partitioned `qrGenerate` rate limit policy'si; `Middleware/` klasöründe 3 sınıf var (bkz. [[Middleware]]). `Controllers/` klasöründe iki controller var: `AuthController` (A-03 ✅, 13 endpoint) ve `QrLoginController` (A-03.1 ✅, 5 endpoint, `/auth/qr/*` — Admin panelde bu akış olmadığı için `AuthController`'dan ayrı) — ikisi de yalnızca `IMediator.Send(command)` ile `Application/Features/`'taki Command Handler'ları çağırır, iş mantığı içermez. `Microsoft.NET.Sdk.Web` SDK'sı kullanır, hedef framework `net9.0`.
 **Kütüphaneler:** ASP.NET Core, Microsoft.AspNetCore.Authentication.JwtBearer 9.0.0 (aktif — JWT doğrulama kurulu), Serilog.AspNetCore 8.0.1 (+ Console/File sink aktif, MSSqlServer sink A-04'te), Swashbuckle.AspNetCore 7.2.0
 **Bağlantılar:** [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[Program_cs]] · [[Middleware]] · [[Backend_Katmanli_Mimari]]
 
@@ -19,7 +19,7 @@
 | `Middleware/` | 3 sınıf: ExceptionHandling/SecurityHeaders/RequestResponseLogging (bkz. [[Middleware]]) |
 | `appsettings.json` | Genel config (gizli değer yok — bkz. [[Ortam_Degiskenleri]]) |
 | `appsettings.Development.json` | Dev secrets (`.gitignore`'da) |
-| `Controllers/` | `AuthController.cs` (A-03, 13 endpoint, `IMediator` üzerinden çağırır) |
+| `Controllers/` | `AuthController.cs` (A-03, 13 endpoint), `QrLoginController.cs` (A-03.1, 5 endpoint) — ikisi de `IMediator` üzerinden çağırır |
 | `Filters/` | `ValidationFilter.cs` — global action filter, `IValidator<T>`'leri otomatik çalıştırır |
 | `Common/` | `RequestLanguageResolver.cs` — `Accept-Language` çıkarma mantığı |
 | `Properties/launchSettings.json` | Dev başlatma profili |

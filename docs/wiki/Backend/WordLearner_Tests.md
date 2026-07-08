@@ -1,8 +1,8 @@
 # WordLearner.Tests
 
-**Özet:** xUnit birim test projesi; [[WordLearner_Application]] ve [[WordLearner_Infrastructure]]'a referans verir. A-02: [[RepositoryTests]] (in-memory EF Core ile generic [[Repository]] CRUD + soft delete filtresi + `UpdatedAt`/userId audit alanları, 10 test) ve `EntityNotFoundExceptionTests` (Type+key overload'ının mesaj formatını doğrular, 1 test). A-03: `PasswordServiceTests` (BCrypt/SHA-256, mock'suz — saf algoritma, 5 test), `JwtTokenServiceTests` (claim'ler + Algorithm Confusion önlemi, gerçek in-memory `IConfiguration` ile, 6 test), `OtpServiceTests` (OTP üretimi/doğrulanması/temizlenmesi, 7 test) + `LoginCompletionServiceTests` (OTP/Google/Apple girişlerinin ortak son adımı, grace period kurtarma dahil, 5 test — MediatR CQRS refactor'ünde `AuthService`'ten çıkan paylaşılan servislerin testleri), `Features/Auth/` altında 13 akışın her biri için ayrı bir `*CommandHandlerTests` dosyası (eskiden tek `AuthServiceTests` dosyasıydı, 39 test — şimdi handler başına bölünmüş hâliyle 38 test, grace period/anonimleştirme senaryoları tekrar edilmek yerine `LoginCompletionServiceTests`'e taşındığı için). Toplam 72 test, hepsi yeşil.
+**Özet:** xUnit birim test projesi; [[WordLearner_Application]] ve [[WordLearner_Infrastructure]]'a referans verir. A-02: [[RepositoryTests]] (in-memory EF Core ile generic [[Repository]] CRUD + soft delete filtresi + `UpdatedAt`/userId audit alanları, 10 test) ve `EntityNotFoundExceptionTests` (Type+key overload'ının mesaj formatını doğrular, 1 test). A-03 ✅: `PasswordServiceTests` (BCrypt/SHA-256, mock'suz — saf algoritma, 5 test), `JwtTokenServiceTests` (claim'ler + Algorithm Confusion önlemi, gerçek in-memory `IConfiguration` ile, 6 test), `OtpServiceTests` (OTP üretimi/doğrulanması/temizlenmesi, 7 test) + `LoginCompletionServiceTests` (OTP/Google/Apple girişlerinin ortak son adımı, grace period kurtarma dahil, 5 test — MediatR CQRS refactor'ünde `AuthService`'ten çıkan paylaşılan servislerin testleri), `Features/Auth/` altında 13 akışın her biri için ayrı bir `*CommandHandlerTests` dosyası (eskiden tek `AuthServiceTests` dosyasıydı, 39 test — şimdi handler başına bölünmüş hâliyle 38 test, grace period/anonimleştirme senaryoları tekrar edilmek yerine `LoginCompletionServiceTests`'e taşındığı için) — A-03 toplamı 72 test. **A-03.1 ✅:** `Features/QrLogin/` altında 5 akışın her biri için ayrı `*CommandHandlerTests` dosyası (Generate/Scan/Confirm/Deny/GetStatus), 18 test. **Genel toplam 90 test, hepsi yeşil** (`dotnet test --logger trx` ile doğrulandı — sonuçlar `API_YOL_HARITASI/*.html` sayfalarına `adim.sonuclar` alanı olarak gömülü, bkz. [[API_Yol_Haritasi_Sistemi]]).
 **Kütüphaneler:** xUnit 2.9.2, xunit.runner.visualstudio 2.8.2, Microsoft.NET.Test.Sdk 17.12.0, coverlet.collector 6.0.2, `Moq` 4.20.70, `FluentAssertions` 6.12.0, `Microsoft.EntityFrameworkCore.InMemory` 9.0.0 (bkz. [[Kodlama_Standartlari]] §7, tam versiyon listesi [[Teknik_Ozellikler]] §1)
-**Bağlantılar:** [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[Repository]] · [[RepositoryTests]] · [[Kodlama_Standartlari]] · [[Backend_Katmanli_Mimari]] · [[Teknik_Ozellikler]]
+**Bağlantılar:** [[WordLearner_Application]] · [[WordLearner_Infrastructure]] · [[Repository]] · [[RepositoryTests]] · [[Kodlama_Standartlari]] · [[Backend_Katmanli_Mimari]] · [[Teknik_Ozellikler]] · [[Auth_Domain]]
 
 ## Proje Referansları
 `WordLearner.Tests.csproj` → [[WordLearner_Application]], [[WordLearner_Infrastructure]]
@@ -10,12 +10,13 @@
 ## Klasör Yapısı
 ```
 Services/              → PasswordServiceTests.cs, JwtTokenServiceTests.cs,
-                          OtpServiceTests.cs, LoginCompletionServiceTests.cs ✅ (A-03)
+                          OtpServiceTests.cs, LoginCompletionServiceTests.cs ✅ (A-03, 23 test)
 Features/Auth/         → 13 *CommandHandlerTests.cs (RegisterCommandHandlerTests.cs vb.,
-                          eski AuthServiceTests.cs'in yerine — A-03 MediatR refactor) ✅
+                          eski AuthServiceTests.cs'in yerine — A-03 MediatR refactor) ✅ (38 test)
+Features/QrLogin/      → 5 *CommandHandlerTests.cs (GenerateQrLoginCommandHandlerTests.cs vb.) ✅ (A-03.1, 18 test)
 Helpers/               → SrsCalculatorTests.cs vb. (henüz yok)
-Repositories/          → RepositoryTests.cs   (generic taban için, A-02'de bir kez) ✅
-Common/Exceptions/     → EntityNotFoundExceptionTests.cs (Type+key overload mesaj formatı) ✅
+Repositories/          → RepositoryTests.cs   (generic taban için, A-02'de bir kez) ✅ (10 test)
+Common/Exceptions/     → EntityNotFoundExceptionTests.cs (Type+key overload mesaj formatı) ✅ (1 test)
 ```
 
 ## Test Felsefesi

@@ -1,6 +1,6 @@
 # AppException
 
-**Özet:** Bilinen iş kuralı hatalarının (Auth: `DuplicateEmailException`, `InvalidCredentialsException`, `InvalidOtpException`, `AccountNotActiveException`, `AccountAnonymizedException`, `InvalidRefreshTokenException`, `InvalidSocialTokenException`) türediği taban sınıf. Mesajı kendi içinde SABİTLEMEZ — yalnızca dilden bağımsız bir `Code` (ör. `INVALID_CREDENTIALS`) taşır. İstemciye giden gerçek mesaj, isteğin `Accept-Language` header'ına göre [[ErrorMessages]] sözlüğünden [[Middleware|ExceptionHandlingMiddleware]] tarafından çözülür.
+**Özet:** Bilinen iş kuralı hatalarının (Auth: `DuplicateEmailException`, `InvalidCredentialsException`, `InvalidOtpException`, `AccountNotActiveException`, `AccountAnonymizedException`, `InvalidRefreshTokenException`, `InvalidSocialTokenException`; QR ile Giriş — A-03.1: `QrSessionGoneException`(410), `QrSessionForbiddenException`(403)) türediği taban sınıf. Mesajı kendi içinde SABİTLEMEZ — yalnızca dilden bağımsız bir `Code` (ör. `INVALID_CREDENTIALS`) taşır. İstemciye giden gerçek mesaj, isteğin `Accept-Language` header'ına göre [[ErrorMessages]] sözlüğünden [[Middleware|ExceptionHandlingMiddleware]] tarafından çözülür.
 **Kütüphaneler:** Yok — saf C#.
 **Bağlantılar:** [[ErrorMessages]] · [[Middleware]] · [[ApiErrorResponse]] · [[EntityNotFoundException]] · [[Guvenlik_Politikalari]] · [[Auth_Domain]]
 

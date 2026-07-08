@@ -1,7 +1,7 @@
 # Auth Domain (Users, RefreshTokens)
 
-**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder. Bu domain [[Gelistirme_Yol_Haritasi]]'nde **A-03 (Auth API)** task'ında yazılacak, henüz kod yok.
-**Kütüphaneler:** BCrypt.Net-Next (şifre hash), JWT (Microsoft.AspNetCore.Authentication.JwtBearer), System.IdentityModel.Tokens.Jwt, Google.Apis.Auth
+**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder; `QrLoginSessions` (A-03.1) aynı token akışını QR ile tetikler. **A-03 ✅ ve A-03.1 ✅ tamamlandı** — bu domain artık gerçek kodda mevcut.
+**Kütüphaneler:** BCrypt.Net-Next 4.0.3 (şifre hash, aktif), Microsoft.AspNetCore.Authentication.JwtBearer 9.0.0 (aktif), System.IdentityModel.Tokens.Jwt 7.1.0 (aktif), Google.Apis.Auth 1.67.0 (aktif)
 **Bağlantılar:** [[Veritabani_Semasi]] · [[Guvenlik_Politikalari]] · [[Roller_ve_Erisim]] · [[BaseEntity]] · [[Loglama_Domain]] · [[Teknik_Ozellikler]] · [[Gelistirme_Kurulumu]]
 
 ## Users
@@ -26,7 +26,7 @@ tutarlı). `User` entity'sinin kendisi de `BaseEntity`'den türediği için kend
 imkanı vardır — örn. bir admin başka bir kullanıcıyı oluşturursa `CreatedByUserId` o admin'in Id'si
 olur; self-servis kayıtta `null` kalır.
 
-## Yazılmış Kod (A-03)
+## Yazılmış Kod (A-03 ✅ + A-03.1 ✅ — ikisi de tamamlandı)
 `User`, `RefreshToken` entity + `OtpPurpose` enum → `IPasswordService`, `ITokenService`,
 `IOtpService`/`ILoginCompletionService` (paylaşılan OTP/giriş-tamamlama mantığı) → 13 Auth
 Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`: register/verify-email/login
@@ -34,14 +34,23 @@ Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`: register/verify-
 (13 endpoint, `IMediator.Send(command)` ile) — detay [[API_Sozlesmesi]] ve
 `docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `API_YOL_HARITASI/A-03_auth-api.html`.
 
-## QrLoginSessions (A-03.1 — planlı, henüz kod yok)
+## QrLoginSessions (A-03.1 ✅ tamamlandı)
 Steam benzeri "QR kod ile giriş": mobilde zaten giriş yapmış kullanıcı, web/masaüstünde gösterilen
 QR'ı okutup onaylar. **Ayrı bir kimlik doğrulama sistemi değildir** — onaylanınca yukarıdaki
-`ITokenService` çağrılır, `RefreshTokens`'a aynı şekilde yazılır. Alanlar: `QrTokenHash` (SHA-256,
-`RefreshTokens.TokenHash` ile aynı desen), `PairingCode` (4 haneli, DB'den bağımsız relay/phishing
-savunması — mobil onay ekranında gösterilip web ekranındakiyle gözle karşılaştırılır), `Status`
-(`Pending→Scanned→Confirmed→Consumed` veya `Denied`/`Expired`). Detay → `DATABASE_SCHEMA/Auth.md`,
-[[Guvenlik_Politikalari]].
+**aynı** `ILoginCompletionService.CompleteLoginAsync` çağrılır, `RefreshTokens`'a aynı şekilde
+yazılır. Alanlar: `QrTokenHash` (SHA-256, `RefreshTokens.TokenHash` ile aynı desen), `PairingCode`
+(4 haneli, DB'den bağımsız relay/phishing savunması — mobil onay ekranında gösterilip web
+ekranındakiyle gözle karşılaştırılır), `Status` (`Pending→Scanned→Confirmed→Consumed` veya
+`Denied`/`Expired`).
+**Yazılmış kod:** `IQrLoginSessionRepository`/`QrLoginSessionRepository`, `QrSessionGoneException`
+(410)/`QrSessionForbiddenException`(403) (ikisi de [[AppException]]'dan türer), paylaşılan
+`QrLoginSessionExpiryExtensions` (lazy expire — ayrı temizlik job'ı yok), 5 MediatR Command+Handler
+(`Application/Features/QrLogin/`: Generate/Scan/Confirm/Deny/GetStatus), `QrLoginController`
+(5 endpoint, `/auth/qr/*` — `AuthController`'dan ayrı, çünkü Admin panelde bu akış yok), IP-partitioned
+`qrGenerate` rate limit policy'si (20/saat). **Tasarım kararı:** `RequesterIp`/`RequesterDeviceInfo`
+yalnızca `generate` adımında (web'in isteğinden) yazılır, `scan`'de değil — mobil ekranda "seni
+İSTEYEN taraf" gösterilip kullanıcı gözle doğrular (relay/phishing önlemi). 18 birim test. Detay →
+`DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `API_YOL_HARITASI/A-03.1_qr-login.html`.
 
 ## Apple Sosyal Giriş — Platformlar Arası Tutarlılık (not, kod değişikliği gerektirmiyor)
 Apple `sub` (AppleId) client bazında (Bundle ID/Services ID) farklı üretilir. Mobil ve ileride
@@ -51,7 +60,7 @@ açılır. Bu bir Apple Developer portal ayarıdır, `User`/`RefreshToken` şema
 yok. Şu an web'de Apple girişi zaten **yok** (bkz. [[Sistem_Mimarisi]]); mobilde Apple ile kayıt
 olan biri bugün web'e (a) `forgot-password` ile şifre belirleyip veya (b) QR ile giriş yapabilir.
 
-### Referans Kod (henüz yazılmadı, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6`'dan)
+### Referans Kod (yazıldı — A-03, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6`'dan)
 - **`ITokenService`/`JwtTokenService`:** `GenerateAccessToken(User)` (claims: NameIdentifier/
   Email/Role/firstName, 15dk, HMAC-SHA256), `GenerateRefreshToken()` (64 byte random → Base64),
   `GetPrincipalFromExpiredToken(token)` — Algorithm Confusion önlemi: `Header.Alg != HmacSha256`
