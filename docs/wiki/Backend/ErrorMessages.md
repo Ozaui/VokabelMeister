@@ -32,7 +32,9 @@ public static class ErrorMessages
 ## Şu An Tanımlı Kodlar (tr + de)
 `INVALID_CREDENTIALS`, `INVALID_OTP`, `EMAIL_ALREADY_REGISTERED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED`,
 `INVALID_REFRESH_TOKEN`, `INVALID_SOCIAL_TOKEN` (A-03) + `QR_SESSION_GONE`, `QR_SESSION_FORBIDDEN`
-(A-03.1) — her biri bir [[AppException]] alt tipine karşılık gelir.
+(A-03.1) — her biri bir [[AppException]] alt tipine karşılık gelir. + `INTERNAL_SERVER_ERROR`
+(2026-07-11 — [[Middleware]]'in `AppException`'dan türemeyen exception'lar için kullandığı sabit
+kod; öncesinde bu tek satır hardcoded Türkçe'ydi, artık diğerleriyle aynı `Resolve()` deseninden geçiyor).
 
 ## Güvenli Varsayılan Davranış
 Sözlükte olmayan bir kod gelirse (yeni bir `AppException` eklenip çevirisi unutulmuşsa) exception

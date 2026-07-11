@@ -25,3 +25,11 @@ Common/Exceptions/     → EntityNotFoundExceptionTests.cs (Type+key overload me
 Testler Faz F'ye bırakılmaz — her API'nın servis katmanı bitince aynı task içinde birim testi
 yazılır. İsimlendirme kalıbı: `{Metot}_{Senaryo}_{BeklenenSonuç}`. AAA deseni (Arrange/Act/Assert),
 repository ve dış servisler her zaman mock'lanır. Detay → [[Kodlama_Standartlari]] §7.
+
+**İsimlendirme düzeltmesi (2026-07-11):** `{Metot}` alanı, MediatR Handler'ları için gerçek C#
+metot adı (`Handle`) değil, **domain fiili** anlamına gelir — `Handle_...` her testte tekrar edip
+ayırt edici olmayacağı için. `Features/QrLogin/` (`Scan_...`, `Confirm_...` vb.) bunu baştan doğru
+uyguluyordu; `Features/Auth/`'daki 13 dosya ise hâlâ pre-CQRS `AuthService` döneminden kalma
+`LoginAsync_...`/`RegisterAsync_...` deseniyle yazılıydı ("Async" eki artık var olmayan eski servis
+metodunun izi). 45 test metodu `Xxx_...` desenine hizalandı (ör. `LoginAsync_ValidCredentials_...`
+→ `Login_ValidCredentials_...`) — davranış değişmedi, yalnızca isim.

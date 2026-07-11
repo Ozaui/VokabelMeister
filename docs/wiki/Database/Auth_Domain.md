@@ -77,6 +77,17 @@ yollarıyla (Login/Google/Apple) parite için `IsActive` kontrolü eklendi. (3) 
 GetStatus'ta oturum bulunamadığında fırlatılan `EntityNotFoundException`'ın mesajına ham QR
 token'ı (bir secret) gömülüyordu — artık hash'i gömülüyor.
 
+**Kod kalitesi turu (2026-07-11, aynı gün, ayrı denetim):** Üç küçük düzeltme daha: (1)
+`PendingOtpCodeHash`/`OriginalEmailHash`/`TokenHash`/`QrTokenHash` kolonları `MaxLength(88)` idi —
+`PasswordService.HashToken` (SHA-256→Base64) her zaman sabit **44** karakter üretir, 88 muhtemelen
+SHA-512 ile karışıklıktan kaynaklanan bir hataydı (veri kaybı yoktu, yalnızca şema kendi verisini
+yanlış belgeliyordu) — `FixHashColumnMaxLength` migration'ıyla düzeltildi. (2) `ConfirmQrLoginCommandHandler`/
+`DenyQrLoginCommandHandler` neredeyse birebir kopya kod taşıyordu (hash arama + expiry + Scanned +
+sahiplik kontrolü) — ortak mantık `QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync`'e
+çıkarıldı (`QrLoginSessionExpiryExtensions`'ın yanına, aynı "internal static helper" deseniyle;
+DI değişmedi, yalnızca handler gövdeleri sadeleşti). (3) `Repository<T>.UpdateAsync`'teki gereksiz
+`_set.Update(entity)` çağrısı kaldırıldı (entity zaten tracked, bkz. [[Repository]]).
+
 ## Apple Sosyal Giriş — Platformlar Arası Tutarlılık (not, kod değişikliği gerektirmiyor)
 Apple `sub` (AppleId) client bazında (Bundle ID/Services ID) farklı üretilir. Mobil ve ileride
 eklenecek web Apple girişi Apple Developer Console'da **gruplanmadan** (web Services ID'nin

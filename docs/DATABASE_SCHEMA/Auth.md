@@ -25,7 +25,7 @@ CREATE TABLE Users (
     StreakDays INT NOT NULL DEFAULT 0,
     LastStreakDate DATETIME2 NULL,
     -- OTP (tek set, purpose ile ayrılır)
-    PendingOtpCodeHash VARCHAR(88) NULL,        -- SHA-256(otp)
+    PendingOtpCodeHash VARCHAR(44) NULL,        -- SHA-256(otp)→Base64, sabit 44 karakter
     PendingOtpCodeExpiresAt DATETIME2 NULL,
     PendingOtpCodePurpose NVARCHAR(20) NULL,    -- EmailVerification|LoginOtp|PasswordReset|AccountDeletion
     -- Hesap durumu
@@ -39,7 +39,7 @@ CREATE TABLE Users (
     -- Hesap silme (30 gün grace + kalıcı blok)
     ScheduledDeletionAt DATETIME2 NULL,
     IsAnonymized BIT NOT NULL DEFAULT 0,
-    OriginalEmailHash VARCHAR(88) NULL,         -- SHA-256(eski email) — silinen e-posta ile tekrar kaydı blokla
+    OriginalEmailHash VARCHAR(44) NULL,         -- SHA-256(eski email)→Base64, sabit 44 karakter — silinen e-posta ile tekrar kaydı blokla
     OneSignalPlayerId NVARCHAR(100) NULL,       -- Push
     Role NVARCHAR(20) NOT NULL DEFAULT 'User',  -- User|Admin
     IsDeleted BIT NOT NULL DEFAULT 0,
@@ -59,7 +59,7 @@ CREATE TABLE Users (
 CREATE TABLE RefreshTokens (
     Id INT PRIMARY KEY IDENTITY,
     UserId INT NOT NULL,
-    TokenHash VARCHAR(88) NOT NULL,    -- SHA-256
+    TokenHash VARCHAR(44) NOT NULL,    -- SHA-256→Base64, sabit 44 karakter
     TokenFamily NVARCHAR(36) NOT NULL, -- GUID — replay tespiti (Token Family Pattern)
     ExpiresAt DATETIME2 NOT NULL,
     IsUsed BIT NOT NULL DEFAULT 0,
@@ -81,7 +81,7 @@ CREATE TABLE RefreshTokens (
 ```sql
 CREATE TABLE QrLoginSessions (
     Id INT PRIMARY KEY IDENTITY,
-    QrTokenHash VARCHAR(88) NOT NULL,        -- SHA-256(token) — ham token DB'de asla saklanmaz
+    QrTokenHash VARCHAR(44) NOT NULL,        -- SHA-256(token)→Base64, sabit 44 karakter — ham token DB'de asla saklanmaz
     PairingCode CHAR(4) NOT NULL,            -- web + mobil onay ekranında gösterilir, gözle karşılaştırılır
     Status NVARCHAR(20) NOT NULL DEFAULT 'Pending',  -- Pending|Scanned|Confirmed|Consumed|Denied|Expired
     UserId INT NULL,                         -- taranana kadar boş; QR'ı okutan kullanıcı ile doldurulur

@@ -15,12 +15,18 @@ Türkçe loglar (`_logger.LogError`) ve exception tipine göre eşler:
 |-----------|-----------|------|---------|
 | [[EntityNotFoundException]] | 404 | `NOT_FOUND` | `ex.Message` (gerçek mesaj, dinamik — henüz çok dilli değil) |
 | [[AppException]] alt tipleri (A-03) | `StatusCodeFor(appEx)` ile Code'a göre (401/403/409/400) | `appEx.Code` | [[ErrorMessages]].`Resolve(code, dil)` — `Accept-Language`'a göre |
-| Diğer her şey | 500 | `INTERNAL_SERVER_ERROR` | Sabit "Beklenmeyen bir hata oluştu." (gerçek mesaj **sızdırılmaz**) |
+| Diğer her şey | 500 | `INTERNAL_SERVER_ERROR` | [[ErrorMessages]].`Resolve("INTERNAL_SERVER_ERROR", dil)` — dile göre değişir (gerçek exception mesajı **sızdırılmaz**) |
+
+**Düzeltme (2026-07-11, kod kalitesi denetimi):** `INTERNAL_SERVER_ERROR` satırı önceden hardcoded
+Türkçe bir string dönüyordu (`"Beklenmeyen bir hata oluştu."`) — [[AppException]] dalının aksine
+`Accept-Language`'ı yok sayıyordu. `ErrorMessages.cs`'e `INTERNAL_SERVER_ERROR` kodu (tr/de) eklenip
+bu satır da diğerleriyle aynı `Resolve()` çağrısına geçirildi.
 
 Yanıt [[ApiErrorResponse]] olarak `System.Text.Json` ile camelCase serileştirilir
-(`PropertyNamingPolicy = JsonNamingPolicy.CamelCase`). `GetRequestLanguage` yardımcı metodu
-`Accept-Language` header'ının ilk 2 harfini (ör. `en-US`→`en`) çıkarır; header yoksa/tanınmıyorsa
-[[ErrorMessages]] varsayılan Türkçe'ye düşer.
+(`PropertyNamingPolicy = JsonNamingPolicy.CamelCase`). Dil, paylaşılan `RequestLanguageResolver.Resolve(context)`
+(`WordLearner.API.Common/`) ile `Accept-Language` header'ının ilk 2 harfinden (ör. `en-US`→`en`) çıkarılır
+— bu, `ValidationFilter`'ın da kullandığı AYNI yardımcıdır, middleware'in kendi private metodu değildir;
+header yoksa/tanınmıyorsa [[ErrorMessages]] varsayılan Türkçe'ye düşer.
 
 ## 2. SecurityHeadersMiddleware
 `_next(context)` çağrısından **önce** 5 başlığı ekler (yanıt başlamadan eklenmeli):

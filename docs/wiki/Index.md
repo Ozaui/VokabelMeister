@@ -735,3 +735,32 @@ dosyası. **Etkilenen doküman/wiki dosyaları:** `REFERENCE/SECURITY.md`,
 `docs/wiki/Backend/WordLearner_Tests.md`, `docs/wiki/Architecture/Backend_Katmanli_Mimari.md`,
 `docs/wiki/Database/Auth_Domain.md`, `docs/wiki/Standartlar/Guvenlik_Politikalari.md`, bu dosya
 (`Index.md`).*
+
+*Yirmi beşinci INGEST (2026-07-11, aynı gün) — **Kod kalitesi denetiminin orta öncelikli 5
+bulgusu düzeltildi.** Yirmi dördüncü INGEST'in bulduğu 4 ciddi bug'dan sonra kalan orta öncelikli
+maddeler ele alındı, hiçbiri güvenlik/veri riski taşımıyordu, hepsi mühendislik pratiği iyileştirmesi:
+**(1)** [[Middleware]] — `ExceptionHandlingMiddleware`'in bilinmeyen exception fallback mesajı
+hardcoded Türkçe'ydi (`AppException` dalının aksine `Accept-Language`'ı yok sayıyordu);
+`ErrorMessages.cs`'e `INTERNAL_SERVER_ERROR` kodu (tr/de) eklenip diğerleriyle aynı `Resolve()`
+deseni kullanıldı. **(2)** Hash kolonları (`PendingOtpCodeHash`/`OriginalEmailHash`/`TokenHash`/
+`QrTokenHash`) `MaxLength(88)` idi, gerçek `PasswordService.HashToken` (SHA-256→Base64) çıktısı
+sabit 44 karakter — `FixHashColumnMaxLength` migration'ıyla düzeltildi (veri kaybı yok, yalnızca
+şema kendi verisini yanlış belgeliyordu). **(3)** `ConfirmQrLoginCommandHandler`/
+`DenyQrLoginCommandHandler` DRY ihlali — ortak yükleme+doğrulama mantığı yeni
+`QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync`'e çıkarıldı (`QrLoginSessionExpiryExtensions`
+ile aynı "internal static helper" deseni, DI değişmedi). **(4)** `Repository<T>.UpdateAsync`
+gereksiz `_set.Update(entity)` çağırıyordu (entity zaten tracked olduğu için TÜM kolonları
+Modified işaretleyip UPDATE'i gereksiz genişletiyordu) — kaldırıldı. **(5)** `Features/Auth/`
+altındaki 13 test dosyasında 45 test metodu hâlâ pre-CQRS `AuthService` döneminden kalma
+`LoginAsync_...` deseni kullanıyordu (artık öyle bir metot yok) — `Features/QrLogin/`'in zaten
+kullandığı `Login_...` desenine hizalandı. **Testler:** davranış değişikliği olmadığı için yeni
+test eklenmedi, mevcut 102 test aynen yeşil kaldı. **Roadmap:** `A-02_ortak-altyapi.html`/
+`A-03_auth-api.html`/`A-03.1_qr-login.html`/`A-03.2_auth-success-message-localization.html`
+ilgili `adim.kod` alanları senkronize edildi. **Etkilenen dosyalar:** `API/Middleware/
+ExceptionHandlingMiddleware.cs`, `Application/Common/Localization/ErrorMessages.cs`,
+`Infrastructure/Data/Configurations/Auth/{User,RefreshToken,QrLoginSession}Configuration.cs`,
+yeni migration `FixHashColumnMaxLength`, `Application/Features/QrLogin/{Confirm,Deny}QrLoginCommand.cs`,
+yeni `QrLoginSessionOwnershipHelper.cs`, `Infrastructure/Repositories/Repository.cs`, 13 Auth test
+dosyası. **Doküman:** `docs/DATABASE_SCHEMA/Auth.md` (VARCHAR(88)→44), `docs/wiki/Backend/
+{Middleware,Repository,ErrorMessages,WordLearner_Tests}.md`, `docs/wiki/Database/Auth_Domain.md`,
+bu dosya (`Index.md`).*
