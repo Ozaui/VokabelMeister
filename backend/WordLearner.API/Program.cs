@@ -178,6 +178,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "VokabelMeister API v1"));
 }
 
+// NEDEN UseHttpsRedirection EN BAŞTA (2026-07-12'de düzeltildi — önceden loglama/güvenlik
+// başlıkları/exception middleware'lerinden SONRA çağrılıyordu): düz HTTP ile gelen bir
+// istek hiçbir iş yapılmadan (loglanmadan, başlık eklenmeden) doğrudan HTTPS'e yönlendirilmeli
+// — ASP.NET Core'un standart konvansiyonu budur. Bu proje geliştirme ortamında pratikte nadiren
+// tetiklenir (prod'da genelde ters proxy TLS'i sonlandırır) ama sıralama artık konvansiyona uygun.
+app.UseHttpsRedirection();
+
 // NEDEN SIRALAMA: Loglama en dışta durur ki exception fırlasa bile (ExceptionHandlingMiddleware
 // onu yakalayıp 500'e çevirse bile) gerçek süre ve nihai durum kodu loglanabilsin.
 // Güvenlik başlıkları, hata yanıtı da dahil her yanıta eklenmesi için exception
@@ -186,7 +193,6 @@ app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.UseHttpsRedirection();
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();

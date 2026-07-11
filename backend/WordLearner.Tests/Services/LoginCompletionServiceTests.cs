@@ -14,16 +14,15 @@
 //                AutoMapper (AuthProfile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using Microsoft.Extensions.Configuration;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
-using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Application.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Services;
 
@@ -41,9 +40,6 @@ public class LoginCompletionServiceTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:ExpirationMinutes"] = "15" })
             .Build();
 
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private LoginCompletionService CreateService() =>
         new(
             _userRepo.Object,
@@ -52,7 +48,7 @@ public class LoginCompletionServiceTests
             _tokenService.Object,
             _otpService.Object,
             CreateConfiguration(),
-            CreateMapper()
+            AuthTestMapper.Create()
         );
 
     private void SetupTokenService()

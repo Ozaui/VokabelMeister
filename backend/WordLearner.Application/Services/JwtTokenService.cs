@@ -34,9 +34,7 @@ public class JwtTokenService : ITokenService
     //        firstName claim'lerini ekle  3) HMAC-SHA256 ile imzala  4) string'e serileştir.
     public string GenerateAccessToken(User user)
     {
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
-        );
+        var key = GetSigningKey();
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -77,9 +75,7 @@ public class JwtTokenService : ITokenService
     //        (Algorithm Confusion önlemi — TECHNICAL_SPECIFICATIONS.md §5)  3) Geçersizse null dön.
     public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
     {
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
-        );
+        var key = GetSigningKey();
         var validationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -117,4 +113,11 @@ public class JwtTokenService : ITokenService
             return null;
         }
     }
+
+    // AMAÇ: appsettings'teki Jwt:SecretKey'den simetrik imza anahtarını üretir.
+    // NEDEN: GenerateAccessToken ve GetPrincipalFromExpiredToken AYNI anahtarı (aynı
+    //        SecretKey'den) kullanır — imzalayan ile doğrulayan taraf farklı bir anahtar
+    //        türetseydi hiçbir token doğrulanamazdı; tek yerde tutmak bu tutarlılığı garanti eder.
+    private SymmetricSecurityKey GetSigningKey() =>
+        new(Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!));
 }

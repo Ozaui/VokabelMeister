@@ -148,17 +148,10 @@ public static class ErrorMessages
     };
 
     // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
-    // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir AppException
-    //        eklenip buraya çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi
-    //        döner; API asla yalnızca çeviri eksik diye 500'e düşmemeli.
-    public static string Resolve(string code, string? language)
-    {
-        if (!Messages.TryGetValue(code, out var translations))
-            return code;
-
-        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
-        return translations.TryGetValue(lang, out var message)
-            ? message
-            : translations[DefaultLanguage];
-    }
+    // NEDEN: bkz. LocalizedMessageResolver.Resolve — sözlükte olmayan bir kod gelirse
+    //        (programlama hatası — yeni bir AppException eklenip buraya çevirisi
+    //        eklenmemişse) exception fırlatmak yerine kodun kendisi döner; API asla
+    //        yalnızca çeviri eksik diye 500'e düşmemeli.
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
 }

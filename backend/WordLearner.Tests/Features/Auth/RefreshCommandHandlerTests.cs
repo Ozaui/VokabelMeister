@@ -6,7 +6,6 @@
 // BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions, AutoMapper (AuthProfile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -14,6 +13,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -25,9 +25,6 @@ public class RefreshCommandHandlerTests
     private readonly Mock<ITokenService> _tokenService = new();
     private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
 
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private RefreshCommandHandler CreateHandler() =>
         new(
             _userRepo.Object,
@@ -35,7 +32,7 @@ public class RefreshCommandHandlerTests
             _passwordService.Object,
             _tokenService.Object,
             _loginCompletionService.Object,
-            CreateMapper()
+            AuthTestMapper.Create()
         );
 
     private void SetupTokenService()

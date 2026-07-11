@@ -53,14 +53,8 @@ public static class SuccessMessages
     };
 
     // AMAÇ: Bir başarı koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
-    // NEDEN: bkz. ErrorMessages.Resolve — sözlükte olmayan bir kod gelirse (programlama
-    //        hatası) exception fırlatmak yerine kodun kendisi döner.
-    public static string Resolve(string code, string? language)
-    {
-        if (!Messages.TryGetValue(code, out var translations))
-            return code;
-
-        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
-        return translations.TryGetValue(lang, out var message) ? message : translations[DefaultLanguage];
-    }
+    // NEDEN: bkz. LocalizedMessageResolver.Resolve — sözlükte olmayan bir kod gelirse
+    //        (programlama hatası) exception fırlatmak yerine kodun kendisi döner.
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
 }

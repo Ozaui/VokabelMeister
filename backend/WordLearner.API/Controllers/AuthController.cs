@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using WordLearner.API.Common;
+using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Features.Auth;
 
@@ -47,6 +48,9 @@ public class AuthController : ControllerBase
     // AMAÇ: Yeni kullanıcı kaydı oluşturur, e-posta doğrulama OTP'si gönderir.
     [HttpPost("register")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RegisterResponse>> Register(
         RegisterCommand command,
         CancellationToken ct
@@ -59,6 +63,8 @@ public class AuthController : ControllerBase
     // AMAÇ: Kayıt sonrası e-postaya gelen OTP kodunu doğrular.
     [HttpPost("verify-email")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> VerifyEmail(
         VerifyEmailCommand command,
         CancellationToken ct
@@ -67,6 +73,8 @@ public class AuthController : ControllerBase
     // AMAÇ: E-posta doğrulama kodunu tekrar gönderir.
     [HttpPost("resend-verification")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ResendVerification(
         ResendVerificationCommand command,
         CancellationToken ct
@@ -75,6 +83,10 @@ public class AuthController : ControllerBase
     // AMAÇ: Login adım 1 — şifreyi doğrular, başarılıysa OTP gönderir (token DÖNMEZ).
     [HttpPost("login")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<MessageResponse>> Login(
         LoginCommand command,
         CancellationToken ct
@@ -83,6 +95,9 @@ public class AuthController : ControllerBase
     // AMAÇ: Login adım 2 — OTP'yi doğrular, başarılıysa access+refresh token üretir.
     [HttpPost("login/verify-otp")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> VerifyLoginOtp(
         VerifyLoginOtpCommand command,
         CancellationToken ct
@@ -91,6 +106,10 @@ public class AuthController : ControllerBase
     // AMAÇ: Google ID token'ı ile giriş yapar/kayıt olur (2FA gerekmez).
     [HttpPost("google")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> LoginWithGoogle(
         LoginWithGoogleCommand command,
         CancellationToken ct
@@ -99,6 +118,10 @@ public class AuthController : ControllerBase
     // AMAÇ: Apple identity token'ı ile giriş yapar/kayıt olur.
     [HttpPost("apple")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> LoginWithApple(
         LoginWithAppleCommand command,
         CancellationToken ct
@@ -107,6 +130,9 @@ public class AuthController : ControllerBase
     // AMAÇ: Refresh token'ı doğrular, rotate eder, yeni access+refresh token çifti üretir.
     [HttpPost("refresh")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<AuthTokenResponse>> Refresh(
         RefreshCommand command,
         CancellationToken ct
@@ -116,6 +142,9 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Logout(LogoutCommand command, CancellationToken ct)
     {
         await _mediator.Send(command with { UserId = CurrentUserId }, ct);
@@ -125,6 +154,8 @@ public class AuthController : ControllerBase
     // AMAÇ: Şifre sıfırlama OTP'si gönderir (kullanıcı yoksa bile aynı yanıt döner).
     [HttpPost("forgot-password")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ForgotPassword(
         ForgotPasswordCommand command,
         CancellationToken ct
@@ -133,6 +164,8 @@ public class AuthController : ControllerBase
     // AMAÇ: OTP + yeni şifre ile şifreyi değiştirir, tüm cihazlardan çıkış yapar.
     [HttpPost("reset-password")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ResetPassword(
         ResetPasswordCommand command,
         CancellationToken ct
@@ -142,6 +175,9 @@ public class AuthController : ControllerBase
     [HttpPost("delete-account/request")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MessageResponse>> RequestAccountDeletion(CancellationToken ct) =>
         Ok(
             await _mediator.Send(
@@ -154,6 +190,10 @@ public class AuthController : ControllerBase
     [HttpPost("delete-account/confirm")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(
         ConfirmAccountDeletionCommand command,
         CancellationToken ct

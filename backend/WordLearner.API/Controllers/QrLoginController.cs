@@ -14,6 +14,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Features.QrLogin;
 
@@ -38,6 +39,7 @@ public class QrLoginController : ControllerBase
     // AMAÇ: Web'in göstereceği yeni bir QR oturumu başlatır.
     [HttpPost("generate")]
     [EnableRateLimiting("qrGenerate")]
+    [ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<QrGenerateResponse>> Generate(CancellationToken ct)
     {
         var command = new GenerateQrLoginCommand
@@ -55,6 +57,10 @@ public class QrLoginController : ControllerBase
     //       anonim trafiği kilitler — bkz. Program.cs "qrStatus" policy yorumu.
     [HttpGet("{token}/status")]
     [EnableRateLimiting("qrStatus")]
+    [ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
 
@@ -62,6 +68,10 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/scan")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(QrScanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<ActionResult<QrScanResponse>> Scan(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new ScanQrLoginCommand(token) { UserId = CurrentUserId }, ct));
 
@@ -69,6 +79,11 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/confirm")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<IActionResult> Confirm(string token, CancellationToken ct)
     {
         await _mediator.Send(new ConfirmQrLoginCommand(token) { UserId = CurrentUserId }, ct);
@@ -79,6 +94,11 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/deny")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<IActionResult> Deny(string token, CancellationToken ct)
     {
         await _mediator.Send(new DenyQrLoginCommand(token) { UserId = CurrentUserId }, ct);
