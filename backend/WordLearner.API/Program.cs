@@ -145,6 +145,28 @@ builder.Services.AddRateLimiter(options =>
                 }
             )
     );
+
+    // NEDEN IP başına PARTITIONED ("anonymous"ın aksine): GET /auth/qr/{token}/status
+    // web tarafından ~2sn'de bir çağrılan bir polling endpoint'i (~30 istek/dk).
+    // Paylaşımlı "anonymous" limitini (10/dk, TÜM anonim trafik ortak) kullanırsa
+    // tek bir açık QR ekranı ~20 saniye içinde bu bütçeyi tüketip sunucudaki TÜM
+    // anonim kullanıcıları (register/login/forgot-password dahil) kilitler — polling
+    // kendi kendini ve başkalarını kilitlemiş olurdu. IP başına ayrı pencere (qrGenerate
+    // ile aynı gerekçe) bu yan etkiyi önler; limit polling hızının (30/dk) üstünde
+    // bir tampon payıyla belirlendi.
+    options.AddPolicy(
+        "qrStatus",
+        context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 40,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                }
+            )
+    );
 });
 
 var app = builder.Build();

@@ -42,7 +42,7 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -57,7 +57,7 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
             throw new QrSessionForbiddenException();
 
         session.Status = QrLoginStatus.Denied;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return Unit.Value;
     }

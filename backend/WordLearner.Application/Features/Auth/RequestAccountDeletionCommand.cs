@@ -52,7 +52,7 @@ public class RequestAccountDeletionCommandHandler
         user.PendingOtpCodeHash = otpHash;
         user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.DeleteAccountOtpExpiryMinutes);
         user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);
         return new MessageResponse(

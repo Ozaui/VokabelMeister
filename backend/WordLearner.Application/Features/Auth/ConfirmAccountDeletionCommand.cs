@@ -21,7 +21,8 @@ namespace WordLearner.Application.Features.Auth;
 
 // NEDEN UserId/Language init-property: bkz. LogoutCommand — JWT'den ve
 //       Accept-Language header'ından gelir, gövdede yer almaz.
-public record ConfirmAccountDeletionCommand(string OtpCode, string Password) : IRequest<MessageResponse>
+public record ConfirmAccountDeletionCommand(string OtpCode, string Password)
+    : IRequest<MessageResponse>
 {
     public int UserId { get; init; }
     public string? Language { get; init; }
@@ -58,7 +59,10 @@ public class ConfirmAccountDeletionCommandHandler
         _otpService = otpService;
     }
 
-    public async Task<MessageResponse> Handle(ConfirmAccountDeletionCommand request, CancellationToken ct)
+    public async Task<MessageResponse> Handle(
+        ConfirmAccountDeletionCommand request,
+        CancellationToken ct
+    )
     {
         var user =
             await _userRepository.GetByIdAsync(request.UserId, ct)
@@ -66,14 +70,19 @@ public class ConfirmAccountDeletionCommandHandler
 
         _otpService.Validate(user, request.OtpCode, OtpPurpose.AccountDeletion);
 
-        if (!_passwordService.Verify(request.Password, user.PasswordHash ?? FakePasswordHashForTiming))
+        if (
+            !_passwordService.Verify(
+                request.Password,
+                user.PasswordHash ?? FakePasswordHashForTiming
+            )
+        )
             throw new InvalidCredentialsException();
 
         user.IsDeleted = true;
         user.DeletedAt = DateTime.UtcNow;
         user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(AccountDeletionGraceDays);
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
 

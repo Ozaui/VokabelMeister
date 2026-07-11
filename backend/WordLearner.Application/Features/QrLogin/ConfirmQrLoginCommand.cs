@@ -47,7 +47,7 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -63,7 +63,7 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
 
         session.Status = QrLoginStatus.Confirmed;
         session.ConfirmedAt = DateTime.UtcNow;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return Unit.Value;
     }

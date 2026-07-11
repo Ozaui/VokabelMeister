@@ -77,7 +77,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
         user.PendingOtpCodeHash = otpHash;
         user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
         user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);
         return new MessageResponse("OTP_SENT", SuccessMessages.Resolve("OTP_SENT", request.Language));

@@ -21,6 +21,14 @@ public interface IUserRepository : IRepository<User>
     //        IsAnonymized kontrolü çağıran (AuthService) tarafında yapılır.
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
 
+    // AMAÇ: Id'ye göre kullanıcı bulur — soft delete filtresini YOK SAYAR.
+    // NEDEN: GetByIdAsync (Repository<T>'den miras) soft-delete filtresi uygular;
+    //        bu, grace-period içindeki (soft-delete'li) bir kullanıcının Id'siyle
+    //        bulunması gereken akışlarda (ör. QR ile giriş tamamlanırken
+    //        ILoginCompletionService.CompleteLoginAsync'in IsDeleted kurtarma
+    //        mantığına ulaşabilmesi için) GetByEmailAsync ile aynı gerekçeyle var.
+    Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default);
+
     // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
     Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default);
 

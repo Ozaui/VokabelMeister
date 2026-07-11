@@ -56,7 +56,7 @@ public class VerifyEmailCommandHandlerTests
         // ASSERT
         user.IsEmailVerified.Should().BeTrue();
         user.PendingOtpCodeHash.Should().BeNull();
-        _userRepo.Verify(r => r.UpdateAsync(user, null, default), Times.Once);
+        _userRepo.Verify(r => r.UpdateAsync(user, user.Id, default), Times.Once);
     }
 
     /// <summary>

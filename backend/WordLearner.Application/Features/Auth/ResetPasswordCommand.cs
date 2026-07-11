@@ -54,7 +54,7 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
 
         user!.PasswordHash = _passwordService.Hash(request.NewPassword);
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         // NEDEN: Şifre değiştiğinde tüm cihazlardan çıkış yapılır (REFERENCE/SECURITY.md §7).
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);

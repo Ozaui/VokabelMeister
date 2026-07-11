@@ -80,7 +80,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
         }
 
         existingToken.IsUsed = true;
-        await _refreshTokenRepository.UpdateAsync(existingToken, ct: ct);
+        await _refreshTokenRepository.UpdateAsync(existingToken, existingToken.UserId, ct);
 
         var user = await _userRepository.GetByIdAsync(existingToken.UserId, ct);
         if (user is null || !user.IsActive || user.IsAnonymized)
@@ -98,7 +98,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
             DeviceInfo = existingToken.DeviceInfo,
             IpAddress = request.ClientIp,
         };
-        await _refreshTokenRepository.AddAsync(newRefreshToken, ct: ct);
+        await _refreshTokenRepository.AddAsync(newRefreshToken, user.Id, ct);
 
         return new AuthTokenResponse(
             accessToken,

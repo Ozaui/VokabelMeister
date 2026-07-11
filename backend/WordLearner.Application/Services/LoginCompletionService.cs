@@ -76,7 +76,7 @@ public class LoginCompletionService : ILoginCompletionService
         user.LastLoginAt = DateTime.UtcNow;
         user.LastLoginIP = ipAddress;
         user.LoginCount += 1;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         var accessToken = _tokenService.GenerateAccessToken(user);
         var refreshTokenResult = _tokenService.GenerateRefreshToken();
@@ -89,7 +89,7 @@ public class LoginCompletionService : ILoginCompletionService
             ExpiresAt = refreshTokenResult.ExpiresAt,
             IpAddress = ipAddress,
         };
-        await _refreshTokenRepository.AddAsync(refreshToken, ct: ct);
+        await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);
 
         return new AuthTokenResponse(
             accessToken,

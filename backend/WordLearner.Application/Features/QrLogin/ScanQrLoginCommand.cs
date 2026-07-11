@@ -49,7 +49,7 @@ public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrS
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -63,7 +63,7 @@ public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrS
         session.Status = QrLoginStatus.Scanned;
         session.UserId = request.UserId;
         session.ScannedAt = DateTime.UtcNow;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return new QrScanResponse(session.RequesterDeviceInfo, session.RequesterIp, session.PairingCode);
     }

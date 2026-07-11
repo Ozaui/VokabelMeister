@@ -83,7 +83,7 @@ public class RefreshCommandHandlerTests
         sonuc.AccessToken.Should().Be("access-token");
         mevcutToken.IsUsed.Should().BeTrue();
         _refreshTokenRepo.Verify(
-            r => r.AddAsync(It.Is<RefreshToken>(t => t.TokenFamily == "family-1"), null, default),
+            r => r.AddAsync(It.Is<RefreshToken>(t => t.TokenFamily == "family-1"), user.Id, default),
             Times.Once
         );
     }

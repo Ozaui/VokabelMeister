@@ -14,7 +14,9 @@
 //        kaynak) anlamına gelmez.
 // NASIL: 1) Hash'e göre oturumu bul, yoksa 404  2) Süresi geçmişse Expired'a
 //        çevir + 200 döndür  3) Consumed ise 410  4) Confirmed ise kullanıcıyı
-//        yükle, CompleteLoginAsync çağır, Consumed'e geçir, token'lı yanıt dön
+//        (soft-delete filtresi YOK SAYILARAK — grace-period kurtarma normal
+//        login akışıyla aynı şekilde çalışabilsin diye) yükle, CompleteLoginAsync
+//        çağır, Consumed'e geçir, token'lı yanıt dön
 //        5) Diğer durumlarda (Pending/Scanned/Denied) yalnızca Status dön.
 // BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService, IUserRepository,
 //                ILoginCompletionService.
@@ -62,7 +64,7 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -76,14 +78,27 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         if (session.Status != QrLoginStatus.Confirmed)
             return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
 
+        // NEDEN GetByIdIncludingDeletedAsync (GetByIdAsync DEĞİL): normal login
+        //       (LoginCommand/LoginWithGoogle/Apple) kullanıcıyı GetByEmailAsync ile
+        //       soft-delete filtresi YOK SAYILARAK bulur, böylece CompleteLoginAsync'in
+        //       grace-period kurtarma mantığı çalışabilir. GetByIdAsync (filtreli)
+        //       kullanılsaydı, hesabını yeni silmiş bir kullanıcı burada anlamsız bir
+        //       404 alırdı — diğer giriş yollarıyla tutarsız bir davranış.
         var user =
-            await _userRepository.GetByIdAsync(session.UserId!.Value, ct)
+            await _userRepository.GetByIdIncludingDeletedAsync(session.UserId!.Value, ct)
             ?? throw new EntityNotFoundException(typeof(User), session.UserId.Value);
+
+        // NEDEN: LoginCommand/LoginWithGoogleCommand/LoginWithAppleCommand'ın hepsi
+        //        CompleteLoginAsync'e girmeden önce IsActive kontrolü yapıyor (dondurulmuş
+        //        hesap giriş yapamaz) — QR akışının token üretimi de aynı ortak son
+        //        adımdan geçtiği için aynı kontrole tabi olmalı.
+        if (!user.IsActive)
+            throw new AccountNotActiveException();
 
         var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
 
         session.Status = QrLoginStatus.Consumed;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, user.Id, ct);
 
         return new QrStatusResponse(
             QrLoginStatus.Confirmed.ToString(),

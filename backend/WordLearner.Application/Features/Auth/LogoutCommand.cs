@@ -47,7 +47,7 @@ public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>
             throw new InvalidRefreshTokenException();
 
         token.RevokedAt = DateTime.UtcNow;
-        await _refreshTokenRepository.UpdateAsync(token, ct: ct);
+        await _refreshTokenRepository.UpdateAsync(token, request.UserId, ct);
 
         return Unit.Value;
     }

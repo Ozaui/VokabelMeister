@@ -26,6 +26,11 @@ public class UserRepository : Repository<User>, IUserRepository
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
         _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
 
+    // AMAÇ: Id'ye göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
+    // NEDEN: bkz. IUserRepository — GetByEmailAsync ile aynı gerekçe, Id ile arama.
+    public Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, ct);
+
     // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
     public Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default) =>
         _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.GoogleId == googleId, ct);

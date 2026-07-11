@@ -51,6 +51,34 @@ public class ConfirmQrLoginCommandHandlerTests
         // ASSERT
         session.Status.Should().Be(QrLoginStatus.Confirmed);
         session.ConfirmedAt.Should().NotBeNull();
+        // NEDEN: audit alanı (UpdatedByUserId) onaylayan kullanıcının Id'siyle doldurulmalı.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
+    }
+
+    /// <summary>
+    /// Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken
+    ///
+    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404)
+    ///       fırlatıldığını VE exception mesajının ham QR token'ını değil hash'ini
+    ///       taşıdığını doğrulamak (ham token bir secret'tir, log'a sızmamalı).
+    /// </summary>
+    [Fact]
+    public async Task Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ConfirmQrLoginCommand("gecersiz-token") { UserId = 5 }, default);
+
+        // ASSERT
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
     /// <summary>

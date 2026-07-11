@@ -41,7 +41,7 @@ public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, Mes
         user!.IsEmailVerified = true;
         user.EmailVerifiedAt = DateTime.UtcNow;
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         return new MessageResponse("EMAIL_VERIFIED", SuccessMessages.Resolve("EMAIL_VERIFIED", request.Language));
     }

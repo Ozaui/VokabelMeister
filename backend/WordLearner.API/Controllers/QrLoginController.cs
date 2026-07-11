@@ -50,8 +50,11 @@ public class QrLoginController : ControllerBase
 
     // AMAÇ: Web'in ~2sn'de bir sorguladığı polling endpoint'i — Confirmed'de tek
     //       seferlik token döner, sonra oturum Consumed'e geçer.
+    // NEDEN "qrStatus" (paylaşımlı "anonymous" DEĞİL): bu polling sıklığı (~30
+    //       istek/dk) paylaşımlı 10/dk bütçesini saniyeler içinde tüketip TÜM
+    //       anonim trafiği kilitler — bkz. Program.cs "qrStatus" policy yorumu.
     [HttpGet("{token}/status")]
-    [EnableRateLimiting("anonymous")]
+    [EnableRateLimiting("qrStatus")]
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
 

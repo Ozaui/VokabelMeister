@@ -56,6 +56,9 @@ public class ScanQrLoginCommandHandlerTests
         result.RequesterIp.Should().Be("9.9.9.9");
         result.RequesterDeviceInfo.Should().Be("Chrome/Windows");
         result.PairingCode.Should().Be("4821");
+        // NEDEN: audit alanı (UpdatedByUserId) oturumu tarayan kullanıcının Id'siyle
+        //        doldurulmalı — bkz. IRepository.UpdateAsync NEDEN notu.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
     /// <summary>
@@ -67,15 +70,21 @@ public class ScanQrLoginCommandHandlerTests
     public async Task Scan_TokenNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE
-        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
-        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync((QrLoginSession?)null);
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
         var handler = CreateHandler();
 
         // ACT
         var act = () => handler.Handle(new ScanQrLoginCommand("gecersiz-token"), default);
 
         // ASSERT
-        await act.Should().ThrowAsync<EntityNotFoundException>();
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        // NEDEN: exception mesajı ham token'ı DEĞİL, hash'ini taşımalı — ham QR
+        //        token'ı bir secret'tir, log'a/exception mesajına sızmamalı.
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
     /// <summary>
