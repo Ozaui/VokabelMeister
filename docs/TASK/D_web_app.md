@@ -20,9 +20,13 @@
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `forgotPassword`, `resetPassword`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
+> **Not (tema):** `LevelSelectPage` kendi RTK Query mutation'ını yazmaz — D-12'deki `profileApi.
+> updateProfile` (`PUT /users/me`) çağrılır, `{ currentLevel, themePreference }` birlikte gönderilir.
+> Login öncesi (bu sayfadan önceki ekranlarda) tema, local cihaz tercihi/`prefers-color-scheme`
+> ile gösterilir; login sonrası `AuthUserDto.themePreference` `authSlice`'a yazılıp senkronlanır.
 - [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` güncellemesi
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component:** `RegisterPage`, `VerifyEmailPage` (OTP), `LoginPage` (+ Google butonu), `VerifyOtpPage`, `ForgotPasswordPage`, `ResetPasswordPage`, `LevelSelectPage` (A1-C2 seçimi, kayıt sonrası)
+- [ ] **Component:** `RegisterPage`, `VerifyEmailPage` (OTP), `LoginPage` (+ Google butonu), `VerifyOtpPage`, `ForgotPasswordPage`, `ResetPasswordPage`, `LevelSelectPage` (A1-C2 + tema seçimi [Açık/Koyu/Sistem], kayıt sonrası ilk giriş onboarding'i — `PUT /users/me` ile C-01'e gönderilir, bkz. `C_kullanici_backend.md` C-01 notu)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `/register`, `/verify-email`, `/login`, `/verify-otp`, `/forgot-password`, `/reset-password`, `/level-select` (`App.tsx`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
@@ -176,11 +180,11 @@
 
 ### D-12 — Profil Sayfası ⬜ *(avatar, şifre değiştir, hesap sil OTP)*
 **Referans:** C-01, C-09 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §4
-- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`profile.types.ts`)
+- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil, `profile.types.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component:** `ProfilePage` (profil formu + avatar yükleme), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
+- [ ] **Component:** `ProfilePage` (profil formu + avatar yükleme + tema değiştir seçici [Açık/Koyu/Sistem]), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `/profile` (`App.tsx`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**

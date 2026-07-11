@@ -70,6 +70,7 @@ Bu dosyayı okuduktan sonra, task'a göre **yalnızca** ilgili dosyayı aç:
 | Kurulum/çalıştırma/yayınlama | `REFERENCE/DEVELOPMENT_SETUP.md` |
 | Kelime kartı gramer JSON'u (Almanca) | `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` |
 | Kelime kartı gramer JSON'u (Türkçe) | `REFERENCE/TURKISH_LANGUAGE_FEATURES.md` |
+| Admin panel görsel tasarımı (renk/tipografi/stil) | `REFERENCE/DESIGN_SYSTEM.md` |
 
 ---
 

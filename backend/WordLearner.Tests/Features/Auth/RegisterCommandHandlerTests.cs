@@ -9,7 +9,6 @@
 //                WordLearner.Application.Features.Auth.RegisterCommand.
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -17,6 +16,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -27,13 +27,14 @@ public class RegisterCommandHandlerTests
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<IEmailService> _emailService = new();
 
-    // AMAÇ: Mock yerine gerçek AuthProfile ile oluşturulmuş bir IMapper — hem
-    //       handler'ı besler hem de profil konfigürasyonunun geçerli olduğunu doğrular.
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private RegisterCommandHandler CreateHandler() =>
-        new(_userRepo.Object, _passwordService.Object, _otpService.Object, _emailService.Object, CreateMapper());
+        new(
+            _userRepo.Object,
+            _passwordService.Object,
+            _otpService.Object,
+            _emailService.Object,
+            AuthTestMapper.Create()
+        );
 
     /// <summary>
     /// Register_NewEmail_CreatesUserAndSendsVerificationOtp
@@ -63,6 +64,36 @@ public class RegisterCommandHandlerTests
         sonuc.Email.Should().Be("new@example.com");
         _userRepo.Verify(r => r.AddAsync(It.Is<User>(u => u.PasswordHash == "hashed-password"), null, default), Times.Once);
         _emailService.Verify(e => e.SendEmailVerificationOtpAsync("new@example.com", "123456", default), Times.Once);
+    }
+
+    /// <summary>
+    /// Register_NewEmail_ReturnsDefaultSystemThemePreference
+    ///
+    /// AMAÇ: RegisterCommand'ın ThemePreference için bir girdi almadığını, response'ta
+    ///       DB varsayılanı olan "System"in döndüğünü doğrulamak.
+    /// NEDEN: ThemePreference, CurrentLevel ile aynı deseni takip eder — kayıt anonim
+    ///        olduğu için (henüz JWT yok) bu alan register'da toplanmaz, gerçek seçim
+    ///        ilk-login-sonrası onboarding'de (PUT /users/me, C-01) yapılır.
+    /// </summary>
+    [Fact]
+    public async Task Register_NewEmail_ReturnsDefaultSystemThemePreference()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("tema@example.com", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.OriginalEmailHashExistsAsync(It.IsAny<string>(), default)).ReturnsAsync(false);
+        _passwordService.Setup(p => p.Hash("Deneme123!@#")).Returns("hashed-password");
+        _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+        _userRepo
+            .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+            .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+        var handler = CreateHandler();
+        var command = new RegisterCommand("tema@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+        // ACT
+        var sonuc = await handler.Handle(command, default);
+
+        // ASSERT
+        sonuc.ThemePreference.Should().Be("System");
     }
 
     /// <summary>

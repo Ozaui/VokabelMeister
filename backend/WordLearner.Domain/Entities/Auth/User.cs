@@ -52,6 +52,12 @@ public class User : BaseEntity
     // AMAÇ: Kullanıcının mevcut seviyesi — geçerli değerler: A1, A2, B1, B2, C1, C2.
     public string CurrentLevel { get; set; } = "A1";
 
+    // AMAÇ: Arayüz tema tercihi — geçerli değerler: Light, Dark, System.
+    // NEDEN: CurrentLevel ile aynı desen — register'da toplanmaz (kayıt anonim, henüz JWT yok),
+    //        kayıt sonrası ilk-login-sonrası onboarding'de (LevelSelectPage ile aynı ekran/an,
+    //        PUT /users/me — C-01) set edilir. JWT claim'ine hiç girmez (yetki bilgisi değil).
+    public string ThemePreference { get; set; } = "System";
+
     // AMAÇ: Mevcut seviye içindeki toplanan XP.
     public int TotalXP { get; set; }
 

@@ -36,6 +36,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.DailyWordGoal).HasDefaultValue(10);
         builder.Property(u => u.DailyNewWordLimit).HasDefaultValue(5);
         builder.Property(u => u.CurrentLevel).HasMaxLength(2).HasDefaultValue("A1");
+        builder.Property(u => u.ThemePreference).HasMaxLength(10).HasDefaultValue("System");
 
         // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
         builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(44);
@@ -60,6 +61,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             t.HasCheckConstraint(
                 "CK_Users_Level",
                 "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')"
+            );
+            t.HasCheckConstraint(
+                "CK_Users_ThemePreference",
+                "ThemePreference IN ('Light','Dark','System')"
             );
             t.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
             t.HasCheckConstraint(

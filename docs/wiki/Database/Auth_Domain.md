@@ -1,17 +1,28 @@
 # Auth Domain (Users, RefreshTokens)
 
-**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder; `QrLoginSessions` (A-03.1) aynı token akışını QR ile tetikler. **A-03 ✅ ve A-03.1 ✅ tamamlandı** — bu domain artık gerçek kodda mevcut.
+**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder; `QrLoginSessions` (A-03.1) aynı token akışını QR ile tetikler; `ThemePreference` (A-03.3) `CurrentLevel` ile aynı "register'da toplanmaz, onboarding'de set edilir" desenini takip eder. **A-03 ✅, A-03.1 ✅ ve A-03.3 ✅ tamamlandı** — bu domain artık gerçek kodda mevcut.
 **Kütüphaneler:** BCrypt.Net-Next 4.0.3 (şifre hash, aktif), Microsoft.AspNetCore.Authentication.JwtBearer 9.0.0 (aktif), System.IdentityModel.Tokens.Jwt 7.1.0 (aktif), Google.Apis.Auth 1.67.0 (aktif)
 **Bağlantılar:** [[Veritabani_Semasi]] · [[Guvenlik_Politikalari]] · [[Roller_ve_Erisim]] · [[BaseEntity]] · [[Loglama_Domain]] · [[Teknik_Ozellikler]] · [[Gelistirme_Kurulumu]]
 
 ## Users
 Tek satırda: kimlik (Email/PasswordHash/GoogleId/AppleId/AuthProvider), profil (FirstName/LastName/
 DisplayName/AvatarUrl), öğrenme hedefleri (DailyWordGoal/DailyNewWordLimit), istatistikler
-(CurrentLevel A1-C2/TotalXP/LifetimeXP/StreakDays), tek-set OTP alanları
+(CurrentLevel A1-C2/**ThemePreference** Light|Dark|System/TotalXP/LifetimeXP/StreakDays), tek-set OTP alanları
 (PendingOtpCodeHash/ExpiresAt/Purpose — `EmailVerification|LoginOtp|PasswordReset|AccountDeletion`),
 hesap durumu (IsActive/IsEmailVerified/LastLoginAt/LoginCount), hesap silme
 (ScheduledDeletionAt/IsAnonymized/OriginalEmailHash — bkz. [[Guvenlik_Politikalari]] §9), push
 (OneSignalPlayerId), rol (`User|Admin` — bkz. [[Roller_ve_Erisim]]).
+
+## ThemePreference (A-03.3 ✅ tamamlandı)
+Arayüz tema tercihi (`Light|Dark|System`, varsayılan `System`) — `CurrentLevel` ile **birebir aynı
+desen**: `RegisterCommand`'a girdi olarak eklenmedi (kayıt anonim, `POST /auth/register`/
+`verify-email` hiç token dönmüyor, yani "kayıt sırasında" hissedilen her tercih aslında ilk-login-
+sonrası bir onboarding adımı) — yalnızca `RegisterResponse`/`AuthUserDto` DB varsayılanını **döner**.
+Gerçek seçim, `CurrentLevel`'ı da toplayan `LevelSelectPage`/`LevelSelectScreen` ile aynı onboarding
+anında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılacak. JWT claim'ine hiç girmez
+(`JwtTokenService` yalnızca yetki bilgisi taşır — NameIdentifier/Email/Role/firstName). İki-katmanlı
+savunma: `CK_Users_ThemePreference` (DB, `CK_Users_Level` ile aynı desen) + gelecekteki C-01
+validator'ü (FluentValidation, henüz yok — girdi olmadığı için bugün valide edilecek bir şey yok).
 
 ## RefreshTokens
 `TokenHash` (SHA-256), `TokenFamily` (GUID — replay tespiti), `ExpiresAt`, `IsUsed`, `RevokedAt`,

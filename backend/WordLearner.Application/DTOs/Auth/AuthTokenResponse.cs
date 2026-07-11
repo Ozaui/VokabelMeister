@@ -12,7 +12,10 @@
 namespace WordLearner.Application.DTOs.Auth;
 
 // AMAÇ: Yanıttaki minimal kullanıcı özeti. Tam profil için GET /users/me kullanılır (C-fazı).
-public record AuthUserDto(int Id, string CurrentLevel);
+// NEDEN (ThemePreference): Her login yolu (OTP/Google/Apple/refresh/QR) bu DTO'yu paylaştığı için
+//        tema tercihi tek yerden tüm istemcilere (Admin/Web/Mobil) yayılır — istemci, tokenı
+//        aldığı anda kullanıcının kayıtlı temasını bilir, ayrı bir GET /users/me çağrısı gerekmez.
+public record AuthUserDto(int Id, string CurrentLevel, string ThemePreference);
 
 // AMAÇ: Başarılı girişin standart yanıtı.
 public record AuthTokenResponse(

@@ -20,6 +20,7 @@ CREATE TABLE Users (
     DailyNewWordLimit INT NOT NULL DEFAULT 5,   -- geri kalanı SRS tekrarı
     -- İstatistikler
     CurrentLevel NVARCHAR(2) NOT NULL DEFAULT 'A1',
+    ThemePreference NVARCHAR(10) NOT NULL DEFAULT 'System',  -- Light|Dark|System — CurrentLevel ile aynı desen: register'da toplanmaz, kayıt sonrası onboarding'de (PUT /users/me, C-01) set edilir
     TotalXP INT NOT NULL DEFAULT 0,
     LifetimeXP INT NOT NULL DEFAULT 0,
     StreakDays INT NOT NULL DEFAULT 0,
@@ -47,6 +48,7 @@ CREATE TABLE Users (
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     CONSTRAINT CK_Users_Level CHECK (CurrentLevel IN ('A1','A2','B1','B2','C1','C2')),
+    CONSTRAINT CK_Users_ThemePreference CHECK (ThemePreference IN ('Light','Dark','System')),
     CONSTRAINT CK_Users_Role CHECK (Role IN ('User','Admin')),
     CONSTRAINT CK_Users_AuthProvider CHECK (AuthProvider IN ('Local','Google','Apple')),
     INDEX IX_Users_Email (Email), INDEX IX_Users_Role (Role),

@@ -48,7 +48,7 @@ public class VerifyLoginOtpCommandHandlerTests
             "access-token",
             "refresh-token",
             900,
-            new AuthUserDto(user.Id, user.CurrentLevel),
+            new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference),
             false
         );
         _loginCompletionService

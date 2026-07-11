@@ -8,10 +8,17 @@
 **Referans:** REFERENCE/API_ENDPOINTS.md §4
 **Frontend karşılığı:** D-12 (Web — Profil Sayfası), E-14 (Mobil — Profil Ekranı)
 > 🧩 `frontendRefs` ↔ D-12/E-14 `backendRef` (iki yönlü).
-- [ ] `UserController`: `GET /users/me`, `PUT /users/me` (CurrentLevel dahil), `GET /users/me/statistics`, `DELETE /users/me`
+- [ ] `UserController`: `GET /users/me`, `PUT /users/me` (CurrentLevel, **ThemePreference** dahil), `GET /users/me/statistics`, `DELETE /users/me`
 - [ ] ➜ **API Yol Haritası'na işle**
 - [ ] **Birim testleri:** `UserServiceTests` (profil güncelleme, istatistik hesaplama)
 - [ ] ➜ **API Yol Haritası'na işle**
+> **Not (A-03.3, `ThemePreference`):** `PUT /users/me` bu görevin **gerçek toplama noktası** —
+> `LevelSelectPage`/`LevelSelectScreen` (D-03/E-05) kayıt sonrası ilk-login onboarding'inde
+> kullanıcının seçtiği `CurrentLevel` ile birlikte `ThemePreference`'ı da (`Light|Dark|System`)
+> buraya gönderir. Validator'a `RuleFor(x => x.ThemePreference)` eklenmeli — izin verilen
+> değerler dışında bir şey gelirse `WithErrorCode("INVALID_THEME_PREFERENCE")` → `ErrorMessages.cs`'e
+> (tr/de) o zaman eklenir (`RegisterCommandValidator` ile birebir aynı desen). DB `CK_Users_
+> ThemePreference` zaten son savunma hattı olarak var (A-03.3'te eklendi).
 
 ### C-02 — Kişisel Kategori API ⬜
 **Frontend karşılığı:** D-06 (Web — Kategoriler Sayfası, kişisel kategoriler sekmesi), E-08 (Mobil — Kategoriler Ekranı)

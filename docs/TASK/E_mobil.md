@@ -28,9 +28,13 @@
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `loginWithApple`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
+> **Not (tema):** `LevelSelectScreen` kendi RTK Query mutation'ını yazmaz — E-14'teki `profileApi.
+> updateProfile` (`PUT /users/me`) çağrılır, `{ currentLevel, themePreference }` birlikte gönderilir.
+> Login öncesi ekranlarda tema, cihaz sistem tercihi (`Appearance.getColorScheme()`) ile gösterilir;
+> login sonrası `AuthUserDto.themePreference` `authSlice`'a yazılıp senkronlanır.
 - [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component (Ekran):** `RegisterScreen`, `VerifyEmailScreen`, `LoginScreen` (+ Google/Apple butonları — Apple yalnızca iOS), `VerifyOtpScreen`, `LevelSelectScreen`
+- [ ] **Component (Ekran):** `RegisterScreen`, `VerifyEmailScreen`, `LoginScreen` (+ Google/Apple butonları — Apple yalnızca iOS), `VerifyOtpScreen`, `LevelSelectScreen` (A1-C2 + tema seçimi [Açık/Koyu/Sistem], kayıt sonrası ilk giriş onboarding'i)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `AuthStackNavigator`'a ekran kayıtları (`navigation/AuthStackNavigator.tsx`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
@@ -180,11 +184,11 @@
 
 ### E-14 — Profil Ekranı ⬜
 **Referans:** C-01, C-09, C-10 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §4
-- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`types/profile.ts`)
+- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil, `types/profile.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion`, `updateDeviceToken` (OneSignal)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component (Ekran):** `ProfileScreen` (`expo-image-picker` ile avatar), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
+- [ ] **Component (Ekran):** `ProfileScreen` (`expo-image-picker` ile avatar + tema değiştir seçici [Açık/Koyu/Sistem]), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Route:** `MainTabNavigator`'a ekran kaydı
 - [ ] ➜ **Frontend Yol Haritası'na işle**

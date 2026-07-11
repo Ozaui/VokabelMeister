@@ -143,6 +143,34 @@
       ikisi de doğrulanıyor). Toplam 97/97 yeşil (A-03 72 + A-03.1 18 + A-03.2 7).
 - [x] ➜ **API Yol Haritası'na işle**
 
+### A-03.3 — Tema Tercihi (ThemePreference) ✅
+**Referans:** `DATABASE_SCHEMA/Auth.md` (Users), `wiki/Database/Auth_Domain.md`
+> **Neden ayrı task:** A-03 zaten ✅ tamamlanmıştı — bu bir davranış değişikliği/retrofit değil,
+> saf bir DB+DTO eklentisi (A-03.2'nin izlediği desenle aynı: küçük-orta ölçekli, kendi
+> entity/controller'ı yok). Kullanıcı admin panel tasarım kararları sırasında sistemde hiç tema
+> (dark/light/system) kavramı olmadığını fark etti. **Kritik mimari karar:** `CurrentLevel` (A1-C2)
+> zaten "kayıt sırasında sorulan tercih" kategorisinde bire bir emsal — ama `RegisterCommand`'a
+> hiç girmiyor (kayıt anonim, henüz token/onboarding yok), DB varsayılanı döner, gerçek seçim
+> kayıt sonrası ilk-login-sonrası onboarding'de (`LevelSelectPage`, `PUT /users/me` — C-01)
+> yapılıyor. `ThemePreference` bu deseni birebir takip eder — `RegisterCommand`'a **girdi
+> eklenmedi**, yalnızca çıkış DTO'ları (`RegisterResponse`/`AuthUserDto`) genişledi. JWT'ye hiç
+> girmez (`JwtTokenService` claim'leri yalnızca yetki taşır — NameIdentifier/Email/Role/firstName).
+- [x] **Entity + Config + Migration:** `Users.ThemePreference NVARCHAR(10) DEFAULT 'System'` +
+      `CK_Users_ThemePreference` (`CurrentLevel` ile aynı iki-katmanlı savunma deseni) —
+      `User.cs`, `UserConfiguration.cs`, `AddUserThemePreference` migration
+- [x] ➜ **API Yol Haritası'na işle** (`A-03.3_tema-tercihi.html`)
+- [x] **DTO:** `RegisterResponse` ve `AuthUserDto`'ya `ThemePreference` alanı (AutoMapper otomatik
+      map eder, `AuthProfile.cs` değişmedi)
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] **Birim testleri:** `RegisterCommandHandlerTests`e 1 yeni test (`Register_NewEmail_
+      ReturnsDefaultSystemThemePreference`) + `AuthUserDto`'nun 3. parametre alması nedeniyle 4
+      mevcut test dosyasında (`LoginWithGoogle/AppleCommandHandlerTests`, `GetQrLoginStatusCommandHandlerTests`,
+      `VerifyLoginOtpCommandHandlerTests`) çağrı noktaları senkronize edildi (davranış değişmedi)
+- [x] ➜ **API Yol Haritası'na işle**
+> **Not:** Gerçek toplama (kullanıcının temayı SEÇMESİ) `LevelSelectPage`/`LevelSelectScreen` ile
+> aynı onboarding anında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılacak — bugün
+> kodlanmadı (YAGNI), yalnızca not bırakıldı (bkz. `C_kullanici_backend.md` C-01).
+
 ### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
 **Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)

@@ -54,7 +54,7 @@ public class GetQrLoginStatusCommandHandlerTests
         _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
         _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
         _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
-        var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1"), false);
+        var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1", "System"), false);
         _loginCompletionService
             .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", default))
             .ReturnsAsync(authResponse);
@@ -102,7 +102,7 @@ public class GetQrLoginStatusCommandHandlerTests
         _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
         _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
         _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
-        var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1"), true);
+        var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1", "System"), true);
         _loginCompletionService
             .Setup(l => l.CompleteLoginAsync(user, null, default))
             .ReturnsAsync(authResponse);
