@@ -11,7 +11,7 @@ JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (
 { "success": true, "data": {}, "message": "İşlem başarılı", "timestamp": "..." }
 { "success": false, "error": { "code": "INVALID_CREDENTIALS", "message": "E-posta veya şifre hatalı" } }
 ```
-`error.code` sabit/dilden bağımsız; `error.message` `Accept-Language`'a göre (tr varsayılan, en). Detay → `SECURITY.md §1.4`.
+`error.code` sabit/dilden bağımsız; `error.message` `Accept-Language`'a göre (tr varsayılan, şu an tr/de dolu — yeni dil eklemek sözlüğe sütun eklemekle olur). Detay → `SECURITY.md §1.4`.
 
 **HTTP:** 200/201/204 · 400 Geçersiz · 401 Kimlik yok · 403 Yetkisiz · 404 Bulunamadı · 409 Çakışma · 429 Çok istek · 500.
 **Auth seviyeleri:** `Anonim` · `[Authorize]` · `[Authorize(Admin)]`.

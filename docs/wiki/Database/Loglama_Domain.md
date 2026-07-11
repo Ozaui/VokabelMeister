@@ -30,8 +30,10 @@ Serilog `Serilog.Sinks.MSSqlServer` kolon eşlemesi: `Level`/`Message`/`Exceptio
 `Properties` (Serilog standardı) + ek kolonlar `SourceContext`/`RequestPath`/`UserId`.
 
 ## SecurityLog
-`EventType` (`LoginFailed|OtpFailed|RateLimitHit|UnauthorizedAccess|TokenReplay|AdminAction`),
-`EmailHash` (SHA-256 — **ham e-posta asla saklanmaz**, PII kuralı), `IpAddress`/`UserAgent`, `Detail`.
+`EventType` (`LogEventType` enum, 10 değer: `LoginFailed|OtpFailed|RateLimitHit|
+UnauthorizedAccess|TokenReplay|PasswordReset|AccountDeletion|AdminAction|QrLoginConfirmed|
+QrLoginDenied` — son ikisi A-03.1'de eklendi), `EmailHash` (SHA-256 — **ham e-posta asla
+saklanmaz**, PII kuralı), `IpAddress`/`UserAgent`, `Detail`.
 
 ## Planlanan Kod (A-04)
 `ActivityLog`/`ApplicationLog`/`SecurityLog` entity + `LogEventType` enum → Serilog MSSqlServer

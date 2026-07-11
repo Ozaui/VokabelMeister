@@ -1,6 +1,6 @@
-# API Sözleşmesi (planlanan — henüz hiç endpoint yok)
+# API Sözleşmesi (A-03/A-03.1 ✅ — 18 endpoint canlı, diğerleri planlanan)
 
-**Özet:** Tüm endpoint'lerin uyacağı standart response formatı, HTTP kod sözleşmesi ve tam endpoint listesi `docs/REFERENCE/API_ENDPOINTS.md`'de tanımlı. Şu an [[WordLearner_API]]'nin `Controllers/` klasörü **boş** — ilk endpoint A-03'te `AuthController` ile gelecek.
+**Özet:** Tüm endpoint'lerin uyacağı standart response formatı, HTTP kod sözleşmesi ve tam endpoint listesi `docs/REFERENCE/API_ENDPOINTS.md`'de tanımlı. [[WordLearner_API]]'nin `Controllers/` klasöründe artık `AuthController` (13 endpoint) + `QrLoginController` (5 endpoint) var — geri kalan gruplar (Kullanıcı, Sistem Kelimeleri, Kategoriler, ...) henüz yazılmadı, aşağıdaki tablodaki task sırasıyla eklenecek.
 **Kütüphaneler:** ASP.NET Core (Controllers, JWT Bearer auth)
 **Bağlantılar:** [[WordLearner_API]] · [[Auth_Domain]] · [[Roller_ve_Erisim]] · [[Guvenlik_Politikalari]] · [[Gelistirme_Yol_Haritasi]]
 
@@ -21,11 +21,11 @@ Rate limiting: Login 5 hatalı/15dk → kilit · Genel 100/dk (auth), 10/dk (ano
 HTTP kodları: 200/201/204 başarı · 400/401/403/404/409/429/500 hata.
 Auth seviyeleri: `Anonim` (JWT yok) · `[Authorize]` (JWT) · `[Authorize(Admin)]`.
 
-## Endpoint Grupları (planlanan — task karşılığı)
+## Endpoint Grupları (Auth ✅ tamamlandı, diğerleri planlanan — task karşılığı)
 
 | Grup | Endpoint kökü | Task | Wiki |
 |------|----------------|------|------|
-| Auth | `/auth/*` (13 endpoint) | A-03 | [[Auth_Domain]] |
+| Auth | `/auth/*` (13 endpoint) + `/auth/qr/*` (5 endpoint, A-03.1) | A-03 ✅ | [[Auth_Domain]] |
 | Kullanıcı | `/users/me*` | C-01 | — |
 | Sistem Kelimeleri | `/words*` | A-05 | [[Icerik_Domain]] |
 | Kategoriler | `/categories*` | A-06 | [[Icerik_Domain]] |

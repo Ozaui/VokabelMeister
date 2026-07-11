@@ -33,6 +33,6 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu` (A-03 ✅, A-03.1 ✅) → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-04 — Loglama Sistemi` (A-03 ✅, A-03.1 ✅, A-03.2 ✅) → `TASK/A_admin_panel_backend.md`
 
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi

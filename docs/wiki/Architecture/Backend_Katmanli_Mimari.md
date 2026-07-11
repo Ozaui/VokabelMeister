@@ -39,12 +39,12 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - [[EntityNotFoundException]] / [[AppException]] / [[ErrorMessages]] / [[ApiErrorResponse]] (Application)
 - [[Middleware]] — `ExceptionHandlingMiddleware`/`SecurityHeadersMiddleware`/`RequestResponseLoggingMiddleware`
 
-**A-03 ✅ + A-03.1 ✅ (Auth + QR ile Giriş — ilk gerçek feature domain'i):**
+**A-03 ✅ + A-03.1 ✅ + A-03.2 ✅ (Auth + QR ile Giriş + mesaj lokalizasyonu — ilk gerçek feature domain'i):**
 - Domain: `User`, `RefreshToken`, `QrLoginSession` entity + `OtpPurpose`, `QrLoginStatus` enum (`Entities/Auth/`, `Enums/Auth/`)
 - Infrastructure: `UserConfiguration`/`RefreshTokenConfiguration`/`QrLoginSessionConfiguration`, `UserRepository`/`RefreshTokenRepository`/`QrLoginSessionRepository`
-- Application: 13 (Auth) + 5 (QrLogin) Command+Handler (`Features/Auth/`, `Features/QrLogin/`), `AuthProfile` (AutoMapper), paylaşılan servisler (`OtpService`, `LoginCompletionService`, `PasswordService`, `JwtTokenService`, `GoogleTokenValidator`, `AppleTokenValidator`), FluentValidation validator'ları (`Validators/Auth/`)
+- Application: 13 (Auth) + 5 (QrLogin) Command+Handler (`Features/Auth/`, `Features/QrLogin/`), `AuthProfile` (AutoMapper), paylaşılan servisler (`OtpService`, `LoginCompletionService`, `PasswordService`, `JwtTokenService`, `GoogleTokenValidator`, `AppleTokenValidator`), FluentValidation validator'ları (`Validators/Auth/`), **A-03.2:** [[ErrorMessages]]'ın başarı-mesajı kardeşi `SuccessMessages` (`Common/Localization/`) — 7 `MessageResponse` döndüren Handler'ın tamamı artık `SuccessMessages.Resolve(code, language)` kullanıyor, hardcode Türkçe metin kalmadı
 - API: `AuthController` (13 endpoint) + `QrLoginController` (5 endpoint), ikisi de yalnızca `IMediator.Send(command)` çağırır
-- Test: 90 birim test (72 Auth + 18 QrLogin), hepsi yeşil
-- Detay → [[Auth_Domain]], `API_YOL_HARITASI/A-03_auth-api.html`, `A-03.1_qr-login.html`
+- Test: 102 birim test (79 Auth [A-03.2'de +7 dil senaryosu] + 23 QrLogin [2026-07-11 bugfix turunda +5 regresyon testi]), hepsi yeşil
+- Detay → [[Auth_Domain]], `API_YOL_HARITASI/A-03_auth-api.html`, `A-03.1_qr-login.html`, `A-03.2_auth-success-message-localization.html`
 
 Word/Category/... (A-05+) henüz yazılmadı.

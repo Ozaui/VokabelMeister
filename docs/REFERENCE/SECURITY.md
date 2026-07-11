@@ -67,7 +67,7 @@ Bilinen iş hataları tek taban sınıftan türer: `AppException` — yalnızca 
 1. throw new InvalidCredentialsException()  (Code=INVALID_CREDENTIALS)
 2. ExceptionHandlingMiddleware → HTTP kodunu Code'a göre eşler
 3. Accept-Language'dan dili çıkar (ör. "en-US"→"en")
-4. ErrorMessages.Resolve(code, dil) → tr/en metin (yoksa tr'ye düşer)
+4. ErrorMessages.Resolve(code, dil) → tr/de metin (yoksa tr'ye düşer; yeni dil = sözlüğe sütun)
 5. İstemciye: { "error": { "code": "...", "message": "<dile göre>" } }
 ```
 - `AppException.Message` (.NET `.Message`) → yalnızca log/geliştirici, daima Türkçe, istemciye gitmez.
@@ -87,7 +87,7 @@ Bilinen iş hataları tek taban sınıftan türer: `AppException` — yalnızca 
 
 ## 4. Girdi Doğrulama & Çıktı Kodlama
 
-Sunucu tarafı doğrulama her zaman (FluentValidation). SQL injection: parametreli / EF LINQ (string birleştirme yasak). XSS: JSON otomatik encode. Rate limiting: Login 5/15dk; OTP 3 yanlış→geçersiz; genel 100/dk (auth), 10/dk (anonim).
+Sunucu tarafı doğrulama her zaman (FluentValidation). SQL injection: parametreli / EF LINQ (string birleştirme yasak). XSS: JSON otomatik encode. Rate limiting: Login 5/15dk; OTP 3 yanlış→geçersiz; genel 100/dk (auth), 10/dk (anonim). QR akışı iki AYRI, IP-partitioned policy kullanır (paylaşımlı "anonim" 10/dk bütçesini kullanmaz — bkz. §1.3): `qrGenerate` 20/saat/IP, `qrStatus` 40/dk/IP (web'in ~2sn'de bir sorguladığı polling endpoint'i için — paylaşımlı bütçe kullansaydı bu polling tek başına tüm anonim trafiği kilitlerdi).
 
 ## 5. API Güvenlik Başlıkları (middleware)
 

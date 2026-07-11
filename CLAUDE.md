@@ -15,7 +15,7 @@
 - Kullanıcıyla **Türkçe** konuş.
 - **Türkçe:** kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, roadmap.
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
-- **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden (tr/en) çözülür. Kullanıcı seçtiği dili görür; DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
+- **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
 
 **Yorum blokları (zorunlu)**
 - Her dosya başı: `AMAÇ / NEDEN / BAĞIMLILIKLAR`.

@@ -1,6 +1,6 @@
 # ErrorMessages
 
-**Özet:** [[AppException]].`Code` değerlerinin her dildeki karşılığını tutan merkezi statik sözlük. Yeni bir dil eklemek (ör. `de`) yalnızca buraya bir sütun eklemekle olur — hiçbir exception sınıfına dokunulmaz.
+**Özet:** [[AppException]].`Code` değerlerinin her dildeki karşılığını tutan merkezi statik sözlük. Şu an tr/de dolu (hedef kitle DE↔TR). Yeni bir dil eklemek (ör. `en`, ileride) yalnızca buraya bir sütun eklemekle olur — hiçbir exception sınıfına dokunulmaz.
 **Kütüphaneler:** Yok — saf C#.
 **Bağlantılar:** [[AppException]] · [[Middleware]] · [[Guvenlik_Politikalari]] · [[SuccessMessages]]
 
@@ -29,7 +29,7 @@ public static class ErrorMessages
 }
 ```
 
-## Şu An Tanımlı Kodlar (tr + en)
+## Şu An Tanımlı Kodlar (tr + de)
 `INVALID_CREDENTIALS`, `INVALID_OTP`, `EMAIL_ALREADY_REGISTERED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DELETED`,
 `INVALID_REFRESH_TOKEN`, `INVALID_SOCIAL_TOKEN` (A-03) + `QR_SESSION_GONE`, `QR_SESSION_FORBIDDEN`
 (A-03.1) — her biri bir [[AppException]] alt tipine karşılık gelir.

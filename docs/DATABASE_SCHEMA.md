@@ -5,7 +5,7 @@
 
 > **BaseEntity notu:** `CreatedByUserId/UpdatedByUserId/DeletedByUserId` (int?, FK→Users) A-02'de eklendi;
 > `Users` A-03'te yazılana kadar FK constraint yok, `userId` geçilmedikçe null kalır. Bazı tablolarda
-> ad-hoc tanımlıydı (`Words.CreatedBy`, `SmtpSettings.UpdatedByUserId`, `ClassWords.CreatedBy`) — o tablolar
+> ad-hoc tanımlıydı (`WordConcepts.CreatedBy`, `SmtpSettings.UpdatedByUserId`, `ClassWords.CreatedBy`) — o tablolar
 > kodlanırken (A-03+) ad-hoc kolonlar kaldırılıp BaseEntity standardıyla birleştirilir.
 
 ## Domain Haritası

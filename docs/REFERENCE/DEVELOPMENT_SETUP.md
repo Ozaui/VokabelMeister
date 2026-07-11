@@ -64,9 +64,9 @@ App Pool → **No Managed Code** (Kestrel + IIS reverse proxy, URL Rewrite gerek
 
 ## 8. Git Akışı
 ```
-main → production · develop → aktif · feature/ · bugfix/
+Tek dal: main (feature/bugfix dalı yok, doğrudan main üzerinde çalışılır)
 ```
-Commit: `feat(auth): Google girişi eklendi` · `fix(word): çoğul kaydetme hatası` · `docs: ...`.
+Commit: Türkçe, task no ile başlar → `CLAUDE.md §7` (ör. `A-03: AuthController (13 endpoint) + rate limiting`).
 
 ## 9. Klasör Yapısı
 ```

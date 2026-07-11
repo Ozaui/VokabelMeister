@@ -1,7 +1,7 @@
 # Güvenlik Politikaları
 
 **Özet:** OWASP Top 10 + GDPR/KVKK uyumlu bir güvenlik modeli — JWT tabanlı 2 adımlı OTP girişi, Token Family Pattern ile refresh replay tespiti, bcrypt (wf:12) şifre hash'i, AES-256 ile SMTP kimlik bilgisi şifreleme ve PII'siz loglama (e-posta yerine SHA-256 hash). ASP.NET Identity **kullanılmıyor** — her şey manuel yazılıyor.
-**Kütüphaneler:** Microsoft.AspNetCore.Authentication.JwtBearer, BCrypt.Net-Next (planlı), AES-256-CBC (planlı `IEncryptionService`)
+**Kütüphaneler:** Microsoft.AspNetCore.Authentication.JwtBearer (✅ kurulu ve kullanımda), BCrypt.Net-Next (✅ kurulu ve kullanımda, A-03), AES-256-CBC (planlı `IEncryptionService` — SMTP şifreleme A-10'da yazılacak, henüz yok)
 **Bağlantılar:** [[Auth_Domain]] · [[Roller_ve_Erisim]] · [[Loglama_Domain]] · [[Ortam_Degiskenleri]] · [[API_Sozlesmesi]]
 
 ## Kimlik Doğrulama (JWT)
@@ -30,12 +30,16 @@ Apple `sub` client bazlı üretilir; web'e Apple girişi eklenirse Apple Develop
 Services ID'si mobil Bundle ID'ye **gruplanmalı** (Primary App ID), yoksa aynı kişi için iki ayrı
 hesap açılır. Bugün web'de Apple girişi yok, bu yüzden şimdilik yapılacak kod yok — detay [[Auth_Domain]].
 
-### QR Kod ile Giriş (Steam benzeri, A-03.1 — planlı)
+### QR Kod ile Giriş (Steam benzeri, A-03.1 — ✅ tamamlandı)
 Ayrı bir kimlik doğrulama sistemi **değil** — zaten mobilde giriş yapmış kullanıcının web/masaüstü
-oturumunu onaylamasıdır; onaylanınca yukarıdaki **aynı** `ITokenService`/`RefreshTokens` akışı
-çalışır. `QrTokenHash` (SHA-256, ham token DB'de tutulmaz) + `PairingCode` (4 haneli, kullanıcı
-gözle karşılaştırır — relay/phishing savunması, DB sızıntısından bağımsız). Süre: 2dk, rate limit:
-IP başına 20/saat. `SecurityLog: QrLoginConfirmed/QrLoginDenied`. Detay → [[Auth_Domain]].
+oturumunu onaylamasıdır; onaylanınca yukarıdaki **aynı** `ILoginCompletionService.CompleteLoginAsync`
+çağrılır, `RefreshTokens`'a aynı şekilde yazılır. `QrTokenHash` (SHA-256, ham token DB'de tutulmaz)
++ `PairingCode` (4 haneli, kullanıcı gözle karşılaştırır — relay/phishing savunması, DB
+sızıntısından bağımsız). Süre: 2dk, rate limit: `generate` IP başına 20/saat, `status` (polling)
+IP başına 40/dk — ikisi de IP-partitioned (paylaşımlı anonim/authenticated bütçesini kullanmaz;
+2026-07-11'de `status` polling'in paylaşımlı 10/dk bütçesini tüketip TÜM anonim trafiği kilitlediği
+bulunup düzeltildi). `SecurityLog: QrLoginConfirmed/QrLoginDenied` (A-04'te SecurityLog yazılınca
+bağlanacak — bkz. [[Loglama_Domain]]). Detay → [[Auth_Domain]].
 
 ## Yetkilendirme (RBAC)
 İki rol: `User`/`Admin`. `[Authorize(Roles="Admin")]` sistem içeriği CRUD'unda, `[Authorize]`
@@ -52,7 +56,7 @@ okuma/genel erişimde. Kaynak yetkisi: `UserId` filtresiyle — detay [[Roller_v
 FluentValidation (sunucu tarafı her zaman) · parametreli sorgu/EF Core LINQ (SQL injection yasak) ·
 JSON otomatik encode (XSS) · Login 5/15dk, OTP 3 yanlış, genel 100/dk (auth)/10/dk (anonim).
 
-## Güvenlik Başlıkları (middleware, henüz [[Program_cs]]'e eklenmedi)
+## Güvenlik Başlıkları (middleware, [[Program_cs]]'e eklendi ✅ — A-02, `SecurityHeadersMiddleware`)
 ```
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff

@@ -11,15 +11,19 @@
 | `API_YOL_HARITASI/_TASLAK.html` | Yeni API şablonu — kopyalanıp doldurulur |
 | `API_YOL_HARITASI/A-02_ortak-altyapi.html` | A-02 (Ortak Altyapı) rehberi — 11 adım, `durum: 'done'` |
 | `API_YOL_HARITASI/A-03_auth-api.html` | A-03 (Auth API) rehberi — 64 adım, 15 `grup`'a bölünmüş (MediatR CQRS refactor sonrası), `durum: 'done'` |
+| `API_YOL_HARITASI/A-03.1_qr-login.html` | A-03.1 (QR Kod ile Giriş) rehberi — ayrı dosya (bkz. aşağıdaki "Adım Gruplama" kuralı, madde 2), `durum: 'done'`, `relatedRefs` ile A-03'e çift yönlü bağlı |
+| `API_YOL_HARITASI/A-03.2_auth-success-message-localization.html` | A-03.2 (Auth Başarı Mesajlarının Lokalizasyonu) rehberi — `SuccessMessages` + 7 Handler güncellemesi, `durum: 'done'` |
 | `API_YOL_HARITASI/render.js` | `window.API`/`const API` objesini okuyup `#content`'e basan paylaşımlı render motoru (kod bloklarını `esc()` ile XSS'e karşı güvenli işler) |
 | `API_YOL_HARITASI/style.css` | Hem hub hem her API sayfasının ortak koyu-tema stili |
 
-`API_YOL_HARITASI/index.html`'in (backend hub) `LISTE` dizisi şu an iki satır içeriyor:
+`API_YOL_HARITASI/index.html`'in (backend hub) `LISTE` dizisi şu an dört satır içeriyor:
 ```js
 { faz: 'A-02', metot: '-', yol: '-', baslik: 'Ortak Altyapı', durum: 'done', dosya: 'A-02_ortak-altyapi.html' },
 { faz: 'A-03', metot: '-', yol: '/auth/*', baslik: 'Auth API', durum: 'done', dosya: 'A-03_auth-api.html' },
+{ faz: 'A-03.1', metot: '-', yol: '/auth/qr/*', baslik: 'QR Kod ile Giriş', durum: 'done', dosya: 'A-03.1_qr-login.html' },
+{ faz: 'A-03.2', metot: 'POST', yol: '/api/v1/auth/*', baslik: 'Auth Başarı Mesajlarının Lokalizasyonu', durum: 'done', dosya: 'A-03.2_auth-success-message-localization.html' },
 ```
-Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02/A-03 durumuyla birebir tutarlı — ikisi de tamamlandı.
+Bu, [[Gelistirme_Yol_Haritasi]]'ndeki A-02/A-03/A-03.1/A-03.2 durumuyla birebir tutarlı — dördü de tamamlandı.
 
 ## Yeni API Ekleme Kuralı (3 adım)
 1. `_TASLAK.html`'i kopyala → `<faz>_<id>.html` adıyla kaydet (örn. `A-03_auth-login.html`)
@@ -37,7 +41,7 @@ barındıran adımlar için, klasik `service` türünden ayrı bir kategori.)
 
 ## Adım Gruplama (`adim.grup`) — Büyük API'larda Okunabilirlik (2026-07-07'de eklendi)
 **Sorun:** A-03 63→64 adıma çıkınca (MediatR CQRS refactor) tek düz akordiyon listesi okunamaz
-hâle geldi; A-03.1 (QR Kod ile Giriş, henüz yazılmadı) aynı sayfaya eklenirse daha da büyüyecekti.
+hâle geldi; A-03.1 (QR Kod ile Giriş) aynı sayfaya eklenirse daha da büyüyecekti.
 **Çözüm (iki parça, birbirinden bağımsız):**
 1. **`adim.grup` (görsel bölümleme, tek dosya içinde):** Her adıma aynı metinli bir `grup: '...'`
    alanı eklenir (ör. `"13 Auth Command + Handler (MediatR CQRS)"`). `render.js` bunu görünce
@@ -57,8 +61,9 @@ Repository'ler (18-20) → E-posta & Sosyal Login Doğrulayıcılar (21-24) → 
 OTP/LoginCompletion/AutoMapper (25-27) → 13 Auth Command + Handler (28-40) → DI Kaydı (41) →
 Validator'lar (42-43) → Dil Çözümleme & Doğrulama Filtresi (44-45) → Controller (46) →
 Rate Limiting (47) → Birim Testler (48-64).
-**A-03.1 henüz yazılmadı** (`docs/TASK/A_admin_panel_backend.md`'de tüm alt-maddeleri ⬜) —
-yazıldığında bu kurala göre kendi dosyasını açacak, `relatedRefs` A-03↔A-03.1 arasında eklenecek.
+**A-03.1 ✅ tamamlandı** (`docs/TASK/A_admin_panel_backend.md`'de tüm alt-maddeleri ✅) — bu kurala
+göre kendi dosyasını (`A-03.1_qr-login.html`) açtı, `relatedRefs` A-03↔A-03.1 arasında çift yönlü
+eklendi. Aynı ayrı-dosya deseni A-03.2 için de tekrarlandı (`A-03.2_auth-success-message-localization.html`).
 
 ## İkinci Seviye: Katman Gruplama (`API.katmanlar`) — Aynı Gün Eklendi
 15 grup bile TOC'ta uzun bir liste oluşturunca (A-03), bir üst seviye eklendi: `katmanlar:
@@ -110,7 +115,8 @@ sayfada varsayılan açık olsaydı sayfa kullanılamaz hâle gelirdi). Opsiyone
 gösterilir — testler geçerken hiç yazılmaz. `sonuclar` boş/yoksa render.js hiçbir şey basmaz (geriye
 dönük uyumlu — eski sayfalar bu alanı eklemeden çalışmaya devam eder).
 **Uygulandığı yer:** `A-02_ortak-altyapi.html` (2 adım/11 test), `A-03_auth-api.html` (17 adım/61
-test), `A-03.1_qr-login.html` (5 adım/18 test) — toplam 90/90 yeşil, tek bir `dotnet test` koşusundan.
+test → A-03.2'de 7 dil senaryosu eklendi, 68 test), `A-03.1_qr-login.html` (5 adım/18 test) —
+toplam 97/97 yeşil, tek bir `dotnet test` koşusundan.
 
 ## Yeniden Kullanılan Kod Kuralı
 `docs/index.html`'deki not: bir API daha önce yazılmış bir kodu/yardımcıyı (örn. [[Repository]],

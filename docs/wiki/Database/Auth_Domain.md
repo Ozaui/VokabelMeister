@@ -26,6 +26,15 @@ tutarlı). `User` entity'sinin kendisi de `BaseEntity`'den türediği için kend
 imkanı vardır — örn. bir admin başka bir kullanıcıyı oluşturursa `CreatedByUserId` o admin'in Id'si
 olur; self-servis kayıtta `null` kalır.
 
+**Düzeltme (2026-07-11):** A-03/A-03.1 ilk yazıldığında bu alanlar hiçbir Auth/QrLogin
+Handler'ında fiilen doldurulmuyordu (22 `AddAsync`/`UpdateAsync` çağrısının tamamı `userId`
+parametresini boş bırakıyordu — kod denetiminde bulundu). Artık kural netleşti ve uygulandı:
+kaydın SAHİBİ kendi eylemiyle güncelliyorsa (LoginCommand'ın OTP üretmesi, ResetPasswordCommand,
+QR Scan/Confirm/Deny/GetStatus vb.) o kullanıcının Id'si geçiliyor; yalnızca gerçek self-servis
+KAYIT OLUŞTURMA (RegisterCommand, LoginWithGoogle/AppleCommand'ın yeni-kullanıcı dalı,
+GenerateQrLoginCommand) ve sistemin kendiliğinden yaptığı geçişlerde (ör. QR oturumunun otomatik
+Expired'a çevrilmesi) `null` kalıyor. Detay → `IRepository.cs` NEDEN yorumu.
+
 ## Yazılmış Kod (A-03 ✅ + A-03.1 ✅ — ikisi de tamamlandı)
 `User`, `RefreshToken` entity + `OtpPurpose` enum → `IPasswordService`, `ITokenService`,
 `IOtpService`/`ILoginCompletionService` (paylaşılan OTP/giriş-tamamlama mantığı) → 13 Auth
@@ -49,8 +58,24 @@ ekranındakiyle gözle karşılaştırılır), `Status` (`Pending→Scanned→Co
 (5 endpoint, `/auth/qr/*` — `AuthController`'dan ayrı, çünkü Admin panelde bu akış yok), IP-partitioned
 `qrGenerate` rate limit policy'si (20/saat). **Tasarım kararı:** `RequesterIp`/`RequesterDeviceInfo`
 yalnızca `generate` adımında (web'in isteğinden) yazılır, `scan`'de değil — mobil ekranda "seni
-İSTEYEN taraf" gösterilip kullanıcı gözle doğrular (relay/phishing önlemi). 18 birim test. Detay →
+İSTEYEN taraf" gösterilip kullanıcı gözle doğrular (relay/phishing önlemi). 23 birim test (18
+orijinal + 2026-07-11 bugfix turunda 5 yeni). Detay →
 `DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `API_YOL_HARITASI/A-03.1_qr-login.html`.
+
+**Bugfix turu (2026-07-11, kod denetimi sonrası):** Dört gerçek sorun düzeltildi — (1)
+`GET /auth/qr/{token}/status` (web'in ~2sn'de bir sorguladığı polling endpoint'i) paylaşımlı
+`"anonymous"` rate-limit'ini (10/dk, TÜM anonim trafik ortak) kullanıyordu; bu polling hızı
+(~30/dk) o bütçeyi saniyeler içinde tüketip register/login/forgot-password dahil TÜM anonim
+trafiği kilitliyordu — yeni IP-partitioned `"qrStatus"` policy'si (40/dk/IP) eklendi (bkz.
+[[Guvenlik_Politikalari]] "Güvenlik Başlıkları" altındaki rate limit notu, `REFERENCE/SECURITY.md
+§4`). (2) `GetQrLoginStatusCommand` kullanıcıyı soft-delete filtresi UYGULANARAK (`GetByIdAsync`)
+buluyordu, oysa normal login `GetByEmailAsync` ile filtresiz buluyor — hesabını yeni silmiş bir
+kullanıcı QR ile giriş tamamlamaya çalışınca anlamsız bir 404 alıyordu; `IUserRepository`'ye
+`GetByIdIncludingDeletedAsync` eklendi, artık `ILoginCompletionService.CompleteLoginAsync`'in
+grace-period kurtarma mantığına normal login ile aynı şekilde ulaşıyor. Ayrıca diğer giriş
+yollarıyla (Login/Google/Apple) parite için `IsActive` kontrolü eklendi. (3) Scan/Confirm/Deny/
+GetStatus'ta oturum bulunamadığında fırlatılan `EntityNotFoundException`'ın mesajına ham QR
+token'ı (bir secret) gömülüyordu — artık hash'i gömülüyor.
 
 ## Apple Sosyal Giriş — Platformlar Arası Tutarlılık (not, kod değişikliği gerektirmiyor)
 Apple `sub` (AppleId) client bazında (Bundle ID/Services ID) farklı üretilir. Mobil ve ileride

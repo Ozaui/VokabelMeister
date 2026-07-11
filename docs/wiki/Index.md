@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, **güncel toplam 102/102 birim testi yeşil**). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -654,3 +654,84 @@ kullanıcı tarafından zaten tamamlanmış, yalnızca dokümantasyon/roadmap/wi
 `WordLearner_Application.md` (özet + Klasör Yapısı + Dosyalar listesi), `Gelistirme_Yol_Haritasi.md`
 (GÜNCEL OLMAYAN bir durumdaydı — hâlâ "A-03.1 ⬜", "A-03 61 test", "Sıradaki: A-03.1" yazıyordu;
 gerçek duruma göre A-03/A-03.1/A-03.2 ✅, 97 test, sıradaki A-04 olarak düzeltildi).*
+
+*Yirmi üçüncü INGEST (2026-07-11, aynı gün) — **Üç paralel denetim (wiki/md/backend kod) + toplu
+düzeltme.** Kullanıcı "her şeyi kontrol ediyoruz" diyerek üç ayrı subagent'a wiki, `docs/*.md` ve
+gerçek backend kodunu bağımsız incelettirdi; bulgular çapraz karşılaştırıldı. Kod tarafında **hiçbir
+gerçek kural ihlali bulunmadı** (rol sızması yok, SQL injection yok, UserId/soft-delete filtreleri
+doğru, ENV/PII kuralına uyumlu) — tüm bulgular dokümantasyonun koddan geride kalmasıydı:
+**(1) tr/en↔tr/de çelişkisi:** `CLAUDE.md §1`, `SECURITY.md §1.4`, `API_ENDPOINTS.md §1` "(tr/en)"
+diyordu, gerçek kod (`ErrorMessages.cs`/`SuccessMessages.cs`) bilinçli olarak yalnızca **tr/de**
+dolu (hedef DE↔TR, `en` YAGNI ile eklenmedi) — mimari zaten dile-göre-anahtarlanan sözlük olduğu
+için esnek (yeni dil = sözlüğe sütun, kod değişmez); üç dosya + [[ErrorMessages]] "tr/de + gelecekte
+esnek" olarak düzeltildi. **(2) `Standartlar/*` üç düğüm tamamen bayattı:** [[Guvenlik_Politikalari]]
+(BCrypt/QR-giriş/güvenlik-başlıkları "planlı" diyordu, hepsi ✅), [[Teknik_Ozellikler]] (JWT/Şifre
+servisi/`Program.cs` "planlanan, henüz yok" diyordu, A-02/A-03'te tamamlandı), [[API_Sozlesmesi]]
+(başlık "henüz hiç endpoint yok" diyordu, 18 endpoint canlı) — Yirmi birinci INGEST'in bulduğu
+"üst-seviye özet sayfası atlanıyor" deseni bu üçüne hiç uygulanmamıştı, şimdi düzeltildi.
+**(3) Test sayısı [[WordLearner_Tests]]/[[Backend_Katmanli_Mimari]]'de hâlâ 90 yazıyordu**
+(A-03.2'nin +7'si işlenmemiş, Yirmi ikinci INGEST'te bu iki düğüm atlanmış) → 97'ye düzeltildi, A-03
+toplamı 72→79. **(4) [[API_Yol_Haritasi_Sistemi]] kendi içinde çelişiyordu** (A-03.1'i hem "henüz
+yazılmadı" hem "18 testle tamam" diyordu) ve A-03.2 sayfasından hiç bahsetmiyordu — `Dosyalar`
+tablosuna A-03.1/A-03.2 satırları, `LISTE` dizisine dört satır, "A-03.1 henüz yazılmadı" → "✅
+tamamlandı" düzeltildi. **(5) [[Loglama_Domain]]** `SecurityLog.EventType`'ı 6 değerle listeliyordu,
+`LogEventType` enum'u 10 değer taşıyor (`PasswordReset`/`AccountDeletion`/`QrLoginConfirmed`/
+`QrLoginDenied` eksikti) → tamamlandı. **Ayrıca `docs/*.md` tarafında (wiki dışı):**
+`DEVELOPMENT_SETUP.md §8` gerçekte hiç kullanılmayan `develop`/`feature/` branch modeli ve
+Conventional Commits formatı öneriyordu (gerçek pratik: tek dal `main`, Türkçe+task-no commit,
+`CLAUDE.md §7`) → düzeltildi; `DATABASE_SCHEMA.md` üst notu "`Words.CreatedBy`" diyordu, doğrusu
+`WordConcepts.CreatedBy` → düzeltildi; `TASK.md`'nin "Sıradaki task" satırı hâlâ A-03.2'yi
+gösteriyordu (A-03.2 zaten ✅) → A-04 olarak düzeltildi. **Bilinçli olarak DOKUNULMADI:**
+`API_ENDPOINTS.md`'de "## 2." bölüm numarasının atlanmış olması — kozmetik bir boşluk, ama mevcut
+numaralandırma (`§3`=Auth, `§4`=Kullanıcı, ...) 40'tan fazla yerde (`TASK/*.md`, wiki, `DATABASE_SCHEMA/
+Auth.md`) çapraz referans veriyor; yeniden numaralandırmanın riski kazancından büyük. **Kod tarafında
+hiçbir değişiklik yapılmadı**, yalnızca dokümantasyon/wiki gerçek koda yeniden hizalandı. **Etkilenen
+dosyalar:** `CLAUDE.md`, `docs/REFERENCE/{SECURITY,API_ENDPOINTS,DEVELOPMENT_SETUP}.md`,
+`docs/DATABASE_SCHEMA.md`, `docs/TASK.md`, `docs/wiki/Backend/{ErrorMessages,WordLearner_Tests,
+API_Yol_Haritasi_Sistemi}.md`, `docs/wiki/Architecture/Backend_Katmanli_Mimari.md`,
+`docs/wiki/Standartlar/{Guvenlik_Politikalari,Teknik_Ozellikler,API_Sozlesmesi}.md`,
+`docs/wiki/Database/Loglama_Domain.md`, bu dosya (`Index.md`).*
+
+*Yirmi dördüncü INGEST (2026-07-11, aynı gün) — **Kod kalitesi denetimi + 4 gerçek bug fix
+(QR ile Giriş akışı).** Yirmi üçüncü INGEST'in "kod tarafında hiçbir kural ihlali yok" tespitinden
+sonra kullanıcı ayrı bir tur olarak saf kod kalitesi/mühendislik pratiği denetimi istedi (3 paralel
+subagent: Domain+Infrastructure, Application, API+Testler). Bu kez **4 gerçek fonksiyonel bug**
+bulundu ve düzeltildi (dokümantasyon değil, davranış hatası):
+**(1) QR polling kendi kendini kilitliyordu:** `GET /auth/qr/{token}/status` (web'in ~2sn'de bir
+sorguladığı polling endpoint'i) paylaşımlı `"anonymous"` rate-limit policy'sini (10/dk, TÜM anonim
+trafik ortak) kullanıyordu — bu polling hızı (~30/dk) o bütçeyi ~20 saniyede tüketip
+register/login/forgot-password dahil TÜM anonim kullanıcıları 429'a düşürüyordu. `qrGenerate`
+zaten IP-partitioned yazılmışken `status`'a aynı disiplin uygulanmamıştı. Düzeltme: `Program.cs`'e
+yeni IP-partitioned `"qrStatus"` policy'si (40/dk/IP) eklendi, `QrLoginController.GetStatus` buna
+geçirildi. **(2) Audit alanları (`CreatedByUserId`/`UpdatedByUserId`) hiçbir Auth/QrLogin
+Handler'ında doldurulmuyordu** — `IRepository.cs`'nin kendi "Auth/A-03 tamamlanana kadar null
+geçilir" notuna rağmen 22 `AddAsync`/`UpdateAsync` çağrısının TAMAMI `userId`'yi boş bırakıyordu.
+Düzeltme: kaydın SAHİBİ kendi eylemiyle güncelliyorsa o kullanıcının Id'si geçiliyor artık; yalnızca
+gerçek self-servis KAYIT OLUŞTURMA (Register, Google/Apple yeni-kullanıcı dalı,
+GenerateQrLoginCommand) ve sistemin otomatik geçişlerinde (QR oturumu expiry) `null` kalıyor —
+`IRepository.cs`'nin NEDEN yorumu bu kurala göre yeniden yazıldı. **(3) QR girişi soft-delete/
+hesap-durumu kontrolünü atlıyordu:** `GetQrLoginStatusCommand` kullanıcıyı `GetByIdAsync` (soft-
+delete filtreli) ile buluyordu, normal login ise `GetByEmailAsync` ile (filtresiz) — hesabını yeni
+silmiş bir kullanıcı QR ile giriş tamamlarken anlamsız bir 404 alıyordu, `ILoginCompletionService`'in
+grace-period kurtarma mantığına hiç ulaşamıyordu. Düzeltme: `IUserRepository`'ye
+`GetByIdIncludingDeletedAsync` eklendi (`GetByEmailAsync` ile aynı `IgnoreQueryFilters()`
+gerekçesi), ayrıca diğer giriş yollarıyla parite için `IsActive` kontrolü eklendi. **(4) Ham QR
+token exception mesajına gömülüyordu:** Scan/Confirm/Deny/GetStatus'ta oturum bulunamayınca
+`EntityNotFoundException(typeof(QrLoginSession), request.QrToken)` — ham token (bir secret) log'a
+gidebilecek bir mesaja yazılıyordu; projede her diğer secret yalnızca hash'i üzerinden ele
+alınıyor. Düzeltme: `request.QrToken` → zaten hesaplanmış `tokenHash`. **Testler:** 4 fix için
+mevcut 3 test (2 Auth, 1 QrLogin) mock-verify assertion'ları güncellendi, `Features/QrLogin/`'e 5
+yeni regresyon testi eklendi (Confirm/Deny'e ilk kez `TokenNotFound` testi, GetQrLoginStatus'a
+grace-period kurtarma/inactive/anonymized senaryoları) — 97→102, hepsi yeşil. **Roadmap:**
+`API_YOL_HARITASI/{A-02_ortak-altyapi,A-03_auth-api,A-03.1_qr-login}.html`'deki ilgili `adim.kod`
+alanları güncel koda senkronize edildi (CLAUDE.md §6 — kod alanı gerçek dosyanın birebir kopyası
+olmalı kuralı). **Etkilenen kod dosyaları:** `API/Program.cs`, `API/Controllers/QrLoginController.cs`,
+`Application/Interfaces/Repositories/{IRepository,IUserRepository}.cs`,
+`Infrastructure/Repositories/UserRepository.cs`, `Application/Features/Auth/{Login,ForgotPassword,
+ConfirmAccountDeletion,Logout,Refresh,ResetPassword,RequestAccountDeletion,ResendVerification,
+VerifyEmail}Command.cs`, `Application/Services/LoginCompletionService.cs`,
+`Application/Features/QrLogin/{Scan,Confirm,Deny,GetQrLoginStatus}QrLoginCommand.cs`, ilgili 6 test
+dosyası. **Etkilenen doküman/wiki dosyaları:** `REFERENCE/SECURITY.md`,
+`docs/wiki/Backend/WordLearner_Tests.md`, `docs/wiki/Architecture/Backend_Katmanli_Mimari.md`,
+`docs/wiki/Database/Auth_Domain.md`, `docs/wiki/Standartlar/Guvenlik_Politikalari.md`, bu dosya
+(`Index.md`).*

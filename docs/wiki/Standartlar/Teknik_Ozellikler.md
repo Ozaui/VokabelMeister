@@ -38,7 +38,7 @@ npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-n
 npm i @react-native-google-signin/google-signin
 ```
 
-## 3. JWT Token Servisi (planlanan — A-03, henüz yok)
+## 3. JWT Token Servisi (A-03 ✅ — implement edildi)
 
 `ITokenService`/`JwtTokenService`: `GenerateAccessToken(User)` (15dk, HMAC-SHA256, claims:
 NameIdentifier/Email/Role/firstName), `GenerateRefreshToken()` (64 byte random, Base64, gün
@@ -46,7 +46,7 @@ sayısı `Jwt:RefreshTokenExpirationDays`'ten), `GetPrincipalFromExpiredToken(st
 **Algorithm Confusion önlemi:** doğrulanan token'ın `Header.Alg`'i `HmacSha256` değilse `null`
 döner. Detay → [[Auth_Domain]], [[Guvenlik_Politikalari]].
 
-## 4. Şifre Servisi (planlanan — A-03, henüz yok)
+## 4. Şifre Servisi (A-03 ✅ — implement edildi)
 
 `IPasswordService`/`PasswordService`: `Hash(password)` → `BCrypt.Net.BCrypt.HashPassword(pw,
 workFactor: 12)`, `Verify(password, hash)`, `HashToken(token)` → SHA-256 (refresh/OTP token
@@ -83,10 +83,10 @@ Bu, [[SRS_Domain]]'deki `UserProgress`/`UserCardProgress` alanlarını doğrudan
 `SecurityLog` Serilog ile **değil**, özel `IActivityLogger`/`ISecurityLogger` servisleriyle
 yazılır — detay [[Loglama_Domain]].
 
-## 7. Program.cs — Hedef Yapılandırma (planlanan tam hâl)
+## 7. Program.cs — Hedef Yapılandırma (A-02 ✅ — tamamlandı)
 
-Bu, [[Program_cs]]'in **şu anki iskelet hâli değil**, A-02 tamamlandığında ulaşması gereken
-hedef yapıdır — Serilog host, DbContext + Infrastructure/Application servis kayıtları,
-FluentValidation, JWT Bearer authentication, CORS policy, `SecurityHeadersMiddleware` +
-`ExceptionHandlingMiddleware`, `UseStaticFiles()` (avatar/görsel) sırasıyla eklenir. Tam kod
-`docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §10`'da; adım adım gerekçesiyle [[Program_cs]] düğümünde.
+Bu, [[Program_cs]]'in gerçek A-02 sonrası hâlidir — Serilog host, DbContext + Infrastructure/
+Application servis kayıtları, FluentValidation, JWT Bearer authentication, CORS policy,
+`SecurityHeadersMiddleware` + `ExceptionHandlingMiddleware`, `UseStaticFiles()` (avatar/görsel)
+sırasıyla eklendi. Tam kod `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md §10`'da; adım adım
+gerekçesiyle [[Program_cs]] düğümünde.
