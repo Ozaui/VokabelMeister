@@ -35,7 +35,7 @@ window.API = {
   auth: 'Anonim + JWT',
   baslik: 'QR Kod ile Giriş',
   durum: 'done',
-  ozet: 'Web/desktop tarafın ürettiği bir QR oturumunun mobil cihazda taranıp onaylanması sonucu A-03\'teki ITokenService/ILoginCompletionService ile token üretimine bağlandığı akış. Veri modeli, repository, exception\'lar, 5 MediatR Command+Handler (generate/scan/confirm/deny/status), Controller, rate limiting ve 18 birim testle tamamlandı.',
+  ozet: 'Web/desktop tarafın ürettiği bir QR oturumunun mobil cihazda taranıp onaylanması sonucu A-03\'teki ITokenService/ILoginCompletionService ile token üretimine bağlandığı akış. Veri modeli, repository, exception\'lar, 5 MediatR Command+Handler (generate/scan/confirm/deny/status), Controller, rate limiting ve 23 birim testle tamamlandı.',
   adimlar: [
     {
       num: 1, tur: 'enum', grup: 'Veri Modeli',
@@ -965,7 +965,7 @@ public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrS
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -979,7 +979,7 @@ public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrS
         session.Status = QrLoginStatus.Scanned;
         session.UserId = request.UserId;
         session.ScannedAt = DateTime.UtcNow;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return new QrScanResponse(session.RequesterDeviceInfo, session.RequesterIp, session.PairingCode);
     }
@@ -1038,7 +1038,7 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -1054,7 +1054,7 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
 
         session.Status = QrLoginStatus.Confirmed;
         session.ConfirmedAt = DateTime.UtcNow;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return Unit.Value;
     }
@@ -1108,7 +1108,7 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -1123,7 +1123,7 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
             throw new QrSessionForbiddenException();
 
         session.Status = QrLoginStatus.Denied;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
         return Unit.Value;
     }
@@ -1132,7 +1132,7 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
     {
       num: 18, tur: 'handler', grup: '5 QR Command + Handler (MediatR CQRS)',
       baslik: 'GetQrLoginStatusCommand.cs', dosya: 'Application/Features/QrLogin/GetQrLoginStatusCommand.cs',
-      aciklama: 'Bu akışın KALBİ — QR girişinin "ayrı bir kimlik doğrulama sistemi değil" dediğimiz iddiayı somutlaştıran yer: Confirmed durumu ilk okunduğunda, A-03\'te Google/Apple/OTP girişlerinin ÜÇÜNÜN DE kullandığı AYNI `ILoginCompletionService.CompleteLoginAsync` çağrılıyor — yeni bir token üretim mantığı YAZILMADI, var olan yeniden kullanıldı. Neden Consumed sonrası 410 ama Expired\'da 200+"Expired": token bir kez üretilip döndükten sonra (Consumed) AYNI token\'ın tekrar okunabilir olması güvenlik açığıdır (biri network trafiğini dinleyip token\'ı ikinci kez okuyabilirdi) — bu yüzden kalıcı olarak "gone". Ama Expired\'da HENÜZ HİÇBİR TOKEN ÜRETİLMEDİ, yalnızca web\'in "yeni bir QR oluştur" bilmesi gerekiyor — bunu 410 (kaybolan bir kaynak) yerine sıradan bir durum bilgisi (200) olarak modellemek, istemci tarafında hata/success ayrımını daha basit tutuyor. `ClientIp` neden telefonun değil WEB\'in IP\'si: `User.LastLoginIP` her zaman "kullanıcı NEREDEN giriş yaptı" anlamına gelir — QR akışında giriş YAPILAN taraf web tarayıcısıdır, telefon yalnızca onaylayan taraf; bu yüzden ClientIp, generate\'deki RequesterIp gibi, bu isteği (status polling) atan tarafın IP\'sidir.',
+      aciklama: 'Bu akışın KALBİ — QR girişinin "ayrı bir kimlik doğrulama sistemi değil" dediğimiz iddiayı somutlaştıran yer: Confirmed durumu ilk okunduğunda, A-03\'te Google/Apple/OTP girişlerinin ÜÇÜNÜN DE kullandığı AYNI `ILoginCompletionService.CompleteLoginAsync` çağrılıyor — yeni bir token üretim mantığı YAZILMADI, var olan yeniden kullanıldı. Neden Consumed sonrası 410 ama Expired\'da 200+"Expired": token bir kez üretilip döndükten sonra (Consumed) AYNI token\'ın tekrar okunabilir olması güvenlik açığıdır (biri network trafiğini dinleyip token\'ı ikinci kez okuyabilirdi) — bu yüzden kalıcı olarak "gone". Ama Expired\'da HENÜZ HİÇBİR TOKEN ÜRETİLMEDİ, yalnızca web\'in "yeni bir QR oluştur" bilmesi gerekiyor — bunu 410 (kaybolan bir kaynak) yerine sıradan bir durum bilgisi (200) olarak modellemek, istemci tarafında hata/success ayrımını daha basit tutuyor. `ClientIp` neden telefonun değil WEB\'in IP\'si: `User.LastLoginIP` her zaman "kullanıcı NEREDEN giriş yaptı" anlamına gelir — QR akışında giriş YAPILAN taraf web tarayıcısıdır, telefon yalnızca onaylayan taraf; bu yüzden ClientIp, generate\'deki RequesterIp gibi, bu isteği (status polling) atan tarafın IP\'sidir. NOT (denetim sonrası düzeltme, 2026-07-11): kullanıcı artık `GetByIdAsync` (soft-delete filtreli) yerine `GetByIdIncludingDeletedAsync` ile yükleniyor — aksi hâlde grace period içindeki (hesabını yeni silmiş) bir kullanıcı burada anlamsız bir 404 alıyordu, normal login (GetByEmailAsync) ile tutarsız bir davranıştı. Ayrıca CompleteLoginAsync\'ten önce diğer giriş yollarıyla aynı IsActive kontrolü eklendi, exception artık ham QR token\'ı yerine tokenHash taşıyor (secret log/exception mesajına sızmasın diye), ve UpdateAsync çağrısına audit için `user.Id` eklendi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // GetQrLoginStatusCommand.cs
 //
@@ -1149,7 +1149,9 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
 //        kaynak) anlamına gelmez.
 // NASIL: 1) Hash'e göre oturumu bul, yoksa 404  2) Süresi geçmişse Expired'a
 //        çevir + 200 döndür  3) Consumed ise 410  4) Confirmed ise kullanıcıyı
-//        yükle, CompleteLoginAsync çağır, Consumed'e geçir, token'lı yanıt dön
+//        (soft-delete filtresi YOK SAYILARAK — grace-period kurtarma normal
+//        login akışıyla aynı şekilde çalışabilsin diye) yükle, CompleteLoginAsync
+//        çağır, Consumed'e geçir, token'lı yanıt dön
 //        5) Diğer durumlarda (Pending/Scanned/Denied) yalnızca Status dön.
 // BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService, IUserRepository,
 //                ILoginCompletionService.
@@ -1197,7 +1199,7 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         var tokenHash = _passwordService.HashToken(request.QrToken);
         var session =
             await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), request.QrToken);
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
 
         if (session.IsExpired(DateTime.UtcNow))
         {
@@ -1211,14 +1213,27 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         if (session.Status != QrLoginStatus.Confirmed)
             return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
 
+        // NEDEN GetByIdIncludingDeletedAsync (GetByIdAsync DEĞİL): normal login
+        //       (LoginCommand/LoginWithGoogle/Apple) kullanıcıyı GetByEmailAsync ile
+        //       soft-delete filtresi YOK SAYILARAK bulur, böylece CompleteLoginAsync'in
+        //       grace-period kurtarma mantığı çalışabilir. GetByIdAsync (filtreli)
+        //       kullanılsaydı, hesabını yeni silmiş bir kullanıcı burada anlamsız bir
+        //       404 alırdı — diğer giriş yollarıyla tutarsız bir davranış.
         var user =
-            await _userRepository.GetByIdAsync(session.UserId!.Value, ct)
+            await _userRepository.GetByIdIncludingDeletedAsync(session.UserId!.Value, ct)
             ?? throw new EntityNotFoundException(typeof(User), session.UserId.Value);
+
+        // NEDEN: LoginCommand/LoginWithGoogleCommand/LoginWithAppleCommand'ın hepsi
+        //        CompleteLoginAsync'e girmeden önce IsActive kontrolü yapıyor (dondurulmuş
+        //        hesap giriş yapamaz) — QR akışının token üretimi de aynı ortak son
+        //        adımdan geçtiği için aynı kontrole tabi olmalı.
+        if (!user.IsActive)
+            throw new AccountNotActiveException();
 
         var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
 
         session.Status = QrLoginStatus.Consumed;
-        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        await _qrLoginSessionRepository.UpdateAsync(session, user.Id, ct);
 
         return new QrStatusResponse(
             QrLoginStatus.Confirmed.ToString(),
@@ -1278,7 +1293,7 @@ public static class InfrastructureServiceExtensions
     {
       num: 20, tur: 'controller', grup: 'Controller & Rate Limiting',
       baslik: 'QrLoginController.cs', dosya: 'API/Controllers/QrLoginController.cs',
-      aciklama: 'AuthController\'dan (A-03) BİLEREK AYRI bir controller — CLAUDE.md §1 "Sistem içeriği/kişisel içerik" ayrımına benzer bir gerekçe: QR akışı Admin panelde HİÇ yok (yalnızca Web+Mobil), rotası da kendi başına bir alt-kaynak (`/auth/qr/*`); AuthController\'a eklemek o dosyayı (zaten 13 endpoint) daha da şişirir ve "Auth" ile "QR" farklı yaşam döngülerine sahip iki kavram olur. Controller kuralı (CODING_STANDARDS.md §5) burada da işliyor: hiçbir `if`/iş kuralı YOK, yalnızca `_mediator.Send(command)` + JWT\'den `ClientIp`/`CurrentUserId` okuma. Neden `Confirm`/`Deny` `NoContent()` (204) dönüyor, `Ok()` değil: bu iki uçtan istemciye dönecek YENİ bir bilgi yok (zaten kendi gönderdiği token\'ı biliyor) — HTTP\'de "işlem başarılı ama gövdede bir şey yok" durumunun standart karşılığı 204\'tür, 200+boş gövde yerine bu tercih edilir.',
+      aciklama: 'AuthController\'dan (A-03) BİLEREK AYRI bir controller — CLAUDE.md §1 "Sistem içeriği/kişisel içerik" ayrımına benzer bir gerekçe: QR akışı Admin panelde HİÇ yok (yalnızca Web+Mobil), rotası da kendi başına bir alt-kaynak (`/auth/qr/*`); AuthController\'a eklemek o dosyayı (zaten 13 endpoint) daha da şişirir ve "Auth" ile "QR" farklı yaşam döngülerine sahip iki kavram olur. Controller kuralı (CODING_STANDARDS.md §5) burada da işliyor: hiçbir `if`/iş kuralı YOK, yalnızca `_mediator.Send(command)` + JWT\'den `ClientIp`/`CurrentUserId` okuma. Neden `Confirm`/`Deny` `NoContent()` (204) dönüyor, `Ok()` değil: bu iki uçtan istemciye dönecek YENİ bir bilgi yok (zaten kendi gönderdiği token\'ı biliyor) — HTTP\'de "işlem başarılı ama gövdede bir şey yok" durumunun standart karşılığı 204\'tür, 200+boş gövde yerine bu tercih edilir. NOT (denetim sonrası düzeltme, 2026-07-11): `GetStatus` artık paylaşımlı `"anonymous"` (10/dk, TÜM anonim trafik ortak) yerine kendi `"qrStatus"` policy\'sini (adım 21, Program.cs) kullanıyor — ~2sn\'lik polling (~30 istek/dk) paylaşımlı bütçeyi saniyeler içinde tüketip diğer tüm anonim uçları (register/login/forgot-password) kilitliyordu.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // QrLoginController.cs
 //
@@ -1331,8 +1346,11 @@ public class QrLoginController : ControllerBase
 
     // AMAÇ: Web'in ~2sn'de bir sorguladığı polling endpoint'i — Confirmed'de tek
     //       seferlik token döner, sonra oturum Consumed'e geçer.
+    // NEDEN "qrStatus" (paylaşımlı "anonymous" DEĞİL): bu polling sıklığı (~30
+    //       istek/dk) paylaşımlı 10/dk bütçesini saniyeler içinde tüketip TÜM
+    //       anonim trafiği kilitler — bkz. Program.cs "qrStatus" policy yorumu.
     [HttpGet("{token}/status")]
-    [EnableRateLimiting("anonymous")]
+    [EnableRateLimiting("qrStatus")]
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
 
@@ -1366,8 +1384,8 @@ public class QrLoginController : ControllerBase
     },
     {
       num: 21, tur: 'config', grup: 'Controller & Rate Limiting',
-      baslik: 'Program.cs (qrGenerate rate limit policy eklendi)', dosya: 'API/Program.cs',
-      aciklama: 'Yeniden kullanılan dosya — A-02\'de kurulan rate limiter altyapısına yeni bir policy ekleniyor. Neden `qrGenerate` AYRI bir policy, `anonymous` (10/dk, GLOBAL) yeterli değil: `anonymous` policy\'si TÜM anonim istekleri TEK bir ortak pencerede sayar — bu, generate endpoint\'i için görev tanımı olan "IP başına 20/saat" (TASK/A_admin_panel_backend.md A-03.1) ile UYUMSUZ, hem limit sayısı hem de PENCERE (dakika vs saat) farklı. `RateLimitPartition.GetFixedWindowLimiter` + `partitionKey: IP` neden gerekiyor: partition olmadan (düz `AddFixedWindowLimiter` gibi) TÜM kullanıcılar birlikte tek bir 20/saat kotasını paylaşırdı — bir kullanıcı limiti doldurunca BAŞKA kullanıcılar da QR oluşturamaz hâle gelirdi; partition her IP\'ye KENDİ ayrı kotasını verir, bir saldırgan IP\'si yalnızca kendini bloklar. `##NEW##` işaretli blok dışındaki her şey (JWT/CORS/`anonymous`/`authenticated` policy\'leri) A-02/A-03\'ten aynen geliyor.',
+      baslik: 'Program.cs (qrGenerate + qrStatus rate limit policy\'leri eklendi)', dosya: 'API/Program.cs',
+      aciklama: 'Yeniden kullanılan dosya — A-02\'de kurulan rate limiter altyapısına yeni bir policy ekleniyor. Neden `qrGenerate` AYRI bir policy, `anonymous` (10/dk, GLOBAL) yeterli değil: `anonymous` policy\'si TÜM anonim istekleri TEK bir ortak pencerede sayar — bu, generate endpoint\'i için görev tanımı olan "IP başına 20/saat" (TASK/A_admin_panel_backend.md A-03.1) ile UYUMSUZ, hem limit sayısı hem de PENCERE (dakika vs saat) farklı. `RateLimitPartition.GetFixedWindowLimiter` + `partitionKey: IP` neden gerekiyor: partition olmadan (düz `AddFixedWindowLimiter` gibi) TÜM kullanıcılar birlikte tek bir 20/saat kotasını paylaşırdı — bir kullanıcı limiti doldurunca BAŞKA kullanıcılar da QR oluşturamaz hâle gelirdi; partition her IP\'ye KENDİ ayrı kotasını verir, bir saldırgan IP\'si yalnızca kendini bloklar. `##NEW##` işaretli blok dışındaki her şey (JWT/CORS/`anonymous`/`authenticated` policy\'leri) A-02/A-03\'ten aynen geliyor. NOT (denetim sonrası düzeltme, 2026-07-11): ikinci bir `"qrStatus"` policy\'si eklendi — `GetStatus` (adım 20, QrLoginController) web tarafından ~2sn\'de bir çağrılan bir polling endpoint\'i (~30 istek/dk); paylaşımlı `"anonymous"` limitini (10/dk, TÜM anonim trafik ortak) kullansaydı tek bir açık QR ekranı ~20 saniye içinde bu bütçeyi tüketip sunucudaki TÜM anonim kullanıcıları (register/login/forgot-password dahil) kilitlerdi — `qrGenerate` ile aynı gerekçeyle IP başına PARTITIONED, limit polling hızının üstünde bir tampon payıyla (40/dk) belirlendi.',
       kod: `// ADIM 7: Rate Limiting — REFERENCE/SECURITY.md §4: genel 100/dk (kimliği doğrulanmış
 // istekler), 10/dk (anonim istekler). Controller/action'lar [EnableRateLimiting("...")]
 // ile bu isimli policy'lerden birini seçer (A-03 — AuthController).
@@ -1405,10 +1423,32 @@ builder.Services.AddRateLimiter(options =>
 ##NEW##                }
 ##NEW##            )
 ##NEW##    );
+
+    // NEDEN IP başına PARTITIONED ("anonymous"ın aksine): GET /auth/qr/{token}/status
+    // web tarafından ~2sn'de bir çağrılan bir polling endpoint'i (~30 istek/dk).
+    // Paylaşımlı "anonymous" limitini (10/dk, TÜM anonim trafik ortak) kullanırsa
+    // tek bir açık QR ekranı ~20 saniye içinde bu bütçeyi tüketip sunucudaki TÜM
+    // anonim kullanıcıları (register/login/forgot-password dahil) kilitler — polling
+    // kendi kendini ve başkalarını kilitlemiş olurdu. IP başına ayrı pencere (qrGenerate
+    // ile aynı gerekçe) bu yan etkiyi önler; limit polling hızının (30/dk) üstünde
+    // bir tampon payıyla belirlendi.
+    options.AddPolicy(
+        "qrStatus",
+        context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 40,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                }
+            )
+    );
 });`
     },
     {
-      num: 22, tur: 'test', grup: 'Birim Testler (5 dosya, 18 test)',
+      num: 22, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
       baslik: 'GenerateQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/GenerateQrLoginCommandHandlerTests.cs',
       aciklama: 'GenerateQrLoginCommandHandler için 2 test. Mock kuralı (CODING_STANDARDS.md §7.4): yalnızca `IQrLoginSessionRepository`/`IPasswordService` mock\'lanır, gerçek DB/HTTP çağrısı yapılmaz.\nTest Adı: Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode | Ne Test Edildi: Yeni oturumun Pending durumunda, isteği atan (web) tarafın IP/cihaz bilgisiyle DB\'ye eklendiği ve yanıtta ham token+4 haneli PairingCode+120sn döndüğü | Neden Önemli: Status varsayılanının yanlış (ör. doğrudan Scanned) yazılması, hiç taranmamış bir oturumun taranmış gibi görünmesine yol açar — güvenlik açığı.\nTest Adı: Generate_GeneratedToken_IsUrlSafeBase64 | Ne Test Edildi: Ham token\'ın standart Base64\'teki \'+\'/\'/\' karakterlerini içermediği | Neden Önemli: Bu karakterler route\'a (/auth/qr/{token}/...) gömüldüğünde routing hatasına yol açar; regresyon farkedilmeden production\'a sızabilir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1489,9 +1529,9 @@ public class GenerateQrLoginCommandHandlerTests
       ]
     },
     {
-      num: 23, tur: 'test', grup: 'Birim Testler (5 dosya, 18 test)',
+      num: 23, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
       baslik: 'ScanQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/ScanQrLoginCommandHandlerTests.cs',
-      aciklama: 'ScanQrLoginCommandHandler için 4 test (CODING_STANDARDS.md §7.5 minimum kapsam: mutlu yol · bulunamadı · süre/durum uç durumları).\nTest Adı: Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo | Ne Test Edildi: Pending bir oturumun Scanned\'e geçtiği, UserId/ScannedAt yazıldığı, yanıtta isteyen tarafın bilgisinin döndüğü | Neden Önemli: Mobil ekranda YANLIŞ cihaz/IP gösterilirse kullanıcı relay saldırısını fark edemez.\nTest Adı: Scan_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 | Neden Önemli: Var olmayan bir token\'a 200 dönmek istemciye yanlış bir "oturum var" izlenimi verirdi.\nTest Adı: Scan_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş oturum taranınca 410 + DB\'de Expired\'a çevrildiği | Neden Önemli: Süresi dolmuş bir QR\'ın hâlâ taranabilir olması, saldırgana geniş bir zaman penceresi bırakırdı.\nTest Adı: Scan_AlreadyScannedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Pending dışındaki (zaten Scanned) bir oturumun tekrar taranamadığı | Neden Önemli: İkinci bir cihazın aynı QR\'ı taraması, oturumun UserId\'sinin ÜZERİNE yazılmasına (session hijacking benzeri bir senaryo) izin verirdi.',
+      aciklama: 'ScanQrLoginCommandHandler için 4 test (CODING_STANDARDS.md §7.5 minimum kapsam: mutlu yol · bulunamadı · süre/durum uç durumları).\nTest Adı: Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo | Ne Test Edildi: Pending bir oturumun Scanned\'e geçtiği, UserId/ScannedAt yazıldığı, yanıtta isteyen tarafın bilgisinin döndüğü VE audit alanının (UpdatedByUserId) tarayan kullanıcının Id\'siyle doldurulduğu | Neden Önemli: Mobil ekranda YANLIŞ cihaz/IP gösterilirse kullanıcı relay saldırısını fark edemez.\nTest Adı: Scan_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Var olmayan bir token\'a 200 dönmek istemciye yanlış bir "oturum var" izlenimi verirdi; ham token bir secret\'tir, log/exception mesajına sızmamalı.\nTest Adı: Scan_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş oturum taranınca 410 + DB\'de Expired\'a çevrildiği | Neden Önemli: Süresi dolmuş bir QR\'ın hâlâ taranabilir olması, saldırgana geniş bir zaman penceresi bırakırdı.\nTest Adı: Scan_AlreadyScannedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Pending dışındaki (zaten Scanned) bir oturumun tekrar taranamadığı | Neden Önemli: İkinci bir cihazın aynı QR\'ı taraması, oturumun UserId\'sinin ÜZERİNE yazılmasına (session hijacking benzeri bir senaryo) izin verirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // ScanQrLoginCommandHandlerTests.cs
 //
@@ -1518,6 +1558,12 @@ public class ScanQrLoginCommandHandlerTests
 
     private ScanQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
 
+    /// <summary>
+    /// Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo
+    ///
+    /// AMAÇ: Pending bir oturum taranınca Scanned'e geçtiğini, UserId/ScannedAt
+    ///       yazıldığını ve yanıtta isteyen (web) tarafın IP/cihaz/pairingCode bilgisini döndüğünü doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo()
     {
@@ -1544,23 +1590,43 @@ public class ScanQrLoginCommandHandlerTests
         result.RequesterIp.Should().Be("9.9.9.9");
         result.RequesterDeviceInfo.Should().Be("Chrome/Windows");
         result.PairingCode.Should().Be("4821");
+        // NEDEN: audit alanı (UpdatedByUserId) oturumu tarayan kullanıcının Id'siyle
+        //        doldurulmalı — bkz. IRepository.UpdateAsync NEDEN notu.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
+    /// <summary>
+    /// Scan_TokenNotFound_ThrowsEntityNotFoundException
+    ///
+    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404) fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Scan_TokenNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE
-        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
-        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync((QrLoginSession?)null);
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
         var handler = CreateHandler();
 
         // ACT
         var act = () => handler.Handle(new ScanQrLoginCommand("gecersiz-token"), default);
 
         // ASSERT
-        await act.Should().ThrowAsync<EntityNotFoundException>();
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        // NEDEN: exception mesajı ham token'ı DEĞİL, hash'ini taşımalı — ham QR
+        //        token'ı bir secret'tir, log'a/exception mesajına sızmamalı.
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
+    /// <summary>
+    /// Scan_ExpiredSession_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: ExpiresAt geçmiş bir oturum taranmaya çalışılırsa QrSessionGoneException
+    ///       (410) fırlatıldığını VE oturumun DB'de Expired'a çevrildiğini doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Scan_ExpiredSession_ThrowsQrSessionGoneException()
     {
@@ -1583,6 +1649,12 @@ public class ScanQrLoginCommandHandlerTests
         _qrRepo.Verify(r => r.UpdateAsync(session, null, default), Times.Once);
     }
 
+    /// <summary>
+    /// Scan_AlreadyScannedSession_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: Pending dışındaki bir oturum (ör. zaten Scanned) tekrar taranmaya
+    ///       çalışılırsa QrSessionGoneException fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Scan_AlreadyScannedSession_ThrowsQrSessionGoneException()
     {
@@ -1604,16 +1676,16 @@ public class ScanQrLoginCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'Scan_ExpiredSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '8ms' },
-        { test: 'Scan_TokenNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '0.7ms' },
+        { test: 'Scan_ExpiredSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '2.0ms' },
+        { test: 'Scan_TokenNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '1.9ms' },
         { test: 'Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo', durum: 'Passed', sure: '1.4ms' },
-        { test: 'Scan_AlreadyScannedSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '0.6ms' },
+        { test: 'Scan_AlreadyScannedSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '1.8ms' },
       ]
     },
     {
-      num: 24, tur: 'test', grup: 'Birim Testler (5 dosya, 18 test)',
+      num: 24, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
       baslik: 'ConfirmQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/ConfirmQrLoginCommandHandlerTests.cs',
-      aciklama: 'ConfirmQrLoginCommandHandler için 4 test — özellikle sahiplik kontrolü (403) burada doğrulanıyor.\nTest Adı: Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı onaylayınca Confirmed\'e geçtiği ve ConfirmedAt\'in yazıldığı | Neden Önemli: GetQrLoginStatusCommandHandler yalnızca Confirmed durumda token üretir — bu geçiş yanlış çalışırsa web hiçbir zaman giriş yapamaz.\nTest Adı: Confirm_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının confirm edememesi (403) | Neden Önemli: Bu kontrol olmadan farklı bir kullanıcı başkasının QR oturumunu manipüle edebilirdi — projenin en kritik yetki/sahiplik testlerinden biri.\nTest Adı: Confirm_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış (Pending) bir oturumun confirm edilememesi | Neden Önemli: Confirm, scan\'i atlayarak doğrudan çağrılabilseydi "kimin onayladığı" hiç doğrulanmamış olurdu.\nTest Adı: Confirm_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş bir oturumun confirm edilememesi ve Expired\'a çevrildiği | Neden Önemli: Süre kontrolü yalnızca scan\'de değil confirm\'de de tekrar yapılmazsa, tarama ile onay arasında geçen sürede süresi dolan bir oturum yine de onaylanabilirdi.',
+      aciklama: 'ConfirmQrLoginCommandHandler için 5 test — özellikle sahiplik kontrolü (403) burada doğrulanıyor.\nTest Adı: Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı onaylayınca Confirmed\'e geçtiği, ConfirmedAt\'in yazıldığı VE audit alanının (UpdatedByUserId) onaylayan kullanıcının Id\'siyle doldurulduğu | Neden Önemli: GetQrLoginStatusCommandHandler yalnızca Confirmed durumda token üretir — bu geçiş yanlış çalışırsa web hiçbir zaman giriş yapamaz.\nTest Adı: Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Ham token bir secret\'tir, log/exception mesajına sızmamalı (bkz. ScanQrLoginCommandHandlerTests).\nTest Adı: Confirm_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının confirm edememesi (403) | Neden Önemli: Bu kontrol olmadan farklı bir kullanıcı başkasının QR oturumunu manipüle edebilirdi — projenin en kritik yetki/sahiplik testlerinden biri.\nTest Adı: Confirm_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış (Pending) bir oturumun confirm edilememesi | Neden Önemli: Confirm, scan\'i atlayarak doğrudan çağrılabilseydi "kimin onayladığı" hiç doğrulanmamış olurdu.\nTest Adı: Confirm_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş bir oturumun confirm edilememesi ve Expired\'a çevrildiği | Neden Önemli: Süre kontrolü yalnızca scan\'de değil confirm\'de de tekrar yapılmazsa, tarama ile onay arasında geçen sürede süresi dolan bir oturum yine de onaylanabilirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // ConfirmQrLoginCommandHandlerTests.cs
 //
@@ -1641,6 +1713,12 @@ public class ConfirmQrLoginCommandHandlerTests
 
     private ConfirmQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
 
+    /// <summary>
+    /// Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed
+    ///
+    /// AMAÇ: Scanned bir oturumu, onu tarayan kullanıcı onaylayınca Confirmed'e
+    ///       geçtiğini ve ConfirmedAt'in yazıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed()
     {
@@ -1661,8 +1739,42 @@ public class ConfirmQrLoginCommandHandlerTests
         // ASSERT
         session.Status.Should().Be(QrLoginStatus.Confirmed);
         session.ConfirmedAt.Should().NotBeNull();
+        // NEDEN: audit alanı (UpdatedByUserId) onaylayan kullanıcının Id'siyle doldurulmalı.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
+    /// <summary>
+    /// Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken
+    ///
+    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404)
+    ///       fırlatıldığını VE exception mesajının ham QR token'ını değil hash'ini
+    ///       taşıdığını doğrulamak (ham token bir secret'tir, log'a sızmamalı).
+    /// </summary>
+    [Fact]
+    public async Task Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ConfirmQrLoginCommand("gecersiz-token") { UserId = 5 }, default);
+
+        // ASSERT
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
+    }
+
+    /// <summary>
+    /// Confirm_WrongUser_ThrowsQrSessionForbiddenException
+    ///
+    /// AMAÇ: Oturumu TARAMAMIŞ bir kullanıcı confirm etmeye çalışırsa
+    ///       QrSessionForbiddenException (403) fırlatıldığını doğrulamak (sahiplik kontrolü).
+    /// </summary>
     [Fact]
     public async Task Confirm_WrongUser_ThrowsQrSessionForbiddenException()
     {
@@ -1685,6 +1797,12 @@ public class ConfirmQrLoginCommandHandlerTests
         session.Status.Should().Be(QrLoginStatus.Scanned);
     }
 
+    /// <summary>
+    /// Confirm_NotScanned_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: Henüz taranmamış (Pending) ya da zaten tüketilmiş bir oturum
+    ///       confirm edilmeye çalışılırsa QrSessionGoneException fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Confirm_NotScanned_ThrowsQrSessionGoneException()
     {
@@ -1701,6 +1819,12 @@ public class ConfirmQrLoginCommandHandlerTests
         await act.Should().ThrowAsync<QrSessionGoneException>();
     }
 
+    /// <summary>
+    /// Confirm_ExpiredSession_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: ExpiresAt geçmiş bir oturum confirm edilmeye çalışılırsa
+    ///       QrSessionGoneException fırlatıldığını VE oturumun Expired'a çevrildiğini doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Confirm_ExpiredSession_ThrowsQrSessionGoneException()
     {
@@ -1724,16 +1848,17 @@ public class ConfirmQrLoginCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'Confirm_ExpiredSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '1.2ms' },
-        { test: 'Confirm_NotScanned_ThrowsQrSessionGoneException', durum: 'Passed', sure: '0.6ms' },
-        { test: 'Confirm_WrongUser_ThrowsQrSessionForbiddenException', durum: 'Passed', sure: '1.2ms' },
-        { test: 'Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed', durum: 'Passed', sure: '2.4ms' },
+        { test: 'Confirm_ExpiredSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '0.7ms' },
+        { test: 'Confirm_NotScanned_ThrowsQrSessionGoneException', durum: 'Passed', sure: '1.1ms' },
+        { test: 'Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken', durum: 'Passed', sure: '1.3ms' },
+        { test: 'Confirm_WrongUser_ThrowsQrSessionForbiddenException', durum: 'Passed', sure: '1.1ms' },
+        { test: 'Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed', durum: 'Passed', sure: '2.6ms' },
       ]
     },
     {
-      num: 25, tur: 'test', grup: 'Birim Testler (5 dosya, 18 test)',
+      num: 25, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
       baslik: 'DenyQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/DenyQrLoginCommandHandlerTests.cs',
-      aciklama: 'DenyQrLoginCommandHandler için 3 test — ConfirmQrLoginCommandHandlerTests ile aynı ön koşulları, ters yönde (hedef durum Denied) doğrular.\nTest Adı: Deny_ScannedSessionOwnedByUser_TransitionsToDenied | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı reddedince Denied\'e geçtiği | Neden Önemli: Denied bir oturumun yanlışlıkla Confirmed\'e "geri dönebilmesi" (kod hatasıyla) token üretimine yol açardı.\nTest Adı: Deny_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının deny edememesi | Neden Önemli: Confirm ile simetrik sahiplik kontrolü — biri yalnızca onayda korunup reddetmede korunmasaydı tutarsız bir güvenlik modeli olurdu.\nTest Adı: Deny_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış bir oturumun reddedilememesi | Neden Önemli: Confirm_NotScanned testiyle simetrik — deny\'ın da scan adımını atlayamaması gerekir.',
+      aciklama: 'DenyQrLoginCommandHandler için 4 test — ConfirmQrLoginCommandHandlerTests ile aynı ön koşulları, ters yönde (hedef durum Denied) doğrular.\nTest Adı: Deny_ScannedSessionOwnedByUser_TransitionsToDenied | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı reddedince Denied\'e geçtiği VE audit alanının (UpdatedByUserId) reddeden kullanıcının Id\'siyle doldurulduğu | Neden Önemli: Denied bir oturumun yanlışlıkla Confirmed\'e "geri dönebilmesi" (kod hatasıyla) token üretimine yol açardı.\nTest Adı: Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Ham token bir secret\'tir, log/exception mesajına sızmamalı (bkz. ScanQrLoginCommandHandlerTests).\nTest Adı: Deny_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının deny edememesi | Neden Önemli: Confirm ile simetrik sahiplik kontrolü — biri yalnızca onayda korunup reddetmede korunmasaydı tutarsız bir güvenlik modeli olurdu.\nTest Adı: Deny_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış bir oturumun reddedilememesi | Neden Önemli: Confirm_NotScanned testiyle simetrik — deny\'ın da scan adımını atlayamaması gerekir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // DenyQrLoginCommandHandlerTests.cs
 //
@@ -1761,6 +1886,11 @@ public class DenyQrLoginCommandHandlerTests
 
     private DenyQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
 
+    /// <summary>
+    /// Deny_ScannedSessionOwnedByUser_TransitionsToDenied
+    ///
+    /// AMAÇ: Scanned bir oturumu, onu tarayan kullanıcı reddedince Denied'e geçtiğini doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Deny_ScannedSessionOwnedByUser_TransitionsToDenied()
     {
@@ -1780,8 +1910,42 @@ public class DenyQrLoginCommandHandlerTests
 
         // ASSERT
         session.Status.Should().Be(QrLoginStatus.Denied);
+        // NEDEN: audit alanı (UpdatedByUserId) reddeden kullanıcının Id'siyle doldurulmalı.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
+    /// <summary>
+    /// Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken
+    ///
+    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404)
+    ///       fırlatıldığını VE exception mesajının ham QR token'ını değil hash'ini
+    ///       taşıdığını doğrulamak (ham token bir secret'tir, log'a sızmamalı).
+    /// </summary>
+    [Fact]
+    public async Task Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new DenyQrLoginCommand("gecersiz-token") { UserId = 5 }, default);
+
+        // ASSERT
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
+    }
+
+    /// <summary>
+    /// Deny_WrongUser_ThrowsQrSessionForbiddenException
+    ///
+    /// AMAÇ: Oturumu TARAMAMIŞ bir kullanıcı deny etmeye çalışırsa
+    ///       QrSessionForbiddenException (403) fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Deny_WrongUser_ThrowsQrSessionForbiddenException()
     {
@@ -1803,6 +1967,12 @@ public class DenyQrLoginCommandHandlerTests
         await act.Should().ThrowAsync<QrSessionForbiddenException>();
     }
 
+    /// <summary>
+    /// Deny_NotScanned_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: Henüz taranmamış bir oturum reddedilmeye çalışılırsa
+    ///       QrSessionGoneException fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task Deny_NotScanned_ThrowsQrSessionGoneException()
     {
@@ -1820,15 +1990,16 @@ public class DenyQrLoginCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'Deny_WrongUser_ThrowsQrSessionForbiddenException', durum: 'Passed', sure: '7.3ms' },
-        { test: 'Deny_ScannedSessionOwnedByUser_TransitionsToDenied', durum: 'Passed', sure: '0.4ms' },
-        { test: 'Deny_NotScanned_ThrowsQrSessionGoneException', durum: 'Passed', sure: '0.8ms' },
+        { test: 'Deny_WrongUser_ThrowsQrSessionForbiddenException', durum: 'Passed', sure: '36.6ms' },
+        { test: 'Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken', durum: 'Passed', sure: '1.4ms' },
+        { test: 'Deny_ScannedSessionOwnedByUser_TransitionsToDenied', durum: 'Passed', sure: '1.1ms' },
+        { test: 'Deny_NotScanned_ThrowsQrSessionGoneException', durum: 'Passed', sure: '5.7ms' },
       ]
     },
     {
-      num: 26, tur: 'test', grup: 'Birim Testler (5 dosya, 18 test)',
+      num: 26, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
       baslik: 'GetQrLoginStatusCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/GetQrLoginStatusCommandHandlerTests.cs',
-      aciklama: 'GetQrLoginStatusCommandHandler için 5 test — akışın en kritik tek-seferlik-token davranışı burada doğrulanıyor.\nTest Adı: GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession | Ne Test Edildi: Confirmed bir oturum İLK okunduğunda ILoginCompletionService ile token üretildiği ve oturumun Consumed\'e geçtiği | Neden Önemli: Bu, QR akışının A-03\'e "gerçekten" bağlandığını kanıtlayan tek test — mock\'un doğru servisle (gerçek Google/Apple/OTP\'nin de kullandığı) çağrıldığını doğrular.\nTest Adı: GetStatus_ConsumedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Token\'lar bir kez döndükten sonra AYNI oturumun tekrar okunmasının 410 döndüğü VE CompleteLoginAsync\'in İKİNCİ KEZ ÇAĞRILMADIĞI | Neden Önemli: Bu kontrol olmasaydı bir kullanıcı için İKİ AYRI refresh token ailesi üretilebilir, ya da network\'ü dinleyen biri token\'ı tekrar okuyabilirdi.\nTest Adı: GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens | Ne Test Edildi: Henüz Confirmed olmayan bir oturum için yalnızca Status\'un dolu, token alanlarının null olduğu | Neden Önemli: Web tarafı polling sırasında yanlışlıkla boş/geçersiz bir token\'ı gerçekmiş gibi kullanmamalı.\nTest Adı: GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing | Ne Test Edildi: Süresi geçmiş bir oturumun 410 DEĞİL 200+"Expired" döndürdüğü | Neden Önemli: Bu davranış bilerek Consumed\'den farklı (410) tasarlandı — testin olmaması, ileride biri "tutarlılık" adına ikisini birleştirip web\'in "yeni QR üret" akışını kırmasına yol açabilirdi.\nTest Adı: GetStatus_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 | Neden Önemli: Diğer 4 handler\'la tutarlı temel davranış.',
+      aciklama: 'GetQrLoginStatusCommandHandler için 8 test — akışın en kritik tek-seferlik-token davranışı burada doğrulanıyor.\nTest Adı: GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession | Ne Test Edildi: Confirmed bir oturum İLK okunduğunda ILoginCompletionService ile token üretildiği ve oturumun Consumed\'e geçtiği | Neden Önemli: Bu, QR akışının A-03\'e "gerçekten" bağlandığını kanıtlayan tek test — mock\'un doğru servisle (gerçek Google/Apple/OTP\'nin de kullandığı) çağrıldığını doğrular.\nTest Adı: GetStatus_ConfirmedSession_SoftDeletedUserWithinGracePeriod_StillCompletesLogin | Ne Test Edildi: Kullanıcı grace period içinde soft-delete\'li olsa bile GetByIdIncludingDeletedAsync ile bulunup CompleteLoginAsync\'e ulaştığı | Neden Önemli: Regresyon testi — öncesinde GetByIdAsync (filtreli) kullanıldığı için bu senaryoda anlamsız bir 404 dönüyordu, normal login (GetByEmailAsync) ile tutarsızdı.\nTest Adı: GetStatus_ConfirmedSession_InactiveUser_ThrowsAccountNotActiveExceptionWithoutCompletingLogin | Ne Test Edildi: Kullanıcı dondurulmuşsa (IsActive=false) CompleteLoginAsync\'e hiç ulaşılmadan AccountNotActiveException fırlatıldığı VE oturumun Consumed\'e geçmediği | Neden Önemli: Diğer giriş yollarıyla (LoginCommand/Google/Apple) aynı kontrolün QR akışında da uygulanması gerekir.\nTest Adı: GetStatus_ConfirmedSession_AnonymizedUser_PropagatesExceptionWithoutConsumingSession | Ne Test Edildi: CompleteLoginAsync AccountAnonymizedException fırlatırsa bu exception\'ın yutulmadan yukarı taşındığı VE oturumun Consumed\'e geçirilmediği | Neden Önemli: Token hiç üretilmediyse oturum tüketilmiş sayılmamalı, aksi hâlde kullanıcı kalıcı olarak "gone" bir oturumla kalırdı.\nTest Adı: GetStatus_ConsumedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Token\'lar bir kez döndükten sonra AYNI oturumun tekrar okunmasının 410 döndüğü VE CompleteLoginAsync\'in İKİNCİ KEZ ÇAĞRILMADIĞI | Neden Önemli: Bu kontrol olmasaydı bir kullanıcı için İKİ AYRI refresh token ailesi üretilebilir, ya da network\'ü dinleyen biri token\'ı tekrar okuyabilirdi.\nTest Adı: GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens | Ne Test Edildi: Henüz Confirmed olmayan bir oturum için yalnızca Status\'un dolu, token alanlarının null olduğu | Neden Önemli: Web tarafı polling sırasında yanlışlıkla boş/geçersiz bir token\'ı gerçekmiş gibi kullanmamalı.\nTest Adı: GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing | Ne Test Edildi: Süresi geçmiş bir oturumun 410 DEĞİL 200+"Expired" döndürdüğü | Neden Önemli: Bu davranış bilerek Consumed\'den farklı (410) tasarlandı — testin olmaması, ileride biri "tutarlılık" adına ikisini birleştirip web\'in "yeni QR üret" akışını kırmasına yol açabilirdi.\nTest Adı: GetStatus_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 | Neden Önemli: Diğer 4 handler\'la tutarlı temel davranış.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // GetQrLoginStatusCommandHandlerTests.cs
 //
@@ -1848,6 +2019,11 @@ using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
 
+// NEDEN bu dosyaya ek testler (2026-07-11, denetim sonrası): GetQrLoginStatusCommandHandler
+// artık GetByIdIncludingDeletedAsync kullanıyor (soft-delete filtresi YOK SAYILARAK) ve
+// CompleteLoginAsync'ten önce IsActive kontrolü ekliyor — normal login akışlarıyla tutarlılık
+// için (bkz. IUserRepository.GetByIdIncludingDeletedAsync NEDEN notu).
+
 namespace WordLearner.Tests.Features.QrLogin;
 
 public class GetQrLoginStatusCommandHandlerTests
@@ -1860,6 +2036,12 @@ public class GetQrLoginStatusCommandHandlerTests
     private GetQrLoginStatusCommandHandler CreateHandler() =>
         new(_qrRepo.Object, _passwordService.Object, _userRepo.Object, _loginCompletionService.Object);
 
+    /// <summary>
+    /// GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession
+    ///
+    /// AMAÇ: Confirmed bir oturum İLK okunduğunda ILoginCompletionService ile token
+    ///       üretildiğini, oturumun Consumed'e geçtiğini ve yanıtta token'ların döndüğünü doğrulamak.
+    /// </summary>
     [Fact]
     public async Task GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession()
     {
@@ -1873,7 +2055,7 @@ public class GetQrLoginStatusCommandHandlerTests
         };
         _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
         _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
-        _userRepo.Setup(r => r.GetByIdAsync(5, default)).ReturnsAsync(user);
+        _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
         var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1"), false);
         _loginCompletionService
             .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", default))
@@ -1888,8 +2070,131 @@ public class GetQrLoginStatusCommandHandlerTests
         result.AccessToken.Should().Be("access");
         result.RefreshToken.Should().Be("refresh");
         session.Status.Should().Be(QrLoginStatus.Consumed);
+        // NEDEN: audit alanı (UpdatedByUserId) token'ı alan kullanıcının Id'siyle doldurulmalı.
+        _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
+    /// <summary>
+    /// GetStatus_ConfirmedSession_SoftDeletedUserWithinGracePeriod_StillCompletesLogin
+    ///
+    /// AMAÇ: Kullanıcı QR akışı sırasında soft-delete'li (grace period içinde) olsa bile
+    ///       GetByIdIncludingDeletedAsync ile bulunup CompleteLoginAsync'e ulaştığını
+    ///       doğrulamak — normal login (GetByEmailAsync, IgnoreQueryFilters) ile aynı
+    ///       davranış. Öncesinde GetByIdAsync (filtreli) kullanıldığı için bu senaryoda
+    ///       anlamsız bir 404 dönüyordu; bu regresyon testidir.
+    /// </summary>
+    [Fact]
+    public async Task GetStatus_ConfirmedSession_SoftDeletedUserWithinGracePeriod_StillCompletesLogin()
+    {
+        // ARRANGE
+        var user = new User
+        {
+            Id = 5,
+            Email = "test@example.com",
+            IsActive = true,
+            IsDeleted = true,
+            IsAnonymized = false,
+        };
+        var session = new QrLoginSession
+        {
+            Status = QrLoginStatus.Confirmed,
+            UserId = 5,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+        };
+        _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
+        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+        _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
+        var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1"), true);
+        _loginCompletionService
+            .Setup(l => l.CompleteLoginAsync(user, null, default))
+            .ReturnsAsync(authResponse);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new GetQrLoginStatusCommand("token"), default);
+
+        // ASSERT
+        result.AccessToken.Should().Be("access");
+        session.Status.Should().Be(QrLoginStatus.Consumed);
+    }
+
+    /// <summary>
+    /// GetStatus_ConfirmedSession_InactiveUser_ThrowsAccountNotActiveExceptionWithoutCompletingLogin
+    ///
+    /// AMAÇ: Kullanıcı dondurulmuşsa (IsActive=false) CompleteLoginAsync'e hiç
+    ///       ulaşılmadan AccountNotActiveException fırlatıldığını ve oturumun
+    ///       Consumed'e geçmediğini doğrulamak — LoginCommand/LoginWithGoogle/Apple
+    ///       ile aynı kontrol.
+    /// </summary>
+    [Fact]
+    public async Task GetStatus_ConfirmedSession_InactiveUser_ThrowsAccountNotActiveExceptionWithoutCompletingLogin()
+    {
+        // ARRANGE
+        var user = new User { Id = 5, Email = "test@example.com", IsActive = false };
+        var session = new QrLoginSession
+        {
+            Status = QrLoginStatus.Confirmed,
+            UserId = 5,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+        };
+        _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
+        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+        _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new GetQrLoginStatusCommand("token"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountNotActiveException>();
+        session.Status.Should().Be(QrLoginStatus.Confirmed);
+        _loginCompletionService.Verify(
+            l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), default),
+            Times.Never
+        );
+    }
+
+    /// <summary>
+    /// GetStatus_ConfirmedSession_AnonymizedUser_PropagatesExceptionWithoutConsumingSession
+    ///
+    /// AMAÇ: CompleteLoginAsync (kullanıcı anonimleştirilmişse) AccountAnonymizedException
+    ///       fırlatırsa, bu exception'ın yutulmadan yukarı taşındığını VE oturumun
+    ///       Consumed'e geçirilmediğini (token hiç üretilmediği için) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetStatus_ConfirmedSession_AnonymizedUser_PropagatesExceptionWithoutConsumingSession()
+    {
+        // ARRANGE
+        var user = new User { Id = 5, Email = "test@example.com", IsActive = true, IsAnonymized = true };
+        var session = new QrLoginSession
+        {
+            Status = QrLoginStatus.Confirmed,
+            UserId = 5,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+        };
+        _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
+        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+        _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
+        _loginCompletionService
+            .Setup(l => l.CompleteLoginAsync(user, null, default))
+            .ThrowsAsync(new AccountAnonymizedException());
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new GetQrLoginStatusCommand("token"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountAnonymizedException>();
+        session.Status.Should().Be(QrLoginStatus.Confirmed);
+        _qrRepo.Verify(r => r.UpdateAsync(session, It.IsAny<int?>(), default), Times.Never);
+    }
+
+    /// <summary>
+    /// GetStatus_ConsumedSession_ThrowsQrSessionGoneException
+    ///
+    /// AMAÇ: Token'lar bir kez döndükten sonra (Consumed) aynı oturum TEKRAR
+    ///       okunmaya çalışılırsa QrSessionGoneException (410) fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task GetStatus_ConsumedSession_ThrowsQrSessionGoneException()
     {
@@ -1914,6 +2219,12 @@ public class GetQrLoginStatusCommandHandlerTests
         );
     }
 
+    /// <summary>
+    /// GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens
+    ///
+    /// AMAÇ: Henüz Confirmed olmayan bir oturum için yalnızca Status alanının
+    ///       dolduğunu, token alanlarının null döndüğünü doğrulamak.
+    /// </summary>
     [Fact]
     public async Task GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens()
     {
@@ -1931,6 +2242,13 @@ public class GetQrLoginStatusCommandHandlerTests
         result.AccessToken.Should().BeNull();
     }
 
+    /// <summary>
+    /// GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing
+    ///
+    /// AMAÇ: ExpiresAt geçmiş bir oturum sorgulandığında 410 DEĞİL, 200 +
+    ///       {status:"Expired"} döndüğünü doğrulamak — web bunu "yeni QR üret"
+    ///       sinyali olarak kullanır, henüz hiçbir token sızmadığı için "gone" değildir.
+    /// </summary>
     [Fact]
     public async Task GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing()
     {
@@ -1952,27 +2270,40 @@ public class GetQrLoginStatusCommandHandlerTests
         session.Status.Should().Be(QrLoginStatus.Expired);
     }
 
+    /// <summary>
+    /// GetStatus_TokenNotFound_ThrowsEntityNotFoundException
+    ///
+    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404) fırlatıldığını doğrulamak.
+    /// </summary>
     [Fact]
     public async Task GetStatus_TokenNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE
-        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
-        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync((QrLoginSession?)null);
+        _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+        _qrRepo
+            .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+            .ReturnsAsync((QrLoginSession?)null);
         var handler = CreateHandler();
 
         // ACT
         var act = () => handler.Handle(new GetQrLoginStatusCommand("gecersiz-token"), default);
 
         // ASSERT
-        await act.Should().ThrowAsync<EntityNotFoundException>();
+        var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+        // NEDEN: exception mesajı ham token'ı DEĞİL, hash'ini taşımalı — bkz. ScanQrLoginCommandHandlerTests.
+        sonuc.Which.Message.Should().NotContain("gecersiz-token");
+        sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 }`,
       sonuclar: [
-        { test: 'GetStatus_ConsumedSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '0.7ms' },
-        { test: 'GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing', durum: 'Passed', sure: '0.9ms' },
-        { test: 'GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession', durum: 'Passed', sure: '0.9ms' },
-        { test: 'GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens', durum: 'Passed', sure: '1.3ms' },
-        { test: 'GetStatus_TokenNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '0.5ms' },
+        { test: 'GetStatus_ConsumedSession_ThrowsQrSessionGoneException', durum: 'Passed', sure: '2.2ms' },
+        { test: 'GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing', durum: 'Passed', sure: '0.6ms' },
+        { test: 'GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession', durum: 'Passed', sure: '2.5ms' },
+        { test: 'GetStatus_ConfirmedSession_SoftDeletedUserWithinGracePeriod_StillCompletesLogin', durum: 'Passed', sure: '1.6ms' },
+        { test: 'GetStatus_ConfirmedSession_InactiveUser_ThrowsAccountNotActiveExceptionWithoutCompletingLogin', durum: 'Passed', sure: '2.1ms' },
+        { test: 'GetStatus_ConfirmedSession_AnonymizedUser_PropagatesExceptionWithoutConsumingSession', durum: 'Passed', sure: '6.0ms' },
+        { test: 'GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens', durum: 'Passed', sure: '1.7ms' },
+        { test: 'GetStatus_TokenNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '0.6ms' },
       ]
     }
   ],

@@ -1459,7 +1459,7 @@ public class ExceptionHandlingMiddleware
     {
       num: 18, tur: 'repository', grup: 'Repository\'ler',
       baslik: 'IUserRepository / UserRepository', dosya: 'Application/Interfaces/Repositories/IUserRepository.cs, Infrastructure/Repositories/UserRepository.cs',
-      aciklama: 'IRepository<T>\'nin genel CRUD\'una User\'a özgü aramaları ekler. GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync bilinçli olarak IgnoreQueryFilters() kullanır — global soft delete filtresi olmadan grace period içindeki (30 gün, soft-delete\'li) bir hesap login/register akışlarında hiç bulunamazdı; IsDeleted/IsAnonymized kontrolü artık repository\'de değil AuthService\'te yapılıyor. OriginalEmailHashExistsAsync, anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını engeller (SECURITY.md §9).',
+      aciklama: 'IRepository<T>\'nin genel CRUD\'una User\'a özgü aramaları ekler. GetByEmailAsync/GetByIdIncludingDeletedAsync/GetByGoogleIdAsync/GetByAppleIdAsync bilinçli olarak IgnoreQueryFilters() kullanır — global soft delete filtresi olmadan grace period içindeki (30 gün, soft-delete\'li) bir hesap login/register akışlarında hiç bulunamazdı; IsDeleted/IsAnonymized kontrolü artık repository\'de değil AuthService\'te yapılıyor. GetByIdIncludingDeletedAsync, GetByIdAsync (Repository<T>\'den miras, filtreli) ile aynı gerekçeyle Id üzerinden arama yapar — QR ile giriş gibi Id\'yle kullanıcı bulması gereken ama grace-period kurtarmasına ihtiyaç duyan akışlar için (bkz. GetQrLoginStatusCommand). OriginalEmailHashExistsAsync, anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını engeller (SECURITY.md §9).',
       kod: `// ═══ IUserRepository.cs — Application/Interfaces/Repositories/IUserRepository.cs ═══
 using WordLearner.Domain.Entities;
 
@@ -1473,6 +1473,14 @@ public interface IUserRepository : IRepository<User>
     //        global soft delete filtresi bu senaryoda bilerek bypass edilir; IsDeleted/
     //        IsAnonymized kontrolü çağıran (AuthService) tarafında yapılır.
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
+
+    // AMAÇ: Id'ye göre kullanıcı bulur — soft delete filtresini YOK SAYAR.
+    // NEDEN: GetByIdAsync (Repository<T>'den miras) soft-delete filtresi uygular;
+    //        bu, grace-period içindeki (soft-delete'li) bir kullanıcının Id'siyle
+    //        bulunması gereken akışlarda (ör. QR ile giriş tamamlanırken
+    //        ILoginCompletionService.CompleteLoginAsync'in IsDeleted kurtarma
+    //        mantığına ulaşabilmesi için) GetByEmailAsync ile aynı gerekçeyle var.
+    Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default);
 
     // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
     Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default);
@@ -1507,6 +1515,11 @@ public class UserRepository : Repository<User>, IUserRepository
     //        "e-posta zaten kullanımda" kontrolü bu satır olmadan çalışamaz.
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
         _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
+
+    // AMAÇ: Id'ye göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
+    // NEDEN: bkz. IUserRepository — GetByEmailAsync ile aynı gerekçe, Id ile arama.
+    public Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, ct);
 
     // AMAÇ: Google Sign-In sub (GoogleId) değerine göre kullanıcı bulur.
     public Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default) =>
@@ -2194,7 +2207,7 @@ public class LoginCompletionService : ILoginCompletionService
         user.LastLoginAt = DateTime.UtcNow;
         user.LastLoginIP = ipAddress;
         user.LoginCount += 1;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         var accessToken = _tokenService.GenerateAccessToken(user);
         var refreshTokenResult = _tokenService.GenerateRefreshToken();
@@ -2207,7 +2220,7 @@ public class LoginCompletionService : ILoginCompletionService
             ExpiresAt = refreshTokenResult.ExpiresAt,
             IpAddress = ipAddress,
         };
-        await _refreshTokenRepository.AddAsync(refreshToken, ct: ct);
+        await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);
 
         return new AuthTokenResponse(
             accessToken,
@@ -2383,7 +2396,7 @@ public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, Mes
         user!.IsEmailVerified = true;
         user.EmailVerifiedAt = DateTime.UtcNow;
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         return new MessageResponse("E-posta doğrulandı.");
     }
@@ -2439,7 +2452,7 @@ public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificati
             user.PendingOtpCodeHash = otpHash;
             user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
             user.PendingOtpCodePurpose = OtpPurpose.EmailVerification;
-            await _userRepository.UpdateAsync(user, ct: ct);
+            await _userRepository.UpdateAsync(user, user.Id, ct);
             await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
         }
 
@@ -2525,7 +2538,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
         user.PendingOtpCodeHash = otpHash;
         user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
         user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);
         return new MessageResponse("OTP gönderildi.");
@@ -2850,7 +2863,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
         }
 
         existingToken.IsUsed = true;
-        await _refreshTokenRepository.UpdateAsync(existingToken, ct: ct);
+        await _refreshTokenRepository.UpdateAsync(existingToken, existingToken.UserId, ct);
 
         var user = await _userRepository.GetByIdAsync(existingToken.UserId, ct);
         if (user is null || !user.IsActive || user.IsAnonymized)
@@ -2868,7 +2881,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
             DeviceInfo = existingToken.DeviceInfo,
             IpAddress = request.ClientIp,
         };
-        await _refreshTokenRepository.AddAsync(newRefreshToken, ct: ct);
+        await _refreshTokenRepository.AddAsync(newRefreshToken, user.Id, ct);
 
         return new AuthTokenResponse(
             accessToken,
@@ -2933,7 +2946,7 @@ public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>
             throw new InvalidRefreshTokenException();
 
         token.RevokedAt = DateTime.UtcNow;
-        await _refreshTokenRepository.UpdateAsync(token, ct: ct);
+        await _refreshTokenRepository.UpdateAsync(token, request.UserId, ct);
 
         return Unit.Value;
     }
@@ -2989,7 +3002,7 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
             user.PendingOtpCodeHash = otpHash;
             user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
             user.PendingOtpCodePurpose = OtpPurpose.PasswordReset;
-            await _userRepository.UpdateAsync(user, ct: ct);
+            await _userRepository.UpdateAsync(user, user.Id, ct);
             await _emailService.SendPasswordResetOtpAsync(user.Email, otpCode, ct);
         }
 
@@ -3052,7 +3065,7 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
 
         user!.PasswordHash = _passwordService.Hash(request.NewPassword);
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         // NEDEN: Şifre değiştiğinde tüm cihazlardan çıkış yapılır (REFERENCE/SECURITY.md §7).
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
@@ -3115,7 +3128,7 @@ public class RequestAccountDeletionCommandHandler
         user.PendingOtpCodeHash = otpHash;
         user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.DeleteAccountOtpExpiryMinutes);
         user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);
         return new MessageResponse("Hesap silme onay kodu gönderildi.");
@@ -3138,18 +3151,22 @@ public class RequestAccountDeletionCommandHandler
 
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
-using WordLearner.Domain.Entities;
-using WordLearner.Domain.Enums;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// NEDEN UserId init-property: bkz. LogoutCommand — JWT'den gelir, gövdede yer almaz.
-public record ConfirmAccountDeletionCommand(string OtpCode, string Password) : IRequest<MessageResponse>
+// NEDEN UserId/Language init-property: bkz. LogoutCommand — JWT'den ve
+//       Accept-Language header'ından gelir, gövdede yer almaz.
+public record ConfirmAccountDeletionCommand(string OtpCode, string Password)
+    : IRequest<MessageResponse>
 {
     public int UserId { get; init; }
+    public string? Language { get; init; }
 }
 
 public class ConfirmAccountDeletionCommandHandler
@@ -3183,7 +3200,10 @@ public class ConfirmAccountDeletionCommandHandler
         _otpService = otpService;
     }
 
-    public async Task<MessageResponse> Handle(ConfirmAccountDeletionCommand request, CancellationToken ct)
+    public async Task<MessageResponse> Handle(
+        ConfirmAccountDeletionCommand request,
+        CancellationToken ct
+    )
     {
         var user =
             await _userRepository.GetByIdAsync(request.UserId, ct)
@@ -3191,18 +3211,26 @@ public class ConfirmAccountDeletionCommandHandler
 
         _otpService.Validate(user, request.OtpCode, OtpPurpose.AccountDeletion);
 
-        if (!_passwordService.Verify(request.Password, user.PasswordHash ?? FakePasswordHashForTiming))
+        if (
+            !_passwordService.Verify(
+                request.Password,
+                user.PasswordHash ?? FakePasswordHashForTiming
+            )
+        )
             throw new InvalidCredentialsException();
 
         user.IsDeleted = true;
         user.DeletedAt = DateTime.UtcNow;
         user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(AccountDeletionGraceDays);
         _otpService.Clear(user);
-        await _userRepository.UpdateAsync(user, ct: ct);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
 
-        return new MessageResponse("Hesabınız silindi. 30 gün içinde tekrar giriş yaparak geri alabilirsiniz.");
+        return new MessageResponse(
+            "ACCOUNT_DELETION_CONFIRMED",
+            SuccessMessages.Resolve("ACCOUNT_DELETION_CONFIRMED", request.Language)
+        );
     }
 }`
     },
@@ -5146,7 +5174,7 @@ public class VerifyEmailCommandHandlerTests
         // ASSERT
         user.IsEmailVerified.Should().BeTrue();
         user.PendingOtpCodeHash.Should().BeNull();
-        _userRepo.Verify(r => r.UpdateAsync(user, null, default), Times.Once);
+        _userRepo.Verify(r => r.UpdateAsync(user, user.Id, default), Times.Once);
     }
 
     /// <summary>
@@ -5916,7 +5944,7 @@ public class RefreshCommandHandlerTests
         sonuc.AccessToken.Should().Be("access-token");
         mevcutToken.IsUsed.Should().BeTrue();
         _refreshTokenRepo.Verify(
-            r => r.AddAsync(It.Is<RefreshToken>(t => t.TokenFamily == "family-1"), null, default),
+            r => r.AddAsync(It.Is<RefreshToken>(t => t.TokenFamily == "family-1"), user.Id, default),
             Times.Once
         );
     }
