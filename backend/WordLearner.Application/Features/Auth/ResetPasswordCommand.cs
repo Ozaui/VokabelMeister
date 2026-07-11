@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -16,8 +17,12 @@ using WordLearner.Domain.Enums.Auth;
 namespace WordLearner.Application.Features.Auth;
 
 // AMAÇ: Adım 2 — OTP + yeni şifre. Başarılıysa tüm cihazlardan çıkış yapılır.
+// NEDEN Language init-property: bkz. LoginCommand.
 public record ResetPasswordCommand(string Email, string OtpCode, string NewPassword)
-    : IRequest<MessageResponse>;
+    : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand, MessageResponse>
 {
@@ -55,6 +60,6 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
         await _emailService.SendPasswordChangedNotificationAsync(user.Email, ct);
 
-        return new MessageResponse("Şifreniz güncellendi.");
+        return new MessageResponse("PASSWORD_UPDATED", SuccessMessages.Resolve("PASSWORD_UPDATED", request.Language));
     }
 }

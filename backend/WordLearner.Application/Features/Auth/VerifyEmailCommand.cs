@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -15,7 +16,11 @@ using WordLearner.Domain.Enums.Auth;
 namespace WordLearner.Application.Features.Auth;
 
 // AMAÇ: Kayıt sonrası e-postaya gelen 6 haneli kodu doğrular.
-public record VerifyEmailCommand(string Email, string OtpCode) : IRequest<MessageResponse>;
+// NEDEN Language init-property: bkz. LoginCommand.
+public record VerifyEmailCommand(string Email, string OtpCode) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, MessageResponse>
 {
@@ -38,6 +43,6 @@ public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, Mes
         _otpService.Clear(user);
         await _userRepository.UpdateAsync(user, ct: ct);
 
-        return new MessageResponse("E-posta doğrulandı.");
+        return new MessageResponse("EMAIL_VERIFIED", SuccessMessages.Resolve("EMAIL_VERIFIED", request.Language));
     }
 }

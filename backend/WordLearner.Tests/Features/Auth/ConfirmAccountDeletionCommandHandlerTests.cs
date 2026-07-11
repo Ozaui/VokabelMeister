@@ -9,6 +9,7 @@
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -105,5 +106,32 @@ public class ConfirmAccountDeletionCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// ConfirmAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage
+    ///
+    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
+    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Validate(user, "123456", OtpPurpose.AccountDeletion));
+        _passwordService.Setup(p => p.Verify("Deneme123!@#", "hash")).Returns(true);
+        var handler = CreateHandler();
+
+        // ACT
+        var sonuc = await handler.Handle(
+            new ConfirmAccountDeletionCommand("123456", "Deneme123!@#") { UserId = user.Id, Language = "de" },
+            default
+        );
+
+        // ASSERT
+        sonuc.Code.Should().Be("ACCOUNT_DELETION_CONFIRMED");
+        sonuc.Message.Should().Be(SuccessMessages.Resolve("ACCOUNT_DELETION_CONFIRMED", "de"));
     }
 }

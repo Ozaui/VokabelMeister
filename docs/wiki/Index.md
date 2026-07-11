@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST). Sırada **A-03.2 (Auth başarı mesajlarının lokalizasyonu)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -80,6 +80,16 @@
   register→verify-email→login→verify-otp→refresh→logout gerçek token/204 döndü. 72/72 birim testi
   yeşil (`WordLearner.Tests/Features/Auth/` — 13 handler test dosyası, `Services/` — `OtpServiceTests`
   + `LoginCompletionServiceTests`). Detay → On yedinci INGEST.
+- **A-03.2 (Auth Başarı Mesajlarının Lokalizasyonu) tamamlandı** — yeni [[SuccessMessages]]
+  ([[ErrorMessages]]'ın kardeşi, ayrı sözlük çünkü kodlar anlamca farklı kümeler),
+  `MessageResponse` artık `record MessageResponse(string Code, string Message)` (`ApiErrorDetail`
+  ile simetrik). `MessageResponse` döndüren 7 Command'a (`LoginCommand`/`ResendVerificationCommand`/
+  `ResetPasswordCommand`/`ConfirmAccountDeletionCommand`/`RequestAccountDeletionCommand`/
+  `VerifyEmailCommand`/`ForgotPasswordCommand`) `Language` init-only property eklendi;
+  `AuthController`'a `Language` computed property (`RequestLanguageResolver.Resolve(HttpContext)`,
+  `ClientIp` ile aynı desen) eklendi, ilgili 7 endpoint `command with { Language = Language }` ile
+  güncellendi. 7 test dosyasına birer `Xxx_GermanLanguage_ReturnsGermanMessage` testi eklendi (7 yeni
+  test). Detay → Yirmi ikinci INGEST.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
@@ -109,7 +119,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, sıradaki A-03.2) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, sıradaki A-04) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -597,3 +607,50 @@ domain'e özgü sayfaları (ör. [[Auth_Domain]] bir istisna dışında) güncel
 proje-yapısı/mimari özet sayfalarını (Backend/*, Architecture/*) atlamış — bundan sonraki her
 INGEST'te bu iki kategori de kontrol edilmeli. Kod tarafında hiçbir değişiklik yapılmadı, yalnızca
 wiki gerçek koda/dokümana yeniden hizalandı.*
+
+*Yirmi ikinci INGEST (2026-07-11) — **A-03.2 (Auth Başarı Mesajlarının Lokalizasyonu) tamamlandı ✅:**
+On yedinci INGEST'te (A-03'ün MediatR retrofit'i sırasında) fark edilen bir eksiklik kapatıldı — hata
+mesajları [[ErrorMessages]] ile `Accept-Language`'a göre dile göre çözülürken, `MessageResponse`
+üreten 7 Auth endpoint'inin başarı metinleri (ör. "OTP gönderildi.") hâlâ hardcode Türkçe'ydi;
+kullanıcı bunu doğrudan görüyordu (log/DB sabiti değil), bu yüzden bir eksiklikti. **Uygulama:**
+Yeni [[SuccessMessages]] (`Application/Common/Localization/`) — [[ErrorMessages]] ile birebir aynı
+`Resolve(code, language)` deseni, 7 kod (`OTP_SENT`, `EMAIL_VERIFIED`, `VERIFICATION_CODE_SENT`,
+`PASSWORD_UPDATED`, `PASSWORD_RESET_OTP_SENT`, `ACCOUNT_DELETION_OTP_SENT`,
+`ACCOUNT_DELETION_CONFIRMED`, tr+de). Ayrı sözlük (ErrorMessages'a eklenmedi): kodlar anlamca farklı
+kümeler (`ACCOUNT_DELETED` orada bir HATA koduyken burada `ACCOUNT_DELETION_CONFIRMED` bir BAŞARI
+kodu). `MessageResponse` DTO'su `record MessageResponse(string Message)` iken
+`record MessageResponse(string Code, string Message)` oldu — `ApiErrorResponse` içindeki
+`ApiErrorDetail(Code, Message)` ile simetrik. `MessageResponse` döndüren 7 Command'a
+(`LoginCommand`, `ResendVerificationCommand`, `ResetPasswordCommand`,
+`ConfirmAccountDeletionCommand`, `RequestAccountDeletionCommand`, `VerifyEmailCommand`,
+`ForgotPasswordCommand`) `UserId`/`ClientIp` ile aynı desende bir `Language` init-only property
+eklendi (gövdeden gelmiyor, `Accept-Language` header'ından geliyor); her Handler artık
+`SuccessMessages.Resolve(code, request.Language)` çağırıyor. 13'ün geri kalan 6'sı (`RegisterCommand`,
+`VerifyLoginOtpCommand`, `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `RefreshCommand`,
+`LogoutCommand`) kapsam DIŞINDA kaldı — `AuthTokenResponse`/`RegisterResponse` döndürüyorlar ya da
+(Logout) hiç gövde döndürmüyorlar, dile göre değişen bir metin taşımıyorlar. `AuthController`'a
+`ClientIp` ile aynı desende bir `Language` computed property eklendi
+(`RequestLanguageResolver.Resolve(HttpContext)` — bu yardımcı YENİ DEĞİL, A-03'ten beri
+`ValidationFilter`/`ExceptionHandlingMiddleware` tarafından kullanılıyordu, burada yeniden
+kullanıldı), ilgili 7 endpoint `command with { Language = Language }` (gövdesiz
+`RequestAccountDeletion`'da `new RequestAccountDeletionCommand(CurrentUserId) { Language = Language }`)
+ile güncellendi. 7 handler test dosyasına birer `Xxx_GermanLanguage_ReturnsGermanMessage` testi
+eklendi (`Code` sabit kaldığını + `Message`'ın Almanca döndüğünü doğrular) — 7 yeni test, toplam
+97/97 yeşil (A-03 72 + A-03.1 18 + A-03.2 7; `WordLearner.Tests/TestResults/a032.trx`'te 37 test
+GERÇEKTEN çalıştırıldı — bu koşuda A-03.1'in QrLogin testleri de birlikte yer aldı, 24'ü A-03.2'nin
+Auth dosyalarına ait). **Roadmap:** A-03.1 gibi kendi entity/controller'ı olmadığı için (bkz.
+`_TASLAK.html` "✂️ BÜYÜK ALT-GÖREV = AYRI DOSYA" notu — ayırt edici soru budur) A-03'e 65. bir `grup`
+olarak EKLENMEDİ, yine de A-03 sayfası zaten 64 adımken daha da büyütmek okunabilirliği bozacağı için
+küçük-orta ölçekli ayrı bir sayfa açıldı: `API_YOL_HARITASI/A-03.2_auth-success-message-localization.html`
+(17 adım, 4 grup: Lokalizasyon Altyapısı/7 Handler/Controller/Testler — `sonuclar` alanları
+a032.trx'ten gerçek veriyle dolduruldu), `index.html`'e satır eklendi, `A-03_auth-api.html` ve
+`A-03.1_qr-login.html`'in `relatedRefs`'i iki yönlü güncellendi (üçü de birbirine bağlı).
+`TASK/A_admin_panel_backend.md` A-03.2 ⬜→✅. **Etkilenen dosyalar (kod, benim tarafımdan değil
+kullanıcı tarafından zaten tamamlanmış, yalnızca dokümantasyon/roadmap/wiki senkronize edildi):**
+`Application/Common/Localization/SuccessMessages.cs` (yeni), `Application/DTOs/Auth/MessageResponse.cs`,
+7 Command dosyası (`Application/Features/Auth/*`), `AuthController.cs`, 7 test dosyası
+(`WordLearner.Tests/Features/Auth/*`). Doküman: bu dosya (`Index.md`), yeni
+`docs/wiki/Backend/SuccessMessages.md`, `ErrorMessages.md` (kardeş linki eklendi),
+`WordLearner_Application.md` (özet + Klasör Yapısı + Dosyalar listesi), `Gelistirme_Yol_Haritasi.md`
+(GÜNCEL OLMAYAN bir durumdaydı — hâlâ "A-03.1 ⬜", "A-03 61 test", "Sıradaki: A-03.1" yazıyordu;
+gerçek duruma göre A-03/A-03.1/A-03.2 ✅, 97 test, sıradaki A-04 olarak düzeltildi).*

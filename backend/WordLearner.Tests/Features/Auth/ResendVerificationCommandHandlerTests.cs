@@ -8,6 +8,7 @@
 
 using FluentAssertions;
 using Moq;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -69,5 +70,31 @@ public class ResendVerificationCommandHandlerTests
             e => e.SendEmailVerificationOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default),
             Times.Never
         );
+    }
+
+    /// <summary>
+    /// ResendVerificationAsync_GermanLanguage_ReturnsGermanMessage
+    ///
+    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
+    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
+    /// </summary>
+    [Fact]
+    public async Task ResendVerificationAsync_GermanLanguage_ReturnsGermanMessage()
+    {
+        // ARRANGE
+        var user = new User { Email = "test@example.com", IsEmailVerified = false };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+        var handler = CreateHandler();
+
+        // ACT
+        var sonuc = await handler.Handle(
+            new ResendVerificationCommand(user.Email) { Language = "de" },
+            default
+        );
+
+        // ASSERT
+        sonuc.Code.Should().Be("VERIFICATION_CODE_SENT");
+        sonuc.Message.Should().Be(SuccessMessages.Resolve("VERIFICATION_CODE_SENT", "de"));
     }
 }

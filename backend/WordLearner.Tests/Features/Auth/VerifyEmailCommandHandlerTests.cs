@@ -9,6 +9,7 @@
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -80,5 +81,31 @@ public class VerifyEmailCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// VerifyEmailAsync_GermanLanguage_ReturnsGermanMessage
+    ///
+    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
+    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
+    /// </summary>
+    [Fact]
+    public async Task VerifyEmailAsync_GermanLanguage_ReturnsGermanMessage()
+    {
+        // ARRANGE
+        var user = new User { Email = "test@example.com" };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Validate(user, "123456", OtpPurpose.EmailVerification));
+        var handler = CreateHandler();
+
+        // ACT
+        var sonuc = await handler.Handle(
+            new VerifyEmailCommand(user.Email, "123456") { Language = "de" },
+            default
+        );
+
+        // ASSERT
+        sonuc.Code.Should().Be("EMAIL_VERIFIED");
+        sonuc.Message.Should().Be(SuccessMessages.Resolve("EMAIL_VERIFIED", "de"));
     }
 }

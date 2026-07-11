@@ -8,6 +8,7 @@
 
 using FluentAssertions;
 using Moq;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -67,5 +68,28 @@ public class ForgotPasswordCommandHandlerTests
             e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default),
             Times.Never
         );
+    }
+
+    /// <summary>
+    /// ForgotPasswordAsync_GermanLanguage_ReturnsGermanMessage
+    ///
+    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
+    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
+    /// </summary>
+    [Fact]
+    public async Task ForgotPasswordAsync_GermanLanguage_ReturnsGermanMessage()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+        var handler = CreateHandler();
+
+        // ACT
+        var sonuc = await handler.Handle(new ForgotPasswordCommand(user.Email) { Language = "de" }, default);
+
+        // ASSERT
+        sonuc.Code.Should().Be("PASSWORD_RESET_OTP_SENT");
+        sonuc.Message.Should().Be(SuccessMessages.Resolve("PASSWORD_RESET_OTP_SENT", "de"));
     }
 }

@@ -2,7 +2,13 @@
 
 **Özet:** [[AppException]].`Code` değerlerinin her dildeki karşılığını tutan merkezi statik sözlük. Yeni bir dil eklemek (ör. `de`) yalnızca buraya bir sütun eklemekle olur — hiçbir exception sınıfına dokunulmaz.
 **Kütüphaneler:** Yok — saf C#.
-**Bağlantılar:** [[AppException]] · [[Middleware]] · [[Guvenlik_Politikalari]]
+**Bağlantılar:** [[AppException]] · [[Middleware]] · [[Guvenlik_Politikalari]] · [[SuccessMessages]]
+
+## Başarı Tarafındaki Kardeşi
+A-03.2'de (2026-07-11) [[SuccessMessages]] eklendi — birebir aynı `Resolve(code, language)` deseni,
+ama `AppException.Code` yerine `MessageResponse.Code`'u çözer. Ayrı sözlük: kodlar anlamca farklı
+kümeler (ör. `ACCOUNT_DELETED` burada bir HATA koduyken `SuccessMessages`'taki
+`ACCOUNT_DELETION_CONFIRMED` bir BAŞARI kodudur).
 
 ## Konum
 `backend/WordLearner.Application/Common/Localization/ErrorMessages.cs`

@@ -9,6 +9,7 @@
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -125,5 +126,32 @@ public class LoginCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<AccountNotActiveException>();
+    }
+
+    /// <summary>
+    /// LoginAsync_GermanLanguage_ReturnsGermanOtpSentMessage
+    ///
+    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
+    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
+    /// </summary>
+    [Fact]
+    public async Task LoginAsync_GermanLanguage_ReturnsGermanOtpSentMessage()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("Deneme123!@#", "hash")).Returns(true);
+        _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+        var handler = CreateHandler();
+
+        // ACT
+        var sonuc = await handler.Handle(
+            new LoginCommand(user.Email, "Deneme123!@#") { Language = "de" },
+            default
+        );
+
+        // ASSERT
+        sonuc.Code.Should().Be("OTP_SENT");
+        sonuc.Message.Should().Be(SuccessMessages.Resolve("OTP_SENT", "de"));
     }
 }

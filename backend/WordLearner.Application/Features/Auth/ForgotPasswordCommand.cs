@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -16,7 +17,11 @@ using WordLearner.Domain.Enums.Auth;
 namespace WordLearner.Application.Features.Auth;
 
 // AMAÇ: Kullanıcı yoksa bile aynı yanıt döner (e-posta numaralandırma önlemi).
-public record ForgotPasswordCommand(string Email) : IRequest<MessageResponse>;
+// NEDEN Language init-property: bkz. LoginCommand.
+public record ForgotPasswordCommand(string Email) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordCommand, MessageResponse>
 {
@@ -48,6 +53,9 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
             await _emailService.SendPasswordResetOtpAsync(user.Email, otpCode, ct);
         }
 
-        return new MessageResponse("Şifre sıfırlama kodu gönderildi.");
+        return new MessageResponse(
+            "PASSWORD_RESET_OTP_SENT",
+            SuccessMessages.Resolve("PASSWORD_RESET_OTP_SENT", request.Language)
+        );
     }
 }

@@ -9,6 +9,7 @@
 
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -17,7 +18,11 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-public record RequestAccountDeletionCommand(int UserId) : IRequest<MessageResponse>;
+// NEDEN Language init-property: bkz. LoginCommand.
+public record RequestAccountDeletionCommand(int UserId) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class RequestAccountDeletionCommandHandler
     : IRequestHandler<RequestAccountDeletionCommand, MessageResponse>
@@ -50,6 +55,9 @@ public class RequestAccountDeletionCommandHandler
         await _userRepository.UpdateAsync(user, ct: ct);
 
         await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);
-        return new MessageResponse("Hesap silme onay kodu gönderildi.");
+        return new MessageResponse(
+            "ACCOUNT_DELETION_OTP_SENT",
+            SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", request.Language)
+        );
     }
 }

@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -16,7 +17,11 @@ using WordLearner.Domain.Enums.Auth;
 namespace WordLearner.Application.Features.Auth;
 
 // AMAÇ: Doğrulama kodunun süresi dolduysa/gelmediyse yenisini ister.
-public record ResendVerificationCommand(string Email) : IRequest<MessageResponse>;
+// NEDEN Language init-property: bkz. LoginCommand.
+public record ResendVerificationCommand(string Email) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificationCommand, MessageResponse>
 {
@@ -48,6 +53,9 @@ public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificati
             await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
         }
 
-        return new MessageResponse("Doğrulama kodu gönderildi.");
+        return new MessageResponse(
+            "VERIFICATION_CODE_SENT",
+            SuccessMessages.Resolve("VERIFICATION_CODE_SENT", request.Language)
+        );
     }
 }

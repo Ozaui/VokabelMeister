@@ -10,6 +10,7 @@
 
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -18,10 +19,12 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// NEDEN UserId init-property: bkz. LogoutCommand — JWT'den gelir, gövdede yer almaz.
+// NEDEN UserId/Language init-property: bkz. LogoutCommand — JWT'den ve
+//       Accept-Language header'ından gelir, gövdede yer almaz.
 public record ConfirmAccountDeletionCommand(string OtpCode, string Password) : IRequest<MessageResponse>
 {
     public int UserId { get; init; }
+    public string? Language { get; init; }
 }
 
 public class ConfirmAccountDeletionCommandHandler
@@ -74,6 +77,9 @@ public class ConfirmAccountDeletionCommandHandler
 
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
 
-        return new MessageResponse("Hesabınız silindi. 30 gün içinde tekrar giriş yaparak geri alabilirsiniz.");
+        return new MessageResponse(
+            "ACCOUNT_DELETION_CONFIRMED",
+            SuccessMessages.Resolve("ACCOUNT_DELETION_CONFIRMED", request.Language)
+        );
     }
 }

@@ -1,6 +1,6 @@
 # Geliştirme Yol Haritası (Faz A→F)
 
-**Özet:** Proje altı fazda ilerler (A: Admin Backend → B: Admin Panel → C: Kullanıcı Backend → D: Web → E: Mobil → F: Test/Yayın) ve her API "dikey dilim" yöntemiyle tüm katmanlarıyla tek seferde bitirilir. Şu an **A-01/A-02/A-03 tamamlandı**; ilk feature (Auth API — `User`/`RefreshToken`, 13 endpoint, 61 birim test) uçtan uca gerçek bir sunucuyla doğrulandı. Sırada **A-03.1 (QR Kod ile Giriş)**. Kaynak otorite: `docs/TASK.md` (yöntem/standart — ⭐ Çalışma Yöntemi, Her Parça İçin Döngü) +
+**Özet:** Proje altı fazda ilerler (A: Admin Backend → B: Admin Panel → C: Kullanıcı Backend → D: Web → E: Mobil → F: Test/Yayın) ve her API "dikey dilim" yöntemiyle tüm katmanlarıyla tek seferde bitirilir. Şu an **A-01/A-02/A-03/A-03.1/A-03.2 tamamlandı** — Auth API (`User`/`RefreshToken`, 13 endpoint) uçtan uca gerçek bir sunucuyla doğrulandı, QR Kod ile Giriş (5 endpoint) A-03'ün `ILoginCompletionService`'ini yeniden kullanıyor, Auth başarı mesajları da (A-03.2) artık hata mesajları gibi `Accept-Language`'a göre çözülüyor. Toplam **97/97 birim testi yeşil** (A-03 72 + A-03.1 18 + A-03.2 7). Sırada **A-04 (Loglama Sistemi)**. Kaynak otorite: `docs/TASK.md` (yöntem/standart — ⭐ Çalışma Yöntemi, Her Parça İçin Döngü) +
 `docs/TASK/` klasörü (faz başına 1 dosya, örn. Faz A → `docs/TASK/A_admin_panel_backend.md`) —
 bu düğüm onların özetidir, güncel ilerleme için orijinal dosyalara bakılmalı.
 **Kütüphaneler:** —
@@ -10,7 +10,7 @@ bu düğüm onların özetidir, güncel ilerleme için orijinal dosyalara bakıl
 
 | Faz | Ne | Durum |
 |-----|----|----|
-| **A** | Admin panel backend (altyapı + auth + log + içerik + admin) | 🔄 (A-01→A-03 ✅) |
+| **A** | Admin panel backend (altyapı + auth + log + içerik + admin) | 🔄 (A-01→A-03.2 ✅) |
 | **B** | Admin panel frontend (`/admin`) | ⬜ |
 | **C** | Kullanıcı backend (web+mobil ortak API) | ⬜ |
 | **D** | Web app (`/web`) | ⬜ |
@@ -23,8 +23,9 @@ bu düğüm onların özetidir, güncel ilerleme için orijinal dosyalara bakıl
 |------|--------|-------|-----|
 | A-01 | Proje İskeleti | ✅ | 5 proje + referanslar + NuGet + `Program.cs` temel |
 | A-02 | Ortak Altyapı | ✅ | [[BaseEntity]], [[WordLearnerDbContext]], [[IRepository]]/[[Repository]], [[InfrastructureServiceExtensions]], [[EntityNotFoundException]], [[ApiErrorResponse]], [[Middleware]] (Exception/SecurityHeaders/RequestResponseLogging), JWT/CORS/Serilog/FluentValidation kaydı, [[RepositoryTests]] (11 test) |
-| A-03 | Auth API (User) | ✅ | `User`/`RefreshToken` entity, [[AppException]]/[[ErrorMessages]] (tr+de, dile göre çözülür — log/DB İngilizce), `AuthController` (13 endpoint), rate limiting, 61 test (toplam, A-02 dahil) — gerçek sunucuyla uçtan uca doğrulandı |
-| A-03.1 | QR Kod ile Giriş | ⬜ | `QrLoginSession` + `IQrLoginService` — Steam-tarzı, `PairingCode` ile relay/phishing önlemi |
+| A-03 | Auth API (User) | ✅ | `User`/`RefreshToken` entity, [[AppException]]/[[ErrorMessages]] (tr+de, dile göre çözülür — log/DB İngilizce), `AuthController` (13 endpoint), rate limiting, 72 test — gerçek sunucuyla uçtan uca doğrulandı |
+| A-03.1 | QR Kod ile Giriş | ✅ | `QrLoginSession` + 5 MediatR Command+Handler — Steam-tarzı, `PairingCode` ile relay/phishing önlemi, A-03'ün `ILoginCompletionService`'ini yeniden kullanır, 18 test |
+| A-03.2 | Auth Başarı Mesajlarının Lokalizasyonu | ✅ | [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 Command'a `Language` init-property, 7 yeni test (toplam A-03+A-03.1+A-03.2 = 97 test) |
 | A-04 | Loglama Sistemi | ⬜ | `ActivityLog`/`ApplicationLog`/`SecurityLog` |
 | A-05 | Sistem Kelimesi API (Words) | ⬜ | |
 | A-06 | Kategori API | ⬜ | |
@@ -46,10 +47,13 @@ Test felsefesi: birim testler Faz F'ye bırakılmaz — servis katmanı bitince 
 içinde test yazılır (adım 12). Detay → [[Kodlama_Standartlari]] §7.
 
 ## Sonraki Task
-`A-03.1 — QR Kod ile Giriş` (A-03 tamamlandı). Detay ve referans kod → [[Teknik_Ozellikler]],
+`A-04 — Loglama Sistemi` (A-03/A-03.1/A-03.2 tamamlandı). Detay ve referans kod → [[Teknik_Ozellikler]],
 kurulum komutları → [[Gelistirme_Kurulumu]].
 
 ## Rehber Sistemi
 Her API'ın yazım adımları `docs/API_YOL_HARITASI/` altındaki HTML sayfalarına işlenir — sistemin
-kendisi → [[API_Yol_Haritasi_Sistemi]]. A-02 sayfası 11 adım, A-03 sayfası 36 adım (entity → servisler
-→ validator → controller → birim testler) içerir, ikisi de tamamlandı.
+kendisi → [[API_Yol_Haritasi_Sistemi]]. A-02 sayfası 11 adım, A-03 sayfası 64 adım (entity → servisler
+→ validator → controller → birim testler), A-03.1 sayfası 26 adım (kendi entity/controller'ı olduğu
+için ayrı dosya), A-03.2 sayfası 17 adım (lokalizasyon altyapısı → 7 handler → controller → testler,
+kendi entity/controller'ı olmadığı için A-03'e değil ayrı bir küçük sayfaya işlendi) içerir — hepsi
+tamamlandı.

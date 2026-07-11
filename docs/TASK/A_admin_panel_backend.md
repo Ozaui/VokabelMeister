@@ -116,7 +116,7 @@
 > **Not:** `SecurityLog` (QrLoginConfirmed/QrLoginDenied) entegrasyonu A-03'teki auth akışlarıyla aynı
 > sebeple A-04'ten sonra eklenir (bkz. A-03'ün notu).
 
-### A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu ⬜
+### A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu ✅
 **Referans:** REFERENCE/SECURITY.md, `ErrorMessages.cs` (mevcut hata mesajı lokalizasyon deseni)
 > **Neden ayrı task:** A-03'ün 13 `MessageResponse` metni (ör. "OTP gönderildi.", "Hesabınız
 > silindi...") şu an hardcode Türkçe — kullanıcı doğrudan görüyor (web/mobil bunu aynen
@@ -125,15 +125,23 @@
 > `ErrorMessages.Resolve(code, language)` + `RequestLanguageResolver` (`Accept-Language`) ile
 > çözülüyor; başarı mesajları bu sisteme hiç girmemiş. MediatR CQRS refactor'u sırasında (2026-07-07)
 > fark edildi, kapsamı büyüteceği için o refactor'dan ayrı bir task olarak bırakıldı.
-- [ ] Her `MessageResponse`'a bir kod ekle (ör. `"OTP_SENT"`, `"ACCOUNT_DELETED"`) — `ErrorMessages.cs`
+- [x] Her `MessageResponse`'a bir kod ekle (ör. `"OTP_SENT"`, `"ACCOUNT_DELETED"`) — `ErrorMessages.cs`
       deseniyle aynı: sabit dosyada dil→kod→metin sözlüğü (en az tr+de, İngilizce YAGNI ile ertelenebilir)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] 13 Command Handler'ın `MessageResponse` üretim noktalarını kod+`RequestLanguageResolver`
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] 13 Command Handler'ın `MessageResponse` üretim noktalarını kod+`RequestLanguageResolver`
       çözümüne geçir (`ValidationFilter`'ın zaten yaptığı dil çözme mantığıyla aynı desen)
-- [ ] ➜ **API Yol Haritası'na işle**
-- [ ] **Birim testleri:** ilgili handler testlerine dil parametresi verildiğinde doğru dilde
-      mesaj döndüğünü doğrulayan senaryolar eklenir
-- [ ] ➜ **API Yol Haritası'na işle**
+> **Not:** Kapsam, `MessageResponse` DÖNDÜREN 7 Command'a (`LoginCommand`, `ResendVerificationCommand`,
+> `ResetPasswordCommand`, `ConfirmAccountDeletionCommand`, `RequestAccountDeletionCommand`,
+> `VerifyEmailCommand`, `ForgotPasswordCommand`) daraldı — 13'ün geri kalan 6'sı (`RegisterCommand`,
+> `VerifyLoginOtpCommand`, `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `RefreshCommand`,
+> `LogoutCommand`) `AuthTokenResponse`/`RegisterResponse` döndürüyor ya da (Logout) hiç gövde
+> döndürmüyor — dile göre değişen bir metin taşımadıkları için lokalize edilecek bir şeyleri yok.
+- [x] ➜ **API Yol Haritası'na işle**
+- [x] **Birim testleri:** ilgili handler testlerine dil parametresi verildiğinde doğru dilde
+      mesaj döndüğünü doğrulayan senaryolar eklenir — 7 handler test dosyasına birer
+      `Xxx_GermanLanguage_ReturnsGermanMessage` testi eklendi (7 yeni test, `Code`+`Message`
+      ikisi de doğrulanıyor). Toplam 97/97 yeşil (A-03 72 + A-03.1 18 + A-03.2 7).
+- [x] ➜ **API Yol Haritası'na işle**
 
 ### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md

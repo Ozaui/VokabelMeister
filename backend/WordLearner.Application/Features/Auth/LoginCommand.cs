@@ -12,6 +12,7 @@
 
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -19,8 +20,12 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Login adım 1 — şifre doğrulanır, başarılıysa OTP gönderilir.
-public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>;
+// NEDEN Language init-property: bkz. LogoutCommand'daki UserId — Accept-Language
+//       header'ından gelir, gövdede yer almaz (Controller `with` ile set eder).
+public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
 {
@@ -75,6 +80,6 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
         await _userRepository.UpdateAsync(user, ct: ct);
 
         await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);
-        return new MessageResponse("OTP gönderildi.");
+        return new MessageResponse("OTP_SENT", SuccessMessages.Resolve("OTP_SENT", request.Language));
     }
 }
