@@ -399,13 +399,15 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.DailyNewWordLimit).HasDefaultValue(5);
         builder.Property(u => u.CurrentLevel).HasMaxLength(2).HasDefaultValue("A1");
 
-        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(88);
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(44);
         // NEDEN: Enum DB'de okunabilir bir string olarak tutulur (sayısal index'e bağımlı kalmaz).
         builder.Property(u => u.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
 
         builder.Property(u => u.IsActive).HasDefaultValue(true);
         builder.Property(u => u.LastLoginIP).HasMaxLength(45);
-        builder.Property(u => u.OriginalEmailHash).HasMaxLength(88);
+        // NEDEN 44: bkz. PendingOtpCodeHash — aynı PasswordService.HashToken (SHA-256→Base64).
+        builder.Property(u => u.OriginalEmailHash).HasMaxLength(44);
         builder.Property(u => u.OneSignalPlayerId).HasMaxLength(100);
         builder.Property(u => u.Role).HasMaxLength(20).HasDefaultValue("User");
 
@@ -447,7 +449,8 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 {
     public void Configure(EntityTypeBuilder<RefreshToken> builder)
     {
-        builder.Property(r => r.TokenHash).HasMaxLength(88).IsRequired();
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(r => r.TokenHash).HasMaxLength(44).IsRequired();
         builder.Property(r => r.TokenFamily).HasMaxLength(36).IsRequired();
         builder.Property(r => r.DeviceInfo).HasMaxLength(500);
         builder.Property(r => r.IpAddress).HasMaxLength(45);
@@ -1231,6 +1234,15 @@ public static class ErrorMessages
             ["FIRST_NAME_REQUIRED"] = new() { ["tr"] = "Ad zorunludur.", ["de"] = "Vorname ist erforderlich." },
             ["LAST_NAME_REQUIRED"] = new() { ["tr"] = "Soyad zorunludur.", ["de"] = "Nachname ist erforderlich." },
             ["TOKEN_REQUIRED"] = new() { ["tr"] = "Token zorunludur.", ["de"] = "Token ist erforderlich." },
+
+            // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
+            //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
+            //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.
+            ["INTERNAL_SERVER_ERROR"] = new()
+            {
+                ["tr"] = "Beklenmeyen bir hata oluştu.",
+                ["de"] = "Ein unerwarteter Fehler ist aufgetreten.",
+            },
         };
 
     // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
@@ -4860,13 +4872,13 @@ public class LoginCompletionServiceTests
     }
 
     /// <summary>
-    /// CompleteLoginAsync_ActiveUser_ReturnsAccessAndRefreshTokens
+    /// CompleteLogin_ActiveUser_ReturnsAccessAndRefreshTokens
     ///
     /// AMAÇ: Normal (silinmemiş, anonimleştirilmemiş) bir kullanıcı için access+refresh
     ///       token içeren yanıtın döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task CompleteLoginAsync_ActiveUser_ReturnsAccessAndRefreshTokens()
+    public async Task CompleteLogin_ActiveUser_ReturnsAccessAndRefreshTokens()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -4885,13 +4897,13 @@ public class LoginCompletionServiceTests
     }
 
     /// <summary>
-    /// CompleteLoginAsync_AnonymizedUser_ThrowsAccountAnonymizedException
+    /// CompleteLogin_AnonymizedUser_ThrowsAccountAnonymizedException
     ///
     /// AMAÇ: Anonimleştirilmiş (IsAnonymized=true) bir hesapla giriş tamamlanmaya
     ///       çalışıldığında AccountAnonymizedException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task CompleteLoginAsync_AnonymizedUser_ThrowsAccountAnonymizedException()
+    public async Task CompleteLogin_AnonymizedUser_ThrowsAccountAnonymizedException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsAnonymized = true };
@@ -4905,7 +4917,7 @@ public class LoginCompletionServiceTests
     }
 
     /// <summary>
-    /// CompleteLoginAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse
+    /// CompleteLogin_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse
     ///
     /// AMAÇ: Soft-delete'li (IsDeleted=true) ama grace period içindeki bir hesabın
     ///       giriş tamamlama sırasında otomatik kurtarıldığını ve yanıtta
@@ -4914,7 +4926,7 @@ public class LoginCompletionServiceTests
     ///        hesap silme işlemi geri alınır; bu davranış CompleteLoginAsync'in kritik dalı.
     /// </summary>
     [Fact]
-    public async Task CompleteLoginAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse()
+    public async Task CompleteLogin_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse()
     {
         // ARRANGE
         var user = new User
@@ -4939,13 +4951,13 @@ public class LoginCompletionServiceTests
     }
 
     /// <summary>
-    /// CompleteLoginAsync_AlwaysClearsPendingOtp
+    /// CompleteLogin_AlwaysClearsPendingOtp
     ///
     /// AMAÇ: Giriş tamamlandığında IOtpService.Clear'ın çağrıldığını doğrulamak —
     ///       kullanılan OTP bir daha kullanılamaz hâle gelmeli.
     /// </summary>
     [Fact]
-    public async Task CompleteLoginAsync_AlwaysClearsPendingOtp()
+    public async Task CompleteLogin_AlwaysClearsPendingOtp()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -4979,10 +4991,10 @@ public class LoginCompletionServiceTests
     }
 }`,
       sonuclar: [
-        { test: 'CompleteLoginAsync_AlwaysClearsPendingOtp', durum: 'Passed', sure: '75.9ms' },
-        { test: 'CompleteLoginAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse', durum: 'Passed', sure: '1.6ms' },
-        { test: 'CompleteLoginAsync_AnonymizedUser_ThrowsAccountAnonymizedException', durum: 'Passed', sure: '0.8ms' },
-        { test: 'CompleteLoginAsync_ActiveUser_ReturnsAccessAndRefreshTokens', durum: 'Passed', sure: '1.6ms' },
+        { test: 'CompleteLogin_AlwaysClearsPendingOtp', durum: 'Passed', sure: '75.9ms' },
+        { test: 'CompleteLogin_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse', durum: 'Passed', sure: '1.6ms' },
+        { test: 'CompleteLogin_AnonymizedUser_ThrowsAccountAnonymizedException', durum: 'Passed', sure: '0.8ms' },
+        { test: 'CompleteLogin_ActiveUser_ReturnsAccessAndRefreshTokens', durum: 'Passed', sure: '1.6ms' },
         { test: 'ExpiresInSeconds_ReadsFromConfiguration', durum: 'Passed', sure: '0.5ms' },
       ]
     },
@@ -5028,14 +5040,14 @@ public class RegisterCommandHandlerTests
         new(_userRepo.Object, _passwordService.Object, _otpService.Object, _emailService.Object, CreateMapper());
 
     /// <summary>
-    /// RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp
+    /// Register_NewEmail_CreatesUserAndSendsVerificationOtp
     ///
     /// AMAÇ: Daha önce kayıtlı olmayan bir e-postayla kayıt olunduğunda kullanıcının
     ///       oluşturulduğunu ve doğrulama e-postasının gönderildiğini doğrulamak.
     /// NEDEN: Register akışının mutlu yolu — şifre hash'lenmeli, OTP üretilmeli, e-posta atılmalı.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp()
+    public async Task Register_NewEmail_CreatesUserAndSendsVerificationOtp()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("new@example.com", default)).ReturnsAsync((User?)null);
@@ -5058,14 +5070,14 @@ public class RegisterCommandHandlerTests
     }
 
     /// <summary>
-    /// RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException
+    /// Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException
     ///
     /// AMAÇ: Aktif bir kullanıcının e-postasıyla tekrar kayıt denendiğinde
     ///       DuplicateEmailException fırlatıldığını doğrulamak.
     /// NEDEN: E-posta benzersizliği DB constraint'i değil, servis katmanında zorlanır.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
+    public async Task Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
     {
         // ARRANGE
         _userRepo
@@ -5082,7 +5094,7 @@ public class RegisterCommandHandlerTests
     }
 
     /// <summary>
-    /// RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException
+    /// Register_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException
     ///
     /// AMAÇ: Daha önce anonimleştirilmiş bir hesabın orijinal e-postasıyla kayıt
     ///       denendiğinde de DuplicateEmailException fırlatıldığını doğrulamak.
@@ -5091,7 +5103,7 @@ public class RegisterCommandHandlerTests
     ///        değiştiği için) durumları OriginalEmailHash üzerinden yakalar.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException()
+    public async Task Register_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("eski@example.com", default)).ReturnsAsync((User?)null);
@@ -5108,9 +5120,9 @@ public class RegisterCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException', durum: 'Passed', sure: '1.4ms' },
-        { test: 'RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException', durum: 'Passed', sure: '1.7ms' },
-        { test: 'RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp', durum: 'Passed', sure: '76.2ms' },
+        { test: 'Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException', durum: 'Passed', sure: '1.4ms' },
+        { test: 'Register_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException', durum: 'Passed', sure: '1.7ms' },
+        { test: 'Register_NewEmail_CreatesUserAndSendsVerificationOtp', durum: 'Passed', sure: '76.2ms' },
       ]
     },
     {
@@ -5144,7 +5156,7 @@ public class VerifyEmailCommandHandlerTests
     private VerifyEmailCommandHandler CreateHandler() => new(_userRepo.Object, _otpService.Object);
 
     /// <summary>
-    /// VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp
+    /// VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp
     ///
     /// AMAÇ: Doğru OTP kodu girildiğinde IsEmailVerified'ın true'ya çekildiğini ve
     ///       bekleyen OTP alanlarının temizlendiğini doğrulamak.
@@ -5152,7 +5164,7 @@ public class VerifyEmailCommandHandlerTests
     ///        onboarding vb. akışlarda) doğrulanmamış olarak kalır.
     /// </summary>
     [Fact]
-    public async Task VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp()
+    public async Task VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com" };
@@ -5178,13 +5190,13 @@ public class VerifyEmailCommandHandlerTests
     }
 
     /// <summary>
-    /// VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException
+    /// VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// NEDEN: IOtpService.Validate'in hash karşılaştırması EmailVerification akışında da geçerli olmalı.
     /// </summary>
     [Fact]
-    public async Task VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException()
+    public async Task VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com" };
@@ -5202,8 +5214,8 @@ public class VerifyEmailCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException', durum: 'Passed', sure: '0.6ms' },
-        { test: 'VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp', durum: 'Passed', sure: '1.4ms' },
+        { test: 'VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException', durum: 'Passed', sure: '0.6ms' },
+        { test: 'VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp', durum: 'Passed', sure: '1.4ms' },
       ]
     },
     {
@@ -5237,12 +5249,12 @@ public class ResendVerificationCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp
+    /// ResendVerification_UnverifiedUserExists_SendsNewOtp
     ///
     /// AMAÇ: Doğrulanmamış bir kullanıcı için yeni OTP üretilip e-posta gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp()
+    public async Task ResendVerification_UnverifiedUserExists_SendsNewOtp()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com", IsEmailVerified = false };
@@ -5258,7 +5270,7 @@ public class ResendVerificationCommandHandlerTests
     }
 
     /// <summary>
-    /// ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    /// ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage
     ///
     /// AMAÇ: Kayıtlı olmayan bir e-posta için de aynı mesajın döndüğünü ama e-posta
     ///       GÖNDERİLMEDİĞİNİ doğrulamak.
@@ -5266,7 +5278,7 @@ public class ResendVerificationCommandHandlerTests
     ///        farklı olsaydı bir saldırgan hangi e-postaların kayıtlı olduğunu anlayabilirdi.
     /// </summary>
     [Fact]
-    public async Task ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    public async Task ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -5284,14 +5296,14 @@ public class ResendVerificationCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp', durum: 'Passed', sure: '0.4ms' },
-        { test: 'ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage', durum: 'Passed', sure: '0.9ms' },
+        { test: 'ResendVerification_UnverifiedUserExists_SendsNewOtp', durum: 'Passed', sure: '0.4ms' },
+        { test: 'ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage', durum: 'Passed', sure: '0.9ms' },
       ]
     },
     {
       num: 55, tur: 'test', grup: 'Birim Testler (17 dosya)',
       baslik: 'LoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginCommandHandlerTests.cs',
-      aciklama: 'Login adım 1\'in 4 testi — LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety dahil (timing attack önlemi, projenin en kritik login testlerinden biri).',
+      aciklama: 'Login adım 1\'in 4 testi — Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety dahil (timing attack önlemi, projenin en kritik login testlerinden biri).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // LoginCommandHandlerTests.cs
 //
@@ -5331,12 +5343,12 @@ public class LoginCommandHandlerTests
         };
 
     /// <summary>
-    /// LoginAsync_ValidCredentials_SendsLoginOtp
+    /// Login_ValidCredentials_SendsLoginOtp
     ///
     /// AMAÇ: Doğru şifre ile login adım 1'in OTP gönderdiğini (token DÖNMEDİĞİNİ) doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_ValidCredentials_SendsLoginOtp()
+    public async Task Login_ValidCredentials_SendsLoginOtp()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -5353,12 +5365,12 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_WrongPassword_ThrowsInvalidCredentialsException
+    /// Login_WrongPassword_ThrowsInvalidCredentialsException
     ///
     /// AMAÇ: Yanlış şifre girildiğinde InvalidCredentialsException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    public async Task Login_WrongPassword_ThrowsInvalidCredentialsException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -5374,7 +5386,7 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
+    /// Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
     ///
     /// AMAÇ: Kullanıcı bulunamadığında bile PasswordService.Verify'ın (FakePasswordHashForTiming
     ///       ile) ÇAĞRILDIĞINI ve InvalidCredentialsException fırlatıldığını doğrulamak.
@@ -5383,7 +5395,7 @@ public class LoginCommandHandlerTests
     ///        bu da bir saldırganın e-posta numaralandırması yapmasına izin verir.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
+    public async Task Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -5399,13 +5411,13 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_AccountNotActive_ThrowsAccountNotActiveException
+    /// Login_AccountNotActive_ThrowsAccountNotActiveException
     ///
     /// AMAÇ: Şifre doğru olsa bile dondurulmuş (IsActive=false) bir hesapla login
     ///       denendiğinde AccountNotActiveException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    public async Task Login_AccountNotActive_ThrowsAccountNotActiveException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -5422,10 +5434,10 @@ public class LoginCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety', durum: 'Passed', sure: '373.3ms' },
-        { test: 'LoginAsync_ValidCredentials_SendsLoginOtp', durum: 'Passed', sure: '2ms' },
-        { test: 'LoginAsync_WrongPassword_ThrowsInvalidCredentialsException', durum: 'Passed', sure: '0.6ms' },
-        { test: 'LoginAsync_AccountNotActive_ThrowsAccountNotActiveException', durum: 'Passed', sure: '1ms' },
+        { test: 'Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety', durum: 'Passed', sure: '373.3ms' },
+        { test: 'Login_ValidCredentials_SendsLoginOtp', durum: 'Passed', sure: '2ms' },
+        { test: 'Login_WrongPassword_ThrowsInvalidCredentialsException', durum: 'Passed', sure: '0.6ms' },
+        { test: 'Login_AccountNotActive_ThrowsAccountNotActiveException', durum: 'Passed', sure: '1ms' },
       ]
     },
     {
@@ -5466,13 +5478,13 @@ public class VerifyLoginOtpCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _loginCompletionService.Object);
 
     /// <summary>
-    /// VerifyLoginOtpAsync_ValidOtp_DelegatesToLoginCompletionService
+    /// VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService
     ///
     /// AMAÇ: Doğru OTP kodu girildiğinde ILoginCompletionService.CompleteLoginAsync'in
     ///       doğru kullanıcı/ip ile çağrıldığını ve sonucunun aynen döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task VerifyLoginOtpAsync_ValidOtp_DelegatesToLoginCompletionService()
+    public async Task VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", CurrentLevel = "A1" };
@@ -5502,12 +5514,12 @@ public class VerifyLoginOtpCommandHandlerTests
     }
 
     /// <summary>
-    /// VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException
+    /// VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -5523,14 +5535,14 @@ public class VerifyLoginOtpCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'VerifyLoginOtpAsync_ValidOtp_DelegatesToLoginCompletionService', durum: 'Passed', sure: '36.4ms' },
-        { test: 'VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '1.9ms' },
+        { test: 'VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService', durum: 'Passed', sure: '36.4ms' },
+        { test: 'VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '1.9ms' },
       ]
     },
     {
       num: 57, tur: 'test', grup: 'Birim Testler (17 dosya)',
       baslik: 'LoginWithGoogleCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginWithGoogleCommandHandlerTests.cs',
-      aciklama: 'Google girişinin 5 testi — account linking (LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount) dahil.',
+      aciklama: 'Google girişinin 5 testi — account linking (LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount) dahil.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // LoginWithGoogleCommandHandlerTests.cs
 //
@@ -5566,13 +5578,13 @@ public class LoginWithGoogleCommandHandlerTests
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1"), false));
 
     /// <summary>
-    /// LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
+    /// LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
     ///
     /// AMAÇ: GoogleId ile eşleşen bir kullanıcı bulunduğunda yeni hesap açılmadan
     ///       doğrudan token döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
+    public async Task LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -5592,13 +5604,13 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser
+    /// LoginWithGoogle_NoExistingAccount_CreatesNewUser
     ///
     /// AMAÇ: Ne GoogleId ne de e-posta ile eşleşen bir kullanıcı bulunmadığında yeni
     ///       hesap oluşturulduğunu doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser()
+    public async Task LoginWithGoogle_NoExistingAccount_CreatesNewUser()
     {
         // ARRANGE
         _googleValidator
@@ -5623,7 +5635,7 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
+    /// LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
     ///
     /// AMAÇ: Google'dan gelen e-posta, mevcut bir yerel (Local) hesapla eşleştiğinde
     ///       yeni hesap açmak yerine GoogleId'nin o hesaba bağlandığını (account linking)
@@ -5632,7 +5644,7 @@ public class LoginWithGoogleCommandHandlerTests
     ///        "user register olurken hangi hesaba giriyor" tasarım kararının kalbi.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
+    public async Task LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
     {
         // ARRANGE
         var mevcutYerelHesap = new User { Id = 1, Email = "ortak@example.com", IsActive = true };
@@ -5653,12 +5665,12 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException
+    /// LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException
     ///
     /// AMAÇ: Google token doğrulaması null döndüğünde InvalidSocialTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException()
+    public async Task LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException()
     {
         // ARRANGE
         _googleValidator.Setup(g => g.ValidateAsync("gecersiz-token", default)).ReturnsAsync((GoogleTokenPayload?)null);
@@ -5672,12 +5684,12 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException
+    /// LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException
     ///
     /// AMAÇ: Google ile eşleşen hesap dondurulmuşsa (IsActive=false) login'in reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    public async Task LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = false };
@@ -5695,17 +5707,17 @@ public class LoginWithGoogleCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser', durum: 'Passed', sure: '2.2ms' },
-        { test: 'LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount', durum: 'Passed', sure: '3.8ms' },
-        { test: 'LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException', durum: 'Passed', sure: '1.4ms' },
-        { test: 'LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount', durum: 'Passed', sure: '1ms' },
-        { test: 'LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException', durum: 'Passed', sure: '0.6ms' },
+        { test: 'LoginWithGoogle_NoExistingAccount_CreatesNewUser', durum: 'Passed', sure: '2.2ms' },
+        { test: 'LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount', durum: 'Passed', sure: '3.8ms' },
+        { test: 'LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException', durum: 'Passed', sure: '1.4ms' },
+        { test: 'LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount', durum: 'Passed', sure: '1ms' },
+        { test: 'LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException', durum: 'Passed', sure: '0.6ms' },
       ]
     },
     {
       num: 58, tur: 'test', grup: 'Birim Testler (17 dosya)',
       baslik: 'LoginWithAppleCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginWithAppleCommandHandlerTests.cs',
-      aciklama: 'Apple girişinin 4 testi — Apple\'ın yalnızca ilk yetkilendirmede email vermesi kısıtını doğrulayan LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly dahil.',
+      aciklama: 'Apple girişinin 4 testi — Apple\'ın yalnızca ilk yetkilendirmede email vermesi kısıtını doğrulayan LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly dahil.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // LoginWithAppleCommandHandlerTests.cs
 //
@@ -5741,12 +5753,12 @@ public class LoginWithAppleCommandHandlerTests
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1"), false));
 
     /// <summary>
-    /// LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens
+    /// LoginWithApple_ExistingAppleUser_ReturnsTokens
     ///
     /// AMAÇ: AppleId ile eşleşen mevcut bir kullanıcı için token döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens()
+    public async Task LoginWithApple_ExistingAppleUser_ReturnsTokens()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -5765,13 +5777,13 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount
+    /// LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount
     ///
     /// AMAÇ: İlk yetkilendirmede (e-posta dolu) ne AppleId ne de e-posta eşleşmesi
     ///       olmadığında yeni hesap açıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount()
+    public async Task LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount()
     {
         // ARRANGE
         _appleValidator
@@ -5796,7 +5808,7 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
+    /// LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
     ///
     /// AMAÇ: Apple'ın yalnızca İLK yetkilendirmede e-posta verdiği, sonraki girişlerde
     ///       payload.Email'in null geldiği senaryoda AppleId ile hâlâ doğru kullanıcının
@@ -5805,7 +5817,7 @@ public class LoginWithAppleCommandHandlerTests
     ///        yoksa DB'deki mevcut e-posta korunmalı.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
+    public async Task LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "korunan@example.com", IsActive = true };
@@ -5825,14 +5837,14 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
+    /// LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
     ///
     /// AMAÇ: Ne AppleId ile eşleşme ne de e-posta (savunmacı/teorik olarak beklenmeyen
     ///       bir durum) varken yeni hesap açılamayacağını, InvalidSocialTokenException
     ///       fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
+    public async Task LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
     {
         // ARRANGE
         _appleValidator
@@ -5849,16 +5861,16 @@ public class LoginWithAppleCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens', durum: 'Passed', sure: '34.9ms' },
-        { test: 'LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount', durum: 'Passed', sure: '6.3ms' },
-        { test: 'LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException', durum: 'Passed', sure: '2.5ms' },
-        { test: 'LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly', durum: 'Passed', sure: '0.6ms' },
+        { test: 'LoginWithApple_ExistingAppleUser_ReturnsTokens', durum: 'Passed', sure: '34.9ms' },
+        { test: 'LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount', durum: 'Passed', sure: '6.3ms' },
+        { test: 'LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException', durum: 'Passed', sure: '2.5ms' },
+        { test: 'LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly', durum: 'Passed', sure: '0.6ms' },
       ]
     },
     {
       num: 59, tur: 'test', grup: 'Birim Testler (17 dosya)',
       baslik: 'RefreshCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/RefreshCommandHandlerTests.cs',
-      aciklama: 'Refresh akışının 5 testi — Token Family Pattern\'in replay tespiti (RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows, projenin en kritik güvenlik testlerinden biri) dahil. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor.',
+      aciklama: 'Refresh akışının 5 testi — Token Family Pattern\'in replay tespiti (Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows, projenin en kritik güvenlik testlerinden biri) dahil. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // RefreshCommandHandlerTests.cs
 //
@@ -5909,14 +5921,14 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair
+    /// Refresh_ValidToken_RotatesTokenAndReturnsNewPair
     ///
     /// AMAÇ: Geçerli bir refresh token ile yeni bir access+refresh token çifti
     ///       üretildiğini ve eski token'ın kullanıldı (IsUsed=true) olarak işaretlendiğini
     ///       doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair()
+    public async Task Refresh_ValidToken_RotatesTokenAndReturnsNewPair()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -5950,12 +5962,12 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException
+    /// Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: DB'de bulunamayan bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
@@ -5970,12 +5982,12 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException
+    /// Refresh_TokenExpired_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Süresi dolmuş bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_TokenExpired_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var suresiGecmisToken = new RefreshToken { ExpiresAt = DateTime.UtcNow.AddDays(-1) };
@@ -5991,7 +6003,7 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
+    /// Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
     ///
     /// AMAÇ: Zaten kullanılmış (IsUsed=true) bir refresh token TEKRAR kullanıldığında
     ///       (replay saldırısı) aynı TokenFamily'deki TÜM token'ların iptal edildiğini
@@ -6001,7 +6013,7 @@ public class RefreshCommandHandlerTests
     ///        family (dolayısıyla saldırganın elindeki token da) iptal edilir.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
+    public async Task Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
     {
         // ARRANGE
         var kullanilmisToken = new RefreshToken
@@ -6023,13 +6035,13 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException
+    /// Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Token geçerli olsa bile ait olduğu kullanıcı anonimleştirilmişse
     ///       (IsAnonymized=true) refresh'in reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true, IsAnonymized = true };
@@ -6047,11 +6059,11 @@ public class RefreshCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair', durum: 'Passed', sure: '5.8ms' },
-        { test: 'RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '73.5ms' },
-        { test: 'RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows', durum: 'Passed', sure: '1.4ms' },
-        { test: 'RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '1.5ms' },
-        { test: 'RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '0.9ms' },
+        { test: 'Refresh_ValidToken_RotatesTokenAndReturnsNewPair', durum: 'Passed', sure: '5.8ms' },
+        { test: 'Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '73.5ms' },
+        { test: 'Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows', durum: 'Passed', sure: '1.4ms' },
+        { test: 'Refresh_TokenExpired_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '1.5ms' },
+        { test: 'Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '0.9ms' },
       ]
     },
     {
@@ -6084,12 +6096,12 @@ public class LogoutCommandHandlerTests
     private LogoutCommandHandler CreateHandler() => new(_refreshTokenRepo.Object, _passwordService.Object);
 
     /// <summary>
-    /// LogoutAsync_OwnToken_RevokesToken
+    /// Logout_OwnToken_RevokesToken
     ///
     /// AMAÇ: Kullanıcının kendi refresh token'ını iptal edebildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LogoutAsync_OwnToken_RevokesToken()
+    public async Task Logout_OwnToken_RevokesToken()
     {
         // ARRANGE
         var token = new RefreshToken { UserId = 1 };
@@ -6105,14 +6117,14 @@ public class LogoutCommandHandlerTests
     }
 
     /// <summary>
-    /// LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
+    /// Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Başka bir kullanıcıya ait refresh token'ı iptal etmeye çalışıldığında
     ///       reddedildiğini doğrulamak.
     /// NEDEN: Sahiplik kontrolü olmazsa bir kullanıcı başka birinin oturumunu kapatabilirdi.
     /// </summary>
     [Fact]
-    public async Task LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
+    public async Task Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var baskasininTokeni = new RefreshToken { UserId = 2 };
@@ -6128,8 +6140,8 @@ public class LogoutCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '2.5ms' },
-        { test: 'LogoutAsync_OwnToken_RevokesToken', durum: 'Passed', sure: '34.5ms' },
+        { test: 'Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException', durum: 'Passed', sure: '2.5ms' },
+        { test: 'Logout_OwnToken_RevokesToken', durum: 'Passed', sure: '34.5ms' },
       ]
     },
     {
@@ -6163,12 +6175,12 @@ public class ForgotPasswordCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// ForgotPasswordAsync_ExistingUser_SendsResetOtp
+    /// ForgotPassword_ExistingUser_SendsResetOtp
     ///
     /// AMAÇ: Kayıtlı bir kullanıcı için şifre sıfırlama OTP'sinin gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ForgotPasswordAsync_ExistingUser_SendsResetOtp()
+    public async Task ForgotPassword_ExistingUser_SendsResetOtp()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -6184,13 +6196,13 @@ public class ForgotPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    /// ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage
     ///
     /// AMAÇ: Kayıtlı olmayan bir e-posta için de e-posta GÖNDERİLMEDİĞİNİ ama aynı
     ///       mesajın döndüğünü doğrulamak (e-posta numaralandırma önlemi).
     /// </summary>
     [Fact]
-    public async Task ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    public async Task ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -6208,8 +6220,8 @@ public class ForgotPasswordCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'ForgotPasswordAsync_ExistingUser_SendsResetOtp', durum: 'Passed', sure: '0.8ms' },
-        { test: 'ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage', durum: 'Passed', sure: '1ms' },
+        { test: 'ForgotPassword_ExistingUser_SendsResetOtp', durum: 'Passed', sure: '0.8ms' },
+        { test: 'ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage', durum: 'Passed', sure: '1ms' },
       ]
     },
     {
@@ -6253,13 +6265,13 @@ public class ResetPasswordCommandHandlerTests
         );
 
     /// <summary>
-    /// ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
+    /// ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
     ///
     /// AMAÇ: Doğru OTP ile şifrenin güncellendiğini ve kullanıcının TÜM refresh
     ///       token'larının iptal edildiğini (tüm cihazlardan çıkış) doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
+    public async Task ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -6277,12 +6289,12 @@ public class ResetPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException
+    /// ResetPassword_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP ile şifre sıfırlama denendiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task ResetPassword_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -6298,8 +6310,8 @@ public class ResetPasswordCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens', durum: 'Passed', sure: '1.6ms' },
-        { test: 'ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '38.3ms' },
+        { test: 'ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens', durum: 'Passed', sure: '1.6ms' },
+        { test: 'ResetPassword_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '38.3ms' },
       ]
     },
     {
@@ -6334,12 +6346,12 @@ public class RequestAccountDeletionCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp
+    /// RequestAccountDeletion_ExistingUser_SendsDeletionOtp
     ///
     /// AMAÇ: Var olan bir kullanıcı için hesap silme onay OTP'sinin gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp()
+    public async Task RequestAccountDeletion_ExistingUser_SendsDeletionOtp()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -6355,7 +6367,7 @@ public class RequestAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException
+    /// RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException
     ///
     /// AMAÇ: Var olmayan bir userId ile hesap silme talebi oluşturulduğunda
     ///       EntityNotFoundException fırlatıldığını doğrulamak.
@@ -6363,7 +6375,7 @@ public class RequestAccountDeletionCommandHandlerTests
     ///        olmalı, ama hesap bu arada silinmiş olabilir — savunmacı kontrol.
     /// </summary>
     [Fact]
-    public async Task RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException()
+    public async Task RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByIdAsync(999, default)).ReturnsAsync((User?)null);
@@ -6377,8 +6389,8 @@ public class RequestAccountDeletionCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '38.3ms' },
-        { test: 'RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp', durum: 'Passed', sure: '1.9ms' },
+        { test: 'RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '38.3ms' },
+        { test: 'RequestAccountDeletion_ExistingUser_SendsDeletionOtp', durum: 'Passed', sure: '1.9ms' },
       ]
     },
     {
@@ -6424,13 +6436,13 @@ public class ConfirmAccountDeletionCommandHandlerTests
         };
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
+    /// ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
     ///
     /// AMAÇ: Doğru OTP + doğru şifre ile hesabın soft-delete edildiğini ve 30 gün
     ///       sonrasına anonimleştirme zamanlandığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
+    public async Task ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -6449,13 +6461,13 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException
+    /// ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException
     ///
     /// AMAÇ: OTP doğru olsa bile yanlış şifre ile hesap silmenin onaylanamadığını doğrulamak.
     /// NEDEN: Geri alınamaz bir işlem olduğu için çift onay (OTP + şifre) zorunlu.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    public async Task ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -6473,12 +6485,12 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException
+    /// ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP ile hesap silme onayının reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -6495,9 +6507,9 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 }`,
       sonuclar: [
-        { test: 'ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '1.5ms' },
-        { test: 'ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException', durum: 'Passed', sure: '1.2ms' },
-        { test: 'ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization', durum: 'Passed', sure: '3.4ms' },
+        { test: 'ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '1.5ms' },
+        { test: 'ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException', durum: 'Passed', sure: '1.2ms' },
+        { test: 'ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization', durum: 'Passed', sure: '3.4ms' },
       ]
     },
   ],

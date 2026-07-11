@@ -270,7 +270,7 @@ public interface IRepository<T> where T : BaseEntity
     ,{
       num: 5, tur: 'repository',
       baslik: 'Repository.cs', dosya: 'Infrastructure/Repositories/Repository.cs',
-      aciklama: 'Generic (jenerik) sınıf nedir: `Repository<T>` yazımındaki `T` bir "yer tutucu tip" — bu sınıf User için de, ileride Word için de, hangi entity verilirse onun için de aynı CRUD kodunu ÇALIŞTIRABİLİR hâle gelir (`T : BaseEntity` kısıtı, T\'nin illa BaseEntity\'den türemiş bir entity olmasını zorunlu kılar). Bu sayede her yeni entity için AddAsync/GetByIdAsync gibi metotları yeniden yazmaya gerek kalmaz — bir kez yazılır, hepsi kullanır (DRY). `virtual` metot nedir: bu anahtar kelime, alt sınıfların (ör. ileride yazılacak UserRepository) bu metodu `override` ederek DAVRANIŞINI değiştirebileceğini belirtir — ör. UserRepository, GetByIdAsync\'i override edip `.Include(u => u.RefreshTokens)` ekleyebilir; virtual olmasaydı bu mümkün olmazdı. WordLearnerDbContext ve EntityNotFoundException hazır olduktan sonra yazılır — her ikisine de bağımlıdır (DbContext olmadan sorgu atılamaz, EntityNotFoundException olmadan SoftDeleteAsync "bulunamadı" durumunu bildiremez).',
+      aciklama: 'Generic (jenerik) sınıf nedir: `Repository<T>` yazımındaki `T` bir "yer tutucu tip" — bu sınıf User için de, ileride Word için de, hangi entity verilirse onun için de aynı CRUD kodunu ÇALIŞTIRABİLİR hâle gelir (`T : BaseEntity` kısıtı, T\'nin illa BaseEntity\'den türemiş bir entity olmasını zorunlu kılar). Bu sayede her yeni entity için AddAsync/GetByIdAsync gibi metotları yeniden yazmaya gerek kalmaz — bir kez yazılır, hepsi kullanır (DRY). `virtual` metot nedir: bu anahtar kelime, alt sınıfların (ör. ileride yazılacak UserRepository) bu metodu `override` ederek DAVRANIŞINI değiştirebileceğini belirtir — ör. UserRepository, GetByIdAsync\'i override edip `.Include(u => u.RefreshTokens)` ekleyebilir; virtual olmasaydı bu mümkün olmazdı. WordLearnerDbContext ve EntityNotFoundException hazır olduktan sonra yazılır — her ikisine de bağımlıdır (DbContext olmadan sorgu atılamaz, EntityNotFoundException olmadan SoftDeleteAsync "bulunamadı" durumunu bildiremez). NOT (denetim sonrası düzeltme, 2026-07-11): UpdateAsync içindeki gereksiz \`_set.Update(entity)\` çağrısı kaldırıldı — bu Repository\'den GetByIdAsync ile alınan bir entity zaten DbContext tarafından takip edilir, \`_set.Update(entity)\` çağırmak TÜM property\'leri (değişmemiş olanlar dahil) Modified işaretleyip UPDATE ifadesini gereksiz yere genişletiyordu; EF\'in change tracking\'i zaten yalnızca gerçekten değişen kolonları yazar.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // Repository.cs
 //
@@ -289,7 +289,8 @@ using WordLearner.Infrastructure.Data;
 
 namespace WordLearner.Infrastructure.Repositories;
 
-public class Repository<T> : IRepository<T> where T : BaseEntity
+public class Repository<T> : IRepository<T>
+    where T : BaseEntity
 {
     protected readonly WordLearnerDbContext _db;
     protected readonly DbSet<T> _set;
@@ -304,17 +305,21 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     // AMAÇ: Soft delete filtresi aktifken Id'ye göre kayıt getirir.
     // NEDEN: virtual — feature repository gerektiğinde Include() ekleyerek override edebilir.
-    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default)
-        => _set.FirstOrDefaultAsync(e => e.Id == id, ct);
+    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
+        _set.FirstOrDefaultAsync(e => e.Id == id, ct);
 
     // AMAÇ: Filtresiz tüm (silinmemiş) kayıtları belleğe yükler.
     // NEDEN: virtual — feature repository sayfalama veya projeksiyon için override edebilir.
-    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
-        => await _set.ToListAsync(ct);
+    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>
+        await _set.ToListAsync(ct);
 
     // AMAÇ: Yeni entity'yi DB'ye ekler ve Id'si dolu hâliyle geri döner.
     // NEDEN: userId verilirse CreatedByUserId/UpdatedByUserId set edilir (kim oluşturdu).
-    public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)
+    public virtual async Task<T> AddAsync(
+        T entity,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
         entity.CreatedByUserId = userId;
         entity.UpdatedByUserId = userId;
@@ -325,10 +330,23 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
 
     // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
     // NEDEN: userId verilirse UpdatedByUserId set edilir (kim güncelledi).
-    public virtual async Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default)
+    // NEDEN _set.Update() ÇAĞRILMAZ: entity, çağıranın elinde her zaman bu Repository
+    //       üzerinden önce GetByIdAsync/GetByXxxAsync ile alınmış (dolayısıyla DbContext
+    //       tarafından zaten TAKİP EDİLEN) bir örnektir — bu proje genelinde tek desen.
+    //       \`_set.Update(entity)\` çağırmak entity'nin TÜM property'lerini (değişmemiş
+    //       olanlar dahil) Modified işaretler ve UPDATE ifadesini gereksiz yere
+    //       genişletir; hâlbuki EF'in otomatik change tracking'i zaten yalnızca
+    //       GERÇEKTEN değişen kolonları SaveChangesAsync ile yazar. Bu metot DETACHED
+    //       (fetch edilmemiş, elle \`new T{Id=...}\` ile kurulmuş) bir entity ile
+    //       çağrılırsa değişiklikler SESSİZCE kaybolur — bu yüzden UpdateAsync'e
+    //       yalnızca bu Repository'den alınmış entity geçilmelidir.
+    public virtual async Task UpdateAsync(
+        T entity,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
         entity.UpdatedByUserId = userId;
-        _set.Update(entity);
         await _db.SaveChangesAsync(ct);
     }
 
@@ -336,10 +354,13 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     // NEDEN: Fiziksel silme geri alınamaz; soft delete ile veri kaybı olmaz,
     //        admin silinmiş kaydı görmek istediğinde IgnoreQueryFilters() kullanır.
     //        userId verilirse DeletedByUserId set edilir (kim sildi).
-    public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
+    public virtual async Task SoftDeleteAsync(
+        int id,
+        int? userId = null,
+        CancellationToken ct = default
+    )
     {
-        var entity = await GetByIdAsync(id, ct)
-            ?? throw new EntityNotFoundException(typeof(T), id);
+        var entity = await GetByIdAsync(id, ct) ?? throw new EntityNotFoundException(typeof(T), id);
 
         entity.IsDeleted = true;
         entity.DeletedAt = DateTime.UtcNow;
@@ -348,8 +369,7 @@ public class Repository<T> : IRepository<T> where T : BaseEntity
     }
 
     // AMAÇ: Birden fazla değişikliği toplu olarak DB'ye yazar.
-    public Task SaveChangesAsync(CancellationToken ct = default)
-        => _db.SaveChangesAsync(ct);
+    public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }`
     }
     ,{
