@@ -136,6 +136,15 @@ public static class ErrorMessages
             ["tr"] = "Token zorunludur.",
             ["de"] = "Token ist erforderlich.",
         },
+
+        // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
+        //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
+        //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.
+        ["INTERNAL_SERVER_ERROR"] = new()
+        {
+            ["tr"] = "Beklenmeyen bir hata oluştu.",
+            ["de"] = "Ein unerwarteter Fehler ist aufgetreten.",
+        },
     };
 
     // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.

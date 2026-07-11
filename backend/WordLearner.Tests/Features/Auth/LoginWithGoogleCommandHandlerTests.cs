@@ -33,13 +33,13 @@ public class LoginWithGoogleCommandHandlerTests
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1"), false));
 
     /// <summary>
-    /// LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
+    /// LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
     ///
     /// AMAÇ: GoogleId ile eşleşen bir kullanıcı bulunduğunda yeni hesap açılmadan
     ///       doğrudan token döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
+    public async Task LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -59,13 +59,13 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser
+    /// LoginWithGoogle_NoExistingAccount_CreatesNewUser
     ///
     /// AMAÇ: Ne GoogleId ne de e-posta ile eşleşen bir kullanıcı bulunmadığında yeni
     ///       hesap oluşturulduğunu doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_NoExistingAccount_CreatesNewUser()
+    public async Task LoginWithGoogle_NoExistingAccount_CreatesNewUser()
     {
         // ARRANGE
         _googleValidator
@@ -90,7 +90,7 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
+    /// LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
     ///
     /// AMAÇ: Google'dan gelen e-posta, mevcut bir yerel (Local) hesapla eşleştiğinde
     ///       yeni hesap açmak yerine GoogleId'nin o hesaba bağlandığını (account linking)
@@ -99,7 +99,7 @@ public class LoginWithGoogleCommandHandlerTests
     ///        "user register olurken hangi hesaba giriyor" tasarım kararının kalbi.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
+    public async Task LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
     {
         // ARRANGE
         var mevcutYerelHesap = new User { Id = 1, Email = "ortak@example.com", IsActive = true };
@@ -120,12 +120,12 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException
+    /// LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException
     ///
     /// AMAÇ: Google token doğrulaması null döndüğünde InvalidSocialTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_InvalidToken_ThrowsInvalidSocialTokenException()
+    public async Task LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException()
     {
         // ARRANGE
         _googleValidator.Setup(g => g.ValidateAsync("gecersiz-token", default)).ReturnsAsync((GoogleTokenPayload?)null);
@@ -139,12 +139,12 @@ public class LoginWithGoogleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException
+    /// LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException
     ///
     /// AMAÇ: Google ile eşleşen hesap dondurulmuşsa (IsActive=false) login'in reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithGoogleAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    public async Task LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = false };

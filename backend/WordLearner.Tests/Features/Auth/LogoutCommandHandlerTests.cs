@@ -24,12 +24,12 @@ public class LogoutCommandHandlerTests
     private LogoutCommandHandler CreateHandler() => new(_refreshTokenRepo.Object, _passwordService.Object);
 
     /// <summary>
-    /// LogoutAsync_OwnToken_RevokesToken
+    /// Logout_OwnToken_RevokesToken
     ///
     /// AMAÇ: Kullanıcının kendi refresh token'ını iptal edebildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LogoutAsync_OwnToken_RevokesToken()
+    public async Task Logout_OwnToken_RevokesToken()
     {
         // ARRANGE
         var token = new RefreshToken { UserId = 1 };
@@ -45,14 +45,14 @@ public class LogoutCommandHandlerTests
     }
 
     /// <summary>
-    /// LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
+    /// Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Başka bir kullanıcıya ait refresh token'ı iptal etmeye çalışıldığında
     ///       reddedildiğini doğrulamak.
     /// NEDEN: Sahiplik kontrolü olmazsa bir kullanıcı başka birinin oturumunu kapatabilirdi.
     /// </summary>
     [Fact]
-    public async Task LogoutAsync_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
+    public async Task Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var baskasininTokeni = new RefreshToken { UserId = 2 };

@@ -27,12 +27,12 @@ public class RequestAccountDeletionCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp
+    /// RequestAccountDeletion_ExistingUser_SendsDeletionOtp
     ///
     /// AMAÇ: Var olan bir kullanıcı için hesap silme onay OTP'sinin gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RequestAccountDeletionAsync_ExistingUser_SendsDeletionOtp()
+    public async Task RequestAccountDeletion_ExistingUser_SendsDeletionOtp()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -48,7 +48,7 @@ public class RequestAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException
+    /// RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException
     ///
     /// AMAÇ: Var olmayan bir userId ile hesap silme talebi oluşturulduğunda
     ///       EntityNotFoundException fırlatıldığını doğrulamak.
@@ -56,7 +56,7 @@ public class RequestAccountDeletionCommandHandlerTests
     ///        olmalı, ama hesap bu arada silinmiş olabilir — savunmacı kontrol.
     /// </summary>
     [Fact]
-    public async Task RequestAccountDeletionAsync_UserNotFound_ThrowsEntityNotFoundException()
+    public async Task RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByIdAsync(999, default)).ReturnsAsync((User?)null);
@@ -70,13 +70,13 @@ public class RequestAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// RequestAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage
+    /// RequestAccountDeletion_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task RequestAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task RequestAccountDeletion_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };

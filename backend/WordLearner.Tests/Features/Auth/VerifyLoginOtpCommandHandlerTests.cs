@@ -32,13 +32,13 @@ public class VerifyLoginOtpCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _loginCompletionService.Object);
 
     /// <summary>
-    /// VerifyLoginOtpAsync_ValidOtp_DelegatesToLoginCompletionService
+    /// VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService
     ///
     /// AMAÇ: Doğru OTP kodu girildiğinde ILoginCompletionService.CompleteLoginAsync'in
     ///       doğru kullanıcı/ip ile çağrıldığını ve sonucunun aynen döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task VerifyLoginOtpAsync_ValidOtp_DelegatesToLoginCompletionService()
+    public async Task VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", CurrentLevel = "A1" };
@@ -68,12 +68,12 @@ public class VerifyLoginOtpCommandHandlerTests
     }
 
     /// <summary>
-    /// VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException
+    /// VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task VerifyLoginOtpAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };

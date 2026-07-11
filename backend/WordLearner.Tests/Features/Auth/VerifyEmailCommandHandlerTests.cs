@@ -26,7 +26,7 @@ public class VerifyEmailCommandHandlerTests
     private VerifyEmailCommandHandler CreateHandler() => new(_userRepo.Object, _otpService.Object);
 
     /// <summary>
-    /// VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp
+    /// VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp
     ///
     /// AMAÇ: Doğru OTP kodu girildiğinde IsEmailVerified'ın true'ya çekildiğini ve
     ///       bekleyen OTP alanlarının temizlendiğini doğrulamak.
@@ -34,7 +34,7 @@ public class VerifyEmailCommandHandlerTests
     ///        onboarding vb. akışlarda) doğrulanmamış olarak kalır.
     /// </summary>
     [Fact]
-    public async Task VerifyEmailAsync_ValidOtp_MarksEmailVerifiedAndClearsOtp()
+    public async Task VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com" };
@@ -60,13 +60,13 @@ public class VerifyEmailCommandHandlerTests
     }
 
     /// <summary>
-    /// VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException
+    /// VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// NEDEN: IOtpService.Validate'in hash karşılaştırması EmailVerification akışında da geçerli olmalı.
     /// </summary>
     [Fact]
-    public async Task VerifyEmailAsync_WrongOtpCode_ThrowsInvalidOtpException()
+    public async Task VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com" };
@@ -84,13 +84,13 @@ public class VerifyEmailCommandHandlerTests
     }
 
     /// <summary>
-    /// VerifyEmailAsync_GermanLanguage_ReturnsGermanMessage
+    /// VerifyEmail_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task VerifyEmailAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task VerifyEmail_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com" };

@@ -36,13 +36,13 @@ public class ResetPasswordCommandHandlerTests
         );
 
     /// <summary>
-    /// ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
+    /// ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
     ///
     /// AMAÇ: Doğru OTP ile şifrenin güncellendiğini ve kullanıcının TÜM refresh
     ///       token'larının iptal edildiğini (tüm cihazlardan çıkış) doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResetPasswordAsync_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
+    public async Task ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -60,12 +60,12 @@ public class ResetPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException
+    /// ResetPassword_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP ile şifre sıfırlama denendiğinde InvalidOtpException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResetPasswordAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task ResetPassword_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };
@@ -81,13 +81,13 @@ public class ResetPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ResetPasswordAsync_GermanLanguage_ReturnsGermanMessage
+    /// ResetPassword_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task ResetPasswordAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task ResetPassword_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com" };

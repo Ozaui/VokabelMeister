@@ -37,13 +37,15 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.DailyNewWordLimit).HasDefaultValue(5);
         builder.Property(u => u.CurrentLevel).HasMaxLength(2).HasDefaultValue("A1");
 
-        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(88);
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(u => u.PendingOtpCodeHash).HasMaxLength(44);
         // NEDEN: Enum DB'de okunabilir bir string olarak tutulur (sayısal index'e bağımlı kalmaz).
         builder.Property(u => u.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
 
         builder.Property(u => u.IsActive).HasDefaultValue(true);
         builder.Property(u => u.LastLoginIP).HasMaxLength(45);
-        builder.Property(u => u.OriginalEmailHash).HasMaxLength(88);
+        // NEDEN 44: bkz. PendingOtpCodeHash — aynı PasswordService.HashToken (SHA-256→Base64).
+        builder.Property(u => u.OriginalEmailHash).HasMaxLength(44);
         builder.Property(u => u.OneSignalPlayerId).HasMaxLength(100);
         builder.Property(u => u.Role).HasMaxLength(20).HasDefaultValue("User");
 

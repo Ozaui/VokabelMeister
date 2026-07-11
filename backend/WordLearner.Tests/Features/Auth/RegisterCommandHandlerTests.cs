@@ -36,14 +36,14 @@ public class RegisterCommandHandlerTests
         new(_userRepo.Object, _passwordService.Object, _otpService.Object, _emailService.Object, CreateMapper());
 
     /// <summary>
-    /// RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp
+    /// Register_NewEmail_CreatesUserAndSendsVerificationOtp
     ///
     /// AMAÇ: Daha önce kayıtlı olmayan bir e-postayla kayıt olunduğunda kullanıcının
     ///       oluşturulduğunu ve doğrulama e-postasının gönderildiğini doğrulamak.
     /// NEDEN: Register akışının mutlu yolu — şifre hash'lenmeli, OTP üretilmeli, e-posta atılmalı.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_NewEmail_CreatesUserAndSendsVerificationOtp()
+    public async Task Register_NewEmail_CreatesUserAndSendsVerificationOtp()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("new@example.com", default)).ReturnsAsync((User?)null);
@@ -66,14 +66,14 @@ public class RegisterCommandHandlerTests
     }
 
     /// <summary>
-    /// RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException
+    /// Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException
     ///
     /// AMAÇ: Aktif bir kullanıcının e-postasıyla tekrar kayıt denendiğinde
     ///       DuplicateEmailException fırlatıldığını doğrulamak.
     /// NEDEN: E-posta benzersizliği DB constraint'i değil, servis katmanında zorlanır.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
+    public async Task Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
     {
         // ARRANGE
         _userRepo
@@ -90,7 +90,7 @@ public class RegisterCommandHandlerTests
     }
 
     /// <summary>
-    /// RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException
+    /// Register_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException
     ///
     /// AMAÇ: Daha önce anonimleştirilmiş bir hesabın orijinal e-postasıyla kayıt
     ///       denendiğinde de DuplicateEmailException fırlatıldığını doğrulamak.
@@ -99,7 +99,7 @@ public class RegisterCommandHandlerTests
     ///        değiştiği için) durumları OriginalEmailHash üzerinden yakalar.
     /// </summary>
     [Fact]
-    public async Task RegisterAsync_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException()
+    public async Task Register_EmailPreviouslyAnonymized_ThrowsDuplicateEmailException()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("eski@example.com", default)).ReturnsAsync((User?)null);

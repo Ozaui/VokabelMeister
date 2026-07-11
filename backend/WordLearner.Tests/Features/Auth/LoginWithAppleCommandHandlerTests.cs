@@ -33,12 +33,12 @@ public class LoginWithAppleCommandHandlerTests
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1"), false));
 
     /// <summary>
-    /// LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens
+    /// LoginWithApple_ExistingAppleUser_ReturnsTokens
     ///
     /// AMAÇ: AppleId ile eşleşen mevcut bir kullanıcı için token döndüğünü doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_ExistingAppleUser_ReturnsTokens()
+    public async Task LoginWithApple_ExistingAppleUser_ReturnsTokens()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -57,13 +57,13 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount
+    /// LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount
     ///
     /// AMAÇ: İlk yetkilendirmede (e-posta dolu) ne AppleId ne de e-posta eşleşmesi
     ///       olmadığında yeni hesap açıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_FirstAuthorizationWithEmail_CreatesNewAccount()
+    public async Task LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount()
     {
         // ARRANGE
         _appleValidator
@@ -88,7 +88,7 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
+    /// LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
     ///
     /// AMAÇ: Apple'ın yalnızca İLK yetkilendirmede e-posta verdiği, sonraki girişlerde
     ///       payload.Email'in null geldiği senaryoda AppleId ile hâlâ doğru kullanıcının
@@ -97,7 +97,7 @@ public class LoginWithAppleCommandHandlerTests
     ///        yoksa DB'deki mevcut e-posta korunmalı.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
+    public async Task LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "korunan@example.com", IsActive = true };
@@ -117,14 +117,14 @@ public class LoginWithAppleCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
+    /// LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
     ///
     /// AMAÇ: Ne AppleId ile eşleşme ne de e-posta (savunmacı/teorik olarak beklenmeyen
     ///       bir durum) varken yeni hesap açılamayacağını, InvalidSocialTokenException
     ///       fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginWithAppleAsync_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
+    public async Task LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
     {
         // ARRANGE
         _appleValidator

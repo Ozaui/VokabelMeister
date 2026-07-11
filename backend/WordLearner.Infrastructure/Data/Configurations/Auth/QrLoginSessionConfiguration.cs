@@ -21,7 +21,8 @@ public class QrLoginSessionConfiguration : IEntityTypeConfiguration<QrLoginSessi
 {
     public void Configure(EntityTypeBuilder<QrLoginSession> builder)
     {
-        builder.Property(q => q.QrTokenHash).HasMaxLength(88).IsRequired();
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(q => q.QrTokenHash).HasMaxLength(44).IsRequired();
         builder.Property(q => q.PairingCode).HasMaxLength(4).IsRequired();
 
         // NEDEN: Enum DB'de okunabilir bir string olarak tutulur (sayısal index'e bağımlı kalmaz).

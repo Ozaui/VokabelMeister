@@ -38,12 +38,12 @@ public class LoginCommandHandlerTests
         };
 
     /// <summary>
-    /// LoginAsync_ValidCredentials_SendsLoginOtp
+    /// Login_ValidCredentials_SendsLoginOtp
     ///
     /// AMAÇ: Doğru şifre ile login adım 1'in OTP gönderdiğini (token DÖNMEDİĞİNİ) doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_ValidCredentials_SendsLoginOtp()
+    public async Task Login_ValidCredentials_SendsLoginOtp()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -60,12 +60,12 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_WrongPassword_ThrowsInvalidCredentialsException
+    /// Login_WrongPassword_ThrowsInvalidCredentialsException
     ///
     /// AMAÇ: Yanlış şifre girildiğinde InvalidCredentialsException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    public async Task Login_WrongPassword_ThrowsInvalidCredentialsException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -81,7 +81,7 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
+    /// Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
     ///
     /// AMAÇ: Kullanıcı bulunamadığında bile PasswordService.Verify'ın (FakePasswordHashForTiming
     ///       ile) ÇAĞRILDIĞINI ve InvalidCredentialsException fırlatıldığını doğrulamak.
@@ -90,7 +90,7 @@ public class LoginCommandHandlerTests
     ///        bu da bir saldırganın e-posta numaralandırması yapmasına izin verir.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
+    public async Task Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -106,13 +106,13 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_AccountNotActive_ThrowsAccountNotActiveException
+    /// Login_AccountNotActive_ThrowsAccountNotActiveException
     ///
     /// AMAÇ: Şifre doğru olsa bile dondurulmuş (IsActive=false) bir hesapla login
     ///       denendiğinde AccountNotActiveException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task LoginAsync_AccountNotActive_ThrowsAccountNotActiveException()
+    public async Task Login_AccountNotActive_ThrowsAccountNotActiveException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -129,13 +129,13 @@ public class LoginCommandHandlerTests
     }
 
     /// <summary>
-    /// LoginAsync_GermanLanguage_ReturnsGermanOtpSentMessage
+    /// Login_GermanLanguage_ReturnsGermanOtpSentMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task LoginAsync_GermanLanguage_ReturnsGermanOtpSentMessage()
+    public async Task Login_GermanLanguage_ReturnsGermanOtpSentMessage()
     {
         // ARRANGE
         var user = CreateActiveUser();

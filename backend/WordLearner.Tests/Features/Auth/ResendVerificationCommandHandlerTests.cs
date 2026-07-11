@@ -26,12 +26,12 @@ public class ResendVerificationCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp
+    /// ResendVerification_UnverifiedUserExists_SendsNewOtp
     ///
     /// AMAÇ: Doğrulanmamış bir kullanıcı için yeni OTP üretilip e-posta gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ResendVerificationAsync_UnverifiedUserExists_SendsNewOtp()
+    public async Task ResendVerification_UnverifiedUserExists_SendsNewOtp()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com", IsEmailVerified = false };
@@ -47,7 +47,7 @@ public class ResendVerificationCommandHandlerTests
     }
 
     /// <summary>
-    /// ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    /// ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage
     ///
     /// AMAÇ: Kayıtlı olmayan bir e-posta için de aynı mesajın döndüğünü ama e-posta
     ///       GÖNDERİLMEDİĞİNİ doğrulamak.
@@ -55,7 +55,7 @@ public class ResendVerificationCommandHandlerTests
     ///        farklı olsaydı bir saldırgan hangi e-postaların kayıtlı olduğunu anlayabilirdi.
     /// </summary>
     [Fact]
-    public async Task ResendVerificationAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    public async Task ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -73,13 +73,13 @@ public class ResendVerificationCommandHandlerTests
     }
 
     /// <summary>
-    /// ResendVerificationAsync_GermanLanguage_ReturnsGermanMessage
+    /// ResendVerification_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task ResendVerificationAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task ResendVerification_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = new User { Email = "test@example.com", IsEmailVerified = false };

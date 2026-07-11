@@ -48,14 +48,14 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair
+    /// Refresh_ValidToken_RotatesTokenAndReturnsNewPair
     ///
     /// AMAÇ: Geçerli bir refresh token ile yeni bir access+refresh token çifti
     ///       üretildiğini ve eski token'ın kullanıldı (IsUsed=true) olarak işaretlendiğini
     ///       doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_ValidToken_RotatesTokenAndReturnsNewPair()
+    public async Task Refresh_ValidToken_RotatesTokenAndReturnsNewPair()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -89,12 +89,12 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException
+    /// Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: DB'de bulunamayan bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenNotFound_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
@@ -109,12 +109,12 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException
+    /// Refresh_TokenExpired_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Süresi dolmuş bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenExpired_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_TokenExpired_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var suresiGecmisToken = new RefreshToken { ExpiresAt = DateTime.UtcNow.AddDays(-1) };
@@ -130,7 +130,7 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
+    /// Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
     ///
     /// AMAÇ: Zaten kullanılmış (IsUsed=true) bir refresh token TEKRAR kullanıldığında
     ///       (replay saldırısı) aynı TokenFamily'deki TÜM token'ların iptal edildiğini
@@ -140,7 +140,7 @@ public class RefreshCommandHandlerTests
     ///        family (dolayısıyla saldırganın elindeki token da) iptal edilir.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
+    public async Task Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
     {
         // ARRANGE
         var kullanilmisToken = new RefreshToken
@@ -162,13 +162,13 @@ public class RefreshCommandHandlerTests
     }
 
     /// <summary>
-    /// RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException
+    /// Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException
     ///
     /// AMAÇ: Token geçerli olsa bile ait olduğu kullanıcı anonimleştirilmişse
     ///       (IsAnonymized=true) refresh'in reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task RefreshAsync_UserAnonymized_ThrowsInvalidRefreshTokenException()
+    public async Task Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true, IsAnonymized = true };

@@ -17,7 +17,8 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 {
     public void Configure(EntityTypeBuilder<RefreshToken> builder)
     {
-        builder.Property(r => r.TokenHash).HasMaxLength(88).IsRequired();
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(r => r.TokenHash).HasMaxLength(44).IsRequired();
         builder.Property(r => r.TokenFamily).HasMaxLength(36).IsRequired();
         builder.Property(r => r.DeviceInfo).HasMaxLength(500);
         builder.Property(r => r.IpAddress).HasMaxLength(45);

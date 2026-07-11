@@ -8,16 +8,17 @@
 //        Scanned bir oturum VE yalnızca onu tarayan kullanıcı (sahiplik kontrolü)
 //        confirm edebilir. Token üretimi burada YAPILMAZ — GetQrLoginStatusCommand
 //        (web'in polling'i) Confirmed'i ilk okuduğunda ITokenService'i çağırır.
-// NASIL: 1) Hash'e göre oturumu bul, yoksa 404  2) Süresi geçmişse Expired + 410
-//        3) Scanned değilse 410  4) UserId eşleşmiyorsa 403  5) Confirmed'e geçir.
-// BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService (HashToken).
+// NASIL: 1-4) QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync (hash'e göre
+//        bul → yoksa 404 → süresi geçmişse Expired + 410 → Scanned değilse 410 →
+//        UserId eşleşmiyorsa 403)  5) Confirmed'e geçir.
+// BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService (HashToken),
+//                QrLoginSessionOwnershipHelper (DenyQrLoginCommandHandler ile paylaşılan
+//                yükleme+doğrulama mantığı).
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
-using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
-using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.QrLogin;
@@ -44,22 +45,13 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
 
     public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken ct)
     {
-        var tokenHash = _passwordService.HashToken(request.QrToken);
-        var session =
-            await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
-            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
-
-        if (session.IsExpired(DateTime.UtcNow))
-        {
-            await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
-            throw new QrSessionGoneException();
-        }
-
-        if (session.Status != QrLoginStatus.Scanned)
-            throw new QrSessionGoneException();
-
-        if (session.UserId != request.UserId)
-            throw new QrSessionForbiddenException();
+        var session = await QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync(
+            _qrLoginSessionRepository,
+            _passwordService,
+            request.QrToken,
+            request.UserId,
+            ct
+        );
 
         session.Status = QrLoginStatus.Confirmed;
         session.ConfirmedAt = DateTime.UtcNow;

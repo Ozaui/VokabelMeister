@@ -38,13 +38,13 @@ public class ConfirmAccountDeletionCommandHandlerTests
         };
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
+    /// ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
     ///
     /// AMAÇ: Doğru OTP + doğru şifre ile hesabın soft-delete edildiğini ve 30 gün
     ///       sonrasına anonimleştirme zamanlandığını doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
+    public async Task ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -63,13 +63,13 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException
+    /// ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException
     ///
     /// AMAÇ: OTP doğru olsa bile yanlış şifre ile hesap silmenin onaylanamadığını doğrulamak.
     /// NEDEN: Geri alınamaz bir işlem olduğu için çift onay (OTP + şifre) zorunlu.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_WrongPassword_ThrowsInvalidCredentialsException()
+    public async Task ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -87,12 +87,12 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException
+    /// ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP ile hesap silme onayının reddedildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_WrongOtp_ThrowsInvalidOtpException()
+    public async Task ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException()
     {
         // ARRANGE
         var user = CreateActiveUser();
@@ -109,13 +109,13 @@ public class ConfirmAccountDeletionCommandHandlerTests
     }
 
     /// <summary>
-    /// ConfirmAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage
+    /// ConfirmAccountDeletion_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task ConfirmAccountDeletionAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task ConfirmAccountDeletion_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = CreateActiveUser();

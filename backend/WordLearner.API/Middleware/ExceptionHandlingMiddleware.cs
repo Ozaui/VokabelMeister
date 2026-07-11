@@ -81,13 +81,15 @@ public class ExceptionHandlingMiddleware
 
         // NEDEN: EntityNotFoundException'ın mesajı dinamiktir (entity adı içerir),
         //        doğrudan ex.Message kullanılır. AppException'lar Code üzerinden
-        //        isteğin diline göre çözülür. INTERNAL_SERVER_ERROR ise hiçbir zaman
-        //        gerçek exception mesajını sızdırmaz, sabit bir metin döner.
+        //        isteğin diline göre çözülür. INTERNAL_SERVER_ERROR de AYNI şekilde
+        //        dile göre çözülür (ErrorMessages.cs'te sabit bir kod) — gerçek exception
+        //        mesajı hiçbir zaman sızdırılmaz, ama istemcinin dili yok sayılmaz.
+        var language = RequestLanguageResolver.Resolve(context);
         var message = ex switch
         {
             EntityNotFoundException => ex.Message,
-            AppException appEx => ErrorMessages.Resolve(appEx.Code, RequestLanguageResolver.Resolve(context)),
-            _ => "Beklenmeyen bir hata oluştu.",
+            AppException appEx => ErrorMessages.Resolve(appEx.Code, language),
+            _ => ErrorMessages.Resolve("INTERNAL_SERVER_ERROR", language),
         };
 
         context.Response.ContentType = "application/json";

@@ -57,6 +57,16 @@ public class Repository<T> : IRepository<T>
 
     // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
     // NEDEN: userId verilirse UpdatedByUserId set edilir (kim güncelledi).
+    // NEDEN _set.Update() ÇAĞRILMAZ: entity, çağıranın elinde her zaman bu Repository
+    //       üzerinden önce GetByIdAsync/GetByXxxAsync ile alınmış (dolayısıyla DbContext
+    //       tarafından zaten TAKİP EDİLEN) bir örnektir — bu proje genelinde tek desen.
+    //       `_set.Update(entity)` çağırmak entity'nin TÜM property'lerini (değişmemiş
+    //       olanlar dahil) Modified işaretler ve UPDATE ifadesini gereksiz yere
+    //       genişletir; hâlbuki EF'in otomatik change tracking'i zaten yalnızca
+    //       GERÇEKTEN değişen kolonları SaveChangesAsync ile yazar. Bu metot DETACHED
+    //       (fetch edilmemiş, elle `new T{Id=...}` ile kurulmuş) bir entity ile
+    //       çağrılırsa değişiklikler SESSİZCE kaybolur — bu yüzden UpdateAsync'e
+    //       yalnızca bu Repository'den alınmış entity geçilmelidir.
     public virtual async Task UpdateAsync(
         T entity,
         int? userId = null,
@@ -64,7 +74,6 @@ public class Repository<T> : IRepository<T>
     )
     {
         entity.UpdatedByUserId = userId;
-        _set.Update(entity);
         await _db.SaveChangesAsync(ct);
     }
 

@@ -26,12 +26,12 @@ public class ForgotPasswordCommandHandlerTests
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
     /// <summary>
-    /// ForgotPasswordAsync_ExistingUser_SendsResetOtp
+    /// ForgotPassword_ExistingUser_SendsResetOtp
     ///
     /// AMAÇ: Kayıtlı bir kullanıcı için şifre sıfırlama OTP'sinin gönderildiğini doğrulamak.
     /// </summary>
     [Fact]
-    public async Task ForgotPasswordAsync_ExistingUser_SendsResetOtp()
+    public async Task ForgotPassword_ExistingUser_SendsResetOtp()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
@@ -47,13 +47,13 @@ public class ForgotPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage
+    /// ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage
     ///
     /// AMAÇ: Kayıtlı olmayan bir e-posta için de e-posta GÖNDERİLMEDİĞİNİ ama aynı
     ///       mesajın döndüğünü doğrulamak (e-posta numaralandırma önlemi).
     /// </summary>
     [Fact]
-    public async Task ForgotPasswordAsync_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
+    public async Task ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
         // ARRANGE
         _userRepo.Setup(r => r.GetByEmailAsync("yok@example.com", default)).ReturnsAsync((User?)null);
@@ -71,13 +71,13 @@ public class ForgotPasswordCommandHandlerTests
     }
 
     /// <summary>
-    /// ForgotPasswordAsync_GermanLanguage_ReturnsGermanMessage
+    /// ForgotPassword_GermanLanguage_ReturnsGermanMessage
     ///
     /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
     ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
     /// </summary>
     [Fact]
-    public async Task ForgotPasswordAsync_GermanLanguage_ReturnsGermanMessage()
+    public async Task ForgotPassword_GermanLanguage_ReturnsGermanMessage()
     {
         // ARRANGE
         var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
