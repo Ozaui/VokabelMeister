@@ -43,7 +43,7 @@ window.API = {
     {
       num: 1, tur: 'dto', grup: 'Lokalizasyon Altyapısı',
       baslik: 'SuccessMessages.cs (yeni dosya)', dosya: 'Application/Common/Localization/SuccessMessages.cs',
-      aciklama: 'Statik sözlük tabanlı lokalizasyon yardımcısı nedir: bir `Dictionary<string, Dictionary<string, string>>` — dış anahtar bir KOD (ör. "OTP_SENT"), iç sözlük ise o kodun her dildeki karşılığı ("tr"→"OTP gönderildi.", "de"→"OTP wurde gesendet."). Bu dosya `ErrorMessages.cs`\'in (A-03) birebir aynı deseni: `AppException.Code`\'un dile göre nasıl çözüldüğünü zaten biliyorsanız, bu dosyayı okumak için yeni bir şey öğrenmenize gerek yok — aynı `Resolve(code, language)` imzası, aynı "bulunamazsa `DefaultLanguage="tr"`\'ye düş" güvenli varsayılanı. NEDEN ayrı bir sözlük (ErrorMessages\'a EKLENMEDİ): kodlar anlamca farklı iki küme — `ErrorMessages`\'taki "ACCOUNT_DELETED" zaten "bu hesap kalıcı silinmiş, giriş REDDEDİLDİ" anlamına gelen bir HATA koduyken, buradaki "ACCOUNT_DELETION_CONFIRMED" "silme isteğin BAŞARIYLA alındı" anlamına gelen bir BAŞARI kodu — aynı sözlükte tutulsalar bir junior\'ın (ya da gelecekteki bir geliştiricinin) "ACCOUNT_DELETED" ile "ACCOUNT_DELETION_CONFIRMED"\'i karıştırıp yanlış Handler\'da kullanması an meselesi olurdu; iki ayrı statik sınıf bu karışıklığı derleme zamanında imkânsız kılar (`SuccessMessages.Resolve(...)` ile `ErrorMessages.Resolve(...)` farklı sınıflardır, biri diğerinin yerine yanlışlıkla import edilemez/karıştırılamaz gibi görünmez). Bu dosya olmadan ne olurdu: her Handler kendi `MessageResponse("...")`\'unu hâlâ elle, sabit Türkçe string olarak üretmeye devam ederdi — Almanca isteyen bir kullanıcı Türkçe bir cümle görürdü, hata mesajları zaten doğru dilde gelirken başarı mesajları tutarsız bir şekilde hep Türkçe kalırdı.',
+      aciklama: 'Statik sözlük tabanlı lokalizasyon yardımcısı nedir: bir `Dictionary<string, Dictionary<string, string>>` — dış anahtar bir KOD (ör. "OTP_SENT"), iç sözlük ise o kodun her dildeki karşılığı ("tr"→"OTP gönderildi.", "de"→"OTP wurde gesendet."). Bu dosya `ErrorMessages.cs`\'in (A-03) birebir aynı deseni: `AppException.Code`\'un dile göre nasıl çözüldüğünü zaten biliyorsanız, bu dosyayı okumak için yeni bir şey öğrenmenize gerek yok — aynı `Resolve(code, language)` imzası, aynı "bulunamazsa `DefaultLanguage="tr"`\'ye düş" güvenli varsayılanı. NEDEN ayrı bir sözlük (ErrorMessages\'a EKLENMEDİ): kodlar anlamca farklı iki küme — `ErrorMessages`\'taki "ACCOUNT_DELETED" zaten "bu hesap kalıcı silinmiş, giriş REDDEDİLDİ" anlamına gelen bir HATA koduyken, buradaki "ACCOUNT_DELETION_CONFIRMED" "silme isteğin BAŞARIYLA alındı" anlamına gelen bir BAŞARI kodu — aynı sözlükte tutulsalar bir junior\'ın (ya da gelecekteki bir geliştiricinin) "ACCOUNT_DELETED" ile "ACCOUNT_DELETION_CONFIRMED"\'i karıştırıp yanlış Handler\'da kullanması an meselesi olurdu; iki ayrı statik sınıf bu karışıklığı derleme zamanında imkânsız kılar (`SuccessMessages.Resolve(...)` ile `ErrorMessages.Resolve(...)` farklı sınıflardır, biri diğerinin yerine yanlışlıkla import edilemez/karıştırılamaz gibi görünmez). Bu dosya olmadan ne olurdu: her Handler kendi `MessageResponse("...")`\'unu hâlâ elle, sabit Türkçe string olarak üretmeye devam ederdi — Almanca isteyen bir kullanıcı Türkçe bir cümle görürdü, hata mesajları zaten doğru dilde gelirken başarı mesajları tutarsız bir şekilde hep Türkçe kalırdı. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): `Resolve()`\'un gövdesi artık A-03\'te yazılan paylaşılan `LocalizedMessageResolver.Resolve(...)`\'a delege ediyor — `ErrorMessages.cs` ile birebir aynı algoritmayı BAĞIMSIZ olarak taşımak yerine (kod denetiminde bulunan bir DRY ihlali), yalnızca ÇÖZÜMLEME MANTIĞI tek bir yere taşındı; iki sözlük (`ErrorMessages`/`SuccessMessages`) hâlâ ayrı sınıflar (yukarıdaki "NEDEN ayrı bir sözlük" gerekçesiyle).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // SuccessMessages.cs
 //
@@ -99,16 +99,10 @@ public static class SuccessMessages
     };
 
     // AMAÇ: Bir başarı koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
-    // NEDEN: bkz. ErrorMessages.Resolve — sözlükte olmayan bir kod gelirse (programlama
-    //        hatası) exception fırlatmak yerine kodun kendisi döner.
-    public static string Resolve(string code, string? language)
-    {
-        if (!Messages.TryGetValue(code, out var translations))
-            return code;
-
-        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
-        return translations.TryGetValue(lang, out var message) ? message : translations[DefaultLanguage];
-    }
+    // NEDEN: bkz. LocalizedMessageResolver.Resolve (A-03) — sözlükte olmayan bir kod gelirse
+    //        (programlama hatası) exception fırlatmak yerine kodun kendisi döner.
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
 }
 `
     },
@@ -659,7 +653,7 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
     {
       num: 10, tur: 'controller', grup: 'Controller',
       baslik: 'AuthController.cs', dosya: 'API/Controllers/AuthController.cs',
-      aciklama: 'Computed property (hesaplanan özellik) nedir: `private string? Language => RequestLanguageResolver.Resolve(HttpContext);` — bir alan gibi GÖRÜNÜR ama aslında her okunduğunda çalışan küçük bir metottur (`=>` gövdeli property, "expression-bodied property"). Bu satır zaten var olan `ClientIp` property\'siyle (bir satır üstünde) BİREBİR aynı deseni tekrarlıyor — ikisi de HttpContext\'ten bir bilgi çıkarıp Command\'lara `with` ile geçiriyor. `RequestLanguageResolver` YENİ YAZILMADI — A-03\'te zaten vardı (`ValidationFilter` ve `ExceptionHandlingMiddleware` `Accept-Language` header\'ını okumak için onu kullanıyordu); A-03.2 onu YENİDEN KULLANIYOR (bkz. CLAUDE.md §3 "paylaşılan mantık" — aynı header çözme işini iki farklı yerde yazmak yerine tek bir yardımcıya bağlanmak), bu yüzden bu adımda `RequestLanguageResolver.cs`\'in KENDİSİ ayrı bir adım olarak tekrar YAZILMADI. 7 endpoint\'in HER BİRİNDE `command with { Language = Language }` (veya `RequestAccountDeletion`\'da `new ... { Language = Language }`) tekrarı — bu bilinçli bir kod tekrarı: Controller\'ın MediatR\'a `_mediator.Send(...)` çağırmadan ÖNCE HTTP-özel bilgiyi (header) Command\'a enjekte etmesi gerekiyor, bunu tek bir yerde (ör. bir base class metodu) toplamak 7 farklı dönüş tipini (`MessageResponse`, bazen doğrudan Command constructor\'ı) tek bir generic metotla kapsamaya çalışmak, kazandığından fazla soyutlama karmaşıklığı katardı (CLAUDE.md §3 — "spekülatif ortak tip yazılmaz").',
+      aciklama: 'Computed property (hesaplanan özellik) nedir: `private string? Language => RequestLanguageResolver.Resolve(HttpContext);` — bir alan gibi GÖRÜNÜR ama aslında her okunduğunda çalışan küçük bir metottur (`=>` gövdeli property, "expression-bodied property"). Bu satır zaten var olan `ClientIp` property\'siyle (bir satır üstünde) BİREBİR aynı deseni tekrarlıyor — ikisi de HttpContext\'ten bir bilgi çıkarıp Command\'lara `with` ile geçiriyor. `RequestLanguageResolver` YENİ YAZILMADI — A-03\'te zaten vardı (`ValidationFilter` ve `ExceptionHandlingMiddleware` `Accept-Language` header\'ını okumak için onu kullanıyordu); A-03.2 onu YENİDEN KULLANIYOR (bkz. CLAUDE.md §3 "paylaşılan mantık" — aynı header çözme işini iki farklı yerde yazmak yerine tek bir yardımcıya bağlanmak), bu yüzden bu adımda `RequestLanguageResolver.cs`\'in KENDİSİ ayrı bir adım olarak tekrar YAZILMADI. 7 endpoint\'in HER BİRİNDE `command with { Language = Language }` (veya `RequestAccountDeletion`\'da `new ... { Language = Language }`) tekrarı — bu bilinçli bir kod tekrarı: Controller\'ın MediatR\'a `_mediator.Send(...)` çağırmadan ÖNCE HTTP-özel bilgiyi (header) Command\'a enjekte etmesi gerekiyor, bunu tek bir yerde (ör. bir base class metodu) toplamak 7 farklı dönüş tipini (`MessageResponse`, bazen doğrudan Command constructor\'ı) tek bir generic metotla kapsamaya çalışmak, kazandığından fazla soyutlama karmaşıklığı katardı (CLAUDE.md §3 — "spekülatif ortak tip yazılmaz"). NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): her action\'a `[ProducesResponseType(typeof(X), StatusCodes.StatusYyy)]` öznitelikleri eklendi — Swagger/OpenAPI\'nin bir endpoint\'in dönebileceği GERÇEK yanıt tiplerini/HTTP kodlarını (ör. 400\'de `ApiErrorResponse`, 201\'de `RegisterResponse`) belgeleyebilmesi için; bu öznitelikler olmadan Swagger UI yalnızca action\'ın imzasındaki tek bir dönüş tipini (ör. `ActionResult<RegisterResponse>`) gösterir, hata yanıtlarının şeklini HİÇ belgelemez — bir frontend geliştirici Swagger\'a bakarak "400 dönerse gövde ne olacak" sorusunu cevaplayamazdı, kodu okumak zorunda kalırdı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // AuthController.cs
 //
@@ -679,7 +673,8 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-##NEW##using WordLearner.API.Common;
+using WordLearner.API.Common;
+using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Features.Auth;
 
@@ -696,9 +691,9 @@ public class AuthController : ControllerBase
     // AMAÇ: İsteği atan cihazın IP adresi — RefreshToken.IpAddress ve User.LastLoginIP'ye yazılır.
     private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
 
-##NEW##    // AMAÇ: İsteğin Accept-Language header'ından çıkarılan dil kodu — MessageResponse
-##NEW##    //       üreten Command'lara \`with\` ile geçirilir (bkz. A-03.2, SECURITY.md §1.4).
-##NEW##    private string? Language => RequestLanguageResolver.Resolve(HttpContext);
+    // AMAÇ: İsteğin Accept-Language header'ından çıkarılan dil kodu — MessageResponse
+    //       üreten Command'lara \`with\` ile geçirilir (bkz. A-03.2, SECURITY.md §1.4).
+    private string? Language => RequestLanguageResolver.Resolve(HttpContext);
 
     // AMAÇ: JWT'deki NameIdentifier claim'inden mevcut kullanıcının Id'sini okur.
     // NEDEN: [Authorize] öznitelikli endpoint'ler (logout, delete-account/*) kendi
@@ -709,6 +704,9 @@ public class AuthController : ControllerBase
     // AMAÇ: Yeni kullanıcı kaydı oluşturur, e-posta doğrulama OTP'si gönderir.
     [HttpPost("register")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RegisterResponse>> Register(
         RegisterCommand command,
         CancellationToken ct
@@ -721,33 +719,41 @@ public class AuthController : ControllerBase
     // AMAÇ: Kayıt sonrası e-postaya gelen OTP kodunu doğrular.
     [HttpPost("verify-email")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> VerifyEmail(
         VerifyEmailCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
 
     // AMAÇ: E-posta doğrulama kodunu tekrar gönderir.
     [HttpPost("resend-verification")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ResendVerification(
         ResendVerificationCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
 
     // AMAÇ: Login adım 1 — şifreyi doğrular, başarılıysa OTP gönderir (token DÖNMEZ).
     [HttpPost("login")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<MessageResponse>> Login(
         LoginCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
 
     // AMAÇ: Login adım 2 — OTP'yi doğrular, başarılıysa access+refresh token üretir.
     [HttpPost("login/verify-otp")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> VerifyLoginOtp(
         VerifyLoginOtpCommand command,
         CancellationToken ct
@@ -756,6 +762,10 @@ public class AuthController : ControllerBase
     // AMAÇ: Google ID token'ı ile giriş yapar/kayıt olur (2FA gerekmez).
     [HttpPost("google")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> LoginWithGoogle(
         LoginWithGoogleCommand command,
         CancellationToken ct
@@ -764,6 +774,10 @@ public class AuthController : ControllerBase
     // AMAÇ: Apple identity token'ı ile giriş yapar/kayıt olur.
     [HttpPost("apple")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AuthTokenResponse>> LoginWithApple(
         LoginWithAppleCommand command,
         CancellationToken ct
@@ -772,6 +786,9 @@ public class AuthController : ControllerBase
     // AMAÇ: Refresh token'ı doğrular, rotate eder, yeni access+refresh token çifti üretir.
     [HttpPost("refresh")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<AuthTokenResponse>> Refresh(
         RefreshCommand command,
         CancellationToken ct
@@ -781,6 +798,9 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Logout(LogoutCommand command, CancellationToken ct)
     {
         await _mediator.Send(command with { UserId = CurrentUserId }, ct);
@@ -790,43 +810,50 @@ public class AuthController : ControllerBase
     // AMAÇ: Şifre sıfırlama OTP'si gönderir (kullanıcı yoksa bile aynı yanıt döner).
     [HttpPost("forgot-password")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ForgotPassword(
         ForgotPasswordCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
 
     // AMAÇ: OTP + yeni şifre ile şifreyi değiştirir, tüm cihazlardan çıkış yapar.
     [HttpPost("reset-password")]
     [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<MessageResponse>> ResetPassword(
         ResetPasswordCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
 
     // AMAÇ: Hesap silme OTP'si gönderir (15dk geçerli).
     [HttpPost("delete-account/request")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MessageResponse>> RequestAccountDeletion(CancellationToken ct) =>
-##OLD##        Ok(await _mediator.Send(new RequestAccountDeletionCommand(CurrentUserId), ct));
-##NEW##        Ok(
-##NEW##            await _mediator.Send(
-##NEW##                new RequestAccountDeletionCommand(CurrentUserId) { Language = Language },
-##NEW##                ct
-##NEW##            )
-##NEW##        );
+        Ok(
+            await _mediator.Send(
+                new RequestAccountDeletionCommand(CurrentUserId) { Language = Language },
+                ct
+            )
+        );
 
     // AMAÇ: OTP + şifre ile hesap silmeyi onaylar; soft delete + 30 gün grace zamanlar.
     [HttpPost("delete-account/confirm")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(
         ConfirmAccountDeletionCommand command,
         CancellationToken ct
-##OLD##    ) => Ok(await _mediator.Send(command with { UserId = CurrentUserId }, ct));
-##NEW##    ) => Ok(await _mediator.Send(command with { UserId = CurrentUserId, Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { UserId = CurrentUserId, Language = Language }, ct));
 }`
     },
     {
@@ -1713,7 +1740,8 @@ public class ForgotPasswordCommandHandlerTests
   // (bkz. dosya başı AMAÇ/NEDEN notu), üçü de birbirine bağlanır.
   relatedRefs: [
     { dosya: 'A-03_auth-api.html', baslik: 'A-03 — Auth API' },
-    { dosya: 'A-03.1_qr-login.html', baslik: 'A-03.1 — QR Kod ile Giriş' }
+    { dosya: 'A-03.1_qr-login.html', baslik: 'A-03.1 — QR Kod ile Giriş' },
+    { dosya: 'A-03.3_tema-tercihi.html', baslik: 'A-03.3 — Tema Tercihi (ThemePreference)' }
   ],
   // B-02/D-03/E-05 (Admin/Web/Mobil Auth ekranları) henüz yazılmadı; yazılınca buraya eklenecek.
   frontendRefs: []

@@ -35,7 +35,7 @@ window.API = {
   auth: 'Anonim + JWT',
   baslik: 'QR Kod ile Giriş',
   durum: 'done',
-  ozet: 'Web/desktop tarafın ürettiği bir QR oturumunun mobil cihazda taranıp onaylanması sonucu A-03\'teki ITokenService/ILoginCompletionService ile token üretimine bağlandığı akış. Veri modeli, repository, exception\'lar, 5 MediatR Command+Handler (generate/scan/confirm/deny/status), Controller, rate limiting ve 23 birim testle tamamlandı.',
+  ozet: 'Web/desktop tarafın ürettiği bir QR oturumunun mobil cihazda taranıp onaylanması sonucu A-03\'teki ITokenService/ILoginCompletionService ile token üretimine bağlandığı akış. Veri modeli, repository, exception\'lar, 5 MediatR Command+Handler (generate/scan/confirm/deny/status), Controller, rate limiting ve 25 birim testle tamamlandı.',
   adimlar: [
     {
       num: 1, tur: 'enum', grup: 'Veri Modeli',
@@ -595,7 +595,7 @@ public class ExceptionHandlingMiddleware
     {
       num: 11, tur: 'config', grup: 'Hata Yönetimi & Yardımcılar',
       baslik: 'ErrorMessages.cs (2 yeni kod eklendi)', dosya: 'Application/Common/Localization/ErrorMessages.cs',
-      aciklama: 'Yeniden kullanılan dosya — istemciye giden mesajların tr/de sözlüğü (CLAUDE.md §1 — "İstisna: istemciye giden mesaj"). Exception\'ın `.Message\'ı` (İngilizce, yalnızca log) İLE istemcinin gördüğü metin (dile göre değişen) İKİ AYRI KANALDIR — bu dosya olmadan `QR_SESSION_GONE` gibi bir Code, `Resolve()`\'un fallback\'i sayesinde çökmez ama istemciye kod adının kendisi ("QR_SESSION_GONE") gösterilir, insan-okunur bir cümle değil. `##NEW##` işaretli 2 girdi dışındaki tüm sözlük A-03\'ten aynen geliyor.',
+      aciklama: 'Yeniden kullanılan dosya — istemciye giden mesajların tr/de sözlüğü (CLAUDE.md §1 — "İstisna: istemciye giden mesaj"). Exception\'ın `.Message\'ı` (İngilizce, yalnızca log) İLE istemcinin gördüğü metin (dile göre değişen) İKİ AYRI KANALDIR — bu dosya olmadan `QR_SESSION_GONE` gibi bir Code, `Resolve()`\'un fallback\'i sayesinde çökmez ama istemciye kod adının kendisi ("QR_SESSION_GONE") gösterilir, insan-okunur bir cümle değil. `##NEW##` işaretli 2 girdi dışındaki tüm sözlük A-03\'ten aynen geliyor. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): `Resolve()`\'un gövdesi artık A-03\'te yazılan paylaşılan `LocalizedMessageResolver.Resolve(...)`\'a delege ediyor — `SuccessMessages.cs` (A-03.2) ile birebir aynı çözümleme algoritmasını BAĞIMSIZ taşımak yerine (kod denetiminde bulunan DRY ihlali) tek yere toplandı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // ErrorMessages.cs
 //
@@ -746,19 +746,11 @@ public static class ErrorMessages
     };
 
     // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
-    // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir AppException
-    //        eklenip buraya çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi
-    //        döner; API asla yalnızca çeviri eksik diye 500'e düşmemeli.
-    public static string Resolve(string code, string? language)
-    {
-        if (!Messages.TryGetValue(code, out var translations))
-            return code;
-
-        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
-        return translations.TryGetValue(lang, out var message)
-            ? message
-            : translations[DefaultLanguage];
-    }
+    // NEDEN: bkz. LocalizedMessageResolver.Resolve (A-03) — sözlükte olmayan bir kod gelirse
+    //        (programlama hatası) exception fırlatmak yerine kodun kendisi döner; API
+    //        asla yalnızca çeviri eksik diye 500'e düşmemeli.
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
 }`
     },
     {
@@ -1351,7 +1343,7 @@ public static class InfrastructureServiceExtensions
     {
       num: 21, tur: 'controller', grup: 'Controller & Rate Limiting',
       baslik: 'QrLoginController.cs', dosya: 'API/Controllers/QrLoginController.cs',
-      aciklama: 'AuthController\'dan (A-03) BİLEREK AYRI bir controller — CLAUDE.md §1 "Sistem içeriği/kişisel içerik" ayrımına benzer bir gerekçe: QR akışı Admin panelde HİÇ yok (yalnızca Web+Mobil), rotası da kendi başına bir alt-kaynak (`/auth/qr/*`); AuthController\'a eklemek o dosyayı (zaten 13 endpoint) daha da şişirir ve "Auth" ile "QR" farklı yaşam döngülerine sahip iki kavram olur. Controller kuralı (CODING_STANDARDS.md §5) burada da işliyor: hiçbir `if`/iş kuralı YOK, yalnızca `_mediator.Send(command)` + JWT\'den `ClientIp`/`CurrentUserId` okuma. Neden `Confirm`/`Deny` `NoContent()` (204) dönüyor, `Ok()` değil: bu iki uçtan istemciye dönecek YENİ bir bilgi yok (zaten kendi gönderdiği token\'ı biliyor) — HTTP\'de "işlem başarılı ama gövdede bir şey yok" durumunun standart karşılığı 204\'tür, 200+boş gövde yerine bu tercih edilir. NOT (denetim sonrası düzeltme, 2026-07-11): `GetStatus` artık paylaşımlı `"anonymous"` (10/dk, TÜM anonim trafik ortak) yerine kendi `"qrStatus"` policy\'sini (adım 22, Program.cs) kullanıyor — ~2sn\'lik polling (~30 istek/dk) paylaşımlı bütçeyi saniyeler içinde tüketip diğer tüm anonim uçları (register/login/forgot-password) kilitliyordu.',
+      aciklama: 'AuthController\'dan (A-03) BİLEREK AYRI bir controller — CLAUDE.md §1 "Sistem içeriği/kişisel içerik" ayrımına benzer bir gerekçe: QR akışı Admin panelde HİÇ yok (yalnızca Web+Mobil), rotası da kendi başına bir alt-kaynak (`/auth/qr/*`); AuthController\'a eklemek o dosyayı (zaten 13 endpoint) daha da şişirir ve "Auth" ile "QR" farklı yaşam döngülerine sahip iki kavram olur. Controller kuralı (CODING_STANDARDS.md §5) burada da işliyor: hiçbir `if`/iş kuralı YOK, yalnızca `_mediator.Send(command)` + JWT\'den `ClientIp`/`CurrentUserId` okuma. Neden `Confirm`/`Deny` `NoContent()` (204) dönüyor, `Ok()` değil: bu iki uçtan istemciye dönecek YENİ bir bilgi yok (zaten kendi gönderdiği token\'ı biliyor) — HTTP\'de "işlem başarılı ama gövdede bir şey yok" durumunun standart karşılığı 204\'tür, 200+boş gövde yerine bu tercih edilir. NOT (denetim sonrası düzeltme, 2026-07-11): `GetStatus` artık paylaşımlı `"anonymous"` (10/dk, TÜM anonim trafik ortak) yerine kendi `"qrStatus"` policy\'sini (adım 22, Program.cs) kullanıyor — ~2sn\'lik polling (~30 istek/dk) paylaşımlı bütçeyi saniyeler içinde tüketip diğer tüm anonim uçları (register/login/forgot-password) kilitliyordu. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): her action\'a `[ProducesResponseType(typeof(X), StatusCodes.StatusYyy)]` öznitelikleri eklendi — bkz. AuthController.cs (A-03.2) aynı NOT\'u, birebir aynı gerekçe: Swagger UI\'ın hata yanıtlarının (`ApiErrorResponse`) şeklini de belgeleyebilmesi için.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // QrLoginController.cs
 //
@@ -1368,6 +1360,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Features.QrLogin;
 
@@ -1392,6 +1385,7 @@ public class QrLoginController : ControllerBase
     // AMAÇ: Web'in göstereceği yeni bir QR oturumu başlatır.
     [HttpPost("generate")]
     [EnableRateLimiting("qrGenerate")]
+    [ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<QrGenerateResponse>> Generate(CancellationToken ct)
     {
         var command = new GenerateQrLoginCommand
@@ -1409,6 +1403,10 @@ public class QrLoginController : ControllerBase
     //       anonim trafiği kilitler — bkz. Program.cs "qrStatus" policy yorumu.
     [HttpGet("{token}/status")]
     [EnableRateLimiting("qrStatus")]
+    [ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
 
@@ -1416,6 +1414,10 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/scan")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(QrScanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<ActionResult<QrScanResponse>> Scan(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new ScanQrLoginCommand(token) { UserId = CurrentUserId }, ct));
 
@@ -1423,6 +1425,11 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/confirm")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<IActionResult> Confirm(string token, CancellationToken ct)
     {
         await _mediator.Send(new ConfirmQrLoginCommand(token) { UserId = CurrentUserId }, ct);
@@ -1433,6 +1440,11 @@ public class QrLoginController : ControllerBase
     [HttpPost("{token}/deny")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<IActionResult> Deny(string token, CancellationToken ct)
     {
         await _mediator.Send(new DenyQrLoginCommand(token) { UserId = CurrentUserId }, ct);
@@ -1506,7 +1518,7 @@ builder.Services.AddRateLimiter(options =>
 });`
     },
     {
-      num: 23, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
+      num: 23, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
       baslik: 'GenerateQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/GenerateQrLoginCommandHandlerTests.cs',
       aciklama: 'GenerateQrLoginCommandHandler için 2 test. Mock kuralı (CODING_STANDARDS.md §7.4): yalnızca `IQrLoginSessionRepository`/`IPasswordService` mock\'lanır, gerçek DB/HTTP çağrısı yapılmaz.\nTest Adı: Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode | Ne Test Edildi: Yeni oturumun Pending durumunda, isteği atan (web) tarafın IP/cihaz bilgisiyle DB\'ye eklendiği ve yanıtta ham token+4 haneli PairingCode+120sn döndüğü | Neden Önemli: Status varsayılanının yanlış (ör. doğrudan Scanned) yazılması, hiç taranmamış bir oturumun taranmış gibi görünmesine yol açar — güvenlik açığı.\nTest Adı: Generate_GeneratedToken_IsUrlSafeBase64 | Ne Test Edildi: Ham token\'ın standart Base64\'teki \'+\'/\'/\' karakterlerini içermediği | Neden Önemli: Bu karakterler route\'a (/auth/qr/{token}/...) gömüldüğünde routing hatasına yol açar; regresyon farkedilmeden production\'a sızabilir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1587,7 +1599,7 @@ public class GenerateQrLoginCommandHandlerTests
       ]
     },
     {
-      num: 24, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
+      num: 24, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
       baslik: 'ScanQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/ScanQrLoginCommandHandlerTests.cs',
       aciklama: 'ScanQrLoginCommandHandler için 4 test (CODING_STANDARDS.md §7.5 minimum kapsam: mutlu yol · bulunamadı · süre/durum uç durumları).\nTest Adı: Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo | Ne Test Edildi: Pending bir oturumun Scanned\'e geçtiği, UserId/ScannedAt yazıldığı, yanıtta isteyen tarafın bilgisinin döndüğü VE audit alanının (UpdatedByUserId) tarayan kullanıcının Id\'siyle doldurulduğu | Neden Önemli: Mobil ekranda YANLIŞ cihaz/IP gösterilirse kullanıcı relay saldırısını fark edemez.\nTest Adı: Scan_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Var olmayan bir token\'a 200 dönmek istemciye yanlış bir "oturum var" izlenimi verirdi; ham token bir secret\'tir, log/exception mesajına sızmamalı.\nTest Adı: Scan_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş oturum taranınca 410 + DB\'de Expired\'a çevrildiği | Neden Önemli: Süresi dolmuş bir QR\'ın hâlâ taranabilir olması, saldırgana geniş bir zaman penceresi bırakırdı.\nTest Adı: Scan_AlreadyScannedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Pending dışındaki (zaten Scanned) bir oturumun tekrar taranamadığı | Neden Önemli: İkinci bir cihazın aynı QR\'ı taraması, oturumun UserId\'sinin ÜZERİNE yazılmasına (session hijacking benzeri bir senaryo) izin verirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1741,7 +1753,7 @@ public class ScanQrLoginCommandHandlerTests
       ]
     },
     {
-      num: 25, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
+      num: 25, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
       baslik: 'ConfirmQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/ConfirmQrLoginCommandHandlerTests.cs',
       aciklama: 'ConfirmQrLoginCommandHandler için 5 test — özellikle sahiplik kontrolü (403) burada doğrulanıyor.\nTest Adı: Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı onaylayınca Confirmed\'e geçtiği, ConfirmedAt\'in yazıldığı VE audit alanının (UpdatedByUserId) onaylayan kullanıcının Id\'siyle doldurulduğu | Neden Önemli: GetQrLoginStatusCommandHandler yalnızca Confirmed durumda token üretir — bu geçiş yanlış çalışırsa web hiçbir zaman giriş yapamaz.\nTest Adı: Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Ham token bir secret\'tir, log/exception mesajına sızmamalı (bkz. ScanQrLoginCommandHandlerTests).\nTest Adı: Confirm_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının confirm edememesi (403) | Neden Önemli: Bu kontrol olmadan farklı bir kullanıcı başkasının QR oturumunu manipüle edebilirdi — projenin en kritik yetki/sahiplik testlerinden biri.\nTest Adı: Confirm_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış (Pending) bir oturumun confirm edilememesi | Neden Önemli: Confirm, scan\'i atlayarak doğrudan çağrılabilseydi "kimin onayladığı" hiç doğrulanmamış olurdu.\nTest Adı: Confirm_ExpiredSession_ThrowsQrSessionGoneException | Ne Test Edildi: Süresi geçmiş bir oturumun confirm edilememesi ve Expired\'a çevrildiği | Neden Önemli: Süre kontrolü yalnızca scan\'de değil confirm\'de de tekrar yapılmazsa, tarama ile onay arasında geçen sürede süresi dolan bir oturum yine de onaylanabilirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1914,7 +1926,7 @@ public class ConfirmQrLoginCommandHandlerTests
       ]
     },
     {
-      num: 26, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
+      num: 26, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
       baslik: 'DenyQrLoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/DenyQrLoginCommandHandlerTests.cs',
       aciklama: 'DenyQrLoginCommandHandler için 4 test — ConfirmQrLoginCommandHandlerTests ile aynı ön koşulları, ters yönde (hedef durum Denied) doğrular.\nTest Adı: Deny_ScannedSessionOwnedByUser_TransitionsToDenied | Ne Test Edildi: Scanned bir oturumu, onu tarayan kullanıcı reddedince Denied\'e geçtiği VE audit alanının (UpdatedByUserId) reddeden kullanıcının Id\'siyle doldurulduğu | Neden Önemli: Denied bir oturumun yanlışlıkla Confirmed\'e "geri dönebilmesi" (kod hatasıyla) token üretimine yol açardı.\nTest Adı: Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 fırlatıldığı VE exception mesajının ham QR token\'ını değil hash\'ini taşıdığı | Neden Önemli: Ham token bir secret\'tir, log/exception mesajına sızmamalı (bkz. ScanQrLoginCommandHandlerTests).\nTest Adı: Deny_WrongUser_ThrowsQrSessionForbiddenException | Ne Test Edildi: Oturumu TARAMAMIŞ bir kullanıcının deny edememesi | Neden Önemli: Confirm ile simetrik sahiplik kontrolü — biri yalnızca onayda korunup reddetmede korunmasaydı tutarsız bir güvenlik modeli olurdu.\nTest Adı: Deny_NotScanned_ThrowsQrSessionGoneException | Ne Test Edildi: Henüz taranmamış bir oturumun reddedilememesi | Neden Önemli: Confirm_NotScanned testiyle simetrik — deny\'ın da scan adımını atlayamaması gerekir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2055,7 +2067,7 @@ public class DenyQrLoginCommandHandlerTests
       ]
     },
     {
-      num: 27, tur: 'test', grup: 'Birim Testler (5 dosya, 23 test)',
+      num: 27, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
       baslik: 'GetQrLoginStatusCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/QrLogin/GetQrLoginStatusCommandHandlerTests.cs',
       aciklama: 'GetQrLoginStatusCommandHandler için 8 test — akışın en kritik tek-seferlik-token davranışı burada doğrulanıyor.\nTest Adı: GetStatus_ConfirmedSession_CompletesLoginAndConsumesSession | Ne Test Edildi: Confirmed bir oturum İLK okunduğunda ILoginCompletionService ile token üretildiği ve oturumun Consumed\'e geçtiği | Neden Önemli: Bu, QR akışının A-03\'e "gerçekten" bağlandığını kanıtlayan tek test — mock\'un doğru servisle (gerçek Google/Apple/OTP\'nin de kullandığı) çağrıldığını doğrular.\nTest Adı: GetStatus_ConfirmedSession_SoftDeletedUserWithinGracePeriod_StillCompletesLogin | Ne Test Edildi: Kullanıcı grace period içinde soft-delete\'li olsa bile GetByIdIncludingDeletedAsync ile bulunup CompleteLoginAsync\'e ulaştığı | Neden Önemli: Regresyon testi — öncesinde GetByIdAsync (filtreli) kullanıldığı için bu senaryoda anlamsız bir 404 dönüyordu, normal login (GetByEmailAsync) ile tutarsızdı.\nTest Adı: GetStatus_ConfirmedSession_InactiveUser_ThrowsAccountNotActiveExceptionWithoutCompletingLogin | Ne Test Edildi: Kullanıcı dondurulmuşsa (IsActive=false) CompleteLoginAsync\'e hiç ulaşılmadan AccountNotActiveException fırlatıldığı VE oturumun Consumed\'e geçmediği | Neden Önemli: Diğer giriş yollarıyla (LoginCommand/Google/Apple) aynı kontrolün QR akışında da uygulanması gerekir.\nTest Adı: GetStatus_ConfirmedSession_AnonymizedUser_PropagatesExceptionWithoutConsumingSession | Ne Test Edildi: CompleteLoginAsync AccountAnonymizedException fırlatırsa bu exception\'ın yutulmadan yukarı taşındığı VE oturumun Consumed\'e geçirilmediği | Neden Önemli: Token hiç üretilmediyse oturum tüketilmiş sayılmamalı, aksi hâlde kullanıcı kalıcı olarak "gone" bir oturumla kalırdı.\nTest Adı: GetStatus_ConsumedSession_ThrowsQrSessionGoneException | Ne Test Edildi: Token\'lar bir kez döndükten sonra AYNI oturumun tekrar okunmasının 410 döndüğü VE CompleteLoginAsync\'in İKİNCİ KEZ ÇAĞRILMADIĞI | Neden Önemli: Bu kontrol olmasaydı bir kullanıcı için İKİ AYRI refresh token ailesi üretilebilir, ya da network\'ü dinleyen biri token\'ı tekrar okuyabilirdi.\nTest Adı: GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens | Ne Test Edildi: Henüz Confirmed olmayan bir oturum için yalnızca Status\'un dolu, token alanlarının null olduğu | Neden Önemli: Web tarafı polling sırasında yanlışlıkla boş/geçersiz bir token\'ı gerçekmiş gibi kullanmamalı.\nTest Adı: GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing | Ne Test Edildi: Süresi geçmiş bir oturumun 410 DEĞİL 200+"Expired" döndürdüğü | Neden Önemli: Bu davranış bilerek Consumed\'den farklı (410) tasarlandı — testin olmaması, ileride biri "tutarlılık" adına ikisini birleştirip web\'in "yeni QR üret" akışını kırmasına yol açabilirdi.\nTest Adı: GetStatus_TokenNotFound_ThrowsEntityNotFoundException | Ne Test Edildi: Hash\'e karşılık gelen oturum yoksa 404 | Neden Önemli: Diğer 4 handler\'la tutarlı temel davranış.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2363,13 +2375,89 @@ public class GetQrLoginStatusCommandHandlerTests
         { test: 'GetStatus_PendingSession_ReturnsStatusOnlyWithoutTokens', durum: 'Passed', sure: '1.7ms' },
         { test: 'GetStatus_TokenNotFound_ThrowsEntityNotFoundException', durum: 'Passed', sure: '0.6ms' },
       ]
+    },
+    {
+      num: 28, tur: 'test', grup: 'Birim Testler (6 dosya, 25 test)',
+      baslik: 'QrLoginSessionRepositoryTests.cs (yeni dosya)', dosya: 'WordLearner.Tests/Repositories/QrLoginSessionRepositoryTests.cs',
+      aciklama: 'bkz. A-03\'teki UserRepositoryTests.cs/RefreshTokenRepositoryTests.cs (düşük öncelikli kod kalitesi turu, 2026-07-12) — aynı boşluk QrLoginSessionRepository için de vardı: `GetByTokenHashAsync` daha önce yalnızca Handler testlerinde (`Mock<IQrLoginSessionRepository>`) taklit ediliyordu, gerçek bir DB\'ye karşı hiç çalıştırılmamıştı. Bu dosya A-03\'te yazılan paylaşılan `InMemoryDbContextFactory.CreateContext()` yardımcısını YENİDEN KULLANIR (bkz. A-03, adım 67) — QR\'a özel yeni bir kurulum yardımcısı YAZILMADI, çünkü ihtiyaç birebir aynı: izole, benzersiz isimli bir in-memory `WordLearnerDbContext`.\nTest Adı: GetByTokenHashAsync_RecordExists_ReturnsSession | Ne Test Edildi: Mutlu yol — hash\'e göre QR oturumunun bulunduğu | Neden Önemli: `GetQrLoginStatusCommand`/`ScanQrLoginCommand` akışlarının ilk adımı budur.\nTest Adı: GetByTokenHashAsync_NotFound_ReturnsNull | Ne Test Edildi: Eşleşen hash yoksa null (exception değil) döndüğü | Neden Önemli: Handler bu null\'u `EntityNotFoundException`\'a çevirir; repository seviyesinde exception fırlarsa Handler\'ın hata dönüşüm sorumluluğu bozulur.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// QrLoginSessionRepositoryTests.cs
+//
+// AMAÇ: QrLoginSessionRepository'nin QrTokenHash'e göre arama sorgusunu gerçek bir
+//       in-memory EF Core bağlamına karşı doğrulamak.
+// NEDEN: bkz. UserRepositoryTests.cs (A-03) dosya başı.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.QrLoginSessionRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Repositories;
+using WordLearner.Tests.Common;
+
+namespace WordLearner.Tests.Repositories;
+
+public class QrLoginSessionRepositoryTests
+{
+    /// <summary>
+    /// GetByTokenHashAsync_RecordExists_ReturnsSession
+    ///
+    /// AMAÇ: Mutlu yol — hash'e göre QR oturumunun bulunduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_RecordExists_ReturnsSession()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new QrLoginSessionRepository(context);
+        var eklenen = await repo.AddAsync(
+            new QrLoginSession
+            {
+                QrTokenHash = "qr-hash-abc",
+                PairingCode = "1234",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(2),
+            }
+        );
+
+        // ACT
+        var bulunan = await repo.GetByTokenHashAsync("qr-hash-abc");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.Id.Should().Be(eklenen.Id);
+    }
+
+    /// <summary>
+    /// GetByTokenHashAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Eşleşen bir hash yoksa null döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new QrLoginSessionRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByTokenHashAsync("hic-yok-hash");
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+}`,
+      sonuclar: [
+        { test: 'GetByTokenHashAsync_RecordExists_ReturnsSession', durum: 'Passed', sure: '326.0ms' },
+        { test: 'GetByTokenHashAsync_NotFound_ReturnsNull', durum: 'Passed', sure: '2.3ms' },
+      ]
     }
   ],
   // Aynı katmandaki (backend↔backend) kardeş API sayfaları — A-03'e bağımlı olduğu için bağlanır;
   // A-03.2 de aynı üst task'ın (A-03) bir alt-görevi olduğu için karşılıklı bağlanır.
   relatedRefs: [
     { dosya: 'A-03_auth-api.html', baslik: 'A-03 — Auth API' },
-    { dosya: 'A-03.2_auth-success-message-localization.html', baslik: 'A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu' }
+    { dosya: 'A-03.2_auth-success-message-localization.html', baslik: 'A-03.2 — Auth Başarı Mesajlarının Lokalizasyonu' },
+    { dosya: 'A-03.3_tema-tercihi.html', baslik: 'A-03.3 — Tema Tercihi (ThemePreference)' }
   ],
   // D-03.1 (Web) ve E-05.1 (Mobil) henüz yazılmadı; yazılınca buraya eklenecek.
   frontendRefs: []

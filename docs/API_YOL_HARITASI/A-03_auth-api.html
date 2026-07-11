@@ -36,7 +36,7 @@ window.API = {
   paketler: [
     { paket: 'Microsoft.EntityFrameworkCore.Design', versiyon: '9.0.0', proje: 'API', neden: 'dotnet ef migrations add/database update komutları için gerekli — startup projesinde bulunmalı.' },
     { paket: 'BCrypt.Net-Next', versiyon: '4.0.3', proje: 'Application', neden: 'PasswordService — şifre hash/verify (work factor 12).' },
-    { paket: 'System.IdentityModel.Tokens.Jwt', versiyon: '7.1.0', proje: 'Application', neden: 'JwtTokenService — access token üretimi/doğrulaması (HMAC-SHA256).' },
+    { paket: 'System.IdentityModel.Tokens.Jwt', versiyon: '7.1.2', proje: 'Application', neden: 'JwtTokenService — access token üretimi/doğrulaması (HMAC-SHA256). (2026-07-12: 7.1.0→7.1.2, yalnızca NU1603 uyarısını gidermek için — davranış değişikliği yok.)' },
     { paket: 'Microsoft.Extensions.Configuration.Abstractions', versiyon: '9.0.0', proje: 'Application', neden: 'JwtTokenService\'in appsettings.json (Jwt:SecretKey vb.) okuması için IConfiguration.' },
     { paket: 'Microsoft.Extensions.Configuration.Binder', versiyon: '9.0.0', proje: 'Application', neden: 'IConfiguration.GetValue<T>() extension metodu (ör. Jwt:ExpirationMinutes okurken).' },
     { paket: 'Google.Apis.Auth', versiyon: '1.67.0', proje: 'Application', neden: 'GoogleTokenValidator — GoogleJsonWebSignature.ValidateAsync ile Google ID token doğrulaması.' },
@@ -58,7 +58,7 @@ window.API = {
       '13 Auth Command + Handler (MediatR CQRS)', 'DI Kaydı (Otp/LoginCompletion)', 'Validator\'lar'
     ] },
     { ad: 'API & Test', gruplar: [
-      'Dil Çözümleme & Doğrulama Filtresi', 'Controller', 'Rate Limiting (Program.cs)', 'Birim Testler (17 dosya)'
+      'Dil Çözümleme & Doğrulama Filtresi', 'Controller', 'Rate Limiting (Program.cs)', 'Birim Testler (21 dosya)'
     ] }
   ],
   adimlar: [
@@ -801,7 +801,7 @@ public interface ITokenService
     {
       num: 12, tur: 'service', grup: 'Token Servisi (ITokenService)',
       baslik: 'JwtTokenService.cs', dosya: 'Application/Services/JwtTokenService.cs',
-      aciklama: 'ASP.NET Identity kullanılmadığı için JWT üretimi/doğrulaması manuel yazıldı. GenerateAccessToken, Program.cs\'teki JwtBearer doğrulama ayarlarıyla AYNI Jwt:SecretKey/Issuer/Audience\'ı appsettings.json\'dan okur (tek kaynak — ikisi farklı değer okusaydı, üretilen token kendi sunucusunda bile geçersiz sayılırdı). Algorithm Confusion Attack nedir ve GetPrincipalFromExpiredToken\'daki kontrol neden kritik: JWT\'nin header\'ında hangi imzalama algoritmasının (HS256, RS256...) kullanıldığı yazar — bir saldırgan bu alanı değiştirip sunucuyu kandırmaya çalışabilir (ör. asimetrik RS256 bekleyen bir sistemde saldırgan "alg: none" ya da farklı bir algoritma yazıp sahte imza geçirmeye çalışır). `ValidateToken` çağrısı imzayı doğrular ama "alg" header\'ının saldırgan tarafından değiştirilip değiştirilmediğini KENDİLİĞİNDEN reddetmez — bu yüzden doğrulanan token\'ın header\'ında gerçekten beklenen HS256 kullanıldığı elle teyit edilir (TECHNICAL_SPECIFICATIONS.md §5).',
+      aciklama: 'ASP.NET Identity kullanılmadığı için JWT üretimi/doğrulaması manuel yazıldı. GenerateAccessToken, Program.cs\'teki JwtBearer doğrulama ayarlarıyla AYNI Jwt:SecretKey/Issuer/Audience\'ı appsettings.json\'dan okur (tek kaynak — ikisi farklı değer okusaydı, üretilen token kendi sunucusunda bile geçersiz sayılırdı). Algorithm Confusion Attack nedir ve GetPrincipalFromExpiredToken\'daki kontrol neden kritik: JWT\'nin header\'ında hangi imzalama algoritmasının (HS256, RS256...) kullanıldığı yazar — bir saldırgan bu alanı değiştirip sunucuyu kandırmaya çalışabilir (ör. asimetrik RS256 bekleyen bir sistemde saldırgan "alg: none" ya da farklı bir algoritma yazıp sahte imza geçirmeye çalışır). `ValidateToken` çağrısı imzayı doğrular ama "alg" header\'ının saldırgan tarafından değiştirilip değiştirilmediğini KENDİLİĞİNDEN reddetmez — bu yüzden doğrulanan token\'ın header\'ında gerçekten beklenen HS256 kullanıldığı elle teyit edilir (TECHNICAL_SPECIFICATIONS.md §5). NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): `GenerateAccessToken` ve `GetPrincipalFromExpiredToken` aynı `new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!))` satırını birebir tekrarlıyordu (kopya-yapıştır) — özel bir `GetSigningKey()` metoduna çıkarıldı. Bunun bir DRY kozmetiği olmanın ötesinde gerçek bir gerekçesi var: imzalayan (GenerateAccessToken) ile doğrulayan (GetPrincipalFromExpiredToken) taraf FARKLI bir anahtar türetseydi (ör. biri güncellenip diğeri unutulsaydı) hiçbir token doğrulanamazdı — tek metotta tutmak bu iki tarafın HER ZAMAN aynı anahtarı kullandığını garanti eder.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // JwtTokenService.cs
 //
@@ -838,9 +838,7 @@ public class JwtTokenService : ITokenService
     //        firstName claim'lerini ekle  3) HMAC-SHA256 ile imzala  4) string'e serileştir.
     public string GenerateAccessToken(User user)
     {
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
-        );
+        var key = GetSigningKey();
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -881,9 +879,7 @@ public class JwtTokenService : ITokenService
     //        (Algorithm Confusion önlemi — TECHNICAL_SPECIFICATIONS.md §5)  3) Geçersizse null dön.
     public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
     {
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!)
-        );
+        var key = GetSigningKey();
         var validationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -921,6 +917,13 @@ public class JwtTokenService : ITokenService
             return null;
         }
     }
+
+    // AMAÇ: appsettings'teki Jwt:SecretKey'den simetrik imza anahtarını üretir.
+    // NEDEN: GenerateAccessToken ve GetPrincipalFromExpiredToken AYNI anahtarı (aynı
+    //        SecretKey'den) kullanır — imzalayan ile doğrulayan taraf farklı bir anahtar
+    //        türetseydi hiçbir token doğrulanamazdı; tek yerde tutmak bu tutarlılığı garanti eder.
+    private SymmetricSecurityKey GetSigningKey() =>
+        new(Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!));
 }`
     },
     {
@@ -1249,18 +1252,52 @@ public static class ErrorMessages
     // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir AppException
     //        eklenip buraya çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi
     //        döner; API asla yalnızca çeviri eksik diye 500'e düşmemeli.
-    public static string Resolve(string code, string? language)
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
+}`
+    },
     {
-        if (!Messages.TryGetValue(code, out var translations))
+      num: 16, tur: 'service', grup: 'Hata Yönetimi (AppException + Exception\'lar)',
+      baslik: 'LocalizedMessageResolver.cs (yeni dosya)', dosya: 'Application/Common/Localization/LocalizedMessageResolver.cs',
+      aciklama: 'DRY (Don\'t Repeat Yourself) ilkesi nedir: aynı mantığı birden fazla yerde birebir kopyalamamak — bir gün o mantık değişince (ör. varsayılan dil çözümleme kuralı) TEK yerde düzeltilir, kopyaların bazısı unutulup tutarsız davranışa yol açmaz. Bu dosya (2026-07-12, düşük öncelikli kod kalitesi turu) tam olarak bunu düzeltiyor: `ErrorMessages.cs` (bu sayfa, bir önceki adım) ile A-03.2\'de yazılan `SuccessMessages.cs` birebir aynı `Resolve(code, language)` algoritmasını (kod sözlükte yoksa kodun kendisini dön, dil sözlükte yoksa varsayılana düş) BAĞIMSIZ olarak kendi içlerinde taşıyordu — kod denetiminde yakalanan bir kopya-yapıştır. İki sözlük YİNE DE ayrı sınıf olarak KALDI (birleştirilmedi): `ErrorMessages` ile `SuccessMessages`\'ın kod kümeleri anlamca farklı (biri "işlem neden BAŞARISIZ oldu", diğeri "işlem BAŞARIYLA ne yaptı") — aynı sözlükte tutulsalar isim çakışması riski doğardı (bkz. `SuccessMessages.cs` dosya başı yorumu, A-03.2). Yalnızca ÇÖZÜMLEME ALGORİTMASI (sözlükte arama + varsayılana düşme) tek bir yere taşındı; `internal` erişim belirleyicisi bilinçli — bu yardımcı yalnızca Application katmanının kendi içindeki iki sözlük sınıfı tarafından çağrılır, dışarıya (Controller/Handler\'lara) doğrudan açılmasının bir faydası yok.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// LocalizedMessageResolver.cs
+//
+// AMAÇ: Kod→dil→metin sözlüğünden, istenen dile (bulunamazsa varsayılana) karşılık
+//       gelen metni çözen paylaşılan algoritma.
+// NEDEN: ErrorMessages.cs ve SuccessMessages.cs birebir aynı \`Resolve\` mantığını
+//        (yalnızca sözlük içerikleri farklı) bağımsız olarak taşıyordu (kod
+//        denetiminde bulunan DRY ihlali) — iki sözlük ayrı kalmaya devam ediyor
+//        (kodları anlamca farklı kümeler, bkz. SuccessMessages.cs dosya başı),
+//        yalnızca çözümleme algoritması burada birleşti.
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Localization;
+
+internal static class LocalizedMessageResolver
+{
+    // AMAÇ: Bir koda, istenen dile (bulunamazsa varsayılan dile) karşılık gelen metni döner.
+    // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir kod eklenip
+    //        çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi döner; API
+    //        asla yalnızca çeviri eksik diye 500'e düşmemeli.
+    public static string Resolve(
+        IReadOnlyDictionary<string, Dictionary<string, string>> messages,
+        string code,
+        string? language,
+        string defaultLanguage
+    )
+    {
+        if (!messages.TryGetValue(code, out var translations))
             return code;
 
-        var lang = string.IsNullOrWhiteSpace(language) ? DefaultLanguage : language;
-        return translations.TryGetValue(lang, out var message) ? message : translations[DefaultLanguage];
+        var lang = string.IsNullOrWhiteSpace(language) ? defaultLanguage : language;
+        return translations.TryGetValue(lang, out var message) ? message : translations[defaultLanguage];
     }
 }`
     },
     {
-      num: 16, tur: 'exception', grup: 'Hata Yönetimi (AppException + Exception\'lar)',
+      num: 17, tur: 'exception', grup: 'Hata Yönetimi (AppException + Exception\'lar)',
       baslik: 'Auth Exception\'ları (7 dosya)', dosya: 'Application/Common/Exceptions/{DuplicateEmail,InvalidCredentials,InvalidOtp,AccountNotActive,AccountAnonymized,InvalidRefreshToken,InvalidSocialToken}Exception.cs',
       aciklama: 'AuthService\'in fırlattığı 7 bilinen iş kuralı hatası, hepsi AppException\'dan türer ve parametresizdir (sabit Code + sabit İngilizce log mesajı taşır — istemciye giden gerçek mesaj bir önceki adımdaki ErrorMessages\'ten gelir). InvalidCredentialsException özellikle üç farklı durumda (kullanıcı yok, şifre yanlış, sosyal hesapla yerel login) AYNI kodu kullanır — bilgi sızıntısını önlemek için.',
       kod: `// ═══ DuplicateEmailException.cs ═══
@@ -1333,7 +1370,7 @@ public class InvalidSocialTokenException : AppException
 }`
     },
     {
-      num: 17, tur: 'config', grup: 'Hata Yönetimi (AppException + Exception\'lar)',
+      num: 18, tur: 'config', grup: 'Hata Yönetimi (AppException + Exception\'lar)',
       baslik: 'ExceptionHandlingMiddleware.cs (AppException/ErrorMessages entegrasyonu)', dosya: 'API/Middleware/ExceptionHandlingMiddleware.cs',
       aciklama: 'A-02\'de yazılan middleware, yukarıdaki mimari karar (AppException + ErrorMessages) doğrultusunda güncellendi — bu değişiklik A-03\'e özel bir ekleme değil, tüm projeyi etkileyen bir mimari revizyon olduğu için satır satır vurgulanmadı (##NEW## kullanılmadı), dosyanın YENİ hâli baştan sona gösteriliyor. StatusCodeFor ile her AppException alt tipi kendi HTTP koduna eşlenir; GetRequestLanguage, Accept-Language header\'ından dili çıkarır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1469,7 +1506,7 @@ public class ExceptionHandlingMiddleware
 }`
     },
     {
-      num: 18, tur: 'repository', grup: 'Repository\'ler',
+      num: 19, tur: 'repository', grup: 'Repository\'ler',
       baslik: 'IUserRepository / UserRepository', dosya: 'Application/Interfaces/Repositories/IUserRepository.cs, Infrastructure/Repositories/UserRepository.cs',
       aciklama: 'IRepository<T>\'nin genel CRUD\'una User\'a özgü aramaları ekler. GetByEmailAsync/GetByIdIncludingDeletedAsync/GetByGoogleIdAsync/GetByAppleIdAsync bilinçli olarak IgnoreQueryFilters() kullanır — global soft delete filtresi olmadan grace period içindeki (30 gün, soft-delete\'li) bir hesap login/register akışlarında hiç bulunamazdı; IsDeleted/IsAnonymized kontrolü artık repository\'de değil AuthService\'te yapılıyor. GetByIdIncludingDeletedAsync, GetByIdAsync (Repository<T>\'den miras, filtreli) ile aynı gerekçeyle Id üzerinden arama yapar — QR ile giriş gibi Id\'yle kullanıcı bulması gereken ama grace-period kurtarmasına ihtiyaç duyan akışlar için (bkz. GetQrLoginStatusCommand). OriginalEmailHashExistsAsync, anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını engeller (SECURITY.md §9).',
       kod: `// ═══ IUserRepository.cs — Application/Interfaces/Repositories/IUserRepository.cs ═══
@@ -1549,7 +1586,7 @@ public class UserRepository : Repository<User>, IUserRepository
 }`
     },
     {
-      num: 19, tur: 'repository', grup: 'Repository\'ler',
+      num: 20, tur: 'repository', grup: 'Repository\'ler',
       baslik: 'IRefreshTokenRepository / RefreshTokenRepository', dosya: 'Application/Interfaces/Repositories/IRefreshTokenRepository.cs, Infrastructure/Repositories/RefreshTokenRepository.cs',
       aciklama: 'Token Family Pattern (SECURITY.md §1) için gereken sorgular: GetByTokenHashAsync (refresh/replay doğrulama), RevokeFamilyAsync (replay tespitinde TÜM family iptal), RevokeAllForUserAsync (şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış", SECURITY.md §7). İkisi de RefreshTokens tablosunda soft delete kullanılmadığı için IgnoreQueryFilters gerektirmiyor.',
       kod: `// ═══ IRefreshTokenRepository.cs — Application/Interfaces/Repositories/IRefreshTokenRepository.cs ═══
@@ -1625,7 +1662,7 @@ public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRep
 }`
     },
     {
-      num: 20, tur: 'config', grup: 'Repository\'ler',
+      num: 21, tur: 'config', grup: 'Repository\'ler',
       baslik: 'InfrastructureServiceExtensions.cs (repository DI kaydı eklendi)', dosya: 'Infrastructure/Extensions/InfrastructureServiceExtensions.cs',
       aciklama: 'A-02\'de yalnızca DbContext kaydeden bu extension\'a, A-03\'ün ilk repository kayıtları eklendi. Scoped seçildi çünkü DbContext ile aynı yaşam süresinde olmalılar (bir HTTP isteği boyunca aynı context\'i paylaşırlar).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1678,7 +1715,7 @@ public static class InfrastructureServiceExtensions
 }`
     },
     {
-      num: 21, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
+      num: 22, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
       baslik: 'IEmailService.cs + DevEmailService.cs', dosya: 'Application/Interfaces/Services/IEmailService.cs, Application/Services/DevEmailService.cs',
       aciklama: 'AuthService dış bir e-posta sağlayıcısına doğrudan bağımlı olmasın diye sözleşme yazıldı (CODING_STANDARDS.md §7.4 — dış servisler her zaman mock\'lanır). Gerçek SMTP implementasyonu (SmtpEmailService, MailKit) A-10\'da yazılacak — SMTP ayarları A-09\'da DB\'ye AES-256 şifreli kaydedilecek, henüz yok. DevEmailService bu implementasyon olmadan A-03\'teki hiçbir OTP akışının test edilemeyeceği için yazıldı: e-postayı Serilog üzerinden konsola loglar, geliştirici OTP kodunu görüp akışı uçtan uca deneyebilir.',
       kod: `// ═══ IEmailService.cs — Application/Interfaces/Services/IEmailService.cs ═══
@@ -1770,7 +1807,7 @@ public class DevEmailService : IEmailService
 }`
     },
     {
-      num: 22, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
+      num: 23, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
       baslik: 'IGoogleTokenValidator.cs + GoogleTokenValidator.cs', dosya: 'Application/Interfaces/Services/IGoogleTokenValidator.cs, Application/Services/GoogleTokenValidator.cs',
       aciklama: '"ID token" ile sosyal giriş nasıl çalışır: kullanıcı mobil/web uygulamada Google ile giriş yapınca, Google DOĞRUDAN istemciye (uygulamaya) imzalı bir JWT (ID token) verir — "ben Google\'ım, bu kullanıcı gerçekten şu e-postaya sahip" diyen bir kanıt gibi düşünülebilir. İstemci bu token\'ı bizim backend\'imize gönderir, backend de Google\'ın genel anahtarıyla imzayı doğrular — backend Google ile HİÇ konuşmaz, yalnızca Google\'ın imzasını doğrular, bu yüzden bir "client secret"a ihtiyaç duymaz (REFERENCE/ENV.md §3). Bu doğrulama Google.Apis.Auth kütüphanesinin GoogleJsonWebSignature.ValidateAsync\'ine sarılır. Arayüz olması, AuthService testlerinde gerçek bir Google sunucu çağrısı yapılmadan mock enjekte edilebilmesini sağlar. Audience kontrolü (Google:ClientId) olmadan, BAŞKA bir uygulama için üretilmiş (ama yine Google tarafından imzalanmış, dolayısıyla "geçerli" görünen) bir token da yanlışlıkla kabul edilirdi — audience, "bu token gerçekten BİZİM uygulamamız için mi üretildi" sorusunu cevaplar.',
       kod: `// ═══ IGoogleTokenValidator.cs — Application/Interfaces/Services/IGoogleTokenValidator.cs ═══
@@ -1828,7 +1865,7 @@ public class GoogleTokenValidator : IGoogleTokenValidator
 }`
     },
     {
-      num: 23, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
+      num: 24, tur: 'service', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
       baslik: 'IAppleTokenValidator.cs + AppleTokenValidator.cs', dosya: 'Application/Interfaces/Services/IAppleTokenValidator.cs, Application/Services/AppleTokenValidator.cs',
       aciklama: 'JWKS (JSON Web Key Set) nedir: bir servisin (burada Apple\'ın) imzaladığı token\'ları doğrulamak için yayınladığı, herkese açık şifreleme anahtarlarının listesi — Google için bunu Google.Apis.Auth kütüphanesi görünmez şekilde hallediyordu (adım 22), ama Google\'ın aksine Apple için resmi bir .NET doğrulama kütüphanesi yok — bu yüzden Apple\'ın JWKS\'ini https://appleid.apple.com/auth/keys\'ten elle çekip identity token\'ın imzasını, issuer\'ını (https://appleid.apple.com) ve audience\'ını (Apple:BundleId) elle doğrularız. JwtTokenService.GetPrincipalFromExpiredToken\'daki Algorithm Confusion önlemiyle aynı gerekçeyle, doğrulanan token\'ın header\'ında gerçekten RS256 kullanıldığı elle teyit edilir. Email yalnızca İLK yetkilendirmede gelir (Apple\'ın bilinen kısıtı) — AuthService bu durumda DB\'deki mevcut email\'i korumalı.',
       kod: `// ═══ IAppleTokenValidator.cs — Application/Interfaces/Services/IAppleTokenValidator.cs ═══
@@ -1933,7 +1970,7 @@ public class AppleTokenValidator : IAppleTokenValidator
 }`
     },
     {
-      num: 24, tur: 'config', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
+      num: 25, tur: 'config', grup: 'E-posta & Sosyal Login Doğrulayıcılar',
       baslik: 'ApplicationServiceExtensions.cs (email + sosyal doğrulayıcı DI kaydı eklendi)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs',
       aciklama: 'IEmailService/IGoogleTokenValidator Scoped kaydedildi (diğer Application servisleriyle tutarlı). IAppleTokenValidator ise AddHttpClient&lt;T&gt; ile kaydedildi — her doğrulamada Apple\'ın JWKS\'sini HTTP ile çektiği için tek tek `new HttpClient()` yerine IHttpClientFactory kullanmak soket tükenmesi (socket exhaustion) riskini önler ve testlerde HttpClient\'ın mock\'lanmasını kolaylaştırır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -1998,7 +2035,7 @@ public static class ApplicationServiceExtensions
 }`
     },
     {
-      num: 25, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
+      num: 26, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
       baslik: 'IOtpService.cs + OtpService.cs', dosya: 'Application/Interfaces/Services/IOtpService.cs, Application/Services/OtpService.cs',
       aciklama: '(MediatR/CQRS/Handler kavramları adım 28\'de tam olarak açıklanıyor — burada kısaca: her endpoint artık ayrı bir "Command" nesnesi ve onu işleyen bir "Handler" sınıfıyla temsil ediliyor, tek bir dev AuthService sınıfı yerine.) MediatR CQRS\'e geçişte (bkz. adım 27-39) AuthService\'in private GenerateOtp/ValidateOtp/ClearOtp metotları paylaşılan bir servise çıkarıldı — Register/ResendVerification/Login/VerifyLoginOtp/ForgotPassword/ResetPassword/RequestAccountDeletion/ConfirmAccountDeletion Command Handler\'larının HEPSİ aynı OTP mantığını kullanır, ama MediatR handler\'ları birbirini Send() ile çağıramaz (bu bilinçli bir mimari kısıtlama/anti-pattern kuralıdır — sebebi: bir handler başka bir handler\'ı çağırabilseydi, hangi handler\'ın hangisini tetiklediğini takip etmek zamanla çok karmaşıklaşır ve döngüsel bağımlılık riski doğar; bu yüzden paylaşılan mantık her zaman bağımsız, "sıradan" bir servise çıkarılır, başka bir handler\'a değil). OtpExpiryMinutes(5)/DeleteAccountOtpExpiryMinutes(15) sabitleri interface\'e (const) taşındı ki handler\'lar somut OtpService sınıfına değil soyutlamaya bağımlı kalsın.',
       kod: `// ═══ IOtpService.cs — Application/Interfaces/Services/IOtpService.cs ═══
@@ -2105,7 +2142,7 @@ public class OtpService : IOtpService
 }`
     },
     {
-      num: 26, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
+      num: 27, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
       baslik: 'ILoginCompletionService.cs + LoginCompletionService.cs', dosya: 'Application/Interfaces/Services/ILoginCompletionService.cs, Application/Services/LoginCompletionService.cs',
       aciklama: 'AuthService\'in private CompleteLoginAsync/ExpiresInSeconds metotları paylaşılan bir servise çıkarıldı — VerifyLoginOtpCommandHandler/LoginWithGoogleCommandHandler/LoginWithAppleCommandHandler\'ın üçü de OTP doğrulama/Google/Apple girişlerinin ORTAK son adımını (grace period kurtarma, anonimleştirme kontrolü, giriş istatistikleri, token üretimi) kullanır. ExpiresInSeconds ayrıca RefreshCommandHandler tarafından da (CompleteLoginAsync çağırmadan, kendi token rotation akışında) paylaşılır — bu yüzden public bir metot olarak arayüze eklendi, RefreshCommandHandler\'da tekrar yazılmadı. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): AuthTokenResponse.User alanı elle `new AuthUserDto(user.Id, user.CurrentLevel)` yerine artık AuthProfile üzerinden `_mapper.Map<AuthUserDto>(user)` ile üretiliyor.',
       kod: `// ═══ ILoginCompletionService.cs — Application/Interfaces/Services/ILoginCompletionService.cs ═══
@@ -2249,7 +2286,7 @@ public class LoginCompletionService : ILoginCompletionService
 }`
     },
     {
-      num: 27, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
+      num: 28, tur: 'service', grup: 'Paylaşılan Servisler (OTP, Login Tamamlama, AutoMapper)',
       baslik: 'AuthProfile.cs (AutoMapper retrofit)', dosya: 'Application/Features/Auth/AuthProfile.cs',
       aciklama: 'AutoMapper / "Profile" nedir: bir Entity\'nin (ör. User) alanlarını bir DTO\'nun (ör. AuthUserDto) alanlarına elle `new AuthUserDto(user.Id, user.CurrentLevel)` yazmak yerine, "hangi alan hangisine gider" eşlemesini bir kere bir `Profile` sınıfında (`CreateMap<User, AuthUserDto>()`) tanımlayıp, sonra her yerde `_mapper.Map<AuthUserDto>(user)` ile otomatik kullanma kütüphanesi — alan adları uyuşuyorsa (Id→Id, CurrentLevel→CurrentLevel gibi) ekstra kod gerekmez. A-02\'de "ileride Entity↔DTO dönüşümü için Profile sınıfları eklenecek" varsayımıyla kurulup DI\'a kaydedilen AutoMapper (adım 13), A-03\'ün MediatR\'a taşınmış hâlinde de (adım 26\'daki not) hiç kullanılmadan kalmıştı — 13 Command Handler\'ın hepsi Entity→DTO dönüşümünü elle yapıyordu. Kullanıcı bu YAGNI tutarsızlığını fark etti; MediatR\'daki retrofit\'in (adım 27 öncesi tüm handler\'lar) aksine burada "kaldır mı, kullan mı" gerçek bir seçimdi (DTO\'lar 3-5 alanlı, elle mapping zaten okunaklıydı) — kullanıcı gerçekten kullanmayı seçti. Repo\'da gerçek Entity→DTO dönüşümü yalnızca iki yerde vardı: RegisterCommandHandler → RegisterResponse ve LoginCompletionService/RefreshCommandHandler → AuthUserDto (ikisi bağımsız, aynı satırı iki yerde tekrarlıyordu). Bu profil, ApplicationServiceExtensions\'taki mevcut AddAutoMapper(applicationAssembly) (adım 13) tarafından otomatik bulunur — DI değişikliği gerekmedi. Geri kalan 9 handler yalnızca sabit MessageResponse("...") string\'i döndüğü için (entity kaynaklı değil) AutoMapper\'a konu olmadı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2280,7 +2317,7 @@ public class AuthProfile : Profile
 }`
     },
     {
-      num: 28, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 29, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'RegisterCommand.cs', dosya: 'Application/Features/Auth/RegisterCommand.cs',
       aciklama: 'CQRS + MediatR + Command/Handler nedir (bu grup boyunca tekrar tekrar kullanılacak temel kavram): CQRS (Command Query Responsibility Segregation), "veriyi değiştiren istekler" (Command) ile "veri okuyan istekler" (Query) ayrımını isimlendiren bir tasarım yaklaşımıdır. MediatR, bunu C#\'ta uygulamaya yarayan bir kütüphane: her endpoint\'in isteği artık `RegisterCommand` gibi sade bir `record` (yalnızca veriyi taşıyan, "bu endpoint\'in aldığı girdi bu" diyen bir sınıf) olarak tanımlanır, ve bu Command\'ı işleyen mantık AYRI bir `RegisterCommandHandler` sınıfında yaşar. Controller artık iş mantığını KENDİSİ yazmaz, yalnızca `await _mediator.Send(command)` der — MediatR, gönderilen Command\'ın tipine bakıp doğru Handler\'ı otomatik bulup çalıştırır (reflection ile), controller hangi sınıfın onu işlediğini bilmek zorunda değildir. Neden eskiden tek bir dev `AuthService` sınıfı yerine bu tercih edildi: `AuthService` 13 farklı akışın (register, login, refresh...) hepsini TEK sınıfta topluyordu — bu sınıf büyüdükçe okunması/test edilmesi zorlaşıyordu; her akışı kendi Command+Handler çiftine bölmek, "bu endpoint ne yapıyor" sorusunun cevabını TEK, küçük bir dosyada bulmayı sağlar (dikey dilim: Command + Handler hep aynı dosyada, katmana göre değil özelliğe göre bölünür). Register akışının Command+Handler\'ı — RegisterRequest DTO\'sunun yerini RegisterCommand aldı, controller\'a doğrudan body-bind edilir. Handler\'ın mantığı AuthService.RegisterAsync ile birebir aynı (davranış değişmedi); tek fark GenerateOtp\'nin artık IOtpService.Generate() olması ve OtpExpiryMinutes\'in IOtpService.OtpExpiryMinutes\'ten okunması. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): dönüş satırı elle `new RegisterResponse(user.Id, user.Email, user.FirstName, user.CurrentLevel)` yerine artık AuthProfile üzerinden `_mapper.Map<RegisterResponse>(user)` ile üretiliyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2367,7 +2404,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
 }`
     },
     {
-      num: 29, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 30, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'VerifyEmailCommand.cs', dosya: 'Application/Features/Auth/VerifyEmailCommand.cs',
       aciklama: 'E-posta doğrulama akışının Command+Handler\'ı — IOtpService.Validate/Clear\'ı kullanır, davranış AuthService.VerifyEmailAsync ile birebir aynı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2415,7 +2452,7 @@ public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, Mes
 }`
     },
     {
-      num: 30, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 31, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'ResendVerificationCommand.cs', dosya: 'Application/Features/Auth/ResendVerificationCommand.cs',
       aciklama: 'E-posta numaralandırma (enumeration) saldırısı nedir: bir saldırganın, sisteme rastgele e-postalar deneyip yanıttaki KÜÇÜK farklardan ("kullanıcı bulunamadı" vs "kod gönderildi") hangi e-postaların sistemde KAYITLI olduğunu öğrenmesi — bu bilgi tek başına zararsız görünse de, sonraki bir saldırının (phishing, şifre deneme) hedef listesini oluşturur. Önlem: kullanıcı bulunsa da bulunmasa da API her zaman AYNI yanıtı döner ("e-posta sistemde varsa kod gönderildi" gibi belirsiz bir mesaj) — saldırgan yanıttan hiçbir ayrım yapamaz. Doğrulama kodu tekrar gönderme akışının Command+Handler\'ı — bu önlem (kullanıcı bulunamasa da aynı mesaj) korunuyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2473,7 +2510,7 @@ public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificati
 }`
     },
     {
-      num: 31, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 32, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'LoginCommand.cs', dosya: 'Application/Features/Auth/LoginCommand.cs',
       aciklama: 'Timing attack (zamanlama saldırısı) nedir ve FakePasswordHashForTiming neden var: eğer "kullanıcı bulunamadı" durumunda hemen (BCrypt çalıştırmadan) hata dönülür, ama "kullanıcı var, şifre yanlış" durumunda BCrypt.Verify çalıştırılıp (bu ~200-300ms sürer) SONRA hata dönülürse, bir saldırgan yanıt SÜRESİNE bakarak "bu e-posta sistemde kayıtlı mı" bilgisini öğrenebilir (hızlı yanıt = yok, yavaş yanıt = var, şifre yanlış) — bu bilgi sızıntısı, saldırganın hangi e-postalara saldıracağını (ör. şifre deneme, phishing) seçmesini kolaylaştırır. Çözüm: kullanıcı bulunamasa BİLE sahte, sabit bir hash ile (FakePasswordHashForTiming) BCrypt.Verify çalıştırılır — böylece her iki durumda da yanıt süresi neredeyse aynı olur, saldırgan süreden bir şey öğrenemez. Login adım 1\'in Command+Handler\'ı — bu önlem buraya taşındı; bu alan artık ConfirmAccountDeletionCommandHandler\'da da BAĞIMSIZ bir kopya olarak var (2 kullanım, tek satırlık sabit — paylaşılan bir servise çıkarmak aşırı soyutlama olurdu, bilinçli bir tekrar).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2558,7 +2595,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
 }`
     },
     {
-      num: 32, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 33, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'VerifyLoginOtpCommand.cs', dosya: 'Application/Features/Auth/VerifyLoginOtpCommand.cs',
       aciklama: 'Login adım 2\'nin Command+Handler\'ı — ClientIp gövdede gelmez, controller model binding\'den SONRA `command with { ClientIp = ClientIp }` ile ekler (HttpContext\'e yalnızca controller erişebilir). OTP doğrulandıktan sonra ILoginCompletionService.CompleteLoginAsync\'e delege eder.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2613,7 +2650,7 @@ public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpComman
 }`
     },
     {
-      num: 33, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 34, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'LoginWithGoogleCommand.cs', dosya: 'Application/Features/Auth/LoginWithGoogleCommand.cs',
       aciklama: 'Google girişinin Command+Handler\'ı — account linking (aynı e-postalı yerel hesaba GoogleId bağlama) ve yeni hesap oluşturma mantığı AuthService.LoginWithGoogleAsync ile birebir aynı, son adımda yine ILoginCompletionService\'e delege eder.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2699,7 +2736,7 @@ public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleComm
 }`
     },
     {
-      num: 34, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 35, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'LoginWithAppleCommand.cs', dosya: 'Application/Features/Auth/LoginWithAppleCommand.cs',
       aciklama: 'Apple girişinin Command+Handler\'ı — Apple\'ın yalnızca ilk yetkilendirmede e-posta vermesi kısıtı (sonraki girişlerde yalnızca AppleId ile eşleştirme, mevcut e-postanın asla üzerine yazılmaması) korunuyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2790,7 +2827,7 @@ public class LoginWithAppleCommandHandler : IRequestHandler<LoginWithAppleComman
 }`
     },
     {
-      num: 35, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 36, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'RefreshCommand.cs', dosya: 'Application/Features/Auth/RefreshCommand.cs',
       aciklama: 'Refresh akışının Command+Handler\'ı — Token Family Pattern (replay tespitinde TÜM family iptali) birebir taşındı. NEDEN AYRI TİP (LogoutCommand değil): eskiden Refresh ve Logout aynı RefreshRequest DTO\'sunu paylaşıyordu, ama MediatR\'da bir IRequest<T> tek bir dönüş tipine bağlıdır (Refresh AuthTokenResponse döner, Logout dönüşsüzdür) — bu yüzden ayrı Command\'lara bölünmeleri gerekti (bkz. adım 41\'deki validator notu). ILoginCompletionService yalnızca ExpiresInSeconds() için enjekte edilir, CompleteLoginAsync çağrılmaz (Refresh\'in token-family-rotation mantığı CompleteLoginAsync\'ten materyal olarak farklı — ClearOtp/login istatistiği/anonimleştirme kontrolü YOK). NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): AuthTokenResponse.User alanı elle `new AuthUserDto(user.Id, user.CurrentLevel)` yerine artık AuthProfile üzerinden `_mapper.Map<AuthUserDto>(user)` ile üretiliyor — LoginCompletionService\'teki aynı dönüşümden bağımsız, ikinci bir çağrı noktası.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2906,7 +2943,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
 }`
     },
     {
-      num: 36, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 37, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'LogoutCommand.cs', dosya: 'Application/Features/Auth/LogoutCommand.cs',
       aciklama: 'Logout akışının Command+Handler\'ı — RefreshCommand\'dan ayrı bir tip (yukarıdaki notla aynı gerekçe). UserId JWT\'den gelir (gövdede yok), controller `command with { UserId = CurrentUserId }` ile ekler. Sahiplik kontrolü (başkasının token\'ı iptal edilemez) korunuyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -2965,7 +3002,7 @@ public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>
 }`
     },
     {
-      num: 37, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 38, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'ForgotPasswordCommand.cs', dosya: 'Application/Features/Auth/ForgotPasswordCommand.cs',
       aciklama: 'Şifre sıfırlama isteğinin Command+Handler\'ı — e-posta numaralandırma önlemi (kullanıcı yoksa/anonimleştirilmişse de aynı mesaj) korunuyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3023,7 +3060,7 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
 }`
     },
     {
-      num: 38, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 39, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'ResetPasswordCommand.cs', dosya: 'Application/Features/Auth/ResetPasswordCommand.cs',
       aciklama: 'Şifre sıfırlama onayının Command+Handler\'ı — başarılı sıfırlama sonrası tüm cihazlardan çıkış (RevokeAllForUserAsync) davranışı korunuyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3088,7 +3125,7 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
 }`
     },
     {
-      num: 39, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 40, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'RequestAccountDeletionCommand.cs', dosya: 'Application/Features/Auth/RequestAccountDeletionCommand.cs',
       aciklama: 'Hesap silme talebinin Command+Handler\'ı — gövdesi yoktur (JWT\'deki kullanıcı kimliği kullanılır), bu yüzden eskiden de ayrı bir Request DTO\'su yoktu; controller doğrudan `new RequestAccountDeletionCommand(CurrentUserId)` oluşturur, hiçbir validator gerekmez (ValidationFilter IValidator<T> bulamayınca sessizce atlar — mevcut davranış zaten böyleydi).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3148,7 +3185,7 @@ public class RequestAccountDeletionCommandHandler
 }`
     },
     {
-      num: 40, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
+      num: 41, tur: 'handler', grup: '13 Auth Command + Handler (MediatR CQRS)',
       baslik: 'ConfirmAccountDeletionCommand.cs', dosya: 'Application/Features/Auth/ConfirmAccountDeletionCommand.cs',
       aciklama: 'Hesap silme onayının Command+Handler\'ı — çift onay (OTP + şifre) ve 30 gün grace period zamanlama korunuyor. FakePasswordHashForTiming\'in BAĞIMSIZ ikinci kopyası burada (bkz. adım 30\'daki not — bilinçli, küçük bir tekrar).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3247,7 +3284,7 @@ public class ConfirmAccountDeletionCommandHandler
 }`
     },
     {
-      num: 41, tur: 'config', grup: 'DI Kaydı (Otp/LoginCompletion)',
+      num: 42, tur: 'config', grup: 'DI Kaydı (Otp/LoginCompletion)',
       baslik: 'ApplicationServiceExtensions.cs (IOtpService/ILoginCompletionService DI kaydı)', dosya: 'Application/Extensions/ApplicationServiceExtensions.cs',
       aciklama: 'A-03\'ün MediatR CQRS refactor\'ünden sonraki son DI hâli — AddScoped<IAuthService, AuthService>() satırı KALKTI (o servis artık yok), yerine yeni paylaşılan IOtpService/ILoginCompletionService servisleri Scoped kaydedildi (##NEW## satırlar). AddMediatR zaten assembly-scan yaptığı için 13 Command Handler ve 12 validator hiçbir ek kayıt gerekmeden otomatik bulundu — A-02\'de öngörülen \'ileride eklenecek her yeni sınıf otomatik bulunur\' varsayımının ilk gerçek kanıtı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3318,7 +3355,7 @@ public static class ApplicationServiceExtensions
 }`
     },
     {
-      num: 42, tur: 'validator', grup: 'Validator\'lar',
+      num: 43, tur: 'validator', grup: 'Validator\'lar',
       baslik: 'Paylaşılan Doğrulama Kuralları (4 dosya)', dosya: 'Application/Validators/Auth/{Password,Email,Otp,RefreshToken}RuleExtensions.cs',
       aciklama: 'FluentValidation nedir: bir Command/DTO\'nun alanlarının geçerli olup olmadığını (ör. "Email boş olamaz", "Password en az 8 karakter") `RuleFor(x => x.Email).NotEmpty()` gibi akıcı (fluent), zincirlenebilir bir sözdizimiyle tanımlayan kütüphane — attribute (`[Required]`) yazmak yerine ayrı bir `Validator` sınıfında toplanır, karmaşık kurallar (ör. "şifre en az bir büyük harf VE bir rakam içermeli") daha kolay ifade edilir. Bu dosyadaki "RuleExtensions" ise bir adım öteye gider: birden fazla validator\'ın (RegisterCommandValidator, ResetPasswordCommandValidator...) AYNI şifre/e-posta kuralını tekrar tekrar yazmaması için, kuralın kendisi bir `IRuleBuilder` extension metoduna çıkarılmış — her validator `RuleFor(x => x.Password).ValidPassword()` gibi TEK satırla bu paylaşılan kuralı çağırır. Şifre/e-posta/OTP kuralları A-03\'ün ilk hâlinden beri paylaşılan extension metotlardı (bkz. eski adım 28); MediatR refactor\'ünde YENİ bir dördüncü dosya eklendi: RefreshTokenRuleExtensions.cs. NEDEN: RefreshCommand ve LogoutCommand eskiden aynı RefreshRequest DTO\'sunu paylaşıyordu (tek validator yeterliydi); MediatR\'da ayrı Command tiplerine bölündükleri için (bkz. adım 34-35) iki farklı validator sınıfı gerekti (adım 42), ama ikisi de AYNI kuralı (token doluluğu) uyguluyor — bu yüzden RefreshRequestValidator.cs\'in içindeki tek kural, diğer üç RuleExtensions dosyasıyla aynı desende (1 kural = 1 extension metodu) paylaşılan bir dosyaya çıkarıldı.',
       kod: `// ═══ PasswordRuleExtensions.cs — Application/Validators/Auth/PasswordRuleExtensions.cs ═══
@@ -3456,7 +3493,7 @@ public static class RefreshTokenRuleExtensions
 }`
     },
     {
-      num: 43, tur: 'validator', grup: 'Validator\'lar',
+      num: 44, tur: 'validator', grup: 'Validator\'lar',
       baslik: '13 Command\'ın Validator\'ları (7 dosya, 12 sınıf)', dosya: 'Application/Validators/Auth/{RegisterRequest,EmailVerification,Login,SocialLogin,RefreshAndLogout,PasswordReset,DeleteAccountConfirmRequest}Validator*.cs',
       aciklama: 'Her validator\'ın generic tipi XxxRequest\'ten XxxCommand\'a retarget edildi (ValidationFilter runtime tipine göre IValidator<T> aradığı için, Command\'ların Request DTO\'larının yerini almasıyla hiçbir davranış değişikliği gerekmedi — yalnızca dosya içeriği güncellendi, dosya KONUMLARI aynı kaldı). TEK gerçek yapısal değişiklik: eski RefreshRequestValidator.cs (1 sınıf, 2 endpoint\'i doğrulardı) silindi, yerine RefreshAndLogoutValidators.cs (2 sınıf — RefreshCommandValidator + LogoutCommandValidator) geldi, çünkü artık 2 ayrı Command tipi var (bkz. adım 34-35, 41). Login/DeleteAccountConfirm\'deki şifre kuralı hâlâ bilinçli olarak ValidPassword() DEĞİL, yalnızca NotEmpty() — bu GÜÇ kontrolü değil, doluluk kontrolüdür.',
       kod: `// ═══ RegisterCommandValidator.cs — Application/Validators/Auth/RegisterRequestValidator.cs ═══
@@ -3701,7 +3738,7 @@ public class ConfirmAccountDeletionCommandValidator : AbstractValidator<ConfirmA
 }`
     },
     {
-      num: 44, tur: 'config', grup: 'Dil Çözümleme & Doğrulama Filtresi',
+      num: 45, tur: 'config', grup: 'Dil Çözümleme & Doğrulama Filtresi',
       baslik: 'RequestLanguageResolver.cs (yeni) + ExceptionHandlingMiddleware.cs güncellendi', dosya: 'API/Common/RequestLanguageResolver.cs, API/Middleware/ExceptionHandlingMiddleware.cs',
       aciklama: 'ValidationFilter (adım 31) de ExceptionHandlingMiddleware ile AYNI "Accept-Language\'dan dil çıkar" mantığına ihtiyaç duyuyordu — kod tekrarını önlemek için RequestLanguageResolver adında paylaşılan bir yardımcıya çıkarıldı. Bu mimari bir DRY düzeltmesi (bu API\'ye özel bir ekleme değil), bu yüzden değişen satırlar renkli vurgulanmadı — dosyanın YENİ hâli baştan sona gösteriliyor.',
       kod: `// ═══ RequestLanguageResolver.cs — API/Common/RequestLanguageResolver.cs ═══
@@ -3858,7 +3895,7 @@ public class ExceptionHandlingMiddleware
 }`
     },
     {
-      num: 45, tur: 'config', grup: 'Dil Çözümleme & Doğrulama Filtresi',
+      num: 46, tur: 'config', grup: 'Dil Çözümleme & Doğrulama Filtresi',
       baslik: 'ValidationFilter.cs (yeni)', dosya: 'API/Filters/ValidationFilter.cs',
       aciklama: 'Action Filter nedir: ASP.NET Core\'da bir controller metodu ÇALIŞMADAN önce (veya sonra) devreye giren, TÜM controller\'lara otomatik uygulanabilen bir ara katman — burada, her Command\'ın kendi Validator\'ının (adım 42-43) çalıştırılıp hatalıysa isteği controller\'a hiç ulaştırmadan 400 döndüren global bir filtre. Bu, middleware\'e (A-02) çok benzer bir kavramdır, farkı: middleware TÜM HTTP pipeline\'ında çalışır, action filter ise özellikle "MVC action\'ı çağrılmadan hemen önce/sonra" noktasına özelleşmiştir ve model binding sonucu (Command nesnesi) gibi MVC\'ye özgü bilgilere erişebilir. FluentValidation.AspNetCore paketi (otomatik ModelState entegrasyonu) kullanılmıyor (TECHNICAL_SPECIFICATIONS.md §1\'de yok) — bu yüzden bu global action filter aynı işi, DI\'a kayıtlı IValidator&lt;T&gt;\'leri reflection (çalışma zamanında "bu Command tipi için bir Validator var mı" diye tip bilgisiyle arama) ile bulup manuel çalıştırarak yapar. KRİTİK karar: istemciye giden mesaj her hatanın ErrorMessage\'ı DEĞİL, ErrorCode\'udur — ErrorMessage yalnızca WithMessage() ile verilen sabit İngilizce log açıklaması. Gerçek bir istekle uçtan uca doğrulandı (curl): geçersiz email+zayıf şifre → 400 + Türkçe birleşik mesaj (varsayılan dil tr).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -3947,7 +3984,7 @@ public class ValidationFilter : IAsyncActionFilter
 }`
     },
     {
-      num: 46, tur: 'controller', grup: 'Controller',
+      num: 47, tur: 'controller', grup: 'Controller',
       baslik: 'AuthController.cs (13 endpoint, MediatR ile)', dosya: 'API/Controllers/AuthController.cs',
       aciklama: 'REFERENCE/API_ENDPOINTS.md §3\'teki 13 endpoint\'i artık IAuthService değil IMediator üzerinden ilgili Command\'a bağlayan ince controller. Ctor artık yalnızca IMediator alır — hiçbir servis arayüzünü tanımaz. ClientIp/CurrentUserId aynı kalır (HttpContext\'e yalnızca controller erişebildiği için, bu bilgiler model binding\'den SONRA `command with { ... }` ile Command\'a eklenir — VerifyLoginOtp/LoginWithGoogle/LoginWithApple/Refresh\'te ClientIp, Logout/ConfirmAccountDeletion\'da UserId). RequestAccountDeletion\'da gövde yok, controller Command\'ı doğrudan oluşturur. Gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı: register(201)→verify-email(200)→login(200,OTP)→login/verify-otp(200, gerçek token)→refresh(200, yeni token çifti)→logout(204) — davranış A-03\'ün ilk hâliyle birebir aynı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -4092,9 +4129,9 @@ public class AuthController : ControllerBase
 }`
     },
     {
-      num: 47, tur: 'config', grup: 'Rate Limiting (Program.cs)',
+      num: 48, tur: 'config', grup: 'Rate Limiting (Program.cs)',
       baslik: 'Program.cs (ValidationFilter kaydı + Rate Limiting eklendi)', dosya: 'API/Program.cs',
-      aciklama: 'Rate limiting (istek sınırlama) nedir: bir istemcinin (IP veya kullanıcı) belirli bir zaman aralığında en fazla kaç istek atabileceğini sınırlayan mekanizma — olmasaydı bir saldırgan `/auth/login`\'i saniyede binlerce kez deneyip şifre tahmin edebilir (brute-force) veya sunucuyu aşırı istekle çökertebilirdi (DoS). "Sabit pencere" (fixed window) policy\'si, ör. "her 1 dakikalık pencerede en fazla 10 istek" der ve pencere dolunca sayaç sıfırlanır. A-02\'de kurulan composition root\'a A-03\'ün son iki parçası eklendi: (1) AddControllers\'a ValidationFilter global filter olarak eklendi. (2) AddRateLimiter ile "anonymous" (10/dk) ve "authenticated" (100/dk) sabit pencere policy\'leri tanımlandı (REFERENCE/SECURITY.md §4) — anonim istekler (login denemeleri gibi) daha sıkı sınırlanır çünkü kimliği doğrulanmamış trafik kötüye kullanıma daha açıktır. "Login 5/15dk" ve "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları bilinçli olarak buraya dahil edilmedi — SecurityLog\'a bağımlı oldukları için A-04\'ten sonraya bırakıldı. UseRateLimiter() pipeline\'da UseAuthorization\'dan hemen sonra, MapControllers\'dan hemen önce çağrılır.',
+      aciklama: 'Rate limiting (istek sınırlama) nedir: bir istemcinin (IP veya kullanıcı) belirli bir zaman aralığında en fazla kaç istek atabileceğini sınırlayan mekanizma — olmasaydı bir saldırgan `/auth/login`\'i saniyede binlerce kez deneyip şifre tahmin edebilir (brute-force) veya sunucuyu aşırı istekle çökertebilirdi (DoS). "Sabit pencere" (fixed window) policy\'si, ör. "her 1 dakikalık pencerede en fazla 10 istek" der ve pencere dolunca sayaç sıfırlanır. A-02\'de kurulan composition root\'a A-03\'ün son iki parçası eklendi: (1) AddControllers\'a ValidationFilter global filter olarak eklendi. (2) AddRateLimiter ile "anonymous" (10/dk) ve "authenticated" (100/dk) sabit pencere policy\'leri tanımlandı (REFERENCE/SECURITY.md §4) — anonim istekler (login denemeleri gibi) daha sıkı sınırlanır çünkü kimliği doğrulanmamış trafik kötüye kullanıma daha açıktır. "Login 5/15dk" ve "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları bilinçli olarak buraya dahil edilmedi — SecurityLog\'a bağımlı oldukları için A-04\'ten sonraya bırakıldı. UseRateLimiter() pipeline\'da UseAuthorization\'dan hemen sonra, MapControllers\'dan hemen önce çağrılır. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): `app.UseHttpsRedirection()` pipeline\'ın EN BAŞINA taşındı — önceden loglama/güvenlik başlıkları/exception middleware\'lerinden SONRA çağrılıyordu, yani düz HTTP ile gelen bir istek HTTPS\'e yönlendirilmeden ÖNCE gereksiz yere loglanıp güvenlik başlığı alıyordu; ASP.NET Core\'un standart konvansiyonu yönlendirmenin hiçbir iş yapılmadan en başta olmasıdır.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // Program.cs
 //
@@ -4235,6 +4272,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "VokabelMeister API v1"));
 }
 
+// NEDEN UseHttpsRedirection EN BAŞTA (2026-07-12'de düzeltildi — önceden loglama/güvenlik
+// başlıkları/exception middleware'lerinden SONRA çağrılıyordu): düz HTTP ile gelen bir
+// istek hiçbir iş yapılmadan (loglanmadan, başlık eklenmeden) doğrudan HTTPS'e yönlendirilmeli
+// — ASP.NET Core'un standart konvansiyonu budur. Bu proje geliştirme ortamında pratikte nadiren
+// tetiklenir (prod'da genelde ters proxy TLS'i sonlandırır) ama sıralama artık konvansiyona uygun.
+app.UseHttpsRedirection();
+
 // NEDEN SIRALAMA: Loglama en dışta durur ki exception fırlasa bile (ExceptionHandlingMiddleware
 // onu yakalayıp 500'e çevirse bile) gerçek süre ve nihai durum kodu loglanabilsin.
 // Güvenlik başlıkları, hata yanıtı da dahil her yanıta eklenmesi için exception
@@ -4243,7 +4287,6 @@ app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.UseHttpsRedirection();
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();
@@ -4258,7 +4301,7 @@ app.MapControllers();
 app.Run();`
     }
     ,{
-      num: 48, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 49, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'PasswordServiceTests.cs', dosya: 'WordLearner.Tests/Services/PasswordServiceTests.cs',
       aciklama: 'PasswordService\'in BCrypt (şifre) + SHA-256 (token) davranışlarını doğrulayan 5 test. BCrypt\'in her çağrıda farklı salt üretip yine de aynı şifreyi doğrulayabildiği (Hash_SamePasswordCalledTwice), ve SHA-256\'nın deterministik olduğu (HashToken_SameInputCalledTwice — RefreshTokens.TokenHash/Users.PendingOtpCodeHash DB\'de bu değeri arayarak eşleştirir, deterministik olmasaydı hiçbir OTP/refresh doğrulaması eşleşmezdi) özellikle test edilir. Mock gerekmez — gerçek BCrypt/SHA-256 çağrılır (CODING_STANDARDS.md §7.4 — yalnızca repository/dış servisler mock\'lanır, bu servis saf algoritma implementasyonudur).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -4395,7 +4438,7 @@ public class PasswordServiceTests
       ]
     }
     ,{
-      num: 49, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 50, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'JwtTokenServiceTests.cs', dosya: 'WordLearner.Tests/Services/JwtTokenServiceTests.cs',
       aciklama: 'JwtTokenService\'in access/refresh token üretimini ve Algorithm Confusion önlemli expired-token doğrulamasını test eden 6 test. IConfiguration Moq ile değil gerçek bir in-memory ConfigurationBuilder ile kurulur (GetValue<T> extension metodunun gerçek davranışını test etmek için). En kritik test GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull — farklı bir SecretKey ile imzalanmış (yani başka bir sunucu/saldırgan tarafından üretilmiş) bir token\'ın kesinlikle reddedildiğini doğrular; bu kontrol olmadan /auth/refresh sahte bir token ile kandırılabilirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -4600,7 +4643,7 @@ public class JwtTokenServiceTests
       ]
     },
     {
-      num: 50, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 51, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'OtpServiceTests.cs', dosya: 'WordLearner.Tests/Services/OtpServiceTests.cs',
       aciklama: 'OtpService\'in OTP üretimi/doğrulanması/temizlenmesi mantığının (amaç/hash/süre kontrolleri dahil) TEK bir yerdeki testi — eskiden bu mantık AuthServiceTests içinde her akış (VerifyEmail/VerifyLoginOtp/ResetPassword/ConfirmAccountDeletion) için AYRI AYRI tekrar test ediliyordu; paylaşılan servise çıkarılınca (bkz. adım 25) testleri de tek yerde toplandı — kod tekrarını azaltan bilinçli bir test-stratejisi değişikliği (kapsam kaybı yok, tam tersine).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -4802,9 +4845,34 @@ public class OtpServiceTests
       ]
     },
     {
-      num: 51, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 52, tur: 'test', grup: 'Birim Testler (21 dosya)',
+      baslik: 'AuthTestMapper.cs (yeni dosya)', dosya: 'WordLearner.Tests/Common/AuthTestMapper.cs',
+      aciklama: 'Kod denetiminde bulunan bir kopya-yapıştır: `LoginCompletionServiceTests.cs` (bir sonraki adım), `RegisterCommandHandlerTests.cs` ve `RefreshCommandHandlerTests.cs` — bu üç test dosyası da, CODING_STANDARDS.md §7.4 kuralı gereği ("`IMapper` mock\'lanmaz, gerçek Profile\'dan kurulur") birbirinden bağımsız olarak BİREBİR AYNI özel `CreateMapper()` metodunu (`new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper()`) taşıyordu. Bu dosya (2026-07-12, düşük öncelikli kod kalitesi turu) o tekrarı tek bir paylaşılan yardımcıya çıkarıyor — `WordLearner.Tests.Common` altında, çünkü `Application/Services` gibi Application katmanına değil, yalnızca TEST projesine ait bir kurulum yardımcısı. `internal` erişim belirleyicisi bilinçli: yalnızca aynı test assembly\'sindeki test sınıfları çağırabilir, dışarıya açık bir API değil.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// AuthTestMapper.cs
+//
+// AMAÇ: Testlerde gerçek AuthProfile'dan kurulmuş bir IMapper örneği üretir.
+// NEDEN: CODING_STANDARDS.md §7.4 — IMapper mock'lanmaz, gerçek Profile'dan kurulur.
+//        Bu satır 3 test dosyasında (RegisterCommandHandlerTests, RefreshCommandHandlerTests,
+//        LoginCompletionServiceTests) birebir kopyaydı (kod denetiminde bulunan DRY ihlali).
+// BAĞIMLILIKLAR: AutoMapper, WordLearner.Application.Features.Auth.AuthProfile.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using AutoMapper;
+using WordLearner.Application.Features.Auth;
+
+namespace WordLearner.Tests.Common;
+
+internal static class AuthTestMapper
+{
+    public static IMapper Create() =>
+        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
+}`
+    },
+    {
+      num: 53, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'LoginCompletionServiceTests.cs', dosya: 'WordLearner.Tests/Services/LoginCompletionServiceTests.cs',
-      aciklama: 'LoginCompletionService\'in OTP doğrulama/Google/Apple girişlerinin ortak son adımını (grace period kurtarma dahil) doğrulayan test — eskiden AuthServiceTests içinde yalnızca VerifyLoginOtpAsync\'in bir parçası olarak (yani tek bir giriş yönteminden) test ediliyordu; artık üç handler\'ın (OTP/Google/Apple) paylaştığı davranış TEK yerde kapsamlı test ediliyor. Handler testleri (aşağıdaki adımlar) artık yalnızca doğru delege edildiğini doğruluyor, bu davranışın kendisini tekrar test etmiyor. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor — bu hem servisi besliyor hem profil konfigürasyonunun geçerliliğini doğruluyor.',
+      aciklama: 'LoginCompletionService\'in OTP doğrulama/Google/Apple girişlerinin ortak son adımını (grace period kurtarma dahil) doğrulayan test — eskiden AuthServiceTests içinde yalnızca VerifyLoginOtpAsync\'in bir parçası olarak (yani tek bir giriş yönteminden) test ediliyordu; artık üç handler\'ın (OTP/Google/Apple) paylaştığı davranış TEK yerde kapsamlı test ediliyor. Handler testleri (aşağıdaki adımlar) artık yalnızca doğru delege edildiğini doğruluyor, bu davranışın kendisini tekrar test etmiyor. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor — bu hem servisi besliyor hem profil konfigürasyonunun geçerliliğini doğruluyor. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): kendi özel `CreateMapper()` metodu kaldırıldı, bir önceki adımda (adım 52) çıkarılan paylaşılan `AuthTestMapper.Create()` kullanılıyor — üç test dosyasındaki birebir kopya tek yerde toplandı.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // LoginCompletionServiceTests.cs
 //
@@ -4821,16 +4889,15 @@ public class OtpServiceTests
 //                AutoMapper (AuthProfile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using Microsoft.Extensions.Configuration;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
-using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Application.Services;
 using WordLearner.Domain.Entities;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Services;
 
@@ -4848,9 +4915,6 @@ public class LoginCompletionServiceTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:ExpirationMinutes"] = "15" })
             .Build();
 
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private LoginCompletionService CreateService() =>
         new(
             _userRepo.Object,
@@ -4859,7 +4923,7 @@ public class LoginCompletionServiceTests
             _tokenService.Object,
             _otpService.Object,
             CreateConfiguration(),
-            CreateMapper()
+            AuthTestMapper.Create()
         );
 
     private void SetupTokenService()
@@ -4999,9 +5063,9 @@ public class LoginCompletionServiceTests
       ]
     },
     {
-      num: 52, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 54, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'RegisterCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/RegisterCommandHandlerTests.cs',
-      aciklama: 'Register akışının 3 testi (mutlu yol, aktif hesapla çakışma, anonimleştirilmiş hesapla çakışma) — AuthServiceTests\'teki RegisterAsync bölümünden birebir taşındı. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor.',
+      aciklama: 'Register akışının 3 testi (mutlu yol, aktif hesapla çakışma, anonimleştirilmiş hesapla çakışma) — AuthServiceTests\'teki RegisterAsync bölümünden birebir taşındı. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): kendi özel `CreateMapper()` metodu kaldırıldı, paylaşılan `AuthTestMapper.Create()` (adım 52) kullanılıyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // RegisterCommandHandlerTests.cs
 //
@@ -5013,7 +5077,6 @@ public class LoginCompletionServiceTests
 //                WordLearner.Application.Features.Auth.RegisterCommand.
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -5021,6 +5084,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -5031,13 +5095,14 @@ public class RegisterCommandHandlerTests
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<IEmailService> _emailService = new();
 
-    // AMAÇ: Mock yerine gerçek AuthProfile ile oluşturulmuş bir IMapper — hem
-    //       handler'ı besler hem de profil konfigürasyonunun geçerli olduğunu doğrular.
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private RegisterCommandHandler CreateHandler() =>
-        new(_userRepo.Object, _passwordService.Object, _otpService.Object, _emailService.Object, CreateMapper());
+        new(
+            _userRepo.Object,
+            _passwordService.Object,
+            _otpService.Object,
+            _emailService.Object,
+            AuthTestMapper.Create()
+        );
 
     /// <summary>
     /// Register_NewEmail_CreatesUserAndSendsVerificationOtp
@@ -5126,7 +5191,7 @@ public class RegisterCommandHandlerTests
       ]
     },
     {
-      num: 53, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 55, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'VerifyEmailCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/VerifyEmailCommandHandlerTests.cs',
       aciklama: 'E-posta doğrulama akışının 2 testi — CODING_STANDARDS.md §7.5\'teki zorunlu minimum kapsamın "mutlu yol" ve "uç durum" senaryolarını karşılar: geçerli OTP kodu doğrulamayı geçirmeli, geçersiz/süresi dolmuş bir kod ise reddedilmeli (aksi hâlde biri rastgele bir kodla hesap doğrulayabilirdi).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5219,7 +5284,7 @@ public class VerifyEmailCommandHandlerTests
       ]
     },
     {
-      num: 54, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 56, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'ResendVerificationCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/ResendVerificationCommandHandlerTests.cs',
       aciklama: 'Doğrulama kodu tekrar gönderme akışının 2 testi (var olan/olmayan kullanıcı, e-posta numaralandırma önlemi dahil).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5301,7 +5366,7 @@ public class ResendVerificationCommandHandlerTests
       ]
     },
     {
-      num: 55, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 57, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'LoginCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginCommandHandlerTests.cs',
       aciklama: 'Login adım 1\'in 4 testi — Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety dahil (timing attack önlemi, projenin en kritik login testlerinden biri).',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5441,7 +5506,7 @@ public class LoginCommandHandlerTests
       ]
     },
     {
-      num: 56, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 58, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'VerifyLoginOtpCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/VerifyLoginOtpCommandHandlerTests.cs',
       aciklama: 'Login adım 2\'nin 2 testi — grace period kurtarma senaryosu artık burada DEĞİL, LoginCompletionServiceTests\'te (adım 50); bu dosya yalnızca OTP doğrulamasının ILoginCompletionService.CompleteLoginAsync\'e doğru kullanıcı/ip ile delege ettiğini doğruluyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5540,7 +5605,7 @@ public class VerifyLoginOtpCommandHandlerTests
       ]
     },
     {
-      num: 57, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 59, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'LoginWithGoogleCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginWithGoogleCommandHandlerTests.cs',
       aciklama: 'Google girişinin 5 testi — account linking (LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount) dahil.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5715,7 +5780,7 @@ public class LoginWithGoogleCommandHandlerTests
       ]
     },
     {
-      num: 58, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 60, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'LoginWithAppleCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LoginWithAppleCommandHandlerTests.cs',
       aciklama: 'Apple girişinin 4 testi — Apple\'ın yalnızca ilk yetkilendirmede email vermesi kısıtını doğrulayan LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly dahil.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -5868,9 +5933,9 @@ public class LoginWithAppleCommandHandlerTests
       ]
     },
     {
-      num: 59, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 61, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'RefreshCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/RefreshCommandHandlerTests.cs',
-      aciklama: 'Refresh akışının 5 testi — Token Family Pattern\'in replay tespiti (Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows, projenin en kritik güvenlik testlerinden biri) dahil. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor.',
+      aciklama: 'Refresh akışının 5 testi — Token Family Pattern\'in replay tespiti (Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows, projenin en kritik güvenlik testlerinden biri) dahil. NOT (AutoMapper retrofit\'i, bkz. adım 27/wiki INGEST notu): mock `IMapper` yerine gerçek AuthProfile\'dan kurulmuş bir `IMapper` kullanılıyor. NOT (düşük öncelikli kod kalitesi turu, 2026-07-12): kendi özel `CreateMapper()` metodu kaldırıldı, paylaşılan `AuthTestMapper.Create()` (adım 52) kullanılıyor.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
 // RefreshCommandHandlerTests.cs
 //
@@ -5879,7 +5944,6 @@ public class LoginWithAppleCommandHandlerTests
 // BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions, AutoMapper (AuthProfile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-using AutoMapper;
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -5887,6 +5951,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities;
+using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -5898,9 +5963,6 @@ public class RefreshCommandHandlerTests
     private readonly Mock<ITokenService> _tokenService = new();
     private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
 
-    private static IMapper CreateMapper() =>
-        new MapperConfiguration(cfg => cfg.AddProfile<AuthProfile>()).CreateMapper();
-
     private RefreshCommandHandler CreateHandler() =>
         new(
             _userRepo.Object,
@@ -5908,7 +5970,7 @@ public class RefreshCommandHandlerTests
             _passwordService.Object,
             _tokenService.Object,
             _loginCompletionService.Object,
-            CreateMapper()
+            AuthTestMapper.Create()
         );
 
     private void SetupTokenService()
@@ -6067,7 +6129,7 @@ public class RefreshCommandHandlerTests
       ]
     },
     {
-      num: 60, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 62, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'LogoutCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/LogoutCommandHandlerTests.cs',
       aciklama: 'Logout akışının 2 testi — biri kendi token\'ını iptal ettiğini (mutlu yol), diğeri BAŞKASININ token\'ını iptal ETMEYE çalıştığını (yetki/sahiplik ihlali, CODING_STANDARDS.md §7.5 zorunlu senaryosu) doğrular; bu kontrol olmasaydı bir kullanıcı başka birinin oturumunu dışarıdan kapatabilirdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -6145,7 +6207,7 @@ public class LogoutCommandHandlerTests
       ]
     },
     {
-      num: 61, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 63, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'ForgotPasswordCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/ForgotPasswordCommandHandlerTests.cs',
       aciklama: 'Şifre sıfırlama isteğinin 2 testi — var olan ve olmayan kullanıcı için AYNI yanıtın döndüğünü doğrular (bkz. adım 30\'daki e-posta numaralandırma tanımı); bu iki test olmadan biri yanlışlıkla "kullanıcı yok" durumunda farklı bir mesaj/kod dönmeye başlarsa (regresyon), numaralandırma açığı sessizce geri gelebilir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -6225,7 +6287,7 @@ public class ForgotPasswordCommandHandlerTests
       ]
     },
     {
-      num: 62, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 64, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'ResetPasswordCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/ResetPasswordCommandHandlerTests.cs',
       aciklama: 'Şifre sıfırlama onayının 2 testi — geçerli OTP ile şifre gerçekten değişmeli (mutlu yol), geçersiz/süresi dolmuş OTP ile İSE reddedilmeli (uç durum); bu ikinci test olmadan, biri OTP kontrolünü yanlışlıkla atlayan bir değişiklik yaparsa, HERKESİN şifresini rastgele bir kodla sıfırlayabileceği bir güvenlik açığı fark edilmezdi.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -6315,7 +6377,7 @@ public class ResetPasswordCommandHandlerTests
       ]
     },
     {
-      num: 63, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 65, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'RequestAccountDeletionCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/RequestAccountDeletionCommandHandlerTests.cs',
       aciklama: 'Hesap silme talebinin 2 testi — mutlu yol (var olan kullanıcı için OTP üretilir) ve "bulunamadı" senaryosu (var olmayan userId → EntityNotFoundException, adım 3\'te tanımlanan özel exception). UserId JWT\'den geldiği için normalde bu userId her zaman geçerli olmalı, ama savunmacı programlama gereği (guard clause) bu uç durum yine de test edilir.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -6394,7 +6456,7 @@ public class RequestAccountDeletionCommandHandlerTests
       ]
     },
     {
-      num: 64, tur: 'test', grup: 'Birim Testler (17 dosya)',
+      num: 66, tur: 'test', grup: 'Birim Testler (21 dosya)',
       baslik: 'ConfirmAccountDeletionCommandHandlerTests.cs', dosya: 'WordLearner.Tests/Features/Auth/ConfirmAccountDeletionCommandHandlerTests.cs',
       aciklama: 'Hesap silme onayının 3 testi — çift onay (OTP + şifre) mekanizmasının HER İKİ parçasını da ayrı ayrı sınar: geçerli OTP+şifre → gerçekten soft delete olur (BaseEntity.IsDeleted, adım 1\'de A-02\'de tanımlandı) + 30 gün grace period planlanır; yanlış şifre → reddedilir; yanlış OTP → reddedilir. Hesap silme gibi geri dönüşü zor bir işlemde tek bir doğrulamanın (yalnızca OTP ya da yalnızca şifre) yeterli olmaması bilinçli bir güvenlik kararıdır — bu üç test o kararın gerçekten uygulandığını kanıtlar.',
       kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -6510,6 +6572,510 @@ public class ConfirmAccountDeletionCommandHandlerTests
         { test: 'ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException', durum: 'Passed', sure: '1.5ms' },
         { test: 'ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException', durum: 'Passed', sure: '1.2ms' },
         { test: 'ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization', durum: 'Passed', sure: '3.4ms' },
+      ]
+    },
+    {
+      num: 67, tur: 'test', grup: 'Birim Testler (21 dosya)',
+      baslik: 'InMemoryDbContextFactory.cs (yeni dosya)', dosya: 'WordLearner.Tests/Common/InMemoryDbContextFactory.cs',
+      aciklama: 'A-02\'deki RepositoryTests.cs (adım 7) kendi TestEntity\'si için özel bir TestDbContext kuruyordu — Repository&lt;T&gt; taban sınıfını gerçek entity\'ler olmadan izole test etmek içindi. Ama IgnoreQueryFilters kullanan (adım 68\'deki) UserRepository sorguları GERÇEK WordLearnerDbContext\'e karşı çalıştırılmalı — sahte bir TestEntity ile bu davranış test edilemez, gerçek soft-delete global filtresinin gerçek DbContext\'te nasıl davrandığı görülmeli. Bu yardımcı (2026-07-12, düşük öncelikli kod kalitesi turu) o boşluğu kapatıyor: her çağrıda `Guid.NewGuid()` ile benzersiz isimli bir EF Core InMemory veritabanı üretir. NEDEN benzersiz isim şart: testler paralel/sırayla çalışırken AYNI veritabanı adını paylaşsaydı bir testin eklediği kayıt başka bir testte de görünür, testler birbirinin sonucunu bozardı (test izolasyonu ilkesi) — Guid, her testin kendi temiz DB\'sinde çalıştığını garanti eder.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// InMemoryDbContextFactory.cs
+//
+// AMAÇ: Feature repository testlerinde (UserRepository, RefreshTokenRepository,
+//       QrLoginSessionRepository) kullanılan, izole bir in-memory WordLearnerDbContext üretir.
+// NEDEN: RepositoryTests.cs'teki CreateContext() yalnızca TestEntity için özel bir
+//        TestDbContext üretiyordu (Repository<T> taban sınıfını gerçek entity'ler
+//        olmadan test etmek için); feature repository'lerin gerçek sorguları
+//        (IgnoreQueryFilters dahil) doğrudan gerçek WordLearnerDbContext'e karşı
+//        çalıştırılmalı — bu üç test dosyasının paylaştığı ortak kurulum burada.
+// BAĞIMLILIKLAR: Microsoft.EntityFrameworkCore.InMemory, WordLearnerDbContext.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Tests.Common;
+
+internal static class InMemoryDbContextFactory
+{
+    // AMAÇ: Her çağrıda benzersiz isimli, izole bir in-memory veritabanı bağlamı üretir.
+    // NEDEN: Testler paralel/sırayla çalışırken aynı veritabanı adını paylaşırsa
+    //        kayıtlar birbirine karışır; Guid ile her test kendi temiz DB'sinde çalışır.
+    public static WordLearnerDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<WordLearnerDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new WordLearnerDbContext(options);
+    }
+}`
+    },
+    {
+      num: 68, tur: 'test', grup: 'Birim Testler (21 dosya)',
+      baslik: 'UserRepositoryTests.cs (yeni dosya)', dosya: 'WordLearner.Tests/Repositories/UserRepositoryTests.cs',
+      aciklama: 'Kod kalitesi denetiminde bulunan bir boşluk: UserRepository\'nin IgnoreQueryFilters() kullanan DÖRT metodu (GetByEmailAsync, GetByGoogleIdAsync, GetByAppleIdAsync, GetByIdIncludingDeletedAsync, OriginalEmailHashExistsAsync) daha önce hiçbir yerde gerçek/in-memory bir DB\'ye karşı test edilmemişti — yalnızca Handler testlerinde `Mock<IUserRepository>` ile TAKLİT ediliyordu, yani mock her zaman "doğru" davranıyormuş gibi davranıyordu, gerçek LINQ sorgusunun soft-delete filtresini GERÇEKTEN yok sayıp saymadığı hiç kanıtlanmamıştı. Bu, kritik bir detayın (IgnoreQueryFilters çağrısının) yanlışlıkla silinmesi durumunda HİÇBİR testin bunu yakalayamayacağı anlamına geliyordu — nitekim `GetQrLoginStatusCommand`\'daki gerçek bug (bkz. A-03.1 bugfix turu) tam olarak bu sınıfta EKSİK olan bir metottan kaynaklanmıştı. `IgnoreQueryFilters()` nedir ve neden gerekli: WordLearnerDbContext\'teki global soft-delete filtresi normalde `IsDeleted=false` olmayan hiçbir kaydı sorgulara YANSITMAZ (her `DbSet<T>` sorgusuna görünmez bir `WHERE IsDeleted = 0` eklenmiş gibi davranır) — ama hesap kurtarma (30 gün grace period) ve "e-posta zaten kullanımda" kontrolü gibi akışlar SİLİNMİŞ bir kaydı da bulabilmeli; `IgnoreQueryFilters()` o görünmez filtreyi BİLEREK devre dışı bırakır. Odak testler: soft-delete\'li bir kullanıcının GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync/GetByIdIncludingDeletedAsync ile GERÇEKTEN bulunabildiğini VE aynı zamanda taban sınıfın filtreli `GetByIdAsync`\'inin onu GÖRMEDİĞİNİ (ikisi arasındaki fark, bug\'ın kendisiydi) kanıtlamak.\nTest Adı: GetByEmailAsync_ActiveUser_ReturnsUser | Ne Test Edildi: Mutlu yol — soft-delete edilmemiş bir kullanıcının bulunduğu | Neden Önemli: Temel regresyon güvencesi.\nTest Adı: GetByEmailAsync_SoftDeletedUser_StillReturnsUser | Ne Test Edildi: Soft-delete\'li (grace period içindeki) bir kullanıcının GetByEmailAsync ile hâlâ bulunduğu | Neden Önemli: Bu olmadan hesap kurtarma ve "e-posta zaten kullanımda" kontrolü çalışamaz.\nTest Adı: GetByEmailAsync_NotFound_ReturnsNull | Ne Test Edildi: Hiç kayıtlı olmayan e-posta için null (exception değil) döndüğü | Neden Önemli: Var olmayan bir kaydın sessizce null dönmesi, çağıran kodun (ör. Register) "kullanıcı yok, kayıt oluşturulabilir" kararını güvenle verebilmesini sağlar.\nTest Adı: GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser | Ne Test Edildi: GoogleId aramasının da soft-delete filtresini yok saydığı | Neden Önemli: Aksi hâlde hesabını silmiş bir kullanıcı Google ile tekrar giriş denediğinde sistem "hesap yok" sanıp aynı GoogleId ile İKİNCİ bir hesap açardı (veri bütünlüğü ihlali).\nTest Adı: GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser | Ne Test Edildi: AppleId aramasının da aynı şekilde davrandığı | Neden Önemli: GetByGoogleIdAsync ile birebir aynı gerekçe, Apple girişi için.\nTest Adı: OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue | Ne Test Edildi: Daha önce anonimleştirilmiş (30 gün sonrası PII temizlenmiş) bir kullanıcının OriginalEmailHash\'inin eşleştiği | Neden Önemli: Bu kontrol olmadan silinip anonimleştirilmiş bir hesabın eski e-postasıyla sınırsızca tekrar kayıt açılabilirdi (REFERENCE/SECURITY.md §9 ihlali).\nTest Adı: OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse | Ne Test Edildi: Eşleşen kayıt yoksa false (yeni kayıt engellenmez) döndüğü | Neden Önemli: Mutlu yolun yanlışlıkla engellenmediğinden emin olur.\nTest Adı: GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser | Ne Test Edildi: Id\'ye göre aramanın da filtresiz çalıştığı VE taban `GetByIdAsync`\'in (filtreli) AYNI kaydı GÖRMEDİĞİ — iki sorgu YAN YANA karşılaştırılır | Neden Önemli: Bu ikilik, GetQrLoginStatusCommand\'daki gerçek A-03.1 bug\'ının ta kendisiydi — bu test olmadan aynı hata sessizce geri gelebilir.\nTest Adı: GetByIdIncludingDeletedAsync_NotFound_ReturnsNull | Ne Test Edildi: Olmayan bir Id için exception değil null döndüğü | Neden Önemli: Çağıran kodun güvenle "bulunamadı" kararı verebilmesi.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// UserRepositoryTests.cs
+//
+// AMAÇ: UserRepository'nin User'a özgü sorgularını (özellikle IgnoreQueryFilters
+//       kullanan dört metodu) gerçek bir in-memory EF Core bağlamına karşı doğrulamak.
+// NEDEN: Kod kalitesi denetiminde bulunan bir boşluk kapatılıyor — bu sorguların
+//        hiçbiri daha önce gerçek/in-memory DB'ye karşı test edilmiyordu (yalnızca
+//        Handler testlerinde Mock<IUserRepository> ile taklit ediliyordu); bu, kritik
+//        bir detayın (IgnoreQueryFilters) yanlışlıkla silinmesi durumunda hiçbir testin
+//        bunu yakalayamayacağı anlamına geliyordu (bkz. Auth_Domain.md "bugfix turu" notu —
+//        GetQrLoginStatusCommand'daki gerçek bug tam olarak bu sınıfta EKSİK olan bir metottan
+//        kaynaklanmıştı). Odak: soft-delete'li bir kullanıcının GERÇEKTEN bulunabildiğini
+//        (grace-period kurtarma/hesap kurtarma akışlarının dayandığı davranış) kanıtlamak.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.UserRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Repositories;
+using WordLearner.Tests.Common;
+
+namespace WordLearner.Tests.Repositories;
+
+public class UserRepositoryTests
+{
+    /// <summary>
+    /// GetByEmailAsync_ActiveUser_ReturnsUser
+    ///
+    /// AMAÇ: Mutlu yol — soft-delete edilmemiş bir kullanıcının e-postayla bulunduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_ActiveUser_ReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "aktif@example.com", FirstName = "A", LastName = "B" }
+        );
+
+        // ACT
+        var bulunan = await repo.GetByEmailAsync("aktif@example.com");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.Id.Should().Be(eklenen.Id);
+    }
+
+    /// <summary>
+    /// GetByEmailAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: Soft-delete edilmiş (grace period içindeki) bir kullanıcının GetByEmailAsync
+    ///       ile hâlâ bulunabildiğini doğrulamak — IgnoreQueryFilters() olmadan bu metot
+    ///       WordLearnerDbContext'in global soft-delete filtresi yüzünden null dönerdi.
+    /// NEDEN kritik: Bu davranış olmadan hesap kurtarma (LoginCompletionService'in
+    ///       IsDeleted→false çevirmesi) ve "e-posta zaten kullanımda" kontrolü çalışamaz —
+    ///       kullanıcı hesabını sildikten sonra AYNI e-postayla tekrar giriş/kayıt denediğinde
+    ///       sistem onu hiç görmemiş gibi davranırdı.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "silinen@example.com", FirstName = "A", LastName = "B" }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByEmailAsync("silinen@example.com");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.IsDeleted.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// GetByEmailAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Hiç kayıtlı olmayan bir e-posta için null döndüğünü (exception fırlatılmadığını) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByEmailAsync("yok@example.com");
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: GoogleId ile aramanın da (GetByEmailAsync ile aynı gerekçeyle) soft-delete
+    ///       filtresini yok saydığını doğrulamak — aksi hâlde Google ile tekrar giriş
+    ///       deneyen, hesabını silmiş bir kullanıcı için LoginWithGoogleCommand yanlışlıkla
+    ///       "hesap yok" sanıp YENİ bir hesap açardı (aynı GoogleId ile ikinci kayıt = veri bütünlüğü ihlali).
+    /// </summary>
+    [Fact]
+    public async Task GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "google@example.com",
+                GoogleId = "google-sub-123",
+                FirstName = "A",
+                LastName = "B",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByGoogleIdAsync("google-sub-123");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: AppleId ile aramanın da soft-delete filtresini yok saydığını doğrulamak
+    ///       (bkz. GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser — aynı gerekçe, Apple girişi).
+    /// </summary>
+    [Fact]
+    public async Task GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "apple@example.com",
+                AppleId = "apple-sub-456",
+                FirstName = "A",
+                LastName = "B",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByAppleIdAsync("apple-sub-456");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue
+    ///
+    /// AMAÇ: Daha önce anonimleştirilmiş (30 gün grace period sonrası PII temizlenmiş) bir
+    ///       kullanıcının OriginalEmailHash'i eşleşiyorsa true döndüğünü doğrulamak — bu
+    ///       kayıt zaten soft-delete'li olduğu için IgnoreQueryFilters() şart.
+    /// NEDEN kritik: Bu kontrol olmadan, silinip anonimleştirilmiş bir hesabın eski
+    ///       e-postasıyla RegisterCommand'da sınırsızca tekrar kayıt açılabilirdi
+    ///       (REFERENCE/SECURITY.md §9 ihlali).
+    /// </summary>
+    [Fact]
+    public async Task OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "deleted_1@deleted.invalid",
+                OriginalEmailHash = "hash-of-original-email",
+                IsAnonymized = true,
+                FirstName = "Silindi",
+                LastName = "Silindi",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var sonuc = await repo.OriginalEmailHashExistsAsync("hash-of-original-email");
+
+        // ASSERT
+        sonuc.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse
+    ///
+    /// AMAÇ: Eşleşen bir kayıt yoksa false döndüğünü (mutlu yol — yeni kayıt engellenmez) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.OriginalEmailHashExistsAsync("hic-eslesmeyen-hash");
+
+        // ASSERT
+        sonuc.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: Id'ye göre aramanın da (GetByIdAsync'in aksine) soft-delete filtresini yok
+    ///       saydığını doğrulamak — 2026-07-11'de QR ile giriş bugfix'inde eklenen metot,
+    ///       taban Repository&lt;T&gt;.GetByIdAsync'in filtreli olması yüzünden
+    ///       GetQrLoginStatusCommand'ın grace-period kurtarmaya hiç ulaşamadığı gerçek bug'ı düzeltti.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "qr@example.com", FirstName = "A", LastName = "B" }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT — hem filtreli hem filtresiz sorguyu karşılaştır
+        var filtreliSonuc = await repo.GetByIdAsync(eklenen.Id);
+        var filtresizSonuc = await repo.GetByIdIncludingDeletedAsync(eklenen.Id);
+
+        // ASSERT — GetByIdAsync (taban sınıf) soft-delete'li kaydı GÖRMEMELİ,
+        //          GetByIdIncludingDeletedAsync GÖRMELİ — bu ikilik, bug'ın kendisiydi.
+        filtreliSonuc.Should().BeNull();
+        filtresizSonuc.Should().NotBeNull();
+        filtresizSonuc!.IsDeleted.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// GetByIdIncludingDeletedAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Olmayan bir Id için exception değil null döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdIncludingDeletedAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByIdIncludingDeletedAsync(999);
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+}`,
+      sonuclar: [
+        { test: 'GetByEmailAsync_ActiveUser_ReturnsUser', durum: 'Passed', sure: '1.2ms' },
+        { test: 'GetByEmailAsync_SoftDeletedUser_StillReturnsUser', durum: 'Passed', sure: '1.0ms' },
+        { test: 'GetByEmailAsync_NotFound_ReturnsNull', durum: 'Passed', sure: '273.1ms' },
+        { test: 'GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser', durum: 'Passed', sure: '38.2ms' },
+        { test: 'GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser', durum: 'Passed', sure: '6.4ms' },
+        { test: 'OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue', durum: 'Passed', sure: '1.0ms' },
+        { test: 'OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse', durum: 'Passed', sure: '3.7ms' },
+        { test: 'GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser', durum: 'Passed', sure: '9.2ms' },
+        { test: 'GetByIdIncludingDeletedAsync_NotFound_ReturnsNull', durum: 'Passed', sure: '0.5ms' },
+      ]
+    },
+    {
+      num: 69, tur: 'test', grup: 'Birim Testler (21 dosya)',
+      baslik: 'RefreshTokenRepositoryTests.cs (yeni dosya)', dosya: 'WordLearner.Tests/Repositories/RefreshTokenRepositoryTests.cs',
+      aciklama: 'bkz. UserRepositoryTests.cs (bir önceki adım) dosya başı gerekçesi — bu sorgular da (hash arama, family/kullanıcı bazlı toplu iptal) daha önce yalnızca Handler testlerinde mock\'lanıyordu, gerçek LINQ `Where` ifadelerinin doğru kayıtları seçtiği hiç doğrulanmamıştı.\nTest Adı: GetByTokenHashAsync_RecordExists_ReturnsToken | Ne Test Edildi: Mutlu yol — hash\'e göre token\'ın bulunduğu | Neden Önemli: /auth/refresh akışının ilk adımı budur.\nTest Adı: GetByTokenHashAsync_NotFound_ReturnsNull | Ne Test Edildi: Eşleşen hash yoksa null (exception değil) döndüğü | Neden Önemli: RefreshCommandHandler bu null\'u InvalidRefreshTokenException\'a çevirir; repository seviyesinde exception fırlarsa Handler\'ın hata dönüşüm sorumluluğu bozulur.\nTest Adı: RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily | Ne Test Edildi: Aynı TokenFamily\'deki TÜM iptal edilmemiş token\'ların RevokedAt\'inin set edildiği; BAŞKA bir family\'deki token\'ın VE zaten iptal edilmiş bir token\'ın RevokedAt\'inin ÜZERİNE YAZILMADIĞI | Neden Önemli: Token Family Pattern\'in replay savunmasının tam kalbi budur — yanlış family iptal edilirse ya sahte kullanıcı dışarıda kalır ya da gerçek kullanıcı gereksiz yere tüm cihazlardan atılır; zaten iptal edilmiş bir token\'ın RevokedAt\'inin korunması, replay\'in GERÇEKTE ne zaman tespit edildiği bilgisinin kaybolmamasını sağlar.\nTest Adı: RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens | Ne Test Edildi: Bir kullanıcının (hangi family\'den olursa olsun) tüm token\'larının iptal edildiği; BAŞKA bir kullanıcının token\'ına dokunulmadığı | Neden Önemli: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" akışı budur — yanlış kullanıcının token\'ları iptal edilirse bir kullanıcı diğerini oturumdan atabilir.',
+      kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RefreshTokenRepositoryTests.cs
+//
+// AMAÇ: RefreshTokenRepository'nin Token Family Pattern'i destekleyen sorgularını
+//       (hash arama, family/kullanıcı bazlı toplu iptal) gerçek bir in-memory EF Core
+//       bağlamına karşı doğrulamak.
+// NEDEN: bkz. UserRepositoryTests.cs dosya başı — daha önce bu sorgular yalnızca
+//        Handler testlerinde mock'lanıyordu, gerçek LINQ ifadelerinin (Where filtreleri)
+//        doğru kayıtları seçtiği hiç doğrulanmamıştı.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.RefreshTokenRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Repositories;
+using WordLearner.Tests.Common;
+
+namespace WordLearner.Tests.Repositories;
+
+public class RefreshTokenRepositoryTests
+{
+    /// <summary>
+    /// GetByTokenHashAsync_RecordExists_ReturnsToken
+    ///
+    /// AMAÇ: Mutlu yol — hash'e göre token'ın bulunduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_RecordExists_ReturnsToken()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new RefreshTokenRepository(context);
+        var eklenen = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 1,
+                TokenHash = "hash-abc",
+                TokenFamily = "family-1",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+
+        // ACT
+        var bulunan = await repo.GetByTokenHashAsync("hash-abc");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.Id.Should().Be(eklenen.Id);
+    }
+
+    /// <summary>
+    /// GetByTokenHashAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Eşleşen bir hash yoksa null döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new RefreshTokenRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByTokenHashAsync("hic-yok-hash");
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+
+    /// <summary>
+    /// RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily
+    ///
+    /// AMAÇ: Aynı TokenFamily'deki TÜM iptal edilmemiş token'ların RevokedAt'inin
+    ///       set edildiğini; BAŞKA bir family'deki token'ın VE zaten iptal edilmiş
+    ///       (RevokedAt dolu) bir token'ın üzerine yazılmadığını doğrulamak.
+    /// NEDEN kritik: Token Family Pattern'in replay savunmasının tam kalbi budur —
+    ///       yanlış family'yi iptal etmek ya sahte kullanıcıyı dışarıda bırakır ya da
+    ///       gerçek kullanıcıyı gereksiz yere tüm cihazlardan atar.
+    /// </summary>
+    [Fact]
+    public async Task RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new RefreshTokenRepository(context);
+        var eskiIptalZamani = DateTime.UtcNow.AddDays(-1);
+        var ayniFamilyIptalEdilmemis = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 1,
+                TokenHash = "hash-1",
+                TokenFamily = "family-replay",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+        var ayniFamilyZatenIptal = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 1,
+                TokenHash = "hash-2",
+                TokenFamily = "family-replay",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+                RevokedAt = eskiIptalZamani,
+            }
+        );
+        var farkliFamily = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 2,
+                TokenHash = "hash-3",
+                TokenFamily = "family-baska",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+
+        // ACT
+        await repo.RevokeFamilyAsync("family-replay");
+
+        // ASSERT
+        (await repo.GetByIdAsync(ayniFamilyIptalEdilmemis.Id))!.RevokedAt.Should().NotBeNull();
+        // NEDEN: Zaten iptal edilmiş token'ın RevokedAt'i (sorgu RevokedAt==null şartı taşıdığı
+        //        için) DEĞİŞMEMELİ — replay'in GERÇEKTE ne zaman tespit edildiği kaybolmamalı.
+        (await repo.GetByIdAsync(ayniFamilyZatenIptal.Id))!.RevokedAt.Should().Be(eskiIptalZamani);
+        (await repo.GetByIdAsync(farkliFamily.Id))!.RevokedAt.Should().BeNull();
+    }
+
+    /// <summary>
+    /// RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens
+    ///
+    /// AMAÇ: Bir kullanıcının (hangi family'den olursa olsun) tüm token'larının iptal
+    ///       edildiğini; BAŞKA bir kullanıcının token'ına dokunulmadığını doğrulamak.
+    /// NEDEN kritik: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" — yanlış
+    ///       kullanıcının token'ları iptal edilirse bir kullanıcı diğerini oturumdan atabilir.
+    /// </summary>
+    [Fact]
+    public async Task RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new RefreshTokenRepository(context);
+        var kullanici1Token1 = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 1,
+                TokenHash = "hash-1",
+                TokenFamily = "family-a",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+        var kullanici1Token2 = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 1,
+                TokenHash = "hash-2",
+                TokenFamily = "family-b",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+        var kullanici2Token = await repo.AddAsync(
+            new RefreshToken
+            {
+                UserId = 2,
+                TokenHash = "hash-3",
+                TokenFamily = "family-c",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+            }
+        );
+
+        // ACT
+        await repo.RevokeAllForUserAsync(1);
+
+        // ASSERT
+        (await repo.GetByIdAsync(kullanici1Token1.Id))!.RevokedAt.Should().NotBeNull();
+        (await repo.GetByIdAsync(kullanici1Token2.Id))!.RevokedAt.Should().NotBeNull();
+        (await repo.GetByIdAsync(kullanici2Token.Id))!.RevokedAt.Should().BeNull();
+    }
+}`,
+      sonuclar: [
+        { test: 'GetByTokenHashAsync_RecordExists_ReturnsToken', durum: 'Passed', sure: '325.9ms' },
+        { test: 'GetByTokenHashAsync_NotFound_ReturnsNull', durum: 'Passed', sure: '0.3ms' },
+        { test: 'RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily', durum: 'Passed', sure: '5.6ms' },
+        { test: 'RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens', durum: 'Passed', sure: '13.3ms' },
       ]
     },
   ],
