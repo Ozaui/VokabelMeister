@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, **güncel toplam 102/102 birim testi yeşil**). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -104,6 +104,7 @@
 ## 4. Standartlar ve Kurallar
 
 - [[Kodlama_Standartlari]] — Türkçe yorum kuralı, AMAÇ/NEDEN/NASIL blokları, test standardı
+- [[Tasarim_Sistemi]] — Admin panel renk paleti/tipografi/stil kuralları (yalnızca tasarım kararı, kod yok)
 - [[Guvenlik_Politikalari]] — JWT, RBAC, şifreleme, rate limiting
 - [[Alman_Dili_Ozellikleri]] — cinsiyet/artikel/hâl/çoğul referansı (`GrammarData` şeması, dil=`de`)
 - [[Turkce_Dili_Ozellikleri]] — ünlü uyumu/hâl eki/iyelik referansı (`GrammarData` şeması, dil=`tr`, öncelikli)
@@ -764,3 +765,95 @@ yeni `QrLoginSessionOwnershipHelper.cs`, `Infrastructure/Repositories/Repository
 dosyası. **Doküman:** `docs/DATABASE_SCHEMA/Auth.md` (VARCHAR(88)→44), `docs/wiki/Backend/
 {Middleware,Repository,ErrorMessages,WordLearner_Tests}.md`, `docs/wiki/Database/Auth_Domain.md`,
 bu dosya (`Index.md`).*
+
+*Yirmi altıncı INGEST (2026-07-12) — Admin panel için tasarım sistemi kararı: Kullanıcı admin
+panel ekranlarını başka bir agent'a (görsel mockup üretecek) tasarlatmadan önce, önce sistemde
+"kullanıcı tema ayarı var mı" sorusunu sordu (yoktu — bu On yedinci INGEST'e kadar hiç
+bahsedilmemişti), sonra bu sohbette bağımsız olarak bir renk paleti/stil kararı aldı: **"Menekşe +
+Mercan"** paleti (Primary `#6D5DFC`/Accent `#FB923C`), Nunito+DM Sans tipografi, rounded (16px
+kart/12px buton, keskin köşe yok) + tek katmanlı yumuşak gölge, ve tasarım agent'larının yaygın bir
+kötü alışkanlığına karşı açık bir kural: eksik görsel/fotoğraf yerine ikon türetme/elle çizme YOK,
+yalnızca işlevsel yerlerde (nav/aksiyon) ikon. Ayrıca kullanıcı bir mockup ekran görüntüsünde 3
+seviyeli kategori ağacı gördü ve "sistemimiz buna uygun mu" diye sordu — `Categories.
+ParentCategoryId` self-referencing FK olduğu doğrulandı (sınırsız derinlik destekleniyor), yalnızca
+mockup'taki "TEMEL/ORTA SEVİYE" insan-dostu etiketlerin şemadaki CEFR kodlarıyla (`MinLevel/
+MaxLevel`) birebir örtüşmediği not edildi (karar bekliyor, kodlanmadı). Yeni `docs/REFERENCE/
+DESIGN_SYSTEM.md` (paletin kalıcı kod-tarafı referansı) ve [[Tasarim_Sistemi]] (bu wiki node'u)
+yazıldı — **B-01 (admin panel kurulumu) henüz yapılmadığı için hiçbir koda/Tailwind config'ine
+dokunulmadı, bu saf bir tasarım kararı.** Etkilenen dosyalar: `docs/REFERENCE/DESIGN_SYSTEM.md`
+(yeni), `docs/wiki/Standartlar/Tasarim_Sistemi.md` (yeni), bu dosya (`Index.md` §4 + bu INGEST),
+`CLAUDE.md` §2 (yönlendirme tablosuna satır eklendi).*
+
+*Yirmi yedinci INGEST (2026-07-12, aynı gün) — Tema Tercihi (ThemePreference) alanı: Yukarıdaki
+tasarım sistemi kararının ardından kullanıcı, sistemde hiç var olmayan dark/light/system tema
+tercihinin **kullanıcı bazlı, DB'de kalıcı** bir özellik olarak eklenmesini istedi; üç mimari soru
+sordu (JWT'de mi taşınsın, success/error mesajlarını mı etkiler, API buna göre mi yazılsın).
+**Kritik bulgu:** `User.CurrentLevel` (A1-C2) zaten "kayıt sırasında sorulan tercih" kategorisinde
+bire bir emsal — ama `RegisterCommand`'a hiç girmiyor (`Email/Password/FirstName/LastName` dördü
+var, `CurrentLevel` yok); DB `DEFAULT 'A1'` ile başlıyor, `RegisterResponse` bu varsayılanı yalnızca
+**döner**, gerçek seçim kayıt sonrası ilk-login-sonrası `LevelSelectPage`/`LevelSelectScreen`
+onboarding ekranında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılıyor — çünkü
+`POST /auth/register`/`verify-email` hiçbir zaman token dönmüyor (`VerifyEmailCommand :
+IRequest<MessageResponse>`), yani "kayıt sırasında" hissedilen her tercih aslında ilk-login-sonrası
+bir onboarding adımı. **Tema bu deseni birebir takip ediyor: (1) JWT'ye girmiyor** (`JwtTokenService`
+claim'leri yalnızca yetki taşır: NameIdentifier/Email/Role/firstName; register/verify-email zaten
+token dönmüyor). **(2) Dil lokalizasyonuyla karışmıyor** (`ErrorMessages`/`SuccessMessages` dile
+göre, tema görsel bir eksen) — ama geçersiz tema DEĞERİ (kullanıcının asıl sorusu) gelecekteki C-01
+validator'ünde normal bir `WithErrorCode` + `ErrorMessages.cs` girdisiyle ele alınacak (bugün C-01
+yokken kodlanmadı, yalnızca not). **(3) `RegisterCommand`'a giriş alanı EKLENMEDİ** — yalnızca
+`RegisterResponse`/`AuthUserDto`'ya çıkış alanı eklendi (DB varsayılanı `"System"` döner),
+`AuthProfile.cs` (`CreateMap<User,X>()`) değişmeden otomatik map ediyor. **Kod yazıldı:**
+`Users.ThemePreference NVARCHAR(10) DEFAULT 'System'` + `CK_Users_ThemePreference` (`CurrentLevel`
+ile aynı iki-katmanlı doğrulama deseni — FluentValidation henüz yok çünkü girdi yok, DB CHECK tek
+savunma hattı), `User.cs`/`UserConfiguration.cs`/migration, `RegisterResponse`/`AuthUserDto`'ya
+alan, 1 yeni test (103. test). **Kod yazılmadı, yalnızca not bırakıldı:** C-01 (`PUT /users/me`
+`themePreference` alacak + validator), D-03/E-05 (`LevelSelectPage/Screen` tema seçimini de
+kapsayacak), D-12/E-14 (profil sayfasından değiştirme). B-02 (Admin Auth) hiç etkilenmedi — admin'ler
+self-servis kayıt olmuyor (CLAUDE.md "Admin elle atanır"), zaten var olan `User` kaydının
+`ThemePreference`'ı login response'unda otomatik gelir. Etkilenen dosyalar: `docs/DATABASE_SCHEMA/
+Auth.md`, `backend/.../{User.cs,UserConfiguration.cs,RegisterDtos.cs,AuthTokenResponse.cs}`, yeni
+migration `AddUserThemePreference`, `RegisterCommandHandlerTests.cs`, `docs/REFERENCE/
+API_ENDPOINTS.md` §3-4, `docs/TASK/{A_admin_panel_backend,C_kullanici_backend,D_web_app,
+E_mobil}.md`, `docs/wiki/Database/Auth_Domain.md`, bu dosya (`Index.md`).*
+
+*Yirmi sekizinci INGEST (2026-07-12) — **Kod kalitesi denetiminin düşük öncelikli 8 bulgusu
+düzeltildi** (Yirmi dördüncü/Yirmi beşinci INGEST'in devamı — ciddi/orta öncelikli turlardan sonraki
+son tur, hiçbiri davranış değiştirmiyor, saf mühendislik pratiği/bakım): **(1)** `ApiErrorResponse`
+`class`'tan `record`'a çevrildi (DTOs/'daki her şey record'du, tek istisnaydı) — JSON çıktısı
+değişmedi, `(string code, string message)` çağrı şekli korundu (secondary constructor). **(2)**
+`ErrorMessages.Resolve`/`SuccessMessages.Resolve` birebir aynı algoritmayı taşıyordu — yeni
+`LocalizedMessageResolver.Resolve(messages, code, language, defaultLanguage)`'a delege edildi, iki
+sözlük ayrı kaldı (kodlar anlamca farklı kümeler). **(3)** `JwtTokenService`'te
+`new SymmetricSecurityKey(...)` iki yerde (GenerateAccessToken/GetPrincipalFromExpiredToken) elle
+tekrarlanıyordu — `GetSigningKey()` private metoduna çıkarıldı. **(4)** `Program.cs`'te
+`UseHttpsRedirection()` loglama/güvenlik-başlıkları/exception middleware'lerinden SONRA
+çağrılıyordu — ASP.NET Core konvansiyonuna uyacak şekilde pipeline'ın EN BAŞINA taşındı. **(5)**
+`RegisterCommandHandlerTests`/`RefreshCommandHandlerTests`/`LoginCompletionServiceTests`'te yerel
+`CreateMapper()` birebir kopyaydı — paylaşılan `WordLearner.Tests.Common.AuthTestMapper.Create()`'e
+çıkarıldı. **(6)** `AuthController` (13) + `QrLoginController` (5) — 18 endpoint'in hiçbirinde
+`[ProducesResponseType]` yoktu, Swagger şeması yalnızca 200/201 gösteriyordu; her endpoin'e gerçek
+exception→status eşlemesini (400/401/403/404/409/410) yansıtan öznitelikler eklendi. **(7)** NuGet
+bakımı: `AutoMapper` 13.0.1'de yüksek önem dereceli bir DoS açığı (GHSA-rvv3-g6hj-g44x) bulundu;
+açığı düzelten min. sürüm (15.1.1) ücretli lisans gerektirdiği için **kullanıcı kararıyla** ücretsiz
+son sürüm 14.0.0'a geçildi (açık bu sürümde hâlâ mevcut — bilinçli kabul edilen düşük-risk;
+`AskUserQuestion` ile üç seçenek sunuldu, kullanıcı "ücretsiz son sürüme geç"i seçti) — `System.
+IdentityModel.Tokens.Jwt` 7.1.0→7.1.2 (yalnızca NU1603 pin-uyuşmazlığı uyarısını gidermek için).
+**(8)** "Repository sorgu mantığı (özellikle `IgnoreQueryFilters`) hiçbir yerde gerçek DB'ye karşı
+test edilmiyor" bulgusu kapatıldı — yeni `UserRepositoryTests` (10, soft-delete'li kullanıcının
+GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync/OriginalEmailHashExistsAsync/
+GetByIdIncludingDeletedAsync ile GERÇEKTEN bulunduğunu kanıtlar), `RefreshTokenRepositoryTests` (4,
+RevokeFamilyAsync/RevokeAllForUserAsync'in yalnızca doğru kayıtları etkilediğini kanıtlar),
+`QrLoginSessionRepositoryTests` (2) — paylaşılan `InMemoryDbContextFactory` ile. 102→117 test, hepsi
+yeşil. **Roadmap:** `A-02_ortak-altyapi.html`/`A-03_auth-api.html`/`A-03.1_qr-login.html` senkronize
+edildi (yeni dosyalar için yeni adımlar dahil). **Etkilenen kod dosyaları:**
+`Application/Common/Models/ApiErrorResponse.cs`, `Application/Common/Localization/
+{ErrorMessages,SuccessMessages}.cs`, yeni `LocalizedMessageResolver.cs`,
+`Application/Services/JwtTokenService.cs`, `API/Program.cs`, `API/Controllers/
+{Auth,QrLogin}Controller.cs`, `Application/WordLearner.Application.csproj`, 3 test dosyası, yeni
+`Tests/Common/{AuthTestMapper,InMemoryDbContextFactory}.cs`, yeni `Tests/Repositories/
+{User,RefreshToken,QrLoginSession}RepositoryTests.cs`. **Etkilenen doküman/wiki dosyaları:**
+`docs/DATABASE_SCHEMA.md`'ye dokunulmadı (kapsam dışı), `docs/wiki/Standartlar/Teknik_Ozellikler.md`
+(paket versiyonları), `docs/wiki/Backend/{ApiErrorResponse,Program_cs,WordLearner_Tests}.md`,
+`docs/wiki/Architecture/Backend_Katmanli_Mimari.md`, bu dosya (`Index.md`). **Not:** Bu INGEST
+Yirmi altıncı/Yirmi yedinci INGEST'lerle (tasarım sistemi + tema tercihi) EŞ ZAMANLI, bağımsız bir
+oturumda yazıldı — numaralandırma çakışmasını önlemek için Yirmi sekizinci olarak numaralandırıldı.*

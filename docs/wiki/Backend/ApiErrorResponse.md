@@ -11,13 +11,19 @@
 ```csharp
 public record ApiErrorDetail(string Code, string Message);
 
-public class ApiErrorResponse
+public record ApiErrorResponse(ApiErrorDetail Error)
 {
-    public bool Success { get; } = false;   // sabit — bu tip yalnızca hata yolunda kullanılır
-    public ApiErrorDetail Error { get; set; }
-    public ApiErrorResponse(string code, string message) { Error = new ApiErrorDetail(code, message); }
+    public bool Success => false;   // sabit — bu tip yalnızca hata yolunda kullanılır
+
+    public ApiErrorResponse(string code, string message)
+        : this(new ApiErrorDetail(code, message)) { }
 }
 ```
+**Düzeltme (2026-07-12, kod kalitesi denetimi):** `class`'tan `record`'a çevrildi — DTOs/'daki
+her şey (dahil `ApiErrorDetail`'in kendisi) immutable record'ken bu tip tek istisnaydı. JSON çıktısı
+DEĞİŞMEDİ (`{"error":{"code":...,"message":...},"success":false}`, manuel `JsonSerializer` ile
+doğrulandı); `(string code, string message)` çağrı şekli de aynı kaldı, `ExceptionHandlingMiddleware`/
+`ValidationFilter`'daki çağıranlar dokunulmadan çalışmaya devam ediyor.
 `code` alanı sabit, dilden bağımsız bir sözlük gibi davranır (`NOT_FOUND`, `INVALID_CREDENTIALS`,
 `INTERNAL_SERVER_ERROR` — bkz. [[Middleware]]); frontend, "message"i doğrudan göstermek yerine "code"a göre
 özel davranış tetikleyebilir. **`message` alanı artık `Accept-Language` header'ına göre değişir**
