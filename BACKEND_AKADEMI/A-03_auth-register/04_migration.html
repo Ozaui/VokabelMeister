@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Migration</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'migration',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '03_ef-configuration.html',
+    sonrakiBolum: '05_command-validator.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 11 · CLAUDE.md ADIM 3',
+        baslik: 'Migration',
+        altBaslik: 'C# koduyla tanımladığımız User sınıfı, henüz veritabanında GERÇEK bir tablo değil. Migration, aradaki köprüdür.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration Nedir?',
+        aciklama: 'Entity (Bölüm 9) ve Configuration (Bölüm 10) yazmak, yalnızca C# tarafında "veritabanı böyle görünmeli" bilgisini oluşturur — gerçek SQL Server\'da henüz bir "Users" tablosu YOKTUR. `dotnet ef migrations add <İsim>` komutu, C# modelini gerçek veritabanı şemasıyla KARŞILAŞTIRIR ve aradaki farkı bir C# dosyasına (migration) yazar.',
+        neden: 'Migration dosyaları, veritabanı şemasının GEÇMİŞİNİ Git\'te saklanabilir, gözden geçirilebilir, geri alınabilir bir biçimde tutar — "veritabanı şu an nasıl göründüğü" sorusunun cevabı, elle SQL çalıştırma geçmişinde değil, bu dosyalarda yaşar.',
+        olmasaydi: 'Migration olmasaydı, her şema değişikliği (yeni kolon, yeni tablo) elle SQL script\'i yazıp elle çalıştırmakla yapılırdı — bir geliştiricinin kendi makinesinde çalıştırdığı script, başka bir geliştiricinin makinesinde UNUTULABİLİR, üretim veritabanı geliştirme veritabanından SESSİZCE farklılaşabilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Küçük Bir Migration — AddUserThemePreference',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260711225640_AddUserThemePreference.cs',
+        nedenBuKlasor: 'Migrations/ klasörü altında, dosya adı ZAMAN DAMGASI ile başlar (20260711225640) — bu, migration\'ların hangi SIRAYLA uygulanacağını, dosya sistemi sıralamasından bağımsız şekilde garanti eder.',
+        kod: `public partial class AddUserThemePreference : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<string>(
+            name: "ThemePreference",
+            table: "Users",
+            type: "nvarchar(10)",
+            maxLength: 10,
+            nullable: false,
+            defaultValue: "System");
+
+        migrationBuilder.AddCheckConstraint(
+            name: "CK_Users_ThemePreference",
+            table: "Users",
+            sql: "ThemePreference IN ('Light','Dark','System')");
+    }
+
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropCheckConstraint(
+            name: "CK_Users_ThemePreference",
+            table: "Users");
+
+        migrationBuilder.DropColumn(
+            name: "ThemePreference",
+            table: "Users");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public partial class AddUserThemePreference : Migration',
+            aciklama: 'Sınıf, EF Core\'un `Migration` temel sınıfından türer ve `partial` olarak işaretlenir — `partial`, EF Core\'un ARKADA (Designer dosyasında) bu sınıfın model "snapshot"ını tutan ikinci bir parçayı otomatik üretmesine izin verir.',
+            neden: 'Sınıf adı (`AddUserThemePreference`), `dotnet ef migrations add` komutuna verilen isimle BİREBİR aynıdır — dosya adındaki zaman damgasıyla birlikte bu migration\'ın veritabanı geçmişindeki YERİNİ benzersiz şekilde tanımlar.',
+            olmasaydi: '`Migration`\'dan türemeseydi, EF Core bu sınıfı bir migration olarak TANIMAZ, `dotnet ef database update` komutu bu dosyayı hiç görmez, ThemePreference kolonu asla veritabanına EKLENMEZDİ.'
+          },
+          {
+            satir: 'protected override void Up(MigrationBuilder migrationBuilder)',
+            aciklama: '"Up" (yukarı), bu migration UYGULANDIĞINDA (`dotnet ef database update`) çalışacak kodu içerir — burada "Users tablosuna ThemePreference kolonu ekle" komutu var.',
+            neden: 'Bu kod, aslında arkada bir SQL komutu (`ALTER TABLE Users ADD ThemePreference nvarchar(10) NOT NULL DEFAULT \'System\'`) üretir — ama C# olarak yazılması, farklı veritabanı sağlayıcıları (SQL Server, PostgreSQL) arasında TAŞINABİLİR olmasını sağlar.',
+            olmasaydi: 'Bu C# soyutlaması olmasaydı, ham SQL yazmak gerekirdi — SQL Server\'a özgü sözdizimiyle yazılan bir script, ileride PostgreSQL\'e geçilirse SIFIRDAN yeniden yazılması gerekirdi.'
+          },
+          {
+            satir: 'migrationBuilder.AddColumn<string>(',
+            aciklama: 'Users tablosuna yeni bir `string` tipinde kolon ekleme komutu BAŞLAR — aşağıdaki `name`/`table`/`type`/`maxLength`/`nullable`/`defaultValue` parametreleri bu tek çağrının parçalarıdır.',
+            neden: 'Generic `<string>` parametresi, EF Core\'a kolonun .NET tarafındaki karşılığının hangi tip olduğunu söyler — bu bilgi, hangi SQL veri tipinin (nvarchar) üretileceğini BELİRLER.',
+            olmasaydi: 'Bu çağrı olmasaydı, ThemePreference kolonu veritabanına HİÇ eklenmezdi — User.cs\'teki `ThemePreference` property\'si C# tarafında var olsa bile, veritabanı sorgusu "böyle bir kolon yok" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'name: "ThemePreference",',
+            aciklama: 'Eklenecek/silinecek kolonun ADI — bu dosyada İKİ kez (AddColumn ve DropColumn\'da) görünen, User.cs\'teki property adıyla BİREBİR eşleşmesi gereken bir parametre.',
+            neden: 'Bu isim, EF Core\'un modeldeki `ThemePreference` property\'sini veritabanındaki HANGİ kolonla eşleştireceğini belirler — Configuration dosyasında farklı bir isim (`HasColumnName`) verilmediği sürece, property adı = kolon adı.',
+            olmasaydi: 'Bu isim User.cs\'teki property adından FARKLI yazılsaydı (ör. yazım hatasıyla "TemaPreference"), EF Core çalışma zamanında "ThemePreference kolonu bulunamadı" hatası verirdi — model ile veritabanı şeması SESSİZCE uyumsuz hale gelirdi.'
+          },
+          {
+            satir: 'table: "Users",',
+            aciklama: 'Kolonun/constraint\'in hangi TABLOYA ait olduğunu belirtir — bu dosyada birden çok yerde (AddColumn, AddCheckConstraint) tekrar eden bir parametre.',
+            neden: 'Migration\'lar TEK bir tabloyla sınırlı değildir (bir migration birden fazla tabloyu değiştirebilir) — bu yüzden her komut HANGİ tabloyu hedeflediğini AÇIKÇA belirtmek zorundadır.',
+            olmasaydi: 'Bu parametre olmasaydı, EF Core hangi tabloya ALTER TABLE uygulayacağını BİLEMEZDİ — derleme/çalışma zamanı hatası kaçınılmaz olurdu.'
+          },
+          {
+            satir: 'type: "nvarchar(10)",',
+            aciklama: 'Kolonun SQL Server\'daki ham veri tipini AÇIKÇA belirtir — "System"/"Light"/"Dark" değerlerinin en uzunu (System, 6 karakter) için yeterli, ama gereksiz büyük olmayan bir boyut (10) seçilmiştir.',
+            neden: 'EF Core, C# `string` tipinden SQL tipini genelde OTOMATİK türetebilir ama burada AÇIKÇA belirtmek, kolonun boyutu üzerinde TAM kontrol sağlar — CHECK constraint\'in izin verdiği 3 değerin (Light/Dark/System) hiçbiri bu boyutu AŞMAZ.',
+            olmasaydi: 'Tip belirtilmeseydi, EF Core\'un varsayılan davranışına (muhtemelen daha geniş bir nvarchar) bağlı kalınırdı — bu, MaxLength ile tutarlı, kasıtlı bir boyut seçimi yerine RASTGELE bir sonuç doğururdu.'
+          },
+          {
+            satir: 'maxLength: 10,',
+            aciklama: 'EF Core\'un model metadata\'sına, bu kolonun en fazla 10 karakter olacağını bildirir — `type: "nvarchar(10)"` ile TUTARLI olması gereken bir değer.',
+            neden: 'Bu değer, EF Core\'un ÜRETTİĞİ sonraki migration\'larda (ör. modelde başka bir değişiklik olduğunda) bu kolonun boyutunu YANLIŞLIKLA farklı bir değere DEĞİŞTİRMEMESİ için model snapshot\'ında SAKLANIR.',
+            olmasaydi: 'Bu değer `type` parametresiyle TUTARSIZ olsaydı (ör. maxLength: 20 ama type: nvarchar(10)), EF Core\'un iç model temsili ile GERÇEK veritabanı şeması arasında bir ÇELİŞKİ oluşur, sonraki migration\'lar YANLIŞ farklar üretebilirdi.'
+          },
+          {
+            satir: 'nullable: false,',
+            aciklama: 'Kolonun NULL değer ALAMAYACAĞINI belirtir — her kullanıcı satırı MUTLAKA bir ThemePreference değeri taşımalıdır.',
+            neden: 'User.cs\'teki `public string ThemePreference { get; set; } = "System";` tanımı zaten C# tarafında "asla null değil" diyordu — bu parametre, aynı garantiyi veritabanı SEVİYESİNDE de uygular, C# ile DB şemasının TUTARLI kalmasını sağlar.',
+            olmasaydi: 'Kolon nullable bırakılsaydı, C# tarafında "asla null değil" varsayımıyla yazılmış kod (ör. `user.ThemePreference.ToLower()`) veritabanından GERÇEKTEN null bir değer okunursa NullReferenceException fırlatabilirdi.'
+          },
+          {
+            satir: 'defaultValue: "System");',
+            aciklama: 'Yeni kolon NOT NULL olarak eklenir ama bir varsayılan değer (defaultValue) taşır.',
+            neden: 'Bu tablo zaten VAR OLAN kayıtlar içeriyordu (bu migration, User tablosu oluşturulduktan GÜNLER sonra eklendi) — NOT NULL bir kolon varsayılan değersiz eklenseydi, mevcut satırlar için "bu kolonun değeri ne olacak" sorusu cevapsız kalırdı ve migration BAŞARISIZ olurdu.',
+            olmasaydi: 'defaultValue verilmeseydi, SQL Server mevcut milyonlarca satırdaki ThemePreference için NULL yazmaya çalışırdı — ama kolon NOT NULL olarak tanımlandığı için bu bir ÇELİŞKİ oluşturur, migration veritabanına uygulanamazdı.'
+          },
+          {
+            satir: 'migrationBuilder.AddCheckConstraint(',
+            aciklama: 'ThemePreference kolonuna, EF Configuration\'da (A-03/03\'teki Level/Role/AuthProvider ile AYNI desende) bir CHECK constraint ekleme komutu BAŞLAR.',
+            neden: 'Bu migration, hem KOLONU hem de o kolonun DEĞER kümesini SINIRLAYAN constraint\'i AYNI migration içinde ekler — kolon eklenip constraint\'in UNUTULMASI, geçersiz tema değerlerinin veritabanına sızmasına yol açabilirdi.',
+            olmasaydi: 'Bu çağrı olmasaydı, ThemePreference kolonu eklenir ama "Light"/"Dark"/"System" DIŞINDA herhangi bir string (ör. yazım hatasıyla "ligth") veritabanına SESSİZCE yazılabilirdi.'
+          },
+          {
+            satir: 'name: "CK_Users_ThemePreference",',
+            aciklama: 'Eklenecek/silinecek CHECK constraint\'in ADI — bu dosyada İKİ kez (AddCheckConstraint ve DropCheckConstraint\'te) görünür, "CK_" öneki (A-03/03\'teki Level/Role/AuthProvider constraint\'leriyle AYNI konvansiyon) ile başlar.',
+            neden: 'Constraint\'e bir isim vermek, ileride bu constraint\'i BAŞKA bir migration\'da (ör. kısıtı gevşetmek için) REFERANS vermeyi mümkün kılar — isimsiz constraint\'ler yalnızca veritabanının otomatik ürettiği (ve okunması zor) bir isimle bulunabilirdi.',
+            olmasaydi: 'İsim verilmeseydi, SQL Server otomatik bir isim ÜRETİRDİ (ör. "CK__Users__..._1234ABCD") — bu ismi Down metodunda (DropCheckConstraint) REFERANS vermek gerektiğinde, hangi constraint\'in hangisi olduğunu bulmak ZORLAŞIRDI.'
+          },
+          {
+            satir: 'sql: "ThemePreference IN (\'Light\',\'Dark\',\'System\')");',
+            aciklama: 'Constraint\'in asıl SQL ifadesi — ThemePreference kolonunun SADECE bu üç değerden birini alabileceğini garanti eder.',
+            neden: 'A-03/03\'teki Level/Role/AuthProvider constraint\'leriyle AYNI desen: enum yerine string kullanmanın BEDELİ, veritabanı seviyesinde bir CHECK constraint ile ÖDENİR.',
+            olmasaydi: 'Bu constraint olmasaydı, bir onboarding ekranındaki bir bug ya da elle veritabanı güncellemesi, ThemePreference\'ı "Blue" gibi TANINMAYAN bir değere ayarlayabilirdi — arayüz bu değeri Light/Dark/System DIŞINDA bir şey olarak TANIMAZ, varsayılan (muhtemelen yanlış) bir temayla render ederdi.'
+          },
+          {
+            satir: 'protected override void Down(MigrationBuilder migrationBuilder)',
+            aciklama: '"Down" (aşağı), bu migration GERİ ALINDIĞINDA çalışacak kodu içerir — Up\'ın yaptığı her şeyi TERS sırayla geri alır (önce constraint\'i, sonra kolonu siler).',
+            neden: 'Bir migration üretime uygulandıktan sonra bir sorun keşfedilirse, `dotnet ef database update <öncekiMigration>` ile GÜVENLE geri dönülebilmesi için her Up\'ın bir Down karşılığı olmalı.',
+            olmasaydi: 'Down metodu olmasaydı (ya da boş bırakılsaydı), yanlış giden bir migration\'ı geri almanın TEK yolu veritabanını elle, manuel SQL ile düzeltmek olurdu — riskli ve hataya açık bir kurtarma süreci.'
+          },
+          {
+            satir: 'migrationBuilder.DropCheckConstraint(',
+            aciklama: 'Up\'ta eklenen CHECK constraint\'i SİLME komutu BAŞLAR — Down, Up\'ın adımlarını TERS SIRAYLA (önce constraint, sonra kolon) geri alır.',
+            neden: 'Sıra ÖNEMLİDİR: kolon silinmeden ÖNCE ona bağlı constraint\'in silinmesi gerekir — aksi halde SQL Server "bu kolona bağlı bir constraint var, önce onu sil" hatasıyla kolon silme işlemini REDDEDER.',
+            olmasaydi: 'Bu çağrı olmasaydı (ya da DropColumn\'dan SONRA çağrılsaydı), Down migration\'ı ya constraint\'i hiç TEMİZLEMEZDİ ya da yanlış sırada hata verip GERİ ALMA işlemini YARIM bırakırdı.'
+          },
+          {
+            satir: 'table: "Users");',
+            aciklama: 'DropCheckConstraint ve DropColumn çağrılarının HANGİ tabloyu hedeflediğini belirten kapanış parametresi — bu dosyada İKİ kez (her iki Drop çağrısında) görünür.',
+            neden: 'Silme komutları da, ekleme komutları gibi HANGİ tabloya uygulanacağını AÇIKÇA belirtmek zorundadır — Down metodu farklı bir migration\'ın parçası olsa bile bu KURAL değişmez.',
+            olmasaydi: 'Bu parametre olmasaydı, EF Core hangi tablodan constraint/kolon SİLECEĞİNİ bilemez, derleme hatası ya da çalışma zamanı istisnası oluşurdu.'
+          },
+          {
+            satir: 'migrationBuilder.DropColumn(',
+            aciklama: 'Up\'ta eklenen ThemePreference kolonunu TAMAMEN silme komutu BAŞLAR — bu, Down\'ın SON adımıdır.',
+            neden: 'Bu, `AddColumn`\'ın TAM TERSİDİR — geri alma (rollback) senaryosunda veritabanı şemasının Up ÇALIŞTIRILMADAN ÖNCEKİ haline BİREBİR dönmesini garanti eder.',
+            olmasaydi: 'Bu çağrı olmasaydı, Down çalıştırıldığında CHECK constraint silinir ama kolon veritabanında KALIRDI — "geri alma" işlemi YARIM kalır, şema Up öncesi hale TAM olarak dönmezdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Komut: dotnet ef migrations add',
+        aciklama: 'Terminalde `dotnet ef migrations add AddUserThemePreference --project backend/WordLearner.Infrastructure --startup-project backend/WordLearner.API` çalıştırılır. EF Core, o an C# modelinde (Entity + Configuration) olan her şeyi, en son uygulanan migration\'ın bıraktığı şemayla karşılaştırır ve FARKI otomatik üretir.',
+        neden: 'Migration dosyasının İÇERİĞİ elle yazılmaz — EF Core\'un "model diff" (model farkı) motoru üretir. Geliştirici yalnızca migration\'a bir İSİM verir (AddUserThemePreference), üretilen kodu GÖZDEN GEÇİRİR.',
+        olmasaydi: 'Bu otomatik diff aracı olmasaydı, her yeni alan/kolon için ALTER TABLE komutunu elle yazmak gerekirdi — Entity\'deki bir değişikliği migration\'a manuel yansıtmayı UNUTMAK, kod ile veritabanı şemasının SESSİZCE birbirinden uzaklaşmasına yol açardı.'
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Migration, C# modelini (Entity+Configuration) gerçek veritabanı şemasına dönüştüren köprü',
+          'Migration dosyaları elle yazılmaz — EF Core\'un model-diff motoru tarafından üretilir',
+          'Her Up() metodunun bir Down() karşılığı olmalı — güvenli geri alma için',
+          'Var olan tabloya NOT NULL kolon eklerken defaultValue ZORUNLU (mevcut satırlar için)',
+          'Dosya adındaki zaman damgası, migration\'ların uygulanma sırasını garanti eder'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

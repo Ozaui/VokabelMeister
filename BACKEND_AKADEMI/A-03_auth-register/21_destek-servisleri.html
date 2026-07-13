@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Destek Servisleri: IPasswordService + IEmailService</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'destek-servisleri',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '20_hata-mimarisi-appexception.html',
+    sonrakiBolum: '22_refresh-token-repository.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 21 · BACKEND ALTYAPI DERİNLEŞTİRME',
+        baslik: 'Destek Servisleri: IPasswordService + IEmailService',
+        altBaslik: 'Bölüm 8\'deki Handler\'ın "_passwordService.Hash(...)" ve "_emailService.SendEmailVerificationOtpAsync(...)" çağırdığı iki küçük, tek-amaçlı servisin GERÇEK kodu.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Flat, Neden Application/Services?',
+        aciklama: 'PasswordService ve DevEmailService, `Application/Services/` altında; sözleşmeleri (IPasswordService, IEmailService) `Application/Interfaces/Services/` altında — İKİSİ de ALT KLASÖRSÜZ, DÜZ (flat) duruyor. Bu, CLAUDE.md §3\'teki "Paylaşılan mantık ... küçük bir arayüz+impl\'e çıkarılır (Application/Services/ + Application/Interfaces/Services/, flat)" kuralının somut örneği.',
+        neden: 'Şifre hash\'leme ve e-posta gönderme, TEK bir feature\'a (ör. yalnızca Register) ait DEĞİL — Register, Login, ForgotPassword, ResetPassword, RequestAccountDeletion gibi BİRDEN FAZLA Handler AYNI IPasswordService/IEmailService\'i ENJEKTE EDER. "Auth\'a özel" değil "PAYLAŞILAN" bir yetenek olduğu için, `Features/Auth/` gibi bir feature klasörünün İÇİNE değil, feature\'lar ARASI PAYLAŞILAN düz bir klasöre KONUR.',
+        olmasaydi: 'Bu servisler `Features/Auth/Services/` gibi Auth\'a ÖZEL bir alt klasörde OLSAYDI, gelecekte Auth DIŞI bir feature (ör. kelime kartı paylaşım linki için token üretimi) AYNI HashToken metoduna ihtiyaç DUYDUĞUNDA, ya "Auth\'un içinden import" gibi GARİP bir bağımlılık kurulur ya da AYNI kod BAŞKA bir yerde TEKRAR yazılırdı — flat konum, "bu HERKESİN kullanabileceği ortak bir araçtır" mesajını klasör YAPISIYLA verir.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IPasswordService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IPasswordService.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IPasswordService.cs
+//
+// AMAÇ: Şifre hash'leme/doğrulama ve token hash'leme sözleşmesi.
+// NEDEN: AuthService (A-03) somut BCrypt implementasyonuna değil bu arayüze
+//        bağımlı olmalı — testlerde mock enjekte edilebilir, ileride hash
+//        algoritması değişirse (ör. Argon2) çağıran kod etkilenmez.
+// BAĞIMLILIKLAR: Yok — saf sözleşme.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface IPasswordService
+{
+    // AMAÇ: Düz metin şifreyi BCrypt ile hash'ler.
+    // NEDEN: PasswordHash sütununa yalnızca hash yazılır, plaintext asla saklanmaz
+    //        (REFERENCE/SECURITY.md §1 — Şifre Kuralları).
+    string Hash(string password);
+
+    // AMAÇ: Düz metin şifreyi mevcut hash ile karşılaştırır.
+    // NEDEN: BCrypt.Verify constant-time çalışır; timing attack riskini azaltır.
+    bool Verify(string password, string hash);
+
+    // AMAÇ: Refresh token / OTP kodu gibi rastgele üretilen token'ları SHA-256 ile hash'ler.
+    // NEDEN: RefreshTokens.TokenHash ve Users.PendingOtpCodeHash DB'de yalnızca hash
+    //        tutar — ham token/OTP sızıntı durumunda bile kullanılamaz.
+    string HashToken(string token);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IPasswordService',
+            aciklama: 'Bölüm 8\'deki `RegisterCommandHandler`\'ın constructor\'ında `IPasswordService _passwordService` olarak ENJEKTE edilen sözleşme — Handler, BCrypt kütüphanesinin VARLIĞINDAN bile HABERSİZDİR.',
+            neden: 'Handler\'ın somut `PasswordService` sınıfına DEĞİL, bu ARAYÜZE bağımlı olması, Bölüm 9\'daki `RegisterCommandHandlerTests`\'te GERÇEK BCrypt çalıştırmadan (`Mock<IPasswordService>` ile SAHTE bir Hash/Verify davranışı vererek) test YAZILMASINI sağlar — testler saniyeler DEĞİL, MİLİSANİYELER sürer.',
+            olmasaydi: 'Handler doğrudan `BCrypt.Net.BCrypt.HashPassword(...)` ÇAĞIRSAYDI, HER test çalıştırmasında GERÇEK (yavaş, work factor=12 ile ~200ms) bir hash İŞLEMİ ÇALIŞTIRILIRDI — yüzlerce test ÇALIŞTIRAN bir CI pipeline\'ı dakikalarca SÜREBİLİRDİ.'
+          },
+          {
+            satir: 'string Hash(string password);',
+            aciklama: 'Düz metin şifreyi ALIR, hash\'lenmiş halini DÖNER — Bölüm 8\'de `RegisterCommandHandler`\'ın `PasswordHash = _passwordService.Hash(command.Password)` satırında GÖRDÜĞÜMÜZ çağrının SÖZLEŞMESİ.',
+            neden: 'Metodun İMZASI (girdi: düz string, çıktı: düz string) KASITLI olarak BASİT — çağıran kod (Handler), BCrypt\'in İÇ detaylarını (salt üretimi, work factor) hiç BİLMEK ZORUNDA DEĞİLDİR, yalnızca "şifre VER, hash AL" bilir.',
+            olmasaydi: 'Bu metot OLMASAYDI, her Handler kendi İÇİNDE `BCrypt.Net.BCrypt.HashPassword(...)` ÇAĞIRMAK ZORUNDA kalırdı — work factor SABİTİ (12) her Handler\'da AYRI AYRI TEKRARLANIR, biri YANLIŞLIKLA farklı bir değer KULLANIRSA güvenlik TUTARSIZLIĞI oluşurdu.'
+          },
+          {
+            satir: 'bool Verify(string password, string hash);',
+            aciklama: 'Login akışında (Bölüm 14), kullanıcının GİRDİĞİ şifre ile veritabanındaki HASH\'in EŞLEŞİP eşleşmediğini kontrol eder.',
+            neden: '"Constant-time" (sabit süreli) çalışması KRİTİK — Bölüm 19 sözlüğünde geçen "Timing-Attack Önlemi" TAM OLARAK bu metodun BCrypt\'in KENDİ iç algoritmasına DAYANMASIYLA sağlanır, elle yazılmış bir string KARŞILAŞTIRMASI (`password == stored`) BU garantiyi VERMEZ.',
+            olmasaydi: 'Bu metot yerine ELLE bir string KARŞILAŞTIRMASI yapılsaydı, saldırgan YANIT SÜRESİNDEKİ mikrosaniyelik FARKLARI ÖLÇEREK şifreyi KARAKTER KARAKTER TAHMİN edebilirdi (klasik timing attack).'
+          },
+          {
+            satir: 'string HashToken(string token);',
+            aciklama: '`Hash`\'ten AYRI, ikinci bir metot — refresh token ve OTP kodu gibi ZATEN yüksek entropili (rastgele üretilmiş) değerler için KULLANILIR.',
+            neden: 'Şifreler İNSAN tarafından SEÇİLİR (düşük entropi, tahmin edilebilir) — bu yüzden YAVAŞ, salt\'lı BCrypt GEREKİR. Refresh token/OTP ise SİSTEM tarafından RASTGELE ÜRETİLİR (yüksek entropi) — YAVAŞ bir algoritmaya gerek YOKTUR, HIZLI SHA-256 YETERLİDİR. Bu metodun AYRI olması, bu İKİ FARKLI güvenlik ihtiyacının KARIŞTIRILMAMASINI sağlar.',
+            olmasaydi: 'Refresh token\'lar da `Hash` (BCrypt) ile hash\'lenseydi, HER refresh isteğinde YÜZLERCE MİLİSANİYE gereksiz GECİKME eklenirdi (BCrypt KASITLI olarak yavaştır) — HIZ/güvenlik dengesi YANLIŞ tarafa KAYARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'PasswordService.cs — BCrypt + SHA-256 İmplementasyonu',
+        dosyaYolu: 'backend/WordLearner.Application/Services/PasswordService.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// PasswordService.cs
+//
+// AMAÇ: IPasswordService'in BCrypt (şifre) + SHA-256 (token) tabanlı implementasyonu.
+// NEDEN: ASP.NET Identity kullanılmadığı için (REFERENCE/SECURITY.md §1) şifre
+//        hash'leme manuel yazılır; work factor 12, saldırganın brute-force
+//        maliyetini kabul edilebilir ölçüde artırırken login gecikmesini makul tutar.
+// BAĞIMLILIKLAR: BCrypt.Net-Next, System.Security.Cryptography (SHA256).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Cryptography;
+using System.Text;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class PasswordService : IPasswordService
+{
+    // NEDEN 12: REFERENCE/TECHNICAL_SPECIFICATIONS.md §6'da pinlenen değer — 10'dan güvenli,
+    //        14+'ten hızlı; her login isteğinde kabul edilebilir bir gecikme (~200-300ms) verir.
+    private const int WorkFactor = 12;
+
+    // AMAÇ: Düz metin şifreyi BCrypt ile hash'ler (60 karakter, otomatik rastgele salt).
+    public string Hash(string password) =>
+        BCrypt.Net.BCrypt.HashPassword(password, workFactor: WorkFactor);
+
+    // AMAÇ: Düz metin şifreyi mevcut hash ile constant-time karşılaştırır.
+    // NEDEN: BCrypt.Verify salt'ı hash içinden kendi çıkarır, work factor'e bakılmaksızın çalışır.
+    public bool Verify(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);
+
+    // AMAÇ: Refresh token / OTP kodu gibi rastgele üretilen değerleri SHA-256 ile hash'ler.
+    // NEDEN: Bu değerler şifre değildir (zaten yüksek entropili rastgele veridir), bu yüzden
+    //        BCrypt'in yavaş/salt'lı tasarımına ihtiyaç yoktur — SHA-256 hızlı ve yeterlidir;
+    //        RefreshTokens.TokenHash ve Users.PendingOtpCodeHash bu metotla üretilir.
+    public string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToBase64String(bytes);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private const int WorkFactor = 12;',
+            aciklama: 'BCrypt\'in KAÇ KEZ tekrarlı hashleme yapacağını belirleyen "cost factor" — 12, 2\'nin 12. kuvveti (4096) kadar İÇ İŞLEM anlamına gelir.',
+            neden: 'Bu SABİTİN `PasswordService` İÇİNDE, TEK bir yerde durması — REFERENCE/TECHNICAL_SPECIFICATIONS.md §6\'da PİNLENEN değerin KOD karşılığıdır; work factor YÜKSELTİLMEK istendiğinde (ör. donanım GÜÇLENDİKÇE) TEK satır DEĞİŞİR, TÜM sistem AYNI ANDA güncellenir.',
+            olmasaydi: 'Bu değer HER `Hash` çağrısında ELLE geçirilseydi (`Hash(password, workFactor: 12)` gibi), bir gün BİRİSİ farklı bir değer GEÇİREBİLİR ve VERİTABANINDA farklı work factor\'lü hash\'ler KARIŞIRDI — `Verify` yine ÇALIŞIR (BCrypt salt+cost\'u hash içinde SAKLAR) ama TUTARSIZLIK, güvenlik POLİTİKASININ TEK yerden yönetilmediğini GÖSTERİRDİ.'
+          },
+          {
+            satir: 'public string Hash(string password) =>',
+            aciklama: 'Expression-bodied üye (`=>`) — metodun TEK satırlık gövdesi olduğu için `{ return ...; }` yerine KISA sözdizimi KULLANILIR.',
+            neden: 'BCrypt.Net kütüphanesinin `HashPassword` metodu ZATEN salt üretimini, hash\'lemeyi ve SONUCU tek bir 60-karakterlik string\'e KODLAMAYI kendi İÇİNDE yapar — bu metodun TEK görevi, o kütüphane çağrısını `WorkFactor` SABİTİYLE SARMAK (wrap).',
+            olmasaydi: 'Bu satır olmasaydı, `IPasswordService.Hash` sözleşmesinin HİÇBİR gerçek İMPLEMENTASYONU olmazdı — Register (Bölüm 8), ResetPassword (Bölüm 17) gibi TÜM akışlar DERLEME hatası VERİRDİ (arayüzü karşılayan somut sınıf EKSİK).'
+          },
+          {
+            satir: 'public bool Verify(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);',
+            aciklama: '`hash` parametresi, veritabanından OKUNAN `User.PasswordHash` alanıdır — BCrypt bu hash\'in İÇİNDEN salt\'ı ve work factor\'ü KENDİSİ ÇIKARIR, DIŞARIDAN AYRICA geçirilmesine GEREK YOKTUR.',
+            neden: 'Bu, BCrypt\'in TASARIM avantajıdır: hash STRING\'İNİN kendisi ($2a$12$... formatında) work factor + salt + gerçek hash\'i TEK bir string\'DE taşır — bu METODUN yalnızca iki string PARAMETRESİ ALMASI YETERLİDİR.',
+            olmasaydi: 'BCrypt yerine ELDE yazılmış bir SHA-256+salt karşılaştırması OLSAYDI, salt\'ın AYRI bir sütunda SAKLANMASI ve bu metoda AYRICA PARAMETRE olarak GEÇİRİLMESİ GEREKİRDİ — kod hem KARMAŞIKLAŞIR hem de "constant-time karşılaştırma" garantisi ELLE yeniden İNŞA edilmesi GEREKİRDİ.'
+          },
+          {
+            satir: 'var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));',
+            aciklama: '.NET\'in YERLEŞİK `SHA256.HashData` statik metodu — girdi string\'i ÖNCE UTF-8 byte dizisine ÇEVİRİR, sonra 32 byte\'lık bir hash ÜRETİR.',
+            neden: 'SHA-256, BCrypt\'in AKSİNE deterministik\'tir (AYNI girdi HER ZAMAN AYNI çıktıyı üretir) — bir önceki bölümde (Bölüm 11) gördüğümüz `RefreshTokenRepository.GetByTokenHashAsync`\'in "gelen token\'ı hash\'le, VERİTABANINDA bu hash\'i ARA" mantığı, bu DETERMİNİZME DAYANIR.',
+            olmasaydi: 'SHA-256 yerine BCrypt (rastgele salt\'lı) KULLANILSAYDI, AYNI refresh token İKİ FARKLI hash ÜRETİRDİ — `GetByTokenHashAsync`\'in basit bir `WHERE TokenHash = @hash` sorgusu ASLA eşleşme BULAMAZDI, HİÇBİR refresh işlemi ÇALIŞMAZDI.'
+          },
+          {
+            satir: 'return Convert.ToBase64String(bytes);',
+            aciklama: 'Ham 32 byte\'lık hash\'i, veritabanı sütununa (Bölüm 22\'de göreceğimiz `RefreshTokenConfiguration`\'daki `HasMaxLength(44)`) UYGUN, YAZDIRILABİLİR bir Base64 string\'E ÇEVİRİR.',
+            neden: '32 byte, Base64\'te TAM OLARAK 44 karaktere KARŞILIK GELİR (`4/3` oranı + padding) — Bölüm 22\'de bu SAYININ (44) NEREDEN geldiğini TAM OLARAK burada göreceğiz.',
+            olmasaydi: 'Ham byte dizisi DOĞRUDAN bir `string` sütununa YAZILMAYA çalışılsaydı, veritabanı sürücüsü bunu ANLAMLI bir metne DÖNÜŞTÜREMEZDİ (byte dizisi metin DEĞİLDİR) — ya derleme HATASI ya da ÇALIŞMA ZAMANI hatası ALINIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IEmailService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IEmailService.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IEmailService.cs
+//
+// AMAÇ: Uygulamanın gönderdiği tüm e-postalar (OTP, şifre değişti bildirimi vb.)
+//       için sözleşme.
+// NEDEN: AuthService somut bir SMTP/dev implementasyonuna değil bu arayüze bağımlı
+//        olmalı — testlerde mock enjekte edilebilir (CODING_STANDARDS.md §7.4 —
+//        dış servisler her zaman mock'lanır). Gerçek SMTP implementasyonu (A-10)
+//        henüz yazılmadı; şimdilik DevEmailService konsola/loga yazar.
+// BAĞIMLILIKLAR: Yok — saf sözleşme.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface IEmailService
+{
+    // AMAÇ: Kayıt/yeniden gönderme sonrası e-posta doğrulama OTP kodunu gönderir.
+    Task SendEmailVerificationOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    );
+
+    // AMAÇ: Login adım 1 sonrası 2FA OTP kodunu gönderir.
+    Task SendLoginOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+
+    // AMAÇ: Şifre sıfırlama isteği sonrası OTP kodunu gönderir.
+    Task SendPasswordResetOtpAsync(string toEmail, string otpCode, CancellationToken ct = default);
+
+    // AMAÇ: Şifre başarıyla değiştirildiğinde bilgilendirme e-postası gönderir.
+    // NEDEN: Kullanıcı kendisi değiştirmediyse (hesabı ele geçirilmişse) fark etmesi için.
+    Task SendPasswordChangedNotificationAsync(string toEmail, CancellationToken ct = default);
+
+    // AMAÇ: Hesap silme isteği sonrası onay OTP kodunu gönderir.
+    Task SendAccountDeletionOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    );
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IEmailService',
+            aciklama: 'IPasswordService ile AYNI konumda (`Interfaces/Services/`, flat) — beş farklı Handler\'ın (Register, Login, ForgotPassword, ResetPassword, RequestAccountDeletion) PAYLAŞTIĞI TEK bir sözleşme.',
+            neden: 'Beş AYRI metot (tek bir "SendEmail(subject, body)" yerine) — her metot HANGİ e-posta TÜRÜNÜN gönderildiğini AÇIKÇA isimlendirir; bir Handler\'ın "Login OTP\'si mi yoksa Password Reset OTP\'si mi gönderdiğini" ANLAMAK için metot GÖVDESİNE bakmaya GEREK yoktur.',
+            olmasaydi: 'Tek bir GENEL `SendEmailAsync(string toEmail, string subject, string body)` metodu OLSAYDI, HER Handler kendi İÇİNDE subject/body METNİNİ oluşturmak ZORUNDA kalırdı — e-posta İÇERİĞİ (Bölüm 21\'in bir sonraki slaytında GÖRECEĞİMİZ gibi) merkezi bir yerde DEĞİL, HER çağıran kodda TEKRARLANIRDI.'
+          },
+          {
+            satir: 'Task SendEmailVerificationOtpAsync(',
+            aciklama: 'Bölüm 8\'deki `RegisterCommandHandler`\'ın "kullanıcıyı kaydet, SONRA doğrulama kodu gönder" adımında ÇAĞIRDIĞI metot — dönüş tipi `Task` (Task<T> DEĞİL), çünkü çağıran kod bu işlemin SONUCUNDA bir DEĞER beklemez, yalnızca TAMAMLANMASINI BEKLER.',
+            neden: '`async/await` + parametre olarak `CancellationToken ct = default` — CLAUDE.md\'nin "async/await + CancellationToken her I/O metodunda" kuralı BURADA da geçerli: e-posta gönderimi (gerçek SMTP implementasyonunda) bir AĞ İŞLEMİDİR, iptal edilebilir olmalıdır.',
+            olmasaydi: '`CancellationToken` parametresi OLMASAYDI, bir istek İPTAL edildiğinde (ör. kullanıcı sayfayı KAPATTI) devam eden bir e-posta gönderim İŞLEMİ YİNE DE TAMAMLANMAYA çalışırdı — kaynak İSRAFI ve (gerçek SMTP\'de) gereksiz DIŞ SERVİS ÇAĞRISI.'
+          },
+          {
+            satir: 'Task SendPasswordChangedNotificationAsync(string toEmail, CancellationToken ct = default);',
+            aciklama: 'Diğer dört metodun AKSİNE bir `otpCode` PARAMETRESİ ALMAZ — bu e-posta bir DOĞRULAMA kodu TAŞIMAZ, yalnızca BİLGİLENDİRME amaçlıdır ("şifreniz değişti").',
+            neden: 'Bu, "Kullanıcı kendisi DEĞİŞTİRMEDİYSE (hesabı ELE GEÇİRİLMİŞSE) fark etmesi için" — REFERENCE/SECURITY.md\'nin bir GÜVENLİK bildirim gereksinimidir; Bölüm 17\'deki ResetPasswordCommand\'ın BAŞARILI tamamlanmasından SONRA çağrılır.',
+            olmasaydi: 'Bu bildirim OLMASAYDI, bir saldırganın ELE GEÇİRDİĞİ bir hesabın şifresini DEĞİŞTİRMESİ durumunda, GERÇEK kullanıcı bunu YALNIZCA kendi hesabına GİREMEDİĞİNDE (çok GEÇ kalmış olarak) fark EDERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DevEmailService.cs — "Dev" Öneki Neden Var',
+        dosyaYolu: 'backend/WordLearner.Application/Services/DevEmailService.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// DevEmailService.cs
+//
+// AMAÇ: IEmailService'in geliştirme ortamı implementasyonu — gerçek SMTP yerine
+//       e-postayı konsola/dosyaya (Serilog) yazar.
+// NEDEN: Gerçek SMTP servisi (SmtpEmailService, MailKit tabanlı) A-10'da yazılacak
+//        (SMTP ayarları A-09'da DB'ye AES-256 şifreli kaydedilecek — henüz yok).
+//        Bu implementasyon olmadan A-03'teki hiçbir OTP akışı test edilemezdi;
+//        geliştirici konsoldaki OTP kodunu okuyup akışı uçtan uca deneyebilir.
+// BAĞIMLILIKLAR: Microsoft.Extensions.Logging.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.Extensions.Logging;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class DevEmailService : IEmailService
+{
+    private readonly ILogger<DevEmailService> _logger;
+
+    public DevEmailService(ILogger<DevEmailService> logger) => _logger = logger;
+
+    // AMAÇ: Kayıt/yeniden gönderme sonrası e-posta doğrulama OTP kodunu loglar.
+    public Task SendEmailVerificationOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "Email Verification", $"Your verification code: {otpCode}");
+
+    // AMAÇ: Login adım 1 sonrası 2FA OTP kodunu loglar.
+    public Task SendLoginOtpAsync(string toEmail, string otpCode, CancellationToken ct = default) =>
+        LogEmailAsync(toEmail, "Login Verification Code", $"Your login code: {otpCode}");
+
+    // AMAÇ: Şifre sıfırlama isteği sonrası OTP kodunu loglar.
+    public Task SendPasswordResetOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "Password Reset", $"Your password reset code: {otpCode}");
+
+    // AMAÇ: Şifre değiştirildiğinde bilgilendirme e-postasını loglar.
+    public Task SendPasswordChangedNotificationAsync(
+        string toEmail,
+        CancellationToken ct = default
+    ) =>
+        LogEmailAsync(
+            toEmail,
+            "Your Password Was Changed",
+            "Your account password was just changed."
+        );
+
+    // AMAÇ: Hesap silme isteği sonrası onay OTP kodunu loglar.
+    public Task SendAccountDeletionOtpAsync(
+        string toEmail,
+        string otpCode,
+        CancellationToken ct = default
+    ) => LogEmailAsync(toEmail, "Account Deletion Confirmation", $"Your account deletion confirmation code: {otpCode}");
+
+    // AMAÇ: Tüm e-posta türleri için ortak loglama noktası.
+    // NEDEN: PII kuralı (SECURITY.md §6) — ham e-posta yalnızca geliştirme ortamı
+    //        konsol logunda görünür. A-10'da SmtpEmailService yazılınca DI kaydı
+    //        ortama göre koşullu hâle getirilecek (dev→Dev, prod→Smtp); o güne kadar
+    //        IEmailService her ortamda bu implementasyona çözülür.
+    private Task LogEmailAsync(string toEmail, string subject, string body)
+    {
+        _logger.LogInformation(
+            "[DEV EMAIL] To: {ToEmail} | Subject: {Subject} | Body: {Body}",
+            toEmail,
+            subject,
+            body
+        );
+        return Task.CompletedTask;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class DevEmailService : IEmailService',
+            aciklama: 'Sınıf adının başındaki "Dev" öneki, bunun YALNIZCA geliştirme ortamı için bir İMPLEMENTASYON olduğunu, ÜRETİMDE (production) KULLANILMAYACAĞINI daha isim SEVİYESİNDE İLAN eder.',
+            neden: 'Gerçek bir SMTP sağlayıcısı (ör. SendGrid, MailKit tabanlı bir servis) A-10 task\'ında yazılacak — o zaman `SmtpEmailService : IEmailService` isminde İKİNCİ bir SOMUT sınıf eklenecek, DI kaydı ortama göre (`IsDevelopment()`) HANGİSİNİN kullanılacağını SEÇECEK. YAGNI notu: bu ikinci implementasyon, gerçek bir SMTP sağlayıcısı KARARI verilmeden ÖNCEDEN yazılmıyor — CLAUDE.md §3\'ün "spekülatif ortak tip yazılmaz" ilkesiyle TUTARLI, yalnızca GERÇEKTEN gereken (dev) implementasyon var.',
+            olmasaydi: 'Sınıf sadece "EmailService" (öneksiz) İSİMLENDİRİLSEYDİ, altı ay SONRA A-10\'da GERÇEK SMTP servisi eklenince İKİ sınıfın da "EmailService" gibi BENZER isimler TAŞIMASI (ör. "EmailServiceV2") KARIŞIKLIK yaratırdı — "Dev" ÖNEKİ bu geleceği BUGÜNDEN netleştirir.'
+          },
+          {
+            satir: 'private readonly ILogger<DevEmailService> _logger;',
+            aciklama: 'Gerçek bir e-posta ALTYAPISI (SMTP client, API key) YERİNE, yalnızca .NET\'in YERLEŞİK loglama ARAYÜZÜ enjekte EDİLİR.',
+            neden: 'Bu, sınıfın "gerçek e-posta GÖNDERMEDİĞİNİN", yalnızca NE gönderileceğini KAYDETTİĞİNİN kod SEVİYESİNDE KANITIDIR — bağımlılıklarına BAKARAK bile bu sınıfın ÜRETİME UYGUN olmadığı ANLAŞILABİLİR.',
+            olmasaydi: '`ILogger` yerine GERÇEK bir SMTP client enjekte EDİLSEYDİ, bu artık "Dev" değil GERÇEK bir implementasyon OLURDU — o zaman OTP kodları GERÇEKTEN e-postayla GÖNDERİLMEYE ÇALIŞILIRDI, ama HENÜZ SMTP ayarları (A-09, AES-256 şifreli) YOK, uygulama HER OTP gönderiminde ÇÖKERDİ.'
+          },
+          {
+            satir: ') => LogEmailAsync(toEmail, "Email Verification", $"Your verification code: {otpCode}");',
+            aciklama: 'C#\'ın string interpolasyonu (`$"..."`) — OTP kodu doğrudan log METNİNİN İÇİNE gömülür.',
+            neden: 'Bu ham OTP kodunun LOGLANMASI, YALNIZCA geliştirme ortamında KABUL EDİLEBİLİR — CLAUDE.md\'nin "şifre/token asla loglanmaz" kuralı ASIL olarak ÜRETİM loglarını hedefler; burada geliştiricinin OTP\'yi KONSOLDAN OKUYUP akışı TEST edebilmesi, GERÇEK bir SMTP sunucusu KURMADAN geliştirme YAPILABİLMESİ için BİLİNÇLİ bir istisnadır.',
+            olmasaydi: 'OTP kodu LOGLANMASAYDI, A-03\'teki HİÇBİR OTP akışı (Register\'ın e-posta doğrulaması, Login\'in 2FA\'sı, ForgotPassword\'ün sıfırlama kodu) yerel geliştirme ortamında MANUEL olarak TEST EDİLEMEZDİ — geliştirici kodu ASLA GÖREMEZ, akışı UÇTAN UCA DENEYEMEZDİ.'
+          },
+          {
+            satir: 'private Task LogEmailAsync(string toEmail, string subject, string body)',
+            aciklama: 'Beş PUBLIC metodun HEPSİNİN, kendi konu BAŞLIĞI + gövde METNİNİ HAZIRLADIKTAN sonra ÇAĞIRDIĞI, TEK bir ORTAK PRIVATE yardımcı metot.',
+            neden: 'Loglama FORMATININ (`"[DEV EMAIL] To: ... | Subject: ... | Body: ..."`) TEK bir yerde TANIMLI olması — beş metodun HER BİRİ kendi `_logger.LogInformation(...)` çağrısını AYRI AYRI YAZSAYDI, log FORMATI ZAMAN İÇİNDE (biri değiştirilip DİĞERİ unutulunca) TUTARSIZLAŞABİLİRDİ.',
+            olmasaydi: 'Bu ortak metot OLMASAYDI, AYNI `_logger.LogInformation("[DEV EMAIL] ...")` ÇAĞRISI beş YERDE (küçük farklarla) TEKRAR EDİLİRDİ — DRY (Don\'t Repeat Yourself) ihlali, CLAUDE.md\'nin genel kod kalitesi BEKLENTİSİYLE ÇELİŞİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Work Factor (Cost Factor)', tanim: 'BCrypt\'in kaç kez tekrarlı hashleme yapacağını belirleyen sayı — yükseldikçe hem güvenlik hem de işlem süresi artar.' },
+          { terim: 'Deterministik Hash', tanim: 'Aynı girdinin her zaman aynı çıktıyı ürettiği hash türü (SHA-256) — BCrypt\'in aksine, veritabanında doğrudan eşleştirme aramasına izin verir.' },
+          { terim: 'ILogger<T>', tanim: '.NET\'in yerleşik loglama arayüzü — jenerik parametre (T), log kaydının hangi sınıftan geldiğini otomatik etiketler.' },
+          { terim: 'Flat Klasör', tanim: 'Feature\'a özel alt klasör açılmadan, birden fazla feature\'ın paylaştığı kodun düz bir klasörde (Application/Services/) tutulması.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IPasswordService/IEmailService, Auth\'a özel değil PAYLAŞILAN yetenekler oldukları için Application/Services altında flat duruyor',
+          'Hash (BCrypt, yavaş, salt\'lı) şifreler için — HashToken (SHA-256, hızlı, deterministik) refresh token/OTP için: iki farklı entropi seviyesi, iki farklı algoritma',
+          'DevEmailService gerçek SMTP\'nin yerini tutan geçici bir implementasyon — "Dev" öneki bunu isim seviyesinde açıkça işaretler',
+          'Sözleşmeye (arayüze) bağımlılık, testlerde gerçek BCrypt/SMTP çalıştırmadan mock ile hızlı test yazılmasını sağlar',
+          'YAGNI: SmtpEmailService, gerçek bir SMTP sağlayıcısı kararı verilmeden önceden yazılmıyor'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

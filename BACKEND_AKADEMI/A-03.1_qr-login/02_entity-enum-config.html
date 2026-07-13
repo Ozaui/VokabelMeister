@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entity + Enum + EF Configuration</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-enum-config',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '01_qr-login-nedir.html',
+    sonrakiBolum: '03_migration.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'Entity + Enum + EF Configuration',
+        altBaslik: 'A-03/02\'deki User.cs\'ten farklı bir entity türü: kişisel bilgi DEĞİL, GEÇİCİ bir "durum makinesi" kaydı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginStatus.cs — Altı Durumlu Bir Enum',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Auth/QrLoginStatus.cs',
+        nedenBuKlasor: 'Domain/Enums/Auth/ altında — A-03/09\'daki OtpPurpose enum\'ıyla AYNI konvansiyon: enum, ait olduğu ENTİTE\'nin (QrLoginSession) domain\'iyle AYNI klasörde YAŞAR.',
+        kod: `public enum QrLoginStatus
+{
+    Pending,
+
+    Scanned,
+
+    Confirmed,
+
+    Consumed,
+
+    Denied,
+
+    Expired,
+}`,
+        satirlar: [
+          {
+            satir: 'public enum QrLoginStatus',
+            aciklama: 'Bu enum, QR ile giriş oturumunun HANGİ AŞAMADA olduğunu temsil eder — altı DEĞER, oturumun BAŞLANGICINDAN (Pending) TERMİNAL bir SONUCA (Consumed/Denied/Expired) kadar geçebileceği TÜM durumları KAPSAR.',
+            neden: 'Domain/Enums/Auth/ klasöründe TANIMLANMASI, A-03/09\'daki OtpPurpose İLE AYNI konvansiyonu izler — enum, KENDİSİNİ KULLANAN entity\'nin (QrLoginSession) domain\'iyle AYNI yerde YAŞAR.',
+            olmasaydi: 'Bu enum OLMASAYDI, oturum DURUMU bir STRING/int OLARAK TEMSİL EDİLMEK ZORUNDA KALIRDI — Handler\'lardaki karşılaştırmalar (`session.Status == "confirmed"`) YAZIM HATASINA AÇIK, DERLEME ZAMANINDA KONTROL EDİLEMEYEN bir HALE GELİRDİ.'
+          },
+          {
+            satir: 'Pending,',
+            aciklama: 'Başlangıç DURUMU — oturum OLUŞTURULDU, henüz HİÇBİR mobil cihaz TARAMADI.',
+            neden: 'Bu, A-03/09\'daki `OtpPurpose?` (nullable) DEĞİL, User.CurrentLevel GİBİ bir "VARSAYILAN değeri OLAN" enum\'DUR (QrLoginSession.Status = QrLoginStatus.Pending VARSAYILANLI) — HER yeni oturum, TASARIM GEREĞİ Pending BAŞLAR.',
+            olmasaydi: 'Bu değer OLMASAYDI, YENİ oluşturulan bir oturumun BAŞLANGIÇ DURUMU BELİRSİZ KALIRDI — enum\'ın İLK DEĞERİ (C#\'ta VARSAYILAN OLARAK 0) HERHANGİ bir ANLAMSIZ DURUMA (ör. Consumed) DENK GELEBİLİRDİ.'
+          },
+          {
+            satir: 'Scanned,',
+            aciklama: 'Mobil cihaz QR\'ı TARADI, kullanıcı HENÜZ onaylamadı/reddetmedi.',
+            neden: 'Bu ARA durum, "kim TARADI" bilgisinin (UserId set EDİLDİ) "kim ONAYLADI" bilgisinden AYRI TUTULMASINI SAĞLAR — bir SONRAKİ bölümde göreceğimiz sahiplik KONTROLÜ (yalnızca TARAYAN kullanıcı ONAYLAYABİLİR) TAM OLARAK bu AYRIMA DAYANIR.',
+            olmasaydi: 'Scan VE Confirm TEK bir ADIMDA BİRLEŞTİRİLSEYDİ, kullanıcının "GÖRSEL KARŞILAŞTIRMA YAPIP BİLİNÇLİ onaylama" ADIMI (PairingCode\'u KONTROL ETME FIRSATI) HİÇ OLMAZDI — QR TARANDIĞI AN OTOMATİK giriş YAPILIRDI, relay SALDIRISINA karşı SAVUNMASIZ kalırdı.'
+          },
+          {
+            satir: 'Confirmed,',
+            aciklama: 'Kullanıcı mobil CİHAZDA girişi ONAYLADI — token ÜRETİMİ BEKLENİYOR.',
+            neden: 'Token ÜRETİMİ bu ADIMDA DEĞİL, web\'İN POLLING isteğinde (BİR SONRAKİ durumu OKUYAN taraf) YAPILIR — mobil, "onayladım" DER ama TOKEN\'I KENDİSİ ÜRETMEZ/GÖRMEZ (token yalnızca web\'E AİTTİR).',
+            olmasaydi: 'Token, Confirm ADIMINDA (mobil TARAFINDAN TETİKLENEREK) ÜRETİLSEYDİ, mobil CİHAZIN bu token\'I NEREYE (hangi web OTURUMUNA) İLETECEĞİ BELİRSİZ olurdu — polling MODELİ, "web KENDİ SORAR, KENDİ ALIR" DESENİYLE BU KARMAŞIKLIĞI ÖNLER.'
+          },
+          {
+            satir: 'Consumed,',
+            aciklama: 'Web TARAFI token\'ları BİR KEZ OKUDU; oturum ARTIK TEKRAR KULLANILAMAZ.',
+            neden: 'Bu TERMİNAL durum, "token\'lar YALNIZCA BİR KEZ döner" GARANTİSİNİN VERİTABANI SEVİYESİNDEKİ İZİDİR — BİR SONRAKİ status İSTEĞİ (ör. AĞ SORUNU YÜZÜNDEN TEKRARLANAN bir polling) ARTIK token GÖREMEZ.',
+            olmasaydi: 'Bu durum OLMASAYDI, Confirmed bir oturum SINIRSIZ kez OKUNABİLİR VE HER SEFERİNDE (YA DA en AZINDAN İKİNCİ kez) token DÖNEBİLİRDİ — bir AĞ GECİKMESİ YÜZÜNDEN İKİ POLLING İSTEĞİ ÇAKIŞIRSA, token İKİ KEZ SIZDIRILMIŞ OLURDU.'
+          },
+          {
+            satir: 'Denied,',
+            aciklama: 'Kullanıcı mobil CİHAZDA girişi REDDETTİ.',
+            neden: 'Bu, Confirmed\'İN TAM TERSİ bir TERMİNAL DURUMDUR — kullanıcı, PairingCode/cihaz BİLGİSİ EŞLEŞMİYORSA ya da İSTEĞİ TANIMIYORSA bu YOLU SEÇER, oturum BİR DAHA HİÇBİR ŞEKİLDE ONAYLANAMAZ.',
+            olmasaydi: 'Bu durum OLMASAYDI, kullanıcının "HAYIR" DİYEBİLECEĞİ bir YOL OLMAZDI — kullanıcı YALNIZCA BEKLEMEK (oturumun SÜRESİNİN DOLMASINI) ZORUNDA KALIRDI, ŞÜPHELİ bir GİRİŞİ AKTİF OLARAK ENGELLEYEMEZDİ.'
+          },
+          {
+            satir: 'Expired,',
+            aciklama: 'Oturum SÜRESİ (ExpiresAt) DOLDU, HİÇBİR işlem YAPILMADAN GEÇERSİZLEŞTİ.',
+            neden: 'Bu, "hiç KULLANILMAYAN" bir oturumun SONUCUDUR — Pending/Scanned DURUMUNDAYKEN 2 DAKİKA (Bölüm 5\'te GÖRECEĞİMİZ ExpirySeconds) GEÇERSE, BİR SONRAKİ okuma ANINDA bu duruma GEÇİRİLİR (LAZY, ARKA PLAN GÖREVİ YOK).',
+            olmasaydi: 'Bu durum OLMASAYDI, SÜRESİ GEÇMİŞ bir oturum SONSUZA kadar Pending/Scanned GÖRÜNMEYE devam EDERDİ — bir web İSTEMCİSİ, ARTIK TARANMAYACAK bir QR\'I POLLING YAPMAYA DEVAM EDERDİ, "bu QR ARTIK GEÇERSİZ, YENİSİNİ ÜRET" SİNYALİNİ HİÇ ALMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSession.cs — İki Savunma Katmanının Alanları',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/QrLoginSession.cs',
+        nedenBuKlasor: 'Entities/Auth/ altında, User.cs (A-03/02) ile AYNI klasörde — QR girişi, Auth DOMAİNİNİN bir PARÇASIDIR, AYRI bir "QrLogin" domain\'i DEĞİLDİR.',
+        kod: `public class QrLoginSession : BaseEntity
+{
+    public string QrTokenHash { get; set; } = string.Empty;
+
+    public string PairingCode { get; set; } = string.Empty;
+
+    public QrLoginStatus Status { get; set; } = QrLoginStatus.Pending;
+
+    public int? UserId { get; set; }
+
+    public User? User { get; set; }
+
+    public string? RequesterIp { get; set; }
+
+    public string? RequesterDeviceInfo { get; set; }
+
+    public DateTime? ScannedAt { get; set; }
+
+    public DateTime? ConfirmedAt { get; set; }
+
+    public DateTime ExpiresAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public class QrLoginSession : BaseEntity',
+            aciklama: 'A-02/03\'teki BaseEntity\'DEN türer — Id/CreatedAt/IsDeleted GİBİ 7 ALAN, User.cs (A-03/02) İLE AYNI ŞEKİLDE OTOMATİK MİRAS ALINIR.',
+            neden: 'BaseEntity\'nin soft-delete ALANLARI (IsDeleted/DeletedAt), QR oturumları İÇİN de ANLAMLIDIR — ör. bir Admin, ŞÜPHELİ bir QR oturumunu SOFT-DELETE İLE "GİZLEYEBİLİR" (audit AMAÇLI, KALICI silme DEĞİL).',
+            olmasaydi: '`: BaseEntity` YAZILMASAYDI, Id/CreatedAt GİBİ TEMEL alanları BU entity İÇİN AYRI AYRI TANIMLAMAK GEREKİRDİ — A-02/07\'deki Repository<T>\'nin BEKLEDİĞİ `where T : BaseEntity` KISITLAMASI da SAĞLANAMAZDI, QrLoginSessionRepository (Bölüm 4) Repository<T>\'yi MİRAS ALAMAZDI.'
+          },
+          {
+            satir: 'public string QrTokenHash { get; set; } = string.Empty;',
+            aciklama: 'A-03/16\'daki RefreshTokens.TokenHash İLE AYNI İLKE — HAM token DEĞİL, SHA-256 HASH\'İ SAKLANIR.',
+            neden: 'Bu, PROJE genelindeki "RASTGELE ÜRETİLEN GİZLİ değerler ASLA DÜZ METİN SAKLANMAZ" KURALININ (Bölüm 1\'deki "İYİ/KÖTÜ" KARŞILAŞTIRMASINDA GÖRDÜĞÜMÜZ İKİ katmandan BİRİ) BURADAKİ UYGULAMASIDIR.',
+            olmasaydi: 'Ham token SAKLANSAYDI, bir VERİTABANI SIZINTISINDA TÜM AKTİF QR oturumlarının token\'LARI DÜZ METİN OLARAK ELE GEÇERDİ — SALDIRGAN bu token\'LARLA DOĞRUDAN scan/confirm İSTEKLERİ ATABİLİRDİ.'
+          },
+          {
+            satir: 'public string PairingCode { get; set; } = string.Empty;',
+            aciklama: 'Bölüm 1\'deki İKİNCİ savunma KATMANI — HASH\'LENMEZ, DÜZ metin OLARAK saklanır (yalnızca 4 haneli, GÖRSEL KARŞILAŞTIRMA AMAÇLI, GİZLİ bir DEĞER DEĞİLDİR).',
+            neden: 'PairingCode, KENDİ BAŞINA bir GÜVENLİK SIRRI DEĞİLDİR (4 hane, KOLAYCA TAHMİN EDİLEBİLİR) — GÖREVİ, KULLANICIYA "bu İKİ EKRAN AYNI OTURUMA mı AİT" SORUSUNU CEVAPLATMAKTIR, bu YÜZDEN HASH\'LENMESİNE GEREK YOKTUR.',
+            olmasaydi: 'PairingCode de HASH\'LENSEYDİ, Handler\'ların (Scan/Confirm) BU DEĞERİ GERİ OKUYUP web/mobil EKRANLARINA GÖSTERMESİ İÇİN AYRI bir "DEHASH" (ÇÖZME) MEKANİZMASI GEREKİRDİ — SHA-256 TEK YÖNLÜDÜR, GERİ ÇEVRİLEMEZ, bu YÜZDEN GÖSTERİLECEK bir DEĞERİN HASH\'LENMESİ zaten MANTIKSIZ OLURDU.'
+          },
+          {
+            satir: 'public QrLoginStatus Status { get; set; } = QrLoginStatus.Pending;',
+            aciklama: 'Bir ÜSTTEKİ slaytta İNCELEDİĞİMİZ enum, ENTİTENİN "durum MAKİNESİ" ALANI OLARAK BURADA YAŞAR.',
+            neden: 'C# TARAFINDA GERÇEK bir enum OLMASI (A-03/02\'deki User.AuthProvider GİBİ STRING DEĞİL), Handler\'LARDA `session.Status == QrLoginStatus.Pending` GİBİ TİP-GÜVENLİ (type-safe) KARŞILAŞTIRMALAR YAPILMASINI SAĞLAR — YAZIM HATASINA (ör. "Pending" yerine "pending") KARŞI DERLEME ZAMANINDA KORUNUR.',
+            olmasaydi: 'Bu ALAN bir STRING OLSAYDI (`AuthProvider` GİBİ), Handler\'LARDAKİ KARŞILAŞTIRMALAR (`session.Status == "Pending"`) DERLEYİCİ TARAFINDAN KONTROL EDİLMEZ, bir YAZIM HATASI ÇALIŞMA ZAMANINA KADAR FARK EDİLMEZDİ.'
+          },
+          {
+            satir: 'public int? UserId { get; set; }',
+            aciklama: 'NULLABLE — çünkü TARANMAMIŞ (Pending) bir oturumun HENÜZ HİÇBİR kullanıcıyla İLİŞKİSİ YOKTUR; A-03/16\'daki RefreshToken.UserId\'DEN (NON-NULLABLE, ÇÜNKÜ bir refresh token HER ZAMAN bir KULLANICIYA AİTTİR) FARKLI bir DURUM.',
+            neden: 'Bu alanın nullable OLMASI, "Pending" durumunun KENDİSİNİ (henüz kimse TARAMADI) VERİ SEVİYESİNDE TEMSİL EDER — QrLoginSessionConfiguration\'DA (BİR SONRAKİ slaytta) FK\'nın `OnDelete(DeleteBehavior.SetNull)` OLMASININ da NEDENİ BUDUR.',
+            olmasaydi: 'UserId NON-NULLABLE OLSAYDI, GenerateQrLoginCommand (BİR SONRAKİ bölümde) OTURUMU OLUŞTURURKEN bir "SAHTE" UserId (ör. 0) ATAMAK ZORUNDA KALIRDI — bu, GERÇEK bir kullanıcı Id\'siyle (0 numaralı bir kullanıcı OLABİLİR) KARIŞABİLİRDİ.'
+          },
+          {
+            satir: 'public User? User { get; set; }',
+            aciklama: 'A-03/16\'daki RefreshToken.User İLE AYNI DESEN — EF Core NAVIGATION property, `Include()` İLE İLİŞKİLİ User\'A ERİŞİM SAĞLAR.',
+            neden: 'BU İLİŞKİ TEK YÖNLÜDÜR (User TARAFINDA KARŞILIK GELEN bir KOLEKSİYON YOKTUR, KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ) — HİÇBİR akış "kullanıcının QR oturumları" LİSTESİNİ İSTEMEDİĞİ İÇİN (YAGNI), TERS YÖNDE bir navigation EKLENMEMİŞTİR.',
+            olmasaydi: 'Bu navigation property OLMASAYDI, `session.User.Email` GİBİ bir ERİŞİM MÜMKÜN OLMAZDI — İLİŞKİLİ kullanıcı bilgisine SADECE `session.UserId` ÜZERİNDEN AYRI bir SORGUYLA ULAŞILABİLİRDİ.'
+          },
+          {
+            satir: 'public string? RequesterIp { get; set; }',
+            aciklama: 'Bölüm 1\'deki "GÖRSEL KARŞILAŞTIRMA" akışının VERİSİ — oturumu İSTEYEN (web) TARAFIN IP ADRESİ, mobil EKRANDA GÖSTERİLİR.',
+            neden: 'Bu, A-03/21\'deki `LastLoginIP` GİBİ bir AUDIT ALANI DEĞİL, AKTİF bir GÜVENLİK KONTROLÜ ARACIDIR — kullanıcı, "BU IP BENİM TANIDIĞIM bir YER Mİ" SORUSUNU BU ALANA BAKARAK CEVAPLAR.',
+            olmasaydi: 'Bu alan OLMASAYDI, mobil ONAY EKRANI YALNIZCA "BİR YERDEN bir GİRİŞ İSTEĞİ VAR, ONAYLIYOR musun" GİBİ BELİRSİZ bir SORU SORARDI — kullanıcının BİLİNÇLİ bir KARAR VERMESİ İÇİN GEREKLİ BİLGİ EKSİK KALIRDI.'
+          },
+          {
+            satir: 'public string? RequesterDeviceInfo { get; set; }',
+            aciklama: 'RequesterIp İLE AYNI AMAÇ, FARKLI BİLGİ TÜRÜ — TARAYICI/CİHAZ BİLGİSİ (User-Agent).',
+            neden: '"1.2.3.4 IP\'sinden bir İSTEK" YERİNE "Chrome, Windows\'TAN bir İSTEK" GİBİ İNSAN-OKUNUR bir BİLGİ, kullanıcının KARŞILAŞTIRMASINI (KENDİ TARAYICISIYLA EŞLEŞİYOR MU) DAHA KOLAY YAPMASINI SAĞLAR.',
+            olmasaydi: 'YALNIZCA IP GÖSTERİLSEYDİ, ÇOĞU kullanıcı KENDİ IP ADRESİNİ EZBERE BİLMEDİĞİ İÇİN BU BİLGİYİ ANLAMLI bir ŞEKİLDE DEĞERLENDİREMEZDİ — CİHAZ BİLGİSİ (ör. "Safari, iPhone") DAHA SEZGİSEL bir KARŞILAŞTIRMA ARACI SUNAR.'
+          },
+          {
+            satir: 'public DateTime? ScannedAt { get; set; }',
+            aciklama: 'Bölüm 2\'DEKİ QrLoginStatus.Scanned durumuna GEÇİLDİĞİ AN — NULLABLE, ÇÜNKÜ Pending bir oturumda HENÜZ TARANMAMIŞTIR.',
+            neden: 'Bu ZAMAN DAMGASI, ör. "TARAMA İLE ONAY ARASINDA NE KADAR SÜRE GEÇTİ" GİBİ bir AUDIT/ANALİZ SORUSUNU CEVAPLAYABİLİR — DÖRT durum GEÇİŞİNİN (Scanned/Confirmed dahil) HER BİRİ KENDİ ZAMAN DAMGASINI TAŞIR.',
+            olmasaydi: 'Bu alan OLMASAYDI, "BU oturum NE ZAMAN TARANDI" SORUSU CEVAPSIZ KALIRDI — YALNIZCA GÜNCEL DURUM (Status) BİLİNİR, GEÇMİŞTEKİ ADIMLARIN ZAMANLAMASI KAYBOLURDU.'
+          },
+          {
+            satir: 'public DateTime? ConfirmedAt { get; set; }',
+            aciklama: 'ScannedAt İLE AYNI DESEN — Confirmed DURUMUNA GEÇİLDİĞİ AN.',
+            neden: 'GetQrLoginStatusCommand (Bölüm 7), Confirmed bir oturumu İŞLERKEN bu ALANA BAKMAZ AMA audit AMAÇLI TUTULUR — "onay NE ZAMAN VERİLDİ" bilgisi, İLERİDE bir GÜVENLİK İNCELEMESİNDE (ör. şüpheli bir GİRİŞ TESPİT EDİLİRSE) KULLANILABİLİR.',
+            olmasaydi: 'Bu alan OLMASAYDI, "ONAY NE ZAMAN VERİLDİ" bilgisi KAYBOLURDU — YALNIZCA "ONAYLANDI" (Status) BİLİNİR, TAM OLARAK NE ZAMAN OLDUĞU BİLİNMEZDİ.'
+          },
+          {
+            satir: 'public DateTime ExpiresAt { get; set; }',
+            aciklama: 'NON-NULLABLE (User.PendingOtpCodeExpiresAt GİBİ NULLABLE DEĞİL) — HER oturum, OLUŞTURULDUĞU ANDAN İTİBAREN bir SÜRESİ OLMAK ZORUNDADIR, "SÜRESİZ bir QR oturumu" KAVRAMI YOKTUR.',
+            neden: 'Bu, Bölüm 5\'te GÖRECEĞİMİZ `QrLoginSessionExpiryExtensions.IsExpired`\'IN DAYANDIĞI TEMEL ALANDIR — HER Handler, BU ALANA BAKARAK "BU oturum HÂLÂ GEÇERLİ Mİ" SORUSUNU CEVAPLAR.',
+            olmasaydi: 'Bu alan NULLABLE OLSAYDI (`DateTime?`), HER Handler ÖNCE "ExpiresAt null MI" DİYE bir KONTROL YAPMAK ZORUNDA KALIRDI — non-nullable OLMASI, "HER oturumun BİR SÜRESİ VARDIR" GARANTİSİNİ TİP SİSTEMİNDE (derleme ZAMANINDA) SAĞLAR.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionConfiguration.cs — SetNull FK ve Çift Index',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/QrLoginSessionConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/Auth/ altında, UserConfiguration.cs (A-03/03) İLE AYNI klasörde — AYNI domain\'in (Auth) İKİNCİ bir konfigürasyon dosyası.',
+        kod: `builder.Property(q => q.QrTokenHash).HasMaxLength(44).IsRequired();
+builder.Property(q => q.PairingCode).HasMaxLength(4).IsRequired();
+
+builder
+    .Property(q => q.Status)
+    .HasConversion<string>()
+    .HasMaxLength(20)
+    .HasDefaultValue(QrLoginStatus.Pending);
+
+builder.HasIndex(q => q.QrTokenHash);
+builder.HasIndex(q => q.ExpiresAt);
+
+builder
+    .HasOne(q => q.User)
+    .WithMany()
+    .HasForeignKey(q => q.UserId)
+    .OnDelete(DeleteBehavior.SetNull);`,
+        satirlar: [
+          {
+            satir: 'builder.Property(q => q.QrTokenHash).HasMaxLength(44).IsRequired();',
+            aciklama: 'A-03/03\'teki `builder.Property(u => u.PasswordHash).HasMaxLength(60)` İLE AYNI DESEN, FARKLI bir SABİT SAYI — 44, SHA-256\'NIN (32 BYTE) Base64 KODLANMIŞ ÇIKTISININ TAM UZUNLUĞUDUR (KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ).',
+            neden: 'PasswordService.HashToken (A-03/15), SHA-256 HASH\'İNİ Base64\'E ÇEVİRİR — 32 byte\'lık BİR VERİNİN Base64 KARŞILIĞI HER ZAMAN 44 KARAKTERDİR (padding DAHİL), bu YÜZDEN 44 "TAHMİNİ" bir DEĞER DEĞİL, MATEMATİKSEL bir SABİTTİR.',
+            olmasaydi: 'MaxLength FARKLI (ör. 32 ya da 60) BELİRLENSEYDİ, YA GEREKSİZ YERE GENİŞ bir KOLON AYRILIRDI YA DA (DAHA KÖTÜSÜ) GERÇEK 44 karakterlik HASH DEĞERİ KOLONA SIĞMAYIP bir VERİTABANI HATASI FIRLATIRDI.'
+          },
+          {
+            satir: 'builder.Property(q => q.PairingCode).HasMaxLength(4).IsRequired();',
+            aciklama: 'PairingCode\'un TAM OLARAK 4 karakter (Bölüm 5\'teki `"D4"` FORMAT STRING\'İYLE ÜRETİLEN) OLDUĞUNU YANSITAN, İSABETLİ bir SINIR.',
+            neden: 'A-03/03\'teki PasswordHash\'İN "TAM İSABETLİ boyut SEÇİMİ" GEREKÇESİYLE AYNI: 4 karakterin ÜZERİNDE bir MaxLength, GEREKSİZ depolama İSRAFI OLURDU (BURADA ÇOK KÜÇÜK bir FARK OLSA da, KONVANSİYON TUTARLI UYGULANIR).',
+            olmasaydi: 'MaxLength 4\'ten KÜÇÜK OLSAYDI (ör. 3), 4 haneli PairingCode değerleri (ör. "0042") VERİTABANINA HİÇ YAZILAMAZDI — HER Generate ÇAĞRISI bir VERİTABANI HATASIYLA PATLARDI.'
+          },
+          {
+            satir: 'builder',
+            aciklama: 'Bu SLAYTTA İKİ AYRI fluent-API zincirinin (Status konfigürasyonu VE User FK konfigürasyonu) BAŞLANGICINDA duran, BİREBİR AYNI görünen bir satır — kod editörü İÇERİĞE göre eşleştirdiği İÇİN, bu TEK açıklama HER İKİ fiziksel satıra da uygulanır.',
+            neden: 'Zincir UZUN OLDUĞUNDA (üç-dört METOT çağrısı ÜST ÜSTE), `builder`\'ı KENDİ satırında BAŞLATIP HER `.Metot()` çağrısını AYRI bir satıra YERLEŞTİRMEK, hangi ayarların HANGİ property\'YE ait OLDUĞUNU görsel OLARAK NETLEŞTİRİR.',
+            olmasaydi: 'Tüm zincir TEK satırda YAZILSAYDI (`builder.Property(...).HasConversion...HasDefaultValue(...)`), işlevsel FARK OLMAZDI — ama satır AŞIRI UZAR, kod incelemesinde HANGİ ayarın NEREDE bittiğini TAKİP ETMEK ZORLAŞIRDI.'
+          },
+          {
+            satir: '.Property(q => q.Status)',
+            aciklama: 'Zincirin İLK METODU — HANGİ property\'nin (Status) konfigüre EDİLECEĞİNİ BELİRTİR.',
+            neden: 'Bu, A-03/03\'teki `builder.Property(u => u.Email)` İLE AYNI fluent-API DESENİ — yalnızca BURADA zincir UZUN olduğu İÇİN İLK satırda `builder` YALNIZ BAŞINA durur.',
+            olmasaydi: 'Bu satır olmasaydı, ARDINDAN gelen `.HasConversion<string>()` GİBİ çağrılar HANGİ property\'YE UYGULANACAĞINI BİLEMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: '.HasConversion<string>()',
+            aciklama: 'QrLoginStatus enum\'ını (BİR ÖNCEKİ slaytta GÖRDÜĞÜMÜZ, C# TARAFINDA SAYISAL bir DEĞER OLAN tip) VERİTABANINDA OKUNABİLİR bir STRING olarak SAKLAR ("Pending", "Scanned" GİBİ, SAYI (0, 1) DEĞİL).',
+            neden: 'A-03/09\'daki User.AuthProvider\'IN "enum yerine STRING TUTULUR ÇÜNKÜ VERİTABANINI ELLE İNCELEYEN biri OKUYABİLSİN DİYE" GEREKÇESİYLE AYNI — ama BURADA GERÇEK bir C# enum KULLANILIP, YALNIZCA VERİTABANI SEVİYESİNDE STRING\'E ÇEVRİLİYOR (User.AuthProvider\'DA İSE C# TARAFINDA da STRING\'Tİ).',
+            olmasaydi: 'Bu DÖNÜŞÜM OLMASAYDI, EF Core enum\'ı VARSAYILAN olarak SAYISAL bir DEĞER (int) OLARAK SAKLARDI — bir Admin VERİTABANINI ELLE SORGULADIĞINDA "Status = 2" GÖRÜR, BUNUN "Confirmed" mi "Scanned" mı OLDUĞUNU KOD\'A BAKMADAN BİLEMEZDİ.'
+          },
+          {
+            satir: '.HasMaxLength(20)',
+            aciklama: 'String\'e ÇEVRİLEN enum\'ın KOLON UZUNLUĞU — enum DEĞERLERİNİN EN UZUNU ("Confirmed", "Expired") 9 karakter olsa da, İLERİDE daha uzun İSİMLİ bir durum EKLENEBİLECEĞİ İÇİN 20 gibi RAHAT bir PAY bırakılır.',
+            neden: 'A-03/03\'teki PasswordHash İÇİN "TAM İSABETLİ boyut" YAKLAŞIMININ AKSİNE, BURADA enum DEĞERLERİNİN İSİMLERİ (kod TARAFINDA DEĞİŞEBİLİR) OLDUĞU İÇİN bir MİKTAR PAY bırakmak, İLERİDE bir enum DEĞERİ YENİDEN ADLANDIRILDIĞINDA migration GEREKTİRMEMEYİ sağlar.',
+            olmasaydi: 'MaxLength ÇOK DAR (ör. 10) SEÇİLSEYDİ, İLERİDE EKLENECEK DAHA UZUN İsimli bir DURUM (ör. "AutoExpired") VERİTABANINA YAZILAMAZ, bir VERİTABANI HATASI FIRLATIRDI.'
+          },
+          {
+            satir: '.HasDefaultValue(QrLoginStatus.Pending);',
+            aciklama: 'C# TARAFINDAKİ `= QrLoginStatus.Pending` VARSAYILANININ (BİR ÖNCEKİ slayt), VERİTABANI SEVİYESİNDEKİ KARŞILIĞI — SQL Server\'A da "BU KOLONUN VARSAYILANI \'Pending\'" DENİR.',
+            neden: 'C# TARAFINDAKİ VARSAYILAN, YALNIZCA `new QrLoginSession()` İLE OLUŞTURULAN nesnelerde GEÇERLİDİR — VERİTABANI SEVİYESİNDE de BİR VARSAYILAN TANIMLAMAK, ör. HAM SQL İLE (EF Core DIŞINDA) bir SATIR EKLENİRSE de TUTARLI bir DAVRANIŞ SAĞLAR.',
+            olmasaydi: 'Bu satır OLMASAYDI, C# TARAFINDAKİ VARSAYILAN YİNE ÇALIŞIRDI (EF Core NESNEYİ OLUŞTURURKEN ZATEN "Pending" ATAR) — ama VERİTABANI ŞEMASININ KENDİSİ bir VARSAYILAN TAŞIMAZDI, İKİ KATMAN (C#/DB) ARASINDA KÜÇÜK bir TUTARSIZLIK OLURDU.'
+          },
+          {
+            satir: 'builder.HasIndex(q => q.QrTokenHash);',
+            aciklama: 'A-03/03\'teki `builder.HasIndex(u => u.Email)` İLE AYNI AMAÇ — HER scan/confirm/deny/status İSTEĞİNDE token HASH\'İNE GÖRE ARAMA YAPILDIĞI İÇİN, bu SÜTUN İNDEKSLENİR.',
+            neden: 'A-03/03\'teki Email İNDEKSİNDEN FARKLI olarak `IsUnique()` ÇAĞRILMAZ — ÇÜNKÜ (TEORİDE) İKİ FARKLI oturumun AYNI HASH\'E SAHİP OLMASI (64 byte RASTGELE token\'IN ÇAKIŞMASI) İSTATİSTİKSEL OLARAK İHMAL EDİLEBİLİR bir OLASILIK, VE bu BENZERSİZLİĞİ VERİTABANI SEVİYESİNDE ZORUNLU KILMANIN EK bir GÜVENLİK FAYDASI YOKTUR.',
+            olmasaydi: 'Bu İNDEKS OLMASAYDI, HER scan/confirm/deny/status İSTEĞİ TABLODAKİ TÜM SATIRLARI TARAYAN (full table scan) bir SORGU ÇALIŞTIRIRDI — oturum SAYISI ARTTIKÇA (yoğun KULLANIMDA) BU sorgular GİDEREK YAVAŞLARDI.'
+          },
+          {
+            satir: 'builder.HasIndex(q => q.ExpiresAt);',
+            aciklama: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ, "SÜRESİ DOLMUŞ kayıtları AYRIŞTIRAN SORGULARI HIZLANDIRIR" — AMA proje BİLİNÇLİ olarak bir TEMİZLİK GÖREVİ (background job) YAZMAZ (YAGNI, bir SONRAKİ satırın YORUMUNDA da GEÇEN "temizlik JOB\'I yok" NOTU).',
+            neden: 'Süre KONTROLÜ, Bölüm 5\'teki `IsExpired` extension İLE HER OKUMA ANINDA (LAZY) YAPILIR — bu İNDEKS, İLERİDE (İSTENİRSE) bir TEMİZLİK GÖREVİ EKLENDİĞİNDE ("ExpiresAt < şimdi OLAN TÜM kayıtları BUL") HAZIR bir ALTYAPI SAĞLAR, ŞU AN İÇİN İSE gerçek KULLANIMI DAHA SINIRLIDIR.',
+            olmasaydi: 'Bu İNDEKS OLMASAYDI, İLERİDE bir TEMİZLİK GÖREVİ YAZILDIĞINDA (ör. "30 GÜNDEN ESKİ SÜRESİ DOLMUŞ oturumları SİL") o SORGU YAVAŞ ÇALIŞIRDI — bugün EKLENMESİ, GELECEKTEKİ bir İHTİYACI ÖNCEDEN KARŞILAYAN, DÜŞÜK MALİYETLİ bir KARARDIR.'
+          },
+          {
+            satir: '.HasOne(q => q.User)',
+            aciklama: 'İKİNCİ fluent-API zincirinin İLK METODU — QrLoginSession İLE User ARASINDAKİ İLİŞKİYİ TANIMLAMAYA BAŞLAR ("bir QrLoginSession, TEK bir User\'A ait OLABİLİR").',
+            neden: 'Bu, `q.User` navigation property\'sinin (bir ÖNCEKİ slaytta GÖRDÜĞÜMÜZ) EF Core TARAFINDAN bir İLİŞKİ OLARAK TANINMASINI SAĞLAYAN fluent-API ÇAĞRISIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, EF Core `UserId`/`User` ALANLARINI bir FOREIGN KEY İLİŞKİSİ olarak DEĞİL, SIRADAN kolonlar olarak YORUMLARDI — `OnDelete` DAVRANIŞI (bir sonraki satır) HİÇ TANIMLANAMAZDI.'
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Boş parametreli `WithMany()` — User TARAFINDA BU İLİŞKİYE KARŞILIK gelen bir KOLEKSİYON (ör. `User.QrLoginSessions`) TANIMLANMADIĞINI belirtir.',
+            neden: 'Bir ÖNCEKİ slaytta belirtildiği gibi, "kullanıcının QR oturumları" LİSTESİNE hiçbir akış İHTİYAÇ DUYMADIĞI İÇİN (YAGNI), TERS yönde bir navigation EKLENMEZ — `WithMany()` bunu EF Core\'A AÇIKÇA BİLDİRİR.',
+            olmasaydi: '`WithMany()` yerine `WithMany(u => u.QrLoginSessions)` YAZILSAYDI, User.cs\'e HİÇ VAR OLMAYAN bir `QrLoginSessions` KOLEKSİYONU EKLENMESİ GEREKİRDİ — bu proje bu koleksiyona İHTİYAÇ DUYMADIĞI İÇİN GEREKSİZ bir alan OLURDU.'
+          },
+          {
+            satir: '.HasForeignKey(q => q.UserId)',
+            aciklama: 'İlişkinin HANGİ KOLONA (UserId) DAYANDIĞINI belirtir.',
+            neden: 'Bu, EF Core\'un `QrLoginSessions.UserId` kolonunu `Users.Id`\'YE bağlayan bir FOREIGN KEY CONSTRAINT OLUŞTURMASINI sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, EF Core HANGİ KOLONUN foreign key OLDUĞUNU BİLEMEZDİ — migration (Bölüm 3) YANLIŞ ya da EKSİK bir constraint ÜRETİRDİ.'
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.SetNull);',
+            aciklama: 'A-03/03\'teki User\'IN KENDİSİNDE GÖRMEDİĞİMİZ bir DAVRANIŞ — kullanıcı SİLİNİRSE (kalıcı ANONİMLEŞTİRME, A-10), BU oturumun UserId\'si `null`A DÜŞER, oturum kaydının KENDİSİ SİLİNMEZ.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "kullanıcı SİLİNSE BİLE OTURUM KAYDI AUDIT İÇİN KALIR" — QR oturumları, GÜVENLİK İNCELEMESİ AÇISINDAN DEĞERLİ bir GEÇMİŞ KAYITTIR, kullanıcının SİLİNMESİYLE bu GEÇMİŞİN de KAYBOLMASI İSTENMEZ.',
+            olmasaydi: '`DeleteBehavior.Cascade` (VARSAYILAN DAVRANIŞ) KULLANILSAYDI, bir kullanıcı ANONİMLEŞTİRİLDİĞİNDE TÜM QR oturum GEÇMİŞİ de OTOMATİK OLARAK SİLİNİRDİ — bir GÜVENLİK İNCELEMESİNDE "bu kullanıcı GEÇMİŞTE QR İLE NE ZAMAN GİRİŞ YAPTI" SORUSU CEVAPSIZ KALIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrLoginStatus, 6 durumlu bir "durum makinesi" — her geçiş, KENDİ zaman damgasını (ScannedAt/ConfirmedAt) taşır',
+          'QrTokenHash (SHA-256, 44 karakter) DÜZ metin token\'ı ASLA saklamaz — PairingCode İSE görsel karşılaştırma amaçlı, HASH\'LENMEZ',
+          'UserId nullable — Pending bir oturumun HENÜZ hiçbir kullanıcıyla İLİŞKİSİ yoktur',
+          'FK OnDelete SetNull — kullanıcı silinse bile QR oturum geçmişi AUDIT için KORUNUR (Cascade DEĞİL)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

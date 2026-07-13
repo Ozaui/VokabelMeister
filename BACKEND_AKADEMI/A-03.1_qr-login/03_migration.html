@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Migration — CreateTable</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'migration',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '02_entity-enum-config.html',
+    sonrakiBolum: '04_exceptions-dtos-repository.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Migration — CreateTable',
+        altBaslik: 'A-03/04\'te gördüğümüz AddColumn (VAR OLAN bir tabloya kolon ekleme) DEĞİL — SIFIRDAN yeni bir TABLO.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'AddColumn ile CreateTable Arasındaki Fark',
+        aciklama: 'A-03/04\'teki AddUserThemePreference migration\'ı, VAR OLAN Users TABLOSUNA TEK bir KOLON ekliyordu — `AddColumn` + `AddCheckConstraint`. BU migration İSE TAMAMEN YENİ bir TABLO (`QrLoginSessions`) OLUŞTURUR — `CreateTable` çağrısı, TÜM KOLONLARI, PRIMARY KEY\'İ, CHECK constraint\'İ VE FOREIGN KEY\'İ TEK bir İFADEDE TANIMLAR.',
+        neden: 'Bu, dotnet ef migrations add\'IN "MODEL DIFF" MEKANİZMASININ (A-03/04) İKİ FARKLI SENARYODA (var olan tabloya EKLEME, TAMAMEN yeni bir ENTİTE) NASIL FARKLI SQL ÜRETTİĞİNİ GÖSTERİR — GELİŞTİRİCİ İKİSİNİ de ELLE YAZMAZ, EF Core FARKI OTOMATİK BULUR.',
+        olmasaydi: 'Migration OTOMASYONU OLMASAYDI, `CreateTable` İÇİNDEKİ 17 KOLONUN (7\'si BaseEntity\'DEN GELEN, A-02/03) HER BİRİNİ, DOĞRU TİP/UZUNLUK/NULLABLE BİLGİSİYLE ELLE YAZMAK GEREKİRDİ — TEK bir KOLONUN UNUTULMASI ya da YANLIŞ TİPLE YAZILMASI, ÇALIŞMA ZAMANINDA GEÇ FARK EDİLEN bir HATAYA YOL AÇARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AddQrLoginSessions — Constraints ve Foreign Key',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260707144550_AddQrLoginSessions.cs',
+        nedenBuKlasor: 'Migrations/ altında, dosya adı ZAMAN DAMGASIYLA BAŞLAR — A-03/04\'teki AYNI KONVANSİYON.',
+        kod: `constraints: table =>
+{
+    table.PrimaryKey("PK_QrLoginSessions", x => x.Id);
+    table.CheckConstraint("CK_QrLoginSessions_Status", "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')");
+    table.ForeignKey(
+        name: "FK_QrLoginSessions_Users_UserId",
+        column: x => x.UserId,
+        principalTable: "Users",
+        principalColumn: "Id",
+        onDelete: ReferentialAction.SetNull);
+});
+
+migrationBuilder.CreateIndex(
+    name: "IX_QrLoginSessions_ExpiresAt",
+    table: "QrLoginSessions",
+    column: "ExpiresAt");
+
+migrationBuilder.CreateIndex(
+    name: "IX_QrLoginSessions_QrTokenHash",
+    table: "QrLoginSessions",
+    column: "QrTokenHash");
+
+migrationBuilder.CreateIndex(
+    name: "IX_QrLoginSessions_UserId",
+    table: "QrLoginSessions",
+    column: "UserId");`,
+        satirlar: [
+          {
+            satir: 'constraints: table =>',
+            aciklama: '`CreateTable`\'ın (bu slaydın HEMEN üstünde, ana çağrıda) `constraints` PARAMETRESİ — bir LAMBDA olarak, tablo OLUŞTURULDUKTAN SONRA UYGULANACAK TÜM kısıtlamaları (PK, CHECK, FK) TEK bir yerde TOPLAR.',
+            neden: 'EF Core\'un ÜRETTİĞİ migration kodu, KOLON tanımlarını (Name, Type, Nullable) VE kısıtlamaları (constraints) AYRI parametrelerde GRUPLAR — bu, OKUYUCUNUN "HANGİ kolonlar VAR" İLE "HANGİ kurallar UYGULANIYOR" sorularını AYRI AYRI cevaplamasını KOLAYLAŞTIRIR.',
+            olmasaydi: 'Bu parametre olmasaydı, PrimaryKey/CheckConstraint/ForeignKey çağrılarının HANGİ tabloya AİT olduğu BELİRSİZ kalırdı — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'table.PrimaryKey("PK_QrLoginSessions", x => x.Id);',
+            aciklama: 'A-03/04\'teki migration\'da HİÇ GÖRMEDİĞİMİZ bir SATIR — ÇÜNKÜ o migration VAR OLAN bir tabloya KOLON EKLİYORDU, Primary Key ZATEN VARDI. BURADA, YENİ tablonun BİRİNCİL ANAHTARI İLK KEZ TANIMLANIR.',
+            neden: 'HER TABLO, BENZERSİZ bir SATIRI TANIMLAYAN bir PRIMARY KEY\'E İHTİYAÇ DUYAR — A-02/03\'teki BaseEntity.Id, BU ROLÜ OYNAR; migration bunu SQL Server\'A "Id KOLONU BU tablonun BİRİCİK ANAHTARIDIR" OLARAK BİLDİRİR.',
+            olmasaydi: 'Bu satır OLMASAYDI, QrLoginSessions TABLOSUNUN BİRİNCİL ANAHTARI OLMAZDI — EF Core\'un ChangeTracker\'ı (A-02/07\'deki Repository<T>\'nin DAYANDIĞI MEKANİZMA) HANGİ SATIRIN HANGİSİ OLDUĞUNU AYIRT EDEMEZDİ, `UpdateAsync` GİBİ İŞLEMLER GÜVENİLİR ÇALIŞMAZDI.'
+          },
+          {
+            satir: 'table.CheckConstraint("CK_QrLoginSessions_Status", "Status IN (\'Pending\',\'Scanned\',\'Confirmed\',\'Consumed\',\'Denied\',\'Expired\')");',
+            aciklama: 'A-03/03\'teki CK_Users_Level/Role/AuthProvider İLE AYNI KONVANSİYON ("CK_" ÖN EKİ) — QrLoginSessionConfiguration\'DAKİ (Bölüm 2) `HasCheckConstraint` ÇAĞRISININ, MİGRASYONA YANSIMIŞ HALİ.',
+            neden: 'Status C# TARAFINDA GERÇEK bir enum OLSA da (Bölüm 2), VERİTABANI SEVİYESİNDE STRING OLARAK SAKLANDIĞI (`.HasConversion<string>()`) İÇİN, "geçersiz bir DEĞER" (ör. HAM SQL İLE "Foo" YAZILMASI) VERİTABANI SEVİYESİNDE de ENGELLENMELİDİR — A-03/03\'teki AYNI "enum yerine STRING kullanmanın BEDELİ" İLKESİ.',
+            olmasaydi: 'Bu CONSTRAINT OLMASAYDI, EF Core DIŞINDAN (ör. bir ADMIN ARACIYLA) YAPILAN bir GÜNCELLEME, Status kolonuna GEÇERSİZ bir DEĞER (ör. "InProgress") YAZABİLİRDİ — C# TARAFINDAKİ enum PARSE İŞLEMİ (`QrLoginStatus.Parse`) BU DEĞERLE KARŞILAŞINCA ÇALIŞMA ZAMANI HATASI FIRLATIRDI.'
+          },
+          {
+            satir: 'table.ForeignKey(',
+            aciklama: 'A-03/16\'daki RefreshTokens tablosunda GÖRMEDİĞİMİZ (o tablo AYRI bir migration İÇİNDE FK\'sını TANIMLAMIŞTI) — BURADA, TABLO OLUŞTURULURKEN FK de AYNI ANDA TANIMLANIR.',
+            neden: 'FOREIGN KEY, `UserId` KOLONUNUN, YALNIZCA Users tablosundaki GERÇEKTEN VAR OLAN bir Id\'YE İŞARET EDEBİLECEĞİNİ VERİTABANI SEVİYESİNDE GARANTİ EDER — C# TARAFINDAKİ `User? User` navigation property\'sinin (Bölüm 2) VERİTABANI KARŞILIĞIDIR.',
+            olmasaydi: 'FK OLMASAYDI, `UserId` KOLONUNA HERHANGİ bir SAYI (VAR OLMAYAN bir kullanıcı Id\'si DAHİL) YAZILABİLİRDİ — `session.User` navigation property\'si BU DURUMDA HİÇBİR ZAMAN GEÇERLİ bir SONUÇ DÖNDÜREMEZDİ, VERİ BÜTÜNLÜĞÜ (referential integrity) BOZULURDU.'
+          },
+          {
+            satir: 'name: "FK_QrLoginSessions_Users_UserId",',
+            aciklama: 'Foreign key\'in VERİTABANI SEVİYESİNDEKİ ADI — `FK_<ÇocukTablo>_<EbeveynTablo>_<Kolon>` KONVANSİYONUNU izler (A-03/03\'teki CK_ ön ekiyle AYNI isimlendirme FELSEFESİ).',
+            neden: 'Adlandırılmış bir constraint, bir SQL hatası ALINDIĞINDA (ör. geçersiz bir UserId İLE INSERT denemesi) hata MESAJINDA GÖRÜNÜR — bu isim, HANGİ kısıtlamanın İHLAL EDİLDİĞİNİ ANINDA ANLAŞILIR kılar.',
+            olmasaydi: 'İsimsiz BIRAKILSAYDI, EF Core OTOMATİK bir isim (ör. "FK_QrLoginSessions_Users_UserId1") ÜRETİRDİ — bu, migration\'lar ARASI TUTARSIZ, TAHMİN EDİLEMEZ isimlere yol AÇABİLİRDİ.'
+          },
+          {
+            satir: 'column: x => x.UserId,',
+            aciklama: 'FK\'nın hangi KOLON ÜZERİNDE olduğunu belirtir — Bölüm 2\'deki `.HasForeignKey(q => q.UserId)` çağrısının SQL karşılığı.',
+            neden: 'Bu, EF Core\'un C# tarafındaki fluent-API konfigürasyonunu (Bölüm 2) SQL\'e ÇEVİRİRKEN kullandığı LAMBDA sözdizimidir.',
+            olmasaydi: 'Bu satır olmasaydı, FK HANGİ kolona UYGULANACAĞINI BİLEMEZDİ — migration DERLENEMEZDİ.'
+          },
+          {
+            satir: 'principalTable: "Users",',
+            aciklama: 'FK\'nın İŞARET ETTİĞİ EBEVEYN tablo — `UserId` kolonu, `Users` tablosundaki bir SATIRA İŞARET ETMEK ZORUNDADIR.',
+            neden: 'Bu, `session.User` navigation property\'sinin (Bölüm 2) HANGİ tabloya BAĞLI olduğunu VERİTABANI SEVİYESİNDE TANIMLAR.',
+            olmasaydi: 'Bu parametre olmasaydı, SQL Server FK\'nın HANGİ tabloya REFERANS VERDİĞİNİ BİLEMEZDİ — migration DERLENEMEZDİ.'
+          },
+          {
+            satir: 'principalColumn: "Id",',
+            aciklama: 'EBEVEYN tablodaki HANGİ KOLONA (Id) referans VERİLDİĞİNİ belirtir.',
+            neden: 'Users tablosunun PRIMARY KEY\'İ `Id` OLDUĞU İÇİN, FK bu KOLONA İŞARET ETMEK ZORUNDADIR — bir FK, EBEVEYN tabloda BENZERSİZ (unique) bir KOLONA referans vermelidir.',
+            olmasaydi: 'Bu parametre olmasaydı, FK HANGİ kolonun BENZERSİZLİĞİNE DAYANACAĞINI BİLEMEZDİ — migration DERLENEMEZDİ.'
+          },
+          {
+            satir: 'onDelete: ReferentialAction.SetNull);',
+            aciklama: 'Bölüm 2\'deki `.OnDelete(DeleteBehavior.SetNull)` C# KODUNUN, GERÇEK SQL KARŞILIĞI — `ReferentialAction.SetNull`, SQL Server\'IN "ON DELETE SET NULL" İFADESİNE KARŞILIK GELİR.',
+            neden: 'Bu, C# TARAFINDAKİ EF Core FLUENT API İLE ÜRETİLEN SQL ARASINDAKİ DOĞRUDAN İLİŞKİYİ GÖSTERİR — Bölüm 2\'de "NEDEN SetNull" SORUSUNU (AUDIT İÇİN KAYDIN KORUNMASI) CEVAPLAMIŞTIK, BURADA ONUN GERÇEK VERİTABANI KARŞILIĞINI GÖRÜYORUZ.',
+            olmasaydi: 'Bu değer `ReferentialAction.Cascade` (VARSAYILAN) OLSAYDI, bir kullanıcı SİLİNDİĞİNDE İLİŞKİLİ QrLoginSessions SATIRLARI da OTOMATİK SİLİNİRDİ — Bölüm 2\'DE TARTIŞTIĞIMIZ "audit AMAÇLI KAYDIN KORUNMASI" GARANTİSİ VERİTABANI SEVİYESİNDE de BOZULURDU.'
+          },
+          {
+            satir: '});',
+            aciklama: '`constraints: table => { ... }` LAMBDA BLOĞUNUN VE dışındaki `CreateTable(...)` çağrısının KAPANIŞI.',
+            neden: 'Bu satır, TÜM kolonların VE kısıtlamaların (PK, CHECK, FK) TANIMLANDIĞI, TEK bir BÜYÜK `CreateTable` çağrısının SONUNU işaretler.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'migrationBuilder.CreateIndex(',
+            aciklama: 'Bölüm 2\'deki `HasIndex` ÇAĞRILARININ (ExpiresAt, QrTokenHash, UserId — ÜÇ AYRI İNDEKS) MİGRASYONA YANSIMIŞ HALİ — HER `HasIndex` çağrısı, KENDİ `CreateIndex` SATIRINI ÜRETİR. Bu SLAYTTA bu satır ÜÇ KEZ (her indeks için) tekrarlanır; kod editörü İÇERİĞE göre eşleştirdiği için TEK açıklama HER ÜÇ fiziksel satıra da uygulanır.',
+            neden: 'FK\'nın KENDİSİ de (UserId) OTOMATİK olarak bir İNDEKS ÜRETİR (SQL Server\'IN FK PERFORMANSI İÇİN ÖNERDİĞİ bir KONVANSİYON) — bu YÜZDEN Bölüm 2\'de YALNIZCA İKİ `HasIndex` ÇAĞRISI (QrTokenHash, ExpiresAt) GÖRSEK de, BURADA ÜÇ `CreateIndex` VAR.',
+            olmasaydi: 'Bu üç İNDEKS OLMASAYDI, HER scan/status İSTEĞİ (QrTokenHash), HER SÜRE KONTROLÜ (ExpiresAt) VE HER FK KISITLAMASI KONTROLÜ (UserId) TABLODAKİ TÜM SATIRLARI TARAYAN bir SORGU ÇALIŞTIRIRDI — oturum SAYISI ARTTIKÇA CİDDİ bir PERFORMANS SORUNU OLURDU.'
+          },
+          {
+            satir: 'name: "IX_QrLoginSessions_ExpiresAt",',
+            aciklama: 'İndeksin VERİTABANI SEVİYESİNDEKİ ADI — `IX_<Tablo>_<Kolon>` KONVANSİYONU (FK\'lardaki `FK_` ön ekiyle AYNI FELSEFE, ama indeksler İÇİN `IX_`).',
+            neden: 'Adlandırılmış bir indeks, SQL Server Management Studio GİBİ araçlarda HANGİ indeksin NEYİ hızlandırdığını ANLAMAYI KOLAYLAŞTIRIR.',
+            olmasaydi: 'İsimsiz bırakılsaydı, EF Core OTOMATİK bir isim ÜRETİRDİ — migration\'lar ARASI TUTARSIZ isimlere yol AÇABİLİRDİ.'
+          },
+          {
+            satir: 'table: "QrLoginSessions",',
+            aciklama: 'Bu SLAYTTA ÜÇ AYRI `CreateIndex` çağrısında (ExpiresAt, QrTokenHash, UserId indeksleri) tekrarlanan, BİREBİR AYNI satır — HANGİ tabloda indeks OLUŞTURULACAĞINI belirtir. Kod editörü İÇERİĞE göre eşleştirdiği İÇİN, TEK açıklama HER ÜÇ fiziksel satıra da uygulanır.',
+            neden: 'Bu üç indeks de AYNI tabloya (QrLoginSessions) AİT OLDUĞU İÇİN, parametre HER ÇAĞRIDA AYNI DEĞERİ TAŞIR — bu bir HATA/tekrar DEĞİL, üç FARKLI indeksin AYNI tablo üzerinde KURULMASININ DOĞAL SONUCUDUR.',
+            olmasaydi: 'Bu parametre olmasaydı, `CreateIndex` HANGİ tabloya İNDEKS EKLEYECEĞİNİ BİLEMEZDİ — migration DERLENEMEZDİ.'
+          },
+          {
+            satir: 'column: "ExpiresAt");',
+            aciklama: 'Bölüm 2\'deki `builder.HasIndex(q => q.ExpiresAt)` çağrısının SQL SEVİYESİNDEKİ KARŞILIĞI — İNDEKSİN HANGİ KOLON ÜZERİNDE OLUŞTURULACAĞINI BELİRTİR.',
+            neden: 'Bu, ÜÇ `CreateIndex` çağrısından İLKİDİR — TEK bir KOLON (ExpiresAt) üzerinde, "TEK KOLONLU İNDEKS" (composite/çoklu kolon DEĞİL) — bu tablo İÇİN BİRDEN FAZLA KOLONU BİRLİKTE SORGULAYAN bir İHTİYAÇ (ör. "Status + ExpiresAt") HENÜZ ORTAYA ÇIKMADIĞI İÇİN, TEK kolonlu İNDEKSLER YETERLİ GÖRÜLMÜŞTÜR (YAGNI).',
+            olmasaydi: 'Bu KOLON BELİRTİLMESEYDİ, `CreateIndex` çağrısı HANGİ VERİ ÜZERİNDE İNDEKS OLUŞTURACAĞINI BİLEMEZDİ — KOD DERLENEMEZDİ (ZORUNLU bir PARAMETREDİR).'
+          },
+          {
+            satir: 'name: "IX_QrLoginSessions_QrTokenHash",',
+            aciklama: 'İKİNCİ indeksin adı — Bölüm 2\'deki `builder.HasIndex(q => q.QrTokenHash)` çağrısının karşılığı.',
+            neden: 'Bu indeks, HER scan/confirm/deny/status isteğinde (Bölüm 4\'ten itibaren) TOKEN hash\'ine göre yapılan aramayı HIZLANDIRIR.',
+            olmasaydi: 'Bu indeks olmasaydı, HER istek TABLODAKİ TÜM satırları TARAYAN bir sorgu ÇALIŞTIRIRDI.'
+          },
+          {
+            satir: 'column: "QrTokenHash");',
+            aciklama: 'İKİNCİ `CreateIndex` çağrısının hangi KOLON üzerinde olduğunu belirtir.',
+            neden: 'QrTokenHash, EN SIK sorgulanan kolon OLDUĞU İÇİN (her scan/confirm/deny/status isteğinde), İNDEKS bu kolona KURULUR.',
+            olmasaydi: 'Bu parametre olmasaydı, migration DERLENEMEZDİ.'
+          },
+          {
+            satir: 'name: "IX_QrLoginSessions_UserId",',
+            aciklama: 'ÜÇÜNCÜ indeksin adı — FK kolonunun (UserId) KENDİSİ için OTOMATİK üretilen indeks.',
+            neden: 'SQL Server, FK kolonlarının indekslenmesini ÖNERİR — bu, FK kısıtlaması KONTROL EDİLİRKEN (ör. bir kullanıcı silinirken, İLİŞKİLİ satırların BULUNMASI gerektiğinde) performansı ARTIRIR.',
+            olmasaydi: 'Bu indeks olmasaydı, bir kullanıcı SİLİNDİĞİNDE (SetNull tetiklendiğinde) İLİŞKİLİ QrLoginSessions satırlarını BULMAK YAVAŞ bir TABLO TARAMASI GEREKTİRİRDİ.'
+          },
+          {
+            satir: 'column: "UserId");',
+            aciklama: 'ÜÇÜNCÜ `CreateIndex` çağrısının hangi KOLON üzerinde olduğunu belirtir — bu SLAYTTAKİ SON satır.',
+            neden: 'UserId, FK kısıtlamasının DAYANDIĞI kolon olduğu İÇİN, İNDEKS bu kolona KURULUR.',
+            olmasaydi: 'Bu parametre olmasaydı, migration DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'CreateTable, AddColumn\'dan (A-03/04) farklı bir migration türü — TÜM kolonlar, PK, CHECK constraint, FK TEK bir çağrıda tanımlanır',
+          'Primary Key, VAR OLAN bir tabloda zaten mevcuttur — SIFIRDAN bir tabloda İLK KEZ tanımlanması gerekir',
+          'ForeignKey + ReferentialAction.SetNull, C# tarafındaki .OnDelete(DeleteBehavior.SetNull)\'ın (Bölüm 2) GERÇEK SQL karşılığıdır',
+          'FK kolonları (UserId), EF Core tarafından OTOMATİK olarak da indekslenir — üç HasIndex çağrısı üç CreateIndex üretir'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

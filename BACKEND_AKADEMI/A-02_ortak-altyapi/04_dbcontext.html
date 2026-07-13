@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WordLearnerDbContext</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dbcontext',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '03_domain-katmani.html',
+    sonrakiBolum: '05_program-cs-di.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'WordLearnerDbContext',
+        altBaslik: 'EF Core\'un veritabanıyla konuştuğu merkezi sınıf — soft delete filtresi ve otomatik zaman damgası burada kurulur.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'DbContext Nedir?',
+        aciklama: 'DbContext, EF Core\'un kalbi: bir "veritabanı oturumu"nu temsil eder. Hangi entity\'lerin (User, Word...) hangi tablolara karşılık geldiğini bilir, sorguları SQL\'e çevirir, değişiklikleri (INSERT/UPDATE/DELETE) toplu olarak veritabanına yazar.',
+        neden: 'Uygulama genelinde TEK bir DbContext sınıfı olur (WordLearnerDbContext) — her yeni entity eklendiğinde ayrı bir bağlantı sınıfı yazmak yerine, hepsi bu tek sınıfa bir DbSet olarak eklenir.',
+        olmasaydi: 'DbContext olmasaydı (ham ADO.NET kullanılsaydı), her sorgu için elle SqlConnection açıp kapatmak, SQL string\'i yazmak, sonucu elle nesneye eşlemek gerekirdi — hem çok daha fazla kod hem de çok daha kolay hata yapılan bir süreç.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordLearnerDbContext.cs — DbSet\'ler ve Constructor',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: 'Infrastructure/Data/ altında — çünkü "veritabanına NASIL bağlanılacağı" tamamen bir altyapı (Infrastructure) detayıdır, Application veya Domain katmanının bundan haberi olmamalı (Bölüm 2).',
+        kod: `public class WordLearnerDbContext : DbContext
+{
+    public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options)
+        : base(options) { }
+
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+}`,
+        satirlar: [
+          {
+            satir: 'public class WordLearnerDbContext : DbContext',
+            aciklama: 'Microsoft\'un EF Core kütüphanesindeki `DbContext` sınıfından türer — tüm veritabanı yeteneklerini (sorgu, kaydetme, değişiklik izleme) miras alır.',
+            neden: '`: DbContext` yazmak, bu sınıfa "ben bir veritabanı oturumuyum" yeteneğini kazandırır; kendi sorgu/kaydetme mantığımızı sıfırdan yazmamıza gerek kalmaz.',
+            olmasaydi: 'DbContext\'ten türemeseydik, `Users.Add(newUser)` gibi EF Core\'un sağladığı hiçbir kısayol çalışmazdı — her SQL komutunu elle yazmamız gerekirdi.'
+          },
+          {
+            satir: 'public WordLearnerDbContext(DbContextOptions<WordLearnerDbContext> options)',
+            aciklama: 'Constructor, DI konteynerinden "seçenekler" (connection string, hangi veritabanı sağlayıcısı vb.) alır.',
+            neden: 'Bu, EF Core\'un standart kalıbıdır — farklı ortamlar (geliştirme, üretim, test) için farklı seçenek setleri (ör. test\'te InMemory, üretimde SQL Server) enjekte edilebilir; DbContext\'in kodu HİÇ değişmez.',
+            olmasaydi: 'Connection string doğrudan bu sınıf içine sabit (hardcoded) yazılsaydı, testte gerçek SQL Server\'a bağlanmadan test çalıştırmak imkansız olurdu ve CLAUDE.md\'nin "hassas değer asla kaynak koda girmez" kuralı çiğnenirdi.'
+          },
+          {
+            satir: 'public DbSet<User> Users => Set<User>();',
+            aciklama: '`Users` adlı bu özellik, `User` entity\'sinin karşılık geldiği tabloyu temsil eder — `db.Users.Where(...)` gibi sorgular buradan başlar.',
+            neden: 'Her yeni entity için DbContext\'e bir `DbSet<T>` eklenir — bu, "bu entity artık sorgulanabilir/kaydedilebilir" demektir. EF Core, tablo adını varsayılan olarak bu property\'nin adından türetir ("Users" tablosu).',
+            olmasaydi: 'Bir entity\'nin DbSet\'i eklenmeseydi, o entity\'yi doğrudan sorgulayamazdık (yalnızca başka bir entity üzerinden ilişki ile erişilebilirdi) — pratikte her yeni tablo için bu satırın eklenmesi unutulmamalı.'
+          },
+          {
+            satir: 'public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();',
+            aciklama: 'RefreshToken entity\'sinin (A-03/11\'de detaylı göreceğiz — kullanıcının oturum yenileme token\'ları) karşılık geldiği tablo.',
+            neden: 'User ile RefreshToken arasında 1:N bir ilişki var (bir kullanıcının birden fazla cihazdan/oturumdan token\'ı olabilir) — her ikisinin de kendi DbSet\'i olması, ikisinin BAĞIMSIZ sorgulanabilmesini sağlar (ör. "süresi dolmuş tüm token\'ları bul" — User\'a hiç dokunmadan).',
+            olmasaydi: 'RefreshToken\'ın kendi DbSet\'i olmasaydı, token\'lara yalnızca `user.RefreshTokens` navigation property\'si üzerinden, HER ZAMAN bir User\'ı önce yükleyerek erişilebilirdi — süresi dolmuş token\'ları TÜM kullanıcılar genelinde temizleyen bir arkaplan işi gereksiz yere ağırlaşırdı.'
+          },
+          {
+            satir: 'public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();',
+            aciklama: 'QR kod ile giriş (A-03.1) akışının geçici oturum kayıtlarının karşılık geldiği tablo.',
+            neden: 'Bu, DbSet ekleme işleminin ne kadar TEKRARLANABİLİR olduğunu gösteriyor: yeni bir feature (A-03.1) yeni bir entity getirdiğinde, WordLearnerDbContext\'e eklenen TEK şey bu bir satırlık property — OnModelCreating\'e (bir sonraki slayt) HİÇBİR ek kod gerekmez, assembly taraması onu otomatik bulur.',
+            olmasaydi: 'Bu satır eklenmeseydi, QrLoginSession entity\'si Configuration dosyası (IEntityTypeConfiguration) sayesinde YİNE DE bir tabloya dönüşürdü (EF Core, ilişkiler üzerinden de tabloyu bulabilir) ama `db.QrLoginSessions.Where(...)` gibi DOĞRUDAN bir sorgu YAZILAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OnModelCreating — Global Soft Delete Filtresi',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: 'Bu metot hâlâ aynı dosyada — DbContext\'in "model kurulumu" mantığı, DbContext\'in kendisinden ayrılmaz.',
+        kod: `protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+    foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+    {
+        if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+        {
+            var parameter = Expression.Parameter(entityType.ClrType, "e");
+            var property = Expression.Property(parameter, nameof(BaseEntity.IsDeleted));
+            var notDeleted = Expression.Not(property);
+            var lambda = Expression.Lambda(notDeleted, parameter);
+            modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);
+        }
+    }
+
+    base.OnModelCreating(modelBuilder);
+}`,
+        satirlar: [
+          {
+            satir: 'protected override void OnModelCreating(ModelBuilder modelBuilder)',
+            aciklama: 'EF Core\'un model kurulumu sırasında bir KEZ çağırdığı standart metodu override eder — burada entity↔tablo eşleşmeleri, ilişkiler ve (bu dosyada göreceğimiz) global filtreler tanımlanır.',
+            neden: 'EF Core, uygulama başlarken modeli bir kez "derler" (model oluşturma); bu metot, o derleme sırasında araya girip modele KENDİ kurallarımızı (soft delete filtresi gibi) eklememizi sağlayan resmi genişletme noktasıdır.',
+            olmasaydi: 'Bu metot override edilmeseydi, `ApplyConfigurationsFromAssembly` çağrılmaz, hiçbir EF Configuration (UserConfiguration gibi) uygulanmaz — kolon uzunlukları, unique index\'ler, CHECK constraint\'ler TAMAMEN devre dışı kalırdı.'
+          },
+          {
+            satir: 'modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);',
+            aciklama: 'Infrastructure projesindeki TÜM `IEntityTypeConfiguration<T>` sınıflarını (ör. UserConfiguration, bkz. A-03/03) otomatik tarar ve uygular.',
+            neden: 'Her entity için tek tek `modelBuilder.ApplyConfiguration(new UserConfiguration())` yazmak yerine assembly taraması yapılır — yeni bir entity/configuration eklendikçe bu satır DEĞİŞMEZ.',
+            olmasaydi: 'Bu satır olmasaydı, her yeni EF Configuration dosyası yazıldığında geliştirici burayı da güncellemeyi HATIRLAMASI gerekirdi — unutulursa o entity\'nin index\'leri/check constraint\'leri sessizce hiç uygulanmazdı.'
+          },
+          {
+            satir: 'foreach (var entityType in modelBuilder.Model.GetEntityTypes())',
+            aciklama: 'Modele kayıtlı TÜM entity tiplerini (User, RefreshToken, QrLoginSession...) tek tek gezer.',
+            neden: 'Soft delete filtresi her entity için AYRI AYRI, elle yazılmak yerine, modeldeki HER entity üzerinde OTOMATİK kurulur — yeni bir entity eklendiğinde bu döngü onu da otomatik kapsar.',
+            olmasaydi: 'Bu döngü olmasaydı, her yeni entity için OnModelCreating\'e elle bir `modelBuilder.Entity<X>().HasQueryFilter(...)` satırı eklemek gerekirdi — bir entity unutulursa o entity\'nin silinmiş kayıtları sorgularda SIZARDI.'
+          },
+          {
+            satir: 'if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))',
+            aciklama: 'Modeldeki her entity için "bu, BaseEntity\'den mi türüyor" kontrolü yapılır.',
+            neden: 'Yalnızca BaseEntity\'den türeyen (yani IsDeleted alanı olan) entity\'lere filtre uygulanabilir — bu kontrol olmadan IsDeleted\'i olmayan bir tipe filtre uygulanmaya çalışılırsa çalışma zamanı hatası alınırdı.',
+            olmasaydi: 'Bu kontrol olmasaydı, gelecekte BaseEntity\'den TÜREMEYEN bir entity (ör. bir log tablosu, CLAUDE.md\'de "log tabloları BaseEntity taşımaz" deniyor) eklenirse kod çalışma zamanında patlardı.'
+          },
+          {
+            satir: 'var parameter = Expression.Parameter(entityType.ClrType, "e");',
+            aciklama: 'Çalışma zamanında (runtime) bir lambda ifadesi ("e" adlı bir parametre, ör. `User e`) elle inşa etmenin ilk adımı — `Expression` API\'si, C# kodunu DERLEME ZAMANINDA değil ÇALIŞMA ZAMANINDA dinamik olarak üretmeyi sağlar.',
+            neden: 'Generic `T` bilinmediği için (döngü her entity tipi için ÇALIŞIYOR), `e => !e.IsDeleted` gibi bir lambda\'yı DOĞRUDAN C# söz dizimiyle YAZAMAYIZ — hangi tipin parametresi olduğu ancak çalışma zamanında (`entityType.ClrType`) bilinir.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `Expression.Property`/`Expression.Not`/`Expression.Lambda` çağrılarının bağlanacağı bir parametre olmazdı — dinamik lambda inşası BAŞLAYAMAZDI.'
+          },
+          {
+            satir: 'var property = Expression.Property(parameter, nameof(BaseEntity.IsDeleted));',
+            aciklama: 'İnşa edilen lambda\'nın gövdesine, "bu parametrenin IsDeleted alanı" erişimini (`e.IsDeleted`) ekler.',
+            neden: '`nameof(BaseEntity.IsDeleted)` kullanılması, "IsDeleted" metin olarak elle yazılsaydı (ör. yazım hatasıyla "IsDeletd") oluşabilecek SESSİZ hataları derleme zamanında yakalar — alan adı değişirse (refactor) bu satır da otomatik güncellenir.',
+            olmasaydi: '`nameof` yerine düz bir string ("IsDeleted") yazılsaydı, biri BaseEntity\'deki alanı yeniden adlandırdığında (ör. IDE refactor ile) bu satır GÜNCELLENMEZ, çalışma zamanında "property bulunamadı" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'var notDeleted = Expression.Not(property);',
+            aciklama: '"e.IsDeleted" ifadesinin MANTIKSAL DEĞİLİNİ (`!e.IsDeleted`) alır — yani "silinmemiş olanlar" koşulunu kurar.',
+            neden: 'Global filtrenin amacı "yalnızca silinmemiş kayıtları göster" olduğu için, IsDeleted\'in kendisi değil, DEĞİLİ (negation) filtre koşulu olarak kullanılmalı.',
+            olmasaydi: 'Bu `Not` çağrısı atlanıp doğrudan `property` kullanılsaydı, filtre "yalnızca IsDeleted == true olanları göster" anlamına gelirdi — TÜM aktif kayıtlar sorgulardan GİZLENİR, yalnızca SİLİNMİŞ kayıtlar görünürdü (mantığın tam tersi).'
+          },
+          {
+            satir: 'var lambda = Expression.Lambda(notDeleted, parameter);',
+            aciklama: 'Önceki adımlarda inşa edilen parça parça ifadeleri (`parameter` ve `notDeleted`) birleştirip tam bir lambda ifadesine (`e => !e.IsDeleted`) dönüştürür.',
+            neden: 'EF Core\'un `HasQueryFilter` metodu bir `LambdaExpression` bekler — parça parça inşa edilen Expression Tree\'nin bu adımda TEK bir çalıştırılabilir lambda\'ya birleşmesi gerekir.',
+            olmasaydi: 'Bu satır olmasaydı, `HasQueryFilter`\'a geçirilecek eksiksiz bir lambda ifadesi hiç oluşmazdı — bir sonraki satırdaki `HasQueryFilter(lambda)` çağrısı derlenemez ya da anlamsız bir ifadeyle çalışırdı.'
+          },
+          {
+            satir: 'modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda);',
+            aciklama: 'İlgili entity\'ye "yalnızca IsDeleted == false olan kayıtları getir" filtresini otomatik uygular.',
+            neden: 'Bu tek satır, TÜM entity\'ler için soft delete filtresini otomatik kurar — her repository sorgusunda elle `.Where(e => !e.IsDeleted)` yazmak zorunda kalmayız (IgnoreQueryFilters() ile gerektiğinde, ör. admin silinmiş kaydı görmek isterse, bypass edilebilir — bkz. Bölüm 7 ve A-03/06).',
+            olmasaydi: 'Bu global filtre olmasaydı, her repository metodunda `.Where(e => !e.IsDeleted)` elle yazılması gerekirdi — biri bunu bir sorguda UNUTURSA, silinmiş bir kullanıcının kaydı (ör. login sorgusunda) yanlışlıkla geri dönebilirdi. Bu, ciddi bir güvenlik/veri tutarlılığı hatasıdır.'
+          },
+          {
+            satir: 'base.OnModelCreating(modelBuilder);',
+            aciklama: 'Kendi özel kurulumumuz (assembly taraması + soft delete filtresi) bittikten SONRA, EF Core\'un TEMEL (base sınıftaki) model kurulum mantığı çalıştırılır.',
+            neden: 'Bu çağrı EN SONA konur — böylece bizim eklediğimiz konfigürasyonlar, base sınıfın olası varsayılan davranışlarıyla ÇAKIŞMADAN önce uygulanmış olur; bu, override edilen metotlarda yaygın bir .NET konvansiyonudur.',
+            olmasaydi: 'Bu satır hiç çağrılmasaydı, EF Core\'un kendi iç kurulum adımlarından (ör. bazı framework-seviyesi varsayılan davranışlar) bazıları ATLANMIŞ olurdu — bu, ileride teşhisi zor, ince framework hatalarına yol açabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SaveChangesAsync Override — Otomatik UpdatedAt',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: 'Aynı dosyada, çünkü "kaydetme davranışını özelleştirme" DbContext\'in temel sorumluluklarından biri.',
+        kod: `public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+{
+    foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+    {
+        if (entry.State == EntityState.Modified)
+            entry.Entity.UpdatedAt = DateTime.UtcNow;
+    }
+
+    return base.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)',
+            aciklama: 'EF Core\'un standart `SaveChangesAsync` metodunu "override" eder — yani çağrıldığında önce bizim ek kodumuz, sonra orijinal davranış çalışır.',
+            neden: 'Bu, "her kayıt işleminde otomatik olarak çalışacak" bir kanca (hook) yaratmanın en temiz yolu — Repository&lt;T&gt; (Bölüm 7) her SaveChangesAsync çağırdığında bu kod da otomatik tetiklenir.',
+            olmasaydi: 'Override edilmeseydi, UpdatedAt alanını set etmek için her repository/handler\'ın `entity.UpdatedAt = DateTime.UtcNow` satırını elle yazması gerekirdi — biri unutursa o kayıt "hiç güncellenmemiş" gibi görünürdü.'
+          },
+          {
+            satir: 'foreach (var entry in ChangeTracker.Entries<BaseEntity>())',
+            aciklama: 'EF Core\'un "değişiklik izleyicisi" (ChangeTracker), o an bellekte hangi entity\'lerin hangi durumda (eklendi/değişti/silindi) olduğunu bilir — burada BaseEntity türündeki TÜM izlenen kayıtlar gezilir.',
+            neden: 'ChangeTracker, EF Core\'un "hangi property gerçekten değişti" bilgisini zaten tuttuğu için, bu bilgiyi tekrar hesaplamak yerine doğrudan kullanılır.',
+            olmasaydi: 'ChangeTracker kullanılmasaydı, "hangi entity değişti" bilgisini kendi elimizle takip etmemiz gerekirdi — EF Core\'un zaten yaptığı bir işi tekrar yazmak olurdu.'
+          },
+          {
+            satir: 'if (entry.State == EntityState.Modified)',
+            aciklama: 'Yalnızca GERÇEKTEN değişmiş (Modified) kayıtlar için UpdatedAt set edilir — yeni eklenen (Added) kayıtlar bu kontrolü geçmez.',
+            neden: 'Yeni eklenen bir kayıtta UpdatedAt\'in dokunulmadan null kalması isteniyor (Bölüm 3\'te gördüğümüz "hiç güncellenmedi" anlamı) — bu kontrol olmadan her AddAsync çağrısı da yanlışlıkla UpdatedAt\'i doldururdu.',
+            olmasaydi: 'Bu kontrol olmasaydı, yeni oluşturulan her kayıt "oluşturulduğu an güncellenmiş" gibi görünürdü — CreatedAt ile UpdatedAt her zaman aynı değeri taşırdı, "hiç güncellenmedi" bilgisi tamamen kaybolurdu.'
+          },
+          {
+            satir: 'entry.Entity.UpdatedAt = DateTime.UtcNow;',
+            aciklama: 'Değişen kaydın UpdatedAt alanı, ŞU ANKİ UTC zamanına set edilir — bu, "bu kayıt son ne zaman değişti" sorusunun otomatik cevabıdır.',
+            neden: 'UTC kullanılması, sunucunun bulunduğu zaman dilimi ne olursa olsun bu değerin TUTARLI kalmasını sağlar (CLAUDE.md\'nin genel zaman damgası konvansiyonuyla uyumlu); merkezi olarak burada set edilmesi, her Handler\'ın bunu elle yapması gerekliliğini ORTADAN KALDIRIR.',
+            olmasaydi: 'Bu satır olmasaydı, `if (entry.State == EntityState.Modified)` kontrolü hiçbir işe yaramazdı — hangi kayıtların değiştiğini TESPİT eder ama hiçbir ALAN güncellenmezdi, UpdatedAt hep eski değerinde KALIRDI.'
+          },
+          {
+            satir: 'return base.SaveChangesAsync(cancellationToken);',
+            aciklama: 'UpdatedAt güncellemesi tamamlandıktan SONRA, EF Core\'un ASIL kaydetme mantığı (base sınıftaki orijinal SaveChangesAsync) çağrılır — bu, değişiklikleri GERÇEKTEN veritabanına yazan adımdır.',
+            neden: 'Override edilen bir metotta `base.` çağrısı, "kendi ek mantığımı ekledim, şimdi orijinal davranış ÇALIŞSIN" demenin standart yoludur — bu olmadan gerçek SQL hiç ÜRETİLMEZ.',
+            olmasaydi: 'Bu satır olmasaydı (ya da unutulsaydı), metot UpdatedAt\'i bellekte günceller ama HİÇBİR SQL veritabanına GÖNDERMEZDİ — çağıran kod "kaydetme başarılı" sanır, oysa hiçbir değişiklik kalıcı olmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'DbContext, EF Core\'un veritabanıyla konuştuğu merkezi sınıf — bir "veritabanı oturumu"',
+          'DbSet<T>, bir entity\'yi sorgulanabilir/kaydedilebilir kılan property',
+          'ApplyConfigurationsFromAssembly, her EF Configuration\'ı elle kaydetmeyi gereksiz kılar',
+          'Global query filter, TÜM sorgulara otomatik "yalnızca silinmemiş kayıtlar" kısıtlaması ekler',
+          'SaveChangesAsync override\'ı, UpdatedAt alanını elle set etme zorunluluğunu ortadan kaldırır'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

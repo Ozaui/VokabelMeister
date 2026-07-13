@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command + Validator</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'command-validator',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '04_migration.html',
+    sonrakiBolum: '06_repository-katmani.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 12 · CLAUDE.md ADIM 4-5',
+        baslik: 'Command ve Validator',
+        altBaslik: 'RegisterCommand: "kayıt ol" isteğinin taşıdığı veri. RegisterCommandValidator: bu verinin GEÇERLİ olup olmadığını kontrol eden kurallar.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterCommand — Tek Satırlık Bir "record"',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RegisterCommand.cs',
+        nedenBuKlasor: 'Application/Features/Auth/ altında — CLAUDE.md §5 kuralı: Command+Handler AYNI dosyada, ayrı Commands/Handlers klasörüne BÖLÜNMEZ (bu dosyanın 3. slaytında Handler\'ı da göreceğiz).',
+        kod: `public record RegisterCommand(string Email, string Password, string FirstName, string LastName)
+    : IRequest<RegisterResponse>;`,
+        satirlar: [
+          {
+            satir: 'public record RegisterCommand(string Email, string Password, string FirstName, string LastName)',
+            aciklama: '`record` (sınıf değil), C#\'ın "değer taşıyan, değişmez (immutable)" veri türü. Bu satır, 4 alan taşıyan RegisterCommand tipini TEK satırda tanımlar.',
+            neden: 'Command\'lar tanım gereği "bir isteğin anlık verisi"dir — oluşturulduktan sonra DEĞİŞTİRİLMEMELİDİR (Handler, isteği işlerken Command\'ı mutasyona uğratmamalı). `record`, bu değişmezliği (immutability) dile getiren doğru araçtır.',
+            olmasaydi: 'Sıradan bir `class` kullanılsaydı, Handler içinde yanlışlıkla `command.Email = "..."` gibi bir satırla Command\'ın kendisi DEĞİŞTİRİLEBİLİRDİ — bu, "bu Command\'ın orijinal isteği hâlâ temsil ettiğinden" emin olmayı zorlaştırırdı.'
+          },
+          {
+            satir: ': IRequest<RegisterResponse>;',
+            aciklama: 'Bu Command\'ın MediatR\'a ait `IRequest<T>` arayüzünü implemente ettiğini, ve işlendiğinde bir `RegisterResponse` DÖNDÜRECEĞİNİ bildirir.',
+            neden: 'MediatR, `_mediator.Send(command)` çağrıldığında, hangi Handler\'ın bu isteği işleyeceğini TİP EŞLEŞTİRMESİYLE bulur — `IRequestHandler<RegisterCommand, RegisterResponse>` imzasına sahip TEK bir sınıf olmalı (Bölüm 15).',
+            olmasaydi: 'IRequest<T> implemente edilmeseydi, MediatR bu tipi hiç TANIMAZDI — `_mediator.Send(new RegisterCommand(...))` çağrısı derleme zamanında HATA verirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Dikkat: Role Alanı YOK',
+        aciklama: 'RegisterCommand yalnızca Email, Password, FirstName, LastName taşır. Bölüm 9\'da gördüğümüz Role alanı BURADA YOK — kullanıcı Register isteğinde kendi rolünü BELİRLEYEMEZ.',
+        neden: 'Bu, "hangi alanların Command\'a dahil edileceği" kararının rastgele değil, GÜVENLİK odaklı olduğunu gösteren somut bir örnek. User.Role, Handler içinde entity oluşturulurken varsayılan ("User") değerle set edilir (Bölüm 15).',
+        olmasaydi: 'Command\'a bir "Role" alanı eklenseydi (ve Handler bunu doğrudan User.Role\'e atasaydı), API\'yi doğrudan çağıran (Postman/curl ile) herhangi biri `{"role": "Admin"}` göndererek KENDİNİ ADMİN YAPABİLİRDİ — CLAUDE.md\'nin "hiçbir public endpoint rol yükseltemez" kuralının ihlali, kritik bir güvenlik açığı olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterCommandValidator — Sunucu Tarafı Doğrulama',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Auth/RegisterRequestValidator.cs',
+        nedenBuKlasor: 'Validators/Auth/ — Command\'ların yaşadığı Features/Auth/ klasöründen AYRI. CLAUDE.md §3 Adım 5: Validator, Command\'dan sonraki ayrı bir yazım adımı.',
+        kod: `public class RegisterCommandValidator : AbstractValidator<RegisterCommand>
+{
+    public RegisterCommandValidator()
+    {
+        RuleFor(x => x.Email).ValidEmail();
+        RuleFor(x => x.Password).ValidPassword();
+
+        RuleFor(x => x.FirstName)
+            .NotEmpty()
+            .WithMessage("First name must not be empty.")
+            .WithErrorCode("FIRST_NAME_REQUIRED")
+            .MaximumLength(50);
+
+        RuleFor(x => x.LastName)
+            .NotEmpty()
+            .WithMessage("Last name must not be empty.")
+            .WithErrorCode("LAST_NAME_REQUIRED")
+            .MaximumLength(50);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class RegisterCommandValidator : AbstractValidator<RegisterCommand>',
+            aciklama: '`AbstractValidator<RegisterCommand>`\'dan türer — bu, FluentValidation\'ın "bu sınıf, RegisterCommand tipi için bir doğrulayıcıdır" sözleşmesidir; ADIM 5\'teki `AddValidatorsFromAssembly` (A-02/05) bu sınıfı OTOMATİK bulup DI\'a kaydeder.',
+            neden: 'Generic parametre (`RegisterCommand`), bu Validator\'ın HANGİ Command tipiyle eşleştiğini derleme zamanında GARANTİ eder — yanlışlıkla başka bir Command\'ın alanına (ör. `x.Password` yerine var olmayan bir alan) `RuleFor` yazılırsa derleyici HATA verir.',
+            olmasaydi: 'Bu sınıf `AbstractValidator<RegisterCommand>`\'dan türemeseydi, ValidationFilter (A-02/05\'te gördüğümüz global filter) bu sınıfı bir Validator olarak TANIMAZ, RegisterCommand hiçbir zaman doğrulanmadan doğrudan Handler\'a ULAŞIRDI.'
+          },
+          {
+            satir: 'public RegisterCommandValidator()',
+            aciklama: 'Parametresiz constructor — TÜM kurallar (`RuleFor` çağrıları) burada, sınıf İLK oluşturulduğunda TANIMLANIR.',
+            neden: 'FluentValidation\'ın deseni budur: kurallar constructor içinde bir kez KURULUR, her doğrulama isteğinde YENİDEN tanımlanmaz — bu, doğrulama mantığının PERFORMANSLI çalışmasını sağlar.',
+            olmasaydi: 'Kurallar constructor yerine her doğrulama çağrısında YENİDEN inşa edilseydi, her Register isteğinde gereksiz nesne oluşturma (allocation) MALİYETİ eklenirdi.'
+          },
+          {
+            satir: 'RuleFor(x => x.Email).ValidEmail();',
+            aciklama: '`ValidEmail()`, bu projeye özel yazılmış bir "extension metot" — format kontrolü, uzunluk kontrolü gibi birden fazla kuralı TEK bir çağrıda paketler.',
+            neden: 'Email doğrulaması yalnızca RegisterCommand\'da değil, Login, ForgotPassword gibi BAŞKA Command\'larda da gerekiyor — aynı 3-4 satır kuralı her Validator\'da tekrar yazmak yerine, bir kez `EmailRuleExtensions.cs`\'te yazılıp HER YERDE kullanılır (DRY).',
+            olmasaydi: 'Ortak extension metot olmasaydı, Email format kuralı (regex, uzunluk) her Validator\'da AYRI AYRI tekrar yazılırdı — kural bir gün değişirse (ör. maksimum uzunluk 254\'ten 320\'ye çıksa), TÜM Validator\'ların tek tek bulunup güncellenmesi gerekirdi.'
+          },
+          {
+            satir: 'RuleFor(x => x.Password).ValidPassword();',
+            aciklama: '`ValidPassword()`, ValidEmail() ile AYNI desende yazılmış bir başka paylaşılan kural — minimum uzunluk, büyük/küçük harf, rakam, özel karakter gibi şifre GÜÇLÜLÜK kurallarının hepsini TEK çağrıda paketler.',
+            neden: 'Şifre karmaşıklık kuralları, GÜVENLİK açısından proje genelinde TUTARLI olmalı — Register\'da kabul edilen bir şifrenin, ForgotPassword akışında FARKLI bir kuralla reddedilmesi kullanıcı için kafa karıştırıcı olurdu; ortak extension bu tutarlılığı GARANTİ eder.',
+            olmasaydi: 'Şifre kuralı her Validator\'da AYRI yazılsaydı, bir geliştirici Register\'da "en az 8 karakter" derken başka birinin Login\'de (aslında Login\'de şifre GÜÇLÜLÜK kontrolü değil, sadece VARLIĞI kontrol edilir) yanlışlıkla AYNI güçlülük kuralını UYGULAMASI gibi TUTARSIZLIKLAR doğabilirdi.'
+          },
+          {
+            satir: 'RuleFor(x => x.FirstName)',
+            aciklama: 'FirstName alanı için kural ZİNCİRİ BAŞLAR — aşağıdaki `.NotEmpty()`, `.WithMessage(...)`, `.WithErrorCode(...)`, `.MaximumLength(50)` çağrıları hepsi bu TEK ifadeye ZİNCİRLENİR.',
+            neden: 'Email/Password\'den FARKLI olarak FirstName/LastName için paylaşılan bir extension metot (ör. `ValidName()`) YAZILMAMIŞ — bu iki alan yalnızca "boş olmasın + 50 karakteri geçmesin" gibi BASİT kurallar taşıdığı için, ortak bir extension çıkarmak (henüz) YAGNI\'ye aykırı olurdu.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `.NotEmpty()` zinciri hangi ALANA uygulanacağını bilemez, derlenemezdi.'
+          },
+          {
+            satir: '.NotEmpty()',
+            aciklama: 'FirstName ve LastName kurallarının İKİSİNDE de (AYNI metin, iki kez) görünen ilk adım — alanın boş string OLMADIĞINI kontrol eder.',
+            neden: 'User.cs\'teki `FirstName`/`LastName` alanları `string.Empty` varsayılanıyla başlıyordu (A-03/02) — bu kural, kullanıcının GERÇEKTEN bir ad/soyad GİRDİĞİNİ, formun boş bırakılmadığını doğrular.',
+            olmasaydi: 'Bu kural olmasaydı, bir kullanıcı FirstName/LastName alanlarını boş bırakıp Register isteği gönderebilirdi — veritabanına "" (boş isim) ile bir kayıt YAZILIRDI, bu da uygulamanın her yerinde "Merhaba ," gibi anlamsız bir hitapla sonuçlanırdı.'
+          },
+          {
+            satir: '.WithMessage("First name must not be empty.")',
+            aciklama: 'Bu hata mesajı İNGİLİZCE yazılır — CLAUDE.md kuralı: kod/log/exception mesajları İngilizce, yalnızca KULLANICIYA giden mesaj (ApiErrorResponse üzerinden, Accept-Language\'a göre) Türkçe/Almanca çözülür.',
+            neden: 'Bu mesaj GELİŞTİRİCİYE (log\'a, hata ayıklamaya) yöneliktir — kullanıcının GERÇEKTEN göreceği mesaj, `WithErrorCode("FIRST_NAME_REQUIRED")` koduna karşılık gelen, ayrı bir sözlükten (ErrorMessages) dile göre çözülen bir metindir.',
+            olmasaydi: 'Bu mesaj Türkçe yazılıp doğrudan kullanıcıya gönderilseydi, Almanca kullanan bir kullanıcı anlamadığı bir dilde hata görürdü — CLAUDE.md\'nin "istemciye giden mesaj / geliştirici mesajı" ayrımı (iki ayrı kanal) burada bozulurdu.'
+          },
+          {
+            satir: '.WithErrorCode("FIRST_NAME_REQUIRED")',
+            aciklama: 'Bu hatayı benzersiz bir KOD ile etiketler — İngilizce, sabit, değişmeyen bir tanımlayıcı.',
+            neden: 'API\'yi tüketen frontend (Web/Admin/Mobil), kullanıcıya hangi mesajı göstereceğine bu KOD\'a bakarak karar verir — İngilizce mesaj metnine (`WithMessage`) değil, çünkü o metin değişebilir/yerelleştirilir, kod DEĞİŞMEZ.',
+            olmasaydi: 'Hata kodu olmasaydı, frontend hangi alanın hangi sebeple hatalı olduğunu yalnızca İngilizce mesaj METNİNİ ayrıştırarak (string parsing) anlamaya çalışırdı — kırılgan, mesaj metni bir gün değişirse frontend\'in SESSİZCE bozulacağı bir bağımlılık olurdu.'
+          },
+          {
+            satir: '.MaximumLength(50);',
+            aciklama: 'FirstName ve LastName kurallarının İKİSİNDE de (AYNI metin, iki kez) görünen SON adım — alanın en fazla 50 karakter olabileceğini kontrol eder.',
+            neden: 'Bu sınır, A-03/03\'teki EF Configuration\'da tanımlanan `HasMaxLength(50)` kolon sınırıyla BİREBİR eşleşir — API seviyesinde bu kontrol yapılmazsa, 50 karakteri aşan bir istek Handler\'a kadar ULAŞIR ve ancak veritabanı seviyesinde bir hata ile REDDEDİLİR.',
+            olmasaydi: 'Bu kural olmasaydı, 500 karakterlik bir "FirstName" içeren istek Validator\'ı geçer, Handler\'a kadar ilerler, ve ancak SaveChangesAsync çağrıldığında veritabanının kolon boyutu hatasıyla PATLARDI — kullanıcı, sorunun NE olduğunu (validasyon hatası yerine ham bir SQL hatası) net anlayamazdı.'
+          },
+          {
+            satir: 'RuleFor(x => x.LastName)',
+            aciklama: 'LastName alanı için kural ZİNCİRİ BAŞLAR — FirstName ile BİREBİR aynı desen, yalnızca hedef alan ve mesaj/kod metinleri değişir.',
+            neden: 'FirstName ve LastName\'in AYNI kural setine (NotEmpty + MaximumLength(50)) sahip olması BİLİNÇLİDİR — A-03/03\'teki EF Configuration\'da ikisinin de AYNI HasMaxLength(50) sınırını taşımasıyla TUTARLIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, LastName alanı HİÇ doğrulanmazdı — boş ya da aşırı uzun bir soyadı, FirstName\'de engellenirken LastName\'de SERBEST kalırdı, tutarsız bir doğrulama davranışı ortaya çıkardı.'
+          },
+          {
+            satir: '.WithMessage("Last name must not be empty.")',
+            aciklama: 'FirstName\'deki `.WithMessage(...)` ile AYNI desen, yalnızca "First name" yerine "Last name" metni geçer — geliştirici/log seviyesinde İngilizce mesaj.',
+            neden: 'Bu mesaj GELİŞTİRİCİYE yöneliktir (CLAUDE.md: log/exception İngilizce) — kullanıcının GERÇEKTEN göreceği mesaj, `WithErrorCode("LAST_NAME_REQUIRED")` koduna karşılık gelen, dile göre çözülen ayrı bir metindir.',
+            olmasaydi: 'Bu mesaj FirstName\'inkiyle AYNI ("First name must not be empty.") bırakılsaydı, LastName hatası loglandığında geliştirici hangi ALANIN boş olduğunu METNİ okuyarak YANLIŞ anlayabilirdi.'
+          },
+          {
+            satir: '.WithErrorCode("LAST_NAME_REQUIRED")',
+            aciklama: 'FirstName\'deki `.WithErrorCode("FIRST_NAME_REQUIRED")` ile AYNI desen — bu hatayı benzersiz, İngilizce, sabit bir KOD ile etiketler.',
+            neden: 'Frontend, hangi alanın hatalı olduğuna bu KOD\'a bakarak karar verir — "LAST_NAME_REQUIRED" kodu, "FIRST_NAME_REQUIRED"dan AYRI olduğu için frontend iki farklı alanın altına DOĞRU hata mesajını yerleştirebilir.',
+            olmasaydi: 'LastName için de "FIRST_NAME_REQUIRED" kodu kullanılsaydı (kopyala-yapıştır hatası), frontend LastName boşken YANLIŞLIKLA "Ad alanı boş olamaz" mesajını gösterirdi — kullanıcı hangi alanı DÜZELTMESİ gerektiğini YANLIŞ anlardı.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Command = record, isteğin değişmez (immutable) verisi',
+          'Command\'a hangi alanların dahil edileceği bir GÜVENLİK kararıdır — Role gibi hassas alanlar Command\'a hiç girmez',
+          'Validator, Command\'dan AYRI bir sınıf/dosyada yaşar (CLAUDE.md §3 Adım 5)',
+          'Ortak kurallar (ValidEmail, ValidPassword) extension metotlara çıkarılır — DRY',
+          'WithErrorCode: kullanıcıya giden mesaj ile geliştirici mesajı ayrı kanallardır'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

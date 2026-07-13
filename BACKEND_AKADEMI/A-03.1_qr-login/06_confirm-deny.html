@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ConfirmQrLoginCommand + DenyQrLoginCommand</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'confirm-deny',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '05_generate-scan.html',
+    sonrakiBolum: '07_status.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'ConfirmQrLoginCommand + DenyQrLoginCommand',
+        altBaslik: 'İki Command, TEK bir paylaşılan ÖN KOŞUL — sahiplik kontrolü, ayrı bir yardımcıya ÇIKARILMIŞ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionOwnershipHelper.cs — Confirm ve Deny\'ın PAYLAŞTIĞI Ön Koşul',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/QrLoginSessionOwnershipHelper.cs',
+        nedenBuKlasor: 'Features/QrLogin/ altında, QrLoginSessionExpiryExtensions (Bölüm 5) İLE AYNI KLASÖRDE — `internal`, YALNIZCA BU FEATURE İÇİNDEN ÇAĞRILIR.',
+        kod: `internal static class QrLoginSessionOwnershipHelper
+{
+    public static async Task<QrLoginSession> LoadScannedOwnedSessionAsync(
+        IQrLoginSessionRepository repository,
+        IPasswordService passwordService,
+        string qrToken,
+        int userId,
+        CancellationToken ct
+    )
+    {
+        var tokenHash = passwordService.HashToken(qrToken);
+        var session =
+            await repository.GetByTokenHashAsync(tokenHash, ct)
+            ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
+
+        if (session.IsExpired(DateTime.UtcNow))
+        {
+            await repository.UpdateAsync(session, ct: ct);
+            throw new QrSessionGoneException();
+        }
+
+        if (session.Status != QrLoginStatus.Scanned)
+            throw new QrSessionGoneException();
+
+        if (session.UserId != userId)
+            throw new QrSessionForbiddenException();
+
+        return session;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'internal static class QrLoginSessionOwnershipHelper',
+            aciklama: '`internal` — Bölüm 5\'teki QrLoginSessionExpiryExtensions İLE AYNI görünürlük: bu sınıf YALNIZCA WordLearner.Application projesi İÇİNDEN görünür.',
+            neden: 'Bu, PROJE içi bir YARDIMCI/detay OLDUĞU İÇİN `internal` olarak İŞARETLENİR — CLAUDE.md\'nin "spekülatif ortak tip YAZILMAZ" ilkesiyle uyumlu, bu mantık yalnızca QrLogin feature\'ına ÖZGÜDÜR.',
+            olmasaydi: 'Bu sınıf `public` olsaydı, kod YİNE çalışırdı ama "başka projelerden de kullanılabilir" gibi YANLIŞ bir izlenim verirdi.'
+          },
+          {
+            satir: 'public static async Task<QrLoginSession> LoadScannedOwnedSessionAsync(',
+            aciklama: 'DÖNÜŞ tipi `QrLoginSession` (BULUNAN OTURUMUN KENDİSİ) — Bölüm 5\'teki `IsExpired` extension\'DAN (bool DÖNEN) FARKLI olarak, BU YARDIMCI "YÜKLEME + DOĞRULAMA" YAPAR VE SONUÇTA KULLANILABİLİR bir NESNE DÖNER.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "Confirm/Deny\'İN \'HEDEF DURUMA GEÇMEDEN ÖNCEKİ\' ORTAK ÖN KOŞULU" — İKİ Handler da (Bölüm 6\'nın DEVAMINDA) AYNI DÖRT ADIMI (BUL, SÜRE KONTROLÜ, DURUM KONTROLÜ, SAHİPLİK KONTROLÜ) TEKRAR ETMEK YERİNE BU METODU ÇAĞIRIR.',
+            olmasaydi: 'Bu YARDIMCI OLMASAYDI, ConfirmQrLoginCommandHandler VE DenyQrLoginCommandHandler\'IN HER İKİSİ de AYNI DÖRT ADIMI (hash BUL, SÜRE, DURUM, SAHİPLİK) KENDİ İÇLERİNDE TEKRAR EDERDİ — DRY İHLALİ, VE bir KURAL DEĞİŞTİĞİNDE (ör. SÜRE KONTROLÜ MANTIĞI) İKİ YERİN de GÜNCELLENMESİ GEREKİRDİ.'
+          },
+          {
+            satir: 'IQrLoginSessionRepository repository,',
+            aciklama: 'Bir SERVİS/SINIF DEĞİL, `internal static` bir METOT OLDUĞU İÇİN, İHTİYAÇ DUYDUĞU BAĞIMLILIKLAR (repository, passwordService) DI\'DAN DEĞİL, DOĞRUDAN PARAMETRE OLARAK ALINIR.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "repository VE passwordService PARAMETRE olarak ALINIR (DI DEĞİŞİKLİĞİ GEREKMEZ), ÇÜNKÜ HER İKİ Handler ZATEN BU İKİ BAĞIMLILIĞI KENDİ CONSTRUCTOR\'INDA TAŞIYOR" — Handler\'lar KENDİ SAHİP OLDUKLARI NESNELERİ BU METODA "ÖDÜNÇ" VERİR.',
+            olmasaydi: 'Bu YARDIMCI, KENDİ DI KAYDINA sahip bir SERVİS (ör. `IQrLoginSessionOwnershipService`) OLSAYDI, HEM YENİ bir ARAYÜZ+İMPLEMENTASYON+DI KAYDI YAZMAK GEREKİRDİ HEM DE Handler\'LARIN CONSTRUCTOR\'INA BİR BAĞIMLILIK DAHA EKLENİRDİ — İKİ SATIRLIK bir MANTIK İÇİN GEREKSİZ bir SOYUTLAMA KATMANI.'
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'İkinci parametre — hash\'leme servisi, `repository` İLE AYNI GEREKÇEYLE (Handler\'ın KENDİ bağımlılığından ÖDÜNÇ) parametre olarak alınır.',
+            neden: 'Aşağıdaki `passwordService.HashToken(qrToken)` çağrısı için GEREKLİDİR.',
+            olmasaydi: 'Bu parametre olmasaydı, yardımcı METOT gelen HAM token\'ı NASIL hash\'leyeceğini BİLEMEZDİ.'
+          },
+          {
+            satir: 'string qrToken,',
+            aciklama: 'Confirm/Deny Command\'larının HER İKİSİNİN de TAŞIDIĞI `QrToken` ALANI, BU YARDIMCIYA PARAMETRE OLARAK GEÇİRİLİR.',
+            neden: 'Bu, Bölüm 5\'teki ScanQrLoginCommand.QrToken İLE AYNI DESEN — HANGİ OTURUMUN ÜZERİNDE İŞLEM YAPILACAĞINI BELİRTEN, İSTEMCİDEN (ROUTE\'TAN) GELEN TEMEL GİRDİ.',
+            olmasaydi: 'Bu parametre OLMASAYDI, YARDIMCI HANGİ OTURUMU YÜKLEYECEĞİNİ BİLEMEZDİ — METOT ÇAĞRILAMAZDI.'
+          },
+          {
+            satir: 'int userId,',
+            aciklama: 'Confirm/Deny Command\'larının HER İKİSİNİN de TAŞIDIĞI `UserId` ALANI (JWT\'DEN GELEN) — SAHİPLİK KONTROLÜNÜN DAYANDIĞI GÜVENİLİR DEĞER.',
+            neden: 'Bölüm 5\'teki ScanQrLoginCommand.UserId İLE AYNI GEREKÇE: BU DEĞER İSTEMCİDEN (GÖVDEDEN) DEĞİL, Controller\'IN JWT\'DEN OKUYUP `with` İLE EKLEDİĞİ BİR DEĞERDİR.',
+            olmasaydi: 'Bu parametre OLMASAYDI, METODUN SON KONTROLÜ (`if (session.UserId != userId)`) YAPILAMAZDI — SAHİPLİK KONTROLÜNÜN TÜM AMACI (Bölüm 4\'teki QrSessionForbiddenException\'IN VAR OLMA SEBEBİ) ORTADAN KALKARDI.'
+          },
+          {
+            satir: 'CancellationToken ct',
+            aciklama: 'BEŞİNCİ ve SON parametre — sonunda virgül YOK. CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun.',
+            neden: 'Çağıran Handler\'lar (Confirm/Deny), KENDİ `ct` parametrelerini BU metoda AYNEN İLETİR.',
+            olmasaydi: 'Bu parametre olmasaydı, aşağıdaki veritabanı çağrılarına GEÇİRİLECEK bir iptal sinyali OLMAZDI.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI — bir sonraki satırdaki `{` ile metot GÖVDESİ başlar.',
+            neden: 'BEŞ parametreli (repository, passwordService, qrToken, userId, ct) bu metodun çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: 'var tokenHash = passwordService.HashToken(qrToken);',
+            aciklama: 'Bölüm 5\'teki ScanQrLoginCommandHandler İLE AYNI desen — istemciden gelen HAM token, veritabanındaki HASH İLE karşılaştırılabilmesi için hash\'lenir.',
+            neden: 'GetByTokenHashAsync HASH bekler, HAM token DEĞİL — çünkü veritabanında (Bölüm 2) yalnızca hash SAKLANIR.',
+            olmasaydi: 'Bu satır olmasaydı, bir sonraki satırdaki `GetByTokenHashAsync(tokenHash, ct)` çağrısına GEÇİRİLECEK bir DEĞER OLMAZDI.'
+          },
+          {
+            satir: 'var session =',
+            aciklama: 'Bölüm 5\'teki ScanQrLoginCommand İLE AYNI desen — sonucu İKİNCİ satırda DEVAM eden bir DEĞİŞKEN tanımı.',
+            neden: 'Bu satır, bir SONRAKİ satırdaki `await` ifadesiyle BİRLİKTE İKİ satırlık TEK bir ifadeyi OLUŞTURUR.',
+            olmasaydi: 'Bu satır olmasaydı, sorgu SONUCUNA ATANACAK bir DEĞİŞKEN OLMAZDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await repository.GetByTokenHashAsync(tokenHash, ct)',
+            aciklama: 'Bölüm 4\'te yazdığımız TEK ek sorgu — hash\'e KARŞILIK gelen oturumu bulur.',
+            neden: 'Bu sorgu `null` DÖNEBİLİR (geçersiz/uydurma bir token gönderilmişse) — bir SONRAKİ satırda bu durum `??` İLE ele ALINIR.',
+            olmasaydi: 'Bu satır olmasaydı, `session` değişkenine ATANACAK bir sorgu sonucu OLMAZDI.'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);',
+            aciklama: 'Bölüm 5\'teki ScanQrLoginCommand İLE AYNI desen — exception mesajı HAM token\'ı DEĞİL, hash\'ini TAŞIR.',
+            neden: 'Bir üstteki AÇIKLAMADA belirtilen gerekçe: HAM token bir SIRDIR, LOG dosyalarına SIZDIRILMAMALIDIR.',
+            olmasaydi: 'HAM token loglansaydı, log DOSYALARINA erişimi olan biri BU token\'ı KULLANARAK GERÇEK bir istek ATABİLİRDİ.'
+          },
+          {
+            satir: 'if (session.IsExpired(DateTime.UtcNow))',
+            aciklama: 'Bölüm 5\'teki EXTENSION metot, İKİNCİ kez BURADA çağrılır — Confirm/Deny\'ın da PAYLAŞTIĞI, "bulunan oturum HÂLÂ geçerli Mİ" sorusu.',
+            neden: 'Bu, DÖRT Handler\'ın (Scan, Confirm, Deny, Status) HEPSİNİN paylaştığı ORTAK bir adım — süre kontrolü HER YERDE AYNI şekilde SORULUR.',
+            olmasaydi: 'Bu kontrol olmasaydı, süresi ÇOKTAN dolmuş bir oturum Confirm/Deny İÇİN hâlâ GEÇERLİ sayılırdı.'
+          },
+          {
+            satir: 'await repository.UpdateAsync(session, ct: ct);',
+            aciklama: '`IsExpired` metodunun BELLEKTE yaptığı durum değişikliğini (Pending/Scanned→Expired) veritabanına yazar — `userId` verilmez (ANONİM, sistem tarafından OTOMATİK yapılan güncelleme).',
+            neden: 'Bölüm 5\'teki YARDIMCI metot, kendisi veritabanına YAZMIYORDU — bu sorumluluk, ÇAĞIRAN metoda (burası) AİTTİR.',
+            olmasaydi: 'Bu satır olmasaydı, `session.Status = Expired` değişikliği yalnızca BELLEKTE kalırdı.'
+          },
+          {
+            satir: 'throw new QrSessionGoneException();',
+            aciklama: 'Bu SLAYTTA İKİ AYRI yerde (süresi dolmuş oturum VE Scanned dışındaki bir durum) fırlatılan, BİREBİR AYNI görünen exception fırlatma satırı — kod editörü İÇERİĞE göre eşleştirdiği için TEK açıklama HER İKİ fiziksel satıra da uygulanır.',
+            neden: 'Bölüm 4\'te tanımladığımız exception — hem "süresi dolmuş" hem "yanlış durumda" senaryoları AYNI 410 Gone koduna ÇEVRİLİR, istemciye HANGİ teknik sebep olduğunu SIZDIRMAZ.',
+            olmasaydi: 'Bu exception fırlatılmasaydı, kod devam eder ve GEÇERSİZ bir oturum Confirmed/Denied durumuna GEÇİRİLMEYE çalışılırdı.'
+          },
+          {
+            satir: 'if (session.Status != QrLoginStatus.Scanned)',
+            aciklama: 'Bölüm 5\'teki ScanQrLoginCommand\'daki `if (session.Status != QrLoginStatus.Pending)` İLE AYNI DESEN, FARKLI bir BEKLENEN DURUM — Confirm/Deny, YALNIZCA Scanned bir OTURUMDA ANLAMLIDIR.',
+            neden: 'Bu, DÖRT durum GEÇİŞİNİN (Bölüm 1) İKİNCİSİDİR — "TARANMAMIŞ" (Pending) ya da "ZATEN SONUÇLANMIŞ" (Confirmed/Consumed/Denied/Expired) bir OTURUM, ARTIK Confirm/Deny\'A KONU OLAMAZ.',
+            olmasaydi: 'Bu KONTROL OLMASAYDI, ZATEN Confirmed (VEYA Denied) bir OTURUM TEKRAR "confirm" EDİLEBİLİRDİ — ör. ZATEN token ÜRETİLMİŞ (Consumed OLMAK ÜZERE) bir OTURUM, YENİDEN "ConfirmedAt" GÜNCELLENEREK KAFA KARIŞTIRICI bir DURUMA GİREBİLİRDİ.'
+          },
+          {
+            satir: 'if (session.UserId != userId)',
+            aciklama: 'ÜÇÜNCÜ VE SON kontrol — sahiplik: taranmış oturumun `UserId`\'si, İSTEĞİ YAPAN kullanıcının Id\'sine EŞİT Mİ?',
+            neden: 'Bölüm 5\'te Scan sırasında `session.UserId = request.UserId` İLE KAYDEDİLEN değer, ŞİMDİ Confirm/Deny anında TEKRAR KARŞILAŞTIRILIR — "yalnızca TARAYAN cihaz ONAYLAYABİLİR" kuralının UYGULAMA noktası.',
+            olmasaydi: 'Bu kontrol olmasaydı, HERHANGİ bir kimliği doğrulanmış kullanıcı, BAŞKA birinin taradığı bir oturumu ONAYLAYABİLİRDİ — Bölüm 1\'deki "GÖRSEL KARŞILAŞTIRMA" güvenlik modelinin TEMEL varsayımı (yalnızca doğru cihaz onaylar) BOZULURDU.'
+          },
+          {
+            satir: 'throw new QrSessionForbiddenException();',
+            aciklama: 'Bölüm 4\'te TANIMLADIĞIMIZ İKİNCİ exception, İLK KEZ BURADA FIRLATILIR — SÜRE VE DURUM KONTROLLERİ GEÇİLDİ AMA SAHİPLİK KONTROLÜ BAŞARISIZ.',
+            neden: 'Bu, Bölüm 1\'deki "yalnızca TARAYAN kullanıcı ONAYLAYABİLİR" KURALININ TAM OLARAK UYGULANDIĞI SATIRDIR — 403 Forbidden, "bu KAYNAK VAR AMA SENİN DEĞİL" ANLAMINA GELEN DOĞRU HTTP DURUM KODUDUR.',
+            olmasaydi: 'Bu KONTROL (VE exception) OLMASAYDI, HERHANGİ bir kimliği DOĞRULANMIŞ kullanıcı, BAŞKA birinin TARADIĞI bir OTURUMU ONAYLAYABİLİRDİ — bir SALDIRGAN, KURBANIN QR\'INI (BAŞKA bir MEKANİZMAYLA — ör. RELAY — kurbanın TARAMASINI SAĞLADIKTAN SONRA) KENDİ HESABIYLA ONAYLAYABİLİRDİ.'
+          },
+          {
+            satir: 'return session;',
+            aciklama: 'TÜM KONTROLLER GEÇİLDİYSE, YÜKLENEN VE DOĞRULANAN `session` NESNESİ ÇAĞIRANA (Confirm/Deny Handler) DÖNER.',
+            neden: 'Bu, ÇAĞIRAN Handler\'IN (Bölüm 6\'nın DEVAMI) ARTIK HİÇBİR EK KONTROL YAPMADAN DOĞRUDAN `session.Status = QrLoginStatus.Confirmed` (VEYA Denied) YAZABİLECEĞİ ANLAMINA GELİR — TÜM ÖN KOŞULLAR ZATEN SAĞLANMIŞTIR.',
+            olmasaydi: 'Bu satır OLMASAYDI, METOT `session`\'I DÖNDÜRMEZDİ — ÇAĞIRAN Handler, KENDİ BAŞINA TEKRAR bir `GetByTokenHashAsync` ÇAĞRISI YAPMAK ZORUNDA KALIRDI, YARDIMCININ TÜM AMACI (TEKRARI ÖNLEME) BOŞA ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmQrLoginCommand.cs — Onay',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/ConfirmQrLoginCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record ConfirmQrLoginCommand(string QrToken) : IRequest<Unit>
+{
+    public int UserId { get; init; }
+}
+
+public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginCommand, Unit>
+{
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+
+    public ConfirmQrLoginCommandHandler(
+        IQrLoginSessionRepository qrLoginSessionRepository,
+        IPasswordService passwordService
+    )
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken ct)
+    {
+        var session = await QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync(
+            _qrLoginSessionRepository,
+            _passwordService,
+            request.QrToken,
+            request.UserId,
+            ct
+        );
+
+        session.Status = QrLoginStatus.Confirmed;
+        session.ConfirmedAt = DateTime.UtcNow;
+        await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
+
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record ConfirmQrLoginCommand(string QrToken) : IRequest<Unit>',
+            aciklama: 'A-03/23\'teki LogoutCommand İLE AYNI DÖNÜŞ TİPİ (`Unit`) — Confirm de, İSTEMCİYE VERİ DÖNMEZ (Controller 204 No Content DÖNECEK, Bölüm 8).',
+            neden: 'Mobil, "ONAYLADIM" DEDİKTEN SONRA HİÇBİR VERİYE İHTİYAÇ DUYMAZ — token, WEB TARAFINDA (Bölüm 7\'deki Status POLLING\'İ İLE) ÜRETİLECEK, mobil BUNU HİÇ GÖRMEZ.',
+            olmasaydi: 'Confirm bir DTO DÖNSEYDİ (ör. TOKEN\'I DA İÇEREN), token WEB DIŞINDA bir CİHAZA (mobil) da SIZMIŞ OLURDU — Bölüm 1\'deki "token YALNIZCA web\'E AİTTİR" TASARIM İLKESİ BOZULURDU.'
+          },
+          {
+            satir: 'public int UserId { get; init; }',
+            aciklama: 'Bölüm 5\'teki ScanQrLoginCommand.UserId İLE AYNI desen — gövdede GELMEZ, JWT\'DEN (mobil ZATEN giriş YAPMIŞ) okunup Controller `with` İLE EKLER.',
+            neden: 'Confirm İSTEĞİ, `[Authorize]` bir endpoint\'tir (Bölüm 8) — mobil KENDİ JWT\'sini gönderir, Controller BU JWT\'DEN kullanıcı kimliğini ÇIKARIR.',
+            olmasaydi: 'UserId gövdeden alınsaydı, herhangi bir kullanıcı BAŞKASININ Id\'sini göndererek O KİŞİ adına onay VEREBİLİRDİ — sahiplik kontrolü (Bölüm 6\'nın ilk slaydı) BAŞTAN anlamsız OLURDU.'
+          },
+          {
+            satir: 'public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginCommand, Unit>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — dönüş tipi `Unit`, A-03/23\'teki LogoutCommandHandler İLE AYNI.',
+            neden: 'İmza, yukarıdaki ConfirmQrLoginCommand\'ın `IRequest<Unit>` implemente etmesiyle EŞLEŞİR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: 'QrLoginSessionOwnershipHelper\'a "ödünç" verilecek repository — Handler\'ın KENDİ bağımlılığı, yardımcıya PARAMETRE olarak GEÇİRİLECEK.',
+            neden: 'Bir üstteki slaytta gördüğümüz gibi, yardımcı KENDİ DI kaydına SAHİP DEĞİLDİR — bağımlılıkları çağıran Handler\'lardan ÖDÜNÇ ALIR.',
+            olmasaydi: 'Bu alan olmasaydı, Handler\'ın `LoadScannedOwnedSessionAsync` çağrısına GEÇİRECEĞİ bir repository OLMAZDI.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Aynı ödünç-verme deseni — hash\'leme servisi de yardımcıya PARAMETRE olarak GEÇİRİLECEK.',
+            neden: 'Yardımcının `passwordService.HashToken(qrToken)` çağrısı için gereklidir.',
+            olmasaydi: 'Bu alan olmasaydı, Handler\'ın yardımcıya geçireceği bir hash\'leme servisi OLMAZDI.'
+          },
+          {
+            satir: 'public ConfirmQrLoginCommandHandler(',
+            aciklama: 'İki bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER.',
+            neden: 'Çok-satırlı yazım, iki parametrenin OKUNABİLİRLİĞİNİ KORUR.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri ConfirmQrLoginCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IQrLoginSessionRepository qrLoginSessionRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_qrLoginSessionRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_qrLoginSessionRepository = qrLoginSessionRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IPasswordService passwordService',
+            aciklama: 'İKİNCİ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler HAM token\'ı ASLA hash\'leyemezdi.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_qrLoginSessionRepository` null KALIRDI.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'SON atama.',
+            neden: 'İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı.'
+          },
+          {
+            satir: 'public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot — dönüş tipi `Unit`.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var session = await QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync(',
+            aciklama: 'Bir ÖNCEKİ kod BLOĞUNDAKİ YARDIMCI, İLK KEZ BURADA ÇAĞRILIR — DÖRT KONTROLÜN (bul, SÜRE, DURUM, SAHİPLİK) HEPSİ TEK bir SATIRA SIĞAR.',
+            neden: 'Handler\'IN KENDİSİ, ARTIK YALNIZCA "TÜM ÖN KOŞULLAR SAĞLANDIYSA NE YAPILACAĞINA" (Confirmed\'e GEÇİŞ) ODAKLANIR — DOĞRULAMA MANTIĞI TAMAMEN AYRIŞTIRILMIŞTIR.',
+            olmasaydi: 'Bu YARDIMCI ÇAĞRILMASAYDI, Handler\'IN İÇİNE Bölüm 5\'teki ScanQrLoginCommandHandler İLE NEREDEYSE BİREBİR AYNI (HASH BUL + SÜRE + DURUM + SAHİPLİK) KOD BLOĞU KOPYALANIRDI.'
+          },
+          {
+            satir: '_qrLoginSessionRepository,',
+            aciklama: 'Yardımcı çağrısının İLK argümanı — Handler\'ın KENDİ repository\'si, yardımcıya ÖDÜNÇ verilir.',
+            neden: 'Bir üstteki kod bloğunda gördüğümüz gibi, yardımcı KENDİ DI kaydına SAHİP DEĞİLDİR — bu argüman OLMADAN metot HANGİ repository\'yi KULLANACAĞINI BİLEMEZDİ.',
+            olmasaydi: 'Bu argüman olmasaydı, yardımcı çağrısı DERLENEMEZDİ — metot imzası BEŞ parametre BEKLER.'
+          },
+          {
+            satir: '_passwordService,',
+            aciklama: 'İKİNCİ argüman — Handler\'ın KENDİ hash\'leme servisi.',
+            neden: 'Yardımcının `passwordService.HashToken(qrToken)` çağrısı için gereklidir.',
+            olmasaydi: 'Bu argüman olmasaydı, yardımcı çağrısı DERLENEMEZDİ.'
+          },
+          {
+            satir: 'request.QrToken,',
+            aciklama: 'ÜÇÜNCÜ argüman — istemciden (route\'tan) gelen QR token.',
+            neden: 'Yardımcı, HANGİ oturumun ÜZERİNDE işlem YAPACAĞINI bu değerden ÖĞRENİR.',
+            olmasaydi: 'Bu argüman olmasaydı, yardımcı HANGİ oturumu YÜKLEYECEĞİNİ BİLEMEZDİ.'
+          },
+          {
+            satir: 'request.UserId,',
+            aciklama: 'DÖRDÜNCÜ argüman — JWT\'den gelen, GÜVENİLİR kullanıcı kimliği.',
+            neden: 'Yardımcının sahiplik KONTROLÜ (`if (session.UserId != userId)`) bu değere DAYANIR.',
+            olmasaydi: 'Bu argüman olmasaydı, sahiplik kontrolü YAPILAMAZDI.'
+          },
+          {
+            satir: 'ct',
+            aciklama: 'BEŞİNCİ ve SON argüman — sonunda virgül YOK; Handler\'ın KENDİ CancellationToken\'ı, AYNEN yardımcıya İLETİLİR.',
+            neden: 'CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralı, YARDIMCI metotlar İÇİN de GEÇERLİDİR.',
+            olmasaydi: 'Bu argüman olmasaydı, yardımcının İÇİNDEKİ veritabanı çağrılarına bir İPTAL sinyali GEÇİRİLEMEZDİ.'
+          },
+          {
+            satir: ');',
+            aciklama: 'Yardımcı çağrısının VE `var session = await ...` atamasının KAPANIŞI.',
+            neden: 'BEŞ argümanlı bu çağrının çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'session.Status = QrLoginStatus.Confirmed;',
+            aciklama: 'ÜÇÜNCÜ durum GEÇİŞİ (Bölüm 1) — Scanned\'DEN Confirmed\'E.',
+            neden: 'Bu, "kullanıcı GİRİŞİ ONAYLADI" BİLGİSİNİN VERİTABANINDAKİ TEK GÖSTERGESİDİR — Bölüm 7\'deki GetQrLoginStatusCommand, TAM OLARAK BU DEĞERİ ARAR (`if (session.Status != QrLoginStatus.Confirmed)`).',
+            olmasaydi: 'Bu satır OLMASAYDI, oturum Scanned OLARAK KALIRDI — web\'İN POLLING İSTEĞİ (Bölüm 7) HİÇBİR ZAMAN "Confirmed" GÖRMEZ, token HİÇ ÜRETİLMEZDİ.'
+          },
+          {
+            satir: 'session.ConfirmedAt = DateTime.UtcNow;',
+            aciklama: 'Bölüm 2\'deki AUDIT ALANI (nullable) DOLDURULUR.',
+            neden: 'ScannedAt (Bölüm 5) İLE AYNI GEREKÇE — GEÇMİŞTEKİ ADIMLARIN ZAMANLAMASI, İLERİDEKİ bir GÜVENLİK İNCELEMESİ İÇİN KAYIT ALTINA ALINIR.',
+            olmasaydi: 'Bu ALAN DOLDURULMASAYDI, "ONAY NE ZAMAN VERİLDİ" bilgisi SONSUZA KADAR `null` KALIRDI.'
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);',
+            aciklama: 'Bölüm 5\'teki Scan\'İN SON GÜNCELLEMESİYLE AYNI DESEN — `userId` DOLUDUR, DEĞİŞİKLİK KALICI HALE GELİR.',
+            neden: 'ONAY, GERÇEK bir kullanıcı EYLEMİDİR — "KİM ONAYLADI" bilgisinin (`request.UserId`) KAYDA GEÇMESİ ANLAMLIDIR.',
+            olmasaydi: 'Bu satır OLMASAYDI, `session.Status = Confirmed`/`ConfirmedAt` DEĞİŞİKLİKLERİ YALNIZCA BELLEKTE KALIRDI — kullanıcı "ONAYLADIM" SANIR AMA VERİTABANI HÂLÂ Scanned GÖSTERİRDİ.'
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: 'A-03/23\'teki LogoutCommand İLE AYNI DÖNÜŞ — "İŞLEM BAŞARIYLA TAMAMLANDI, DÖNECEK VERİ YOK".',
+            neden: 'Bu, Controller\'IN (Bölüm 8) 204 No Content DÖNMESİNİN MediatR TARAFINDAKİ KARŞILIĞIDIR.',
+            olmasaydi: 'Bu satır OLMASAYDI, METOT `Task<Unit>` DÖNÜŞ TİPİNİ KARŞILAMAZDI — KOD DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'DenyQrLoginCommand — Confirm\'in AYNASI',
+        iyi: {
+          baslik: 'DenyQrLoginCommand — TEK farklı satır',
+          maddeler: [
+            'AYNI QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync ÇAĞRISI (TIPATIP AYNI 6 satır)',
+            'YALNIZCA `session.Status = QrLoginStatus.Denied;` — Confirmed DEĞİL',
+            'ConfirmedAt GİBİ bir "DeniedAt" ALANI YOK (Bölüm 2\'de ENTİTEDE de YOK) — reddetme, KENDİ zaman DAMGASINI TAŞIMAZ (YAGNI, HENÜZ bir İHTİYAÇ DOĞMADI)'
+          ]
+        },
+        kotu: {
+          baslik: 'Confirm ve Deny TEK bir Command olsaydı',
+          maddeler: [
+            '`ConfirmQrLoginCommand(string QrToken, bool IsApproved)` GİBİ bir TASARIM DÜŞÜNÜLEBİLİRDİ',
+            'AMA: iki AYRI HTTP endpoint (`POST .../confirm`, `POST .../deny`) DAHA AÇIK bir REST SÖZLEŞMESİDİR — İSTEMCİ, "HANGİ EYLEMİ" AÇIKÇA URL\'DEN SEÇER',
+            '`IsApproved: false` gibi bir "GİZLİ FLAG", API DOKÜMANTASYONUNDA (Swagger) DAHA AZ AÇIK OLURDU'
+          ]
+        }
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrLoginSessionOwnershipHelper, Confirm VE Deny\'IN PAYLAŞTIĞI DÖRT kontrolü (bul, süre, durum, sahiplik) TEK bir yerde toplar',
+          'Sahiplik kontrolü BAŞARISIZ olursa QrSessionForbiddenException (403) — "bu kaynak var ama SENİN değil"',
+          'Confirm ve Deny, AYNI önkoşulu paylaşır ama FARKLI HEDEF durumlara geçer — TEK bir Command\'a BİRLEŞTİRİLMEZ (REST netliği)',
+          'Confirm/Deny\'nin İKİSİ de Unit döner — mobil, token\'ı HİÇ görmez, token YALNIZCA web\'in status polling\'inde ÜRETİLİR'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

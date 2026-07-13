@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DTO + AutoMapper</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dto-automapper',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '06_repository-katmani.html',
+    sonrakiBolum: '08_handler.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 14 · CLAUDE.md ADIM 9-10',
+        baslik: 'DTO ve AutoMapper',
+        altBaslik: 'RegisterResponse: dışarıya NE döneceğimiz. AuthProfile: Entity\'den DTO\'ya nasıl dönüştüğü.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'DTO Nedir — Entity Neden Doğrudan Dönmez?',
+        aciklama: 'DTO (Data Transfer Object), bir API\'nin dışarıya verdiği/aldığı verinin ŞEKLİDİR. User entity\'si (Bölüm 9) 30\'a yakın alan taşıyor — PasswordHash, PendingOtpCodeHash, OriginalEmailHash gibi son derece HASSAS alanlar dahil. Register endpoint\'i bu entity\'yi OLDUĞU GİBİ dönmez; yalnızca istemcinin GERÇEKTEN ihtiyaç duyduğu 5 alanı taşıyan ayrı, küçük bir RegisterResponse tipi tanımlanır.',
+        neden: 'Entity, veritabanının iç yapısını yansıtır; DTO, API sözleşmesini yansıtır. Bu ikisi FARKLI amaçlara hizmet eder ve FARKLI hızlarla değişir — Entity\'ye yeni bir dahili alan eklemek (ör. bir analitik sayacı), API sözleşmesini OTOMATİK olarak değiştirmemeli.',
+        olmasaydi: 'Entity doğrudan JSON olarak dönseydi, PasswordHash (BCrypt hash\'i olsa bile) İSTEMCİYE sızardı — bu, saldırgana offline brute-force denemesi için bir hedef verir. Ayrıca Entity\'ye eklenen HER yeni dahili alan, hiç fark edilmeden API yanıtına sızabilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterResponse — Yalnızca 5 Alan',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/RegisterDtos.cs',
+        nedenBuKlasor: 'DTOs/Auth/ altında — Command\'ların (Features/Auth/) ve Entity\'lerin (Domain/Entities/Auth/) yaşadığı yerlerden BİLEREK ayrı, çünkü DTO "API sözleşmesi" sorumluluğunu taşır.',
+        kod: `public record RegisterResponse(
+    int Id,
+    string Email,
+    string FirstName,
+    string CurrentLevel,
+    string ThemePreference
+);`,
+        satirlar: [
+          {
+            satir: 'public record RegisterResponse(',
+            aciklama: 'User entity\'sinin 30\'a yakın alanından yalnızca 5 tanesi burada — Id, Email, FirstName, CurrentLevel, ThemePreference.',
+            neden: 'İstemci (mobil/web uygulaması), kayıt sonrası ekranda kullanıcıya "Hoş geldin, {FirstName}" yazmak ve bir sonraki adıma (e-posta doğrulama) geçmek için başka HİÇBİR ALANA ihtiyaç duymaz.',
+            olmasaydi: 'PasswordHash, PendingOtpCodeHash gibi alanlar da dönseydi (Entity doğrudan dönselerdi), istemci ihtiyacı olmayan hassas veriyi ALIR, saklar (ör. mobil cihazın belleğinde/loglarında) — gereksiz bir güvenlik yüzeyi açardı.'
+          },
+          {
+            satir: 'int Id,',
+            aciklama: 'Veritabanının ürettiği, kullanıcının benzersiz kimliği — istemci, bundan sonraki isteklerde (ör. profil güncelleme) bu Id\'yi REFERANS olarak kullanır.',
+            neden: 'AutoMapper\'ın (bir sonraki slayt) "aynı isimli property\'leri otomatik eşleştirme" konvansiyonu ile ÇALIŞABİLMESİ için, DTO\'daki alan adı Entity\'dekiyle (User.Id) BİREBİR AYNI yazılmıştır.',
+            olmasaydi: 'Bu alan olmasaydı, istemci yeni oluşturulan kullanıcının Id\'sini HİÇ ÖĞRENEMEZDİ — sonraki bir "profilimi getir" isteğinde HANGİ kullanıcıyı sorgulayacağını bilemezdi (JWT\'deki claim\'e güvenmek dışında bir yol kalmazdı).'
+          },
+          {
+            satir: 'string Email,',
+            aciklama: 'Kullanıcının kayıt sırasında girdiği e-posta adresi — RegisterCommand\'daki Email ile AYNI değer, doğrulanmamış hâliyle (henüz OTP onayı YOK) geri döner.',
+            neden: 'İstemci, kayıt sonrası ekranda "X adresine bir doğrulama kodu gönderildi" gibi bir mesaj GÖSTEREBİLMEK için bu e-postayı GERİ ihtiyaç duyar — sunucu tarafında zaten bilinen bir değeri istemciye TEKRAR onaylamış olur.',
+            olmasaydi: 'Bu alan dönmeseydi, istemci Register isteğine kendi gönderdiği e-postayı YEREL OLARAK (state\'inde) saklamak ZORUNDA kalırdı — sunucunun GERÇEKTEN kaydettiği değer ile istemcinin varsaydığı değer arasında bir TUTARSIZLIK riski doğardı (ör. sunucu tarafında e-posta küçük harfe çevrilmiş olabilir).'
+          },
+          {
+            satir: 'string FirstName,',
+            aciklama: 'Kullanıcının adı — kayıt sonrası ekranda "Hoş geldin, {FirstName}" gibi bir KİŞİSELLEŞTİRME için döner.',
+            neden: 'DTO tasarımında "istemcinin GERÇEKTEN ihtiyacı olan alan" ilkesi somutlaşıyor: FirstName, kullanıcı deneyimini (UX) doğrudan İYİLEŞTİREN bir alan, bu yüzden dahil edilir — LastName ise bu ilk ekranda GEREKLİ görülmediği için DTO\'ya HİÇ eklenmez.',
+            olmasaydi: 'Bu alan olmasaydı, istemci kayıt sonrası ekranı KİŞİSELLEŞTİRMEK için kullanıcının kendi girdiği FirstName değerini yerel state\'inden okumak zorunda kalırdı — sunucunun GERÇEKTEN neyi kaydettiğini DOĞRULAMADAN göstermiş olurdu.'
+          },
+          {
+            satir: 'string CurrentLevel,',
+            aciklama: 'RegisterCommand\'da (Bölüm 12) HİÇ YOKTU — girdi olarak alınmadı ama ÇIKTIDA var, DB varsayılan değeriyle (A1) dönüyor.',
+            neden: 'İstemci, kayıt sonrası "kullanıcının seviyesi ne" bilgisine ihtiyaç duyabilir (ör. ekranı ona göre çizmek için) — bu bilgi kullanıcıdan ALINMADI ama SUNULMASI gerekiyor, DTO bu asimetriyi doğal şekilde temsil eder.',
+            olmasaydi: 'Bu alan dönmeseydi, istemci yeni kaydolan kullanıcının varsayılan seviyesinin A1 olduğunu VARSAYMAK zorunda kalırdı — sunucu tarafındaki varsayılan değer bir gün DEĞİŞİRSE (ör. A0 eklenirse), istemci bunu asla ÖĞRENEMEZDİ.'
+          },
+          {
+            satir: 'string ThemePreference',
+            aciklama: 'CurrentLevel ile AYNI gerekçe: girdide yok, çıktıda DB varsayılan değeriyle ("System") döner — son parametre olduğu için sonunda virgül YOK.',
+            neden: 'İstemci, kayıt sonrası ekranı hangi TEMA (Light/Dark/System) ile çizeceğini bilebilmek için bu bilgiye ihtiyaç duyar — bu bilgi kullanıcıdan ALINMADI ama SUNULMASI gerekiyor, DTO bu asimetriyi doğal şekilde temsil eder.',
+            olmasaydi: 'DTO, girdiyle (Command) BİREBİR aynı alanları taşımak zorunda olsaydı, "girdi olarak alınmayan ama çıktıda dönen" alanlar temsil edilemezdi — DTO ve Command\'ın AYRI tipler olmasının tam da nedeni budur.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'AutoMapper — YAGNI Kuralı Ne Zaman Devreye Girer',
+        aciklama: 'AutoMapper, Entity → DTO dönüşümünü elle yazmak yerine (`new RegisterResponse(user.Id, user.Email, ...)`) bir "Profile" sınıfına tanımlamayı sağlar. AMA CLAUDE.md açık bir kural koyar: AutoMapper Profile YALNIZCA gerçek bir Entity→DTO dönüşümü varsa yazılır — DTO sabit bir mesajdan (`MessageResponse("...")`) ya da token/config değerlerinden inşa ediliyorsa, ELLE inşa edilir.',
+        neden: 'RegisterResponse\'daki 5 alan, User entity\'sindeki 5 alanla BİREBİR aynı isimde (Id, Email, FirstName, CurrentLevel, ThemePreference) — bu, AutoMapper\'ın "konvansiyon üzerinden eşleştirme" özelliğine TAM UYAN, gerçek bir dönüşüm örneği.',
+        olmasaydi: 'Her Command\'ın DTO\'su için "acaba AutoMapper mi kullansam" diye düşünmek yerine körü körüne HER YERDE Profile yazılsaydı, sabit bir mesaj döndüren (ör. `MessageResponse("E-posta gönderildi")`) bir Handler için de anlamsız, boş bir Profile sınıfı yazılırdı — YAGNI (You Aren\'t Gonna Need It) ilkesinin ihlali.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AuthProfile.cs — Konvansiyon Üzerinden Eşleştirme',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/AuthProfile.cs',
+        nedenBuKlasor: 'Features/Auth/ İÇİNDE (ayrı bir Profiles/ klasöründe DEĞİL) — CLAUDE.md §3 Adım 10: AutoMapper Profile, Command+Handler ile AYNI feature klasöründe yaşar.',
+        kod: `public class AuthProfile : Profile
+{
+    public AuthProfile()
+    {
+        CreateMap<User, RegisterResponse>();
+        CreateMap<User, AuthUserDto>();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class AuthProfile : Profile',
+            aciklama: 'AutoMapper\'ın `Profile` temel sınıfından türer — A-02/05\'teki `AddAutoMapper(applicationAssembly)` çağrısı, assembly\'yi tararken TÜM `Profile` alt sınıflarını OTOMATİK bulur ve kaydeder.',
+            neden: '`Profile`\'dan türemek, bu sınıfa "ben bir dönüşüm kuralları KOLEKSİYONUYUM" kimliğini kazandırır — AutoMapper, yalnızca bu tipten türeyen sınıfları TARAR, sıradan bir sınıfı GÖRMEZDEN GELİR.',
+            olmasaydi: '`Profile`\'dan türemeseydi, `AddAutoMapper` bu sınıfı hiç BULAMAZDI — içindeki `CreateMap` çağrıları hiçbir zaman ÇALIŞTIRILMAZDI, Handler\'daki `_mapper.Map<RegisterResponse>(user)` çağrısı "bu dönüşüm için konfigürasyon yok" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'public AuthProfile()',
+            aciklama: 'Parametresiz constructor — TÜM `CreateMap` kuralları burada, sınıf İLK oluşturulduğunda TANIMLANIR.',
+            neden: 'AutoMapper\'ın deseni budur (RegisterCommandValidator\'daki FluentValidation deseniyle AYNI): dönüşüm kuralları constructor içinde bir kez KURULUR, her `_mapper.Map(...)` çağrısında YENİDEN tanımlanmaz.',
+            olmasaydi: 'Kurallar constructor yerine her Map çağrısında YENİDEN inşa edilseydi, her Register isteğinde gereksiz nesne oluşturma (allocation) MALİYETİ eklenirdi.'
+          },
+          {
+            satir: 'CreateMap<User, RegisterResponse>();',
+            aciklama: 'Bu TEK satır, "User\'dan RegisterResponse\'a nasıl dönüşüleceğini" tanımlar — hiçbir `ForMember(...)` çağrısı YOK çünkü alan isimleri zaten BİREBİR eşleşiyor (Id→Id, Email→Email, FirstName→FirstName...).',
+            neden: 'AutoMapper, varsayılan olarak KAYNAK ve HEDEF tipteki AYNI İSİMLİ property\'leri otomatik eşleştirir — isimler eşleştiği sürece ekstra konfigürasyona GEREK YOKTUR, bu da Handler\'daki (Bölüm 15) `_mapper.Map<RegisterResponse>(user)` çağrısını TEK SATIRA indirger.',
+            olmasaydi: 'AutoMapper kullanılmasaydı, Handler içinde `new RegisterResponse(user.Id, user.Email, user.FirstName, user.CurrentLevel, user.ThemePreference)` yazmak gerekirdi — 5 alan için bu makul ama RegisterResponse 20 alana çıksa (ör. daha zengin bir profil API\'si), bu elle-yazım hem UZUN hem de bir alan eklenip mapping\'e YANSITILMASI UNUTULABİLİR bir kod haline gelirdi.'
+          },
+          {
+            satir: 'CreateMap<User, AuthUserDto>();',
+            aciklama: 'İKİNCİ bir dönüşüm kuralı — AYNI User entity\'sinden, RegisterResponse\'tan FARKLI bir DTO\'ya (AuthUserDto, Login/Refresh gibi TOKEN döndüren endpoint\'lerde kullanılır — Bölüm 18\'de RefreshCommand\'da göreceğiz).',
+            neden: 'Bir Profile sınıfı, TEK bir Entity\'den BİRDEN FAZLA farklı DTO\'ya dönüşüm tanımlayabilir — RegisterResponse (kayıt sonrası, token YOK) ile AuthUserDto (giriş sonrası, token VAR akışların İÇİNDEKİ kullanıcı bilgisi) FARKLI amaçlara hizmet ettiği için AYRI DTO tipleri olarak kalırlar, ama İKİSİ DE aynı AuthProfile dosyasında, aynı yerde tanımlanır.',
+            olmasaydi: 'Bu satır eksik olsaydı, A-03/18\'deki RefreshCommandHandler\'daki `_mapper.Map<AuthUserDto>(user)` çağrısı ÇALIŞMA ZAMANINDA "bu dönüşüm için konfigürasyon yok" hatasıyla PATLARDI — derleme zamanında hiçbir uyarı VERİLMEZDİ çünkü AutoMapper\'ın eşleştirmeleri derleyicinin DEĞİL, çalışma zamanının kontrol ettiği bir alandır.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'DTO, API sözleşmesini temsil eder — Entity\'nin iç yapısından BİLEREK ayrıdır',
+          'Hassas Entity alanları (PasswordHash, OTP hash\'leri) hiçbir zaman DTO\'ya girmez',
+          'DTO, Command\'la (girdi) aynı alanları taşımak zorunda değildir — girdide olmayan alanlar çıktıda dönebilir',
+          'AutoMapper Profile YALNIZCA gerçek bir Entity→DTO dönüşümü varsa yazılır (YAGNI)',
+          'Alan isimleri eşleştiğinde `CreateMap<T1,T2>()` tek satır yeterlidir, ekstra konfigürasyon gerekmez'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

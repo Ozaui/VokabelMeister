@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Domain Katmanı — BaseEntity</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'domain-katmani',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '02_neden-clean-architecture.html',
+    sonrakiBolum: '04_dbcontext.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Domain Katmanı: BaseEntity',
+        altBaslik: 'Her tablonun türediği ortak temel sınıf — yazılan ilk gerçek kod, çünkü her şey ona bağımlı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Entity Nedir?',
+        aciklama: 'Veritabanındaki bir tabloyu temsil eden sıradan bir C# sınıfı. Her property (özellik), bir kolona karşılık gelir. EF Core (Bölüm 4\'te göreceğiz) bu sınıfları okuyup arkada SQL üretir — biz elle SQL yazmayız, bu araca "Object-Relational Mapper (ORM)" denir.',
+        neden: 'Nesnelerle çalışıp SQL detaylarını EF Core\'a bırakmak hem yazım hatası riskini azaltır hem de veritabanı sağlayıcısı değişse (SQL Server → PostgreSQL) entity kodunun neredeyse hiç değişmemesini sağlar.',
+        olmasaydi: 'ORM kullanılmasaydı her sorgu için elle SQL string\'i yazmamız gerekirdi; bir kolon adı değiştiğinde onlarca SQL string\'ini tek tek bulup düzeltmek gerekirdi — biri unutulursa hata DERLEME zamanında değil, ÇALIŞMA zamanında (kullanıcı üretimde hata alınca) patlardı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Her Entity İçin Bu Alanları Tekrar Yazmıyoruz?',
+        aciklama: 'User, Word, Category gibi her tabloda "ne zaman oluşturuldu", "silindi mi", "kim oluşturdu" gibi ORTAK alanlar var. Bu alanları her entity\'ye tek tek eklemek yerine, hepsinin türediği bir "temel sınıf" (base class) yazılır: BaseEntity.',
+        neden: 'DRY (Don\'t Repeat Yourself) ilkesi: aynı 7 property\'yi 20 farklı entity\'ye kopyalamak yerine bir kez yazıp miras (inheritance) yoluyla paylaşırız. Bir gün "DeletedByUserId" alanının tipini değiştirmemiz gerekirse tek bir dosyayı değiştiririz.',
+        olmasaydi: 'BaseEntity olmasaydı, her yeni entity yazan geliştirici bu 7 alanı elden yazardı — biri "IsDeleted" yazmayı unutursa o tablo soft delete\'e giremez, tutarsız bir veri modeli ortaya çıkardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'BaseEntity.cs — Tam Dosya, Satır Satır',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/BaseEntity.cs',
+        nedenBuKlasor: 'Entities/ klasörünün KÖKÜNDE durur (Auth/ gibi bir alt-domain klasöründe DEĞİL) çünkü BaseEntity hiçbir tek domain\'e ait değil — User (Auth), Word (Kelime), Category (Kategori) gibi TÜM entity\'lerin ortak atası. CLAUDE.md §5: "BaseEntity hariç her entity bir domain alt klasöründe" kuralı bunun içindir.',
+        kod: `namespace WordLearner.Domain.Entities;
+
+public abstract class BaseEntity
+{
+    public int Id { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime? UpdatedAt { get; set; }
+
+    public bool IsDeleted { get; set; }
+
+    public DateTime? DeletedAt { get; set; }
+
+    public int? CreatedByUserId { get; set; }
+
+    public int? UpdatedByUserId { get; set; }
+
+    public int? DeletedByUserId { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public abstract class BaseEntity',
+            aciklama: '"abstract" anahtar kelimesi, bu sınıfın tek başına örneklenemeyeceği anlamına gelir — `new BaseEntity()` yazılamaz.',
+            neden: 'BaseEntity kavramsal olarak hiçbir zaman gerçek bir veritabanı tablosu değildir; yalnızca User, Word gibi somut entity\'lerin türediği bir şablondur. "Soyut bir kavramı somutlaştırma" hatasını derleyici seviyesinde engeller.',
+            olmasaydi: '`abstract` olmasaydı `new BaseEntity()` derlenirdi; biri yanlışlıkla "BaseEntity" tipinde bir kayıt oluşturmaya çalışsa, EF Core bunun hangi tabloya karşılık geldiğini bilemeyip çalışma zamanında hata verirdi — hata çok geç, çok belirsiz bir noktada ortaya çıkardı.'
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Her kaydın birincil anahtarı (primary key) — veritabanındaki her satırı benzersiz tanımlayan sayı.',
+            neden: 'EF Core, "Id" adlı bir int property\'yi otomatik olarak birincil anahtar (ve otomatik artan/IDENTITY kolon) olarak tanır — ekstra bir konfigürasyon yazmaya gerek kalmaz (konvansiyon üzerinden yapılandırma).',
+            olmasaydi: 'Property "Id" yerine farklı bir isim taşısaydı (ör. "UserId" tek başına BaseEntity\'de), EF Core bunu otomatik PK olarak tanımaz, her entity konfigürasyonunda elle `HasKey(...)` çağırmak gerekirdi.'
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; } = DateTime.UtcNow;',
+            aciklama: 'Kaydın ilk oluşturulduğu an (UTC saat dilimi).',
+            neden: 'Audit trail (kim ne zaman ne yaptı kaydı) ve sıralama için zorunlu. UTC kullanmak, sunucunun hangi saat diliminde çalıştığından bağımsız, tutarlı bir zaman damgası sağlar.',
+            olmasaydi: 'UTC yerine yerel saat (ör. sunucunun bulunduğu saat dilimi) kullanılsaydı, sunucu bir gün başka bir bölgeye taşınırsa (ör. Almanya → Türkiye sunucusu) eski kayıtlarla yeni kayıtlar arasında saat dilimi kayması, "hangisi önce oluşturuldu" sorgularını yanlış sonuçlandırabilirdi.'
+          },
+          {
+            satir: 'public DateTime? UpdatedAt { get; set; }',
+            aciklama: 'Kaydın son güncellendiği an; hiç güncellenmemişse null.',
+            neden: 'Nullable (`?`) olması "hiç güncellenmedi" ile "CreatedAt anında güncellendi" durumlarını ayırt eder. WordLearnerDbContext (Bölüm 4) yalnızca GERÇEK bir güncelleme olduğunda bu alanı otomatik set eder.',
+            olmasaydi: 'Nullable olmasaydı (varsayılan bir tarih atanmış olsaydı), "son 24 saatte değişen kayıtları getir" gibi bir filtre, hiç güncellenmemiş ama CreatedAt\'i 24 saat içinde olan kayıtları da yanlışlıkla "güncellenmiş" sayardı.'
+          },
+          {
+            satir: 'public bool IsDeleted { get; set; }',
+            aciklama: 'Kaydın silinip silinmediğini gösteren bayrak (soft delete = yumuşak silme).',
+            neden: 'Fiziksel silme (DELETE FROM ...) yerine bu bayrak set edilir; böylece silinmiş kayıtlar veritabanında kalır, geri yüklenebilir ve denetim (audit) geçmişi korunur. WordLearnerDbContext\'teki global sorgu filtresi (Bölüm 4) bu bayrağa göre otomatik filtreler.',
+            olmasaydi: 'Fiziksel silme kullanılsaydı, bir kullanıcı yanlışlıkla hesabını sildiğinde veya bir admin yanlışlıkla bir kategori sildiğinde veri GERİ DÖNDÜRÜLEMEZ şekilde kaybolurdu — CLAUDE.md\'nin "her tablo soft delete taşır" kuralı tam olarak bunu önlemek için var.'
+          },
+          {
+            satir: 'public DateTime? DeletedAt { get; set; }',
+            aciklama: 'Kaydın soft delete yapıldığı an; silinmemişse null.',
+            neden: 'Süre bazlı işlemlerde kullanılır — ör. kullanıcı hesabını sildikten 30 gün sonra hesabın kalıcı olarak anonimleştirilmesi gibi bir kural, bu tarihe bakarak "30 gün geçti mi" sorusunu cevaplar.',
+            olmasaydi: 'DeletedAt olmasaydı, IsDeleted=true olan bir kaydın NE ZAMAN silindiğini bilemezdik — "30 gün sonra anonimleştir" gibi bir zamanlanmış görev hiç çalıştırılamazdı.'
+          },
+          {
+            satir: 'public int? CreatedByUserId { get; set; }',
+            aciklama: 'Kaydı oluşturan kullanıcının Id\'si.',
+            neden: 'Repository&lt;T&gt;.AddAsync (Bölüm 7\'de göreceğiz) bu alanı otomatik set eder — "bu kaydı kim oluşturdu" sorusu, ayrı bir log tablosuna gitmeden doğrudan kayıttan cevaplanabilir.',
+            olmasaydi: 'Bu alan olmasaydı, bir kelime kartını hangi admin\'in eklediğini öğrenmek için ayrı bir log tablosunu (varsa) taramak gerekirdi — basit bir soru için gereksiz karmaşıklık.'
+          },
+          {
+            satir: 'public int? UpdatedByUserId { get; set; }',
+            aciklama: 'Kaydı en son güncelleyen (soft delete dahil) kullanıcının Id\'si.',
+            neden: 'Repository&lt;T&gt;.UpdateAsync/SoftDeleteAsync her çağrıda bu alanı günceller — "son işlemi kim yaptı" sorusu ActivityLog\'a gitmeden doğrudan kayıttan cevaplanır.',
+            olmasaydi: 'Bu alan olmasaydı, bir kaydın son kez kim tarafından değiştirildiğini bilmenin tek yolu ayrı, insert-only bir log tablosunu (CLAUDE.md\'deki log tabloları) baştan sona taramak olurdu.'
+          },
+          {
+            satir: 'public int? DeletedByUserId { get; set; }',
+            aciklama: 'Kaydı soft delete eden kullanıcının Id\'si; silinmemişse null.',
+            neden: 'DeletedAt "ne zaman", bu alan "kim" sorusunu cevaplar. Repository&lt;T&gt;.SoftDeleteAsync ikisini birlikte set eder — bir admin panelinde "bu kelimeyi kim sildi" sorusuna anında cevap verilebilir.',
+            olmasaydi: 'Bu alan olmadan, IsDeleted=true olan bir kaydın kim tarafından silindiğini bilmenin yolu olmazdı — özellikle admin işlemlerinde hesap verebilirlik (accountability) kaybolurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Entity = veritabanı tablosunun karşılığı olan sıradan C# sınıfı',
+          'abstract class = doğrudan örneklenemeyen, yalnızca miras alınan taban sınıf',
+          'BaseEntity, Entities/ klasörünün KÖKÜNDE durur çünkü hiçbir tek domain\'e ait değil',
+          'Nullable (`DateTime?`, `int?`) alanlar "hiç olmadı" ile "oldu" durumlarını ayırt eder',
+          'Soft delete (IsDeleted) fiziksel silmenin (DELETE) geri döndürülemez riskini önler',
+          'CreatedByUserId/UpdatedByUserId/DeletedByUserId, ayrı bir log tablosuna gitmeden "kim yaptı" sorusunu cevaplar'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

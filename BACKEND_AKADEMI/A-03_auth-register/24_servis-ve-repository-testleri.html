@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Servis ve Repository Testleri</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'servis-ve-repository-testleri',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '23_validator-katmani-ve-filter.html',
+    sonrakiBolum: '25_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 24 · BACKEND ALTYAPI DERİNLEŞTİRME',
+        baslik: 'Servis ve Repository Testleri',
+        altBaslik: 'Bölüm 9\'da RegisterCommandHandler\'ın testini gördük — Handler testleri repository/servisleri MOCK\'lar. Bu bölümde, o mock\'ların ARKASINDAKİ gerçek kodun (PasswordService, UserRepository) KENDİSİNİN nasıl test edildiğini görüyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: '"Her Public Servis/Handler Metodu" — Handler\'ın Ötesi',
+        aciklama: 'CLAUDE.md\'nin "Her public servis/Handler metodunun birim testi AYNI task içinde yazılır" kuralı, İKİ kelimeyi YAN YANA koyar: "servis" VE "Handler". Bölüm 9, bu kuralın SADECE Handler yarısını GÖSTERDİ — `RegisterCommandHandlerTests`, `Mock<IPasswordService>` ve `Mock<IUserRepository>` KULLANARAK Handler\'ın İŞ MANTIĞINI (e-posta kontrolü, hash çağrısı, OTP üretimi SIRASI) test ETTİ, ama BU MOCK\'LARIN TEMSİL ETTİĞİ GERÇEK KODUN (PasswordService\'in GERÇEKTEN doğru hash\'lediğini, UserRepository\'nin GERÇEKTEN doğru SQL/LINQ sorgusu ÜRETTİĞİNİ) KENDİSİ AYRI bir test SORUMLULUĞUDUR.',
+        neden: 'Bir Handler testi, "Hash çağrıldı mı" (`Verify(x => x.Hash(...), Times.Once)`) SORUSUNU cevaplar ama "Hash GERÇEKTEN doğru ÇALIŞIYOR mu" SORUSUNU CEVAPLAYAMAZ — mock, GERÇEK BCrypt kodunu HİÇ ÇALIŞTIRMAZ. Servis/repository testleri, TAM OLARAK Handler testinin ATLADIĞI bu BOŞLUĞU (gerçek implementasyonun doğruluğunu) KAPATIR.',
+        olmasaydi: 'Yalnızca Handler testleri OLSAYDI, `PasswordService.Hash`\'in İÇİNDE bir HATA (ör. `workFactor` parametresinin YANLIŞ geçirilmesi) OLSA bile HİÇBİR TEST bunu YAKALAYAMAZDI — TÜM Handler testleri "YEŞİL" (başarılı) GÖRÜNÜRDÜ çünkü onlar zaten SAHTE bir Hash davranışı ile ÇALIŞIYOR, GERÇEK BCrypt koduna HİÇ DOKUNMUYORLARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'PasswordServiceTests.cs — Temsili Servis Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/PasswordServiceTests.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// PasswordServiceTests.cs
+//
+// AMAÇ: PasswordService'in BCrypt (şifre) + SHA-256 (token) davranışlarını doğrulamak.
+// NEDEN: Auth API'nin tüm login/register/OTP akışları bu servise dayanır; hash/verify
+//        arasında bir tutarsızlık olursa hiçbir kullanıcı giriş yapamaz hâle gelir.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, WordLearner.Application.Services.PasswordService.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Tests.Services;
+
+public class PasswordServiceTests
+{
+    /// <summary>
+    /// Hash_ValidPassword_ProducesHashThatVerifyAccepts
+    ///
+    /// AMAÇ: Hash edilen bir şifrenin, aynı servisin Verify metoduyla doğru kabul edildiğini doğrulamak.
+    /// NEDEN: Hash/Verify arasındaki uyumsuzluk, register'da hash'lenen şifreyle login'de
+    ///        hiçbir kullanıcının giriş yapamaması anlamına gelir — en kritik mutlu yol.
+    /// </summary>
+    [Fact]
+    public void Hash_ValidPassword_ProducesHashThatVerifyAccepts()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var sifre = "Deneme123!@#";
+
+        // ACT
+        var hash = servis.Hash(sifre);
+
+        // ASSERT — hash BCrypt formatında olmalı ve orijinal şifreyle doğrulanabilmeli
+        hash.Should().NotBe(sifre);
+        servis.Verify(sifre, hash).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Hash_SamePasswordCalledTwice_ProducesDifferentHashes
+    ///
+    /// AMAÇ: Aynı şifrenin iki kez hash'lenmesinin farklı sonuç ürettiğini doğrulamak.
+    /// NEDEN: BCrypt her çağrıda rastgele bir salt üretir — aynı hash çıkarsa salt
+    ///        üretilmiyor demektir, bu da rainbow table saldırılarına karşı korumayı yok eder.
+    /// </summary>
+    [Fact]
+    public void Hash_SamePasswordCalledTwice_ProducesDifferentHashes()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var sifre = "Deneme123!@#";
+
+        // ACT
+        var hash1 = servis.Hash(sifre);
+        var hash2 = servis.Hash(sifre);
+
+        // ASSERT — farklı salt yüzünden hash'ler farklı olmalı, ikisi de aynı şifreyi doğrulamalı
+        hash1.Should().NotBe(hash2);
+        servis.Verify(sifre, hash1).Should().BeTrue();
+        servis.Verify(sifre, hash2).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verify_WrongPassword_ReturnsFalse
+    ///
+    /// AMAÇ: Yanlış bir şifrenin doğru hash'e karşı false döndüğünü doğrulamak.
+    /// NEDEN: AuthService.LoginAsync bu false değerine göre InvalidCredentialsException fırlatır.
+    /// </summary>
+    [Fact]
+    public void Verify_WrongPassword_ReturnsFalse()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var hash = servis.Hash("DogruSifre123!@#");
+
+        // ACT
+        var sonuc = servis.Verify("YanlisSifre123!@#", hash);
+
+        // ASSERT
+        sonuc.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// HashToken_SameInputCalledTwice_ProducesSameHash
+    ///
+    /// AMAÇ: Aynı token/OTP kodunun iki kez hash'lenmesinin AYNI sonucu ürettiğini doğrulamak.
+    /// NEDEN: BCrypt'in aksine SHA-256 deterministik olmalı — RefreshTokens.TokenHash ve
+    ///        Users.PendingOtpCodeHash bu değeri DB'de arayarak eşleştirir (GetByTokenHashAsync);
+    ///        deterministik olmasaydı hiçbir refresh/OTP doğrulaması eşleşmezdi.
+    /// </summary>
+    [Fact]
+    public void HashToken_SameInputCalledTwice_ProducesSameHash()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+        var token = "123456";
+
+        // ACT
+        var hash1 = servis.HashToken(token);
+        var hash2 = servis.HashToken(token);
+
+        // ASSERT
+        hash1.Should().Be(hash2);
+    }
+
+    /// <summary>
+    /// HashToken_DifferentInputs_ProducesDifferentHashes
+    ///
+    /// AMAÇ: Farklı iki token'ın farklı hash ürettiğini doğrulamak.
+    /// NEDEN: Aksi hâlde farklı OTP kodları/refresh token'lar DB'de çakışıp yanlış kayıtla eşleşebilir.
+    /// </summary>
+    [Fact]
+    public void HashToken_DifferentInputs_ProducesDifferentHashes()
+    {
+        // ARRANGE
+        var servis = new PasswordService();
+
+        // ACT
+        var hash1 = servis.HashToken("111111");
+        var hash2 = servis.HashToken("222222");
+
+        // ASSERT
+        hash1.Should().NotBe(hash2);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var servis = new PasswordService();',
+            aciklama: 'Bölüm 9\'daki Handler testlerinden FARKLI olarak, burada `Mock<IPasswordService>` DEĞİL, GERÇEK `PasswordService` sınıfı `new`\'lenir — hiçbir bağımlılığı OLMADIĞI için (BCrypt/SHA-256 STATİK kütüphane çağrıları) mock\'lanacak BİR ŞEY de YOKTUR.',
+            neden: 'Bu satır, bölümün BAŞLIĞINDAKİ "servis testi" ile "Handler testi" ARASINDAKİ TEMEL FARKI GÖSTERİR: Handler testleri "bu Handler DOĞRU sırayla DOĞRU metotları ÇAĞIRIYOR mu" SORUSUNU (mock\'larla) cevaplarken, servis testleri "bu servis GERÇEKTEN DOĞRU SONUÇ üretiyor mu" SORUSUNU GERÇEK kodu ÇALIŞTIRARAK cevaplar.',
+            olmasaydi: 'PasswordService de MOCK\'LANSAYDI, bu test SINIFININ KENDİSİ anlamsız OLURDU — mock\'un davranışı zaten TEST YAZAN kişi tarafından ÖNCEDEN BELİRLENİR ("Hash çağrılırsa X dön" gibi), bu da GERÇEK BCrypt kodunun DOĞRU çalışıp ÇALIŞMADIĞINI HİÇBİR ZAMAN SINAMAZ.'
+          },
+          {
+            satir: 'hash1.Should().NotBe(hash2);',
+            aciklama: '`Hash_SamePasswordCalledTwice_ProducesDifferentHashes` testinin KALBİ — AYNI şifreden ÜRETİLEN iki hash\'in FARKLI OLMASINI BEKLER (`NotBe`, `Be` DEĞİL).',
+            neden: 'Bu, BCrypt\'in TASARIM GEREĞİ HER ÇAĞRIDA RASTGELE bir salt ÜRETMESİNİN doğrudan SONUCUDUR — test, "salt ÜRETİMİ GERÇEKTEN ÇALIŞIYOR mu" SORUSUNU, salt\'ı DOĞRUDAN OKUYARAK değil, DOLAYLI bir GÖZLEMLE (iki hash\'in farklı OLMASI) DOĞRULAR.',
+            olmasaydi: 'Bu test OLMASAYDI, `PasswordService.Hash` içindeki `workFactor` parametresi YANLIŞLIKLA SABİT bir salt KULLANAN bir İMPLEMENTASYONA (ör. hatalı bir REFACTOR sonrası) DEĞİŞTİRİLSE BİLE hiçbir test bunu YAKALAMAZDI — bu, rainbow table SALDIRILARINA karşı korumanın SESSİZCE KAYBOLMASI anlamına GELİRDİ.'
+          },
+          {
+            satir: 'hash1.Should().Be(hash2);',
+            aciklama: '`HashToken_SameInputCalledTwice_ProducesSameHash` testinde — bir ÖNCEKİ maddenin TAM TERSİ bir BEKLENTİ: AYNI token\'dan ÜRETİLEN iki hash\'in AYNI OLMASINI BEKLER.',
+            neden: 'Bu, `Hash` (BCrypt, deterministik DEĞİL) İLE `HashToken` (SHA-256, deterministik) ARASINDAKİ DAVRANIŞ FARKININ, testlerde de AÇIKÇA GÖRÜNMESİDİR — Bölüm 22\'deki `RefreshTokenRepository.GetByTokenHashAsync`\'in `WHERE TokenHash = @hash` sorgusunun ÇALIŞABİLMESİ, TAM OLARAK bu DETERMİNİZME BAĞLIDIR.',
+            olmasaydi: '`HashToken` YANLIŞLIKLA BCrypt (rastgele salt\'lı) KULLANACAK şekilde YENİDEN yazılsaydı, bu test HEMEN BAŞARISIZ OLURDU (`hash1` ve `hash2` FARKLI ÇIKARDI) — test OLMASAYDI, bu HATA yalnızca ÜRETİMDE, "HİÇBİR refresh TOKEN\'I bulunamıyor" gibi ANLAŞILMASI ZOR bir BELİRTİYLE ORTAYA ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserRepositoryTests.cs — Temsili Repository Testi (InMemory DbContext)',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/UserRepositoryTests.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// UserRepositoryTests.cs
+//
+// AMAÇ: UserRepository'nin User'a özgü sorgularını (özellikle IgnoreQueryFilters
+//       kullanan dört metodu) gerçek bir in-memory EF Core bağlamına karşı doğrulamak.
+// NEDEN: Kod kalitesi denetiminde bulunan bir boşluk kapatılıyor — bu sorguların
+//        hiçbiri daha önce gerçek/in-memory DB'ye karşı test edilmiyordu (yalnızca
+//        Handler testlerinde Mock<IUserRepository> ile taklit ediliyordu); bu, kritik
+//        bir detayın (IgnoreQueryFilters) yanlışlıkla silinmesi durumunda hiçbir testin
+//        bunu yakalayamayacağı anlamına geliyordu (bkz. Auth_Domain.md "bugfix turu" notu —
+//        GetQrLoginStatusCommand'daki gerçek bug tam olarak bu sınıfta EKSİK olan bir metottan
+//        kaynaklanmıştı). Odak: soft-delete'li bir kullanıcının GERÇEKTEN bulunabildiğini
+//        (grace-period kurtarma/hesap kurtarma akışlarının dayandığı davranış) kanıtlamak.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.UserRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Repositories;
+using WordLearner.Tests.Common;
+
+namespace WordLearner.Tests.Repositories;
+
+public class UserRepositoryTests
+{
+    /// <summary>
+    /// GetByEmailAsync_ActiveUser_ReturnsUser
+    ///
+    /// AMAÇ: Mutlu yol — soft-delete edilmemiş bir kullanıcının e-postayla bulunduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_ActiveUser_ReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "aktif@example.com", FirstName = "A", LastName = "B" }
+        );
+
+        // ACT
+        var bulunan = await repo.GetByEmailAsync("aktif@example.com");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.Id.Should().Be(eklenen.Id);
+    }
+
+    /// <summary>
+    /// GetByEmailAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: Soft-delete edilmiş (grace period içindeki) bir kullanıcının GetByEmailAsync
+    ///       ile hâlâ bulunabildiğini doğrulamak — IgnoreQueryFilters() olmadan bu metot
+    ///       WordLearnerDbContext'in global soft-delete filtresi yüzünden null dönerdi.
+    /// NEDEN kritik: Bu davranış olmadan hesap kurtarma (LoginCompletionService'in
+    ///       IsDeleted→false çevirmesi) ve "e-posta zaten kullanımda" kontrolü çalışamaz —
+    ///       kullanıcı hesabını sildikten sonra AYNI e-postayla tekrar giriş/kayıt denediğinde
+    ///       sistem onu hiç görmemiş gibi davranırdı.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "silinen@example.com", FirstName = "A", LastName = "B" }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByEmailAsync("silinen@example.com");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.IsDeleted.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// GetByEmailAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Hiç kayıtlı olmayan bir e-posta için null döndüğünü (exception fırlatılmadığını) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByEmailAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByEmailAsync("yok@example.com");
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: GoogleId ile aramanın da (GetByEmailAsync ile aynı gerekçeyle) soft-delete
+    ///       filtresini yok saydığını doğrulamak — aksi hâlde Google ile tekrar giriş
+    ///       deneyen, hesabını silmiş bir kullanıcı için LoginWithGoogleCommand yanlışlıkla
+    ///       "hesap yok" sanıp YENİ bir hesap açardı (aynı GoogleId ile ikinci kayıt = veri bütünlüğü ihlali).
+    /// </summary>
+    [Fact]
+    public async Task GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "google@example.com",
+                GoogleId = "google-sub-123",
+                FirstName = "A",
+                LastName = "B",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByGoogleIdAsync("google-sub-123");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: AppleId ile aramanın da soft-delete filtresini yok saydığını doğrulamak
+    ///       (bkz. GetByGoogleIdAsync_SoftDeletedUser_StillReturnsUser — aynı gerekçe, Apple girişi).
+    /// </summary>
+    [Fact]
+    public async Task GetByAppleIdAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "apple@example.com",
+                AppleId = "apple-sub-456",
+                FirstName = "A",
+                LastName = "B",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var bulunan = await repo.GetByAppleIdAsync("apple-sub-456");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue
+    ///
+    /// AMAÇ: Daha önce anonimleştirilmiş (30 gün grace period sonrası PII temizlenmiş) bir
+    ///       kullanıcının OriginalEmailHash'i eşleşiyorsa true döndüğünü doğrulamak — bu
+    ///       kayıt zaten soft-delete'li olduğu için IgnoreQueryFilters() şart.
+    /// NEDEN kritik: Bu kontrol olmadan, silinip anonimleştirilmiş bir hesabın eski
+    ///       e-postasıyla RegisterCommand'da sınırsızca tekrar kayıt açılabilirdi
+    ///       (REFERENCE/SECURITY.md §9 ihlali).
+    /// </summary>
+    [Fact]
+    public async Task OriginalEmailHashExistsAsync_HashMatchesAnonymizedUser_ReturnsTrue()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User
+            {
+                Email = "deleted_1@deleted.invalid",
+                OriginalEmailHash = "hash-of-original-email",
+                IsAnonymized = true,
+                FirstName = "Silindi",
+                LastName = "Silindi",
+            }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var sonuc = await repo.OriginalEmailHashExistsAsync("hash-of-original-email");
+
+        // ASSERT
+        sonuc.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse
+    ///
+    /// AMAÇ: Eşleşen bir kayıt yoksa false döndüğünü (mutlu yol — yeni kayıt engellenmez) doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task OriginalEmailHashExistsAsync_NoMatch_ReturnsFalse()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.OriginalEmailHashExistsAsync("hic-eslesmeyen-hash");
+
+        // ASSERT
+        sonuc.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser
+    ///
+    /// AMAÇ: Id'ye göre aramanın da (GetByIdAsync'in aksine) soft-delete filtresini yok
+    ///       saydığını doğrulamak — 2026-07-11'de QR ile giriş bugfix'inde eklenen metot,
+    ///       taban Repository&lt;T&gt;.GetByIdAsync'in filtreli olması yüzünden
+    ///       GetQrLoginStatusCommand'ın grace-period kurtarmaya hiç ulaşamadığı gerçek bug'ı düzeltti.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(
+            new User { Email = "qr@example.com", FirstName = "A", LastName = "B" }
+        );
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT — hem filtreli hem filtresiz sorguyu karşılaştır
+        var filtreliSonuc = await repo.GetByIdAsync(eklenen.Id);
+        var filtresizSonuc = await repo.GetByIdIncludingDeletedAsync(eklenen.Id);
+
+        // ASSERT — GetByIdAsync (taban sınıf) soft-delete'li kaydı GÖRMEMELİ,
+        //          GetByIdIncludingDeletedAsync GÖRMELİ — bu ikilik, bug'ın kendisiydi.
+        filtreliSonuc.Should().BeNull();
+        filtresizSonuc.Should().NotBeNull();
+        filtresizSonuc!.IsDeleted.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// GetByIdIncludingDeletedAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Olmayan bir Id için exception değil null döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdIncludingDeletedAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByIdIncludingDeletedAsync(999);
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'await using var context = InMemoryDbContextFactory.CreateContext();',
+            aciklama: 'Bölüm 9\'daki Handler testlerinden EN BÜYÜK FARK: burada `Mock<IUserRepository>` YOKTUR — GERÇEK bir EF Core `DbContext`, `Microsoft.EntityFrameworkCore.InMemory` paketiyle BELLEK İÇİNDE bir "sahte veritabanı" olarak KURULUR.',
+            neden: 'Bu testin AMACI, `UserRepository`\'nin İÇİNDEKİ GERÇEK LINQ sorgularının (özellikle bu bölümün ODAĞI olan `IgnoreQueryFilters()` KULLANIMININ) DOĞRU ÇALIŞTIĞINI KANITLAMAKTIR — bir MOCK, "repository\'nin bu metodu ÇAĞRILDI mı" SORUSUNU cevaplar ama "bu metodun İÇİNDEKİ SORGU MANTIĞI doğru mu" SORUSUNU ASLA CEVAPLAYAMAZ, çünkü mock\'ta HİÇBİR GERÇEK sorgu ÇALIŞMAZ.',
+            olmasaydi: '`InMemoryDbContextFactory` OLMASAYDI (yani her test GERÇEK bir SQL Server\'a BAĞLANMAK ZORUNDA OLSAYDI), testler HEM YAVAŞ HEM DE bir veritabanı SUNUCUSUNA BAĞIMLI OLURDU — CI pipeline\'ında HER test ÇALIŞTIRMASI bir veritabanı KURULUMU GEREKTİRİRDİ, bu da CODING_STANDARDS.md §7.4\'ün "hızlı, izole birim TESTİ" beklentisini İHLAL EDERDİ.'
+          },
+          {
+            satir: 'await repo.SoftDeleteAsync(eklenen.Id);',
+            aciklama: 'A-02\'deki genel `Repository<T>.SoftDeleteAsync`\'i ÇAĞIRIR — kaydı VERİTABANINDAN SİLMEZ, yalnızca `IsDeleted = true` OLARAK İŞARETLER; bu satırdan SONRA, WordLearnerDbContext\'in GLOBAL soft-delete FİLTRESİ bu kaydı NORMAL sorgulardan (`GetByIdAsync` gibi) GİZLEMEYE BAŞLAR.',
+            neden: 'Bu satır, TESTİN "bir SONRAKİ satırdaki SORGU, soft-delete\'li bir KAYDA rağmen SONUÇ DÖNECEK Mİ" SORUSUNU SORABİLMESİ İÇİN gerekli ÖN KOŞULU (arrange) KURAR — `IgnoreQueryFilters()` KULLANAN bir metodun DAVRANIŞI, YALNIZCA soft-delete\'li bir kayıt VARKEN GÖZLEMLENEBİLİR.',
+            olmasaydi: 'Bu satır ATLANSAYDI, testteki kullanıcı HİÇBİR ZAMAN soft-delete EDİLMEMİŞ OLURDU — `GetByEmailAsync`\'in GLOBAL FİLTREYİ GÖRMEZDEN GELİP GELMEDİĞİ HİÇ TEST EDİLMEZDİ, test SADECE "normal bir kullanıcı BULUNUYOR mu" (zaten ilk testte KANITLANMIŞ) SORUSUNU TEKRARLARDI.'
+          },
+          {
+            satir: 'bulunan.Should().NotBeNull();',
+            aciklama: '`GetByEmailAsync_SoftDeletedUser_StillReturnsUser` testinin KRİTİK İDDİASI — soft-delete\'li bir kullanıcı İÇİN bile `GetByEmailAsync`\'in `null` DEĞİL, GERÇEK kullanıcı NESNESİNİ DÖNMESİNİ BEKLER.',
+            neden: 'Bu davranış, YORUM BLOĞUNDA açıklandığı gibi HESAP KURTARMA akışının (LoginCompletionService\'in IsDeleted→false ÇEVİRMESİ) VE "e-posta zaten KULLANIMDA" KONTROLÜNÜN DAYANDIĞI TEMELDİR — `IgnoreQueryFilters()` bu METODUN İÇİNDE KULLANILMAZSA, bu ASSERT BAŞARISIZ OLUR (`bulunan` `null` ÇIKAR).',
+            olmasaydi: 'Bu test OLMASAYDI (ve YORUM BLOĞUNDA da BELİRTİLDİĞİ gibi, TAM OLARAK bu SINIFTA EKSİK OLAN bir METOTTAN kaynaklanan GERÇEK bir bug DAHA ÖNCE YAŞANMIŞTI — `GetQrLoginStatusCommand` grace-period kurtarmaya hiç ULAŞAMAMIŞTI), BENZER bir REGRESYON (birisi `IgnoreQueryFilters()` çağrısını YANLIŞLIKLA SİLSE) hiçbir TEST TARAFINDAN YAKALANMAZDI.'
+          },
+          {
+            satir: 'filtreliSonuc.Should().BeNull();',
+            aciklama: '`GetByIdIncludingDeletedAsync_SoftDeletedUser_StillReturnsUser` testinde — AYNI Id İÇİN İKİ FARKLI metodun (`GetByIdAsync` VE `GetByIdIncludingDeletedAsync`) SONUÇLARI YAN YANA KARŞILAŞTIRILIR; TABAN sınıfın `GetByIdAsync`\'i (FİLTRELİ) soft-delete\'li kaydı GÖRMEMELİDİR.',
+            neden: 'Bu KARŞILAŞTIRMALI YAPI (`filtreliSonuc` VE `filtresizSonuc`\'un İKİSİNİN de AYNI testte KONTROL EDİLMESİ), YORUM BLOĞUNDA anlatılan GERÇEK bug\'IN TAM OLARAK bu İKİLİĞİN (bir metodun FİLTRELİ, DİĞERİNİN FİLTRESİZ olması GEREKTİĞİ) UNUTULMASINDAN kaynaklandığını GÖSTERİR — test, YALNIZCA "filtresiz metot ÇALIŞIYOR mu" DEĞİL, "filtreli metot HÂLÂ DOĞRU şekilde FİLTRELİYOR mu" SORUSUNU da AYNI ANDA SORAR.',
+            olmasaydi: 'Yalnızca `filtresizSonuc` KONTROL EDİLSEYDİ (`filtreliSonuc` ASSERT EDİLMESEYDİ), TABAN `GetByIdAsync`\'in YANLIŞLIKLA soft-delete\'li KAYITLARI da GÖRMEYE BAŞLAMASI (ör. GLOBAL FİLTRENİN YANLIŞLIKLA KALDIRILMASI) HİÇBİR TESTTE YAKALANMAZDI — bu, DAHA CİDDİ bir GÜVENLİK/GİZLİLİK SORUNU olurdu: silinmiş kullanıcı VERİLERİ normal SORGULARDA GÖRÜNMEYE BAŞLARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Kalan Test Dosyaları — Aynı Pattern',
+        terimler: [
+          {
+            terim: 'JwtTokenServiceTests.cs, OtpServiceTests.cs, LoginCompletionServiceTests.cs',
+            tanim: 'PasswordServiceTests ile AYNI pattern\'i izler: bağımlılığı OLMAYAN (ya da MİNİMAL config bağımlılığı olan) GERÇEK servis nesnesi `new`\'lenir, davranışı DOĞRUDAN gözlemlenir — mock KULLANILMAZ, çünkü test EDİLEN ZATEN o servisin KENDİSİDİR.'
+          },
+          {
+            terim: 'RefreshTokenRepositoryTests.cs',
+            tanim: 'UserRepositoryTests ile AYNI pattern\'i izler: `InMemoryDbContextFactory` ile GERÇEK bir EF Core bağlamı KURULUR, Bölüm 22\'de gördüğümüz `GetByTokenHashAsync`/`RevokeFamilyAsync`/`RevokeAllForUserAsync`\'in GERÇEK LINQ sorgularının doğru KAYITLARI BULUP GÜNCELLEDİĞİNİ (özellikle "yalnızca RevokedAt==null OLANLARIN İPTAL EDİLDİĞİ" davranışını) doğrular.'
+          },
+          {
+            terim: '12 Handler test dosyası (ör. VerifyEmailCommandHandlerTests.cs)',
+            tanim: 'Bölüm 9\'daki RegisterCommandHandlerTests ile AYNI Arrange-Act-Assert + Moq İSKELETİNİ kullanır: `Mock<IUserRepository>`, `Mock<IPasswordService>`, `Mock<IEmailService>` gibi TÜM dış bağımlılıklar MOCK\'LANIR, yalnızca Handler\'ın İÇİNDEKİ İŞ MANTIĞI (hangi sırayla hangi metodun çağrıldığı, hangi durumda hangi exception\'ın fırlatıldığı) test edilir.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'CLAUDE.md\'nin "servis/Handler" kuralı İKİ ayrı test sorumluluğu tanımlar — Handler testleri mock\'lar, servis/repository testleri GERÇEK kodu çalıştırır',
+          'PasswordServiceTests, bağımlılığı olmayan bir servisi doğrudan new\'leyerek test eder — mock yok, çünkü test edilen zaten o servisin kendisi',
+          'UserRepositoryTests, InMemory EF Core DbContext ile GERÇEK LINQ sorgularını (özellikle IgnoreQueryFilters kullanan metotları) doğrular',
+          'Handler testi "metot çağrıldı mı" sorusunu, servis/repository testi "bu kod GERÇEKTEN doğru çalışıyor mu" sorusunu cevaplar — ikisi birbirinin YERİNE geçmez',
+          'GetByIdIncludingDeletedAsync örneği, EKSİK bir repository testinin gerçek bir production bug\'a (QR login grace-period) nasıl yol açabildiğini gösteriyor'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

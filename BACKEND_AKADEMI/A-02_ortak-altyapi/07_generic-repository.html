@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generic Repository&lt;T&gt;</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'generic-repository',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '06_middleware-sirasi.html',
+    sonrakiBolum: '08_hata-yonetimi-ve-testler.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'Generic Repository<T>',
+        altBaslik: 'Tekrar eden CRUD kodu tek yerde — ve neden UpdateAsync içinde `_set.Update()` ÇAĞRILMIYOR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Repository Deseni Nedir?',
+        aciklama: 'Repository, "bu entity nasıl kaydediliyor/okunuyor" detayını (EF Core sorguları) Application katmanından gizleyen bir ara katmandır. Application, `IUserRepository.GetByEmailAsync(email)` der; bunun arkasında bir SQL sorgusu olduğunu bilmesine gerek yoktur (Bölüm 2).',
+        neden: 'Her entity için (User, RefreshToken, QrLoginSession...) TEMEL CRUD işlemleri (getir, ekle, güncelle, sil) neredeyse birebir aynıdır — bu tekrarı önlemek için `Repository<T>` adlı GENERIC (jenerik) bir taban sınıf yazılır, her feature repository yalnızca EK sorgular için bunu miras alır.',
+        olmasaydi: 'Generic taban sınıf olmasaydı, UserRepository, RefreshTokenRepository, QrLoginSessionRepository her biri kendi GetByIdAsync/AddAsync/SoftDeleteAsync metodunu SIFIRDAN, neredeyse birebir aynı kodla yazardı — 10 entity olsa 10 kez aynı kod tekrarı.'
+        },
+      {
+        tur: 'kod',
+        baslik: 'Repository<T> — Tanım ve Temel Metotlar',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Repository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ altında — EF Core\'a bağımlı GERÇEK implementasyon burada yaşar; Application katmanındaki IRepository<T> arayüzü (Bölüm 2\'deki "arayüz vs implementasyon" ayrımı) bunu bilmez.',
+        kod: `public class Repository<T> : IRepository<T>
+    where T : BaseEntity
+{
+    protected readonly WordLearnerDbContext _db;
+    protected readonly DbSet<T> _set;
+
+    public Repository(WordLearnerDbContext db)
+    {
+        _db = db;
+        _set = db.Set<T>();
+    }
+
+    public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
+        _set.FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)
+    {
+        entity.CreatedByUserId = userId;
+        entity.UpdatedByUserId = userId;
+        await _set.AddAsync(entity, ct);
+        await _db.SaveChangesAsync(ct);
+        return entity;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class Repository<T> : IRepository<T>',
+            aciklama: '`<T>` burada "genel bir tip" demek — bu sınıf User, RefreshToken, QrLoginSession ya da BaseEntity\'den türeyen HERHANGİ bir entity ile kullanılabilir.',
+            neden: 'Generic (jenerik) programlama, aynı kodu farklı tipler için TEKRAR YAZMADAN yeniden kullanmayı sağlar — `Repository<User>` ve `Repository<RefreshToken>`, aynı sınıfın farklı tiplerle "damgalanmış" (instantiate edilmiş) hâlleridir.',
+            olmasaydi: 'Generic olmasaydı, her entity için ayrı ayrı `UserRepositoryBase`, `RefreshTokenRepositoryBase` gibi neredeyse birebir aynı kod içeren sınıflar yazmak gerekirdi.'
+          },
+          {
+            satir: 'where T : BaseEntity',
+            aciklama: 'Bu kısıtlama (constraint), `T` yerine yalnızca BaseEntity\'den türeyen tiplerin kullanılabileceğini söyler.',
+            neden: 'Repository<T> içindeki kod `entity.CreatedByUserId`, `entity.IsDeleted` gibi BaseEntity\'ye özgü alanlara erişiyor — bu kısıtlama olmadan derleyici bu alanların var olduğunu BİLEMEZ.',
+            olmasaydi: 'Bu kısıtlama olmasaydı, `Repository<string>` gibi anlamsız bir kullanım derleyici tarafından ENGELLENMEZDİ; ayrıca `entity.CreatedByUserId` gibi satırlar hiç derlenemezdi çünkü `T` tipinin bu property\'ye sahip olduğu garanti edilmemiş olurdu.'
+          },
+          {
+            satir: 'protected readonly WordLearnerDbContext _db;',
+            aciklama: 'DbContext, `protected readonly` olarak tutulur — yalnızca bu sınıf ve ondan türeyen alt sınıflar (ör. UserRepository) erişebilir, dışarıdan değiştirilemez.',
+            neden: '`readonly`, DbContext referansının constructor\'da bir kez set edildikten sonra YANLIŞLIKLA başka bir DbContext ile değiştirilmesini derleyici seviyesinde engeller; `protected` ise alt sınıfların (SaveChangesAsync gibi DbSet dışı işlemler için) buna erişebilmesini sağlar.',
+            olmasaydi: '`protected` yerine `private` olsaydı, UserRepository gibi bir alt sınıf `_db.SaveChangesAsync()` çağıramaz, yalnızca base sınıfın sunduğu metotlarla sınırlı kalırdı — Bölüm 4\'teki transaction gibi özel senaryolar yazılamazdı.'
+          },
+          {
+            satir: 'protected readonly DbSet<T> _set;',
+            aciklama: '`_set`, `T` tipindeki entity\'nin veritabanı tablosuna karşılık gelen EF Core koleksiyonudur (ör. `Repository<User>` için bu, `Users` tablosudur).',
+            neden: 'Her sorgu (`_set.FirstOrDefaultAsync`, `_set.AddAsync`) bu alan üzerinden yapılır; `_db.Set<T>()` her çağrıda tekrar tekrar yazmak yerine constructor\'da BİR KEZ hesaplanıp saklanır.',
+            olmasaydi: 'Bu alan olmasaydı, her metot içinde `_db.Set<T>()` tekrar tekrar çağrılırdı — işlevsel olarak aynı sonucu verir ama kod tekrarı artar, okunabilirlik düşer.'
+          },
+          {
+            satir: 'public Repository(WordLearnerDbContext db)',
+            aciklama: 'Constructor, DbContext\'i DI (Dependency Injection) konteynerinden alır — bu sınıfı KULLANAN kod (ör. UserRepository) `new Repository<User>(db)` derken bu DbContext\'i geçirir.',
+            neden: 'DbContext\'in dışarıdan (constructor injection ile) verilmesi, Repository\'nin kendi DbContext\'ini KENDİSİ yaratmamasını sağlar — bu sayede aynı HTTP isteği içindeki TÜM repository\'ler AYNI DbContext örneğini (ve dolayısıyla aynı change tracker\'ı) paylaşır.',
+            olmasaydi: 'Repository kendi DbContext\'ini içeride `new WordLearnerDbContext()` ile yaratsaydı, her repository FARKLI bir change tracker\'a sahip olur, bir Handler içinde User\'ı güncelleyip RefreshToken eklemek AYNI transaction\'da birleşmezdi.'
+          },
+          {
+            satir: '_db = db;',
+            aciklama: 'DI\'dan gelen DbContext, sınıfın alanına atanır — bundan sonra tüm metotlar bu ÖRNEK üzerinden çalışır.',
+            neden: 'Constructor\'da yapılan bu basit atama, sınıfın "durum"unu (state) kurar; bu olmadan `_db` alanı hep null kalır ve her metot çağrısında NullReferenceException fırlardı.',
+            olmasaydi: 'Bu satır unutulsaydı, `_db` alanı varsayılan değeri (null) ile kalırdı — `AddAsync` içindeki `await _db.SaveChangesAsync(ct);` çağrısı ilk kullanımda NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_set = db.Set<T>();',
+            aciklama: 'Verilen DbContext üzerinden, `T` tipine karşılık gelen DbSet çekilip `_set` alanına atanır.',
+            neden: '`db.Set<T>()`, EF Core\'un generic API\'sidir — hangi `T` ile örneklenirse (`Repository<User>`, `Repository<RefreshToken>`), doğru tabloyu OTOMATİK bulur; bu tek satır, tüm entity tipleri için TEKRAR yazılmadan çalışır.',
+            olmasaydi: 'Bu satır olmasaydı `_set` hiç set edilmez, `GetByIdAsync` gibi `_set` kullanan her metot NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: 'public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>',
+            aciklama: '"virtual" anahtar kelimesi, bu metodun alt sınıflar (ör. UserRepository) tarafından İSTEĞE BAĞLI olarak override edilebileceğini belirtir.',
+            neden: 'UserRepository gibi bazı feature repository\'ler, bu temel davranışı DEĞİL de kendine özel bir davranış (ör. ilişkili verileri de yükleyen bir `Include()`) isteyebilir — virtual, bu esnekliği sağlar.',
+            olmasaydi: 'Metot virtual olmasaydı (yani "sealed" davranışı), hiçbir alt sınıf bu metodu özelleştiremezdi — UserRepository, GetByIdAsync\'in temel davranışıyla YETİNMEK zorunda kalırdı.'
+          },
+          {
+            satir: '_set.FirstOrDefaultAsync(e => e.Id == id, ct);',
+            aciklama: 'Metodun GÖVDESİ — `=>` (expression body) ile yazılmış: verilen Id\'ye sahip ilk kaydı bulur, yoksa `null` döner (Task<T?> dönüş tipindeki `?` bunu yansıtır).',
+            neden: '`FirstOrDefaultAsync`, LINQ\'in async sürümüdür — sorgu veritabanına gidene kadar thread\'i BLOKE ETMEZ, `await` ile diğer isteklere hizmet vermeye devam edebilir.',
+            olmasaydi: 'Bunun yerine senkron `First()` kullanılsaydı, sorgu tamamlanana kadar o thread başka hiçbir isteğe hizmet veremezdi — yüksek trafik altında sunucu daha az eşzamanlı istek karşılayabilirdi.'
+          },
+          {
+            satir: 'public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)',
+            aciklama: 'Yeni bir entity ekleme metodunun imzası — `userId` opsiyonel (sistem tarafından oluşturulan kayıtlarda null kalabilir), `ct` her I/O metodunda zorunlu olan CancellationToken (CLAUDE.md kuralı).',
+            neden: '`async Task<T>` dönüş tipi, bu metodun içinde `await` kullanılacağını ve eklenen entity\'yi (Id\'si veritabanı tarafından atandıktan SONRA) geri döneceğini belirtir.',
+            olmasaydi: '`userId` opsiyonel olmasaydı, sistem tarafından (ör. bir arka plan job\'ı) oluşturulan kayıtlar için de zorla bir kullanıcı Id\'si UYDURMAK gerekirdi — anlamsız/yanlış veri üretilirdi.'
+          },
+          {
+            satir: 'entity.CreatedByUserId = userId;',
+            aciklama: 'Yeni eklenen kayıtta, "bu kaydı kim oluşturdu" bilgisi otomatik set edilir.',
+            neden: 'Çağıran kod (Handler), her AddAsync çağrısında `entity.CreatedByUserId = ...` yazmayı UNUTMAMASI gerekmesin diye, bu iş TEK bir merkezi noktada (Repository<T>.AddAsync) yapılır.',
+            olmasaydi: 'Bu satır olmasaydı, her Handler kendi elleriyle bu alanı set etmek zorunda kalırdı — biri unutursa o kayıt "kimin oluşturduğu bilinmeyen" bir kayıt olarak kalırdı (Bölüm 3).'
+          },
+          {
+            satir: 'entity.UpdatedByUserId = userId;',
+            aciklama: 'Kayıt ilk oluşturulduğunda `UpdatedByUserId` de `CreatedByUserId` ile AYNI değere set edilir — henüz hiç güncellenmemiş bir kayıtta "son güncelleyen" ile "oluşturan" aynı kişidir.',
+            neden: 'Bu, `UpdatedByUserId` alanının HİÇBİR ZAMAN null kalmamasını garanti eder — bir kayıt daha sonra güncellenmese bile "en son kim dokundu" sorusu her zaman cevaplanabilir.',
+            olmasaydi: 'Bu satır olmasaydı, hiç güncellenmemiş bir kayıtta `UpdatedByUserId` null kalırdı — "bu kaydı en son kim değiştirdi" raporlarında NULL değerlerle uğraşmak gerekirdi.'
+          },
+          {
+            satir: 'await _set.AddAsync(entity, ct);',
+            aciklama: 'Entity, EF Core\'un change tracker\'ına "Added" durumunda EKLENİR — bu ADIM henüz veritabanına YAZMAZ, yalnızca bellekte İZLENMEYE başlar.',
+            neden: '`AddAsync` (senkron `Add` yerine) kullanılması, bazı veritabanlarında (ör. Id üretim stratejisi sunucu tarafında olan senaryolarda) gerekli olabilecek async Id üretimini destekler; CLAUDE.md\'nin "her I/O metodunda async/await" kuralına da uyar.',
+            olmasaydi: 'Bu satır olmasaydı, entity change tracker\'a hiç eklenmez, bir sonraki `SaveChangesAsync` çağrısı bu kaydı GÖRMEZ ve veritabanına hiçbir INSERT gitmezdi.'
+          },
+          {
+            satir: 'await _db.SaveChangesAsync(ct);',
+            aciklama: 'Change tracker\'daki TÜM bekleyen değişiklikler (bu AddAsync dahil, aynı DbContext üzerinde başka bekleyen değişiklik varsa ONLAR da) tek bir transaction\'da veritabanına YAZILIR.',
+            neden: 'EF Core, `SaveChangesAsync` çağrılana kadar hiçbir SQL göndermez — bu "unit of work" deseni, birden fazla değişikliğin TEK bir atomik veritabanı işleminde birleşmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, `_set.AddAsync` ile change tracker\'a eklenen entity SONSUZA kadar bellekte kalır, veritabanına hiç YAZILMAZDI — kayıt "eklendi" gibi görünür ama aslında kaybolurdu.'
+          },
+          {
+            satir: 'return entity;',
+            aciklama: 'Veritabanına yazıldıktan SONRAKİ entity (artık veritabanının ürettiği Id\'yi de İÇEREN hâli) çağırana geri döner.',
+            neden: 'Handler, yeni oluşturulan kaydın Id\'sine ihtiyaç duyar (ör. RegisterResponse\'da `user.Id` döndürmek için) — bu Id, `SaveChangesAsync`tan ÖNCE bilinmez, ancak SONRA `entity.Id` üzerinden okunabilir.',
+            olmasaydi: 'Bu satır olmasaydı, metot `void`/`Task` dönerdi ve çağıran kod yeni oluşturulan kaydın veritabanı tarafından üretilen Id\'sine ERİŞEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateAsync — Neden `_set.Update()` ÇAĞRILMIYOR',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Repository.cs',
+        nedenBuKlasor: null,
+        kod: `public virtual async Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default)
+{
+    entity.UpdatedByUserId = userId;
+    await _db.SaveChangesAsync(ct);
+}`,
+        satirlar: [
+          {
+            satir: 'public virtual async Task UpdateAsync(T entity, int? userId = null, CancellationToken ct = default)',
+            aciklama: 'Metot imzası — dönüş tipi `Task` (T DEĞİL): bu metot güncellenen entity\'yi GERİ DÖNDÜRMEZ, çünkü çağıran kod zaten kendi elindeki referansı (aynı nesneyi) değiştirmiş durumdadır.',
+            neden: 'Update işleminde, entity zaten çağıran tarafından elde tutulduğu için tekrar döndürmenin bir faydası yoktur — AddAsync\'te ise entity\'nin veritabanının ürettiği Id\'yi TAŞIYAN hâli döndürülmesi gerekir, bu yüzden ikisi farklıdır.',
+            olmasaydi: 'Dönüş tipi `Task<T>` olsaydı, çağıran kod gereksiz yere "dönen değeri mi kullanmalıyım yoksa elimdeki referansı mı" diye KAFASI KARIŞIRDI — ikisi zaten aynı nesne olduğu için bu bir API netliği sorunu yaratırdı.'
+          },
+          {
+            satir: 'entity.UpdatedByUserId = userId;',
+            aciklama: 'Bu metot, dikkat çekici bir şekilde `_set.Update(entity)` ÇAĞIRMAZ — yalnızca UpdatedByUserId\'yi set eder, bir sonraki satırda SaveChangesAsync çağrılır.',
+            neden: 'Bu projede TEK bir desen var: UpdateAsync\'e geçilen `entity`, her zaman ÖNCE aynı Repository\'nin GetByIdAsync/GetByXxxAsync metoduyla ÇEKİLMİŞ (dolayısıyla EF Core\'un ChangeTracker\'ı tarafından zaten İZLENEN) bir nesnedir. EF Core, izlenen bir nesnenin property\'lerinde yapılan her değişikliği zaten otomatik fark eder (change tracking) — SaveChangesAsync çağrıldığında yalnızca GERÇEKTEN değişen kolonları içeren bir UPDATE SQL\'i üretir.',
+            olmasaydi: '`_set.Update(entity)` çağrılsaydı, EF Core entity\'nin TÜM property\'lerini (değişmemiş olanlar dahil) "Modified" olarak işaretlerdi — bu hem gereksiz yere DAHA GENİŞ bir UPDATE SQL\'i üretir hem de asıl tehlikeli olan: bu metot DETACHED (veritabanından hiç çekilmemiş, elle `new User { Id = 5 }` ile kurulmuş) bir nesneyle çağrılırsa, o nesnenin set EDİLMEMİŞ (varsayılan/null) alanları da veritabanına YAZILIR — kullanıcının diğer alanları (ör. Email, PasswordHash) SESSİZCE boşaltılabilirdi. Bu yüzden UpdateAsync\'e YALNIZCA bu Repository\'den alınmış entity geçilmelidir — bu kısıtlama kod ile ZORUNLU KILINMAZ, bir KONVANSİYONDUR ve yorum satırında açıkça belgelenmiştir.'
+          },
+          {
+            satir: 'await _db.SaveChangesAsync(ct);',
+            aciklama: 'ChangeTracker\'ın fark ettiği değişiklikler (yalnızca gerçekten değişen alanlar) veritabanına UPDATE olarak yazılır.',
+            neden: 'Bu satır olmadan `entity.UpdatedByUserId = userId;` gibi bellekteki değişiklikler asla kalıcı hale gelmez — EF Core\'da her değişiklik grubu EXPLICIT bir SaveChangesAsync çağrısı bekler.',
+            olmasaydi: 'Bu satır olmasaydı, metot çağrıldıktan sonra hiçbir SQL veritabanına gitmezdi — Handler "güncelleme başarılı" sanırdı ama veritabanında hiçbir şey değişmemiş olurdu, sonraki bir okuma eski veriyi döndürürdü.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SoftDeleteAsync — Fiziksel Silme Yerine Bayrak',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Repository.cs',
+        nedenBuKlasor: null,
+        kod: `public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)
+{
+    var entity = await GetByIdAsync(id, ct) ?? throw new EntityNotFoundException(typeof(T), id);
+
+    entity.IsDeleted = true;
+    entity.DeletedAt = DateTime.UtcNow;
+    entity.DeletedByUserId = userId;
+    await UpdateAsync(entity, userId, ct);
+}`,
+        satirlar: [
+          {
+            satir: 'public virtual async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken ct = default)',
+            aciklama: 'Metot, Id ile çağrılır (entity nesnesi ile DEĞİL) — çağıran kod önce kaydı bulup elle geçirmek zorunda kalmaz, bu metot kaydı KENDİSİ arar.',
+            neden: 'Silme işlemi genelde "şu Id\'li kaydı sil" şeklinde ifade edilir (ör. `DELETE /api/v1/words/5`) — Id almak, Controller/Handler katmanının önce bir GetByIdAsync çağırmasına GEREK BIRAKMAZ.',
+            olmasaydi: 'Metot bunun yerine `T entity` parametresi alsaydı, her çağıran kod önce kendi GetByIdAsync\'ini çağırıp entity\'yi bulmak zorunda kalırdı — aynı sorgu iki kez (bir çağıranda, bir de burada) yazılabilirdi.'
+          },
+          {
+            satir: 'var entity = await GetByIdAsync(id, ct) ?? throw new EntityNotFoundException(typeof(T), id);',
+            aciklama: 'Önce kaydı GetByIdAsync ile ÇEKER (bu, yukarıdaki UpdateAsync notunun neden önemli olduğunu somutlaştırıyor) — bulunamazsa özel bir exception fırlatılır.',
+            neden: 'Var olmayan bir Id için silme denenirse, sessizce hiçbir şey yapmak yerine AÇIK bir hata (EntityNotFoundException) fırlatılır — çağıran kod (Handler), "silme başarılı mı" konusunda YANILMAZ.',
+            olmasaydi: 'Bu kontrol olmasaydı, var olmayan bir Id ile SoftDeleteAsync çağrıldığında `entity` null olurdu ve bir sonraki satırda `entity.IsDeleted = true` bir NullReferenceException fırlatırdı — hatanın GERÇEK sebebi (kayıt bulunamadı) belirsizleşirdi.'
+          },
+          {
+            satir: 'entity.IsDeleted = true;',
+            aciklama: 'Kaydı fiziksel olarak SİLMEK yerine, "silinmiş" olarak İŞARETLER — bu bayrak, tüm repository sorgularında (Bölüm 3/4) otomatik filtrelenir.',
+            neden: 'Bölüm 3 ve Bölüm 4\'te gördüğümüz soft delete stratejisinin temel taşı: veri asla fiziksel olarak kaybolmaz, yalnızca "aktif değil" olarak işaretlenir.',
+            olmasaydi: 'Bu satır olmasaydı, `DeletedAt`/`DeletedByUserId` set edilse bile kayıt hâlâ "aktif" görünürdü — soft-delete filtresi bu kaydı gizlemez, kullanıcı silinmiş bir kaydı hâlâ listelerde GÖRÜRDÜ.'
+          },
+          {
+            satir: 'entity.DeletedAt = DateTime.UtcNow;',
+            aciklama: '"Ne zaman silindi" bilgisi UTC olarak kaydedilir — sunucunun yerel saat dilimi değişse bile bu değer TUTARLI kalır.',
+            neden: 'Silme zamanı, denetim (audit) ve olası geri yükleme (undelete) senaryoları için gereklidir — "bu kayıt ne zamandır silinmiş durumda" sorusu buradan cevaplanır.',
+            olmasaydi: 'Bu satır olmasaydı, `IsDeleted = true` olsa bile SİLME ANI bilinmezdi — "3 ay önce mi silindi, 3 dakika önce mi" ayrımı yapılamaz, olası bir geri yükleme politikası (ör. 30 gün içinde geri al) UYGULANAMAZDI.'
+          },
+          {
+            satir: 'entity.DeletedByUserId = userId;',
+            aciklama: '"Kim sildi" bilgisi kaydedilir — CreatedByUserId/UpdatedByUserId ile aynı desende, BaseEntity\'nin üçüncü "kim" alanı.',
+            neden: 'Özellikle Admin\'in başka bir kullanıcının içeriğini sildiği senaryolarda, "bu silme işlemini hangi Admin yaptı" sorusu denetim (audit) için KRİTİKTİR.',
+            olmasaydi: 'Bu satır olmasaydı, bir kayıt silindiğinde "kim sildi" bilgisi kaybolurdu — kötüye kullanım şüphesi olduğunda (ör. bir Admin\'in yetkisini kötüye kullanması) SORUMLU tespit edilemezdi.'
+          },
+          {
+            satir: 'await UpdateAsync(entity, userId, ct);',
+            aciklama: 'Değişiklikleri veritabanına yazmak için TEKRAR SQL yazmak yerine, sınıfın KENDİ UpdateAsync metodu çağrılır.',
+            neden: 'Bu, kod tekrarını önler (DRY) — UpdateAsync zaten `UpdatedByUserId` set edip `SaveChangesAsync` çağırıyor, SoftDeleteAsync bu davranışı YENİDEN YAZMAK yerine yeniden KULLANIR.',
+            olmasaydi: 'Bu satır yerine burada AYRICA `await _db.SaveChangesAsync(ct);` yazılsaydı, iki metotta aynı "kaydetme" mantığı TEKRARLANIRDI — biri değişip diğeri unutulursa (ör. ileride SaveChangesAsync\'e bir retry mantığı eklenirse) tutarsızlık oluşurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-02 Ortak Altyapı — Bölüm Bitti',
+        maddeler: [
+          'Repository<T>, tekrar eden CRUD kodunu (getir, ekle, güncelle, sil) tek yerde toplar',
+          'Feature repository\'ler (UserRepository gibi) bu sınıfı miras alır, yalnızca EK sorgular ekler',
+          'UpdateAsync, `_set.Update()` çağırmaz — entity her zaman önce aynı Repository\'den çekilmiş (izlenen) bir nesne olmalı',
+          'SoftDeleteAsync, fiziksel silme yerine IsDeleted/DeletedAt/DeletedByUserId set eder',
+          '',
+          'Ortak altyapı burada bitti. Sırada: A-03 — gerçek bir API\'yi (Register) baştan sona yazmak.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

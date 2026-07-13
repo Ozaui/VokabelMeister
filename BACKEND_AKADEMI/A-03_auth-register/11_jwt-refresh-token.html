@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bonus: JWT + Refresh Token</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'jwt-refresh-token',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '10_controller.html',
+    sonrakiBolum: '13_verify-email-resend.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 18 · BONUS DERİNLİK',
+        baslik: 'JWT + Refresh Token: Token Family Pattern',
+        altBaslik: 'Register hesap AÇAR ama giriş yapmaz. Bu bölümde, giriş yapıldıktan SONRA kimliğin nasıl korunduğunu görüyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'İki Token, İki Farklı Ömür',
+        aciklama: 'Bir kullanıcı giriş yaptığında (ya da Register + e-posta doğrulaması sonrası) İKİ token alır: Access Token (JWT, 15 dakika ömürlü — her API isteğinde gönderilir) ve Refresh Token (rastgele 64 byte, 7 gün ömürlü — yalnızca yeni bir Access Token istemek için kullanılır).',
+        neden: 'Access Token KISA ömürlü çünkü her istekte gönderildiği için ÇALINMA riski daha yüksek — çalınsa bile 15 dakika sonra İŞE YARAMAZ hale gelir. Refresh Token UZUN ömürlü ama NADİREN kullanılır (yalnızca Access Token süresi dolunca) — bu yüzden veritabanında SAKLANIR ve İPTAL edilebilir, JWT gibi kendi kendine geçerli değildir.',
+        olmasaydi: 'Tek bir UZUN ömürlü token kullanılsaydı (ör. 7 gün geçerli tek bir JWT), bu token çalınırsa saldırgan 7 GÜN BOYUNCA kurbanın kimliğiyle işlem yapabilirdi — kısa ömürlü access + uzun ömürlü ama iptal edilebilir refresh ikilisi, bu riski ciddi ölçüde azaltır.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GenerateAccessToken — JWT Nasıl Üretilir',
+        dosyaYolu: 'backend/WordLearner.Application/Services/JwtTokenService.cs',
+        nedenBuKlasor: 'Application/Services/ altında (flat, alt klasör yok — CLAUDE.md §5) çünkü JWT üretimi Auth feature\'ına ÖZGÜ değil, birden fazla Handler (Login, Refresh, QrLogin) tarafından PAYLAŞILAN ortak bir yetenek.',
+        kod: `public string GenerateAccessToken(User user)
+{
+    var key = GetSigningKey();
+    var claims = new[]
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Email, user.Email),
+        new Claim(ClaimTypes.Role, user.Role),
+        new Claim("firstName", user.FirstName),
+    };
+    var expirationMinutes = _configuration.GetValue("Jwt:ExpirationMinutes", 15);
+
+    var token = new JwtSecurityToken(
+        issuer: _configuration["Jwt:Issuer"],
+        audience: _configuration["Jwt:Audience"],
+        claims: claims,
+        expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
+        signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+    );
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}`,
+        satirlar: [
+          {
+            satir: 'public string GenerateAccessToken(User user)',
+            aciklama: 'Bu metot, bir User entity\'sini GİRDİ olarak alır, İMZALI bir JWT string\'i DÖNER — bu Handler\'lar (Login, Refresh, QrLogin) arasında PAYLAŞILAN, User\'dan token\'a giden tek yol.',
+            neden: 'Metodun GİRDİSİ tam bir `User` nesnesi (yalnızca Id/Email gibi ayrı ayrı parametreler DEĞİL) olması, token\'a EKLENECEK claim\'lerin (Role, FirstName gibi) HEPSİNİN TEK bir yerden, TUTARLI şekilde ÇIKARILMASINI sağlar.',
+            olmasaydi: 'Bu metot her Handler\'da AYRI AYRI YAZILSAYDI (paylaşılmasaydı), bir gün yeni bir claim EKLENMESİ gerektiğinde (ör. "ThemePreference") TÜM Handler\'ların TEK TEK BULUNUP güncellenmesi gerekirdi — biri UNUTULURSA, o akıştan gelen token\'lar EKSİK claim taşırdı.'
+          },
+          {
+            satir: 'var key = GetSigningKey();',
+            aciklama: 'İmzalama anahtarını üreten AYRI bir yardımcı metot ÇAĞRILIR — bu metodun İÇİ (appsettings\'ten SecretKey okuma, byte\'a çevirme) burada TEKRAR yazılmaz.',
+            neden: 'İmzalama anahtarı hem `GenerateAccessToken` hem de (JWT doğrulama gerektiren) BAŞKA metotlar tarafından KULLANILABİLİR — bu mantığı AYRI bir metoda çıkarmak, A-02/05\'teki Program.cs\'de gördüğümüz `IssuerSigningKey` üretimiyle AYNI kod PARÇASININ tekrar YAZILMASINI önler.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `SigningCredentials(key, ...)` çağrısına GEÇİRİLECEK bir anahtar OLMAZDI — token hiç İMZALANAMAZDI.'
+          },
+          {
+            satir: 'var claims = new[]',
+            aciklama: 'Token\'ın İÇİNE gömülecek TÜM claim\'lerin (aşağıdaki 4 satır) TOPLANDIĞI bir DİZİ tanımlanmaya BAŞLAR.',
+            neden: '`JwtSecurityToken` constructor\'ı bir `IEnumerable<Claim>` BEKLER — claim\'lerin TEK TEK değil, bir DİZİ olarak toplanması, token oluşturma çağrısına TEK bir parametre olarak GEÇİRİLMESİNİ sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki 4 `new Claim(...)` ifadesinin TOPLANACAĞI bir KAP OLMAZDI — `JwtSecurityToken`\'a claim\'ler GEÇİRİLEMEZDİ, token boş bir kimlik BİLGİSİYLE üretilirdi.'
+          },
+          {
+            satir: 'new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),',
+            aciklama: 'Kullanıcının veritabanı Id\'si, token\'ın İÇİNE gömülür — AuthController\'daki (A-03/10) `CurrentUserId` bu claim\'i OKUYARAK "bu isteği kim attı" sorusunu cevaplar.',
+            neden: 'Bu, JWT\'nin en TEMEL claim\'i: kimlik doğrulamanın ASIL amacı "bu istek HANGİ kullanıcıya ait" sorusunu güvenli şekilde cevaplamaktır — diğer TÜM claim\'ler (Email, Role) bu KİMLİĞİN etrafındaki EK bilgilerdir.',
+            olmasaydi: 'Bu claim olmasaydı, [Authorize] öznitelikli bir endpoint kullanıcının KİMLİĞİNİ bilemez, "logout" ya da "hesabımı sil" gibi KULLANICIYA ÖZGÜ işlemler YAPILAMAZDI — token yalnızca "biri giriş yaptı" der, "KİM giriş yaptı" DEMEZDİ.'
+          },
+          {
+            satir: 'new Claim(ClaimTypes.Email, user.Email),',
+            aciklama: 'Kullanıcının e-posta adresi de token\'a gömülür — istemci (mobil/web), her istekte AYRICA bir "kullanıcı bilgisi getir" API\'si ÇAĞIRMADAN, doğrudan token\'dan bu bilgiyi OKUYABİLİR.',
+            neden: 'Sık kullanılan, DEĞİŞMESİ NADİR bir bilginin token\'a gömülmesi, gereksiz veritabanı sorgularını AZALTIR — arayüz "hoş geldin, {email}" gibi bir metni token\'ı ÇÖZÜMLEYEREK gösterebilir.',
+            olmasaydi: 'Email claim\'i olmasaydı, istemcinin kullanıcının e-postasını GÖSTERMESİ gereken HER ekranda ayrı bir API çağrısı YAPMASI gerekirdi — gereksiz ağ trafiği ve gecikme.'
+          },
+          {
+            satir: 'new Claim(ClaimTypes.Role, user.Role),',
+            aciklama: 'Kullanıcının rolü (Bölüm 9\'da gördüğümüz "User" veya "Admin"), token\'ın İÇİNE gömülür — "claim" (iddia) olarak.',
+            neden: 'A-02/06\'da gördüğümüz `[Authorize(Roles="Admin")]` kontrolü, HER İSTEKTE veritabanına gitmeden, doğrudan bu token\'daki claim\'i OKUYARAK karar verir — bu, performans açısından KRİTİK: her yetki kontrolü bir SQL sorgusu GEREKTİRMEZ.',
+            olmasaydi: 'Rol claim\'i token\'a gömülmeseydi, her [Authorize(Roles="Admin")] kontrolünde veritabanına GİDİP kullanıcının GÜNCEL rolünü SORGULAMAK gerekirdi — 100 istek/dakika limitindeki (A-02/05) bir sistemde bu, gereksiz veritabanı YÜKÜ demektir.'
+          },
+          {
+            satir: 'new Claim("firstName", user.FirstName),',
+            aciklama: 'Diğer üç claim\'in aksine (ClaimTypes.NameIdentifier/Email/Role — .NET\'in KENDİ standart claim tipleri), bu bir ÖZEL (custom) claim — düz bir string ("firstName") ile tanımlanıyor.',
+            neden: 'Arayüzün "hoş geldin, {FirstName}" gibi bir karşılama metni göstermesi için gerekli — ClaimTypes sınıfında "FirstName" adında hazır bir sabit YOK, bu yüzden proje kendi ÖZEL claim adını tanımlıyor.',
+            olmasaydi: 'Bu claim olmasaydı, istemci kullanıcının adını göstermek için AYRICA bir "profilimi getir" API çağrısı yapması gerekirdi — küçük ama sık kullanılan bir bilgi için gereksiz bir ağ isteği daha.'
+          },
+          {
+            satir: 'var expirationMinutes = _configuration.GetValue("Jwt:ExpirationMinutes", 15);',
+            aciklama: 'Access token\'ın kaç dakika geçerli olacağını appsettings\'ten okur — bulunamazsa (ikinci parametre) 15 dakikalık VARSAYILAN değere düşer.',
+            neden: 'REFERENCE/SECURITY.md\'nin belirlediği "15 dakika access token ömrü" kuralı, KOD İÇİNE sabit (hardcoded) yazılmak yerine yapılandırmadan OKUNUR — bu, ortamdan ortama (ör. test ortamında daha uzun bir süre) FARKLI değer kullanılabilmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `expires: DateTime.UtcNow.AddMinutes(expirationMinutes)` çağrısına GEÇİRİLECEK bir süre DEĞERİ OLMAZDI — kod derlenemezdi.'
+          },
+          {
+            satir: 'issuer: _configuration["Jwt:Issuer"],',
+            aciklama: 'Token\'ın "iss" (issuer) alanına, A-02/05\'teki `ValidIssuer` ile KARŞILAŞTIRILACAK olan değer YAZILIR.',
+            neden: 'Bu değer, A-02/05\'teki `TokenValidationParameters.ValidIssuer` ile BİREBİR AYNI appsettings anahtarından (`Jwt:Issuer`) okunur — üretim ve doğrulama TARAFLARININ AYNI değeri KULLANMASI, token\'ların GEÇERLİ sayılabilmesi için ZORUNLUDUR.',
+            olmasaydi: 'Bu parametre farklı bir değer TAŞISAYDI (ya da appsettings\'teki `ValidIssuer`\'dan FARKLI olsaydı), üretilen HER token, doğrulama aşamasında "issuer eşleşmiyor" hatasıyla REDDEDİLİRDİ — kullanıcılar giriş yapar ama HİÇBİR isteği başarıyla ATAMAZDI.'
+          },
+          {
+            satir: 'audience: _configuration["Jwt:Audience"],',
+            aciklama: 'Token\'ın "aud" (audience) alanına, A-02/05\'teki `ValidAudience` ile KARŞILAŞTIRILACAK olan değer YAZILIR.',
+            neden: 'Issuer ile AYNI mantık: üretim ve doğrulama TARAFLARININ AYNI appsettings anahtarından (`Jwt:Audience`) okunması, token\'ların TUTARLI şekilde geçerli sayılmasını sağlar.',
+            olmasaydi: 'Bu parametre farklı bir değer TAŞISAYDI, üretilen HER token "audience eşleşmiyor" hatasıyla REDDEDİLİRDİ — Issuer hatasıyla AYNI sonucu doğuran, ayrı bir yapılandırma HATASI türü.'
+          },
+          {
+            satir: 'claims: claims,',
+            aciklama: 'Yukarıda toplanan 4 elemanlı claim dizisi, token\'ın İÇİNE gömülür.',
+            neden: 'Bu, `GenerateAccessToken`\'ın TÜM amacının GERÇEKLEŞTİĞİ satır — kullanıcı KİMLİĞİNİN (Id, Email, Role, FirstName) token\'a AKTARILDIĞI ANDIR.',
+            olmasaydi: 'Bu parametre olmasaydı (ya da boş bir dizi geçilseydi), token İMZALI olurdu ama İÇİNDE HİÇBİR kullanıcı bilgisi TAŞIMAZDI — [Authorize] kontrolleri "bu istek kim attı" sorusunu CEVAPLAYAMAZDI.'
+          },
+          {
+            satir: 'expires: DateTime.UtcNow.AddMinutes(expirationMinutes),',
+            aciklama: 'Token\'ın SÜRESİNİN dolacağı anı, ŞU ANKİ UTC zamanına `expirationMinutes` (15) dakika EKLEYEREK hesaplar.',
+            neden: 'UTC kullanılması, sunucunun BULUNDUĞU zaman dilimi ne olursa olsun bu SÜRENİN tutarlı KALMASINI sağlar — A-02/04\'teki UpdatedAt alanında gördüğümüz AYNI ilke.',
+            olmasaydi: 'Bu parametre olmasaydı, token SÜRESİZ (`expires: null`) üretilirdi — çalınmış bir token SONSUZA kadar GEÇERLİ kalırdı, kısa ömürlü access token stratejisinin TÜM amacı ORTADAN kalkardı.'
+          },
+          {
+            satir: 'signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)',
+            aciklama: 'Token, A-02/05\'te appsettings\'ten okuduğumuz SecretKey ile HMAC-SHA256 algoritmasıyla İMZALANIR.',
+            neden: 'Bu imza, token\'ın İÇERİĞİNİN (claims\'lerin) sunucudan ÇIKTIKTAN sonra DEĞİŞTİRİLMEDİĞİNİ garanti eder — biri token\'daki "Role: User" değerini elle "Role: Admin" yapmaya çalışsa, imza artık UYUŞMAZ, token GEÇERSİZ sayılır.',
+            olmasaydi: 'İmza olmasaydı (ya da zayıf bir algoritma kullanılsaydı), bir saldırgan kendi token\'ını üretip İÇİNE `"role": "Admin"` yazarak SİSTEME Admin gibi GİREBİLİRDİ — kimlik doğrulamanın TAMAMI anlamsız hale gelirdi.'
+          },
+          {
+            satir: 'return new JwtSecurityTokenHandler().WriteToken(token);',
+            aciklama: 'İnşa edilen `JwtSecurityToken` NESNESİ, standart JWT FORMATINDA (üç nokta-ayrılmış Base64 string) bir METNE dönüştürülüp GERİ döner.',
+            neden: '`JwtSecurityToken` nesnesinin kendisi bir C# nesnesidir, HTTP üzerinden gönderilmeye UYGUN DEĞİLDİR — `WriteToken`, bunu istemcinin `Authorization: Bearer <token>` başlığında KULLANACAĞI GERÇEK string\'e SERİLEŞTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, metot bir `JwtSecurityToken` NESNESİ döndürmeye ÇALIŞIRDI (dönüş tipiyle UYUŞMAZDI) — ya da hiçbir şey DÖNMEZDİ, Controller\'ın istemciye GÖNDERECEĞİ bir token STRING\'İ hiç OLMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshToken.cs — Token Family Alanı',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/RefreshToken.cs',
+        nedenBuKlasor: 'Entities/Auth/ altında, User\'ın (Bölüm 9) hemen yanında — aralarında 1:N bir ilişki var (bir kullanıcının BİRDEN FAZLA refresh token\'ı olabilir, farklı cihazlardan girişler için).',
+        kod: `public class RefreshToken : BaseEntity
+{
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+
+    public string TokenHash { get; set; } = string.Empty;
+
+    public string TokenFamily { get; set; } = string.Empty;
+
+    public DateTime ExpiresAt { get; set; }
+
+    public bool IsUsed { get; set; }
+
+    public DateTime? RevokedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public class RefreshToken : BaseEntity',
+            aciklama: '`: BaseEntity` ile A-03/02\'deki User gibi, Id/CreatedAt/IsDeleted vb. 7 alanı OTOMATİK miras alır — bu entity de audit/soft-delete alanlarını TEKRAR TANIMLAMAZ.',
+            neden: 'RefreshToken\'ın da (User gibi) "ne zaman OLUŞTURULDU", "silinmiş mi" gibi sorulara CEVABI olması gerekir — ör. bir kullanıcı hesabını sildiğinde, o kullanıcıya ait TÜM refresh token\'ların da soft-delete EDİLMESİ (ya da RevokedAt ile iptal edilmesi) gerekebilir.',
+            olmasaydi: '`: BaseEntity` yazılmasaydı, bu 7 alanı RefreshToken içinde TEKRAR tanımlamak gerekirdi — User.cs\'te gördüğümüz AYNI kod tekrarı BURADA da oluşurdu.'
+          },
+          {
+            satir: 'public int UserId { get; set; }',
+            aciklama: 'Bu refresh token\'ın hangi kullanıcıya ait olduğu — User tablosuna yabancı anahtar (foreign key).',
+            neden: 'Bir kullanıcı BİRDEN FAZLA cihazdan/tarayıcıdan giriş yapabilir; her girişin KENDİ refresh token\'ı vardır — bu alan, "bu token kime ait" sorusunu cevaplayarak "kullanıcının TÜM oturumlarını listele/iptal et" gibi işlemleri MÜMKÜN kılar.',
+            olmasaydi: 'Bu alan olmasaydı, bir RefreshToken kaydının HANGİ kullanıcıya ait olduğu bilinemezdi — "bu kullanıcının tüm cihazlardan çıkışını yap" gibi bir güvenlik işlemi (ör. şifre değiştirildiğinde tüm oturumları iptal etme) YAPILAMAZDI.'
+          },
+          {
+            satir: 'public User User { get; set; } = null!;',
+            aciklama: '`UserId`\'nin (yabancı anahtar) EF Core "navigation property" karşılığı — bu sayede `refreshToken.User.Email` gibi bir erişimle, İLİŞKİLİ User nesnesine DOĞRUDAN ulaşılabilir.',
+            neden: '`= null!;` (null-forgiving operatör), "bu alan İLİŞKİLİ veri YÜKLENDİĞİNDE her zaman DOLU olacak, derleyici null uyarısı VERME" der — EF Core bu alanı sorgu sırasında (`.Include(rt => rt.User)` ile) OTOMATİK doldurur.',
+            olmasaydi: 'Bu navigation property olmasaydı, bir RefreshToken kaydından İLİŞKİLİ User bilgisine erişmek için AYRI bir sorgu (`_userRepository.GetByIdAsync(refreshToken.UserId)`) YAZILMASI gerekirdi.'
+          },
+          {
+            satir: 'public string TokenHash { get; set; } = string.Empty;',
+            aciklama: 'Refresh token\'ın kendisi DEĞİL, SHA-256 hash\'i saklanır — tıpkı Bölüm 9\'daki PasswordHash gibi, aynı ilke.',
+            neden: 'Bir veritabanı sızıntısında bile, saldırgan bu hash\'lerden GERÇEK refresh token değerlerini GERİ ÇEVİREMEZ — kullanıcıların oturumları güvende kalır.',
+            olmasaydi: 'Düz metin token saklansaydı, veritabanına erişimi olan HERKES, TÜM kullanıcıların aktif oturumlarını doğrudan ÇALABİLİR, o kullanıcı gibi davranabilirdi.'
+          },
+          {
+            satir: 'public string TokenFamily { get; set; } = string.Empty;',
+            aciklama: 'Aynı LOGIN oturumundan türeyen TÜM refresh token\'ları gruplayan bir GUID — kullanıcı giriş yaptığında bir family başlar, her "refresh" işleminde AYNI family\'de yeni bir token üretilir (eskisi IsUsed=true olur).',
+            neden: 'Bu alan, "Token Family Pattern"in KALBİdİR: bir token ÇALINIP kullanılırsa (ve GERÇEK kullanıcı da kendi eski token\'ını kullanmaya devam ederse), sistem bunu "aynı family\'den İKİNCİ kullanım" (replay) olarak YAKALAR.',
+            olmasaydi: 'TokenFamily olmadan, "bu token daha önce kullanıldı mı" (IsUsed) kontrolü TEK bir token için çalışırdı ama bir saldırganın ÇALDIĞI token\'ı kullanmasıyla oluşan YENİ token\'lar ZİNCİRİ TAKİP EDİLEMEZDİ — tüm "aile"yi tek seferde İPTAL etmek MÜMKÜN OLMAZDI.'
+          },
+          {
+            satir: 'public DateTime ExpiresAt { get; set; }',
+            aciklama: 'Token\'ın geçerlilik süresinin dolacağı an (UTC) — A-02/05\'teki `Jwt:RefreshTokenExpirationDays` (varsayılan 7 gün) ayarından hesaplanır.',
+            neden: 'Access token gibi refresh token da SONSUZA kadar geçerli OLMAMALI — 7 gün boyunca hiç kullanılmayan (kullanıcı uygulamayı açmayan) bir oturum, bu sürenin sonunda OTOMATİK olarak geçersiz hale gelir, kullanıcı yeniden giriş YAPMAK ZORUNDA kalır.',
+            olmasaydi: 'Süresiz bir refresh token, YILLAR önce çalınmış ve unutulmuş bir token\'ın hâlâ ÇALIŞIYOR olması anlamına gelirdi — süre sınırı, "eski, unutulmuş" tehditlerin doğal olarak ZAMANLA ETKİSİZLEŞMESİNİ sağlar.'
+          },
+          {
+            satir: 'public bool IsUsed { get; set; }',
+            aciklama: 'Bu token\'ın bir refresh işleminde ZATEN kullanılıp kullanılmadığı — Token Family Pattern\'in KALBİ, bir sonraki slaytta detaylı göreceğiz.',
+            neden: 'Refresh token TEK KULLANIMLIKTIR — her "refresh" işleminde eskisi bu bayrakla İŞARETLENİR ve yerine YENİ bir token üretilir; bu bayrak, "aynı token İKİNCİ kez mi geliyor" (replay) sorusunu cevaplar.',
+            olmasaydi: 'Bu alan olmasaydı, ÇALINMIŞ bir refresh token SINIRSIZ sayıda kez kullanılabilirdi — sistem, "bu normal bir yenileme mi, yoksa bir saldırı mı" AYRIMINI YAPAMAZDI.'
+          },
+          {
+            satir: 'public DateTime? RevokedAt { get; set; }',
+            aciklama: 'Token\'ın ELLE iptal edildiği an (logout ya da replay tespiti sonucu) — iptal edilmemişse null.',
+            neden: 'ExpiresAt "doğal olarak ne zaman geçersiz olacağını", RevokedAt ise "ERKEN, BİLEREK ne zaman iptal edildiğini" cevaplar — bir kullanıcı "çıkış yap" dediğinde token henüz SÜRESİ DOLMAMIŞ olabilir, bu alan onu YİNE DE geçersiz kılmayı sağlar.',
+            olmasaydi: 'Bu alan olmasaydı, "logout" işlemi bir refresh token\'ı GERÇEKTEN iptal EDEMEZDİ — kullanıcı çıkış yapsa bile, ELİNDEKİ (ya da çalınmış) refresh token, doğal süresi (7 gün) dolana kadar ÇALIŞMAYA devam ederdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshCommandHandler — Replay Tespiti',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RefreshCommand.cs',
+        nedenBuKlasor: null,
+        kod: `if (existingToken.IsUsed)
+{
+    await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, ct);
+    throw new InvalidRefreshTokenException();
+}
+
+existingToken.IsUsed = true;
+await _refreshTokenRepository.UpdateAsync(existingToken, existingToken.UserId, ct);`,
+        satirlar: [
+          {
+            satir: 'if (existingToken.IsUsed)',
+            aciklama: 'Gelen refresh token DAHA ÖNCE kullanılmış mı diye kontrol edilir.',
+            neden: 'Normal akışta, bir refresh token TAM OLARAK BİR KEZ kullanılır (yeni bir token çiftiyle DEĞİŞTİRİLİR — bir sonraki satırlarda). Eğer AYNI token İKİNCİ kez gelirse, bunun İKİ olası açıklaması var: (1) gerçek kullanıcının cihazında bir hata var, ya da (2) bu token ÇALINDI ve hem saldırgan hem gerçek kullanıcı AYNI (artık eski) token\'ı kullanmaya çalışıyor.',
+            olmasaydi: 'Bu kontrol olmasaydı, çalınan bir refresh token SONSUZA kadar tekrar tekrar kullanılabilir, her seferinde YENİ bir access token ÜRETİLEBİLİRDİ — saldırgan sürekli erişim SAĞLARDI.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, ct);',
+            aciklama: 'Güvenlik ihlali ŞÜPHESİNDE, sistem TEK bir token\'ı DEĞİL, o TokenFamily\'deki TÜM token\'ları (yani bu login oturumundan türeyen HER ŞEYİ) İPTAL eder.',
+            neden: 'Bu, "temkinli davran" (fail-safe) ilkesinin somut UYGULAMASI: sistem, "acaba GERÇEKTEN çalınma mı, yoksa YANLIŞLIKLA mı" AYRIMINI yapamaz — hangisi olursa OLSUN, TÜM family\'yi iptal ederek kullanıcıyı YENİDEN giriş yapmaya ZORLAMAK, potansiyel bir saldırganın erişimini KESİN OLARAK sonlandırır.',
+            olmasaydi: 'Yalnızca TEK bir token iptal edilseydi (ailenin geri kalanı DOKUNULMADAN bırakılsaydı), eğer saldırgan ÖNCEDEN bir sonraki token\'ı da elde ETMİŞSE (ör. cihaz kalıcı olarak ele geçirilmişse), erişimi DEVAM ederdi — TokenFamily\'nin TAMAMINI iptal etmek bu riski TAMAMEN kapatır.'
+          },
+          {
+            satir: 'throw new InvalidRefreshTokenException();',
+            aciklama: 'Family iptal edildikten SONRA, bu isteği yapan tarafa (saldırgan OLABİLİR, gerçek kullanıcı da OLABİLİR) "bu token geçersiz" hatası DÖNÜLÜR — HERHANGİ bir ek bilgi (ör. "replay tespit edildi") VERİLMEZ.',
+            neden: 'Hata mesajının GENEL tutulması ("geçersiz token", "replay tespit edildi" DEĞİL), bir saldırgana sistemin İÇ ÇALIŞMA MANTIĞI hakkında bilgi VERMEMEK içindir — saldırgan, tespit edildiğini ayrıntılı olarak ÖĞRENEMEZ.',
+            olmasaydi: 'Bu exception fırlatılmasaydı, kod DEVAM EDER ve aşağıdaki satırlarda YENİ bir token ÜRETMEYE çalışırdı — family ZATEN iptal edilmiş olsa bile, bu istek YANLIŞLIKLA başarılı SAYILABİLİRDİ.'
+          },
+          {
+            satir: 'existingToken.IsUsed = true;',
+            aciklama: 'Normal (replay OLMAYAN) akışta, kullanılan refresh token "kullanıldı" olarak İŞARETLENİR — bu, Bölüm 18\'in BAŞINDAKİ `if (existingToken.IsUsed)` kontrolünün bir SONRAKİ refresh isteğinde DEVREYE GİRMESİNİ sağlayan alandır.',
+            neden: 'Her refresh işleminde ESKİ token "tüketilir" ve YENİ bir token üretilir (tek kullanımlık refresh token deseni) — bu satır, o "tüketimi" VERİTABANINA KAYDEDER.',
+            olmasaydi: 'Bu satır olmasaydı, AYNI refresh token SINIRSIZ kez kullanılabilirdi — replay tespiti (bir üstteki `if (existingToken.IsUsed)` kontrolü) HİÇBİR ZAMAN TETİKLENMEZDİ, çünkü IsUsed hep `false` KALIRDI.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.UpdateAsync(existingToken, existingToken.UserId, ct);',
+            aciklama: 'A-02/07\'deki Repository<T>.UpdateAsync çağrılır — `IsUsed = true` değişikliği VERİTABANINA yazılır.',
+            neden: '`existingToken.UserId` burada `userId` parametresi olarak GEÇİRİLİR (AddAsync\'teki `ct: ct` isimli argüman YAZIMINDAN farklı olarak burada POZİSYONEL) — "bu güncellemeyi kim yaptı" bilgisi, TOKEN\'IN SAHİBİ olarak KAYDEDİLİR (Register\'daki AddAsync\'te userId null geçilmesinden FARKLI: burada zaten bilinen bir kullanıcı VAR).',
+            olmasaydi: 'Bu satır olmasaydı, `existingToken.IsUsed = true` değişikliği yalnızca BELLEKTE kalırdı — veritabanına HİÇ YAZILMAZDI, bir sonraki refresh isteğinde bu token HÂLÂ "kullanılmamış" GÖRÜNÜRDÜ, replay tespiti TAMAMEN ETKİSİZ kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'JWT (JSON Web Token)', tanim: 'Kendi içinde imzalı, doğrulanabilir kullanıcı bilgisi (claims) taşıyan, kısa ömürlü bir erişim belgesi.' },
+          { terim: 'Claim', tanim: 'Bir JWT\'nin içine gömülen tek bir bilgi parçası (ör. kullanıcı Id\'si, rolü) — token doğrulandığında bu bilgiler doğrudan okunabilir.' },
+          { terim: 'Refresh Token', tanim: 'Yeni bir access token istemek için kullanılan, veritabanında saklanan (ve iptal edilebilen), uzun ömürlü rastgele değer.' },
+          { terim: 'Token Family Pattern', tanim: 'Aynı login oturumundan türeyen tüm refresh token\'ları gruplayıp, birinde şüpheli kullanım (replay) tespit edilirse HEPSİNİ birden iptal eden güvenlik stratejisi.' },
+          { terim: 'Replay Attack (Tekrar Oynatma Saldırısı)', tanim: 'Çalınmış, daha önce kullanılmış bir token\'ın saldırgan tarafından TEKRAR gönderilerek erişim elde edilmeye çalışılması.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Access token kısa ömürlü (15dk, JWT, imzalı) — Refresh token uzun ömürlü (7 gün, DB\'de saklanır, iptal edilebilir)',
+          'JWT claim\'leri (Role dahil), her istekte veritabanına gitmeden yetki kontrolü yapılmasını sağlar',
+          'Refresh token, PasswordHash ile aynı ilkeyle, hash\'lenerek saklanır — düz metin asla',
+          'TokenFamily, aynı login oturumundan türeyen tüm token\'ları gruplar',
+          'Bir token\'ın İKİNCİ kez kullanılması (replay), TÜM family\'nin iptal edilmesini tetikler — temkinli davranış'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

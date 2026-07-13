@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Birim Test</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'test',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '08_handler.html',
+    sonrakiBolum: '10_controller.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 16 · CLAUDE.md ADIM 12',
+        baslik: 'Birim Test — Handler Bitince HEMEN',
+        altBaslik: 'CLAUDE.md kuralı: "Her public servis/Handler metodunun birim testi AYNI TASK içinde yazılır" — Faz F\'ye (sona) bırakılmaz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Handler Bittiği AN Test Yazılır?',
+        aciklama: 'Bir Handler yazıldıktan gün/hafta sonra test yazılırsa, o Handler\'ın TAM OLARAK ne yaptığını hatırlamak zorlaşır — hangi durumda hangi exception fırlatıldığı, hangi sırayla kontroller yapıldığı unutulabilir. Test, Handler\'ın davranışını YAZILDIĞI ANDA, taze bilgiyle belgeler.',
+        neden: 'Ayrıca test, Handler\'daki bir HATAYI (ör. Bölüm 15\'teki çifte e-posta kontrolünün BİRİNİN unutulması) hemen, kod hâlâ zihinde tazeyken YAKALAR — haftalar sonra üretimde bir hata raporu olarak değil.',
+        olmasaydi: 'Test "sona bırakılsaydı" (CLAUDE.md\'nin YASAKLADIĞI şey), 20 Handler biriktikten sonra test yazmaya oturan biri, HER birinin mantığını yeniden ÖĞRENMEK zorunda kalırdı — bu hem çok daha YAVAŞ hem de "acaba bu senaryo neden böyleydi" sorularının cevabını bulmak zorlaşırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Test Kurulumu — Moq ile Sahte Bağımlılıklar',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RegisterCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Auth/ — Application/Features/Auth/\'daki gerçek dosyayla BİREBİR aynı klasör yolunu (Tests/ kökü hariç) izler, bu proje genelindeki bir konvansiyon: hangi kodun testi olduğu, klasör yolundan ANINDA anlaşılır.',
+        kod: `public class RegisterCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepo = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private RegisterCommandHandler CreateHandler() =>
+        new(
+            _userRepo.Object,
+            _passwordService.Object,
+            _otpService.Object,
+            _emailService.Object,
+            AuthTestMapper.Create()
+        );
+}`,
+        satirlar: [
+          {
+            satir: 'public class RegisterCommandHandlerTests',
+            aciklama: 'Test sınıfının adı, test ettiği sınıfın adına "Tests" eki eklenerek türetilir — `RegisterCommandHandler` → `RegisterCommandHandlerTests`, proje genelindeki bir isimlendirme konvansiyonu.',
+            neden: 'Bu isimlendirme, hangi test sınıfının HANGİ üretim sınıfını KAPSADIĞINI anında ANLAŞILIR kılar — dosya adı + klasör yolu (Tests/Features/Auth/) birlikte, testin kaynağını belirsizlik BIRAKMADAN gösterir.',
+            olmasaydi: 'Farklı bir isimlendirme kullanılsaydı (ör. `RegisterTests`), bir geliştirici hangi test sınıfının RegisterCommandHandler\'ı, hangisinin RegisterCommandValidator\'ı test ettiğini dosya listesinde ARAMAK zorunda kalırdı.'
+          },
+          {
+            satir: 'private readonly Mock<IUserRepository> _userRepo = new();',
+            aciklama: 'Moq kütüphanesiyle, IUserRepository ARAYÜZÜNÜN sahte (mock) bir implementasyonu oluşturulur — gerçek bir veritabanı bağlantısı KURULMAZ.',
+            neden: 'Bölüm 15\'teki "Handler, somut UserRepository değil, IUserRepository ARAYÜZÜNE bağımlı" tasarım kararı BURADA meyvesini verir — arayüz sayesinde, testte gerçek implementasyon yerine bu sahte nesne GEÇİRİLEBİLİR.',
+            olmasaydi: 'Handler somut `UserRepository` sınıfına bağımlı olsaydı, bu satır İMKANSIZ olurdu — Moq, somut sınıfları DEĞİL, arayüzleri (ya da virtual metotları) taklit edebilir. Test, gerçek bir SQL Server bağlantısı GEREKTİRİRDİ.'
+          },
+          {
+            satir: 'private readonly Mock<IPasswordService> _passwordService = new();',
+            aciklama: 'Bir üstteki satırla AYNI desen, Bölüm 15\'teki `IPasswordService` bağımlılığı için — gerçek BCrypt hash\'leme testte HİÇ ÇALIŞTIRILMAZ.',
+            neden: 'Test, "Handler DOĞRU sırayla DOĞRU metotları çağırıyor mu" sorusuna odaklanır — BCrypt algoritmasının kendisinin doğru çalışıp çalışmadığı BAŞKA (ve zaten üçüncü parti kütüphanenin kendi testlerinde kapsanan) bir sorudur.',
+            olmasaydi: 'Gerçek PasswordService kullanılsaydı, her test çalıştırmasında GERÇEK BCrypt hash\'leme (bilerek YAVAŞ tasarlanmış bir algoritma) ÇALIŞIRDI — yüzlerce test biriktiğinde test SÜİTİNİN TAMAMI gözle görülür şekilde YAVAŞLARDI.'
+          },
+          {
+            satir: 'private readonly Mock<IOtpService> _otpService = new();',
+            aciklama: 'OTP üretimini sahte bir nesneyle DEĞİŞTİRİR — test, GERÇEKTEN rastgele bir kod ÜRETİLMESİNİ değil, Handler\'ın döneni DOĞRU KULLANDIĞINI doğrular.',
+            neden: 'OTP üretimi RASTGELE bir değer içerir — eğer test gerçek OtpService kullansaydı, her çalıştırmada FARKLI bir kod üretilirdi ve testin "123456 kodu gönderildi mi" gibi KESİN bir doğrulama yapması İMKANSIZLAŞIRDI.',
+            olmasaydi: 'Mock kullanılmasaydı, testin ASSERT bölümünde belirli bir OTP değerini (`"123456"`) BEKLEMEK anlamsız olurdu — rastgelelik, testleri ÖNGÖRÜLEMEZ (flaky) hale getirirdi.'
+          },
+          {
+            satir: 'private readonly Mock<IEmailService> _emailService = new();',
+            aciklama: 'E-posta gönderimini sahte bir nesneyle DEĞİŞTİRİR — test çalıştırıldığında GERÇEKTEN hiçbir e-posta GİTMEZ.',
+            neden: 'Bu, Bölüm 15\'teki "test, dış servisleri her zaman mock\'lar" kuralının DOĞRUDAN sonucu — bir birim test, ağ/SMTP gibi DIŞ dünyaya bağımlı OLMAMALI, yoksa testin BAŞARISI internet bağlantısına/üçüncü parti servise bağımlı hale gelirdi.',
+            olmasaydi: 'Gerçek IEmailService kullanılsaydı, CI sunucusunda (internet erişimi kısıtlı/yavaş olabilir) çalışan testler YAVAŞLAR, hatta e-posta sağlayıcısının GEÇİCİ bir kesintisinde tamamen BAŞARISIZ olurlardı — testin kendisi, KODDAN bağımsız sebeplerle KIRMIZI görünürdü.'
+          },
+          {
+            satir: 'private RegisterCommandHandler CreateHandler() =>',
+            aciklama: 'Her testte TEKRAR eden "handler\'ı mock\'larla kur" adımını TEK bir yardımcı metoda çıkarır — bu, testlerin ARRANGE bölümünü KISALTIR.',
+            neden: 'Bu proje BİRDEN FAZLA test yazacak (mutlu yol, hata senaryosu, vb.) — her testin başında AYNI 5 satırlık kurulum kodunu TEKRAR yazmak yerine, bu metot ÇAĞRILIR (DRY, testler için de geçerli bir ilke).',
+            olmasaydi: 'Bu yardımcı metot olmasaydı, her `[Fact]` testinin başında `new RegisterCommandHandler(_userRepo.Object, _passwordService.Object, ...)` satırı TEKRAR TEKRAR yazılırdı — bir bağımlılık eklendiğinde (ör. 6. bir servis) TÜM testlerin TEK TEK güncellenmesi gerekirdi.'
+          },
+          {
+            satir: 'new(',
+            aciklama: '"Target-typed new" sözdizimi (C# 9+) — `new RegisterCommandHandler(...)` yerine yalnızca `new(...)` yazılır, tip zaten metodun DÖNÜŞ TİPİNDEN (RegisterCommandHandler) BİLİNDİĞİ için tekrar YAZILMAZ.',
+            neden: 'Metodun dönüş tipi (`RegisterCommandHandler`) zaten metot imzasında BELİRTİLDİĞİ için, `new` ifadesinde tipi TEKRAR yazmak GEREKSİZ tekrar (redundancy) olurdu — C#\'ın modern, DAHA KISA sözdizimi tercih edilir.',
+            olmasaydi: 'Bu satır olmasaydı (ya da `new RegisterCommandHandler(` yazılsaydı), İŞLEVSEL olarak AYNI sonucu verirdi — yalnızca biraz daha UZUN, tip adının TEKRARLANDIĞI bir yazım olurdu.'
+          },
+          {
+            satir: '_userRepo.Object,',
+            aciklama: 'Moq\'un `.Object` property\'si, mock nesnenin ARKASINDAKİ GERÇEK arayüz örneğini (IUserRepository) döner — Handler constructor\'ı `Mock<IUserRepository>` DEĞİL, `IUserRepository` BEKLER.',
+            neden: '`Mock<T>` sınıfının kendisi IUserRepository DEĞİLDİR — yalnızca onu SARAN bir test yardımcısıdır; `.Object`, İÇİNDEKİ sahte implementasyonu (Handler\'ın gerçekten kullanacağı nesneyi) AÇIĞA ÇIKARIR.',
+            olmasaydi: '`.Object` yazılmasaydı (doğrudan `_userRepo` geçilseydi), derleyici "Mock<IUserRepository> tipi IUserRepository parametresine ATANAMAZ" hatası verir, proje DERLENEMEZDİ.'
+          },
+          {
+            satir: '_passwordService.Object,',
+            aciklama: 'Bir üstteki `_userRepo.Object` ile AYNI desen — PasswordService mock\'unun GERÇEK implementasyonu Handler\'a geçirilir.',
+            neden: 'Beş bağımlılığın (Bölüm 15) HER BİRİ için AYNI `.Object` kalıbının tekrarlanması, hangi mock\'un hangi parametreye karşılık geldiğini SIRALAMA üzerinden AÇIKÇA gösterir.',
+            olmasaydi: 'Bu satır olmasaydı, CreateHandler() metodunun ürettiği RegisterCommandHandler eksik bir parametre ile DERLENEMEZDİ.'
+          },
+          {
+            satir: '_otpService.Object,',
+            aciklama: 'Bir üstteki desenlerle AYNI — OtpService mock\'unun GERÇEK implementasyonu Handler\'a geçirilir.',
+            neden: 'Beş bağımlılığın HER BİRİ için AYNI `.Object` kalıbının tekrarlanması, hangi mock\'un hangi parametreye karşılık geldiğini SIRALAMA üzerinden AÇIKÇA gösterir.',
+            olmasaydi: 'Bu satır olmasaydı, CreateHandler() metodunun ürettiği RegisterCommandHandler eksik bir parametre ile DERLENEMEZDİ.'
+          },
+          {
+            satir: '_emailService.Object,',
+            aciklama: 'Bir üstteki desenlerle AYNI — EmailService mock\'unun GERÇEK implementasyonu Handler\'a geçirilir; sonunda virgül var çünkü ardından `AuthTestMapper.Create()` parametresi GELİYOR.',
+            neden: 'Beş bağımlılığın HER BİRİ için AYNI `.Object` kalıbının tekrarlanması, hangi mock\'un hangi parametreye karşılık geldiğini SIRALAMA üzerinden AÇIKÇA gösterir.',
+            olmasaydi: 'Bu satır olmasaydı, CreateHandler() metodunun ürettiği RegisterCommandHandler eksik bir parametre ile DERLENEMEZDİ.'
+          },
+          {
+            satir: 'AuthTestMapper.Create()',
+            aciklama: 'AutoMapper için de bir "mock" KULLANILMAZ — bunun yerine Bölüm 14\'teki GERÇEK AuthProfile\'dan kurulu, GERÇEK bir Mapper nesnesi oluşturulur.',
+            neden: 'AutoMapper\'ı mock\'lamak (`Mock<IMapper>`), "User\'dan RegisterResponse\'a GERÇEKTEN doğru alanların eşleştiğini" test ETMEZ — yalnızca "Map çağrıldı mı" kontrol eder. Gerçek Profile kullanmak, mapping KONFİGÜRASYONUNUN kendisini de test kapsamına alır (CLAUDE.md §3: "IMapper mock\'lanmaz, gerçek Profile\'dan kurulur").',
+            olmasaydi: 'IMapper mock\'lansaydı, Bölüm 14\'teki AuthProfile\'da bir YAZIM HATASI (ör. yanlış alan eşleştirmesi) olsa bile test YEŞİL geçerdi — mapping hatası ancak ÜRETİMDE, gerçek bir kullanıcı kayıt olduğunda fark edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Mutlu Yol Testi — Arrange / Act / Assert',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RegisterCommandHandlerTests.cs',
+        nedenBuKlasor: null,
+        kod: `[Fact]
+public async Task Register_NewEmail_CreatesUserAndSendsVerificationOtp()
+{
+    // ARRANGE
+    _userRepo.Setup(r => r.GetByEmailAsync("new@example.com", default)).ReturnsAsync((User?)null);
+    _userRepo.Setup(r => r.OriginalEmailHashExistsAsync(It.IsAny<string>(), default)).ReturnsAsync(false);
+    _passwordService.Setup(p => p.Hash("Deneme123!@#")).Returns("hashed-password");
+    _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+    _userRepo
+        .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+        .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+    var handler = CreateHandler();
+    var command = new RegisterCommand("new@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+    // ACT
+    var sonuc = await handler.Handle(command, default);
+
+    // ASSERT
+    sonuc.Email.Should().Be("new@example.com");
+    _userRepo.Verify(r => r.AddAsync(It.Is<User>(u => u.PasswordHash == "hashed-password"), null, default), Times.Once);
+    _emailService.Verify(e => e.SendEmailVerificationOtpAsync("new@example.com", "123456", default), Times.Once);
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit\'e "bu metot, parametresiz, TEK bir senaryoyu test eden bir test metodudur" der — test çalıştırıcısı (test runner) bu öznitelikle işaretli HER metodu OTOMATİK bulup çalıştırır.',
+            neden: '`[Fact]`, xUnit\'in en temel test özniteliğidir — parametreli testler için `[Theory]` kullanılır, ama bu senaryonun TEK BİR sabit girdi seti olduğu için `[Fact]` yeterlidir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, xUnit bu metodu bir TEST olarak TANIMAZ — `dotnet test` çalıştırıldığında bu metot HİÇ ÇAĞRILMAZ, Handler\'daki bir hata SESSİZCE fark edilmeden kalabilirdi.'
+          },
+          {
+            satir: 'public async Task Register_NewEmail_CreatesUserAndSendsVerificationOtp()',
+            aciklama: 'Test metodunun adı, "ne test ediliyor + hangi koşulda + ne bekleniyor" formülünü izler: Register (metot) + NewEmail (koşul) + CreatesUserAndSendsVerificationOtp (beklenen sonuç).',
+            neden: 'Bu isimlendirme, test SONUÇ RAPORUNDA (ör. CI\'da bir test KIRMIZI olduğunda) İSMİN KENDİSİNİN "hangi senaryonun bozulduğunu" AÇIKLAMASINI sağlar — testin İÇİNE bakmadan bile ne test edildiği ANLAŞILIR.',
+            olmasaydi: 'Test `Test1()` gibi anlamsız bir isim taşısaydı, bu test KIRMIZI olduğunda hangi DAVRANIŞIN bozulduğunu anlamak için testin İÇERİĞİNİ OKUMAK gerekirdi — CI logunda hızlı bir teşhis İMKANSIZLAŞIRDI.'
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Test, üç aşamalı bir kalıp izler: ARRANGE (sahne kur — mock\'lara "şu çağrılırsa şunu dön" talimatı ver), ACT (gerçek kodu ÇALIŞTIR), ASSERT (sonucu DOĞRULA).',
+            neden: 'Bu üçlü yapı, bir testin OKUNABİLİRLİĞİNİ standartlaştırır — herhangi bir geliştirici, hangi kısmın "hazırlık", hangisinin "gerçek eylem", hangisinin "kontrol" olduğunu YORUM SATIRLARI olmasa bile TANIR.',
+            olmasaydi: 'Bu yapı olmadan, kurulum kodu ile doğrulama kodu KARIŞIK yazılsaydı, testin TAM OLARAK neyi doğrulamaya çalıştığını anlamak, özellikle uzun testlerde ZORLAŞIRDI.'
+          },
+          {
+            satir: '_userRepo.Setup(r => r.GetByEmailAsync("new@example.com", default)).ReturnsAsync((User?)null);',
+            aciklama: '"GetByEmailAsync bu e-postayla çağrılırsa, null dön" talimatı — yani Bölüm 15\'teki İLK e-posta kontrolünün "kayıtlı değil" senaryosunu simüle eder.',
+            neden: 'Bu satır olmadan mock, varsayılan olarak `null` (referans tipler için) ya da `default` dönerdi — burada AÇIKÇA yazmak, testi okuyan kişiye "bu test, e-postanın MÜSAİT olduğu senaryoyu kontrol ediyor" bilgisini VERİR.',
+            olmasaydi: 'Bu Setup yazılmasaydı, Moq VARSAYILAN olarak null dönerdi (bu durumda TESADÜFEN doğru davranırdı) — ama bu, testin NİYETİNİ gizler; okuyan biri "bu mock\'un ne döndüğü" belirsiz kalırdı.'
+          },
+          {
+            satir: '_userRepo.Setup(r => r.OriginalEmailHashExistsAsync(It.IsAny<string>(), default)).ReturnsAsync(false);',
+            aciklama: '"OriginalEmailHashExistsAsync HANGİ hash ile çağrılırsa çağrılsın (It.IsAny), false dön" talimatı — Bölüm 15\'teki İKİNCİ e-posta kontrolünün "daha önce anonimleştirilmiş bir hesaba AİT değil" senaryosunu simüle eder.',
+            neden: '`It.IsAny<string>()` kullanılması, bu testin AMACININ hash\'in TAM DEĞERİNİ değil, "bu kontrolün false DÖNDÜĞÜNDE Handler\'ın DEVAM ettiğini" doğrulamak olduğunu gösterir — hash\'in GERÇEK değeri bu testin İLGİ ALANI DEĞİL.',
+            olmasaydi: 'Bu Setup yazılmasaydı, mock VARSAYILAN olarak `false` (bool için varsayılan) dönerdi — bu durumda TESADÜFEN doğru davranırdı, ama bu SETUP\'ın burada AÇIKÇA yazılması, testin bu ikinci kontrolü de KAPSADIĞINI NİYET olarak belgeler.'
+          },
+          {
+            satir: '_passwordService.Setup(p => p.Hash("Deneme123!@#")).Returns("hashed-password");',
+            aciklama: '"Hash metodu TAM OLARAK bu şifreyle çağrılırsa, sabit bir string (\'hashed-password\') dön" talimatı — GERÇEK BCrypt algoritması ÇALIŞTIRILMAZ.',
+            neden: 'Test, "Handler BCrypt\'i doğru mu kullanıyor" sorusunu DEĞİL, "Handler, Hash\'in DÖNDÜRDÜĞÜ değeri User.PasswordHash\'e DOĞRU yazıyor mu" sorusunu test eder — bu ikisi FARKLI sorumluluklardır (BCrypt\'in kendisi ayrı, üçüncü parti bir kütüphanenin sorumluluğudur).',
+            olmasaydi: 'Bu Setup olmasaydı, mock `Hash(...)` çağrıldığında VARSAYILAN olarak null dönerdi — Handler\'ın `PasswordHash = _passwordService.Hash(...)` ataması `PasswordHash = null` OLURDU, bir sonraki Verify adımındaki `"hashed-password"` beklentisi HİÇ TUTMAZDI, test KIRMIZI olurdu.'
+          },
+          {
+            satir: '_otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));',
+            aciklama: '"Generate çağrıldığında, sabit bir (kod, hash) çifti dön" talimatı — RASTGELE OTP üretimi testte DEVRE DIŞI bırakılır, ÖNGÖRÜLEBİLİR bir değer kullanılır.',
+            neden: 'Bölüm 15\'teki `var (otpCode, otpHash) = _otpService.Generate();` satırının, dönen İKİ değeri de (kodu e-postaya, hash\'i veritabanına) DOĞRU YERE yazdığını test edebilmek için, bu İKİ değerin ÖNCEDEN BİLİNMESİ gerekir.',
+            olmasaydi: 'Bu Setup olmasaydı, mock varsayılan olarak `(null, null)` (tuple\'ın varsayılanı) dönerdi — testin SONUNDAKİ `_emailService.Verify(... "123456" ...)` beklentisi HİÇBİR ZAMAN TUTMAZDI, test her zaman KIRMIZI olurdu.'
+          },
+          {
+            satir: '.Setup(r => r.AddAsync(It.IsAny<User>(), null, default))',
+            aciklama: '"AddAsync, HERHANGİ bir User nesnesiyle (It.IsAny), userId=null, varsayılan CancellationToken ile çağrılırsa..." — AddAsync çağrısının ZİNCİRİNİN İLK yarısı.',
+            neden: '`It.IsAny<User>()` kullanılması BİLİNÇLİDİR: bu SETUP aşamasında henüz Handler\'ın TAM OLARAK hangi User nesnesini oluşturacağı test için ÖNEMLİ DEĞİL — asıl DOĞRULAMA (bu User\'ın PasswordHash\'inin doğru olduğu) aşağıdaki `Verify` adımında YAPILIR.',
+            olmasaydi: 'Bu Setup olmasaydı, mock `AddAsync` çağrısına VARSAYILAN olarak `default(User)` (null) dönerdi — Handler\'ın `return _mapper.Map<RegisterResponse>(user);` satırı (AddAsync\'in döndürdüğü değeri KULLANMASA da) bazı senaryolarda NullReferenceException riski TAŞIRDI.'
+          },
+          {
+            satir: '.ReturnsAsync((User u, int? _, CancellationToken _) => u);',
+            aciklama: 'AddAsync\'in GERÇEK davranışını TAKLİT eder: "sana verilen User nesnesini, AYNEN geri dön" — A-02/07\'deki gerçek `AddAsync`\'in "return entity;" satırıyla AYNI davranış.',
+            neden: 'Handler, `AddAsync`\'in dönüşünü DOĞRUDAN kullanmasa da (Bölüm 15\'te `_mapper.Map<RegisterResponse>(user)` ORİJİNAL `user` değişkenini kullanıyor), bu mock GERÇEK repository davranışını NE KADAR SADIK yansıtırsa, test o kadar GÜVENİLİR olur.',
+            olmasaydi: 'Bu satır olmasaydı (`.Returns` çağrısı hiç yapılmasaydı), AddAsync çağrısı VARSAYILAN olarak `default(User)` (null) dönerdi — GERÇEK Repository davranışından SAPAN bir mock, testi YANILTICI kılabilirdi.'
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: 'Bir üstteki slaytta yazdığımız yardımcı metot ÇAĞRILIR — TÜM mock\'larla DONATILMIŞ bir Handler örneği elde edilir.',
+            neden: 'Bu satır, ARRANGE bölümünün SON adımıdır — bundan sonra ACT bölümünde bu `handler` üzerinde GERÇEK metot ÇAĞRILACAKTIR.',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(...)` çağrısı için bir `handler` DEĞİŞKENİ OLMAZDI — kod derlenemezdi.'
+          },
+          {
+            satir: 'var command = new RegisterCommand("new@example.com", "Deneme123!@#", "Test", "Kullanici");',
+            aciklama: 'Bölüm 12\'deki RegisterCommand\'ın SOMUT bir örneği — bu testin SENARYOSUNU (yeni bir e-postayla kayıt) taşıyan GERÇEK veri.',
+            neden: 'Bu e-posta (`new@example.com`), yukarıdaki `GetByEmailAsync` Setup\'ındaki e-postayla BİREBİR AYNI OLMAK ZORUNDADIR — Moq, Setup\'taki parametrelerle ÇAĞRIDAKİ parametreleri TAM eşleştirir, farklı bir e-posta geçilirse mock "eşleşme yok" der, VARSAYILAN (null) dönerdi.',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(command, default)` çağrısı için bir `command` DEĞİŞKENİ OLMAZDI — kod derlenemezdi.'
+          },
+          {
+            satir: '_userRepo.Verify(r => r.AddAsync(It.Is<User>(u => u.PasswordHash == "hashed-password"), null, default), Times.Once);',
+            aciklama: 'Yalnızca "sonuç doğru mu" değil, "AddAsync GERÇEKTEN, DOĞRU parametrelerle, TAM OLARAK BİR KEZ çağrıldı mı" doğrulanır.',
+            neden: 'Bu, Bölüm 15\'teki "şifre hash\'lenmeden User\'a yazılmalı" davranışını test eder — `u.PasswordHash == "hashed-password"` kontrolü, GERÇEK şifrenin (`Deneme123!@#`) ASLA AddAsync\'e DÜZ METİN olarak geçmediğini kanıtlar.',
+            olmasaydi: 'Yalnızca dönüş değeri (`sonuc.Email`) kontrol edilseydi, Handler\'ın İÇİNDE şifreyi hash\'lemeyi UNUTUP unutmadığını bu test YAKALAYAMAZDI — dönüş değeri (RegisterResponse) zaten PasswordHash TAŞIMIYOR (Bölüm 14), bu ciddi bir güvenlik hatası TESTTEN KAÇABİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Hata Senaryosu Testi — Exception Bekleniyor',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RegisterCommandHandlerTests.cs',
+        nedenBuKlasor: null,
+        kod: `[Fact]
+public async Task Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
+{
+    // ARRANGE
+    _userRepo
+        .Setup(r => r.GetByEmailAsync("var@example.com", default))
+        .ReturnsAsync(new User { Id = 1, Email = "var@example.com", IsActive = true });
+    var handler = CreateHandler();
+    var command = new RegisterCommand("var@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+    // ACT
+    var act = () => handler.Handle(command, default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<DuplicateEmailException>();
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'Bu, mutlu yol testindekiyle AYNI xUnit özniteliği — bu metodun da parametresiz, TEK bir senaryoyu test eden bir test metodu OLDUĞUNU belirtir.',
+            neden: '`[Fact]`, bu senaryonun (e-posta ZATEN kayıtlı) da SABİT bir girdi seti taşıdığını, parametreli bir varyasyon GEREKTİRMEDİĞİNİ gösterir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, xUnit bu metodu bir TEST olarak TANIMAZ — Bölüm 15\'teki DuplicateEmailException fırlatma mantığında bir hata olsa bile bu test HİÇ ÇALIŞMAZ, hata FARK EDİLMEZDİ.'
+          },
+          {
+            satir: 'public async Task Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException()',
+            aciklama: 'Mutlu yol testiyle AYNI isimlendirme formülü: Register (metot) + EmailAlreadyRegistered (koşul) + ThrowsDuplicateEmailException (beklenen sonuç — bu kez bir EXCEPTION).',
+            neden: 'İsimdeki "Throws" öneki, bu testin bir HATA senaryosunu test ettiğini, "başarılı bir sonuç" değil "beklenen bir İSTİSNA" arandığını daha metodun İSMİNDEN belli eder.',
+            olmasaydi: 'Test anlamsız bir isimle (`Test2()`) yazılsaydı, CI raporunda bu test KIRMIZI olduğunda "hangi HATA senaryosunun artık doğru ÇALIŞMADIĞI" ANLAŞILMAZDI.'
+          },
+          {
+            satir: '.Setup(r => r.GetByEmailAsync("var@example.com", default))',
+            aciklama: '"GetByEmailAsync bu e-postayla çağrılırsa..." — AYNI e-postayla (`var@example.com`) yapılan çağrının SETUP\'ı, ZİNCİRİN İLK yarısı.',
+            neden: 'Bu e-posta, aşağıdaki `command`\'daki e-postayla BİREBİR AYNI OLMAK ZORUNDADIR — Moq\'un eşleştirme kuralı GEREĞİ (mutlu yol testindeki AYNI ilke).',
+            olmasaydi: 'Bu Setup olmasaydı, `GetByEmailAsync` çağrısı VARSAYILAN olarak null dönerdi — Handler "e-posta müsait" sanır, DuplicateEmailException HİÇ FIRLATILMAZDI, test amacının TAM TERSİNİ doğrulardı.'
+          },
+          {
+            satir: '.ReturnsAsync(new User { Id = 1, Email = "var@example.com", IsActive = true });',
+            aciklama: '"...VAR OLAN bir User nesnesi dön" — Bölüm 15\'teki `if (existingUser is not null)` dalının TETİKLENMESİ için gereken sahte veri.',
+            neden: 'Bu, testin SENARYOSUNU (e-posta ZATEN kayıtlı) SOMUTLAŞTIRAN kritik satır — `existingUser` artık null DEĞİL, bu da Handler\'ın DuplicateEmailException FIRLATMASI gereken dalı TETİKLER.',
+            olmasaydi: 'Bu satır olmasaydı (Setup boş bırakılsaydı), mock VARSAYILAN olarak null dönerdi — testin SENARYOSU (e-posta çakışması) HİÇ OLUŞMAZDI, ASSERT bölümündeki exception beklentisi HER ZAMAN BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: 'Mutlu yol testiyle AYNI — TÜM mock\'larla DONATILMIŞ bir Handler örneği elde edilir.',
+            neden: 'İki testin de AYNI `CreateHandler()` yardımcı metodunu KULLANMASI, testler arasında KURULUM tutarlılığı SAĞLAR — her testin KENDİ mock nesneleri VARDIR (her test METODU, sınıfın YENİ bir örneğiyle çalışır, xUnit\'in varsayılan izolasyon davranışı).',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(...)` çağrısı için bir `handler` DEĞİŞKENİ OLMAZDI.'
+          },
+          {
+            satir: 'var command = new RegisterCommand("var@example.com", "Deneme123!@#", "Test", "Kullanici");',
+            aciklama: 'Bu testin SENARYOSUNU taşıyan RegisterCommand — e-postası (`var@example.com`), YUKARIDAKİ Setup\'taki e-postayla BİREBİR AYNI.',
+            neden: 'Command\'daki e-posta ile Setup\'taki e-postanın EŞLEŞMESİ ZORUNLUDUR — Moq, yalnızca TAM eşleşen parametrelerle çağrılan mock\'lar için Setup\'taki değeri döner.',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(command, default)` çağrısı için bir `command` DEĞİŞKENİ OLMAZDI.'
+          },
+          {
+            satir: 'var act = () => handler.Handle(command, default);',
+            aciklama: 'Metot HEMEN çağrılmaz — bunun yerine "onu çağıracak bir fonksiyon" (`act`) tanımlanır.',
+            neden: 'Bölüm 15\'teki Handler, e-posta çakışması durumunda bir EXCEPTION FIRLATIR — normal bir `var sonuc = await handler.Handle(...)` yazımı, exception fırlatıldığı AN testin kendisini ÇÖKERTİRDİ (test "hata" olarak işaretlenirdi, "beklenen davranış" olarak DEĞİL). `act` değişkeni, FluentAssertions\'a "bu işlemi ÇALIŞTIR ve bir exception BEKLE" demeyi sağlar.',
+            olmasaydi: 'Bu kalıp kullanılmasaydı (`await handler.Handle(command, default)` doğrudan çağrılsaydı), DuplicateEmailException fırlatıldığı an test çalışması KESİLİRDİ — "bu exception BEKLENİYORDU, testin geçmesi gerekiyordu" mesajı YERİNE, test "beklenmedik hata" olarak KIRMIZI görünürdü.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<DuplicateEmailException>();',
+            aciklama: 'FluentAssertions\'ın okunabilir sözdizimi: "act çalıştırıldığında, TAM OLARAK DuplicateEmailException fırlatılmalı" — TAM OLARAK bu tipte, başka bir exception DEĞİL.',
+            neden: 'Bölüm 15\'teki `throw new DuplicateEmailException();` satırının GERÇEKTEN çalıştığını, kodun o dala GİRDİĞİNİ kanıtlar — bu olmasa, "e-posta zaten kayıtlıyken kayıt REDDEDİLİYOR mu" sorusunun cevabı yalnızca MANUEL test ile bulunabilirdi.',
+            olmasaydi: 'Bu doğrulama olmasaydı, Bölüm 15\'teki kontrolde bir HATA olsa (ör. `if (existingUser is not null)` yanlışlıkla `if (existingUser is null)` yazılsaydı — TERSİNE çevrilse), zaten kayıtlı bir e-postayla İKİNCİ bir hesap SESSİZCE açılabilirdi ve bu test bunu YAKALAYAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Test, Handler bittiği AN yazılır — CLAUDE.md kuralı, sona bırakılmaz',
+          'Repository/dış servisler Moq ile MOCK\'lanır — gerçek DB/e-posta çağrısı YOK',
+          'AutoMapper mock\'LANMAZ — gerçek Profile\'dan kurulu, gerçek bir Mapper kullanılır',
+          'Arrange/Act/Assert kalıbı, testin okunabilirliğini standartlaştırır',
+          'Verify(), yalnızca "sonuç doğru mu" değil, "doğru parametrelerle, doğru sayıda çağrıldı mı" sorusunu da cevaplar',
+          'Exception testleri, metodu hemen çağırmak yerine bir fonksiyona SARAR (`act`)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

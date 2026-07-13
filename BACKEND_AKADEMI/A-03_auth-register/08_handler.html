@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Handler — İş Mantığının Kalbi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'handler',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '07_dto-automapper.html',
+    sonrakiBolum: '09_test.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 15 · CLAUDE.md ADIM 11',
+        baslik: 'Handler — İş Mantığının Kalbi',
+        altBaslik: 'Şu ana kadar yazdığımız her şey (Entity, Config, Command, Repository, DTO) BURADA bir araya geliyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Handler Neden Bu Kadar Geç Yazılıyor?',
+        aciklama: 'RegisterCommandHandler, önceki 6 bölümde yazdığımız HER ŞEYİ kullanır: RegisterCommand (Bölüm 12), IUserRepository (Bölüm 13), RegisterResponse+AutoMapper (Bölüm 14), User entity (Bölüm 9). Bu yüzden dikey dilimde Handler, iş mantığının GERÇEKTEN yaşadığı yer olsa da, YAZILMA SIRASINDA sona yakın gelir — çünkü ihtiyaç duyduğu her parçanın ÖNCEDEN var olması gerekir.',
+        neden: 'Handler\'ı ilk yazmaya çalışsaydık, henüz var olmayan IUserRepository, RegisterResponse gibi tiplere referans veren kod DERLENMEZDİ.',
+        olmasaydi: '"Önce Handler, sonra gerisini tamamlarım" yaklaşımı denenseydi, IDE\'de onlarca kırmızı alt çizgi (henüz tanımlanmamış tip hataları) birikirdi — hangisinin GERÇEK bir hata, hangisinin "henüz yazılmadı" olduğunu ayırt etmek zorlaşırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterCommandHandler — Bağımlılıklar (Constructor)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RegisterCommand.cs',
+        nedenBuKlasor: 'AYNI dosyada, RegisterCommand\'ın (Bölüm 12) hemen altında — CLAUDE.md §5: Command+Handler aynı dosyada, asla ayrı klasöre bölünmez.',
+        kod: `public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
+    private readonly IMapper _mapper;
+
+    public RegisterCommandHandler(
+        IUserRepository userRepository,
+        IPasswordService passwordService,
+        IOtpService otpService,
+        IEmailService emailService,
+        IMapper mapper
+    )
+    {
+        _userRepository = userRepository;
+        _passwordService = passwordService;
+        _otpService = otpService;
+        _emailService = emailService;
+        _mapper = mapper;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterResponse>',
+            aciklama: '`IRequestHandler<TCommand, TResponse>` arayüzünü implemente eder — MediatR, `_mediator.Send(new RegisterCommand(...))` çağrıldığında, TAM OLARAK bu imzaya sahip sınıfı otomatik bulup çalıştırır (A-02/05).',
+            neden: 'Bu, Bölüm 12\'de RegisterCommand\'ın `IRequest<RegisterResponse>` implemente etmesiyle EŞLEŞEN karşı taraf — MediatR bu iki tip imzasını (Command\'ın döndürdüğü tip = Handler\'ın işlediği tip) karşılaştırarak DOĞRU Handler\'ı bulur.',
+            olmasaydi: 'İmza uyuşmasaydı (ör. Handler `IRequestHandler<RegisterCommand, string>` olsaydı), MediatR bu Command için hiçbir Handler bulamaz ya da YANLIŞ bir Handler\'a yönlendirirdi — DI konteyneri başlangıçta (uygulama açılırken) bu uyuşmazlığı fark edip HATA verir.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Bölüm 13\'te yazdığımız ARAYÜZ — somut UserRepository DEĞİL.',
+            neden: 'A-02/01\'de gördüğümüz Dependency Injection ilkesinin tam burada uygulandığı yer: Handler, "bir kullanıcıyı nasıl kaydedeceğini" DEĞİL, "kimden isteyeceğini" bilir. Test yazarken (Bölüm 16) bu arayüz sahte (mock) bir nesneyle DEĞİŞTİRİLEBİLİR.',
+            olmasaydi: 'Doğrudan `UserRepository` (somut sınıf) enjekte edilseydi, bu Handler\'ı test etmek için GERÇEK bir SQL Server bağlantısı gerekirdi — birim test, entegrasyon testine dönüşürdü.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'A-02/05\'te Program.cs\'te `AddScoped<IPasswordService, PasswordService>()` ile kaydedilen servis — BCrypt hash\'leme işini SARAN bir arayüz.',
+            neden: 'Handler, BCrypt.Net-Next paketini DOĞRUDAN çağırmak yerine bu arayüzü kullanır — böylece "hash\'leme algoritması BCrypt\'ten farklı bir şeye değişse" (teorik senaryo), Handler\'ın kodu HİÇ değişmez, yalnızca PasswordService\'in İÇİ değişir.',
+            olmasaydi: 'Handler doğrudan `BCrypt.Net.BCrypt.HashPassword(...)` çağırsaydı, hem bu çağrı BİRDEN FAZLA Handler\'da (Register, ChangePassword...) TEKRARLANIRDI hem de testte bu ÜÇÜNCÜ PARTİ kütüphaneyi mock\'lamak (arayüz olmadığı için) MÜMKÜN OLMAZDI.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'OTP (tek kullanımlık doğrulama kodu) üretimi ve doğrulanması mantığını SARAN, birden fazla Handler\'ın (Register, ForgotPassword, DeleteAccount) PAYLAŞTIĞI bir servis.',
+            neden: 'CLAUDE.md §3\'teki "paylaşılan mantık küçük bir arayüz+impl\'e çıkarılır, Handler\'lar birbirini mediator ile çağırmaz" kuralının somut örneği — OTP üretimi Register\'a ÖZGÜ değil, ayrı bir servise ÇIKARILMIŞ.',
+            olmasaydi: 'Bu servis olmasaydı, OTP üretim mantığı (rastgele kod üretme + hash\'leme) HER Handler\'da AYRI AYRI KOPYALANIRDI — bir gün OTP\'nin uzunluğu 6 haneden 8 haneye çıksa, TÜM Handler\'ların TEK TEK bulunup güncellenmesi gerekirdi.'
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'E-posta gönderme işini SARAN arayüz — geliştirme ortamında `DevEmailService` (A-02/05\'teki DI kaydında görülebilir) muhtemelen e-postayı konsola/log\'a yazar, üretimde gerçek bir SMTP/e-posta sağlayıcısına bağlanır.',
+            neden: 'Handler, "e-posta NASIL gönderilir" (SMTP ayarları, sağlayıcı API\'si) bilgisinden TAMAMEN İZOLE — yalnızca "bu e-postayı, bu kişiye, bu OTP koduyla gönder" der. Bu, A-02/02\'deki katman izolasyonu ilkesinin BİR BAŞKA uygulaması.',
+            olmasaydi: 'Handler doğrudan bir SMTP kütüphanesi kullansaydı, testte (Bölüm 16) GERÇEKTEN e-posta GÖNDERİLMEDEN bu Handler\'ı çalıştırmak İMKANSIZ olurdu — her test çalıştırmasında gerçek e-postalar GİDERDİ.'
+          },
+          {
+            satir: 'private readonly IMapper _mapper;',
+            aciklama: 'Bölüm 14\'te DI\'a kaydedilen (AddAutoMapper ile) AutoMapper arayüzü — Handler\'ın SON satırında (bu slaytın devamında) kullanılacak.',
+            neden: 'Bu, AutoMapper\'ın KENDİSİNİN de bir arayüz (IMapper) ÜZERİNDEN enjekte edildiğini gösterir — üçüncü parti bir kütüphane bile olsa, Handler yine SOMUT bir sınıfa değil, bir SÖZLEŞMEYE bağımlıdır (Bölüm 16\'daki testte bunun neden ÖNEMLİ olduğunu — ya da burada BİLEREK mock\'LANMADIĞINI — göreceğiz).',
+            olmasaydi: 'IMapper yerine somut `Mapper` sınıfı enjekte edilseydi, AutoMapper\'ın kendi iç yapısına Handler\'ın DOĞRUDAN bağımlı olması gerekirdi — kütüphanenin sunduğu arayüz soyutlaması BOŞA gitmiş olurdu.'
+          },
+          {
+            satir: 'public RegisterCommandHandler(',
+            aciklama: 'Handler\'ın constructor\'ı — beş bağımlılığın (repository, üç servis, mapper) HEPSİ burada, TEK bir noktada, DI konteynerinden ALINIR.',
+            neden: 'Tüm bağımlılıkların constructor ÜZERİNDEN enjekte edilmesi ("constructor injection"), bir Handler\'ı test ederken hangi sahte (mock) nesnelerin GEÇİLMESİ gerektiğini AÇIKÇA gösterir — Bölüm 16\'daki testte bu 5 parametrenin HER BİRİ mock\'lanacak.',
+            olmasaydi: 'Bağımlılıklar constructor yerine metot İÇİNDE `new PasswordService()` gibi DOĞRUDAN oluşturulsaydı, DI\'ın sağladığı test edilebilirlik (Bölüm 16) TAMAMEN kaybolurdu.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi — DI konteynerinin (A-02/05\'teki `AddScoped<IUserRepository, UserRepository>` kaydı sayesinde) OTOMATİK sağladığı repository.',
+            neden: 'Parametre adı (`userRepository`), alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER ama farklı (alt çizgi öneki ile) tutulur — C#\'ta bu, hangi parametrenin hangi alana ATANDIĞINI OKUYUCUYA açıkça gösteren yaygın bir konvansiyondur.',
+            olmasaydi: 'Bu parametre olmasaydı, aşağıdaki `_userRepository = userRepository;` ataması YAZILAMAZDI — Handler, HİÇBİR ZAMAN bir kullanıcıyı sorgulayamaz/kaydedemezdi.'
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'İkinci parametre — bir üstteki `userRepository` ile AYNI desende, BCrypt hash\'leme servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR — bu, kod okuyan birinin "hangi alan hangi parametreye karşılık geliyor" sorusunu HIZLICA cevaplamasını sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_passwordService = passwordService;` atanamaz, Handler kullanıcının şifresini HİÇBİR ZAMAN hash\'leyemezdi — düz metin şifre veritabanına yazma riski doğardı.'
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'Üçüncü parametre — OTP üretim/doğrulama servisini enjekte eder, diğer parametrelerle AYNI konvansiyon.',
+            neden: 'Bu servis paylaşılan (birden fazla Handler\'ın kullandığı) bir servis olduğu için, DI konteyneri onu HANGİ Handler isterse istesin AYNI kayıttan (A-02/05) sağlar — Handler\'lar arasında kod TEKRARI oluşmaz.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler kendi OTP üretim mantığını YAZMAK zorunda kalırdı — CLAUDE.md\'nin "paylaşılan mantık ortak bir servise çıkarılır" kuralı ihlal edilirdi.'
+          },
+          {
+            satir: 'IEmailService emailService,',
+            aciklama: 'Dördüncü parametre — e-posta gönderme servisini enjekte eder.',
+            neden: 'Diğer üç servis gibi arayüz (interface) üzerinden alınması, geliştirme ortamında GERÇEK e-posta göndermeden (ör. konsola yazan bir implementasyonla) test edilebilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler kullanıcıya OTP doğrulama e-postası HİÇBİR ZAMAN gönderemezdi — kayıt olan kullanıcı e-postasını asla doğrulayamazdı.'
+          },
+          {
+            satir: 'IMapper mapper',
+            aciklama: 'Beşinci ve SON parametre — sonunda virgül YOK, çünkü parametre listesinin son elemanı.',
+            neden: 'AutoMapper\'ın kendisi de (üçüncü parti bir kütüphane olmasına rağmen) arayüz üzerinden enjekte edilir — Handler, somut bir `Mapper` sınıfına değil, `IMapper` SÖZLEŞMESİNE bağımlıdır.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler\'ın son satırındaki `_mapper.Map<RegisterResponse>(user)` çağrısı YAZILAMAZDI — Entity\'den DTO\'ya dönüşüm elle yapılmak ZORUNDA kalırdı.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Constructor parametresi olarak alınan repository, sınıfın ALANINA atanır — bundan sonra `Handle` metodu bu alanı KULLANIR.',
+            neden: 'Bu atama, DI\'dan gelen nesneyi sınıfın YAŞAM SÜRESİ boyunca ERİŞİLEBİLİR kılar — parametre yalnızca constructor içinde geçerliyken, alan TÜM metotlarda kullanılabilir.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` alanı null KALIRDI — `Handle` metodundaki İLK `_userRepository.GetByEmailAsync(...)` çağrısı NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Bir üsttekiyle AYNI desen — passwordService parametresi, `_passwordService` alanına atanır.',
+            neden: 'Bu 5 atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar, kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı — şifre hash\'leme çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'Bir üsttekiyle AYNI desen — otpService parametresi, `_otpService` alanına atanır.',
+            neden: 'Bu 5 atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar, kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı — OTP üretim çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'Bir üsttekiyle AYNI desen — emailService parametresi, `_emailService` alanına atanır.',
+            neden: 'Bu 5 atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar, kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_emailService` null kalırdı — OTP doğrulama e-postası gönderme çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_mapper = mapper;',
+            aciklama: 'SON atama — mapper parametresi, `_mapper` alanına atanır.',
+            neden: 'Bu 5 atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar, kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_mapper` null kalırdı — Handler\'ın SON satırındaki `_mapper.Map<RegisterResponse>(user)` çağrısı NullReferenceException ile PATLARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Handle() — Adım 1-2: Çifte E-posta Kontrolü',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RegisterCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<RegisterResponse> Handle(RegisterCommand request, CancellationToken ct)
+{
+    var existingUser = await _userRepository.GetByEmailAsync(request.Email, ct);
+    if (existingUser is not null)
+        throw new DuplicateEmailException();
+
+    var emailHash = _passwordService.HashToken(request.Email);
+    if (await _userRepository.OriginalEmailHashExistsAsync(emailHash, ct))
+        throw new DuplicateEmailException();
+}`,
+        satirlar: [
+          {
+            satir: 'public async Task<RegisterResponse> Handle(RegisterCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın `IRequestHandler<RegisterCommand, RegisterResponse>` sözleşmesinin ZORUNLU kıldığı tek metot — `_mediator.Send(command)` çağrıldığında ÇALIŞTIRILAN yer BURASIDIR.',
+            neden: 'İmza (`Handle(RegisterCommand request, CancellationToken ct)`), MediatR\'ın TÜM Handler\'lardan BEKLEDİĞİ standart bir kalıptır — `request`, Controller\'dan gelen RegisterCommand\'ı taşır, `ct` iptal sinyalini taşır.',
+            olmasaydi: 'Bu metot imzası YANLIŞ yazılsaydı (ör. `RegisterCommand` yerine başka bir tip), MediatR bu sınıfı `IRequestHandler<RegisterCommand, RegisterResponse>` olarak TANIMAZ, `_mediator.Send(new RegisterCommand(...))` çağrısı çalışma zamanında "Handler bulunamadı" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'var existingUser = await _userRepository.GetByEmailAsync(request.Email, ct);',
+            aciklama: 'Bölüm 13\'te yazdığımız, BİLEREK soft-delete filtresini yok sayan sorguyu çağırır — aktif VEYA grace-period\'daki (silinmiş ama henüz anonimleştirilmemiş) bir kullanıcı varsa bulur.',
+            neden: 'Bu kontrol, Bölüm 10\'daki veritabanı unique index\'inden ÖNCE, uygulama seviyesinde çalışır — kullanıcıya "e-posta zaten kayıtlı" gibi ANLAMLI bir hata mesajı verebilmek için (veritabanı kısıtı ihlali, çıplak haliyle anlamsız bir 500 hatasına dönerdi).',
+            olmasaydi: 'Bu kontrol olmasaydı, aynı e-postayla kayıt denemesi doğrudan veritabanına giderdi — unique index (Bölüm 10) INSERT\'i reddederdi ama bu, kullanıcıya "e-posta zaten kayıtlı" yerine ham bir veritabanı hatası olarak yansırdı.'
+          },
+          {
+            satir: 'if (existingUser is not null)',
+            aciklama: 'Sorgu SONUÇ DÖNDÜRDÜYSE (yani bu e-postayla eşleşen bir kullanıcı VARSA), bir sonraki satırda hata FIRLATILIR.',
+            neden: '`is not null` yazımı (C#\'ın modern kalıp eşleştirme sözdizimi), `existingUser != null` ile AYNI anlama gelir ama daha OKUNAKLI kabul edilir — bu proje bu modern sözdizimini TERCİH eder.',
+            olmasaydi: 'Bu kontrol olmasaydı, `existingUser` null olsun ya da olmasın kod DEVAM EDERDİ — aynı e-postayla İKİNCİ bir kayıt oluşturulmaya ÇALIŞILIRDI, unique index\'e (Bölüm 10) çarpıp ANLAMSIZ bir veritabanı hatasıyla SONUÇLANIRDI.'
+          },
+          {
+            satir: 'throw new DuplicateEmailException();',
+            aciklama: 'Bu Handler\'da İKİ farklı yerde (aktif kullanıcı kontrolü ve anonimleştirilmiş hesap kontrolü) AYNI exception fırlatılır — çağıran koda (Controller/global exception handler) "e-posta zaten kullanımda" TEK bir anlamlı hata türü olarak yansır.',
+            neden: 'İki farklı TEKNİK sebep (aktif hesap VEYA anonimleştirilmiş eski hesap) İSTEMCİ açısından AYNI SONUCU doğurur ("bu e-postayla kayıt olamazsınız") — istemcinin bu ikisini AYIRT ETMESİNE gerek yoktur, bu yüzden TEK bir exception türü yeterlidir.',
+            olmasaydi: 'Bu exception fırlatılmasaydı (kod sessizce devam etseydi), aynı e-postayla İKİNCİ bir kullanıcı oluşturulmaya ÇALIŞILIRDI — en iyi ihtimalle veritabanı unique index\'i bunu REDDEDER (anlamsız 500 hatası), en kötü ihtimalle (anonimleştirilmiş hesap durumunda) İKİNCİ kayıt BAŞARIYLA oluşurdu.'
+          },
+          {
+            satir: 'var emailHash = _passwordService.HashToken(request.Email);',
+            aciklama: 'İKİNCİ kontrolün İLK adımı: girilen e-postanın SHA-256 hash\'i hesaplanır — bu, veritabanındaki `OriginalEmailHash` alanıyla KARŞILAŞTIRILACAK.',
+            neden: 'Anonimleştirme sonrası gerçek e-posta VERİTABANINDAN SİLİNİR, yalnızca HASH\'i kalır (REFERENCE/SECURITY.md §9) — bu yüzden karşılaştırma yapabilmek için ELİMİZDEKİ düz metin e-postayı da AYNI algoritmayla hash\'lememiz gerekir.',
+            olmasaydi: 'Bu satır olmasaydı, bir sonraki satırdaki `OriginalEmailHashExistsAsync(emailHash, ct)` çağrısına GEÇİRİLECEK bir hash değeri OLMAZDI — kod derlenemezdi.'
+          },
+          {
+            satir: 'if (await _userRepository.OriginalEmailHashExistsAsync(emailHash, ct))',
+            aciklama: 'İKİNCİ, farklı bir kontrol: bu e-posta daha önce ANONİMLEŞTİRİLMİŞ (30 gün sonra kalıcı silinmiş) bir hesaba mı aitti?',
+            neden: 'Anonimleştirme sonrası gerçek e-posta VERİTABANINDAN SİLİNİR (yalnızca hash\'i, OriginalEmailHash, kalır) — bu yüzden ilk kontrol (GetByEmailAsync) bu durumu YAKALAYAMAZ, aynı e-postayla tekrar kayıt açılabilirdi. İkinci kontrol, bu boşluğu SHA-256 hash karşılaştırmasıyla kapatır (REFERENCE/SECURITY.md §9).',
+            olmasaydi: 'Bu ikinci kontrol olmasaydı, bir kullanıcı hesabını sildirip anonimleştirilmeyi bekledikten sonra AYNI e-postayla YENİDEN kayıt olabilirdi — hesap silme sürecinin "kalıcılık" garantisi (30 gün sonra bu e-posta bir daha KULLANILAMAZ) delinmiş olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Handle() — Adım 3-6: Hash, OTP, Kayıt, E-posta',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RegisterCommand.cs',
+        nedenBuKlasor: null,
+        kod: `var (otpCode, otpHash) = _otpService.Generate();
+
+var user = new User
+{
+    Email = request.Email,
+    PasswordHash = _passwordService.Hash(request.Password),
+    FirstName = request.FirstName,
+    LastName = request.LastName,
+    AuthProvider = "Local",
+    PendingOtpCodeHash = otpHash,
+    PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes),
+    PendingOtpCodePurpose = OtpPurpose.EmailVerification,
+};
+
+await _userRepository.AddAsync(user, ct: ct);
+await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
+
+return _mapper.Map<RegisterResponse>(user);`,
+        satirlar: [
+          {
+            satir: 'var (otpCode, otpHash) = _otpService.Generate();',
+            aciklama: 'OTP servisinden hem GERÇEK kodu (otpCode — e-postayla gönderilecek) hem HASH\'ini (otpHash — veritabanına yazılacak) alır.',
+            neden: 'Bu, C#\'ın "tuple" (çoklu değer döndürme) özelliğiyle, TEK bir çağrıda hem "kullanıcıya ne gösterilecek" hem "veritabanına ne yazılacak" değerlerini üretir — Bölüm 9\'daki "OTP asla düz metin saklanmaz" ilkesinin somut uygulaması.',
+            olmasaydi: 'Yalnızca hash üretilseydi, e-postayla GÖNDERİLECEK gerçek kod hiçbir yerde olmazdı — kullanıcı e-postasını asla doğrulayamazdı. Yalnızca kod üretilip hash\'lenmeseydi, düz metin kod veritabanına yazılırdı — güvenlik ilkesi ihlal edilirdi.'
+          },
+          {
+            satir: 'var user = new User',
+            aciklama: 'Object initializer sözdizimiyle bir User nesnesi inşa edilmeye BAŞLANIR — aşağıdaki `{ }` bloğundaki HER satır, entity\'nin bir ALANINI doldurur.',
+            neden: 'Bu, "constructor\'a onlarca parametre geçmek" yerine C#\'ın sunduğu daha OKUNAKLI bir kalıptır — hangi alanın hangi değeri aldığı, sıraya değil İSME dayalı olarak AÇIKÇA görünür.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki alan atamalarının (Email=, FirstName= gibi) BAĞLI OLACAĞI bir nesne olmazdı — kod derlenemezdi.'
+          },
+          {
+            satir: 'Email = request.Email,',
+            aciklama: 'Kullanıcının Command\'dan gelen e-postası, YENİ User nesnesinin Email alanına DOĞRUDAN aktarılır.',
+            neden: 'Bu noktaya kadar zaten İKİ KEZ (GetByEmailAsync + OriginalEmailHashExistsAsync) bu e-postanın ÇAKIŞMADIĞI DOĞRULANMIŞTI — artık güvenle User nesnesine YAZILABİLİR.',
+            olmasaydi: 'Bu satır olmasaydı, Email alanı varsayılan değeri (string.Empty, A-03/02) ile KALIRDI — kullanıcı boş bir e-postayla kaydolmuş gibi görünürdü, giriş yapması İMKANSIZ hale gelirdi.'
+          },
+          {
+            satir: 'PasswordHash = _passwordService.Hash(request.Password),',
+            aciklama: 'Kullanıcının girdiği ŞİFRE (düz metin), User nesnesine YAZILMADAN önce BCrypt ile hash\'lenir.',
+            neden: 'A-02/05\'te gördüğümüz BCrypt.Net-Next paketi burada devreye giriyor — `request.Password` (düz metin) hiçbir zaman User nesnesine, dolayısıyla veritabanına YAZILMAZ, yalnızca HASH\'i yazılır.',
+            olmasaydi: '`PasswordHash = request.Password` yazılsaydı (hash\'leme atlansaydı), tüm kullanıcı şifreleri veritabanında DÜZ METİN olarak saklanırdı — bir veritabanı sızıntısında TÜM kullanıcıların gerçek şifreleri anında ele geçerdi (uygulama güvenliğinin en temel, en kritik ihlallerinden biri).'
+          },
+          {
+            satir: 'FirstName = request.FirstName,',
+            aciklama: 'Command\'dan gelen ad, DOĞRUDAN User nesnesine aktarılır — herhangi bir dönüşüm/hash\'leme GEREKMEZ (FirstName hassas bir veri değildir).',
+            neden: 'PasswordHash/Email gibi alanların AKSİNE, FirstName/LastName girdi HALİYLE saklanır — Validator (Bölüm 12) zaten boş olmadığını ve 50 karakteri AŞMADIĞINI doğrulamıştı, Handler bu VERİYE güvenerek doğrudan atar.',
+            olmasaydi: 'Bu satır olmasaydı, FirstName alanı varsayılan değeri (string.Empty) ile KALIRDI — kayıt sonrası "Hoş geldin, " gibi İSİMSİZ bir karşılama ekranı görünürdü.'
+          },
+          {
+            satir: 'LastName = request.LastName,',
+            aciklama: 'FirstName ile BİREBİR aynı desen — Command\'dan gelen soyadı, doğrudan User nesnesine aktarılır.',
+            neden: 'FirstName ve LastName\'in AYNI şekilde (dönüşümsüz, doğrudan) atanması, A-03/05\'teki Validator\'da ikisinin AYNI kural setine (NotEmpty + MaximumLength(50)) sahip olmasıyla TUTARLIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, LastName alanı boş KALIRDI — kullanıcının profilinde yalnızca adı görünür, soyadı HİÇ kaydedilmezdi.'
+          },
+          {
+            satir: 'AuthProvider = "Local",',
+            aciklama: 'Bu kullanıcının, e-posta+şifre (Local) YÖNTEMİYLE kaydolduğunu SABİT olarak işaretler — Google/Apple ile kayıt, bu Handler\'dan GEÇMEZ (ayrı Command\'lar kullanır).',
+            neden: 'RegisterCommand yalnızca Email/Password/FirstName/LastName ALDIĞI için (Bölüm 12), bu Handler\'ın işlediği HER kayıt zaten "Local" yöntemledir — bu değer, Command\'dan DEĞİL, Handler\'ın KENDİ bağlamından (hangi akışta olduğumuzdan) belirlenir.',
+            olmasaydi: 'Bu satır olmasaydı, AuthProvider alanı User.cs\'teki varsayılan değeriyle ("Local", A-03/02) YİNE DE doğru sonucu verirdi — ama bu satırın burada AÇIKÇA yazılması, "bu Handler\'ın Local kayıt akışı olduğunu" OKUYUCUYA netleştirir.'
+          },
+          {
+            satir: 'PendingOtpCodeHash = otpHash,',
+            aciklama: 'Bir üstteki satırda üretilen OTP\'nin HASH\'i (düz metin kodu DEĞİL), User nesnesine yazılır — bu, e-posta doğrulaması TAMAMLANANA kadar veritabanında BEKLEYEN kod olarak durur.',
+            neden: 'Bölüm 9\'daki güvenlik ilkesiyle (OTP asla düz metin saklanmaz) BİREBİR TUTARLI: yalnızca hash veritabanına yazılır, gerçek kod yalnızca E-POSTA üzerinden kullanıcıya ULAŞIR.',
+            olmasaydi: 'Bu satır olmasaydı, kullanıcı e-postasındaki kodu girdiğinde (doğrulama isteğinde) sistemin KARŞILAŞTIRACAĞI bir hash OLMAZDI — e-posta doğrulama akışı BAŞLATILAMAZDI.'
+          },
+          {
+            satir: 'PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes),',
+            aciklama: 'OTP kodunun geçerlilik SÜRESİNİN dolacağı anı, IOtpService\'in TANIMLADIĞI sabit bir süre (dakika) ekleyerek hesaplar.',
+            neden: 'Süre sabiti (`OtpExpiryMinutes`), IOtpService arayüzünde TANIMLIDIR (Handler\'da SABİT bir sayı olarak TEKRAR yazılmaz) — bu, OTP süresi bir gün DEĞİŞTİRİLMEK istendiğinde TEK bir yerin güncellenmesini SAĞLAR.',
+            olmasaydi: 'Bu satır olmasaydı, PendingOtpCodeExpiresAt null KALIRDI — Bölüm 9\'daki "bu kod hâlâ geçerli mi" kontrolü YAPILAMAZDI, kullanıcı GÜNLER sonra bile eski OTP kodunu kullanabilirdi.'
+          },
+          {
+            satir: 'PendingOtpCodePurpose = OtpPurpose.EmailVerification,',
+            aciklama: 'Bu OTP kodunun HANGİ AMAÇLA üretildiğini (e-posta doğrulama) işaretler — Bölüm 9\'da gördüğümüz, birden fazla OTP akışının PAYLAŞTIĞI alan setinin "amaç" etiketi.',
+            neden: '`OtpPurpose.EmailVerification` değeri, bu kodun YALNIZCA e-posta doğrulama isteğinde KABUL EDİLECEĞİNİ garanti eder — bir şifre-sıfırlama isteğinde bu kod YANLIŞLIKLA kabul EDİLEMEZ.',
+            olmasaydi: 'Bu alan set edilmeseydi (ya da yanlış bir değer alsaydı), bu OTP kodu YANLIŞ bir akışta (ör. hesap silme onayında) YANLIŞLIKLA kabul edilebilirdi — Bölüm 9\'da tartıştığımız "amaç karışıklığı" güvenlik açığı doğardı.'
+          },
+          {
+            satir: 'await _userRepository.AddAsync(user, ct: ct);',
+            aciklama: 'A-02/07\'de yazdığımız Repository<T>.AddAsync çağrılır — kullanıcı veritabanına yazılır.',
+            neden: '`ct: ct` yazımı, C#\'ın "named argument" (isimli parametre) özelliği — AddAsync\'in imzası `(T entity, int? userId = null, CancellationToken ct = default)` (A-02/07); burada userId GEÇİLMİYOR (null kalıyor) çünkü Register anonim bir işlem, "kim oluşturdu" sorusunun cevabı yok — kullanıcı KENDİ KENDİNİ kaydediyor.',
+            olmasaydi: 'AddAsync çağrılmasaydı, User nesnesi yalnızca BELLEKTE var olurdu — istek bitince kaybolur, hiçbir kayıt oluşmazdı.'
+          },
+          {
+            satir: 'await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);',
+            aciklama: 'AddAsync\'ten (veritabanına yazma) SONRA çağrılır — kullanıcıya gerçek OTP kodunu (hash\'ini DEĞİL) taşıyan doğrulama e-postası gönderilir.',
+            neden: 'Sıralama BİLİNÇLİ: önce kullanıcı veritabanına YAZILIR, sonra e-posta gönderilir. Eğer e-posta gönderimi kullanıcı YAZILMADAN önce denenip BAŞARISIZ olsaydı, "e-posta gitti ama kullanıcı hiç oluşmadı" gibi tutarsız bir durum ortaya çıkabilirdi — bu sırada risk, TERSİNE göre daha KÜÇÜK (kullanıcı var ama e-posta gitmemiş olabilir, bu durum daha kolay TELAFİ edilir — "OTP tekrar gönder" akışıyla).',
+            olmasaydi: 'Bu satır hiç çağrılmasaydı, kullanıcı hesabı OLUŞTURULUR ama e-posta ADRESİNİ doğrulamak için HİÇBİR yol kalmazdı — CLAUDE.md/DTO yorumundaki "kayıt sonrası hemen giriş yapılmaz, önce e-posta doğrulanmalı" akışı BAŞLATILAMAZDI.'
+          },
+          {
+            satir: 'return _mapper.Map<RegisterResponse>(user);',
+            aciklama: 'Bölüm 14\'te yazdığımız AutoMapper Profile burada ÇALIŞIR — User entity\'si, RegisterResponse DTO\'suna dönüştürülüp Controller\'a (Bölüm 17) döner.',
+            neden: 'Bu, Handler\'ın son satırı — "iş mantığı bitti, şimdi dışarıya ne göstereceğiz" sorusunun cevabı. `_mapper.Map<T>()`, Bölüm 14\'teki `CreateMap<User, RegisterResponse>()` kaydını KULLANIR.',
+            olmasaydi: 'AutoMapper kullanılmasaydı, bu satır `return new RegisterResponse(user.Id, user.Email, user.FirstName, user.CurrentLevel, user.ThemePreference);` şeklinde elle yazılırdı (Bölüm 14\'te tartıştığımız trade-off).'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Handler, önceki 6 bölümde yazılan HER PARÇAYI (Command, Repository, Entity, DTO) bir araya getirir',
+          'Çifte e-posta kontrolü: aktif kullanıcı + daha önce anonimleştirilmiş hesap',
+          'Şifre, User nesnesine YAZILMADAN önce BCrypt ile hash\'lenir — düz metin asla saklanmaz',
+          'OTP hem gerçek kod (e-postaya) hem hash (veritabanına) olarak üretilir',
+          'Handler\'ın son işi, Entity\'yi DTO\'ya (AutoMapper ile) dönüştürüp döndürmek'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

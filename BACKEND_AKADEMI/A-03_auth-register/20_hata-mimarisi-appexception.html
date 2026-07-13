@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hata Mimarisi: AppException + ErrorMessages</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'hata-mimarisi-appexception',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '18_account-deletion.html',
+    sonrakiBolum: '21_destek-servisleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 20 · BACKEND ALTYAPI DERİNLEŞTİRME',
+        baslik: 'Hata Mimarisi: AppException + ErrorMessages',
+        altBaslik: 'Bölüm 1-19 boyunca defalarca gördüğümüz DuplicateEmailException, InvalidCredentialsException gibi exception\'ların HEPSİNİN üzerine kurulduğu ortak temeli bu bölümde açıyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'İki Okuyucu, İki Farklı Mesaj Kanalı',
+        aciklama: 'Bir hata OLUŞTUĞUNDA (ör. "bu e-posta zaten kayıtlı"), bu bilginin İKİ farklı okuyucusu vardır: (1) UYGULAMAYI kullanan gerçek kişi — Türkçe veya Almanca, anlaşılır bir cümle görmeli; (2) Loglara/veritabanına bakan GELİŞTİRİCİ — dile bakılmaksızın, arama yapılabilir, sabit İngilizce bir metin görmeli. AppException bu ikiliği KÖKTEN ayırır: exception\'ın kendisi yalnızca dilden BAĞIMSIZ bir `Code` (ör. "EMAIL_ALREADY_REGISTERED") taşır; asıl gösterilecek metin, `WordLearner.Application.Common.Localization.ErrorMessages` sözlüğünden, isteğin `Accept-Language` başlığına göre AYRICA çözülür.',
+        neden: 'CLAUDE.md §1\'in "istemciye giden mesaj Accept-Language\'a göre ErrorMessages sözlüğünden çözülür; DB/log İngilizce" kuralı TAM OLARAK bu yüzden var: eğer exception\'ın `.Message`\'ı DOĞRUDAN istemciye dönseydi, ya HER exception\'ı İKİ dilde YAZMAK (kod tekrarı) ya da log\'ları da kullanıcının diline BAĞLAMAK (aranabilirlik kaybı) gerekirdi. Code+sözlük ayrımı, YENİ bir dil eklerken (CLAUDE.md: "yalnızca ErrorMessages\'e bir sütun eklemekle desteklenir") HİÇBİR exception sınıfına dokunulmamasını sağlar.',
+        olmasaydi: 'Her exception kendi `.Message`\'ında sabit bir dildeki (ör. sadece Türkçe) metni TAŞISAYDI, İKİ sorun birden ortaya çıkardı: (1) Almanca konuşan bir kullanıcı Türkçe bir hata mesajı GÖRÜRDÜ, (2) geliştirici loglarda "Bu e-posta adresi zaten kayıtlı" gibi TÜRKÇE bir metin ARAMAK zorunda kalırdı — CLAUDE.md\'nin "log/geliştirici İngilizce görür" kuralı BAŞTAN ihlal edilmiş OLURDU.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AppException.cs — Taban Sınıf',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/AppException.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// AppException.cs
+//
+// AMAÇ: İstemciye dönecek mesajı kendi içinde SABİTLEMEYEN, yalnızca dil bağımsız
+//       bir hata kodu (Code) taşıyan taban exception.
+// NEDEN: Bir hata kodunun (ör. INVALID_CREDENTIALS) istemciye gösterilecek metni,
+//        isteğin diline göre değişebilmeli (Accept-Language). Bu yüzden mesaj
+//        exception'ın kendisinde değil, WordLearner.Application.Common.Localization.
+//        ErrorMessages sözlüğünde durur; ExceptionHandlingMiddleware Code'u bu
+//        sözlükten çözer. .Message yalnızca log/DB için sabit İNGİLİZCE açıklamadır
+//        (CODING_STANDARDS.md §1 — kod yorumları/MD dosyaları Türkçe kalır ama
+//        log/exception .Message'ları ve DB'ye giden her şey İngilizce yazılır;
+//        istemciye giden metin ayrı bir kanaldan, ErrorMessages'ten gelir).
+//        EntityNotFoundException bilinçli olarak bundan TÜRETİLMEZ — mesajı entity
+//        adı gibi dinamik veri içerir, sabit kod sözlüğüne uymaz.
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public abstract class AppException : Exception
+{
+    // AMAÇ: İstemciye dönecek, dilden bağımsız hata kodu (ör. "INVALID_CREDENTIALS").
+    // NEDEN: ErrorMessages sözlüğünün anahtarıdır; ExceptionHandlingMiddleware bu kodu
+    //        isteğin diline göre insan-okunur bir mesaja çevirir.
+    public string Code { get; }
+
+    // AMAÇ: Alt sınıfların kod + sabit İngilizce log mesajını taban sınıfa iletmesini sağlar.
+    protected AppException(string code, string developerMessage)
+        : base(developerMessage)
+    {
+        Code = code;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public abstract class AppException : Exception',
+            aciklama: '`abstract` — bu sınıfın DOĞRUDAN bir örneği ASLA oluşturulamaz, yalnızca `DuplicateEmailException` gibi SOMUT alt sınıflar üzerinden kullanılır.',
+            neden: 'Her hata durumunun KENDİNE ÖZGÜ bir Code\'u olmalı (ör. "EMAIL_ALREADY_REGISTERED") — `abstract` işareti, birinin "genel bir AppException fırlatayım" diyerek bu Code\'suz, belirsiz bir hata üretmesini DERLEME ZAMANINDA engeller.',
+            olmasaydi: '`abstract` olmasaydı, kod içinde `throw new AppException(...)` gibi GENEL, ANLAMSIZ bir hata üretmek MÜMKÜN olurdu — 400/409/401 gibi HTTP durum kodlarını ExceptionHandlingMiddleware tip üzerinden ayırt ettiği için, bu tür "isimsiz" bir hata YANLIŞ bir HTTP koduna DÜŞERDİ.'
+          },
+          {
+            satir: 'public string Code { get; }',
+            aciklama: 'Yalnızca OKUNABİLİR (setter yok) bir `Code` alanı — değeri yalnızca constructor\'da BİR KEZ atanır, sonradan DEĞİŞTİRİLEMEZ.',
+            neden: 'Bir exception fırlatıldıktan SONRA Code\'unun değişmesi hiçbir SENARYODA anlamlı değildir — `{ get; }` (setter\'sız) bu DEĞİŞMEZLİĞİ (immutability) tipe kodlar, "birisi yanlışlıkla `ex.Code = "..."` yazar mı" ENDİŞESİNİ BAŞTAN ortadan kaldırır.',
+            olmasaydi: 'Bir `set` erişimcisi de OLSAYDI, ExceptionHandlingMiddleware\'den ÖNCE bir yerde Code\'un YANLIŞLIKLA değiştirilmesi MÜMKÜN olurdu — istemciye YANLIŞ bir hata koduna karşılık gelen mesaj DÖNERDİ.'
+          },
+          {
+            satir: 'protected AppException(string code, string developerMessage)',
+            aciklama: '`protected` — bu constructor yalnızca ALT SINIFLAR (`DuplicateEmailException` gibi) tarafından çağrılabilir, `Application` katmanının DIŞINDAN doğrudan ERİŞİLEMEZ.',
+            neden: 'Her SOMUT exception, KENDİ Code\'unu ve KENDİ İngilizce log mesajını, KENDİ constructor\'ında SABİT olarak geçirir (bkz. DuplicateEmailException) — bu, bir Handler\'ın "hangi Code\'u kullanacağını" HER seferinde YENİDEN karar vermesini ENGELLER, hata türü ile Code arasındaki eşleme TEK bir yerde (exception sınıfının kendisinde) SABİTLENİR.',
+            olmasaydi: '`public` bir constructor OLSAYDI, farklı Handler\'lar AYNI exception türünü FARKLI Code\'larla fırlatabilirdi — ErrorMessages sözlüğündeki hangi çevirinin KULLANILACAĞI ARTIK öngörülemez OLURDU.'
+          },
+          {
+            satir: 'Code = code;',
+            aciklama: 'Constructor\'a geçirilen Code değeri, salt-okunur `Code` alanına ATANIR — bu, ExceptionHandlingMiddleware\'in `ex.Code` üzerinden OKUYACAĞI DEĞERDİR.',
+            neden: 'Bu atama, `base(developerMessage)` çağrısından SONRA gelir çünkü C#\'ta constructor gövdesi HER ZAMAN `base(...)` çağrısından sonra ÇALIŞIR — Exception.Message önce KURULUR, sonra kendi alanımız (Code) DOLDURULUR.',
+            olmasaydi: 'Bu satır olmasaydı, `Code` alanı HER ZAMAN C#\'ın string VARSAYILANI (`null`) kalırdı — ExceptionHandlingMiddleware, ErrorMessages sözlüğünde `null` bir anahtar ARARDI, hiçbir çeviri BULUNAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ErrorMessages.cs — Merkezi Çeviri Sözlüğü (TAM DOSYA)',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Localization/ErrorMessages.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ErrorMessages.cs
+//
+// AMAÇ: AppException.Code değerlerinin her dildeki karşılığını tutan merkezi sözlük.
+// NEDEN: Exception'lar mesajı kendi içinde sabitlemez — aynı kod, isteğin diline
+//        göre farklı bir metne çevrilebilsin diye (REFERENCE/API_ENDPOINTS.md §1).
+//        Şu an yalnızca tr+de var — uygulamanın gerçek hedef kitlesi DE↔TR
+//        (bkz. DATABASE_SCHEMA/Icerik.md, Languages seed). İngilizce gibi henüz
+//        hiçbir gerçek istemcinin istemediği bir dil spekülatif olarak eklenmez
+//        (YAGNI — bkz. TASK.md "Spekülatif ortak tip yazılmaz" kuralı, aynı
+//        gerekçeyle ApiResponse<T>/PagedResult<T> A-02'de geri alınmıştı).
+//        Yeni bir dil eklemek yalnızca buraya bir sütun eklemekle olur, hiçbir
+//        exception sınıfına dokunulmaz.
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Localization;
+
+public static class ErrorMessages
+{
+    // NEDEN varsayılan "tr": İstekte Accept-Language yoksa veya bilinmeyen bir dilse,
+    //        proje Türkçe öncelikli olduğu için Türkçe'ye düşülür (00_INDEX.md kuralı).
+    private const string DefaultLanguage = "tr";
+
+    private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
+    {
+        ["INVALID_CREDENTIALS"] = new()
+        {
+            ["tr"] = "E-posta veya şifre hatalı.",
+            ["de"] = "E-Mail oder Passwort ist falsch.",
+        },
+        ["INVALID_OTP"] = new()
+        {
+            ["tr"] = "Girilen kod geçersiz veya süresi dolmuş.",
+            ["de"] = "Der eingegebene Code ist ungültig oder abgelaufen.",
+        },
+        ["EMAIL_ALREADY_REGISTERED"] = new()
+        {
+            ["tr"] = "Bu e-posta adresi zaten kayıtlı.",
+            ["de"] = "Diese E-Mail-Adresse ist bereits registriert.",
+        },
+        ["ACCOUNT_SUSPENDED"] = new()
+        {
+            ["tr"] = "Hesabınız dondurulmuş. Lütfen destekle iletişime geçin.",
+            ["de"] = "Ihr Konto wurde gesperrt. Bitte wenden Sie sich an den Support.",
+        },
+        ["ACCOUNT_DELETED"] = new()
+        {
+            ["tr"] = "Bu hesap kalıcı olarak silinmiş.",
+            ["de"] = "Dieses Konto wurde dauerhaft gelöscht.",
+        },
+        ["INVALID_REFRESH_TOKEN"] = new()
+        {
+            ["tr"] = "Oturumunuzun süresi dolmuş. Lütfen tekrar giriş yapın.",
+            ["de"] = "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
+        },
+        ["INVALID_SOCIAL_TOKEN"] = new()
+        {
+            ["tr"] = "Sosyal giriş doğrulanamadı.",
+            ["de"] = "Die soziale Anmeldung konnte nicht verifiziert werden.",
+        },
+        ["QR_SESSION_GONE"] = new()
+        {
+            ["tr"] = "QR kodunun süresi doldu veya zaten kullanıldı. Lütfen yeni bir kod oluşturun.",
+            ["de"] = "Der QR-Code ist abgelaufen oder wurde bereits verwendet. Bitte erstellen Sie einen neuen Code.",
+        },
+        ["QR_SESSION_FORBIDDEN"] = new()
+        {
+            ["tr"] = "Bu QR oturumunu yalnızca onu tarayan cihaz onaylayabilir/reddedebilir.",
+            ["de"] = "Diese QR-Sitzung kann nur von dem Gerät bestätigt/abgelehnt werden, das sie gescannt hat.",
+        },
+
+        // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
+        //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye
+        //       giden gerçek mesaj, her kuralın WithErrorCode() ile taşıdığı bu kodlar
+        //       üzerinden ValidationFilter tarafından buradan çözülür (AppException ile
+        //       birebir aynı ayrım: log=sabit İngilizce, API yanıtı=dile göre).
+        ["EMAIL_REQUIRED"] = new()
+        {
+            ["tr"] = "E-posta adresi zorunludur.",
+            ["de"] = "E-Mail-Adresse ist erforderlich.",
+        },
+        ["EMAIL_INVALID"] = new()
+        {
+            ["tr"] = "Geçerli bir e-posta adresi girin.",
+            ["de"] = "Geben Sie eine gültige E-Mail-Adresse ein.",
+        },
+        ["PASSWORD_REQUIRED"] = new()
+        {
+            ["tr"] = "Şifre zorunludur.",
+            ["de"] = "Passwort ist erforderlich.",
+        },
+        ["PASSWORD_TOO_SHORT"] = new()
+        {
+            ["tr"] = "Şifre en az 12 karakter olmalı.",
+            ["de"] = "Das Passwort muss mindestens 12 Zeichen lang sein.",
+        },
+        ["PASSWORD_MISSING_UPPERCASE"] = new()
+        {
+            ["tr"] = "Şifre en az 1 büyük harf içermeli.",
+            ["de"] = "Das Passwort muss mindestens 1 Großbuchstaben enthalten.",
+        },
+        ["PASSWORD_MISSING_LOWERCASE"] = new()
+        {
+            ["tr"] = "Şifre en az 1 küçük harf içermeli.",
+            ["de"] = "Das Passwort muss mindestens 1 Kleinbuchstaben enthalten.",
+        },
+        ["PASSWORD_MISSING_DIGIT"] = new()
+        {
+            ["tr"] = "Şifre en az 1 rakam içermeli.",
+            ["de"] = "Das Passwort muss mindestens 1 Ziffer enthalten.",
+        },
+        ["PASSWORD_MISSING_SPECIAL_CHAR"] = new()
+        {
+            ["tr"] = "Şifre en az 1 özel karakter içermeli (!@#$%^&*).",
+            ["de"] = "Das Passwort muss mindestens 1 Sonderzeichen enthalten (!@#$%^&*).",
+        },
+        ["OTP_REQUIRED"] = new()
+        {
+            ["tr"] = "Doğrulama kodu zorunludur.",
+            ["de"] = "Bestätigungscode ist erforderlich.",
+        },
+        ["OTP_INVALID_FORMAT"] = new()
+        {
+            ["tr"] = "Doğrulama kodu 6 haneli olmalı.",
+            ["de"] = "Der Bestätigungscode muss 6-stellig sein.",
+        },
+        ["FIRST_NAME_REQUIRED"] = new() { ["tr"] = "Ad zorunludur.", ["de"] = "Vorname ist erforderlich." },
+        ["LAST_NAME_REQUIRED"] = new()
+        {
+            ["tr"] = "Soyad zorunludur.",
+            ["de"] = "Nachname ist erforderlich.",
+        },
+        ["TOKEN_REQUIRED"] = new()
+        {
+            ["tr"] = "Token zorunludur.",
+            ["de"] = "Token ist erforderlich.",
+        },
+
+        // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
+        //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
+        //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.
+        ["INTERNAL_SERVER_ERROR"] = new()
+        {
+            ["tr"] = "Beklenmeyen bir hata oluştu.",
+            ["de"] = "Ein unerwarteter Fehler ist aufgetreten.",
+        },
+    };
+
+    // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
+    // NEDEN: bkz. LocalizedMessageResolver.Resolve — sözlükte olmayan bir kod gelirse
+    //        (programlama hatası — yeni bir AppException eklenip buraya çevirisi
+    //        eklenmemişse) exception fırlatmak yerine kodun kendisi döner; API asla
+    //        yalnızca çeviri eksik diye 500'e düşmemeli.
+    public static string Resolve(string code, string? language) =>
+        LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
+}`,
+        satirlar: [
+          {
+            satir: 'private const string DefaultLanguage = "tr";',
+            aciklama: 'İstekte `Accept-Language` başlığı yoksa veya sözlükte KARŞILIĞI olmayan bir dilse, HANGİ dile düşüleceğini belirler.',
+            neden: 'Proje Türkçe↔Almanca hedef kitlesine yazılıyor ama Türkçe ÖNCELİKLİDİR (CLAUDE.md: "desteklenmiyorsa tr\'ye düşer") — bu sabit, o kararın KOD karşılığıdır, `Resolve` metodunun HER çağrısında TEKRAR karar vermesini gerektirmez.',
+            olmasaydi: 'Varsayılan bir dil OLMASAYDI, bilinmeyen bir `Accept-Language` (ör. "fr") gelen bir istekte hangi metnin DÖNECEĞİ BELİRSİZ olurdu — `Resolve` ya exception FIRLATIRDI ya da `null` DÖNERDİ, istemci HİÇBİR hata mesajı GÖRMEZDİ.'
+          },
+          {
+            satir: 'private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()',
+            aciklama: 'İki katmanlı bir sözlük: DIŞTAKİ anahtar hata Code\'u (ör. "INVALID_OTP"), İÇTEKİ anahtar dil kodu ("tr"/"de") — DEĞER ise o dildeki gerçek metin.',
+            neden: 'Bu yapı, "bir Code\'un TÜM dillerdeki çevirilerinin BİR ARADA, TEK bir girişte" durmasını sağlar — yeni bir Code eklenirken GELİŞTİRİCİ hem tr hem de çeviriyi AYNI yerde, YAN YANA yazar, biri UNUTULMA riski AZALIR.',
+            olmasaydi: 'Tek katmanlı (ör. `Dictionary<string, string>` ve anahtar "INVALID_OTP_tr" gibi BİRLEŞTİRİLMİŞ bir string) OLSAYDI, hem anahtar üretimi HATAYA açık olurdu hem de "bu Code\'un HANGİ dilleri var" sorusu KOD OKUYARAK cevaplanamazdı.'
+          },
+          {
+            satir: '["EMAIL_ALREADY_REGISTERED"] = new()',
+            aciklama: 'Bölüm 20\'nin bir sonraki slaytında göreceğimiz `DuplicateEmailException`\'ın `Code`\'u (`"EMAIL_ALREADY_REGISTERED"`) İLE BİREBİR EŞLEŞEN anahtar — bu satır, o exception\'ın "tr"/"de" çevirisini TAŞIR.',
+            neden: 'Exception sınıfı ile bu sözlük anahtarı arasında hiçbir DERLEME ZAMANI bağlantı YOKTUR (ikisi de düz string) — bu, bilinçli bir esneklik: yeni bir dil eklerken exception koduna DOKUNULMAZ, ama aynı zamanda bir Code YAZIM HATASI yapılırsa (ör. "EMAIL_ALREADY_REGISTRED") derleyici bunu YAKALAYAMAZ, yalnızca test/manuel kontrol yakalar.',
+            olmasaydi: 'Bu satır (ya da herhangi bir Code\'un çevirisi) EKSİK olsaydı, `Resolve` metodunun altındaki `LocalizedMessageResolver` sözlükte bu Code\'u BULAMAZDI — bir sonraki slaytta göreceğimiz "programlama hatası durumunda bile 500\'e düşme" ilkesi devreye girer, kodun KENDİSİ (ham "EMAIL_ALREADY_REGISTERED" string\'i) istemciye DÖNER.'
+          },
+          {
+            satir: 'public static string Resolve(string code, string? language) =>',
+            aciklama: 'ValidationFilter (Bölüm 23) VE ExceptionHandlingMiddleware\'in (A-02) her ikisinin de ÇAĞIRDIĞI, sözlüğe giden TEK kapı — dışarıdan `Messages` alanına DOĞRUDAN erişilmez (`private`).',
+            neden: '`Messages`\'in `private` olması, sözlüğün İÇ YAPISININ (iki katmanlı Dictionary olması) sözlüğü KULLANAN kodlardan (Middleware, Filter) GİZLENMESİNİ sağlar — yarın bu sözlük bir JSON dosyasına ya da DB tablosuna TAŞINSA bile, `Resolve`\'u ÇAĞIRAN hiçbir kod DEĞİŞMEZ.',
+            olmasaydi: '`Messages` `public` OLSAYDI, farklı kod noktaları sözlüğe FARKLI şekillerde erişebilir (biri `Messages["X"]["tr"]`, biri `Resolve("X","tr")` yazardı) — dil ÇÖZÜMLEME mantığı (varsayılana düşme, bulunamayan Code) TEK bir yerde DEĞİL, DAĞINIK olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DuplicateEmailException.cs — Temsili Somut Exception',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/DuplicateEmailException.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// DuplicateEmailException.cs
+//
+// AMAÇ: Kayıt sırasında zaten kullanılan (veya daha önce anonimleştirilmiş) bir
+//       e-posta adresi girildiğinde fırlatılır.
+// NEDEN: ExceptionHandlingMiddleware bu tipi 409 Conflict'e çevirir; istemciye
+//        giden mesaj Code (EMAIL_ALREADY_REGISTERED) üzerinden ErrorMessages'ten dile göre çözülür.
+// BAĞIMLILIKLAR: AppException.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class DuplicateEmailException : AppException
+{
+    public DuplicateEmailException()
+        : base("EMAIL_ALREADY_REGISTERED", "Registration attempt: email address already in use.") { }
+}`,
+        satirlar: [
+          {
+            satir: 'public class DuplicateEmailException : AppException',
+            aciklama: 'Bölüm 8\'deki `RegisterCommandHandler`\'ın "bu e-posta zaten var mı" kontrolünde `throw new DuplicateEmailException()` şeklinde fırlattığı, AppException\'dan türeyen İLK somut sınıf — artık `abstract` DEĞİL, doğrudan `new`\'lenebilir.',
+            neden: 'Sınıf adının KENDİSİ (`DuplicateEmailException`) bile, hangi durumda fırlatıldığını AÇIKÇA anlatır — bu, genel bir `throw new AppException("EMAIL_ALREADY_REGISTERED", "...")` çağrısına KIYASLA, kod okuyan bir junior\'ın "bu ne zaman fırlatılıyor" sorusuna ARA KATMAN olmadan cevap VERMESİNİ sağlar.',
+            olmasaydi: 'Her Handler kendi Code\'unu ELLE geçirerek `throw new AppException("EMAIL_ALREADY_REGISTERED", "...")` YAZSAYDI, AYNI hata durumu için FARKLI Handler\'larda FARKLI ya da YANLIŞ YAZILMIŞ Code\'lar (ör. "EMAIL_ALREADY_REGISTRED") ortaya ÇIKABİLİRDİ — derleyici bu YAZIM HATASINI YAKALAYAMAZDI.'
+          },
+          {
+            satir: 'public DuplicateEmailException()',
+            aciklama: 'Parametre ALMAYAN, boş bir constructor — bu exception\'ın davranışı HER ZAMAN aynıdır, çağıran kodun (Handler\'ın) EK bir bilgi (ör. hangi e-posta) GEÇİRMESİNE gerek YOKTUR.',
+            neden: 'CLAUDE.md\'nin "e-posta numaralandırma önlemi" (Bölüm 17/19 sözlüğünde geçen terim) prensibiyle TUTARLI: istemciye giden mesaj HANGİ e-postanın çakıştığını SÖYLEMEZ, bu yüzden exception\'ın KENDİSİNİN de o bilgiyi TAŞIMASINA gerek yoktur — Handler\'ın hangi e-postayla ÇAĞIRDIĞI yalnızca (varsa) ayrı bir log satırında geçer.',
+            olmasaydi: 'Constructor bir `email` parametresi ALSAYDI ve bunu `.Message`\'a EKLESEYDİ, geliştirici LOGLARDA hangi e-postanın çakıştığını GÖREBİLİRDİ (faydalı) ama bu bilginin YANLIŞLIKLA istemciye SIZMAMASI için EK bir dikkat GEREKİRDİ — şu anki tasarım bu riski BAŞTAN ortadan kaldırıyor.'
+          },
+          {
+            satir: ': base("EMAIL_ALREADY_REGISTERED", "Registration attempt: email address already in use.") { }',
+            aciklama: 'AppException\'ın `protected` constructor\'ını ÇAĞIRIR: birinci argüman Code (`ErrorMessages` sözlüğündeki anahtarla BİREBİR eşleşmeli), ikinci argüman ise yalnızca LOG/DB için sabit İNGİLİZCE bir açıklama.',
+            neden: 'İkinci argümanın İngilizce ve TAM CÜMLE olması (ör. "Registration attempt: ...") — CLAUDE.md\'nin "`_logger.Log*` mesajları... İngilizce" kuralı ile TUTARLI; bu metin sadece EXCEPTION\'IN STACK TRACE\'İNDE ve LOGLARDA görünür, kullanıcı ASLA görmez.',
+            olmasaydi: 'Code değeri ("EMAIL_ALREADY_REGISTERED") bir önceki slayttaki ErrorMessages sözlüğündeki anahtarla BİREBİR EŞLEŞMESEYDİ (ör. yazım hatasıyla farklı bir string geçirilseydi), `Resolve` metodu bu Code\'u sözlükte BULAMAZ, istemciye ham Code STRING\'İ (çeviri değil) DÖNERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'AppException\'dan Türeyen Diğer 6 Concrete Exception',
+        terimler: [
+          {
+            terim: 'InvalidCredentialsException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="INVALID_CREDENTIALS"). Tetiklenme senaryosu: Login sırasında e-posta bulunamadığında, şifre yanlış olduğunda VEYA şifresi olmayan (yalnızca sosyal girişli) bir hesapla yerel login denendiğinde — üç durum da AYNI mesajı döner, hangisinin gerçekleştiği istemciye SÖYLENMEZ (e-posta numaralandırma önlemi).'
+          },
+          {
+            terim: 'InvalidOtpException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="INVALID_OTP"). Tetiklenme senaryosu: Girilen 6 haneli kod yanlış, süresi dolmuş VEYA amacı (OtpPurpose — EmailVerification/LoginOtp/PasswordReset/AccountDeletion) uyuşmuyor olduğunda — "yanlış kod" ile "süresi dolmuş kod" ayrı bilgi VERMEZ, aynı bilgi sızıntısı önlemi.'
+          },
+          {
+            terim: 'AccountNotActiveException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="ACCOUNT_SUSPENDED"). Tetiklenme senaryosu: Admin tarafından dondurulmuş (IsActive=false) bir hesapla login denendiğinde — 403 Forbidden\'a çevrilir (401 ile karıştırılmaz, çünkü kimlik DOĞRU ama erişim YASAKLI).'
+          },
+          {
+            terim: 'AccountAnonymizedException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="ACCOUNT_DELETED"). Tetiklenme senaryosu: 30 günlük grace period sonunda KALICI olarak anonimleştirilmiş (IsAnonymized=true) bir hesapla login denendiğinde — AccountNotActiveException\'daki dondurma GEÇİCİDİR, bu KALICIDIR, geri DÖNDÜRÜLEMEZ.'
+          },
+          {
+            terim: 'InvalidRefreshTokenException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="INVALID_REFRESH_TOKEN"). Tetiklenme senaryosu: Bölüm 11\'de gördüğümüz Token Family Pattern\'de refresh token bulunamadığında, süresi dolduğunda, iptal edilmişken VEYA tekrar (replay) kullanıldığında — 401\'e çevrilir, istemci kullanıcıyı yeniden login akışına yönlendirmelidir.'
+          },
+          {
+            terim: 'InvalidSocialTokenException',
+            tanim: 'DuplicateEmailException ile AYNI pattern\'i izler (Code="INVALID_SOCIAL_TOKEN"). Tetiklenme senaryosu: Google/Apple\'dan gelen kimlik token\'ı doğrulanamadığında (imza geçersiz, süresi dolmuş, audience uyuşmuyor) — IGoogleTokenValidator/IAppleTokenValidator null döndüğünde fırlatılır.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'AppException, Code (dil bağımsız) taşır — .Message yalnızca log/DB için sabit İngilizcedir',
+          'ErrorMessages sözlüğü, Code\'ları isteğin Accept-Language\'ına göre tr/de metne çevirir',
+          'Yeni bir somut exception yazmak = AppException\'dan türet + Code\'u ErrorMessages\'e ekle, başka hiçbir yer değişmez',
+          'Sözlükte olmayan bir Code exception FIRLATMAZ — programlama hatası bile API\'yi 500\'e düşürmemeli',
+          '7 concrete exception (DuplicateEmailException dahil) TAMAMI aynı iki satırlık pattern\'i izler: Code + sabit İngilizce log mesajı'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

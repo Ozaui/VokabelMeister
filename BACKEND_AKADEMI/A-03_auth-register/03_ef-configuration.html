@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EF Configuration — UserConfiguration.cs</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'ef-configuration',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '02_entity-user.html',
+    sonrakiBolum: '04_migration.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 10 · CLAUDE.md ADIM 2',
+        baslik: 'EF Configuration: UserConfiguration.cs',
+        altBaslik: 'Entity bir C# sınıfı — ama veritabanı tablosunun kolon uzunluğunu, index\'lerini, kısıtlarını C# sınıfından ANLAYAMAYIZ. Bu bilgi ayrı bir dosyada tanımlanır.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Entity İçinde Değil, Ayrı Bir Dosyada?',
+        aciklama: '`public string Email { get; set; }` yazmak, EF Core\'a "Email adında bir metin alanı var" der ama "en fazla kaç karakter", "başka bir kullanıcıyla aynı olabilir mi" gibi soruları CEVAPLAMAZ. Bu detaylar `IEntityTypeConfiguration<User>` implementasyonunda, AYRI bir sınıfta tanımlanır.',
+        neden: 'Entity sınıfını (User.cs) "yalnızca hangi alanlar var" sorusuna, Configuration sınıfını "bu alanlar veritabanında NASIL kısıtlanacak" sorusuna ayırmak, iki farklı SORUMLULUĞU birbirinden ayırır (Single Responsibility Principle).',
+        olmasaydi: 'Tüm kısıtlar (MaxLength, Unique, CheckConstraint) User.cs içine C# attribute\'ları (Data Annotations) olarak yazılabilirdi — ama bu, Entity sınıfını "hem iş kavramı hem veritabanı detayı" taşıyan karışık bir sınıfa dönüştürürdü; Bölüm 2\'deki "Domain, altyapı detaylarından bağımsız olmalı" ilkesi zedelenirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserConfiguration.cs — Kolon Uzunlukları ve Unique Index',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/UserConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/Auth/ altında — "veritabanı NASIL kısıtlanacak" tamamen bir Infrastructure detayı (Bölüm 2), Auth/ alt klasörü ise User\'ın hangi domain\'e ait olduğunu (Bölüm 9\'daki Entities/Auth/ ile birebir simetrik) yansıtır.',
+        kod: `public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.Property(u => u.Email).HasMaxLength(254).IsRequired();
+        builder.HasIndex(u => u.Email).IsUnique();
+
+        builder.Property(u => u.PasswordHash).HasMaxLength(60);
+
+        builder.Property(u => u.FirstName).HasMaxLength(50).IsRequired();
+        builder.Property(u => u.LastName).HasMaxLength(50).IsRequired();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class UserConfiguration : IEntityTypeConfiguration<User>',
+            aciklama: '`IEntityTypeConfiguration<User>` arayüzünü implemente eder — bu, WordLearnerDbContext\'in (Bölüm 4) `ApplyConfigurationsFromAssembly` çağrısıyla OTOMATİK bulacağı bir sözleşmedir.',
+            neden: 'Her entity için ayrı bir Configuration sınıfı yazmak, `OnModelCreating` metodunun (Bölüm 4) tek bir dev metoda dönüşmesini önler — her sınıf kendi entity\'sinden SORUMLUDUR.',
+            olmasaydi: 'Bu arayüz implemente edilmeseydi, tüm bu kısıtlar WordLearnerDbContext.OnModelCreating içine elle, `modelBuilder.Entity<User>().Property(...)` şeklinde yazılırdı — 20 entity olsa OnModelCreating binlerce satıra çıkardı.'
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<User> builder)',
+            aciklama: '`IEntityTypeConfiguration<User>` arayüzünün ZORUNLU kıldığı tek metot — EF Core, bu metoda kendi inşa ettiği `EntityTypeBuilder<User>` nesnesini VERİR, biz de bu nesne üzerinden kısıtları tanımlarız.',
+            neden: '`builder` parametresi, "User için kısıt tanımlamanın" TEK giriş noktasıdır — Fluent API\'nin tüm zinciri (`.Property(...).HasMaxLength(...)`) bu nesne üzerinden BAŞLAR.',
+            olmasaydi: 'Bu metot imzası YANLIŞ yazılsaydı (ör. yanlış generic tip), `ApplyConfigurationsFromAssembly` (Bölüm 4) bu sınıfı `IEntityTypeConfiguration<User>` olarak TANIMAZ, User\'a hiçbir kısıt UYGULANMAZDI.'
+          },
+          {
+            satir: 'builder.Property(u => u.Email).HasMaxLength(254).IsRequired();',
+            aciklama: 'Email kolonunun veritabanında en fazla 254 karakter olacağını ve boş (null) OLAMAYACAĞINI belirtir. 254, e-posta adresleri için RFC 5321 standardının izin verdiği maksimum uzunluktur.',
+            neden: 'Kolon uzunluğu belirtilmezse SQL Server varsayılan olarak çok geniş bir alan (nvarchar(max)) ayırır — bu hem depolama alanını israf eder hem de bu kolon üzerinde index oluşturmayı YAVAŞLATIR/imkansız kılar.',
+            olmasaydi: 'MaxLength belirtilmeseydi, `HasIndex(u => u.Email).IsUnique()` (bir sonraki satır) SQL Server\'da nvarchar(max) üzerinde unique index oluşturmaya çalışırken HATA verebilirdi — SQL Server\'ın index anahtar boyutu sınırı var.'
+          },
+          {
+            satir: 'builder.HasIndex(u => u.Email).IsUnique();',
+            aciklama: 'Email kolonuna, veritabanı seviyesinde bir "benzersizlik" (unique) kısıtı ekler — iki farklı kullanıcı AYNI e-postaya sahip OLAMAZ.',
+            neden: 'Bu, "e-posta zaten kayıtlı mı" kontrolünün SON SAVUNMA HATTIdır. RegisterCommandHandler (Bölüm 15) zaten bu kontrolü kod seviyesinde yapıyor ama iki eşzamanlı istek (race condition) AYNI ANDA gelirse, kod seviyesindeki kontrol ikisini de "boş" görebilir — veritabanı bu durumda ikinci INSERT\'i REDDEDER.',
+            olmasaydi: 'Unique index olmasaydı, iki kullanıcı aynı e-postayla AYNI ANDA (milisaniyeler farkla) kayıt olmaya çalışırsa, kod seviyesindeki kontrol her ikisini de "email boş" görüp İKİSİNİ DE kaydedebilirdi — aynı e-postaya sahip iki hesap oluşurdu, login akışı hangisinin "doğru" hesap olduğunu bilemezdi.'
+          },
+          {
+            satir: 'builder.Property(u => u.PasswordHash).HasMaxLength(60);',
+            aciklama: 'PasswordHash kolonu tam olarak 60 karakter (BCrypt hash\'inin SABİT çıktı uzunluğu).',
+            neden: 'BCrypt algoritması, girdi şifrenin uzunluğundan BAĞIMSIZ olarak her zaman 60 karakterlik bir çıktı üretir — bu bilgiyi bilerek kolon boyutunu tam isabetle ayarlamak, gereksiz alan israfını önler.',
+            olmasaydi: '60\'tan küçük bir MaxLength verilseydi (ör. 50), BCrypt\'in ürettiği 60 karakterlik hash veritabanına YAZILAMAZDI — her Register denemesi bir veritabanı hatasıyla patlardı.'
+          },
+          {
+            satir: 'builder.Property(u => u.FirstName).HasMaxLength(50).IsRequired();',
+            aciklama: 'FirstName kolonunun en fazla 50 karakter olacağını ve boş (null) OLAMAYACAĞINI belirtir.',
+            neden: '50 karakter, gerçek dünyadaki isimler için CÖMERT ama SINIRSIZ olmayan bir üst sınırdır — Email\'de gördüğümüz "nvarchar(max) israfını önleme" gerekçesiyle AYNI mantık.',
+            olmasaydi: 'MaxLength belirtilmeseydi, SQL Server varsayılan olarak nvarchar(max) ayırırdı — depolama israfı ve (Email\'de gördüğümüz gibi) olası index performans sorunları doğardı.'
+          },
+          {
+            satir: 'builder.Property(u => u.LastName).HasMaxLength(50).IsRequired();',
+            aciklama: 'LastName kolonunun en fazla 50 karakter olacağını ve boş (null) OLAMAYACAĞINI belirtir — FirstName ile BİREBİR aynı desen.',
+            neden: 'FirstName ve LastName\'in AYNI MaxLength\'e sahip olması BİLİNÇLİDİR — ikisi de "insan ismi parçası" kategorisinde AYNI türde veri taşır, farklı sınırlar koymak keyfi bir tutarsızlık yaratırdı.',
+            olmasaydi: 'MaxLength belirtilmeseydi, LastName da nvarchar(max) olarak saklanırdı — FirstName için alınan önlem LastName için ATLANMIŞ olurdu, tutarsız bir şema ortaya çıkardı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CHECK Constraint — Kod Dışında Son Savunma Hattı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/UserConfiguration.cs',
+        nedenBuKlasor: null,
+        kod: `builder.ToTable(t =>
+{
+    t.HasCheckConstraint(
+        "CK_Users_Level",
+        "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')"
+    );
+    t.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
+    t.HasCheckConstraint(
+        "CK_Users_AuthProvider",
+        "AuthProvider IN ('Local','Google','Apple')"
+    );
+});`,
+        satirlar: [
+          {
+            satir: 'builder.ToTable(t =>',
+            aciklama: 'CHECK constraint\'ler, `builder.Property(...)` gibi kolon bazlı değil, TABLO seviyesinde tanımlanır — bu yüzden `ToTable` içindeki bir lambda\'ya (`t =>`) yazılırlar.',
+            neden: 'EF Core Fluent API\'sinde CHECK constraint, belirli bir kolonun değil tablonun bir kuralı olduğu için `HasCheckConstraint`, `Property` zincirine değil `ToTable` bloğuna eklenir.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `t.HasCheckConstraint(...)` çağrıları hiçbir yere bağlanamaz, kod derlenmezdi — `t` değişkeni yalnızca bu lambda parametresi içinde var olur.'
+          },
+          {
+            satir: 't.HasCheckConstraint(',
+            aciklama: 'Bir CHECK constraint tanımının BAŞLADIĞI satır — bu dosyada İKİ kez (CK_Users_Level ve CK_Users_AuthProvider için) görünen, uzun parametreleri okunabilirlik için parantez içinde birden fazla satıra bölen ORTAK bir yazım kalıbı.',
+            neden: 'Uzun bir constraint ifadesini tek satırda yazmak yerine parametrelere BÖLMEK, kod inceleme (code review) sırasında hangi kolonun hangi kurala bağlı olduğunu okumayı kolaylaştırır; kısa olan CK_Users_Role ise (aşağıda) tek satırda kalabilecek kadar kısadır.',
+            olmasaydi: 'Bu çağrı hiç yapılmasaydı, ilgili kolona (CurrentLevel ya da AuthProvider) veritabanı seviyesinde hiçbir kısıt uygulanmaz, geçersiz bir değer (ör. "XYZ") sessizce kaydedilebilirdi.'
+          },
+          {
+            satir: '"CurrentLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')"',
+            aciklama: 'CurrentLevel kolonunun SADECE 6 CEFR seviyesinden (A1-C2) birini alabileceğini veritabanı seviyesinde ZORUNLU kılan asıl SQL ifadesi.',
+            neden: 'CurrentLevel de (Bölüm 9\'da gördüğümüz Role gibi) C# tarafında enum DEĞİL, string olarak tutuluyor — kelime öğrenme seviyeleri (CEFR standardı) sabit, bilinen bir küme; bu constraint "A0" ya da yazım hatalı "a1" gibi geçersiz bir değerin veritabanına YAZILMASINI engeller.',
+            olmasaydi: 'Bu constraint olmasaydı, bir onboarding ekranındaki bir bug kullanıcının seviyesini yanlışlıkla "Beginner" gibi CEFR standardında OLMAYAN bir string ile kaydedebilirdi — kelime kartı önerme algoritması (SRS) bu değeri TANIMAZ, kullanıcıya hiç kart ÖNERİLMEZDİ.'
+          },
+          {
+            satir: 't.HasCheckConstraint("CK_Users_Role", "Role IN (\'User\',\'Admin\')");',
+            aciklama: 'Veritabanına, Role kolonunun SADECE "User" veya "Admin" değerlerini alabileceğini söyler — bu, C# kodundan TAMAMEN bağımsız, SQL Server\'ın kendi uyguladığı bir kural.',
+            neden: 'Bölüm 9\'da Role\'ün string (enum değil) olduğunu görmüştük — bu, C# derleyicisinin "yanlış bir değer" (ör. "SuperAdmin") atanmasını ENGELLEYEMEYECEĞİ anlamına gelir. CHECK constraint, bu boşluğu veritabanı seviyesinde kapatır: CLAUDE.md "yalnızca User/Admin rolü" kuralının veritabanındaki karşılığıdır.',
+            olmasaydi: 'Bu constraint olmasaydı, bir geliştirici (ya da bir bug) yanlışlıkla `user.Role = "SuperAdmin"` yazıp kaydetseydi, veritabanı bunu SESSİZCE kabul ederdi — [Authorize(Roles="Admin")] kontrolleri bu tuhaf değeri nasıl ele alacağını bilemez, beklenmedik bir güvenlik davranışına yol açabilirdi.'
+          },
+          {
+            satir: '"AuthProvider IN (\'Local\',\'Google\',\'Apple\')"',
+            aciklama: 'AuthProvider kolonunun SADECE üç bilinen değerden (Local, Google, Apple) birini alabileceğini garanti eden asıl SQL ifadesi.',
+            neden: 'Bölüm 9\'daki User.cs, AuthProvider için `= "Local"` varsayılanını C# TARAFINDA veriyordu — ama C# kodu her zaman DOĞRU çalışacak diye bir garanti YOKTUR (ör. ileride eklenecek bir "Facebook" girişi kodda YAZILIP constraint\'e EKLENMEYİ UNUTULABİLİR). Bu üçlü CHECK constraint kalıbı (Level, Role, AuthProvider), "enum yerine string kullanmanın BEDELİ"ni veritabanı seviyesinde ÖDER.',
+            olmasaydi: 'Bu constraint olmasaydı, ileride eklenecek yeni bir sosyal giriş sağlayıcısı (ör. Facebook) YARIM yazılmış kodla (constraint güncellenmeden) test edilse, "Facebook" değeri veritabanına SESSİZCE yazılabilirdi — ama [Authorize] ve login akışları yalnızca Local/Google/Apple\'ı TANIDIĞI için bu kullanıcı SESSİZCE giriş yapamaz hale gelirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'EF Configuration, "hangi alanlar var" (Entity) ile "nasıl kısıtlanacak" (Configuration) sorumluluklarını ayırır',
+          'MaxLength, hem depolama israfını önler hem de index performansını korur',
+          'Unique index, kod seviyesindeki kontrolün kaçırabileceği eşzamanlılık (race condition) hatalarına karşı son savunma hattı',
+          'CHECK constraint, C# tarafında enum yerine string kullanılan alanlarda (Role, AuthProvider) geçersiz değerleri veritabanı seviyesinde engeller'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Login — 2 Adımlı OTP Akışı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'login-otp',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '13_verify-email-resend.html',
+    sonrakiBolum: '15_google-apple-login.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 21',
+        baslik: 'Login — 2 Adımlı OTP Akışı',
+        altBaslik: 'Şifre doğru girildi — ama token HEMEN dönmüyor. Neden bir doğrulama daha var, ve bu ikinci adım NASIL güvenilir kılınıyor?'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Tek Adım Yetmiyor — 2FA-benzeri Login',
+        aciklama: 'Register/VerifyEmail\'den FARKLI bir desen: Login BİR TEK Command DEĞİL, İKİ Command\'dan oluşur. LoginCommand (adım 1) yalnızca şifreyi doğrular ve OTP GÖNDERİR — token DÖNMEZ. VerifyLoginOtpCommand (adım 2) o OTP\'yi doğrular ve ANCAK O ZAMAN access+refresh token üretir.',
+        neden: 'Şifre TEK BAŞINA yeterli bir kimlik kanıtı değildir — çalınmış/tahmin edilmiş bir şifreyle giriş denemesi, kullanıcının E-POSTASINA erişimi OLMAYAN bir saldırganı OTP adımında DURDURUR. Bu, "bir şey BİLİYORSUN (şifre) + bir şeye ERİŞİMİN VAR (e-posta)" ilkesine dayanan hafif bir 2FA (iki faktörlü kimlik doğrulama) biçimidir.',
+        olmasaydi: 'Login tek adımda TOKEN dönseydi (yalnızca şifre kontrolüyle), bir saldırgan (sızdırılmış bir şifre listesinden, ya da brute-force ile) doğru şifreyi bulduğu ANDA hesaba TAM erişim kazanırdı — e-postaya erişimi olmasa bile.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCommand.cs — Adım 1: Şifre + Timing-Attack Önlemi',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginCommand.cs',
+        nedenBuKlasor: 'Features/Auth/ altında, diğer Auth Command\'larıyla aynı klasörde.',
+        kod: `public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
+
+public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
+{
+    private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(
+        Guid.NewGuid().ToString(),
+        workFactor: 12
+    );
+
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
+
+    public LoginCommandHandler(
+        IUserRepository userRepository,
+        IPasswordService passwordService,
+        IOtpService otpService,
+        IEmailService emailService
+    )
+    {
+        _userRepository = userRepository;
+        _passwordService = passwordService;
+        _otpService = otpService;
+        _emailService = emailService;
+    }
+
+    public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+        var hashToVerify = user?.PasswordHash ?? FakePasswordHashForTiming;
+        var passwordValid = _passwordService.Verify(request.Password, hashToVerify);
+
+        if (user is null || user.PasswordHash is null || !passwordValid)
+            throw new InvalidCredentialsException();
+
+        if (!user.IsActive)
+            throw new AccountNotActiveException();
+
+        var (otpCode, otpHash) = _otpService.Generate();
+        user.PendingOtpCodeHash = otpHash;
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
+        user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
+        await _userRepository.UpdateAsync(user, user.Id, ct);
+
+        await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);
+        return new MessageResponse("OTP_SENT", SuccessMessages.Resolve("OTP_SENT", request.Language));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>',
+            aciklama: 'Yalnızca 2 alan (Email, Password) — Bölüm 15\'teki RegisterCommand\'dan (4 alan) DAHA DAR: Login\'de FirstName/LastName GEREKMEZ, zaten VAR OLAN bir kullanıcı DOĞRULANIYOR.',
+            neden: 'Dönüş tipi `MessageResponse` (RegisterResponse/AuthTokenResponse DEĞİL) — bu Command\'ın ADIM 1 olduğunu, TOKEN üretmediğini, yalnızca "OTP gönderildi" bilgisini DÖNDÜĞÜNÜ İMZASINDAN anlarız.',
+            olmasaydi: 'Bu Command doğrudan `AuthTokenResponse` döndürseydi, şifre doğrulaması TEK BAŞINA hesaba TAM erişim SAĞLARDI — kavramdaki "2 adımlı" ayrım ORTADAN KALKARDI.'
+          },
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: 'Bölüm 20\'deki VerifyEmailCommand/ResendVerificationCommand İLE AYNI desen — gövdede GELMEZ, Controller isteğin `Accept-Language` header\'ından DOLDURUR.',
+            neden: 'Handler\'ın SON satırındaki `SuccessMessages.Resolve("OTP_SENT", request.Language)` çağrısı bu alanı KULLANACAKTIR.',
+            olmasaydi: 'Bu alan olmasaydı, dönen "OTP gönderildi" mesajı her zaman VARSAYILAN dile (Türkçe) düşerdi.'
+          },
+          {
+            satir: 'public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — Bölüm 15/20\'deki Handler\'larla AYNI kalıp.',
+            neden: 'İmza, yukarıdaki LoginCommand\'ın `IRequest<MessageResponse>` implemente etmesiyle EŞLEŞİR — MediatR bu ikisini karşılaştırarak DOĞRU Handler\'ı bulur.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, `_mediator.Send(new LoginCommand(...))` çağrısı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(',
+            aciklama: 'Uygulama İLK yüklendiğinde (bir kez) hesaplanan, GEÇERLİ formatlı ama HİÇBİR gerçek şifreyle eşleşmeyecek bir BCrypt hash — `static readonly` olduğu için TÜM istekler AYNI sahte hash\'i paylaşır.',
+            neden: 'BCrypt karşılaştırması (`Verify`) KASITLI YAVAŞTIR (work factor 12) — bu yavaşlık, kullanıcı BULUNAMADIĞINDA (`user` null) ATLANIRSA, "kullanıcı var ama şifre yanlış" (yavaş yanıt) ile "kullanıcı hiç yok" (hızlı yanıt) arasındaki SÜRE FARKI bir saldırgana hangi e-postaların KAYITLI olduğunu SÖYLER (timing attack).',
+            olmasaydi: 'Bu sahte hash olmasaydı, `user is null` durumunda `Verify` çağrısı hiç YAPILMAZDI — kullanıcı bulunamayan istekler MİLİSANİYELER içinde, kullanıcı bulunup şifresi yanlış olan istekler ise ~200-300ms\'de (BCrypt\'in KASITLI yavaşlığı) yanıtlanırdı; bu ÖLÇÜLEBİLİR süre farkı, bir saldırganın hangi e-postaların sistemde var olduğunu binlerce denemeyle ÇIKARSAMASINA izin verirdi.'
+          },
+          {
+            satir: 'Guid.NewGuid().ToString(),',
+            aciklama: '`HashPassword`\'a geçirilen İLK parametre — hash\'lenecek "şifre" olarak, HER UYGULAMA başlatmasında FARKLI, rastgele bir GUID kullanılır (gerçek bir şifre DEĞİL).',
+            neden: 'Bu değerin GERÇEK bir şifre OLMAMASI ÖNEMLİDİR: hiçbir kullanıcının şifresi bu GUID\'e EŞİT OLAMAYACAĞI için, `FakePasswordHashForTiming` ASLA gerçek bir kullanıcıyla YANLIŞLIKLA EŞLEŞMEZ.',
+            olmasaydi: 'Sabit bir string (ör. `"dummy"`) kullanılsaydı, İŞLEVSEL olarak YİNE ÇALIŞIRDI — ama rastgele bir GUID kullanmak, "bu DEĞERİN TAHMİN EDİLEMEZ olması gerekmiyor bile ama YİNE DE rastgele seçelim" gibi EK bir dikkatli mühendislik alışkanlığını YANSITIR.'
+          },
+          {
+            satir: 'workFactor: 12',
+            aciklama: 'BCrypt\'in "iş faktörü" — CLAUDE.md\'nin "Şifre: bcrypt wf=12" kuralına uygun, GERÇEK şifre hash\'lemede kullanılan AYNI maliyet parametresi.',
+            neden: 'Sahte hash\'in de GERÇEK şifrelerle AYNI work factor\'da ÜRETİLMESİ ZORUNLUDUR — farklı bir work factor (ör. daha düşük), `Verify` çağrısının SÜRESİNİ gerçek karşılaştırmalardan FARKLI kılar, timing-attack korumasını ZAYIFLATIRDI.',
+            olmasaydi: 'Daha düşük bir work factor kullanılsaydı, sahte hash İLE karşılaştırma GERÇEK şifre karşılaştırmasından DAHA HIZLI biterdi — bu süre FARKI, "kullanıcı var mı yok mu" bilgisini YİNE sızdırırdı, timing-attack koruması KISMEN İŞLEVSİZ kalırdı.'
+          },
+          {
+            satir: ');',
+            aciklama: '`BCrypt.Net.BCrypt.HashPassword(...)` çağrısının ve `static readonly` alan tanımının KAPANIŞI.',
+            neden: 'Çok-satırlı bir metot çağrısında kapanış parantezinin KENDİ satırında durması, İKİ parametrenin (GUID, workFactor) NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı e-postasıyla bulmak VE OTP alanlarını güncellemek için — Bölüm 15/20\'deki AYNI arayüz.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır — test edilebilirlik (Bölüm 16) burada da GEÇERLİDİR.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, bu Handler\'ı test etmek GERÇEK bir veritabanı bağlantısı GEREKTİRİRDİ.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Şifre KARŞILAŞTIRMASI (`Verify`) için — Bölüm 15\'teki Hash\'in TERSİ işlemi yapan AYNI servis.',
+            neden: 'Şifre karşılaştırma mantığı (BCrypt\'in KENDİSİ) Handler\'da DEĞİL, bu serviste YAŞAR — Bölüm 15\'teki "üçüncü parti kütüphaneye doğrudan bağımlılık KURMA" gerekçesi burada da GEÇERLİDİR.',
+            olmasaydi: 'Handler doğrudan `BCrypt.Net.BCrypt.Verify(...)` çağırsaydı, bu çağrı BİRDEN FAZLA Handler\'da TEKRARLANIRDI ve testte BU ÜÇÜNCÜ PARTİ çağrıyı mock\'lamak MÜMKÜN OLMAZDI.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bölüm 15/20\'deki PAYLAŞILAN OTP servisi — burada `Generate()` metodu, Login\'e ÖZGÜ bir OTP üretmek için ÇAĞRILACAK.',
+            neden: 'CLAUDE.md §3\'teki "paylaşılan mantık ortak bir servise çıkarılır" kuralının BİR BAŞKA örneği — Register/VerifyEmail/Login, HEPSİ AYNI OTP altyapısını KULLANIR.',
+            olmasaydi: 'Bu servis olmasaydı, OTP üretim mantığı Login\'de AYRICA YAZILIRDI — Register\'daki koddan KOPUK bir kopya oluşurdu.'
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Yeni üretilen Login OTP\'sini kullanıcıya göndermek için — Bölüm 15\'teki AYNI arayüz.',
+            neden: 'Handler, "e-posta NASIL gönderilir" bilgisinden TAMAMEN İZOLE kalır — yalnızca "bu OTP\'yi bu kullanıcıya gönder" der.',
+            olmasaydi: 'Bu bağımlılık olmasaydı, üretilen Login OTP\'si HİÇBİR ZAMAN kullanıcıya ULAŞMAZDI — Adım 2 (VerifyLoginOtp) HİÇBİR ZAMAN TETİKLENEMEZDİ.'
+          },
+          {
+            satir: 'public LoginCommandHandler(',
+            aciklama: 'Dört bağımlılık olduğu için constructor, Bölüm 15\'teki RegisterCommandHandler gibi PARAMETRELERİ ayrı satırlara BÖLER.',
+            neden: 'Parametre sayısı (4), okunabilirliği KORUMAK için çok-satırlı yazımı GEREKTİRİR — Bölüm 20\'deki VerifyEmailCommandHandler\'ın (2 parametre) tek-satırlık constructor\'ının AKSİNE.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri LoginCommandHandler\'ı OLUŞTURAMAZ, dört alan da HİÇBİR ZAMAN DOLDURULMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi — DI konteynerinin OTOMATİK sağladığı repository.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER tutulur — hangi parametrenin hangi alana ATANDIĞINI OKUYUCUYA gösterir.',
+            olmasaydi: 'Bu parametre olmasaydı, aşağıdaki `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'İkinci parametre — şifre doğrulama servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, `_passwordService = passwordService;` atanamaz, Handler şifreyi ASLA DOĞRULAYAMAZDI.'
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'Üçüncü parametre — OTP üretim servisini enjekte eder.',
+            neden: 'Bu servis paylaşılan bir servis olduğu İÇİN, DI konteyneri onu HANGİ Handler isterse istesin AYNI kayıttan sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler kendi OTP üretim mantığını YAZMAK ZORUNDA kalırdı.'
+          },
+          {
+            satir: 'IEmailService emailService',
+            aciklama: 'DÖRDÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'E-posta servisinin de arayüz üzerinden enjekte edilmesi, testte GERÇEK e-posta göndermeden bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_emailService = emailService;` atanamaz, Handler OTP\'yi kullanıcıya ASLA gönderemezdi.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI — bir sonraki satırdaki `{` ile constructor GÖVDESİ başlar.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama — userRepository parametresi, `_userRepository` alanına atanır.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında sıkıcı, öngörülebilir tekrar kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI — `Handle` metodundaki İLK sorgu NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'İKİNCİ atama — passwordService parametresi, `_passwordService` alanına atanır.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı — `Verify` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'ÜÇÜNCÜ atama — otpService parametresi, `_otpService` alanına atanır.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı — `Generate()` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'SON atama — emailService parametresi, `_emailService` alanına atanır.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_emailService` null kalırdı — OTP gönderme çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot — `_mediator.Send(command)` çağrıldığında ÇALIŞTIRILAN yer.',
+            neden: 'İmza, Bölüm 15/20\'deki Handle ile AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, ct);',
+            aciklama: 'Bölüm 16\'daki AYNI sorgu — kullanıcı VARSA döner, yoksa `null` döner (bir sonraki satırlarda `null` durumu timing-attack korumasıyla BİRLİKTE ele alınır).',
+            neden: 'Bu satır, `user`\'ın `null` OLABİLECEĞİNİ BİLEREK yazılır — HEMEN bir `null` kontrolü YAPILMAZ, çünkü timing-attack önlemi (bir sonraki satırlar) `user is null` durumunu da AYNI YAVAŞLIKTA işlemek İSTER.',
+            olmasaydi: 'Bu satır olmasaydı, `user` değişkeni hiç TANIMLANMAZDI — kodun geri kalanı derlenemezdi.'
+          },
+          {
+            satir: 'var hashToVerify = user?.PasswordHash ?? FakePasswordHashForTiming;',
+            aciklama: '`user?.PasswordHash` — kullanıcı `null`SA ya da `PasswordHash`i `null`SA (sosyal hesap, şifresi hiç yok), `??` ile SAHTE hash\'e düşülür.',
+            neden: 'Bu TEK satır, ÜÇ farklı "şifre yok" senaryosunu (kullanıcı yok / sosyal hesap / gerçekten şifresiz) AYNI davranışa (sahte hash ile KARŞILAŞTIRMA) indirger — hiçbiri "kısayoldan" hızlı bir hata dönmez.',
+            olmasaydi: 'Bu satır olmasaydı, `user.PasswordHash` DOĞRUDAN `Verify`\'a geçirilseydi, `user` null İKEN bu satır NullReferenceException fırlatırdı — hem timing-attack korumasını hem de UYGULAMANIN KENDİSİNİ çökertirdi.'
+          },
+          {
+            satir: 'var passwordValid = _passwordService.Verify(request.Password, hashToVerify);',
+            aciklama: 'BCrypt karşılaştırması HER ZAMAN ÇALIŞTIRILIR — kullanıcı gerçek olsun ya da SAHTE hash ile karşılaştırılsın, GEÇEN SÜRE aynı BÜYÜKLÜK MERTEBESİNDE kalır.',
+            neden: 'Bu, timing-attack önleminin ASIL UYGULAMA NOKTASI: `Verify` çağrısı KOŞULSUZ çalıştığı için, "kullanıcı var mı" sorusunun cevabı ARTIK yanıt SÜRESİNDEN ÇIKARSANAMAZ.',
+            olmasaydi: 'Bu satır bir `if (user is not null)` bloğunun İÇİNE alınsaydı, `user is null` durumunda `Verify` hiç ÇAĞRILMAZ, yanıt ANINDA (BCrypt\'in ~200-300ms\'lik gecikmesi OLMADAN) dönerdi — timing-attack koruması TAMAMEN İŞLEVSİZ kalırdı.'
+          },
+          {
+            satir: 'if (user is null || user.PasswordHash is null || !passwordValid)',
+            aciklama: 'ÜÇ farklı BAŞARISIZLIK senaryosu TEK bir koşulda BİRLEŞTİRİLİR: kullanıcı yok, VEYA şifresi hiç yok (sosyal hesap), VEYA şifre YANLIŞ — hepsi AYNI exception\'a (`InvalidCredentialsException`) YOL AÇAR.',
+            neden: 'Bu üç durumun AYRI AYRI hata mesajlarıyla (ör. "bu hesap Google ile kayıtlı", "böyle bir kullanıcı yok") ele alınması, bir saldırgana HANGİ e-postaların sistemde OLDUĞU ve HANGİ yöntemle kayıtlı OLDUĞU bilgisini VERİRDİ — TEK bir genel hata ("E-posta veya şifre hatalı"), bu bilgi SIZINTISINI KAPATIR.',
+            olmasaydi: 'Bu üç durum AYRI exception\'lara (ör. `UserNotFoundException`, `NoPasswordSetException`, `WrongPasswordException`) ayrılsaydı, istemci tarafındaki hata mesajları farklılaşır ve bir saldırgan bu farkları KULLANARAK e-posta numaralandırması + "bu hesap nasıl kayıtlı" bilgisini ÇIKARSAYABİLİRDİ.'
+          },
+          {
+            satir: 'throw new InvalidCredentialsException();',
+            aciklama: 'Yukarıdaki üçlü koşul SAĞLANDIYSA (kullanıcı yok VEYA şifre yok VEYA yanlış), TEK bir genel exception FIRLATILIR.',
+            neden: 'Bu exception, Controller katmanında (Bölüm 17\'deki desenle) 401 Unauthorized durum koduna EŞLENİR — "E-posta veya şifre hatalı" gibi GENEL bir mesajla, hangi üç durumdan HANGİSİNİN gerçekleştiğini AÇIKLAMAZ.',
+            olmasaydi: 'Bu satır olmasaydı, koşul `true` olsa bile kod DEVAM EDERDİ — geçersiz kimlik bilgileriyle bir kullanıcı OTP adımına GEÇEBİLİRDİ, kimlik doğrulamanın TEMEL AMACI BOŞA çıkardı.'
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: 'Şifre DOĞRU olsa bile, hesap Admin tarafından DONDURULMUŞSA (`IsActive = false`) giriş REDDEDİLİR.',
+            neden: 'Bu kontrol, `InvalidCredentialsException` kontrolünden SONRA gelir — böylece "şifreniz yanlış" (401) ile "hesabınız dondurulmuş" (403) durumları AYRI, ANLAMLI hata kodlarıyla döner; bu ikisinin AYRIMI kullanıcı numaralandırması RİSKİ TAŞIMAZ çünkü şifre ZATEN doğru girildi.',
+            olmasaydi: 'Bu kontrol olmasaydı, dondurulmuş bir hesap YİNE DE OTP adımına geçebilirdi — Admin\'in "bu kullanıcıyı sisteme SOKMA" kararı ETKİSİZ kalırdı.'
+          },
+          {
+            satir: 'throw new AccountNotActiveException();',
+            aciklama: 'Hesap DONDURULMUŞSA fırlatılan, `InvalidCredentialsException`\'dan FARKLI bir exception — Controller katmanında 403 Forbidden\'a EŞLENİR.',
+            neden: 'Farklı bir exception türü kullanılması, şifre YANLIŞ ile hesap DONDURULMUŞ durumlarının FARKLI HTTP durum kodlarıyla (401 vs 403) İSTEMCİYE YANSIMASINI sağlar — istemci bu ikisine FARKLI TEPKİLER verebilir (ör. "şifremi unuttum" linki vs "destek ile iletişime geçin" mesajı).',
+            olmasaydi: 'Bu satır olmasaydı, dondurulmuş bir hesap YİNE DE OTP adımına GEÇERDİ — dondurma işleminin AMACI (kullanıcının sisteme ERİŞİMİNİ engellemek) TAMAMEN BOŞA çıkardı.'
+          },
+          {
+            satir: 'var (otpCode, otpHash) = _otpService.Generate();',
+            aciklama: 'Bölüm 15/20\'deki AYNI OtpService.Generate çağrısı — bu kez amacı `OtpPurpose.LoginOtp` (EmailVerification DEĞİL).',
+            neden: 'Aynı OTP altyapısı (Bölüm 18\'de gördüğümüz OtpService) TÜM OTP akışlarında (kayıt doğrulama, login, şifre sıfırlama, hesap silme) PAYLAŞILIR — her akış kendi OTP üretim mantığını YAZMAZ.',
+            olmasaydi: 'Login kendi OTP üretim mantığını (RandomNumberGenerator + hash) yazsaydı, Register\'daki KOD ile NEREDEYSE BİREBİR AYNI kod İKİ YERDE TEKRARLANIRDI — DRY ihlali.'
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = otpHash;',
+            aciklama: 'Üretilen OTP\'nin HASH\'i, kullanıcının bekleyen OTP alanına yazılır — Bölüm 15\'teki RegisterCommandHandler\'daki AYNI atama.',
+            neden: 'Yalnızca hash saklanır, GERÇEK kod (`otpCode`) veritabanına ASLA yazılmaz — Bölüm 9\'daki "OTP asla düz metin saklanmaz" ilkesi.',
+            olmasaydi: 'Bu satır olmasaydı, kullanıcı e-postasındaki kodu girdiğinde (VerifyLoginOtpCommand) sistemin KARŞILAŞTIRACAĞI bir hash OLMAZDI.'
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);',
+            aciklama: 'OTP kodunun geçerlilik SÜRESİNİN dolacağı an — Bölüm 15\'teki AYNI sabit (`IOtpService.OtpExpiryMinutes`) kullanılır.',
+            neden: 'Süre sabitinin TEK bir yerde (IOtpService arayüzünde) tanımlı olması, TÜM OTP akışlarının (Register, Login, ForgotPassword, AccountDeletion) AYNI süreyi PAYLAŞMASINI garanti eder.',
+            olmasaydi: 'Bu satır olmasaydı, `PendingOtpCodeExpiresAt` null KALIRDI — "bu kod hâlâ geçerli mi" kontrolü YAPILAMAZDI.'
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;',
+            aciklama: 'VerifyEmailCommand\'daki `OtpPurpose.EmailVerification`\'dan FARKLI bir amaç etiketi — Bölüm 20\'deki "amaç karışıklığı önleme" mantığının BURADAKİ karşılığı.',
+            neden: 'Bu etiket olmadan, Register sırasında gönderilen bir e-posta-doğrulama kodu, YANLIŞLIKLA Login adım 2\'de de KABUL EDİLEBİLİRDİ (ikisi de 6 haneli, ikisi de AYNI alanlarda saklanıyor) — `OtpPurpose`, hangi kodun HANGİ işlem için üretildiğini KESİN olarak AYIRIR.',
+            olmasaydi: 'Bu etiket olmasaydı, Register\'da gönderilen bir OTP kodu, Login adım 2\'de de KABUL EDİLEBİLİRDİ — bir saldırgan, kurbanın Register e-postasını GÖRÜRSE bu kodu Login\'de KULLANARAK hesaba erişebilirdi (amaç sınırları olmadan bir "evrensel anahtar"a dönüşürdü).'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Bölüm 16\'daki Repository<T>.UpdateAsync — üç OTP alanındaki DEĞİŞİKLİK, e-posta gönderiminden ÖNCE, TEK bir veritabanı yazımında KALICI hale gelir.',
+            neden: 'Sıralama BİLİNÇLİ: önce veritabanı GÜNCELLENİR, sonra e-posta gönderilir — Bölüm 15\'teki Register\'daki AYNI sıralama gerekçesi (e-posta gönderimi başarısız olsa bile, kod veritabanında zaten HAZIR olsun).',
+            olmasaydi: 'Bu satır olmasaydı, yeni OTP hash\'i yalnızca BELLEKTE kalırdı — kullanıcı e-postadaki kodu girse bile doğrulama HER ZAMAN BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);',
+            aciklama: 'Bölüm 15\'teki `SendEmailVerificationOtpAsync`\'ten FARKLI bir e-posta metodu — Login OTP\'si, KAYIT doğrulama e-postasından FARKLI bir şablonla (ör. "Giriş kodunuz: 123456") gönderilir.',
+            neden: 'İki farklı e-posta AMACININ (kayıt doğrulama / giriş) FARKLI metotlarla temsil edilmesi, IEmailService arayüzünü OKUYAN birinin HANGİ e-postanın NE ZAMAN gönderildiğini İSİMDEN anlamasını sağlar — TEK bir genel `SendOtpAsync(purpose, ...)` metodu bu netliği KAYBEDERDİ.',
+            olmasaydi: 'Tek bir genel `SendOtpAsync` metodu kullanılsaydı, hangi AMAÇ için hangi ŞABLONUN kullanılacağı metodun İÇİNDE bir `switch` ifadesiyle ÇÖZÜLMESİ gerekirdi — IEmailService arayüzü, dışarıdan bakan biri için DAHA AZ AÇIKLAYICI olurdu.'
+          },
+          {
+            satir: 'return new MessageResponse("OTP_SENT", SuccessMessages.Resolve("OTP_SENT", request.Language));',
+            aciklama: 'Bölüm 15\'teki Register\'ın KULLANDIĞI AYNI `"OTP_SENT"` kodu — Register da Login da "bir OTP gönderildi" der, İKİSİ DE AYNI anlama gelir.',
+            neden: 'Farklı Handler\'ların AYNI anlamı taşıyan bir sonucu (OTP gönderildi) AYNI kodla döndürmesi, frontend\'in bu kodu TEK bir yerde (ör. "kod gönderildi" toast bildirimi) ele almasını sağlar — her Handler kendi BENZERSİZ kodunu İCAT ETMEZ.',
+            olmasaydi: 'Her Handler kendi BENZERSİZ kodunu (`"REGISTER_OTP_SENT"`, `"LOGIN_OTP_SENT"`) üretseydi, frontend AYNI görsel geri bildirimi (kod gönderildi bildirimi) göstermek için BİRDEN FAZLA kodu AYRI AYRI ele alması gerekirdi — gereksiz kod tekrarı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyLoginOtpCommand.cs — Adım 2: Kod Doğrula, Token Üret',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/VerifyLoginOtpCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record VerifyLoginOtpCommand(string Email, string OtpCode) : IRequest<AuthTokenResponse>
+{
+    public string? ClientIp { get; init; }
+}
+
+public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpCommand, AuthTokenResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IOtpService _otpService;
+    private readonly ILoginCompletionService _loginCompletionService;
+
+    public VerifyLoginOtpCommandHandler(
+        IUserRepository userRepository,
+        IOtpService otpService,
+        ILoginCompletionService loginCompletionService
+    )
+    {
+        _userRepository = userRepository;
+        _otpService = otpService;
+        _loginCompletionService = loginCompletionService;
+    }
+
+    public async Task<AuthTokenResponse> Handle(VerifyLoginOtpCommand request, CancellationToken ct)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+        _otpService.Validate(user, request.OtpCode, OtpPurpose.LoginOtp);
+
+        return await _loginCompletionService.CompleteLoginAsync(user!, request.ClientIp, ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record VerifyLoginOtpCommand(string Email, string OtpCode) : IRequest<AuthTokenResponse>',
+            aciklama: 'Dönüş tipi ARTIK `MessageResponse` DEĞİL, `AuthTokenResponse` — bu Command, akışın "token ÜRETEN" tarafıdır; Login (adım 1) `MessageResponse`, VerifyLoginOtp (adım 2) `AuthTokenResponse` döner.',
+            neden: 'Bölüm 18\'de RefreshCommand/LogoutCommand\'ın NEDEN AYRI Command\'lara BÖLÜNDÜĞÜNÜ görmüştük (MediatR\'da bir `IRequest<T>` TEK bir dönüş tipine bağlı) — Login/VerifyLoginOtp AYRIMI da AYNI teknik ZORUNLULUKTAN gelir: iki adımın dönüş tipleri KÖKTEN farklı.',
+            olmasaydi: 'Bu iki adım TEK bir Command olsaydı, o Command\'ın dönüş tipi NE OLURDU — `MessageResponse` mü `AuthTokenResponse` MI? MediatR\'ın tip sistemi bu BELİRSİZLİĞE izin VERMEZ, bu yüzden ayrım ZATEN teknik olarak ZORUNLUDUR.'
+          },
+          {
+            satir: 'public string? ClientIp { get; init; }',
+            aciklama: 'LogoutCommand\'daki `UserId`/VerifyEmailCommand\'daki `Language` İLE AYNI desen — gövdede GELMEZ, Controller `HttpContext.Connection.RemoteIpAddress`\'ten okuyup `with` ile EKLER.',
+            neden: 'Bu IP, token üretimi SIRASINDA `User.LastLoginIP`\'ye ve YENİ RefreshToken\'ın `IpAddress` alanına YAZILIR (bir sonraki slaytta ILoginCompletionService\'te göreceğiz) — "bu girişi HANGİ IP\'den yapıldı" AUDIT bilgisidir.',
+            olmasaydi: 'Bu alan olmasaydı, ILoginCompletionService\'e HANGİ IP\'den giriş yapıldığı bilgisi hiç ULAŞMAZDI — RefreshToken.IpAddress her zaman `null` kalırdı, şüpheli bir girişin HANGİ IP\'den geldiğini SONRADAN incelemek İMKANSIZ olurdu.'
+          },
+          {
+            satir: 'public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpCommand, AuthTokenResponse>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — dönüş tipi ARTIK `AuthTokenResponse`, LoginCommandHandler\'ın (adım 1) `MessageResponse`\'undan FARKLI.',
+            neden: 'İmza, yukarıdaki VerifyLoginOtpCommand\'ın `IRequest<AuthTokenResponse>` implemente etmesiyle EŞLEŞİR — MediatR bu ikisini karşılaştırarak DOĞRU Handler\'ı bulur.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı e-postasıyla bulmak için — Bölüm 15/20/21\'deki AYNI arayüz.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, testte GERÇEK bir veritabanı bağlantısı GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bu kez `Validate` metodu için — LoginCommand\'ın (adım 1) ÜRETTİĞİ OTP\'nin doğruluğunu KONTROL EDER.',
+            neden: 'Bölüm 20\'deki VerifyEmailCommandHandler\'daki AYNI servis, AYNI `Validate` metodu — yalnızca `OtpPurpose` parametresi DEĞİŞİR.',
+            olmasaydi: 'Bu servis olmasaydı, OTP doğrulama mantığı bu Handler\'da AYRICA YAZILIRDI.'
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: 'Bu Handler\'a ÖZGÜ, YENİ bir bağımlılık — token üretimi/RefreshToken oluşturma/grace-period kurtarma mantığının TAMAMINI SARAN, bir sonraki slaytta detaylı göreceğimiz PAYLAŞILAN servis.',
+            neden: 'Bu servis, Google/Apple/QR girişleriyle (sonraki bölümler) PAYLAŞILACAK — CLAUDE.md §3\'teki "paylaşılan mantık ortak bir servise çıkarılır" kuralının EN BÜYÜK örneği bu.',
+            olmasaydi: 'Bu servis olmasaydı, VerifyLoginOtpCommandHandler\'ın KENDİSİ token üretimi + RefreshToken oluşturma + grace-period kurtarma KODUNU (yaklaşık 30 satır) İÇİNDE BARINDIRIRDI — bu kod, Google/Apple/QR Handler\'larında da AYRI AYRI TEKRARLANIRDI.'
+          },
+          {
+            satir: 'public VerifyLoginOtpCommandHandler(',
+            aciklama: 'Üç bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER.',
+            neden: 'Parametre sayısı (3), Bölüm 20\'deki VerifyEmailCommandHandler (2 parametre) İLE Bölüm 21\'deki LoginCommandHandler (4 parametre) ARASINDA bir eşikte — bu proje 3 VE ÜZERİ parametrede çok-satırlı yazımı TERCİH eder.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri VerifyLoginOtpCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'İkinci parametre — OTP doğrulama servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, `_otpService = otpService;` atanamaz, Handler OTP\'yi ASLA DOĞRULAYAMAZDI.'
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService',
+            aciklama: 'ÜÇÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Bu servisin de arayüz üzerinden enjekte edilmesi, testte (Bölüm 16\'daki desenle) GERÇEK token üretimi/veritabanı yazımı OLMADAN bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_loginCompletionService = loginCompletionService;` atanamaz, Handler doğrulama BAŞARILI olsa bile TOKEN ÜRETEMEZDİ.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'İKİNCİ atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı — `Validate` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'SON atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_loginCompletionService` null kalırdı — Handler\'ın SON satırındaki `CompleteLoginAsync` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<AuthTokenResponse> Handle(VerifyLoginOtpCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler, yalnızca dönüş tipi (AuthTokenResponse) DEĞİŞİR.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, ct);',
+            aciklama: 'Bölüm 20\'deki VerifyEmailCommand İLE BİREBİR AYNI satır — soft-delete filtresini YOK SAYAR.',
+            neden: 'Bu, grace-period\'daki (hesabını silmiş ama 30 gün içinde) bir kullanıcının Login OTP\'sini de doğrulayabilmesini sağlar — hesap KURTARMA akışı (bir sonraki slaytta ILoginCompletionService\'te) BU noktadan BAŞLAR.',
+            olmasaydi: 'Soft-delete filtresi UYGULANSAYDI (normal `GetByIdAsync` gibi), grace-period\'daki bir kullanıcı Login OTP\'sini DOĞRULAYAMAZDI — hesabını YANLIŞLIKLA silmiş bir kullanıcı, 30 gün içinde bile GERİ DÖNEMEZDİ.'
+          },
+          {
+            satir: '_otpService.Validate(user, request.OtpCode, OtpPurpose.LoginOtp);',
+            aciklama: 'Bölüm 20\'deki AYNI `Validate` çağrısı — bu kez amaç `OtpPurpose.LoginOtp`, LoginCommand\'ın (adım 1) ÜRETTİĞİ kodla EŞLEŞMESİ GEREKİR.',
+            neden: 'Bu satır, VerifyEmailCommand ile OtpService\'in NE KADAR YENİDEN KULLANILABİLİR olduğunu GÖSTERİR — TEK bir doğrulama metodu, YALNIZCA `expectedPurpose` parametresi DEĞİŞEREK 4 farklı akışta (EmailVerification, LoginOtp, PasswordReset, AccountDeletion) ÇALIŞIR.',
+            olmasaydi: 'Yanlış bir `OtpPurpose` (ör. `EmailVerification`) geçirilseydi, Register sırasında gönderilen bir kod Login\'de de KABUL EDİLİRDİ — amaç ayrımı BOZULURDU, Bölüm 20\'deki güvenlik gerekçesi burada da GEÇERLİDİR.'
+          },
+          {
+            satir: 'return await _loginCompletionService.CompleteLoginAsync(user!, request.ClientIp, ct);',
+            aciklama: 'Doğrulama BAŞARILIYSA, TÜM token üretim mantığı TEK bir çağrıya DEVREDİLİR — `ILoginCompletionService`, bir sonraki bölümde (Bölüm 22 - LoginWithGoogle/Apple) TEKRAR göreceğimiz PAYLAŞILAN "girişi tamamla" servisidir.',
+            neden: 'Bu satırın NE KADAR KISA olduğu BİLİNÇLİDİR: VerifyLoginOtpCommandHandler\'ın KENDİSİ token ÜRETMEZ, RefreshToken OLUŞTURMAZ, grace-period KURTARMASI yapmaz — bunların HEPSİ LoginCompletionService\'te, Google/Apple/QR girişleriyle PAYLAŞILAN TEK bir yerde yaşar (DRY).',
+            olmasaydi: 'Bu mantık ILoginCompletionService\'e ÇIKARILMASAYDI, VerifyLoginOtpCommandHandler, LoginWithGoogleCommandHandler VE LoginWithAppleCommandHandler\'ın HER BİRİ token üretimi + RefreshToken oluşturma + grace-period kurtarma KODUNU KENDİ İÇİNDE TEKRARLARDI — üç Handler\'da NEREDEYSE BİREBİR AYNI 30 satır kod.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionService.CompleteLoginAsync — Ortak Son Adım',
+        dosyaYolu: 'backend/WordLearner.Application/Services/LoginCompletionService.cs',
+        nedenBuKlasor: 'Application/Services/ altında (flat, alt klasör yok — CLAUDE.md §5) çünkü bu servis Auth feature\'ına ÖZGÜ değil, OTP/Google/Apple/QR girişlerinin HEPSİNİN paylaştığı ortak bir yetenek.',
+        kod: `public async Task<AuthTokenResponse> CompleteLoginAsync(
+    User user,
+    string? ipAddress,
+    CancellationToken ct = default
+)
+{
+    if (user.IsAnonymized)
+        throw new AccountAnonymizedException();
+
+    var accountWasRecovered = false;
+    if (user.IsDeleted)
+    {
+        user.IsDeleted = false;
+        user.DeletedAt = null;
+        user.ScheduledDeletionAt = null;
+        accountWasRecovered = true;
+    }
+
+    _otpService.Clear(user);
+    user.LastLoginAt = DateTime.UtcNow;
+    user.LastLoginIP = ipAddress;
+    user.LoginCount += 1;
+    await _userRepository.UpdateAsync(user, user.Id, ct);
+
+    var accessToken = _tokenService.GenerateAccessToken(user);
+    var refreshTokenResult = _tokenService.GenerateRefreshToken();
+
+    var refreshToken = new RefreshToken
+    {
+        UserId = user.Id,
+        TokenHash = _passwordService.HashToken(refreshTokenResult.Token),
+        TokenFamily = Guid.NewGuid().ToString(),
+        ExpiresAt = refreshTokenResult.ExpiresAt,
+        IpAddress = ipAddress,
+    };
+    await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);
+
+    return new AuthTokenResponse(
+        accessToken,
+        refreshTokenResult.Token,
+        ExpiresInSeconds(),
+        _mapper.Map<AuthUserDto>(user),
+        accountWasRecovered
+    );
+}`,
+        satirlar: [
+          {
+            satir: 'public async Task<AuthTokenResponse> CompleteLoginAsync(',
+            aciklama: 'Bir Handler DEĞİL, sıradan bir SERVİS metodu — bu yüzden `IRequestHandler` implemente ETMEZ, MediatR\'a KAYITLI DEĞİLDİR; VerifyLoginOtpCommandHandler (ve gelecekteki Google/Apple/QR Handler\'ları) bu metodu DOĞRUDAN çağırır.',
+            neden: 'Bu, CLAUDE.md §3\'teki "Handler\'lar birbirini `_mediator.Send()` ile ASLA çağırmaz" kuralına UYGUN bir tasarım — paylaşılan mantık bir Handler DEĞİL, sade bir servis metodu olarak SUNULUR, döngüsel MediatR çağrısı riski hiç OLUŞMAZ.',
+            olmasaydi: 'Bu metot bir MediatR Command\'ı OLSAYDI, VerifyLoginOtpCommandHandler onu `_mediator.Send(new CompleteLoginCommand(...))` ile ÇAĞIRIRDI — bu da "Handler içinde Handler çağırma" ANTİ-DESENİNE yol AÇARDI (CLAUDE.md\'nin AÇIKÇA YASAKLADIĞI bir şey).'
+          },
+          {
+            satir: 'User user,',
+            aciklama: 'İLK parametre — doğrulaması ZATEN TAMAMLANMIŞ (şifre+OTP, ya da Google/Apple token\'ı) bir User nesnesi.',
+            neden: 'Bu metot "kimlik doğrulamayı" YAPMAZ — çağıran Handler (VerifyLoginOtpCommandHandler gibi) DOĞRULAMAYI ZATEN yaptıktan SONRA bu metodu ÇAĞIRIR; CompleteLoginAsync yalnızca "girişi TAMAMLA" işine ODAKLANIR.',
+            olmasaydi: 'Bu parametre olmasaydı, metot HANGİ kullanıcı İÇİN token ÜRETECEĞİNİ BİLEMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'string? ipAddress,',
+            aciklama: 'İKİNCİ parametre — `null` OLABİLİR (`string?`), çünkü BAZI giriş yöntemlerinde (ör. testte) IP bilgisi MEVCUT OLMAYABİLİR.',
+            neden: 'Bu IP, `User.LastLoginIP` VE `RefreshToken.IpAddress` alanlarına YAZILACAK — nullable OLMASI, "IP bilinmiyor" durumunun AÇIKÇA temsil edilmesini sağlar.',
+            olmasaydi: 'Bu parametre `string` (nullable OLMASA) olsaydı, IP bilgisi OLMAYAN bir çağrı (ör. bazı test senaryoları) BOŞ STRING (`""`) geçirmek ZORUNDA kalırdı — `null` ile "" arasındaki ANLAM FARKI (bilinmiyor / gerçekten boş) KAYBOLURDU.'
+          },
+          {
+            satir: 'CancellationToken ct = default',
+            aciklama: 'ÜÇÜNCÜ ve SON parametre — CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun, ama `= default` VARSAYILAN DEĞERİYLE.',
+            neden: 'Varsayılan değer, bu metodun bazı ÇAĞRI noktalarında (ör. arka plan görevleri, testler) CancellationToken GEÇİRİLMEDEN de ÇAĞRILABİLMESİNİ sağlar — Controller\'daki ZORUNLU (varsayılansız) CancellationToken\'dan FARKLI bir esneklik.',
+            olmasaydi: 'Varsayılan değer OLMASAYDI, bu metodu çağıran HER yerin (VerifyLoginOtpCommandHandler, Google/Apple/QR Handler\'ları) MUTLAKA bir CancellationToken GEÇİRMESİ GEREKİRDİ — küçük bir esneklik KAYBOLURDU.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI — bir sonraki satırdaki `{` ile metot GÖVDESİ başlar.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, üç parametrenin NET görülmesini sağlar.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: 'if (user.IsAnonymized)',
+            aciklama: 'İLK kontrol, EN SIKI olanı: kullanıcı 30 günlük grace period\'u DA GEÇMİŞ, PII\'si (kişisel verisi) kalıcı olarak ANONİMLEŞTİRİLMİŞ — bu artık GERİ DÖNÜŞÜ olmayan bir durum.',
+            neden: 'Anonimleştirilmiş bir "hesap" ARTIK GERÇEK bir hesap DEĞİLDİR (Email/FirstName/LastName gibi PII alanları SİLİNMİŞ/MASKELENMİŞTİR, A-10\'daki AccountCleanupBackgroundService) — bu duruma giriş İZNİ VERİLEMEZ, KURTARMA da MÜMKÜN DEĞİLDİR.',
+            olmasaydi: 'Bu kontrol olmasaydı, anonimleştirilmiş bir kullanıcı YİNE DE (eğer OTP\'yi bir şekilde doğrulayabilseydi) bir token ALABİLİRDİ — ama PII\'si zaten SİLİNDİĞİ için bu token ANLAMSIZ/BOZUK bir hesaba bağlı olurdu, uygulamanın geri kalanında TAHMİN EDİLEMEZ hatalara yol AÇARDI.'
+          },
+          {
+            satir: 'throw new AccountAnonymizedException();',
+            aciklama: 'Anonimleştirilmiş bir hesap için fırlatılan, GERİ DÖNÜŞÜ olmayan bir exception — Controller katmanında (Bölüm 17\'deki desenle) uygun bir HTTP durum koduna (ör. 410 Gone/403) EŞLENİR.',
+            neden: '`DuplicateEmailException`/`InvalidCredentialsException`\'dan FARKLI bir exception türü kullanılması, istemcinin "bu hesap ARTIK GERİ GETİRİLEMEZ, yeniden kayıt olmalısınız" gibi ÖZEL bir mesaj GÖSTEREBİLMESİNİ sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod DEVAM EDER ve anonimleştirilmiş (PII\'si SİLİNMİŞ) bir kullanıcı İÇİN token ÜRETİLMEYE ÇALIŞILIRDI — `_mapper.Map<AuthUserDto>(user)` gibi çağrılar BOZUK/EKSİK veriyle ÇALIŞIR, öngörülemez hatalara yol AÇARDI.'
+          },
+          {
+            satir: 'var accountWasRecovered = false;',
+            aciklama: 'Bu yerel değişken, `AuthTokenResponse.AccountWasRecovered` alanına AKTARILACAK — VARSAYILAN değeri `false`, yalnızca bir sonraki `if` bloğunda KOŞULLU olarak `true` olur.',
+            neden: 'İstemci (mobil/web), bu bayrağı OKUYARAK kullanıcıya "hesabınız GERİ YÜKLENDİ" gibi ÖZEL bir bildirim GÖSTEREBİLİR — bu bilgi olmadan kullanıcı, hesabının SİLİNMEK ÜZERE olduğunu hiç FARK ETMEZDİ.',
+            olmasaydi: 'Bu değişken olmasaydı, `AuthTokenResponse`\'un SON parametresine NE geçirileceği (accountWasRecovered) BELİRSİZ kalırdı — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'if (user.IsDeleted)',
+            aciklama: 'Kullanıcı ANONİMLEŞTİRİLMEMİŞ (bir üstteki kontrolü geçti) AMA soft-delete İLE İŞARETLENMİŞSE (ConfirmAccountDeletionCommand, Bölüm 24\'te göreceğiz) — bu, 30 GÜNLÜK grace period İÇİNDE olduğu ANLAMINA gelir.',
+            neden: 'REFERENCE/SECURITY.md §1\'deki "grace period İÇİNDE tekrar giriş yapan kullanıcı OTOMATİK kurtarılır" kuralının UYGULAMA NOKTASI BURASI — kullanıcı AYRI bir "hesabımı geri getir" BUTONUNA basmaz, sadece TEKRAR giriş yapar.',
+            olmasaydi: 'Bu kontrol olmasaydı, hesabını YANLIŞLIKLA silen (ya da fikrini DEĞİŞTİREN) bir kullanıcı, grace period İÇİNDE bile giriş YAPAMAZDI — `IsDeleted = true` OLDUĞU İÇİN soft-delete filtresi ONU HER YERDE GİZLERDİ.'
+          },
+          {
+            satir: 'user.IsDeleted = false;',
+            aciklama: 'Soft-delete bayrağı GERİ ALINIR — bu andan İTİBAREN kullanıcı, TÜM normal soft-delete filtreli sorgularda TEKRAR GÖRÜNÜR HALE gelir.',
+            neden: 'ConfirmAccountDeletionCommand (Bölüm 24) BU alanı `true` yapmıştı — kurtarma, o işlemin TAM TERSİNİ, aynı üç alan ÜZERİNDEN yapar (simetrik bir "geri al" işlemi).',
+            olmasaydi: 'Bu satır olmasaydı, kullanıcı BAŞARIYLA giriş yapsa bile (token ALSA bile), Repository<T>\'nin GLOBAL soft-delete filtresi (A-02/04) ONU TÜM diğer sorgularda GİZLEMEYE devam ederdi — token GEÇERLİ ama KULLANICI "görünmez" kalırdı, tutarsız bir DURUM.'
+          },
+          {
+            satir: 'user.DeletedAt = null;',
+            aciklama: '"Ne zaman silindi" bilgisi TEMİZLENİR — kurtarılan bir hesabın ARTIK bir silinme ANI YOKTUR.',
+            neden: 'A-02/07\'deki SoftDeleteAsync\'in `DeletedAt`\'i SET ETMESİYLE SİMETRİK: silme üç alanı DOLDURUYORSA, kurtarma AYNI üç alanı BOŞALTIR.',
+            olmasaydi: 'Bu alan TEMİZLENMESEYDİ, BAŞARIYLA kurtarılmış bir hesap YİNE DE "geçmişte silinmiş" bir zaman DAMGASI TAŞIRDI — audit/destek senaryolarında YANILTICI bir izlenim BIRAKIRDI.'
+          },
+          {
+            satir: 'user.ScheduledDeletionAt = null;',
+            aciklama: 'A-10\'daki `AccountCleanupBackgroundService`\'in "30 gün sonra bu tarihte ANONİMLEŞTİR" PLANI İPTAL EDİLİR.',
+            neden: 'Bu, kurtarmanın EN KRİTİK adımıdır: bu alan TEMİZLENMEZSE, arka plan görevi kullanıcıyı 30 gün SONRA YİNE DE anonimleştirebilir — kullanıcı ARADA giriş yapmış OLSA BİLE.',
+            olmasaydi: 'Bu satır olmasaydı, kullanıcı hesabını BAŞARIYLA kurtarmış GİBİ görünür (giriş yapabilir) ama ARKA PLANDA hâlâ "30 gün sonra SİL" planı AKTİF kalırdı — kullanıcı bir SÜRE sonra AÇIKLANAMAZ şekilde HESABININ anonimleştirildiğini GÖRÜRDÜ.'
+          },
+          {
+            satir: 'accountWasRecovered = true;',
+            aciklama: 'Yerel bayrak `true` OLARAK GÜNCELLENİR — bu bilgi fonksiyonun SONUNDA `AuthTokenResponse`\'a AKTARILACAK.',
+            neden: 'Bu satırın `if (user.IsDeleted)` BLOĞUNUN İÇİNDE olması, YALNIZCA GERÇEKTEN bir kurtarma YAŞANDIYSA `true` OLMASINI garanti eder — normal bir girişte (hesap hiç silinmemişken) bu değer HER ZAMAN `false` KALIR.',
+            olmasaydi: 'Bu satır olmasaydı, `accountWasRecovered` HER ZAMAN `false` KALIRDI — kurtarma GERÇEKTEN OLSA bile istemci BUNU HİÇ ÖĞRENEMEZDİ, kullanıcıya "hesabınız geri YÜKLENDİ" bildirimi HİÇ GÖSTERİLMEZDİ.'
+          },
+          {
+            satir: '_otpService.Clear(user);',
+            aciklama: 'Bölüm 20\'deki AYNI temizlik — Login OTP\'si TEK KULLANIMLIK olduğu İÇİN, başarılı bir doğrulamadan SONRA temizlenir.',
+            neden: 'Bu servis, OTP doğrulama/Google/Apple/QR girişlerinin ORTAK son adımı OLDUĞU İÇİN, OTP temizliği de BURADA, TEK bir yerde YAPILIR — Google/Apple girişinde ZATEN bir OTP YOKTUR ama `Clear` çağrısı ZARARSIZDIR (zaten null olan alanları TEKRAR null yapar).',
+            olmasaydi: 'Bu satır olmasaydı, Login\'de kullanılan OTP kodu veritabanında DOLU kalırdı — VerifyEmailCommand\'daki (Bölüm 20) AYNI riskle KARŞILAŞILIRDI: kod SÜRESİ dolmadan biri onu ele geçirirse TEKRAR "doğrulama" DENEYEBİLİRDİ.'
+          },
+          {
+            satir: 'user.LastLoginAt = DateTime.UtcNow;',
+            aciklama: 'Kullanıcının "EN SON NE ZAMAN giriş YAPTIĞI" bilgisi — HER BAŞARILI login/Google/Apple/QR akışında GÜNCELLENİR.',
+            neden: 'Bu alan, ör. "30 gündür giriş YAPMAMIŞ kullanıcılara HATIRLATMA e-postası GÖNDER" gibi GELECEKTEKİ bir özelliğin (C-fazı) TEMEL VERİSİDİR — TEK bir yerden (CompleteLoginAsync) GÜNCELLENDİĞİ İÇİN TÜM giriş yöntemleri İÇİN TUTARLI kalır.',
+            olmasaydi: 'Her giriş yöntemi (OTP/Google/Apple/QR) BU alanı KENDİ Handler\'ında AYRI AYRI güncelleseydi, biri UNUTULURSA o giriş yöntemiyle giren kullanıcıların "son giriş" bilgisi HİÇ GÜNCELLENMEZDİ — TUTARSIZ istatistikler.'
+          },
+          {
+            satir: 'user.LastLoginIP = ipAddress;',
+            aciklama: 'VerifyLoginOtpCommand\'ın (Bölüm 21) Controller\'dan `with { ClientIp = ... }` İLE GEÇİRDİĞİ IP, BURADA kullanıcının kalıcı KAYDINA YAZILIR.',
+            neden: '"En son HANGİ IP\'den giriş yapıldı" bilgisi, şüpheli bir giriş TESPİT EDİLDİĞİNDE (ör. Admin panelinden) İLK bakılacak ALANLARDAN biridir.',
+            olmasaydi: 'Bu satır olmasaydı, `LastLoginIP` HER ZAMAN `null` KALIRDI — bir hesabın ELE GEÇİRİLDİĞİNDEN ŞÜPHELENİLDİĞİNDE, "bu hesaba EN SON HANGİ IP\'den girildi" sorusu HİÇBİR ZAMAN CEVAPLANAMAZDI.'
+          },
+          {
+            satir: 'user.LoginCount += 1;',
+            aciklama: 'Toplam BAŞARILI giriş SAYACI bir ARTIRILIR.',
+            neden: 'Bu basit sayaç, ör. "en AKTİF kullanıcılar" gibi bir Admin İSTATİSTİK panelinin (A-07) TEMEL veri KAYNAKLARINDAN biri olabilir — HER giriş yönteminde AYNI yerden ARTIRILDIĞI için TUTARLIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, `LoginCount` SONSUZA kadar `0` KALIRDI — "bu kullanıcı NE KADAR AKTİF" sorusunun EN BASİT göstergesi HİÇ TOPLANMAZDI.'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Buraya kadar yapılan TÜM değişiklikler (kurtarma, OTP temizliği, giriş istatistikleri) TEK bir veritabanı YAZIMINDA kalıcı OLUR — A-02/07\'deki UpdateAsync deseninin AYNISI.',
+            neden: '`user.Id` HER ZAMAN doludur (bu noktada `user` ZATEN veritabanından ÇEKİLMİŞ bir kayıttır) — Register\'daki (userId `null`) DURUMDAN FARKLI olarak, burada kullanıcı KENDİ kaydını GÜNCELLİYOR.',
+            olmasaydi: 'Bu satır olmasaydı, YUKARIDAKİ TÜM değişiklikler (kurtarma DAHİL) yalnızca BELLEKTE kalırdı — bir sonraki isteğe kadar KAYBOLURDU, kullanıcı HER GİRİŞTE "hesabınız KURTARILDI" mesajını TEKRAR GÖREBİLİRDİ (aslında hiç kurtarılmamış GİBİ).'
+          },
+          {
+            satir: 'var accessToken = _tokenService.GenerateAccessToken(user);',
+            aciklama: 'Bölüm 18\'de (Bonus: JWT + Refresh Token) satır satır GÖRDÜĞÜMÜZ metot — burada ÇAĞRILDIĞI YER.',
+            neden: 'Bu, Bölüm 18\'deki teorik JWT üretimi ile Bölüm 21\'deki GERÇEK Login akışının BİRLEŞTİĞİ noktadır — o bölümde "NASIL üretiliyor"u, burada "NE ZAMAN çağrılıyor"u GÖRÜYORUZ.',
+            olmasaydi: 'Bu satır olmasaydı, `AuthTokenResponse`\'un `AccessToken` alanına GEÇİRİLECEK bir DEĞER OLMAZDI — istemci giriş YAPTIKTAN sonra HİÇBİR API isteği ATAMAZDI (Authorization header\'ı BOŞ kalırdı).'
+          },
+          {
+            satir: 'var refreshTokenResult = _tokenService.GenerateRefreshToken();',
+            aciklama: 'ITokenService\'in İKİNCİ metodu — Bölüm 18\'de GÖRMEDİĞİMİZ, RASTGELE (JWT DEĞİL) bir refresh token + süresini ÜRETİR.',
+            neden: 'Access token (JWT, KENDİ KENDİNİ doğrulayan) İLE refresh token (rastgele, VERİTABANINDA saklı) FARKLI ÜRETİM mantıkları GEREKTİRİR — bu yüzden ITokenService İKİ AYRI metot SUNAR.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `RefreshToken` nesnesinin `TokenHash`/`ExpiresAt` alanlarına GEÇİRİLECEK bir DEĞER OLMAZDI — kullanıcı YALNIZCA 15 dakikalık access token İLE sınırlı kalır, süre DOLUNCA TEKRAR şifre GİRMEK ZORUNDA kalırdı.'
+          },
+          {
+            satir: 'var refreshToken = new RefreshToken',
+            aciklama: 'Object initializer sözdizimiyle bir RefreshToken nesnesi inşa edilmeye BAŞLANIR — Bölüm 15\'teki `var user = new User` İLE AYNI desen.',
+            neden: 'Bölüm 18\'de gördüğümüz RefreshToken entity\'sinin BURADAKİ SOMUT örneği — aşağıdaki `{ }` bloğundaki HER satır, entity\'nin bir ALANINI doldurur.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki alan atamalarının BAĞLI OLACAĞI bir nesne olmazdı — kod derlenemezdi.'
+          },
+          {
+            satir: 'UserId = user.Id,',
+            aciklama: 'Bu refresh token\'ın HANGİ kullanıcıya AİT olduğunu belirten FOREIGN KEY alanı.',
+            neden: 'Bu alan olmadan, RefreshCommand (Bölüm 18) "bu token HANGİ kullanıcıya AİT" sorusunu CEVAPLAYAMAZDI — yeni access token ÜRETİLİRKEN HANGİ kullanıcının JWT\'sinin OLUŞTURULACAĞI BELİRSİZ kalırdı.',
+            olmasaydi: 'Bu satır olmasaydı, `UserId` varsayılan değeriyle (0) KALIRDI — bu token YANLIŞ bir kullanıcıya (Id=0, VAR OLMAYAN bir kullanıcı) BAĞLANMIŞ gibi görünürdü.'
+          },
+          {
+            satir: 'TokenHash = _passwordService.HashToken(refreshTokenResult.Token),',
+            aciklama: 'Bölüm 18\'deki RefreshToken entity\'sindeki AYNI alan — HAM token DEĞİL, SHA-256 hash\'i VERİTABANINA yazılır.',
+            neden: 'Bu, Bölüm 18\'de detaylı GÖRDÜĞÜMÜZ "refresh token asla düz metin SAKLANMAZ" ilkesinin BURADAKİ UYGULAMASI — `refreshTokenResult.Token` (ham DEĞER) yalnızca `AuthTokenResponse`\'un İÇİNDE, İSTEMCİYE bir KEZ döner.',
+            olmasaydi: 'Ham token doğrudan `TokenHash` alanına yazılsaydı, bir veritabanı SIZINTISINDA TÜM kullanıcıların REFRESH token\'ları DÜZ METİN olarak ELE GEÇERDİ — saldırgan bu token\'larla DOĞRUDAN yeni access token İSTEYEBİLİRDİ.'
+          },
+          {
+            satir: 'TokenFamily = Guid.NewGuid().ToString(),',
+            aciklama: 'Bölüm 18\'de detaylı gördüğümüz Token Family Pattern\'in BAŞLANGIÇ NOKTASI — HER YENİ giriş (login/Google/Apple/QR), YENİ bir family BAŞLATIR.',
+            neden: 'Bu family Id, bir sonraki RefreshCommand (Bölüm 18) çağrısında AYNI family\'DE yeni bir token ÜRETMEK ya da REPLAY tespit edildiğinde TÜM family\'yi İPTAL ETMEK için KULLANILIR.',
+            olmasaydi: 'Bu alan olmasaydı, Bölüm 18\'deki `RevokeFamilyAsync(existingToken.TokenFamily, ct)` çağrısına GEÇİRİLECEK bir DEĞER OLMAZDI — bir token ÇALINDIĞINDA, YALNIZCA o TEK token İPTAL EDİLEBİLİRDİ, aynı OTURUMDAN türeyen DİĞER token\'lar (varsa) DOKUNULMADAN kalırdı.'
+          },
+          {
+            satir: 'ExpiresAt = refreshTokenResult.ExpiresAt,',
+            aciklama: '`_tokenService.GenerateRefreshToken()` çağrısının DÖNDÜRDÜĞÜ, 7 GÜN sonrasına ayarlanmış (CLAUDE.md: "Refresh 7gün") son kullanma tarihi.',
+            neden: 'Bu tarih, RefreshCommand (Bölüm 18) çağrıldığında "bu token HÂLÂ geçerli mi" kontrolünde KULLANILACAK — süre DOLMUŞ bir refresh token, YENİ bir access token ÜRETMEK için KULLANILAMAZ.',
+            olmasaydi: 'Bu alan olmasaydı, `ExpiresAt` varsayılan değeriyle (DateTime.MinValue) KALIRDI — refresh token OLUŞTURULDUĞU ANDA "süresi dolmuş" GİBİ görünürdü, kullanıcı HİÇBİR ZAMAN bu token\'ı KULLANAMAZDI.'
+          },
+          {
+            satir: 'IpAddress = ipAddress,',
+            aciklama: 'Bu SPESİFİK refresh token\'ın HANGİ IP\'den ÜRETİLDİĞİ — `User.LastLoginIP`\'den FARKLI olarak, BU alan o TEK OTURUMA/CİHAZA ÖZGÜDÜR (kullanıcı BİRDEN FAZLA cihazdan giriş YAPARSA, HER birinin KENDİ RefreshToken kaydı VE KENDİ IP\'si OLUR).',
+            neden: 'Bir kullanıcı "AKTİF oturumlarımı GÖSTER" (gelecekteki bir özellik) dediğinde, HER RefreshToken\'ın KENDİ IP\'sini TAŞIMASI, "bu oturum HANGİ cihazdan/YERDEN açıldı" bilgisini SAĞLAR.',
+            olmasaydi: 'Bu alan olmasaydı, TÜM RefreshToken kayıtları YALNIZCA `User.LastLoginIP`\'YE (TEK, PAYLAŞILAN bir DEĞERE) BAKMAK ZORUNDA kalırdı — BİRDEN FAZLA cihazdan giriş YAPAN bir kullanıcının HANGİ oturumun HANGİ IP\'den olduğu AYIRT EDİLEMEZDİ.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer bloğunun ve `refreshToken` DEĞİŞKEN tanımının KAPANIŞI.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, BEŞ alanın (UserId, TokenHash, TokenFamily, ExpiresAt, IpAddress) bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);',
+            aciklama: 'YENİ RefreshToken kaydı VERİTABANINA YAZILIR — `user.Id`, "bu kaydı KİM oluşturdu" bilgisi olarak GEÇİRİLİR (kullanıcı KENDİ token\'ını OLUŞTURUYOR).',
+            neden: 'Bu, Bölüm 16\'daki Repository<T>.AddAsync deseninin (Register\'daki `AddAsync(user, ct: ct)`, userId `null`) FARKLI bir KULLANIMI — burada `userId` DOLUDUR çünkü işlemi yapan kullanıcı ZATEN BELLİDİR (anonim DEĞİLDİR).',
+            olmasaydi: 'Bu satır olmasaydı, YUKARIDA inşa edilen `refreshToken` nesnesi yalnızca BELLEKTE KALIRDI — kullanıcı access token\'ı ALSA bile, 15 DAKİKA SONRA `RefreshCommand`\'a (Bölüm 18) geçtiğinde VERİTABANINDA hiçbir EŞLEŞEN kayıt BULUNAMAZDI.'
+          },
+          {
+            satir: 'return new AuthTokenResponse(',
+            aciklama: 'Bölüm 18\'de tanıdığımız DTO — access+refresh token, sürenin SANİYE cinsinden HALİ, minimal kullanıcı özeti (AuthUserDto) VE kurtarma bayrağı TEK bir yanıtta TOPLANIR.',
+            neden: 'TÜM giriş yöntemleri (OTP/Google/Apple/QR/refresh) AYNI DTO\'yu DÖNDÜRÜR — istemci tarafında "Google ile GİRDİM mi, OTP İLE mi" farkı, yanıtın ŞEKLİNİ ETKİLEMEZ, İSTEMCİ TEK bir kod yoluyla TÜMÜNÜ işleyebilir.',
+            olmasaydi: 'Her giriş yöntemi KENDİ DTO\'sunu döndürseydi, istemci tarafında "hangi giriş yöntemine HANGİ tip UYGULANACAK" gibi GEREKSİZ bir DALLANMA gerekirdi — Bölüm 14\'teki "DTO fazlalığından KAÇINMA" ilkesinin BURADAKİ karşılığı.'
+          },
+          {
+            satir: 'accessToken,',
+            aciklama: 'Yukarıda `_tokenService.GenerateAccessToken(user)` ile üretilen JWT — DTO\'nun İLK parametresi.',
+            neden: 'Bu, istemcinin HER API isteğinde `Authorization: Bearer <accessToken>` header\'ında TAŞIYACAĞI DEĞERDİR (Bölüm 18).',
+            olmasaydi: 'Bu parametre olmasaydı, `AuthTokenResponse`\'un `AccessToken` alanı DOLDURULAMAZDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'refreshTokenResult.Token,',
+            aciklama: 'Yukarıda üretilen refresh token\'ın HAM (hash\'lenmemiş) hali — bu, `TokenHash` alanına YAZILAN hash\'ten FARKLI olarak, İSTEMCİYE bu TEK SEFERLİK olarak GÖNDERİLİR.',
+            neden: 'Bölüm 18\'deki "refresh token asla düz metin SAKLANMAZ" ilkesi yalnızca VERİTABANI için geçerlidir — istemciye, saklayabilmesi İÇİN ham DEĞER GÖNDERİLMEK ZORUNDADIR (yoksa istemci hiçbir zaman GEÇERLİ bir refresh token\'a SAHİP OLAMAZ).',
+            olmasaydi: 'Bu parametre olmasaydı, istemci HİÇBİR ZAMAN bir refresh token ALMAZDI — 15 dakika SONRA access token\'ın süresi DOLDUĞUNDA, kullanıcı TEKRAR şifre GİRMEK ZORUNDA kalırdı.'
+          },
+          {
+            satir: 'ExpiresInSeconds(),',
+            aciklama: 'Access token\'ın kaç SANİYE sonra süresinin DOLACAĞI — Bölüm 18\'de gördüğümüz, dakika cinsinden sabiti SANİYEYE çeviren yardımcı metot.',
+            neden: 'İstemci (mobil/web), bu değeri KULLANARAK "access token\'ı NE ZAMAN yenilemem GEREKİYOR" hesaplamasını YAPABİLİR — dakika DEĞİL saniye dönmesi, JavaScript/Swift/Kotlin\'deki YAYGIN zaman birimleriyle DOĞRUDAN UYUMLUDUR.',
+            olmasaydi: 'Bu parametre olmasaydı, istemci access token\'ın NE ZAMAN DOLACAĞINI bilemezdi — JWT\'yi KENDİSİ çözümleyip (`exp` claim\'ini OKUYARAK) hesaplamak ZORUNDA kalırdı, gereksiz bir İSTEMCİ TARAFI karmaşıklığı.'
+          },
+          {
+            satir: '_mapper.Map<AuthUserDto>(user),',
+            aciklama: 'Bölüm 14\'teki AuthProfile\'daki `CreateMap<User, AuthUserDto>()` kaydı BURADA ÇALIŞIR — User entity\'si (30\'a yakın alan) yalnızca 3 alana (Id, CurrentLevel, ThemePreference) İNDİRGENİR.',
+            neden: 'İstemci, giriş YAPTIĞI ANDA kullanıcının seviyesini VE tema tercihini BİLİR — ayrı bir "GET /users/me" çağrısı GEREKMEZ (Bölüm 14\'teki AuthUserDto açıklamasında GÖRDÜĞÜMÜZ gerekçe).',
+            olmasaydi: 'Bu satır olmasaydı, istemci giriş YAPTIKTAN HEMEN sonra kullanıcının seviyesini/temasını GÖSTEREBİLMEK için AYRI bir API çağrısı YAPMASI gerekirdi — gereksiz bir AĞ İSTEĞİ, kullanıcı arayüzünün İLK açılışta "yanlış" (varsayılan) TEMA ile ÇİZİLMESİ RİSKİ.'
+          },
+          {
+            satir: 'accountWasRecovered',
+            aciklama: 'Fonksiyonun BAŞINDA hesaplanan bayrak, EN SONDA `AuthTokenResponse`\'a AKTARILIR — istemci bu alana BAKARAK kullanıcıya ÖZEL bir "hesabınız GERİ YÜKLENDİ" bildirimi GÖSTEREBİLİR.',
+            neden: 'Bu, fonksiyonun EN BAŞINDAKİ `if (user.IsDeleted)` bloğuyla İLGİLİ TEK çıktı NOKTASI — normal bir giriş İÇİN her zaman `false`, kurtarma GERÇEKLEŞTİYSE `true`.',
+            olmasaydi: 'Bu parametre olmasaydı, `AuthTokenResponse`\'un YAPISI EKSİK KALIRDI (dördüncü parametre, User, İLE beşinci parametre ARASINDA bir BOŞLUK) — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: ');',
+            aciklama: 'AuthTokenResponse constructor çağrısının ve `return` ifadesinin KAPANIŞI — metodun SON satırı.',
+            neden: 'Beş parametreli (accessToken, refreshToken, expiresIn, user, accountWasRecovered) bu çağrının çok-satırlı yazılması, kapanışın da KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Login, İKİ ayrı Command\'dan oluşur: LoginCommand (şifre → OTP gönder, token DÖNMEZ) + VerifyLoginOtpCommand (OTP → token)',
+          'FakePasswordHashForTiming + koşulsuz Verify çağrısı, timing-attack\'e karşı SABİT süreli bir yanıt garantisi verir',
+          'InvalidCredentialsException, ÜÇ farklı başarısızlık senaryosunu (kullanıcı yok / şifre yok / şifre yanlış) TEK bir genel hataya birleştirir',
+          'ILoginCompletionService.CompleteLoginAsync, OTP/Google/Apple/QR girişlerinin ORTAK son adımı — grace-period kurtarma, istatistikler, token üretimi TEK yerde'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RequestAccountDeletion + ConfirmAccountDeletion</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'account-deletion',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '17_forgot-reset-password.html',
+    sonrakiBolum: '20_hata-mimarisi-appexception.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 25',
+        baslik: 'RequestAccountDeletion + ConfirmAccountDeletion',
+        altBaslik: 'Bölüm 9\'da User.cs\'te tanıttığımız ScheduledDeletionAt/IsAnonymized/OriginalEmailHash alanları — İŞTE burada, GERÇEKTEN, İLK KEZ kullanılıyorlar.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Çift Onay (OTP + Şifre)?',
+        aciklama: 'Hesap silme, GERİ ALINAMAZ bir işlemin BAŞLANGIÇ NOKTASIDIR (30 gün SONRA KALICI anonimleştirme, A-10) — bu yüzden TEK bir OTP kodu YETERLİ GÖRÜLMEZ. RequestAccountDeletionCommand (adım 1) bir OTP GÖNDERİR (JWT\'DEKİ kimlik ÜZERİNDEN, gövde bile YOKTUR). ConfirmAccountDeletionCommand (adım 2) HEM o OTP\'yi HEM de kullanıcının ŞİFRESİNİ İSTER — Login\'DEKİ (Bölüm 21) İLE AYNI "bir şey BİLİYORSUN" kanıtı EKLENİR.',
+        neden: 'Bir saldırgan, kurbanın SADECE giriş yapmış bir CİHAZINA (JWT\'si GEÇERLİ) ERİŞİM SAĞLARSA BİLE, ŞİFREYİ BİLMEDEN hesabı SİLEMEZ — "oturum ÇALINDI" İLE "hesap TAMAMEN ELE GEÇİRİLDİ" ARASINDA bir SAVUNMA KATMANI OLUŞTURULUR.',
+        olmasaydi: 'Yalnızca OTP YETSEYDİ, bir saldırgan KURBANIN e-postasına GEÇİCİ olarak ERİŞİRSE (ör. AÇIK bırakılmış bir e-posta İSTEMCİSİ) VE JWT\'yi de ELE GEÇİRİRSE, ŞİFREYİ HİÇ BİLMEDEN kurbanın HESABINI KALICI OLARAK SİLEBİLİRDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RequestAccountDeletionCommand.cs — Gövdesiz Command',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RequestAccountDeletionCommand.cs',
+        nedenBuKlasor: 'Features/Auth/ altında, diğer Auth Command\'larıyla aynı klasörde.',
+        kod: `public record RequestAccountDeletionCommand(int UserId) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
+
+public class RequestAccountDeletionCommandHandler
+    : IRequestHandler<RequestAccountDeletionCommand, MessageResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
+
+    public RequestAccountDeletionCommandHandler(
+        IUserRepository userRepository,
+        IOtpService otpService,
+        IEmailService emailService
+    )
+    {
+        _userRepository = userRepository;
+        _otpService = otpService;
+        _emailService = emailService;
+    }
+
+    public async Task<MessageResponse> Handle(RequestAccountDeletionCommand request, CancellationToken ct)
+    {
+        var user =
+            await _userRepository.GetByIdAsync(request.UserId, ct)
+            ?? throw new EntityNotFoundException(typeof(User), request.UserId);
+
+        var (otpCode, otpHash) = _otpService.Generate();
+        user.PendingOtpCodeHash = otpHash;
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.DeleteAccountOtpExpiryMinutes);
+        user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
+        await _userRepository.UpdateAsync(user, user.Id, ct);
+
+        await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);
+        return new MessageResponse(
+            "ACCOUNT_DELETION_OTP_SENT",
+            SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", request.Language)
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record RequestAccountDeletionCommand(int UserId) : IRequest<MessageResponse>',
+            aciklama: 'TEK alan: `UserId` — ve BU alan, İSTEMCİDEN (gövdeden) DEĞİL, AuthController\'IN (Bölüm 17) `new RequestAccountDeletionCommand(CurrentUserId)` İLE DOĞRUDAN İNŞA ETTİĞİ bir DEĞERDİR (bir SONRAKİ slaytta AuthController\'da GÖRECEĞİZ) — bu Command\'IN gövdesi (`[FromBody]`) HİÇ YOKTUR.',
+            neden: 'LogoutCommand\'daki (Bölüm 23) `UserId { get; init; }` (record\'un ANA CONSTRUCTOR PARAMETRESİ DEĞİL, EK bir property) İLE FARKLI bir YAKLAŞIM: BURADA `UserId` doğrudan ANA CONSTRUCTOR PARAMETRESİDİR — ÇÜNKÜ bu Command\'IN gövdesi HİÇ olmadığı İÇİN, TEK "girdisi" ZATEN Controller\'IN sağladığı BU DEĞERDİR.',
+            olmasaydi: '`UserId` GÖVDEDEN alınabilseydi, bir kullanıcı KENDİ isteğinde BAŞKA bir `userId` GÖNDEREREK BAŞKASININ hesabı İÇİN silme OTP\'si TETİKLEYEBİLİRDİ — bu Command\'IN gövdesiz OLMASI, BU riski TASARIM SEVİYESİNDE (BİR "İF" KONTROLÜ BİLE GEREKMEDEN) ORTADAN KALDIRIR.'
+          },
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: 'Diğer TÜM Auth Command\'larındaki AYNI desen — gövdede GELMEZ, Controller isteğin `Accept-Language` header\'ından DOLDURUR.',
+            neden: 'Handler\'ın SON satırındaki `SuccessMessages.Resolve` çağrısı bu alanı KULLANACAKTIR.',
+            olmasaydi: 'Bu alan olmasaydı, dönen mesaj her zaman VARSAYILAN dile (Türkçe) düşerdi.'
+          },
+          {
+            satir: 'public class RequestAccountDeletionCommandHandler',
+            aciklama: 'Sınıf İMZASI, UZUN OLDUĞU İÇİN (implement ettiği arayüz de dahil) İKİ satıra BÖLÜNÜR — bir SONRAKİ satırda `: IRequestHandler<...>` devam eder.',
+            neden: 'Bu, C#\'ın satır UZUNLUĞU İÇİN sunduğu SERBEST BİÇİMLENDİRMEYE bir örnek — `RequestAccountDeletionCommandHandler` VE `IRequestHandler<RequestAccountDeletionCommand, MessageResponse>` İSİMLERİNİN UZUNLUĞU, TEK satırda YAZILMASINI OKUNMASI ZOR kılardı.',
+            olmasaydi: 'Bu ikisi TEK satırda BİRLEŞTİRİLSEYDİ, işlevsel bir FARK OLMAZDI — yalnızca satır AŞIRI UZUN olur, kod incelemesinde OKUNABİLİRLİK AZALIRDI.'
+          },
+          {
+            satir: ': IRequestHandler<RequestAccountDeletionCommand, MessageResponse>',
+            aciklama: 'Sınıf imzasının İKİNCİ satırı — MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder.',
+            neden: 'İmza, yukarıdaki RequestAccountDeletionCommand\'ın `IRequest<MessageResponse>` implemente etmesiyle EŞLEŞİR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı Id\'siyle bulmak VE OTP alanlarını güncellemek için.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, testte GERÇEK bir veritabanı bağlantısı GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bu kez `Generate()` metodu için — hesap silme onayı İÇİN bir OTP üretmek İÇİN.',
+            neden: 'CLAUDE.md §3\'teki "paylaşılan mantık ortak bir servise çıkarılır" kuralı — TÜM OTP akışları AYNI altyapıyı KULLANIR.',
+            olmasaydi: 'Bu servis olmasaydı, OTP üretim mantığı Handler\'da AYRICA YAZILIRDI.'
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Hesap silme onayı kodunu kullanıcıya göndermek için.',
+            neden: 'Handler, "e-posta NASIL gönderilir" bilgisinden TAMAMEN İZOLE kalır.',
+            olmasaydi: 'Bu bağımlılık olmasaydı, üretilen kod HİÇBİR ZAMAN kullanıcıya ULAŞMAZDI.'
+          },
+          {
+            satir: 'public RequestAccountDeletionCommandHandler(',
+            aciklama: 'Üç bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER.',
+            neden: 'Çok-satırlı yazım, üç parametrenin OKUNABİLİRLİĞİNİ KORUR.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri RequestAccountDeletionCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'İkinci parametre — OTP üretim servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler YENİ bir OTP kodu ÜRETEMEZDİ.'
+          },
+          {
+            satir: 'IEmailService emailService',
+            aciklama: 'ÜÇÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'E-posta servisinin de arayüz üzerinden enjekte edilmesi, testte GERÇEK e-posta göndermeden bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler kullanıcıya kodu ASLA gönderemezdi.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'İKİNCİ atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı.'
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'SON atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_emailService` null kalırdı.'
+          },
+          {
+            satir: 'public async Task<MessageResponse> Handle(RequestAccountDeletionCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var user =',
+            aciklama: 'Bölüm 24\'teki ConfirmAccountDeletionCommand İLE PAYLAŞILAN bir DESEN: `GetByEmailAsync` (soft-delete YOK SAYAN) DEĞİL, `GetByIdAsync` (Repository<T>\'nin STANDART, FİLTRELİ metodu, A-02/07) KULLANILIR.',
+            neden: 'Bu Command, ZATEN kimliği DOĞRULANMIŞ (JWT GEÇERLİ) VE hesabı AKTİF olan bir kullanıcının İSTEĞİDİR — soft-delete\'Lİ bir kullanıcının ZATEN GİRİŞ YAPAMAYACAĞINI (CompleteLoginAsync GRACE-PERIOD KURTARMASI HARİÇ) BİLDİĞİMİZ İÇİN, BURADA FİLTRESİZ bir ARAMAYA GEREK YOKTUR.',
+            olmasaydi: '`GetByIdAsync` YERİNE FİLTRESİZ bir SORGU KULLANILSAYDI, ZATEN SİLİNMİŞ (soft-delete\'Lİ) bir kullanıcı İÇİN de YENİDEN bir "hesap SİLME" OTP\'si ÜRETİLEBİLİRDİ — MANTIKSAL olarak ANLAMSIZ bir DURUM (zaten SİLİNMİŞ bir hesabı TEKRAR SİLMEYE ÇALIŞMAK).'
+          },
+          {
+            satir: 'await _userRepository.GetByIdAsync(request.UserId, ct)',
+            aciklama: 'A-02/07\'deki Repository<T>.GetByIdAsync — soft-delete FİLTRELİ, STANDART sorgu; `request.UserId` JWT\'DEN gelir, İSTEMCİDEN DEĞİL.',
+            neden: 'Bu satır, bir üstteki `var user =` satırıyla BİRLİKTE, İKİ satırlık TEK bir ifadenin İLK yarısını OLUŞTURUR — `??` operatörü bir SONRAKİ satırda DEVAM eder.',
+            olmasaydi: 'Bu satır olmasaydı, `user` DEĞİŞKENİNE ATANACAK bir SORGU SONUCU OLMAZDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(User), request.UserId);',
+            aciklama: 'A-02/07\'deki Repository<T>.SoftDeleteAsync İLE AYNI DESEN — kaydı BULAMAZSA, GENEL bir "bulunamadı" EXCEPTION\'I (`AppException`\'DAN TÜREMEZ, A-02/02) FIRLATIR.',
+            neden: 'PRATİKTE bu DAL neredeyse HİÇ TETİKLENMEZ (JWT GEÇERLİYSE kullanıcı NEREDEYSE HER ZAMAN VARDIR) — ama SAVUNMACI programlamanın (ör. kullanıcı TAM O ANDA bir BAŞKA İSTEKLE SİLİNMİŞSE — RACE CONDITION) GEREĞİDİR.',
+            olmasaydi: 'Bu kontrol OLMASAYDI VE `user` `null` DÖNSEYDİ, bir SONRAKİ satırdaki `user.PendingOtpCodeHash = ...` İFADESİ NullReferenceException FIRLATIRDI — kullanıcı ANLAMSIZ bir 500 HATASI ALIRDI.'
+          },
+          {
+            satir: 'var (otpCode, otpHash) = _otpService.Generate();',
+            aciklama: 'Bölüm 15/20/21/24\'teki AYNI OtpService.Generate çağrısı — bu kez amacı `OtpPurpose.AccountDeletion` olacak.',
+            neden: 'Aynı OTP altyapısı TÜM akışlarda PAYLAŞILIR — her akış kendi OTP üretim mantığını YAZMAZ.',
+            olmasaydi: 'Bu servis olmasaydı, OTP üretim mantığı BURADA da AYRICA YAZILIRDI — DRY ihlali.'
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = otpHash;',
+            aciklama: 'Üretilen OTP\'nin HASH\'i, kullanıcının bekleyen OTP alanına yazılır.',
+            neden: 'Yalnızca hash saklanır, GERÇEK kod veritabanına ASLA yazılmaz — Bölüm 9\'daki "OTP asla düz metin saklanmaz" ilkesi.',
+            olmasaydi: 'Bu satır olmasaydı, kullanıcı e-postasındaki kodu girdiğinde (ConfirmAccountDeletionCommand) sistemin KARŞILAŞTIRACAĞI bir hash OLMAZDI.'
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.DeleteAccountOtpExpiryMinutes);',
+            aciklama: 'Bölüm 15/20/21/24\'teki `IOtpService.OtpExpiryMinutes`\'TEN FARKLI bir SABİT — `DeleteAccountOtpExpiryMinutes`, hesap SİLME OTP\'sine ÖZGÜ, DAHA KISA (15 dakika, YORUM SATIRINDA belirtilen) bir SÜRE.',
+            neden: 'Hesap SİLME, DİĞER OTP AKIŞLARINDAN DAHA YÜKSEK RİSKLİ bir İŞLEM OLDUĞU İÇİN, DAHA KISA bir PENCEREYE SAHİP OLMASI (bir SALDIRGANIN bu KODU ELE GEÇİRİP KULLANABİLECEĞİ SÜREYİ AZALTMASI) BİLİNÇLİ bir GÜVENLİK KARARIDIR.',
+            olmasaydi: 'STANDART `OtpExpiryMinutes` (10 dakika, DİĞER akışlarla AYNI) KULLANILSAYDI, İŞLEVSEL olarak ÇOK BÜYÜK bir FARK OLMAZDI — ama bu, "her AKIŞIN KENDİ RİSK SEVİYESİNE GÖRE AYARLANABİLİR bir OTP SÜRESİ OLABİLECEĞİ" ESNEKLİĞİNİ KAYBEDERDİ.'
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;',
+            aciklama: 'OtpPurpose enum\'ının (Bölüm 9) DÖRDÜNCÜ VE SON DEĞERİ — Bölüm 20/21/24\'TE GÖRDÜĞÜMÜZ EmailVerification/LoginOtp/PasswordReset İLE AYNI AİLEDEN.',
+            neden: 'Bu, EN KRİTİK amaç AYRIMIDIR: BU etiket OLMASAYDI, ÖRNEĞİN Login İÇİN GÖNDERİLEN bir kod, hesap SİLME ONAYINDA da KABUL EDİLEBİLİRDİ — SONUÇLARI (GERİ ALINAMAZ silme) DÜŞÜNÜLDÜĞÜNDE, BU DÖRT AMAÇ ARASINDAKİ EN ÖNEMLİ SINIR.',
+            olmasaydi: 'YANLIŞ bir AMAÇ ETİKETİ KULLANILSAYDI (ör. `LoginOtp`), bir SALDIRGAN KURBANIN Login OTP\'sini (E-POSTA HESABI ELE GEÇİRİLDİYSE) hesap SİLME ONAYINDA KULLANARAK KURBANIN HESABINI SİLEBİLİRDİ — TÜM ÖNCEKİ Bölümlerdeki AMAÇ AYRIMI GEREKÇELERİNİN EN YÜKSEK RİSKLİ SONUCU.'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Bölüm 16\'daki Repository<T>.UpdateAsync — üç OTP alanındaki DEĞİŞİKLİK, e-posta gönderiminden ÖNCE, TEK bir veritabanı yazımında KALICI hale gelir.',
+            neden: 'Sıralama BİLİNÇLİ: önce veritabanı GÜNCELLENİR, sonra e-posta gönderilir — Bölüm 15\'teki Register\'daki AYNI sıralama gerekçesi.',
+            olmasaydi: 'Bu satır olmasaydı, yeni OTP hash\'i yalnızca BELLEKTE kalırdı — kullanıcı doğru kodu girse bile doğrulama HER ZAMAN BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);',
+            aciklama: 'DÖRDÜNCÜ VE SON OTP e-postası METODU (Bölüm 15/21/24\'teki EmailVerification/LoginOtp/PasswordReset E-POSTALARININ AYNI AİLESİNDEN).',
+            neden: 'Bu e-postanın İÇERİĞİ, DİĞER ÜÇÜNDEN DAHA CİDDİ bir TONDA OLMALIDIR (ör. "hesabınızı SİLMEK ÜZERESİNİZ, BU İŞLEMİ SİZ BAŞLATMADIYSANIZ..." UYARISI) — KENDİ METODU OLMASI, BU İÇERİĞİN DİĞER OTP e-postalarıyla KARIŞMAMASINI GARANTİ EDER.',
+            olmasaydi: 'TEK bir GENEL OTP e-postası METODU KULLANILSAYDI, hesap SİLME kodu, DİĞER (DAHA "SIRADAN") OTP kodlarıyla AYNI TONDA/ŞABLONDA GÖNDERİLİRDİ — kullanıcı BU KODUN NE KADAR CİDDİ bir İŞLEMİ TETİKLEYECEĞİNİ YETERİNCE FARK ETMEYEBİLİRDİ.'
+          },
+          {
+            satir: 'return new MessageResponse(',
+            aciklama: 'Fonksiyonun DÖNÜŞ noktası — Bölüm 20/21/24\'teki AYNI çok-satırlı MessageResponse İNŞASI.',
+            neden: 'Çok-satırlı yazım, uzun bir KOD+dil çözümleme çağrısını OKUNABİLİR tutar.',
+            olmasaydi: 'Bu satır olmasaydı, fonksiyon HİÇBİR ŞEY DÖNMEZDİ — `Task<MessageResponse>` dönüş TİPİYLE UYUMSUZ, kod DERLENEMEZDİ.'
+          },
+          {
+            satir: '"ACCOUNT_DELETION_OTP_SENT",',
+            aciklama: 'Bölüm 15/20/21/24\'teki DİĞER OTP kodlarıyla AYNI AİLEDEN, AMA KENDİNE ÖZGÜ bir KOD.',
+            neden: 'Frontend, bu kodu GÖREREK "hesap silme AKIŞI BAŞLADI" bilgisini ALIR VE kullanıcıyı "OTP + şifre GİR" EKRANINA YÖNLENDİRİR.',
+            olmasaydi: 'BAŞKA bir OTP akışının KODU KULLANILSAYDI, frontend HANGİ EKRANA YÖNLENDİRECEĞİNİ BU KODDAN ÇIKARAMAZDI.'
+          },
+          {
+            satir: 'SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", request.Language)',
+            aciklama: 'Diğer TÜM Command\'lardaki AYNI desen — kod, isteğin diline göre insan-okunur bir metne ÇÖZÜLÜR.',
+            neden: 'TÜM Command\'lar AYNI `SuccessMessages.Resolve` API\'sini kullanır — A-03.2\'de tüm sözlüğü detaylı göreceğiz.',
+            olmasaydi: 'Bu çağrı olmasaydı, `Code` alanı DOLU ama `Message` alanı BOŞ/sabit kalırdı.'
+          },
+          {
+            satir: ');',
+            aciklama: 'MessageResponse constructor çağrısının ve `return` ifadesinin KAPANIŞI.',
+            neden: 'Çok-satırlı bir constructor çağrısında kapanış parantezinin KENDİ satırında durması, iki parametrenin NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmAccountDeletionCommand.cs — Çift Onay + Soft Delete',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/ConfirmAccountDeletionCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record ConfirmAccountDeletionCommand(string OtpCode, string Password)
+    : IRequest<MessageResponse>
+{
+    public int UserId { get; init; }
+    public string? Language { get; init; }
+}
+
+public class ConfirmAccountDeletionCommandHandler
+    : IRequestHandler<ConfirmAccountDeletionCommand, MessageResponse>
+{
+    private const int AccountDeletionGraceDays = 30;
+
+    private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(
+        Guid.NewGuid().ToString(),
+        workFactor: 12
+    );
+
+    private readonly IUserRepository _userRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IOtpService _otpService;
+
+    public ConfirmAccountDeletionCommandHandler(
+        IUserRepository userRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        IPasswordService passwordService,
+        IOtpService otpService
+    )
+    {
+        _userRepository = userRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _passwordService = passwordService;
+        _otpService = otpService;
+    }
+
+    public async Task<MessageResponse> Handle(
+        ConfirmAccountDeletionCommand request,
+        CancellationToken ct
+    )
+    {
+        var user =
+            await _userRepository.GetByIdAsync(request.UserId, ct)
+            ?? throw new EntityNotFoundException(typeof(User), request.UserId);
+
+        _otpService.Validate(user, request.OtpCode, OtpPurpose.AccountDeletion);
+
+        if (
+            !_passwordService.Verify(
+                request.Password,
+                user.PasswordHash ?? FakePasswordHashForTiming
+            )
+        )
+            throw new InvalidCredentialsException();
+
+        user.IsDeleted = true;
+        user.DeletedAt = DateTime.UtcNow;
+        user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(AccountDeletionGraceDays);
+        _otpService.Clear(user);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
+
+        await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
+
+        return new MessageResponse(
+            "ACCOUNT_DELETION_CONFIRMED",
+            SuccessMessages.Resolve("ACCOUNT_DELETION_CONFIRMED", request.Language)
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record ConfirmAccountDeletionCommand(string OtpCode, string Password)',
+            aciklama: 'Ana CONSTRUCTOR parametreleri — GÖVDEDEN gelen İKİ GERÇEK GİRDİ: OTP kodu VE (KRİTİK) mevcut ŞİFRE.',
+            neden: 'Bu İKİSİ, kavramsal AÇIDAN "İKİ FARKLI KANIT TÜRÜ" TEMSİL EDER (Bölüm 25\'in BAŞINDAKİ "çift ONAY" AÇIKLAMASI) — İKİSİ DE GÖVDEDEN GELİR ÇÜNKÜ İSTEMCİNİN (KULLANICININ) DOĞRUDAN SAĞLAMASI GEREKEN BİLGİLERDİR.',
+            olmasaydi: 'Yalnızca OtpCode OLSAYDI (Password OLMASAYDI), Bölüm 25\'İN BAŞINDAKİ "e-posta ELE GEÇİRİLİRSE HESAP SİLİNEBİLİR" RİSKİ GERÇEKLEŞİRDİ — şifre olmadan bu Command, JWT + E-POSTA ERİŞİMİ OLAN HERKESE hesap silme YETKİSİ VERİRDİ.'
+          },
+          {
+            satir: ': IRequest<MessageResponse>',
+            aciklama: 'Record BAŞLIĞININ İKİNCİ satıra TAŞAN kısmı — Bölüm 24\'teki ResetPasswordCommand İLE AYNI BİÇİMLENDİRME GEREKÇESİ (iki parametreli başlık ZATEN uzun).',
+            neden: 'C#\'ın SERBEST biçimlendirmesi, uzun bir record BAŞLIĞINI okunabilir tutmak İÇİN `:` kısmını AYRI bir satıra İNDİRİR.',
+            olmasaydi: 'Tek satırda BİRLEŞTİRİLSEYDİ, işlevsel FARK OLMAZDI — yalnızca OKUNABİLİRLİK AZALIRDI.'
+          },
+          {
+            satir: 'public int UserId { get; init; }',
+            aciklama: 'Bölüm 23\'teki LogoutCommand İLE AYNI desen — gövdede GELMEZ, JWT\'DEN (AuthController.CurrentUserId) OKUNUP `with` İLE EKLENİR.',
+            neden: 'Bu, sahiplik KONTROLÜNÜN güvenlik TEMELİDİR — `UserId`, İSTEMCİNİN gönderdiği bir DEĞER değil, sunucunun JWT\'DEN çözdüğü GÜVENİLİR bir DEĞERDİR.',
+            olmasaydi: '`UserId` gövdeden alınsaydı, bir kullanıcı BAŞKA birinin `userId`\'sini GÖNDEREREK o kişinin hesabını SİLMEYE ÇALIŞABİLİRDİ.'
+          },
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: 'Diğer TÜM Auth Command\'larındaki AYNI desen — gövdede GELMEZ, Controller isteğin `Accept-Language` header\'ından DOLDURUR.',
+            neden: 'Handler\'ın SON satırındaki `SuccessMessages.Resolve` çağrısı bu alanı KULLANACAKTIR.',
+            olmasaydi: 'Bu alan olmasaydı, dönen mesaj her zaman VARSAYILAN dile (Türkçe) düşerdi.'
+          },
+          {
+            satir: 'public class ConfirmAccountDeletionCommandHandler',
+            aciklama: 'Sınıf İMZASI, uzun olduğu İÇİN İKİ satıra BÖLÜNÜR — RequestAccountDeletionCommandHandler İLE AYNI BİÇİMLENDİRME GEREKÇESİ.',
+            neden: 'C#\'ın satır UZUNLUĞU İÇİN sunduğu SERBEST biçimlendirme.',
+            olmasaydi: 'Tek satırda BİRLEŞTİRİLSEYDİ, işlevsel FARK OLMAZDI — yalnızca OKUNABİLİRLİK AZALIRDI.'
+          },
+          {
+            satir: ': IRequestHandler<ConfirmAccountDeletionCommand, MessageResponse>',
+            aciklama: 'Sınıf imzasının İKİNCİ satırı — MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder.',
+            neden: 'İmza, yukarıdaki ConfirmAccountDeletionCommand\'ın `IRequest<MessageResponse>` implemente etmesiyle EŞLEŞİR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private const int AccountDeletionGraceDays = 30;',
+            aciklama: 'Bölüm 9\'daki (A-03/02) `ScheduledDeletionAt` alanının AÇIKLAMASINDA GEÇEN "30 GÜN" DEĞERİNİN, GERÇEKTEN NEREDE TANIMLANDIĞI — SABİT bir SAYI olarak KOD İÇİNDE BİR YERDE, TEK bir yerde YAŞAR.',
+            neden: 'REFERENCE/SECURITY.md §9\'DA belirlenen bu DEĞER, `const` OLARAK TANIMLANARAK (BİR AYAR DOSYASINDA DEĞİL, ÇÜNKÜ İŞ KURALI OLARAK SABİTTİR) hem OKUNABİLİRLİK (BİR SONRAKİ satırda `AddDays(AccountDeletionGraceDays)` ANLAMLI bir İSİM TAŞIR) hem de TEK BİR yerden DEĞİŞTİRİLEBİLİRLİK SAĞLAR.',
+            olmasaydi: 'BU sayı DOĞRUDAN `AddDays(30)` OLARAK YAZILSAYDI, KOD YİNE ÇALIŞIRDI AMA "30" SAYISININ NE ANLAMA GELDİĞİ (neden 30, neden BAŞKA bir sayı DEĞİL) KOD OKUYUCUSU İÇİN DAHA AZ AÇIK OLURDU — "MAGIC NUMBER" (BÜYÜLÜ SAYI) ANTİ-DESENİ.'
+          },
+          {
+            satir: 'private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(',
+            aciklama: 'Bölüm 21\'deki LoginCommandHandler\'DAKİ AYNI ALAN — KAYNAK KODDAKİ YORUMDA AÇIKÇA BELİRTİLDİĞİ GİBİ, "BAĞIMSIZ, KÜÇÜK bir TEKRAR" (İKİ KULLANIM, TEK SATIR) — PAYLAŞILAN bir SERVİSE ÇIKARMAK AŞIRI SOYUTLAMA OLURDU.',
+            neden: 'Bu, CLAUDE.md\'DEKİ "paylaşılan MANTIK KÜÇÜK bir ARAYÜZ+İMPL\'E ÇIKARILIR" KURALININ BİLİNÇLİ BİR İSTİSNASI (YAGNI\'nin TERSİ YÖNDEKİ UYGULAMASI): İKİ SATIRLIK bir SABİTİ, AYRI bir SERVİS/ARAYÜZ İLE SOYUTLAMAK, PROBLEMİN BOYUTUNA GÖRE GEREKSİZ KARMAŞIKLIK OLURDU.',
+            olmasaydi: 'Bu satır PAYLAŞILAN bir SERVİSE (ör. `ITimingSafeHashProvider`) ÇIKARILSAYDI, İKİ KULLANIM İÇİN YENİ bir ARAYÜZ + IMPLEMENTASYON + DI KAYDI YAZMAK GEREKİRDİ — KODUN BOYUTU, ÇÖZDÜĞÜ PROBLEMDEN DAHA BÜYÜK OLURDU.'
+          },
+          {
+            satir: 'Guid.NewGuid().ToString(),',
+            aciklama: 'Bölüm 21\'deki LoginCommandHandler İLE BİREBİR AYNI satır — hash\'lenecek "şifre" olarak rastgele bir GUID kullanılır.',
+            neden: 'Bu değerin GERÇEK bir şifre OLMAMASI ÖNEMLİDİR — hiçbir kullanıcının şifresi bu GUID\'e EŞİT OLAMAYACAĞI için, sahte hash ASLA gerçek bir kullanıcıyla YANLIŞLIKLA EŞLEŞMEZ.',
+            olmasaydi: 'Sabit bir string kullanılsaydı, İŞLEVSEL olarak YİNE ÇALIŞIRDI — ama rastgelelik EK bir dikkatli mühendislik alışkanlığını YANSITIR.'
+          },
+          {
+            satir: 'workFactor: 12',
+            aciklama: 'CLAUDE.md\'nin "bcrypt wf=12" kuralına uygun, GERÇEK şifre hash\'lemede kullanılan AYNI maliyet parametresi — Bölüm 21\'deki AYNI değer.',
+            neden: 'Sahte hash\'in GERÇEK şifrelerle AYNI work factor\'da ÜRETİLMESİ, `Verify` çağrısının SÜRESİNİ gerçek karşılaştırmalardan FARKLI kılmamak için ZORUNLUDUR.',
+            olmasaydi: 'Daha düşük bir work factor kullanılsaydı, sahte hash İLE karşılaştırma DAHA HIZLI biterdi — bu süre FARKI timing-attack korumasını ZAYIFLATIRDI.'
+          },
+          {
+            satir: ');',
+            aciklama: 'Bu SLAYTTA İKİ AYRI yerde (BCrypt.HashPassword çağrısının/static alan tanımının kapanışı VE dosyanın en sonundaki `return new MessageResponse(...)` çağrısının kapanışı) tek başına duran, BİREBİR AYNI görünen bir kapanış — kod editörü İÇERİĞE göre eşleştirdiği İÇİN, bu TEK açıklama HER İKİ fiziksel satıra da uygulanır.',
+            neden: 'Çok-satırlı yazılan metot çağrılarının kapanışının KENDİ satırında, YALNIZ başına durması, C#\'ın yaygın biçimlendirme kuralıdır.',
+            olmasaydi: 'Bu kapanışlardan biri olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı Id\'siyle bulmak VE silme durumunu güncellemek için.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, testte GERÇEK bir veritabanı bağlantısı GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: 'Bölüm 23/24\'teki AYNI arayüz — hesap SİLİNDİĞİNDE TÜM refresh token\'ları İPTAL ETMEK için.',
+            neden: 'Şifre değişimi/hesap silme gibi KRİTİK işlemlerde TÜM oturumların İPTALİ, BU repository OLMADAN İMKANSIZDIR.',
+            olmasaydi: 'Bu servis olmasaydı, hesap SİLİNSE bile ESKİ oturumlar (refresh token\'lar) GEÇERLİ KALMAYA devam ederdi.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Şifre KARŞILAŞTIRMASI (`Verify`) için — Login\'deki (Bölüm 21) AYNI servis.',
+            neden: 'Şifre karşılaştırma mantığı Handler\'da DEĞİL, bu serviste YAŞAR.',
+            olmasaydi: 'Handler doğrudan BCrypt çağırsaydı, bu çağrı BİRDEN FAZLA Handler\'da TEKRARLANIRDI.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bu kez `Validate` VE `Clear` metotları için — RequestAccountDeletionCommand\'ın ÜRETTİĞİ kodu DOĞRULAYIP TEMİZLEMEK için.',
+            neden: 'OTP doğrulama/temizleme mantığı, TÜM akışlarda AYNI serviste toplanır.',
+            olmasaydi: 'Bu servis olmasaydı, OTP doğrulama mantığı Handler\'da AYRICA YAZILIRDI.'
+          },
+          {
+            satir: 'public ConfirmAccountDeletionCommandHandler(',
+            aciklama: 'DÖRT bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER.',
+            neden: 'Çok-satırlı yazım, dört parametrenin OKUNABİLİRLİĞİNİ KORUR.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri ConfirmAccountDeletionCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: 'İkinci parametre — refresh token repository\'sini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler TÜM oturumları İPTAL EDEMEZDİ.'
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'Üçüncü parametre — şifre doğrulama servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler şifreyi ASLA DOĞRULAYAMAZDI.'
+          },
+          {
+            satir: 'IOtpService otpService',
+            aciklama: 'DÖRDÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Bu servisin de arayüz üzerinden enjekte edilmesi, testte GERÇEK OTP doğrulaması OLMADAN bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler OTP\'yi ASLA DOĞRULAYAMAZDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI.'
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'İKİNCİ atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_refreshTokenRepository` null kalırdı.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'ÜÇÜNCÜ atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'SON atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı.'
+          },
+          {
+            satir: 'public async Task<MessageResponse> Handle(',
+            aciklama: 'Metot İMZASI, İKİ parametresi (Command + CancellationToken) OLDUĞU İÇİN DEĞİL, TAM İMZANIN UZUNLUĞU (dönüş tipi + metot adı + parametreler) YÜZÜNDEN çok-satırlı YAZILIR.',
+            neden: 'Bölüm 20/21/24\'teki TEK satırlık `Handle` imzalarından FARKLI olarak, `ConfirmAccountDeletionCommand` İSMİNİN uzunluğu, TEK satırda yazımı OKUNMASI ZOR kılar.',
+            olmasaydi: 'Tek satırda yazılsaydı, işlevsel FARK OLMAZDI — yalnızca OKUNABİLİRLİK AZALIRDI.'
+          },
+          {
+            satir: 'ConfirmAccountDeletionCommand request,',
+            aciklama: 'İlk parametre — MediatR\'ın gönderdiği Command nesnesi.',
+            neden: 'Bu, TÜM Handler\'lardaki AYNI `request` parametresi — yalnızca ÇOK-satırlı yazıldığı İÇİN kendi satırında durur.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler HANGİ isteği İŞLEYECEĞİNİ BİLEMEZDİ.'
+          },
+          {
+            satir: 'CancellationToken ct',
+            aciklama: 'İkinci ve SON parametre — sonunda virgül YOK.',
+            neden: 'CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun.',
+            olmasaydi: 'Bu parametre olmasaydı, veritabanı çağrılarına GEÇİRİLECEK bir iptal sinyali OLMAZDI.'
+          },
+          {
+            satir: 'var user =',
+            aciklama: 'RequestAccountDeletionCommand İLE AYNI desen — sonucu İKİNCİ satırda DEVAM eden bir DEĞİŞKEN tanımı.',
+            neden: 'Bu satır, bir SONRAKİ satırdaki `await` ifadesiyle BİRLİKTE İKİ satırlık TEK bir ifadeyi OLUŞTURUR.',
+            olmasaydi: 'Bu satır olmasaydı, sorgu SONUCUNA ATANACAK bir DEĞİŞKEN OLMAZDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await _userRepository.GetByIdAsync(request.UserId, ct)',
+            aciklama: 'A-02/07\'deki Repository<T>.GetByIdAsync — soft-delete FİLTRELİ, STANDART sorgu.',
+            neden: 'Bu Command, ZATEN kimliği DOĞRULANMIŞ bir kullanıcının İSTEĞİDİR — filtresiz bir sorguya GEREK YOKTUR.',
+            olmasaydi: 'Bu satır olmasaydı, `user` değişkenine ATANACAK bir sorgu sonucu OLMAZDI.'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(User), request.UserId);',
+            aciklama: 'Kaydı BULAMAZSA, GENEL bir "bulunamadı" exception\'ı FIRLATIR — RequestAccountDeletionCommand İLE AYNI SAVUNMACI desen.',
+            neden: 'JWT geçerliyse kullanıcı NEREDEYSE HER ZAMAN vardır — ama RACE CONDITION gibi SENARYOLARA karşı SAVUNMACI programlama.',
+            olmasaydi: 'Bu kontrol olmasaydı, `user` null dönseydi bir sonraki satırdaki `_otpService.Validate(user, ...)` çağrısı bu `null` durumunu KENDİ İÇİNDE ele ALIRDI ama sonraki `user.PasswordHash` erişimi NullReferenceException FIRLATIRDI.'
+          },
+          {
+            satir: '_otpService.Validate(user, request.OtpCode, OtpPurpose.AccountDeletion);',
+            aciklama: 'Bölüm 20/21/24\'teki AYNI `Validate` çağrısı — bu kez amaç `OtpPurpose.AccountDeletion`.',
+            neden: 'BEŞİNCİ kez GÖRDÜĞÜMÜZ AYNI metot — TEK bir doğrulama mekanizmasının NE KADAR yeniden kullanılabilir OLDUĞUNU BİR KEZ DAHA gösterir.',
+            olmasaydi: 'YANLIŞ bir OtpPurpose geçirilseydi, BAŞKA bir akış İÇİN gönderilmiş bir kod, hesap SİLME onayında da KABUL EDİLİRDİ.'
+          },
+          {
+            satir: 'if (',
+            aciklama: 'Bölüm 21\'deki LoginCommand\'IN ŞİFRE KONTROLÜYLE AYNI TIMING-ATTACK ÖNLEMİ — kullanıcının ŞİFRESİ VARSA ONUNLA, YOKSA (SOSYAL hesap) SAHTE hash İLE, KOŞULSUZ olarak KARŞILAŞTIRILIR.',
+            neden: 'Bu Command, ZATEN kimliği DOĞRULANMIŞ bir kullanıcı TARAFINDAN ÇAĞRILDIĞI İÇİN (JWT GEÇERLİ), TİMİNG-ATTACK burada "HANGİ e-postaların SİSTEMDE VAR OLDUĞU" DEĞİL, "BU KULLANICININ ŞİFRESİNİN NE OLDUĞU" HAKKINDA bir İPUCU VERMEMESİ İÇİN AYNI ÖNLEMİ GEREKTİRİR.',
+            olmasaydi: 'Sosyal hesap sahibi bir kullanıcı (PasswordHash `null`) İÇİN `Verify` ÇAĞRISI ATLANSAYDI, bu Command ANINDA (BCrypt GECİKMESİ OLMADAN) HATA DÖNERDİ — HIZLI/YAVAŞ yanıt FARKI, bir SALDIRGANA "BU HESAP SOSYAL Mİ YOKSA YEREL Mİ" bilgisini SIZDIRABİLİRDİ.'
+          },
+          {
+            satir: '!_passwordService.Verify(',
+            aciklama: 'Koşulun İÇİ — `!` (DEĞİL) operatörü İLE, doğrulama BAŞARISIZSA (yanlış şifre) if BLOĞU TETİKLENİR.',
+            neden: 'Bu, Bölüm 21\'deki `passwordValid` DEĞİŞKENİNE atamadan FARKLI bir yazım — burada SONUÇ AYRI bir değişkende TUTULMAZ, DOĞRUDAN `if` KOŞULUNUN İÇİNDE değerlendirilir.',
+            olmasaydi: '`!` İŞARETİ unutulsaydı, KOŞULUN MANTIĞI TERSİNE dönerdi — DOĞRU şifre GİRİLDİĞİNDE exception FIRLATILIR, YANLIŞ şifreyle İŞLEME DEVAM EDİLİRDİ (KRİTİK bir GÜVENLİK HATASI).'
+          },
+          {
+            satir: 'request.Password,',
+            aciklama: 'Kullanıcının GÖVDEDE gönderdiği, DOĞRULANACAK ŞİFRE — `Verify`\'ın İLK parametresi.',
+            neden: 'Bu, Login\'deki (Bölüm 21) `request.Password` İLE AYNI KAVRAM — kullanıcının BİLDİĞİNİ İDDİA ETTİĞİ şifre.',
+            olmasaydi: 'Bu parametre olmasaydı, `Verify` çağrısı NEYİN doğrulanacağını BİLEMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'user.PasswordHash ?? FakePasswordHashForTiming',
+            aciklama: 'Bölüm 21\'deki LoginCommand İLE BİREBİR AYNI TIMING-ATTACK ÖNLEMİ — kullanıcının GERÇEK hash\'i VARSA ONUNLA, YOKSA (sosyal hesap) SAHTE hash İLE karşılaştırılır.',
+            neden: 'Bu Command da (Login gibi) `Verify`\'ı KOŞULSUZ çağırarak, sosyal hesap sahiplerinin YANIT SÜRESİNİN yerel hesap sahiplerinden FARKLI olmamasını sağlar.',
+            olmasaydi: 'Bu `??` OLMASAYDI VE `user.PasswordHash` `null` OLSAYDI, `Verify` çağrısı NullReferenceException FIRLATIRDI — sosyal hesap sahibi bir kullanıcı hesabını HİÇBİR ZAMAN SİLEMEZDİ (beklenmeyen bir HATAYLA karşılaşırdı).'
+          },
+          {
+            satir: ')',
+            aciklama: 'Bu SLAYTTA DÖRT AYRI yerde (constructor parametre listesi, Handle metot imzası, Verify çağrısı, dış if koşulu) tek başına duran, BİREBİR AYNI görünen bir kapanış parantezi — kod editörü İÇERİĞE göre eşleştirdiği İÇİN, bu TEK açıklama TÜM DÖRT fiziksel satıra AYNI ANDA uygulanır.',
+            neden: 'Çok-satırlı yazılan HER parametre listesi/koşul, kapanışını KENDİ satırında, YALNIZ başına bulundurur — bu, C#\'ın yaygın biçimlendirme KURALIDIR ve HANGİ İÇ İÇE yapının NEREDE bittiğini görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Bu kapanışlardan HERHANGİ biri olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ — parantez/parametre listesi DENGESİZ kalırdı.'
+          },
+          {
+            satir: 'throw new InvalidCredentialsException();',
+            aciklama: 'Bölüm 21\'DEKİ LoginCommand İLE BİREBİR AYNI exception — ŞİFRE YANLIŞSA, OTP DOĞRU olsa BİLE İŞLEM DURDURULUR.',
+            neden: 'AYNI exception TÜRÜNÜN İKİ FARKLI Command\'da (Login, ConfirmAccountDeletion) KULLANILMASI, "ŞİFRE YANLIŞ" DURUMUNUN her ZAMAN AYNI HTTP DURUM KODUNA (401) VE AYNI MESAJA ÇEVRİLMESİNİ SAĞLAR — TUTARLI bir İSTEMCİ DENEYİMİ.',
+            olmasaydi: 'BU Command KENDİ ÖZEL exception\'ını (ör. `WrongDeletionPasswordException`) TANIMLASAYDI, ExceptionHandlingMiddleware\'E (BİR SONRAKİ BÖLÜMDE DETAYLI GÖRECEĞİZ) YENİ bir case EKLEMEK GEREKİRDİ — GEREKSİZ bir GENİŞLEME, ÇÜNKÜ SONUÇ (401, "kimlik BİLGİLERİ HATALI") ZATEN VAR OLAN bir TÜRLE AYNI.'
+          },
+          {
+            satir: 'user.IsDeleted = true;',
+            aciklama: 'Bölüm 3\'te (A-02) TANIŞTIĞIMIZ soft-delete BAYRAĞI — KİLİT NOKTA: bu, User TABLOSUNDA da GEÇERLİDİR, BAŞKA bir ENTİTE/TABLOYA HİÇ İHTİYAÇ DUYULMAZ.',
+            neden: 'A-02/04\'teki GLOBAL soft-delete FİLTRESİ (`HasQueryFilter`), BU satırdan SONRA, kullanıcıyı TÜM standart sorgularda (GetByIdAsync GİBİ) OTOMATİK OLARAK "GÖRÜNMEZ" YAPAR — SoftDeleteAsync\'İN elle ÇAĞRILMASINA BİLE GEREK YOKTUR, DOĞRUDAN alan ATANIR.',
+            olmasaydi: 'Bu alan ATANMASAYDI, hesap "SİLİNMİŞ" GÖRÜNMEZDİ — kullanıcı YİNE Login OLABİLİRDİ (SANKİ HİÇBİR ŞEY OLMAMIŞ GİBİ), "hesabımı SİLDİM" İŞLEMİNİN HİÇBİR GÖZLE GÖRÜLÜR ETKİSİ OLMAZDI.'
+          },
+          {
+            satir: 'user.DeletedAt = DateTime.UtcNow;',
+            aciklama: 'A-02/07\'deki Repository<T>.SoftDeleteAsync\'İN OTOMATİK YAPTIĞI ATAMANIN AYNISI — AMA BURADA ELLE YAZILIYOR, ÇÜNKÜ Handler DOĞRUDAN `user.IsDeleted = true` YAPARAK SoftDeleteAsync\'İ (Id ile ÇALIŞAN GENEL METOT) DEĞİL, `UpdateAsync`\'İ (BİR SONRAKİ satırda) ÇAĞIRIYOR.',
+            neden: 'Handler, ZATEN VerifyOTP + ŞİFRE KONTROLÜ GİBİ KENDİNE ÖZGÜ İŞ MANTIĞI TAŞIDIĞI İÇİN, GENEL SoftDeleteAsync (`await SoftDeleteAsync(id, userId, ct)`) YERİNE ÜÇ ALANI (IsDeleted/DeletedAt/ScheduledDeletionAt) TEK bir `UpdateAsync` ÇAĞRISIYLA BİRLİKTE ATAMAYI TERCİH EDER.',
+            olmasaydi: 'Bu alan ATANMASAYDI, `IsDeleted = true` OLSA BİLE "NE ZAMAN SİLİNDİ" bilgisi KAYBOLURDU — A-10\'DAKİ AccountCleanupBackgroundService\'İN "30 GÜN SONRA" HESABI İÇİN GEREKEN REFERANS NOKTASI EKSİK KALIRDI (AMA `ScheduledDeletionAt` ZATEN AYRI HESAPLANDIĞI İÇİN, BU ÖZEL DURUMDA `DeletedAt` DAHA ÇOK AUDİT AMAÇLIDIR).'
+          },
+          {
+            satir: 'user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(AccountDeletionGraceDays);',
+            aciklama: 'Bölüm 9\'da (A-03/02) TANITTIĞIMIZ, AMA O ZAMAN KULLANIMINI GÖRMEDİĞİMİZ alan — İŞTE BURADA, İLK KEZ, GERÇEKTEN DOLDURULUYOR: "30 GÜN SONRA BU TARİHTE ANONİMLEŞTİR" PLANI KURULUR.',
+            neden: 'A-10\'DAKİ `AccountCleanupBackgroundService` (HENÜZ YAZILMADI, GÜNDE BİR KEZ ÇALIŞACAK), BU ALANI OKUYARAK "SÜRESİ GEÇMİŞ" (BU TARİH GEÇMİŞ AMA `IsAnonymized` HÂLÂ `false`) kullanıcıları BULUP KALICI OLARAK ANONİMLEŞTİRECEK — BU SATIR, O GELECEKTEKİ İŞİN TETİKLEYİCİSİDİR.',
+            olmasaydi: 'Bu alan DOLDURULMASAYDI, A-10\'DAKİ ARKA PLAN GÖREVİ "HANGİ kullanıcıların 30 GÜNÜ DOLDU" SORUSUNU HİÇBİR ZAMAN CEVAPLAYAMAZDI — SOFT-DELETE\'Lİ kullanıcılar SONSUZA kadar "GRACE PERIOD"DA KALIR, HİÇBİR ZAMAN KALICI OLARAK ANONİMLEŞTİRİLMEZDİ.'
+          },
+          {
+            satir: '_otpService.Clear(user);',
+            aciklama: 'Bölüm 20/21/24\'teki AYNI temizlik — hesap SİLME OTP\'si de TEK KULLANIMLIKTIR.',
+            neden: 'Bu, DÖRDÜNCÜ VE SON OtpPurpose (`AccountDeletion`) İÇİN de AYNI "kullanılan KOD TEMİZLENİR" İLKESİNİN UYGULANDIĞI YER — TÜM DÖRT OTP AKIŞI, TAMAMLANDIKTAN SONRA AYNI ŞEKİLDE TEMİZLENİR.',
+            olmasaydi: 'Bu satır OLMASAYDI, ZATEN KULLANILMIŞ bir hesap SİLME KODU, 15 DAKİKALIK SÜRESİ DOLMADAN, TEKRAR "DOĞRULAMA" İÇİN DENENEBİLİRDİ (PRATİKTE ZARARSIZ ÇÜNKÜ HESAP ZATEN SİLİNDİ, AMA YİNE DE GEREKSİZ bir SALDIRI YÜZEYİ).'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Bölüm 16\'daki Repository<T>.UpdateAsync — IsDeleted/DeletedAt/ScheduledDeletionAt VE OTP temizliği TEK bir veritabanı yazımında KALICI hale gelir.',
+            neden: 'Bu satır, refresh token iptalinden ÖNCE çalışır — hesap GÜVENLE "silinmiş" olarak İŞARETLENDİKTEN SONRA diğer adıma geçilir.',
+            olmasaydi: 'Bu satır olmasaydı, YUKARIDAKİ TÜM değişiklikler (IsDeleted DAHİL) yalnızca BELLEKTE kalırdı — kullanıcı hesabı "silinmiş" GÖRÜNMEZDİ.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);',
+            aciklama: 'Bölüm 24\'teki ResetPasswordCommand İLE AYNI ÇAĞRI — hesap SİLİNDİĞİNDE de TÜM cihazlardan OTURUM KAPATILIR.',
+            neden: 'Hesap SİLİNMİŞKEN, o hesaba AİT refresh token\'ların GEÇERLİ KALMASININ HİÇBİR ANLAMI YOKTUR — grace period İÇİNDE bile, kullanıcı YENİDEN GİRİŞ YAPARAK (Bölüm 21\'DEKİ CompleteLoginAsync KURTARMA MANTIĞI İLE) YENİ bir token ALMALIDIR, ESKİ token\'LARLA DEVAM EDEMEMELİDİR.',
+            olmasaydi: 'Bu satır OLMASAYDI, hesap SİLİNMİŞ GÖRÜNSE bile (IsDeleted=true), O ANDA AKTİF olan bir refresh token (BAŞKA bir CİHAZDA AÇIK OLAN bir OTURUM) HÂLÂ YENİ access token\'lar ÜRETEBİLİRDİ — soft-delete\'İN "bu hesaba ARTIK ERİŞİLEMEZ" GARANTİSİ DELİNİRDİ.'
+          },
+          {
+            satir: 'return new MessageResponse(',
+            aciklama: 'DÖRDÜNCÜ VE SON BENZERSİZ MessageResponse KODU (`"ACCOUNT_DELETION_CONFIRMED"`) — DİĞER ÜÇ Auth AKIŞI (Register, VerifyEmail/Resend, Login, ForgotPassword/Reset) İLE AYNI DESENİ TAMAMLAR.',
+            neden: 'Bu, Bölüm 20\'DEN BU YANA GÖRDÜĞÜMÜZ "her Command\'IN KENDİ BENZERSİZ Code\'U + SuccessMessages.Resolve" DESENİNİN SON, EN KAPSAMLI ÖRNEĞİDİR — bir sonraki BÖLÜMDE (A-03.2) BU DESENİN TAMAMINI, TEK bir MERKEZİ SÖZLÜK OLARAK GÖRECEĞİZ.',
+            olmasaydi: 'Bu Command SABİT bir Türkçe MESAJ DÖNSEYDİ, A-03.2\'DE ÇÖZECEĞİMİZ "İSTEMCİYE giden mesaj DİLE GÖRE KALIR" mimari KARARININ KAPSAMI DIŞINDA KALIRDI — Almanca kullanan bir kullanıcı, hesabını SİLDİKTEN SONRA bile Türkçe bir ONAY MESAJI GÖRÜRDÜ.'
+          },
+          {
+            satir: '"ACCOUNT_DELETION_CONFIRMED",',
+            aciklama: 'Diğer Command\'lardaki OTP kodlarından FARKLI, "İŞLEM TAMAMLANDI" AŞAMASINA özgü bir kod — ForgotPassword/ResetPassword İKİLİSİNDEKİ AYNI "istek KODU vs tamamlama KODU" AYRIMI.',
+            neden: 'Frontend, bu kodu GÖREREK hesabın GERÇEKTEN silindiğini ANLAR VE kullanıcıyı OTURUMDAN çıkarıp bir "hesabınız SİLİNDİ" ekranına YÖNLENDİRİR.',
+            olmasaydi: 'RequestAccountDeletionCommand İLE AYNI kod KULLANILSAYDI, frontend "OTP GÖNDERİLDİ Mİ YOKSA HESAP GERÇEKTEN Mİ SİLİNDİ" AYRIMINI KODDAN ÇIKARAMAZDI.'
+          },
+          {
+            satir: 'SuccessMessages.Resolve("ACCOUNT_DELETION_CONFIRMED", request.Language)',
+            aciklama: 'Diğer TÜM Command\'lardaki AYNI desen — kod, isteğin diline göre insan-okunur bir metne ÇÖZÜLÜR.',
+            neden: 'TÜM Command\'lar AYNI `SuccessMessages.Resolve` API\'sini kullanır.',
+            olmasaydi: 'Bu çağrı olmasaydı, `Code` alanı DOLU ama `Message` alanı BOŞ/sabit kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'RequestAccountDeletionCommand gövdesizdir — TEK girdisi JWT\'den gelen UserId, Controller tarafından İNŞA edilir',
+          'ConfirmAccountDeletionCommand, OTP + ŞİFRE ile çift ONAY ister — timing-attack önlemi BURADA da geçerlidir',
+          'Bölüm 9\'da tanıtılan ScheduledDeletionAt/IsAnonymized/OriginalEmailHash alanları, İLK KEZ burada GERÇEKTEN kullanılır',
+          'Silme, User TABLOSUNDA soft-delete olarak İŞARETLENİR — AYRI bir "silinen kullanıcılar" TABLOSU YOKTUR',
+          'Silme sonrası TÜM refresh token\'lar İPTAL edilir — grace period İÇİNDE bile ESKİ oturumlar GEÇERSİZDİR, YENİDEN giriş GEREKİR'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

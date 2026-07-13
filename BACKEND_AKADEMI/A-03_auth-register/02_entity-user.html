@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entity — User.cs</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-user',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '01_dikey-dilim-nedir.html',
+    sonrakiBolum: '03_ef-configuration.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 9 · CLAUDE.md ADIM 1',
+        baslik: 'Entity: User.cs',
+        altBaslik: 'Dikey dilimin İLK adımı — çünkü Command, Repository, her şey bu sınıfın var olduğunu varsayar.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden İlk Yazılan Kod Entity?',
+        aciklama: 'RegisterCommandHandler "yeni bir User oluştur" diyecek, IUserRepository "bir User\'ı e-postayla bul" diyecek — her ikisi de User sınıfının VAR OLMASINI gerektirir. Bu yüzden dikey dilimde her zaman Entity ile başlanır.',
+        neden: 'C# derleyicisi, henüz tanımlanmamış bir tipe referans veren kodu DERLEMEZ — Entity olmadan bir satır ötesi (Command, Repository) yazılamaz bile.',
+        olmasaydi: 'Entity\'siz bir Command yazılmaya çalışılsaydı, IDE\'de kırmızı alt çizgiler, derleme hataları başlardı — kod bir sonraki adıma geçemeden burada takılırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'User.cs — Kimlik ve Şifre Alanları',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/User.cs',
+        nedenBuKlasor: 'Entities/Auth/ altında (Entities/ kökünde DEĞİL, BaseEntity\'nin aksine — Bölüm 3) çünkü User, "kimlik doğrulama" (Auth) domain\'ine ait somut bir kavram. CLAUDE.md §5: "BaseEntity hariç her entity bir domain alt klasöründe".',
+        kod: `public class User : BaseEntity
+{
+    public string Email { get; set; } = string.Empty;
+
+    public string? PasswordHash { get; set; }
+
+    public string? GoogleId { get; set; }
+
+    public string? AppleId { get; set; }
+
+    public string AuthProvider { get; set; } = "Local";
+
+    public string FirstName { get; set; } = string.Empty;
+
+    public string LastName { get; set; } = string.Empty;
+}`,
+        satirlar: [
+          {
+            satir: 'public class User : BaseEntity',
+            aciklama: '`: BaseEntity` ile Bölüm 3\'te yazdığımız Id/CreatedAt/IsDeleted vb. 7 alanı otomatik miras alır — bu satırda hiçbiri tekrar yazılmaz.',
+            neden: 'DRY ilkesinin somut sonucu: User\'ın kendi 30\'a yakın alanı VAR ama audit/soft-delete alanları BaseEntity\'den geliyor, burada görünmüyorlar bile.',
+            olmasaydi: '`: BaseEntity` yazılmasaydı, Id/CreatedAt/IsDeleted gibi 7 alanı User içinde TEKRAR tanımlamak gerekirdi — Word, Category gibi diğer entity\'lerde de aynı tekrar olurdu.'
+          },
+          {
+            satir: 'public string Email { get; set; } = string.Empty;',
+            aciklama: 'Kullanıcının benzersiz giriş adresi — varsayılan değeri boş string (`string.Empty`), null DEĞİL.',
+            neden: 'C# 9\'un `Nullable` ayarı (A-02/01) açıkken, `string` tipi "asla null olmamalı" anlamına gelir — Email\'in KESİNLİKLE her zaman bir değeri olması gerektiği (kayıt formunda zorunlu alan) bu varsayılan değerle daha en baştan İFADE EDİLİR.',
+            olmasaydi: 'Varsayılan değer verilmeseydi (`string.Empty` yazılmasaydı), C# derleyicisi bu alanın başlangıçta null olabileceğini düşünüp UYARI verirdi — Nullable ayarı açıkken bu tutarsızlık, "acaba bu alan gerçekten zorunlu mu" sorusunu BELİRSİZLEŞTİRİRDİ.'
+          },
+          {
+            satir: 'public string? PasswordHash { get; set; }',
+            aciklama: 'BCrypt hash\'i (60 karakter sabit uzunluk). Sosyal girişte (Google/Apple) null kalır.',
+            neden: '`?` (nullable) olması ZORUNLU: bir kullanıcı Google ile giriş yaparsa hiçbir zaman şifre belirlemez — PasswordHash o kullanıcı için anlamsızdır, null olması bunu doğru temsil eder.',
+            olmasaydi: 'Nullable olmasaydı (boş string zorunlu olsaydı), "bu kullanıcının şifresi var mı" sorusunun cevabı `PasswordHash == ""` gibi kırılgan bir kontrole dönüşürdü — boş string ile "gerçekten yok" ayrımı belirsizleşirdi.'
+          },
+          {
+            satir: 'public string? GoogleId { get; set; }',
+            aciklama: 'Google Sign-In ile eşleşen benzersiz kullanıcı kimliği — yalnızca kullanıcı Google ile giriş yaptıysa dolu, aksi halde null.',
+            neden: 'PasswordHash\'le AYNI ilke: bir kullanıcı hem Local hem Google hem Apple ile giriş yapmış OLABİLİR (üç alan da AYNI User satırında dolu olabilir) — bu üç kimlik doğrulama yöntemi birbirini DIŞLAMAZ, User tablosu bu esnekliği nullable alanlarla temsil eder.',
+            olmasaydi: 'GoogleId zorunlu (non-nullable) bir alan olsaydı, yalnızca e-posta+şifre (Local) ile kayıt olan bir kullanıcı için bu alana anlamsız bir varsayılan değer (ör. boş string) YAZILMASI gerekirdi — "bu kullanıcı Google ile de giriş yapabilir mi" sorusu YANLIŞ cevaplanmış olurdu.'
+          },
+          {
+            satir: 'public string? AppleId { get; set; }',
+            aciklama: 'Apple ile Giriş Yap (Sign in with Apple) sonucu eşleşen benzersiz kullanıcı kimliği — GoogleId ile BİREBİR aynı desende, yalnızca kullanıcı Apple ile giriş yaptıysa dolu.',
+            neden: 'GoogleId\'yle AYNI ilke: bir kullanıcı Local/Google/Apple\'dan BİRDEN FAZLASINI kullanmış olabilir, bu üç alan birbirini DIŞLAMAZ — üçü de bağımsız nullable alanlar olarak tutulur.',
+            olmasaydi: 'AppleId zorunlu (non-nullable) bir alan olsaydı, Apple ile HİÇ giriş yapmamış bir kullanıcı için bu alana anlamsız bir varsayılan değer YAZILMASI gerekirdi — "bu kullanıcı Apple ile de giriş yapabilir mi" sorusu YANLIŞ cevaplanmış olurdu.'
+          },
+          {
+            satir: 'public string AuthProvider { get; set; } = "Local";',
+            aciklama: 'Hesabın hangi yöntemle oluşturulduğu: Local (e-posta+şifre), Google veya Apple.',
+            neden: 'Enum yerine string tutulur çünkü bu proje EF Core\'da enum\'ları DB\'de okunabilir string olarak saklamayı tercih ediyor (Bölüm 3\'te PendingOtpCodePurpose\'ta da göreceğiz) — DB\'yi elle inceleyen biri "2" yerine "Google" görür.',
+            olmasaydi: 'Sayısal bir enum saklansaydı, veritabanını elle sorgulayan biri (ör. bir admin, destek ekibi) "AuthProvider = 1" gördüğünde bunun "Google" mu "Apple" mı olduğunu KOD\'a bakmadan bilemezdi.'
+          },
+          {
+            satir: 'public string FirstName { get; set; } = string.Empty;',
+            aciklama: 'Kullanıcının adı — Email ile AYNI desende, varsayılan değeri boş string, null DEĞİL.',
+            neden: 'Nullable ayarı açıkken bu alanın "asla null olmayacağı, her zaman bir değeri olacağı" (kayıt formunda zorunlu) daha en baştan bu varsayılan değerle İFADE EDİLİR — Email\'deki gerekçeyle BİREBİR aynı.',
+            olmasaydi: 'Varsayılan değer verilmeseydi, derleyici bu alanın null olabileceğini düşünüp uyarı verirdi — "bu alan gerçekten zorunlu mu" sorusu belirsizleşirdi.'
+          },
+          {
+            satir: 'public string LastName { get; set; } = string.Empty;',
+            aciklama: 'Kullanıcının soyadı — FirstName ile BİREBİR aynı desen, varsayılan değeri boş string.',
+            neden: 'Ad ve soyad, kayıt formunda AYRI iki alan olarak toplanır (tek bir "FullName" değil) — bu, ileride yalnızca adla hitap etmek (ör. "Merhaba Ahmet") gibi senaryoları soyadı ayrıştırmadan DOĞRUDAN destekler.',
+            olmasaydi: 'Tek bir "FullName" alanı kullanılsaydı, "yalnızca adla hitap et" gibi bir özellik için ad ile soyadı METİN İŞLEME (string parsing) ile ayırmak gerekirdi — bu, "Ahmet Mehmet Yıldız" gibi çok parçalı isimlerde KIRILGAN bir çözüm olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'User.cs — OTP ve Yetki Alanları',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/User.cs',
+        nedenBuKlasor: null,
+        kod: `public string ThemePreference { get; set; } = "System";
+
+public string? PendingOtpCodeHash { get; set; }
+
+public DateTime? PendingOtpCodeExpiresAt { get; set; }
+
+public OtpPurpose? PendingOtpCodePurpose { get; set; }
+
+public string Role { get; set; } = "User";
+
+public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();`,
+        satirlar: [
+          {
+            satir: 'public string ThemePreference { get; set; } = "System";',
+            aciklama: 'Arayüz tema tercihi (Light/Dark/System). Register sırasında toplanmaz — kayıt anonim olduğu için (henüz JWT yok) bu alan varsayılan "System" ile başlar, gerçek seçim ilk-login-sonrası onboarding ekranında yapılır.',
+            neden: 'Bu, "her alan Register formunda toplanmalı" gibi bir varsayımın YANLIŞ olduğunu gösteren iyi bir örnek — bazı alanlar başka bir akışta, daha uygun bir anda doldurulur.',
+            olmasaydi: 'ThemePreference Register formunda zorunlu tutulsaydı, kullanıcı henüz uygulamanın arayüzünü GÖRMEDEN bir tema seçmek zorunda kalırdı — anlamsız bir kullanıcı deneyimi olurdu.'
+          },
+          {
+            satir: 'public string? PendingOtpCodeHash { get; set; }',
+            aciklama: 'Bekleyen OTP (tek kullanımlık doğrulama kodu) kodunun SHA-256 hash\'i — plaintext (düz metin) hiçbir zaman saklanmaz.',
+            neden: 'PasswordHash ile aynı güvenlik ilkesi: bir veritabanı sızıntısı olsa bile, saldırgan hash\'ten gerçek OTP kodunu GERİ ÇEVİREMEZ (hash tek yönlüdür).',
+            olmasaydi: 'OTP kodu düz metin saklansaydı, veritabanına erişimi olan biri (ör. bir iç tehdit, ya da bir SQL injection açığı) tüm kullanıcıların aktif doğrulama kodlarını doğrudan okuyabilirdi.'
+          },
+          {
+            satir: 'public DateTime? PendingOtpCodeExpiresAt { get; set; }',
+            aciklama: 'Bekleyen OTP kodunun geçerlilik süresinin dolacağı an (UTC). Süre dolduysa kod artık kabul edilmez.',
+            neden: 'OTP kodları (Bölüm 15\'te Handler\'da üretimini göreceğiz) kısa ömürlüdür — bu alan olmadan "bu kod hâlâ geçerli mi" sorusu cevaplanamazdı, bir kullanıcı GÜNLER önce aldığı bir kodu hâlâ kullanabilirdi.',
+            olmasaydi: 'Süre kontrolü olmasaydı, e-postası ele geçirilen (ör. eski, artık kullanılmayan bir e-posta hesabı) bir kullanıcının OTP kodu SÜRESİZ geçerli kalırdı — saldırganın bu kodu bulup kullanma penceresi SONSUZ olurdu.'
+          },
+          {
+            satir: 'public OtpPurpose? PendingOtpCodePurpose { get; set; }',
+            aciklama: 'Bekleyen OTP kodunun HANGİ işlem için üretildiği (e-posta doğrulama mı, şifre sıfırlama mı, hesap silme onayı mı).',
+            neden: 'Aynı hash/expiry alan seti TÜM OTP akışlarında PAYLAŞILIYOR (DRY) — ama bu ortak kullanım, "bu kod NEYİ doğrulamak içindi" sorusunu belirsizleştirir; bu alan olmadan bir e-posta-doğrulama kodu YANLIŞLIKLA bir şifre-sıfırlama isteğinde KABUL EDİLEBİLİRDİ.',
+            olmasaydi: 'Bu alan olmasaydı, her OTP akışı için AYRI hash/expiry alan çiftleri (PendingEmailOtpHash, PendingPasswordResetOtpHash...) tanımlamak gerekirdi — User tablosu her yeni OTP türüyle BÜYÜRDÜ; TEK bir alan seti + bir "amaç" etiketi, bunu önler.'
+          },
+          {
+            satir: 'public string Role { get; set; } = "User";',
+            aciklama: 'Yetkilendirme rolü — CLAUDE.md kuralı gereği yalnızca "User" veya "Admin" değerini alabilir (Bölüm 3\'te DB CHECK constraint\'ini göreceğiz).',
+            neden: 'JWT claim\'ine (ClaimTypes.Role) doğrudan string olarak yazılır; [Authorize(Roles="Admin")] ASP.NET Core\'da bu string\'le karşılaştırma yapar — CLAUDE.md: "Instructor/Teacher gibi üçüncü bir rol YOK, hiçbir public endpoint rol yükseltemez."',
+            olmasaydi: 'Register endpoint\'i Role alanını istekten alsaydı (kullanıcı formda kendi rolünü seçebilseydi), HERKES kendini "Admin" yaparak kayıt olabilirdi — bu Register\'ın hiç almadığı bir alan olması BİLİNÇLİ bir güvenlik kararı (Bölüm 5\'te RegisterCommand\'de Role\'ün hiç olmadığını göreceğiz).'
+          },
+          {
+            satir: 'public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();',
+            aciklama: 'Bir kullanıcının sahip olduğu tüm RefreshToken kayıtlarına EF Core "navigation property"si — bu sayede `user.RefreshTokens` ile ilişkili kayıtlara erişilebilir.',
+            neden: 'Bu, User ile RefreshToken arasındaki 1:N (bir kullanıcının birden fazla refresh token\'ı olabilir — farklı cihazlardan girişler) ilişkiyi EF Core\'a tanıtır (Bölüm 11\'de RefreshToken\'ı detaylı göreceğiz).',
+            olmasaydi: 'Bu navigation property olmasaydı, "bu kullanıcının aktif oturumlarını (refresh token\'larını) listele" gibi bir sorgu için ayrı, elle yazılmış bir join sorgusu gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Dikey dilimde ilk yazılan kod her zaman Entity — diğer her şey ona bağımlı',
+          'User : BaseEntity ile audit/soft-delete alanları tekrar yazılmadan miras alınır',
+          'Nullable alanlar (PasswordHash?, GoogleId?) "bu kullanıcı için anlamsız" durumunu doğru temsil eder',
+          'Register formu HER alanı toplamaz — ThemePreference gibi bazıları başka bir akışta doldurulur',
+          'Role, kullanıcıdan hiç alınmaz — bu, "kim admin olabilir" sorusunun bilinçli bir güvenlik kararı olduğunu gösterir'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

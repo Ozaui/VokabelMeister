@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Validator Katmanı ve Global ValidationFilter</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'validator-katmani-ve-filter',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '22_refresh-token-repository.html',
+    sonrakiBolum: '24_servis-ve-repository-testleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 23 · BACKEND ALTYAPI DERİNLEŞTİRME',
+        baslik: 'Validator Katmanı ve Global ValidationFilter',
+        altBaslik: 'Bölüm 5\'te RegisterCommandValidator\'ı gördük. Bu bölümde onun paylaştığı ortak kuralları (PasswordRuleExtensions) ve MediatR\'a hiç ulaşmadan hataları kesen ValidationFilter\'ı açıyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Üç Katmanlı Doğrulama Mimarisi',
+        aciklama: 'A-03\'teki 13 endpoint\'in HER biri kendi Command\'ına ait bir Validator YAZAR (ör. RegisterCommandValidator) — ama parola gücü, e-posta formatı, OTP formatı gibi kurallar BİRDEN FAZLA Command\'da AYNEN TEKRARLANIR. Bu TEKRARI önlemek için mimari ÜÇ katmana AYRILIR: (1) `PasswordRuleExtensions`/`EmailRuleExtensions`/`OtpRuleExtensions` gibi PAYLAŞILAN kural uzantıları, (2) HER Command\'a özel `AbstractValidator<TCommand>` sınıfları (bu paylaşılan kuralları ÇAĞIRIR + kendine özgü kuralları EKLER), (3) `ValidationFilter` — Controller action\'ı ÇALIŞMADAN ÖNCE, DI\'da kayıtlı doğru `IValidator<T>`\'yi BULUP çalıştıran, MediatR\'a HİÇ ULAŞMADAN hataları KESEN global bir action filter.',
+        neden: 'Bu üçlü ayrım, hem DRY (parola kuralı TEK yerde) hem de "ince Controller" (CLAUDE.md §3 — Controller yalnızca `_mediator.Send(command, ct)`) ilkelerini AYNI ANDA sağlar — hiçbir Controller action\'ı KENDİ İÇİNDE `if (!ModelState.IsValid) return BadRequest(...)` gibi bir DOĞRULAMA ÇAĞRISI YAZMAZ, ValidationFilter TÜM controller\'lar için bunu OTOMATİK yapar.',
+        olmasaydi: 'Bu üç katman OLMASAYDI, iki SEÇENEK kalırdı: (1) HER Command\'ın validator\'ı parola kuralını KENDİ İÇİNDE TEKRAR YAZAR (12 kez KOPYALANMIŞ, birbirinden SAPMAYA açık kod), ya da (2) HER Controller action\'ı KENDİ İÇİNDE doğrulama ÇAĞRISI yapar (13 kez TEKRARLANAN, unutulmaya AÇIK bir "if (!IsValid)" bloğu) — İKİSİ de CLAUDE.md\'nin DRY ve ince-Controller BEKLENTİLERİNİ İHLAL EDERDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'PasswordRuleExtensions.cs — Paylaşılan Parola Kuralı',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Auth/PasswordRuleExtensions.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// PasswordRuleExtensions.cs
+//
+// AMAÇ: Şifre gücü kurallarını (REFERENCE/SECURITY.md §1) tek bir yerden
+//       paylaşan FluentValidation extension metodu.
+// NEDEN: RegisterRequestValidator ve ResetPasswordRequestValidator AYNI şifre
+//        kurallarını uyguluyor — kural tekrarını önlemek için ortak metoda alındı.
+//        Her kural hem WithMessage (sabit İngilizce, yalnızca log/DB içindir)
+//        hem WithErrorCode (ValidationFilter'ın ErrorMessages'ten dile göre
+//        çözeceği kod) taşır — AppException ile birebir aynı ayrım.
+// BAĞIMLILIKLAR: FluentValidation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+
+namespace WordLearner.Application.Validators.Auth;
+
+public static class PasswordRuleExtensions
+{
+    // AMAÇ: Min 12 karakter + büyük/küçük harf + rakam + özel karakter kuralını uygular.
+    public static IRuleBuilderOptions<T, string> ValidPassword<T>(
+        this IRuleBuilder<T, string> ruleBuilder
+    ) =>
+        ruleBuilder
+            .NotEmpty()
+            .WithMessage("Password must not be empty.")
+            .WithErrorCode("PASSWORD_REQUIRED")
+            .MinimumLength(12) // NEDEN: brute-force direnci
+            .WithMessage("Password must be at least 12 characters long.")
+            .WithErrorCode("PASSWORD_TOO_SHORT")
+            .Matches(@"[A-Z]")
+            .WithMessage("Password must contain at least 1 uppercase letter.")
+            .WithErrorCode("PASSWORD_MISSING_UPPERCASE")
+            .Matches(@"[a-z]")
+            .WithMessage("Password must contain at least 1 lowercase letter.")
+            .WithErrorCode("PASSWORD_MISSING_LOWERCASE")
+            .Matches(@"[0-9]")
+            .WithMessage("Password must contain at least 1 digit.")
+            .WithErrorCode("PASSWORD_MISSING_DIGIT")
+            .Matches(@"[!@#$%^&*]")
+            .WithMessage("Password must contain at least 1 special character (!@#$%^&*).")
+            .WithErrorCode("PASSWORD_MISSING_SPECIAL_CHAR");
+}`,
+        satirlar: [
+          {
+            satir: 'public static class PasswordRuleExtensions',
+            aciklama: '`static class` — bu sınıf HİÇBİR ZAMAN `new`\'lenmez, yalnızca İÇİNDEKİ EXTENSION metotları (aşağıdaki `ValidPassword`) BAŞKA tiplere "YAPIŞTIRMAK" için VAR.',
+            neden: 'C#\'ın extension metot MEKANİZMASI, FluentValidation\'ın KENDİ `IRuleBuilder<T, string>` tipine, KÜTÜPHANENİN kaynak KODUNA dokunmadan YENİ bir metot (`ValidPassword`) EKLEMEYİ sağlar — bu, Command\'a özel Validator\'ların bu metodu SANKİ FluentValidation\'ın kendi PARÇASIYMIŞ gibi `RuleFor(x => x.Password).ValidPassword()` ŞEKLİNDE ÇAĞIRMASINI mümkün KILAR.',
+            olmasaydi: 'Extension metot OLMASAYDI, PAYLAŞILAN kural bir NORMAL statik metot (`PasswordRules.Apply(ruleBuilder)`) OLARAK yazılırdı — ÇAĞRI sözdizimi (`RuleFor(x => x.Password).ValidPassword()` YERİNE `PasswordRules.Apply(RuleFor(x => x.Password))`) DAHA AZ OKUNABİLİR, FluentValidation\'ın KENDİ akıcı (fluent) API TARZIYLA TUTARSIZ OLURDU.'
+          },
+          {
+            satir: '.MinimumLength(12) // NEDEN: brute-force direnci',
+            aciklama: 'Şifrenin en AZ 12 karakter OLMASINI ZORUNLU kılar — bu SAYI (Bölüm 21\'deki `WorkFactor = 12` gibi) REFERENCE/SECURITY.md\'de PİNLENMİŞ bir DEĞERDİR, KEYFİ SEÇİLMEMİŞTİR.',
+            neden: 'Uzun bir şifre, brute-force (deneme-yanılma) SALDIRILARINA karşı ÜSTEL olarak DAHA DİRENÇLİDİR — 8 karaktere GÖRE 12 karakter, OLASI kombinasyon SAYISINI ÇARPICI biçimde ARTIRIR, BCrypt\'in (Bölüm 21) YAVAŞLIĞIYLA BİRLEŞİNCE brute-force MALİYETİNİ PRATİKTE İMKANSIZ hâle GETİRİR.',
+            olmasaydi: 'Minimum uzunluk KURALI OLMASAYDI (ya da ÇOK KISA bir sınır OLSAYDI), kullanıcılar "1234" gibi KOLAY tahmin EDİLEBİLİR şifreler SEÇEBİLİRDİ — BCrypt\'in yavaşlığı bile KISA/ZAYIF bir şifre uzayını KORUMAYA YETMEZDİ.'
+          },
+          {
+            satir: '.WithErrorCode("PASSWORD_TOO_SHORT")',
+            aciklama: 'Bu satırdaki KOD (`PASSWORD_TOO_SHORT`), Bölüm 20\'deki `ErrorMessages` sözlüğünde TANIMLI olan AYNI ANAHTARLA BİREBİR eşleşir — `ValidationFilter` (bu bölümün ÜÇÜNCÜ kod SLAYTI) bu kodu OKUYUP isteğin DİLİNE göre GERÇEK metni ÇÖZER.',
+            neden: '`WithMessage(...)`\'in HEMEN ÜSTÜNDE, AYRI bir `WithErrorCode(...)` ÇAĞRISI olması — AppException\'daki `Code`/`.Message` AYRIMININ, FluentValidation TARAFINDAKİ BİREBİR KARŞILIĞIDIR: `WithMessage` yalnızca SABİT İngilizce bir LOG açıklaması, GERÇEK istemci mesajı `WithErrorCode`\'un TAŞIDIĞI koddan ÇÖZÜLÜR.',
+            olmasaydi: '`WithErrorCode` ÇAĞRILMASAYDI, `ValidationFilter`\'ın (bir SONRAKİ kod SLAYTINDA GÖRECEĞİMİZ) `e.ErrorCode` okuması BOŞ/null DÖNERDİ — `ErrorMessages.Resolve` sözlükte BOŞ bir anahtar ARARDI, kullanıcıya YA HİÇ mesaj YA DA yanlış (varsayılan) bir mesaj GİDERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterCommandValidator.cs — PasswordRuleExtensions\'ı Kullanımı',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Auth/RegisterRequestValidator.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RegisterRequestValidator.cs
+//
+// AMAÇ: POST /auth/register girdisinin doğrulama kuralları.
+// NEDEN: Sunucu tarafı doğrulama her zaman gerekir (CODING_STANDARDS.md §6);
+//        client doğrulamasına güvenilmez.
+// BAĞIMLILIKLAR: FluentValidation, EmailRuleExtensions, PasswordRuleExtensions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using WordLearner.Application.Features.Auth;
+
+namespace WordLearner.Application.Validators.Auth;
+
+public class RegisterCommandValidator : AbstractValidator<RegisterCommand>
+{
+    public RegisterCommandValidator()
+    {
+        RuleFor(x => x.Email).ValidEmail();
+        RuleFor(x => x.Password).ValidPassword();
+
+        RuleFor(x => x.FirstName)
+            .NotEmpty()
+            .WithMessage("First name must not be empty.")
+            .WithErrorCode("FIRST_NAME_REQUIRED")
+            .MaximumLength(50);
+
+        RuleFor(x => x.LastName)
+            .NotEmpty()
+            .WithMessage("Last name must not be empty.")
+            .WithErrorCode("LAST_NAME_REQUIRED")
+            .MaximumLength(50);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class RegisterCommandValidator : AbstractValidator<RegisterCommand>',
+            aciklama: 'Bölüm 5\'te TANITILAN, `RegisterCommand`\'a ÖZEL validator — FluentValidation\'ın `AbstractValidator<T>` TABAN sınıfından TÜRER, jenerik parametre (`RegisterCommand`) HANGİ Command\'ı DOĞRULADIĞINI BELİRLER.',
+            neden: '`ValidationFilter`\'ın (bu bölümün ÜÇÜNCÜ kod SLAYTI) DI konteynerinden `IValidator<RegisterCommand>` TİPİNİ ARAYIP BULABİLMESİ İÇİN, bu sınıfın `AbstractValidator<RegisterCommand>`\'DAN TÜREMESİ (dolayısıyla `IValidator<RegisterCommand>`\'i UYGULAMASI) ZORUNLUDUR — CLAUDE.md §3\'ün "DI kaydı GENELLİKLE gerekmez (assembly-scan)" NOTU, TAM OLARAK bu tip EŞLEŞMESİNE DAYANIR.',
+            olmasaydi: 'Bu sınıf `AbstractValidator<RegisterCommand>`\'dan TÜREMESEYDİ (ör. GENEL bir `IValidator` OLSAYDI), ValidationFilter\'ın "argümanın TİPİNE göre DOĞRU validator\'ı BUL" mantığı ÇALIŞMAZDI — Register isteği HİÇ DOĞRULANMADAN DOĞRUDAN Handler\'a ULAŞIRDI.'
+          },
+          {
+            satir: 'RuleFor(x => x.Password).ValidPassword();',
+            aciklama: 'Bir ÖNCEKİ kod SLAYTINDA gördüğümüz `PasswordRuleExtensions.ValidPassword()` extension metodunu ÇAĞIRIR — 12 karakter + büyük/küçük harf + rakam + özel karakter kuralının TAMAMI, TEK bir METOT çağrısıyla BU validator\'a UYGULANIR.',
+            neden: 'Bu TEK satır, altı AYRI FluentValidation kuralını (NotEmpty, MinimumLength, üç Matches) TEMSİL eder — RegisterCommandValidator bu kuralların HİÇBİRİNİ KENDİSİ YAZMAZ, yalnızca "parolamı GEÇERLİ bir şifre KURALINA GÖRE DOĞRULA" der; AYNI çağrı Bölüm 17\'deki `ResetPasswordRequestValidator`\'da da GEÇER.',
+            olmasaydi: '`ValidPassword()` extension metodu OLMASAYDI, bu satırın YERİNE PasswordRuleExtensions\'daki altı ZİNCİRLİ kuralın TAMAMI BURADA (VE ResetPasswordRequestValidator\'DA AYRICA) TEKRAR YAZILMASI GEREKİRDİ — parola KURALI DEĞİŞTİĞİNDE (ör. minimum uzunluk 14\'e ÇIKARILDIĞINDA) İKİ AYRI dosyanın GÜNCELLENMESİ GEREKİRDİ, biri UNUTULURSA KURALLAR TUTARSIZLAŞIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ValidationFilter.cs — MediatR\'a Gitmeden ÖNCE Kesen Global Filter',
+        dosyaYolu: 'backend/WordLearner.API/Filters/ValidationFilter.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ValidationFilter.cs
+//
+// AMAÇ: Controller action'lara gelen istek gövdesini (body), varsa DI'a kayıtlı
+//       bir FluentValidation validator'ı ile doğrulayan, tüm controller'larda
+//       ortak kullanılan global action filter.
+// NEDEN: FluentValidation.AspNetCore paketi (otomatik ModelState entegrasyonu)
+//        kullanılmıyor (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1'de yok) — bu
+//        filter aynı işi, DI'a kayıtlı IValidator<T>'leri reflection ile bulup
+//        manuel çalıştırarak yapar; her controller action'ının validasyon
+//        çağrısını elle yazmasına gerek kalmaz (ince katman kuralı, CODING_STANDARDS.md §5).
+//        KRİTİK: İstemciye giden mesaj her validation hatasının ErrorMessage'ı
+//        DEĞİL, ErrorCode'udur — ErrorMessage yalnızca validator'ın WithMessage()
+//        ile verdiği sabit İNGİLİZCE log/DB açıklamasıdır (AppException.Message
+//        ile birebir aynı ayrım). ErrorCode, ErrorMessages sözlüğünden isteğin
+//        Accept-Language'ına göre çözülür — aksi hâlde hata mesajları hep tek dile
+//        kilitli kalırdı.
+// BAĞIMLILIKLAR: FluentValidation, WordLearner.Application.Common.Localization.ErrorMessages,
+//                WordLearner.Application.Common.Models.ApiErrorResponse.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentValidation;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using WordLearner.API.Common;
+using WordLearner.Application.Common.Localization;
+using WordLearner.Application.Common.Models;
+
+namespace WordLearner.API.Filters;
+
+public class ValidationFilter : IAsyncActionFilter
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public ValidationFilter(IServiceProvider serviceProvider) => _serviceProvider = serviceProvider;
+
+    // AMAÇ: Action çalışmadan önce, argümanlardan biri için DI'da kayıtlı bir
+    //       IValidator<T> varsa çalıştırır; başarısızsa 400 döner ve action'ı
+    //       hiç çalıştırmaz.
+    // NEDEN: Tek bir yerden tüm controller'lar için doğrulama sağlanır — yeni bir
+    //        controller/endpoint eklenince yalnızca ilgili Validator yazılır,
+    //        bu filter'a dokunulmaz.
+    // NASIL: 1) Her action argümanı için tipine uygun IValidator<T> ara
+    //        2) Bulunursa ValidateAsync çağır  3) Geçersizse her hatanın
+    //        ErrorCode'unu isteğin diline göre ErrorMessages'ten çözüp birleştir,
+    //        400 + ApiErrorResponse dön  4) Geçerliyse bir sonraki argümana geç.
+    public async Task OnActionExecutionAsync(
+        ActionExecutingContext context,
+        ActionExecutionDelegate next
+    )
+    {
+        var language = RequestLanguageResolver.Resolve(context.HttpContext);
+
+        foreach (var argument in context.ActionArguments.Values)
+        {
+            if (argument is null)
+                continue;
+
+            var validatorType = typeof(IValidator<>).MakeGenericType(argument.GetType());
+            if (_serviceProvider.GetService(validatorType) is not IValidator validator)
+                continue;
+
+            var validationContext = new ValidationContext<object>(argument);
+            var result = await validator.ValidateAsync(validationContext);
+
+            if (!result.IsValid)
+            {
+                // NEDEN: e.ErrorMessage KULLANILMAZ (sabit İngilizce log metni) — e.ErrorCode
+                //        üzerinden ErrorMessages.Resolve ile isteğin diline göre çözülür.
+                var messages = result
+                    .Errors.Select(e => ErrorMessages.Resolve(e.ErrorCode, language))
+                    .Distinct();
+                var combinedMessage = string.Join(" ", messages);
+
+                context.Result = new BadRequestObjectResult(
+                    new ApiErrorResponse("INVALID_REQUEST", combinedMessage)
+                );
+                return;
+            }
+        }
+
+        await next();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class ValidationFilter : IAsyncActionFilter',
+            aciklama: '`IAsyncActionFilter`, ASP.NET Core\'un HER controller action\'ından ÖNCE VE SONRA ÇALIŞTIRILABİLECEK bir "kanca" (hook) sağlayan ARAYÜZDÜR — bu filter, A-02\'de Program.cs\'te GLOBAL olarak (TÜM controller\'lara) KAYDEDİLİR.',
+            neden: 'GLOBAL kayıt, HER YENİ Controller/action eklendiğinde (13 Auth endpoint\'inin HER BİRİ dahil) doğrulama davranışının OTOMATİK olarak DEVREYE GİRMESİNİ sağlar — hiçbir Controller "beni de DOĞRULA" diye AYRICA İŞARETLENMEK ZORUNDA DEĞİLDİR.',
+            olmasaydi: 'Filter GLOBAL DEĞİL de HER Controller\'a AYRI AYRI EKLENEN bir ÖZNİTELİK ([ServiceFilter(typeof(ValidationFilter))] gibi) OLSAYDI, YENİ bir Controller eklerken bu ÖZNİTELİĞİN EKLENMESİ UNUTULABİLİRDİ — o Controller\'ın hiçbir DOĞRULAMASI ÇALIŞMAZ, HATALI veri DOĞRUDAN Handler\'a GEÇERDİ.'
+          },
+          {
+            satir: 'var validatorType = typeof(IValidator<>).MakeGenericType(argument.GetType());',
+            aciklama: 'Reflection (yansıma) kullanarak, action\'a GELEN argümanın ÇALIŞMA ZAMANI tipine (ör. `RegisterCommand`) göre `IValidator<RegisterCommand>` gibi JENERİK bir tip İNŞA EDER.',
+            neden: 'Bu filter, HANGİ Command\'ın HANGİ Controller\'dan GELECEĞİNİ DERLEME ZAMANINDA BİLMEZ (13 farklı Command olabilir) — reflection, "argümanın TİPİ neyse, O TİPE karşılık gelen validator\'ı ARA" DİNAMİK mantığını, HER Command için AYRI bir `if` YAZMADAN MÜMKÜN KILAR.',
+            olmasaydi: 'Reflection KULLANILMASAYDI, bu filter\'ın HER Command türü için AYRI bir `if (argument is RegisterCommand rc) { ... } else if (argument is LoginCommand lc) { ... }` gibi bir ZİNCİR YAZMASI GEREKİRDİ — YENİ bir Command EKLENDİĞİNDE bu ZİNCİRE de bir DAL EKLENMESİ GEREKİRDİ, "hiçbir Controller\'a DOKUNULMAZ" prensibi BOZULURDU.'
+          },
+          {
+            satir: 'if (_serviceProvider.GetService(validatorType) is not IValidator validator)',
+            aciklama: 'DI konteynerinde bu tip İÇİN kayıtlı bir validator VAR MI diye SORAR — `GetService` (`GetRequiredService` DEĞİL) KULLANILMASI, BULUNAMAZSA exception FIRLATMAK yerine `null` DÖNMESİNİ sağlar.',
+            neden: 'TÜM Command\'ların bir Validator\'ı OLMAK ZORUNDA DEĞİLDİR (ör. hiçbir girdi ALMAYAN bir Command\'ın doğrulanacak bir ŞEYİ YOKTUR) — `continue` ile bu argüman ATLANIR, filter\'ın GERİ KALAN argümanları (VARSA) KONTROL ETMESİNE İZİN VERİLİR.',
+            olmasaydi: '`GetRequiredService` KULLANILSAYDI, Validator\'I OLMAYAN bir Command GELDİĞİNDE bu satır DOĞRUDAN bir exception FIRLATIRDI — HİÇBİR girdi doğrulaması GEREKTİRMEYEN, TAMAMEN GEÇERLİ bir istek (ör. parametre ALMAYAN bir Logout isteği) bile 500 hatasıyla ÇÖKERDİ.'
+          },
+          {
+            satir: 'var messages = result',
+            aciklama: 'FluentValidation\'ın DÖNDÜRDÜĞÜ TÜM hata SATIRLARI (`result.Errors`), HER birinin `ErrorCode`\'u ÜZERİNDEN `ErrorMessages.Resolve`\'a GEÇİRİLİP, isteğin DİLİNE göre GERÇEK metne ÇEVRİLİR.',
+            neden: 'Bu satır, `e.ErrorMessage` (WithMessage\'ın SABİT İngilizce METNİ) DEĞİL, `e.ErrorCode` (WithErrorCode\'un KODU) KULLANIR — Bölüm 20\'deki AppException.Code/ErrorMessages İKİLİSİYLE BİREBİR AYNI mimari, FluentValidation TARAFINA da UYGULANMIŞTIR.',
+            olmasaydi: '`e.ErrorMessage` KULLANILSAYDI, kullanıcı HER ZAMAN "Password must be at least 12 characters long." gibi SABİT bir İngilizce METİN GÖRÜRDÜ — Almanca/Türkçe konuşan bir kullanıcı, HİÇBİR ZAMAN kendi DİLİNDE bir doğrulama HATASI GÖREMEZDİ, CLAUDE.md\'nin çift-dil KURALI validation HATALARI için ÇALIŞMAZDI.'
+          },
+          {
+            satir: 'context.Result = new BadRequestObjectResult(',
+            aciklama: '`context.Result`\'a bir DEĞER ATANMASI, ASP.NET Core\'a "action\'I ÇALIŞTIRMA, DOĞRUDAN BU sonucu DÖN" TALİMATINI verir — bunun HEMEN ALTINDAKİ `return` (filter METODUNDAN çıkış), `await next()`\'in (action\'ı GERÇEKTEN ÇALIŞTIRAN satır) HİÇ ÇAĞRILMAMASINI sağlar.',
+            neden: 'Bu, bölümün BAŞLIĞINDAKİ "MediatR\'a GİTMEDEN ÖNCE KESEN" ifadesinin TAM olarak KOD KARŞILIĞIDIR — geçersiz bir Command, Controller\'ın `_mediator.Send(command, ct)` SATIRINA HİÇ ULAŞMAZ, dolayısıyla HİÇBİR Handler ÇALIŞMAZ, veritabanına HİÇBİR SORGU GİTMEZ.',
+            olmasaydi: '`context.Result` ATANMADAN sadece bir exception FIRLATILSAYDI (ya da HİÇBİR ŞEY yapılmadan `return` EDİLSEYDİ), ASP.NET Core\'un normal AKIŞI (action\'ı ÇAĞIRMASI) DEVAM EDERDİ — geçersiz bir Command YİNE DE Handler\'a ULAŞIRDI, FluentValidation\'ın TÜM AMACI BOŞA ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Rule-Extension ve Validator Dosyaları',
+        terimler: [
+          {
+            terim: 'EmailRuleExtensions.cs',
+            tanim: 'PasswordRuleExtensions ile AYNI pattern\'i izler — `ValidEmail()` extension metodu, e-posta format/zorunluluk kurallarını (EMAIL_REQUIRED, EMAIL_INVALID) TEK yerden RegisterCommandValidator, LoginValidator gibi BİRDEN FAZLA validator\'a sağlar.'
+          },
+          {
+            terim: 'OtpRuleExtensions.cs',
+            tanim: 'PasswordRuleExtensions ile AYNI pattern\'i izler — OTP kodu zorunluluğu ve 6 haneli format kuralını (OTP_REQUIRED, OTP_INVALID_FORMAT) VerifyEmail, LoginOtp gibi OTP TÜKETEN tüm Command validator\'larına sağlar.'
+          },
+          {
+            terim: 'RefreshTokenRuleExtensions.cs',
+            tanim: 'PasswordRuleExtensions ile AYNI pattern\'i izler — refresh token string\'inin zorunluluk kuralını (TOKEN_REQUIRED) RefreshCommand ve LogoutCommand validator\'larına sağlar.'
+          },
+          {
+            terim: 'EmailVerificationValidator, LoginValidator, SocialLoginValidator, RefreshAndLogoutValidator, PasswordResetValidator, DeleteAccountConfirmRequestValidator',
+            tanim: 'RegisterCommandValidator ile AYNI pattern\'i izler: `AbstractValidator<TCommand>`\'dan türer, yukarıdaki paylaşılan rule-extension\'ları ÇAĞIRIR, kendine özgü alanlar (ör. OTP kodu, sosyal token) için EK kurallar TANIMLAR — toplam 12 Command validator sınıfı, hepsi ValidationFilter TARAFINDAN aynı reflection mekanizmasıyla BULUNUR.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Üç katman: paylaşılan rule-extension (parola/email/otp/token) → Command\'a özel Validator → global ValidationFilter',
+          'PasswordRuleExtensions gibi extension metotlar, AYNI kuralın birden fazla validator\'da tekrar yazılmasını önler',
+          'ValidationFilter reflection ile DI\'dan IValidator<T> bulur — hiçbir Controller kendi doğrulama kodunu yazmaz',
+          'ErrorMessage DEĞİL ErrorCode kullanılır — validation hataları da AppException ile aynı Code+ErrorMessages ikilisinden geçer',
+          'Geçersiz bir Command, context.Result atanıp erken return edildiği için MediatR\'a hiç ulaşmaz — Handler ve veritabanı hiç çalışmaz'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

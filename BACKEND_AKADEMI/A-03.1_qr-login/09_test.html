@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Birim Test — 410 mü, 403 mü, Yoksa Sessiz 200 mü</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'test',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '08_controller-ratelimit.html',
+    sonrakiBolum: '11_deny-ve-forbidden-exception.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 9',
+        baslik: 'Birim Test — 410 mü, 403 mü, Yoksa Sessiz 200 mü',
+        altBaslik: 'Bölüm 7\'deki mimari kararı ("Expired 200 döner, Consumed 410 döner") KANITLAYAN testler.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetQrLoginStatusCommandHandlerTests — Expired ve Consumed Ayrımı',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/QrLogin/GetQrLoginStatusCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/QrLogin/ altında — A-03/25\'teki Tests/Features/Auth/ İLE AYNI KONVANSİYON: hangi kodun TESTİ olduğu, KLASÖR YOLUNDAN ANINDA anlaşılır.',
+        kod: `[Fact]
+public async Task GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing()
+{
+    // ARRANGE
+    var session = new QrLoginSession
+    {
+        Status = QrLoginStatus.Pending,
+        ExpiresAt = DateTime.UtcNow.AddMinutes(-1),
+    };
+    _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+    _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+    var handler = CreateHandler();
+
+    // ACT
+    var result = await handler.Handle(new GetQrLoginStatusCommand("token"), default);
+
+    // ASSERT
+    result.Status.Should().Be("Expired");
+    session.Status.Should().Be(QrLoginStatus.Expired);
+}
+
+[Fact]
+public async Task GetStatus_ConsumedSession_ThrowsQrSessionGoneException()
+{
+    // ARRANGE
+    var session = new QrLoginSession
+    {
+        Status = QrLoginStatus.Consumed,
+        ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+    };
+    _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+    _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(new GetQrLoginStatusCommand("token"), default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<QrSessionGoneException>();
+    _loginCompletionService.Verify(
+        l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), default),
+        Times.Never
+    );
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, BİREBİR AYNI xUnit özniteliği — kod editörü İÇERİĞE göre eşleştirdiği için TEK açıklama HER İKİ fiziksel satıra da uygulanır.',
+            neden: '`[Fact]`, HER İKİ senaryonun da (Expired, Consumed) SABİT bir girdi seti taşıdığını, parametreli bir varyasyon GEREKTİRMEDİĞİNİ gösterir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, xUnit bu metotları TEST olarak TANIMAZ — Bölüm 7\'deki mimari kararda bir hata olsa bile bu testler HİÇ ÇALIŞMAZ, hata FARK EDİLMEZDİ.'
+          },
+          {
+            satir: 'public async Task GetStatus_ExpiredSession_ReturnsExpiredStatusWithoutThrowing()',
+            aciklama: 'Test metodunun adı, A-03/16\'daki "ne test ediliyor + hangi koşulda + ne bekleniyor" formülünü izler: GetStatus (metot) + ExpiredSession (koşul) + ReturnsExpiredStatusWithoutThrowing (beklenen sonuç).',
+            neden: '"WithoutThrowing" son eki, Bölüm 7\'deki mimari KARARI (Expired bir EXCEPTION DEĞİL, normal bir dönüş değeridir) doğrudan İSİMDEN okunur kılar.',
+            olmasaydi: 'Test anlamsız bir isimle yazılsaydı, CI raporunda bu test KIRMIZI olduğunda hangi mimari kararın BOZULDUĞU anlaşılmazdı.'
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, A-03/16\'daki AYNI üç aşamalı (Arrange/Act/Assert) yapının İLK adımı.',
+            neden: 'Bu yapı, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, kurulum kodu ile doğrulama kodu KARIŞIK yazılsaydı, testin NE doğrulamaya çalıştığı anlaşılması ZORLAŞIRDI.'
+          },
+          {
+            satir: 'var session = new QrLoginSession',
+            aciklama: 'İKİ testin de ORTAK deseni: A-03/28\'deki (RegisterCommandHandlerTests) `new User { ... }` İLE AYNI DOĞRUDAN ENTİTE İNŞASI — MOCK\'LARIN (`Mock<T>`) AKSİNE, `QrLoginSession` GERÇEK bir C# NESNESİ OLDUĞU İÇİN DOĞRUDAN `new` İLE OLUŞTURULUR.',
+            neden: 'Bir Handler TESTİNDE, GERÇEK VERİTABANI YERİNE (`_qrRepo` MOCK\'LANMIŞTIR) TEST\'İN "SAHTE VERİTABANI KAYDI" OLARAK KULLANDIĞI NESNE BUDUR — Setup ÇAĞRISI, MOCK\'A "BU HASH İLE ARANIRSA BU NESNEYİ DÖN" DER.',
+            olmasaydi: 'Bu satır OLMASAYDI, `_qrRepo.Setup(...)`\'A GEÇİRİLECEK bir SAHTE OTURUM KAYDI OLMAZDI — TEST, HANDLER\'IN GERÇEKTEN NASIL DAVRANACAĞINI SİMÜLE EDEMEZDİ.'
+          },
+          {
+            satir: 'Status = QrLoginStatus.Pending,',
+            aciklama: 'İLK testte, oturumun BAŞLANGIÇ durumu Pending olarak KURULUR — Bölüm 5\'teki `IsExpired`\'ın "yalnızca Pending/Scanned durumları Expired\'a ÇEVİRİR" mantığının test EDİLEBİLMESİ için.',
+            neden: 'Eğer Status Consumed/Denied gibi bir TERMİNAL durum OLSAYDI, `IsExpired` bunu Expired\'a ÇEVİRMEZDİ (Bölüm 5\'teki "geçmişte ne olduğu KORUNUR" ilkesi) — Pending seçilmesi, TAM OLARAK süre-dolma senaryosunu İZOLE eder.',
+            olmasaydi: 'Status Consumed OLSAYDI, `IsExpired` durumu DEĞİŞTİRMEZDİ — test "Expired" beklerken GERÇEKTE "Consumed" bir sonuçla KARŞILAŞIR, YANLIŞ bir senaryoyu test etmiş OLURDU.'
+          },
+          {
+            satir: 'ExpiresAt = DateTime.UtcNow.AddMinutes(-1),',
+            aciklama: 'İLK testte, SÜRESİ 1 DAKİKA ÖNCE DOLMUŞ bir OTURUM İNŞA EDİLİR (Status = Pending, AMA ExpiresAt GEÇMİŞTE) — Bölüm 5\'teki `IsExpired`\'IN TETİKLENMESİ İÇİN GEREKLİ SENARYO.',
+            neden: 'NEGATİF bir `AddMinutes` DEĞERİ, "GEÇMİŞTE bir ZAMAN" ÜRETMENİN EN BASİT YOLUDUR — TEST, GERÇEK ZAMANIN GEÇMESİNİ BEKLEMEK YERİNE, DOĞRUDAN "SÜRESİ ZATEN DOLMUŞ" bir DURUM KURAR.',
+            olmasaydi: 'Bu satır `AddMinutes(1)` (GELECEK) OLSAYDI, `IsExpired` `false` DÖNERDİ — TEST, Bölüm 7\'deki "Expired 200 DÖNER" DAVRANIŞINI HİÇ TETİKLEYEMEZDİ, YANLIŞ bir SENARYOYU (SÜRESİ DOLMAMIŞ bir OTURUM) TEST ETMİŞ OLURDU.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, BİREBİR AYNI kapanış — object initializer bloğunun VE `var session = new QrLoginSession` atamasının SONU.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, İKİ alanın (Status, ExpiresAt) bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: '_passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, BİREBİR AYNI Setup — "HangiToken gelirse GELSİN, sabit \'hash\' DEĞERİNİ dön" der.',
+            neden: '`It.IsAny<string>()` kullanılması, bu testlerin AMACININ hash\'in TAM DEĞERİNİ değil, "session\'ın DOĞRU bulunması" olduğunu gösterir — hash\'in GERÇEK değeri bu testlerin İLGİ ALANI DEĞİL.',
+            olmasaydi: 'Bu Setup yazılmasaydı, mock varsayılan olarak `null` dönerdi — bir sonraki `GetByTokenHashAsync("hash", ...)` Setup\'ı HİÇBİR ZAMAN eşleşmezdi.'
+          },
+          {
+            satir: '_qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, BİREBİR AYNI Setup — "hash" DEĞERİYLE arama YAPILIRSA, yukarıda inşa edilen `session`\'ı dön.',
+            neden: 'Bu, Handler\'ın Bölüm 5-7\'de gördüğümüz `GetByTokenHashAsync` çağrısını SİMÜLE eder — gerçek bir veritabanı SORGUSU çalıştırılmadan.',
+            olmasaydi: 'Bu Setup yazılmasaydı, mock varsayılan olarak `null` dönerdi — Handler `EntityNotFoundException` fırlatırdı, YANLIŞ bir senaryoyu TEST etmiş olurduk.'
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, A-03/16\'daki AYNI yardımcı metot çağrısı — TÜM mock\'larla DONATILMIŞ bir Handler örneği elde edilir.',
+            neden: 'Bu satır, ARRANGE bölümünün SON adımıdır.',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(...)` çağrısı için bir `handler` DEĞİŞKENİ OLMAZDI.'
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, üç aşamalı yapının İKİNCİ adımı — GERÇEK kodun ÇALIŞTIRILDIĞI yer.',
+            neden: 'Bu ayrım, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, HANGİ satırın "gerçek eylem" olduğu belirsizleşirdi.'
+          },
+          {
+            satir: 'var result = await handler.Handle(new GetQrLoginStatusCommand("token"), default);',
+            aciklama: 'İLK testte metot DOĞRUDAN çağrılır (bir `act` fonksiyonuna SARILMAZ) — çünkü bu senaryoda bir EXCEPTION BEKLENMEZ, yalnızca bir DÖNÜŞ DEĞERİ.',
+            neden: 'Bölüm 7\'deki mimari karar (Expired normal bir DÖNÜŞTÜR) burada TEST YAZIMINA da YANSIR — `await handler.Handle(...)` DOĞRUDAN çağrılabilir, çünkü EXCEPTION FIRLAMAYACAĞI BEKLENİR.',
+            olmasaydi: 'Bu satır olmasaydı, ASSERT bölümünde İNCELENECEK bir `result` DEĞİŞKENİ OLMAZDI.'
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, üç aşamalı yapının SON adımı.',
+            neden: 'Bu ayrım, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, HANGİ satırların "kontrol" olduğu belirsizleşirdi.'
+          },
+          {
+            satir: 'result.Status.Should().Be("Expired");',
+            aciklama: 'Bölüm 7\'deki MİMARİ KARARIN (Expired = 200 + status BİLGİSİ, exception DEĞİL) İLK KANITI — `result` bir EXCEPTION DEĞİL, GERÇEK bir DÖNÜŞ DEĞERİDİR.',
+            neden: 'Bu ASSERT, METODUN EXCEPTION FIRLATMADAN NORMAL bir ŞEKİLDE `return` İLE SONLANDIĞINI (yalnızca `result` DEĞİŞKENİNİN VAR OLMASI BİLE BUNU KANITLAR) VE İÇERİĞİNİN "Expired" OLDUĞUNU DOĞRULAR.',
+            olmasaydi: 'Bu ASSERT OLMASAYDI, TEST "METOT EXCEPTION FIRLATMADI" GERÇEĞİNİ DOĞRULAR AMA DÖNEN DEĞERİN GERÇEKTEN DOĞRU (Status="Expired") OLUP OLMADIĞINI KONTROL ETMEZDİ — bir Handler HATASI (ör. YANLIŞLIKLA "Pending" DÖNDÜRMEK) FARK EDİLMEZDİ.'
+          },
+          {
+            satir: 'session.Status.Should().Be(QrLoginStatus.Expired);',
+            aciklama: 'İKİNCİ bir DOĞRULAMA — YALNIZCA DÖNÜŞ DEĞERİ DEĞİL, `session` NESNESİNİN (Bölüm 5\'teki `IsExpired` metodunun YAN ETKİSİ İLE) GERÇEKTEN Expired\'A GÜNCELLENDİĞİ de KONTROL EDİLİR.',
+            neden: 'Bölüm 5\'teki `IsExpired`, `session.Status`\'I DOĞRUDAN DEĞİŞTİRİYORDU (BİR "YAN ETKİ") — bu ASSERT, O YAN ETKİNİN GERÇEKTEN GERÇEKLEŞTİĞİNİ, YALNIZCA DÖNÜŞ DEĞERİNİ DEĞİL, GERÇEK NESNE DURUMUNU da DOĞRULAYARAK KANITLAR.',
+            olmasaydi: 'Bu ASSERT OLMASAYDI, `IsExpired` metodunun `session.Status`\'U GÜNCELLEMEYİ UNUTTUĞU bir REGRESYON (ör. GELECEKTE bir REFACTOR SIRASINDA) FARK EDİLMEZDİ — YALNIZCA DÖNÜŞ DEĞERİ DOĞRU OLSA da, VERİTABANINA YAZILACAK DURUM (Bölüm 6\'daki `UpdateAsync` ÇAĞRISI) YANLIŞ OLURDU.'
+          },
+          {
+            satir: 'ExpiresAt = DateTime.UtcNow.AddMinutes(1),',
+            aciklama: 'İKİNCİ testte, SÜRESİ HENÜZ DOLMAMIŞ (1 DAKİKA SONRA DOLACAK) AMA Status ZATEN Consumed OLAN bir OTURUM İNŞA EDİLİR — Bölüm 7\'deki "Consumed KONTROLÜ, SÜRE KONTROLÜNDEN SONRA GELİR" SIRASININ TEST EDİLMESİ.',
+            neden: 'SÜRE HENÜZ DOLMADIĞI İÇİN `IsExpired` `false` DÖNER, KOD `if (session.Status == QrLoginStatus.Consumed)` KONTROLÜNE ULAŞIR — BU TEST, O İKİNCİ KONTROLÜN GERÇEKTEN ÇALIŞTIĞINI İZOLE EDER.',
+            olmasaydi: 'ExpiresAt GEÇMİŞTE OLSAYDI, TEST "Expired MI YOKSA Consumed Mİ ÖNCELİKLİ" SORUSUNU AYIRT EDEMEZDİ — İKİ KONTROLDEN HANGİSİNİN TETİKLENDİĞİ BELİRSİZLEŞİRDİ.'
+          },
+          {
+            satir: 'public async Task GetStatus_ConsumedSession_ThrowsQrSessionGoneException()',
+            aciklama: 'İKİNCİ test metodunun adı — AYNI formülü izler: GetStatus (metot) + ConsumedSession (koşul) + ThrowsQrSessionGoneException (beklenen sonuç, bu kez bir EXCEPTION).',
+            neden: '"Throws" öneki, bu testin bir HATA senaryosunu test ettiğini, İLK testten (WithoutThrowing) TAM TERSİ bir SONUÇ BEKLEDİĞİNİ, metodun İSMİNDEN belli eder.',
+            olmasaydi: 'Test anlamsız bir isimle yazılsaydı, CI raporunda bu test KIRMIZI olduğunda hangi HATA senaryosunun BOZULDUĞU anlaşılmazdı.'
+          },
+          {
+            satir: 'Status = QrLoginStatus.Consumed,',
+            aciklama: 'İKİNCİ testte, oturum ZATEN TÜKETİLMİŞ (Consumed) olarak KURULUR — Bölüm 7\'deki "Consumed, GERÇEKTEN 410 döner" davranışının TEST EDİLEBİLMESİ için.',
+            neden: 'Bu, Bölüm 2\'deki "token\'lar yalnızca BİR KEZ döner" garantisinin İHLAL EDİLMEYE ÇALIŞILDIĞI senaryoyu SİMÜLE eder — SANKİ bu status isteği, token\'IN ZATEN alındığı bir oturuma yönelik İKİNCİ bir istektir.',
+            olmasaydi: 'Status Pending/Scanned OLSAYDI, Handler bu testte QrSessionGoneException FIRLATMAZDI — test, "Consumed GERÇEKTEN 410 döner" iddiasını HİÇ KANITLAYAMAZDI.'
+          },
+          {
+            satir: 'var act = () => handler.Handle(new GetQrLoginStatusCommand("token"), default);',
+            aciklama: 'İKİNCİ testte, İLK testten FARKLI olarak metot bir `act` FONKSİYONUNA SARILIR — çünkü bu senaryoda bir EXCEPTION BEKLENİR.',
+            neden: 'A-03/27\'deki AYNI "act" deseni — `QrSessionGoneException` fırlatıldığı AN testin kendisini ÇÖKERTMEDEN, bunu bir BEKLENEN davranış olarak DOĞRULAMAK için.',
+            olmasaydi: 'Bu kalıp kullanılmasaydı (`await handler.Handle(...)` doğrudan çağrılsaydı), exception fırlatıldığı an test çalışması KESİLİRDİ, "beklenmedik hata" olarak KIRMIZI görünürdü.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<QrSessionGoneException>();',
+            aciklama: 'Bölüm 7\'deki MİMARİ KARARIN İKİNCİ YARISININ KANITI — Consumed, GERÇEKTEN bir EXCEPTION (410) FIRLATIR, Expired\'IN AKSİNE.',
+            neden: 'Bu ASSERT, A-03/25\'teki (ConfirmAccountDeletionCommandHandlerTests) `act.Should().ThrowAsync<T>()` DESENİNİN AYNISI — Bölüm 7\'nin BAŞINDAKİ "Expired VE Consumed FARKLI DAVRANIR" İDDİASININ İKİNCİ YARISINI KANITLAR.',
+            olmasaydi: 'Bu ASSERT OLMASAYDI, Handler\'daki `if (session.Status == QrLoginStatus.Consumed) throw ...` SATIRININ GERÇEKTEN ÇALIŞTIĞI DOĞRULANMAZDI — bir REFACTOR SIRASINDA BU SATIR YANLIŞLIKLA SİLİNSE (ör. Expired\'LA AYNI DAVRANIŞA İNDİRGENSE), TEST BUNU FARK ETMEZDİ.'
+          },
+          {
+            satir: '_loginCompletionService.Verify(',
+            aciklama: 'A-03/28\'deki `_userRepo.Verify(...)` İLE AYNI DESEN — YALNIZCA "EXCEPTION FIRLATILDI Mİ" DEĞİL, "TOKEN ÜRETİMİ HİÇ TETİKLENMEDİ Mİ" de DOĞRULANIR.',
+            neden: 'Consumed bir OTURUM İÇİN CompleteLoginAsync\'İN ÇAĞRILMAMASI KRİTİKTİR — Bölüm 2\'deki "token\'LAR YALNIZCA BİR KEZ döner" GARANTİSİ, BU ÇAĞRININ İKİNCİ KEZ (ZATEN TÜKETİLMİŞ bir OTURUMDA) YAPILMAMASINA DAYANIR.',
+            olmasaydi: 'Bu VERIFY OLMASAYDI, TEST YALNIZCA "bir EXCEPTION FIRLATILDI" GERÇEĞİNİ DOĞRULARDI — AMA Handler\'DA bir HATA OLUP (ör. EXCEPTION FIRLATMADAN ÖNCE YANLIŞLIKLA CompleteLoginAsync\'İ ÇAĞIRAN bir KOD YOLU) OLUP OLMADIĞINI FARK ETMEZDİ; BU, İKİNCİ bir token\'IN SESSİZCE ÜRETİLİP KAYBOLMASI GİBİ TEHLİKELİ bir SENARYODUR.'
+          },
+          {
+            satir: 'l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), default),',
+            aciklama: 'Verify\'ın HANGİ çağrının SAYILACAĞINI belirten lambda — `It.IsAny<...>()` kullanılması, bu doğrulamanın PARAMETRELERİN TAM DEĞERİYLE DEĞİL, "bu metot HİÇ ÇAĞRILDI MI" sorusuyla İLGİLENDİĞİNİ gösterir.',
+            neden: 'Bu, Bölüm 8\'deki ILoginCompletionService.CompleteLoginAsync imzasıyla EŞLEŞEN bir LAMBDA — Handler\'ın bu metodu HİÇBİR parametre kombinasyonuyla ÇAĞIRMADIĞINI doğrulamak İÇİN TÜM parametreler `IsAny` OLMALIDIR.',
+            olmasaydi: 'Bu lambda olmasaydı, `Verify` çağrısı HANGİ metodun DOĞRULANACAĞINI BİLEMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'Times.Never',
+            aciklama: 'Verify\'ın İKİNCİ argümanı — bu çağrının TAM OLARAK SIFIR KEZ gerçekleştiğini BEKLER (Bölüm 16\'daki `Times.Once` İLE KARŞIT).',
+            neden: 'Consumed bir oturum için CompleteLoginAsync\'İN ASLA çağrılmaması GEREKİR — `Times.Never`, bu "HİÇ ÇAĞRILMADI" beklentisini AÇIKÇA ifade eder.',
+            olmasaydi: 'Bu parametre olmasaydı, `Verify` çağrısı VARSAYILAN olarak `Times.AtLeastOnce()` bekler — testin AMACI (çağrının HİÇ YAPILMADIĞINI kanıtlamak) TAM TERSİNE dönerdi.'
+          },
+          {
+            satir: ');',
+            aciklama: '`_loginCompletionService.Verify(...)` çağrısının KAPANIŞI — testin SON satırı.',
+            neden: 'İki argümanlı (lambda + Times.Never) bu çağrının çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmQrLoginCommandHandlerTests — Sahiplik ve Sızıntı Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/QrLogin/ConfirmQrLoginCommandHandlerTests.cs',
+        nedenBuKlasor: null,
+        kod: `[Fact]
+public async Task Confirm_WrongUser_ThrowsQrSessionForbiddenException()
+{
+    // ARRANGE
+    var session = new QrLoginSession
+    {
+        Status = QrLoginStatus.Scanned,
+        UserId = 5,
+        ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+    };
+    _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+    _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(new ConfirmQrLoginCommand("token") { UserId = 99 }, default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<QrSessionForbiddenException>();
+    session.Status.Should().Be(QrLoginStatus.Scanned);
+}
+
+[Fact]
+public async Task Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
+{
+    // ARRANGE
+    _passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");
+    _qrRepo
+        .Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))
+        .ReturnsAsync((QrLoginSession?)null);
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(new ConfirmQrLoginCommand("gecersiz-token") { UserId = 5 }, default);
+
+    // ASSERT
+    var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();
+    sonuc.Which.Message.Should().NotContain("gecersiz-token");
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, BİREBİR AYNI xUnit özniteliği.',
+            neden: '`[Fact]`, HER İKİ senaryonun da SABİT bir girdi seti taşıdığını gösterir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, xUnit bu metotları TEST olarak TANIMAZ.'
+          },
+          {
+            satir: 'public async Task Confirm_WrongUser_ThrowsQrSessionForbiddenException()',
+            aciklama: 'Test metodunun adı, AYNI formülü izler: Confirm (metot) + WrongUser (koşul) + ThrowsQrSessionForbiddenException (beklenen sonuç).',
+            neden: 'İsimdeki "WrongUser", Bölüm 6\'daki sahiplik kontrolünün TAM OLARAK hangi senaryoyu test ettiğini AÇIKÇA belirtir.',
+            olmasaydi: 'Test anlamsız bir isimle yazılsaydı, CI raporunda hangi sahiplik senaryosunun BOZULDUĞU anlaşılmazdı.'
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, üç aşamalı yapının İLK adımı.',
+            neden: 'Bu yapı, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, kurulum kodu ile doğrulama kodu KARIŞIK yazılsaydı, okunması ZORLAŞIRDI.'
+          },
+          {
+            satir: 'var session = new QrLoginSession',
+            aciklama: 'Bölüm 9\'un İLK slaydındaki AYNI desen — GERÇEK bir C# nesnesi DOĞRUDAN `new` İLE inşa edilir.',
+            neden: 'Bu nesne, `_qrRepo` mock\'unun "bu hash ile aranırsa BUNU dön" Setup\'ına GEÇİRİLECEK.',
+            olmasaydi: 'Bu satır olmasaydı, `_qrRepo.Setup(...)`\'a geçirilecek bir sahte oturum kaydı OLMAZDI.'
+          },
+          {
+            satir: 'Status = QrLoginStatus.Scanned,',
+            aciklama: 'Oturum, Bölüm 5\'teki Scan adımından SONRAKİ durumda (Scanned) kurulur — sahiplik kontrolünün ÖN KOŞULU (Bölüm 6\'daki `if (session.Status != QrLoginStatus.Scanned)`) GEÇİLSİN diye.',
+            neden: 'Status Pending OLSAYDI, Handler DURUM kontrolünde (sahiplik kontrolüne ULAŞMADAN) BAŞKA bir exception FIRLATIRDI — test, sahiplik senaryosunu İZOLE edemezdi.',
+            olmasaydi: 'Status Pending kalsaydı, test YANLIŞ bir kod yolunu (durum kontrolü) test etmiş OLURDU, sahiplik kontrolüne HİÇ ULAŞILMAZDI.'
+          },
+          {
+            satir: 'UserId = 5,',
+            aciklama: 'OTURUMU TARAYAN (SAHİP OLAN) kullanıcının Id\'si — Bölüm 5\'teki ScanQrLoginCommandHandler\'IN `session.UserId = request.UserId` ATAMASININ SİMÜLE EDİLMİŞ SONUCU.',
+            neden: 'Bu, BİRAZ SONRA `act`\'İN ÇAĞRISINDA KULLANILACAK OLAN `UserId = 99`\'DAN KASITLI olarak FARKLI SEÇİLMİŞTİR — TEST, SAHİPLİK KONTROLÜNÜN GERÇEKTEN İKİ FARKLI Id\'Yİ AYIRT ETTİĞİNİ KANITLAMAK İSTER.',
+            olmasaydi: 'İKİ Id AYNI OLSAYDI (ör. İKİSİ de 5), SAHİPLİK KONTROLÜ (Bölüm 6) HER ZAMAN BAŞARILI OLURDU — TEST, "YANLIŞ kullanıcı" SENARYOSUNU HİÇ TEST ETMEMİŞ OLURDU.'
+          },
+          {
+            satir: 'ExpiresAt = DateTime.UtcNow.AddMinutes(1),',
+            aciklama: 'Oturumun SÜRESİ henüz DOLMAMIŞ olarak kurulur — Bölüm 6\'daki `IsExpired` kontrolünün BAŞARISIZ (false) dönmesi, kodun sahiplik kontrolüne KADAR İLERLEYEBİLMESİ için GEREKLİDİR.',
+            neden: 'Eğer süre GEÇMİŞTE olsaydı, Handler QrSessionGoneException FIRLATIR, sahiplik kontrolüne HİÇ ULAŞILMAZDI — test, YANLIŞ bir kod yolunu İZOLE ederdi.',
+            olmasaydi: 'ExpiresAt geçmişte olsaydı, test "yanlış kullanıcı" senaryosunu DEĞİL, "süresi dolmuş oturum" senaryosunu test etmiş OLURDU.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer bloğunun ve `var session = new QrLoginSession` atamasının KAPANIŞI.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, ÜÇ alanın (Status, UserId, ExpiresAt) bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: '_passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");',
+            aciklama: 'Bölüm 9\'un İLK slaydındaki AYNI Setup — "hangi token gelirse GELSİN, sabit \'hash\' değerini dön" der.',
+            neden: 'Bu testin İLGİ ALANI hash\'in TAM değeri DEĞİL, sahiplik kontrolüdür — `It.IsAny<string>()` bunu AÇIKÇA gösterir.',
+            olmasaydi: 'Bu Setup yazılmasaydı, mock varsayılan olarak `null` dönerdi — bir sonraki Setup HİÇBİR ZAMAN eşleşmezdi.'
+          },
+          {
+            satir: '_qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);',
+            aciklama: '"hash" değeriyle arama yapılırsa, yukarıda inşa edilen `session`\'ı dön.',
+            neden: 'Bu, Handler\'ın `GetByTokenHashAsync` çağrısını SİMÜLE eder.',
+            olmasaydi: 'Bu Setup yazılmasaydı, Handler `EntityNotFoundException` fırlatırdı, YANLIŞ bir senaryoyu test etmiş OLURDUK.'
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: 'ARRANGE bölümünün SON adımı — TÜM mock\'larla DONATILMIŞ bir Handler örneği elde edilir.',
+            neden: 'Bundan sonra ACT bölümünde bu `handler` üzerinde GERÇEK metot ÇAĞRILACAKTIR.',
+            olmasaydi: 'Bu satır olmasaydı, ACT bölümündeki `handler.Handle(...)` çağrısı için bir `handler` DEĞİŞKENİ OLMAZDI.'
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, üç aşamalı yapının İKİNCİ adımı.',
+            neden: 'Bu ayrım, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, HANGİ satırın "gerçek eylem" olduğu belirsizleşirdi.'
+          },
+          {
+            satir: 'var act = () => handler.Handle(new ConfirmQrLoginCommand("token") { UserId = 99 }, default);',
+            aciklama: 'A-03/27\'deki "act" DESENİ (metodu HEMEN ÇAĞIRMAK YERİNE bir FONKSİYONA SARMAK) — `UserId = 99`, session.UserId\'DEN (5) BİLEREK FARKLI.',
+            neden: 'Bölüm 6\'daki QrLoginSessionOwnershipHelper\'IN SON KONTROLÜ (`if (session.UserId != userId)`), TAM OLARAK BU SENARYOYU (5 ≠ 99) YAKALAMALIDIR — TEST, BU KONTROLÜ İZOLE EDEREK DOĞRULAR.',
+            olmasaydi: 'Bu SATIR (VE "act" DESENİ) OLMASAYDI, `QrSessionForbiddenException`\'IN GERÇEKTEN FIRLATILDIĞINI (VE TESTİN KENDİSİNİ ÇÖKERTMEDEN) DOĞRULAMAK MÜMKÜN OLMAZDI (A-03/27\'DEKİ AYNI GEREKÇE).'
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Bu SLAYTTA İKİ testte de tekrarlanan, üç aşamalı yapının SON adımı.',
+            neden: 'Bu ayrım, testin OKUNABİLİRLİĞİNİ standartlaştırır.',
+            olmasaydi: 'Bu yapı olmadan, HANGİ satırların "kontrol" olduğu belirsizleşirdi.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<QrSessionForbiddenException>();',
+            aciklama: 'FluentAssertions\'ın "act çalıştırıldığında, TAM OLARAK QrSessionForbiddenException fırlatılmalı" doğrulaması.',
+            neden: 'Bu, Bölüm 6\'daki `if (session.UserId != userId) throw new QrSessionForbiddenException();` satırının GERÇEKTEN çalıştığını KANITLAR.',
+            olmasaydi: 'Bu doğrulama olmasaydı, sahiplik kontrolündeki bir hata (ör. koşulun TERSİNE çevrilmesi) test tarafından YAKALANMAZDI.'
+          },
+          {
+            satir: 'session.Status.Should().Be(QrLoginStatus.Scanned);',
+            aciklama: 'SAHİPLİK KONTROLÜ BAŞARISIZ OLDUĞUNDA, OTURUMUN DURUMUNUN DEĞİŞMEDEN (HÂLÂ Scanned) KALDIĞININ DOĞRULANMASI.',
+            neden: 'Bu, "YANLIŞ kullanıcı, YANLIŞLIKLA BİLE OLSA, OTURUMUN DURUMUNU ETKİLEMEMELİDİR" GARANTİSİNİ KANITLAR — Bölüm 6\'daki `session.Status = QrLoginStatus.Confirmed;` SATIRININ, EXCEPTION FIRLATILDIKTAN SONRA (KOD AKIŞI DURDUĞU İÇİN) HİÇ ÇALIŞMADIĞINI GÖSTERİR.',
+            olmasaydi: 'Bu ASSERT OLMASAYDI, TEST YALNIZCA "EXCEPTION FIRLATILDI" GERÇEĞİNİ DOĞRULARDI — Handler\'DA bir HATA OLUP (ör. EXCEPTION FIRLATMADAN ÖNCE DURUMU DEĞİŞTİREN bir KOD SIRASI HATASI) DEĞİŞMEDİĞİNİ AYRICA KANITLAMAZDI.'
+          },
+          {
+            satir: 'public async Task Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()',
+            aciklama: 'İKİNCİ test metodunun adı — Confirm (metot) + TokenNotFound (koşul) + ThrowsEntityNotFoundExceptionWithoutLeakingRawToken (beklenen sonuç, VE bir GÜVENLİK garantisi).',
+            neden: 'İsmin "WithoutLeakingRawToken" kısmı, bu testin YALNIZCA "exception fırlatıldı mı" değil, "exception mesajı GÜVENLİ mi" sorusunu da test ettiğini AÇIKÇA belirtir.',
+            olmasaydi: 'Test anlamsız bir isimle yazılsaydı, bu testin bir GÜVENLİK doğrulaması (log sızıntısı önleme) İÇERDİĞİ İSİMDEN anlaşılmazdı.'
+          },
+          {
+            satir: '_passwordService.Setup(p => p.HashToken("gecersiz-token")).Returns("opaque-sha256-abc123");',
+            aciklama: 'İKİNCİ testte, GEÇERSİZ bir token İÇİN SABİT bir HASH DEĞERİ ("opaque-sha256-abc123") TANIMLANIR — Bölüm 5\'teki ScanQrLoginCommandHandlerTests İLE AYNI DESEN.',
+            neden: 'Bu SABİT DEĞER, BİRAZ SONRAKİ ASSERT\'TE (`sonuc.Which.Message.Should().Contain(...)`) KULLANILACAK — TEST, GERÇEK bir SHA-256 HASH\'İ HESAPLAMAK YERİNE, "HERHANGİ bir HASH DEĞERİ" TEMSİLİ OLARAK BU OPAK STRING\'İ KULLANIR.',
+            olmasaydi: 'Bu SETUP OLMASAYDI, `HashToken` ÇAĞRISI VARSAYILAN OLARAK `null` (VEYA BOŞ STRING) DÖNERDİ — `GetByTokenHashAsync` ÇAĞRISINA GEÇİRİLECEK ANLAMLI bir DEĞER OLMAZDI.'
+          },
+          {
+            satir: '_qrRepo',
+            aciklama: 'Bir sonraki İKİ satırla BİRLİKTE, çok-satırlı TEK bir Setup zincirinin BAŞLANGICI — mock nesnesi KENDİ satırında BAŞLAR.',
+            neden: 'Bu Setup, "opaque-sha256-abc123" hash\'i İLE arama YAPILIRSA `null` (bulunamadı) dönmesini KURAR — çağrının UZUN olması (iki parametreli Setup + ReturnsAsync) çok-satırlı yazımı GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `.Setup(...)` çağrısının HANGİ nesneye AİT olduğu belirsiz KALIRDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: '.Setup(r => r.GetByTokenHashAsync("opaque-sha256-abc123", default))',
+            aciklama: 'Bir üstteki HashToken Setup\'ının ÜRETTİĞİ sabit hash değeriyle EŞLEŞEN bir arama SETUP\'I.',
+            neden: 'Bu, "geçersiz-token" HAM değerinin hash\'lenmiş HALİNİN, veritabanında BULUNAMADIĞI" senaryosunu SİMÜLE eder.',
+            olmasaydi: 'Bu Setup olmasaydı, `GetByTokenHashAsync` çağrısı VARSAYILAN olarak `null` dönerdi — TESADÜFEN doğru davranırdı ama testin NİYETİNİ gizlerdi.'
+          },
+          {
+            satir: '.ReturnsAsync((QrLoginSession?)null);',
+            aciklama: '"Bu hash ile HİÇBİR oturum BULUNAMADI" senaryosunu AÇIKÇA kurar — `(QrLoginSession?)null` tip DÖNÜŞTÜRMESİ, derleyicinin dönüş tipini DOĞRU ÇIKARSAMASI için GEREKLİDİR.',
+            neden: 'Bu, Bölüm 5-6\'daki `?? throw new EntityNotFoundException(...)` dalının TETİKLENMESİ için gereken SAHTE veridir.',
+            olmasaydi: 'Bu satır olmasaydı, mock çağrıldığında VARSAYILAN davranışına (genelde null) DÖNERDİ — TESADÜFEN doğru olsa da, NİYETİ AÇIKÇA belgelemezdi.'
+          },
+          {
+            satir: 'var act = () => handler.Handle(new ConfirmQrLoginCommand("gecersiz-token") { UserId = 5 }, default);',
+            aciklama: 'Metot HEMEN çağrılmaz — bir `act` fonksiyonuna SARILIR, çünkü bir EXCEPTION (EntityNotFoundException) BEKLENİR.',
+            neden: '"gecersiz-token", bu testin SENARYOSUNU (bulunamayan bir token) taşıyan HAM değer — bir üstteki HashToken Setup\'ındaki AYNI string İLE eşleşmesi ZORUNLUDUR.',
+            olmasaydi: 'Bu kalıp kullanılmasaydı, exception fırlatıldığı an test çalışması KESİLİRDİ — "beklenmedik hata" olarak KIRMIZI görünürdü.'
+          },
+          {
+            satir: 'var sonuc = await act.Should().ThrowAsync<EntityNotFoundException>();',
+            aciklama: 'A-03/27\'deki (VerifyLoginOtpCommandHandlerTests) AYNI DESEN — `ThrowAsync`\'İN DÖNÜŞ DEĞERİ (FIRLATILAN EXCEPTION\'IN KENDİSİ), BİR DEĞİŞKENE (`sonuc`) ATANIR, BİR SONRAKİ SATIRDA İNCELENMEK ÜZERE.',
+            neden: 'FluentAssertions\'IN `ThrowAsync<T>()`, YALNIZCA "böyle bir exception FIRLATILDI Mİ" SORUSUNU DEĞİL, O EXCEPTION NESNESİNİN KENDİSİNİ de DÖNER — BU, EXCEPTION\'IN İÇERİĞİNİ (Message GİBİ) DE İNCELEMEYİ SAĞLAR.',
+            olmasaydi: 'Bu ATAMA OLMASAYDI, EXCEPTION\'IN `Message`\'INA (BİR SONRAKİ satırda) ERİŞİLEMEZDİ — TEST YALNIZCA "BİR EXCEPTION FIRLATILDI" GERÇEĞİNİ DOĞRULAYABİLİRDİ, İÇERİĞİNİ DEĞİL.'
+          },
+          {
+            satir: 'sonuc.Which.Message.Should().NotContain("gecersiz-token");',
+            aciklama: 'Bölüm 4-5\'te DEFALARCA GÖRDÜĞÜMÜZ "exception MESAJI HAM token\'I DEĞİL, HASH\'İNİ TAŞIR" İDDİASININ KANITI — HAM token ("gecersiz-token"), MESAJDA HİÇ GEÇMEMELİDİR.',
+            neden: '`.Which`, FluentAssertions\'IN `ThrowAsync` SONUCUNDAKİ EXCEPTION NESNESİNE ERİŞMENİN SÖZDİZİMİDİR — BU ASSERT, Bölüm 5\'teki `EntityNotFoundException(typeof(QrLoginSession), tokenHash)` SATIRINDAKİ İKİNCİ PARAMETRENİN GERÇEKTEN `tokenHash` (HASH) OLDUĞUNU, `qrToken` (HAM DEĞER) OLMADIĞINI DOĞRULAR.',
+            olmasaydi: 'Bu ASSERT OLMASAYDI, BİR GELECEKTEKİ REFACTOR YANLIŞLIKLA `EntityNotFoundException(typeof(QrLoginSession), qrToken)` (HAM DEĞERLE) YAZSA BİLE TEST BUNU FARK ETMEZDİ — HAM, GEÇERLİ bir QR token\'I LOG DOSYALARINA (exception MESAJLARI LOGLANIR) SIZARDI, BU TESTİN VARLIK SEBEBİ ORTADAN KALKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'GetStatus_ExpiredSession testı, Bölüm 7\'deki "Expired = 200, EXCEPTION DEĞİL" mimari KARARINI dönüş DEĞERİYLE de, ENTİTE durumuyla da DOĞRULAR',
+          'GetStatus_ConsumedSession testı, Consumed\'ın GERÇEKTEN 410 fırlattığını VE CompleteLoginAsync\'İN İKİNCİ kez ÇAĞRILMADIĞINI kanıtlar',
+          'Confirm_WrongUser testı, sahiplik KONTROLÜNÜN oturumun DURUMUNU DEĞİŞTİRMEDEN başarısız OLDUĞUNU doğrular',
+          'Confirm_TokenNotFound testı, exception mesajının HAM token\'ı DEĞİL hash\'i TAŞIDIĞINI — bir LOG SIZINTISI senaryosunu — DOĞRUDAN kanıtlar'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

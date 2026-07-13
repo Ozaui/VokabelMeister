@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VerifyEmail + ResendVerification</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'verify-email-resend',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '11_jwt-refresh-token.html',
+    sonrakiBolum: '14_login-otp.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 20',
+        baslik: 'VerifyEmail + ResendVerification',
+        altBaslik: 'Register (Bölüm 15) bir kullanıcı YARATTI ve bir OTP GÖNDERDİ — ama o OTP nerede TÜKETİLİYOR? Ve kod gelmezse ne olur?'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Register\'ın Bıraktığı Yarım İş',
+        aciklama: 'RegisterCommandHandler (Bölüm 15) bir User oluşturdu, `PendingOtpCodeHash`/`PendingOtpCodeExpiresAt`/`PendingOtpCodePurpose` alanlarını doldurdu ve e-postaya bir OTP gönderdi — ama `IsEmailVerified` hâlâ `false`. Bu iki Command, o "yarım kalan" işi TAMAMLAR: VerifyEmailCommand kodu doğrulayıp hesabı aktive eder, ResendVerificationCommand ise kod hiç gelmediyse/süresi dolduysa yenisini ister.',
+        neden: 'Bu ikisi AYRI Command\'lardır çünkü FARKLI HTTP metotlarına, FARKLI girdilere ve FARKLI hata senaryolarına karşılık gelir — CLAUDE.md §3\'teki "her Command kendi dosyasında" ilkesi burada da geçerli, "ikisi de OTP\'yle ilgili" diye TEK bir Command\'a birleştirilmezler.',
+        olmasaydi: 'VerifyEmailCommand olmasaydı, Register sonrası hiçbir kullanıcı hesabını AKTİVE EDEMEZDİ — IsEmailVerified sonsuza kadar false kalırdı. ResendVerification olmasaydı, e-postası spam klasörüne düşen ya da OTP\'nin 10 dakikalık ömrünü kaçıran bir kullanıcı SONSUZA kadar kilitli kalırdı — hesabını silip yeniden kaydolmaktan başka çaresi olmazdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyEmailCommand.cs — Kodu Doğrula, Hesabı Aktive Et',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/VerifyEmailCommand.cs',
+        nedenBuKlasor: 'Features/Auth/ altında, RegisterCommand.cs ile aynı klasörde — CLAUDE.md §5: her Command kendi dosyasında, ama hepsi aynı feature klasöründe.',
+        kod: `public record VerifyEmailCommand(string Email, string OtpCode) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
+
+public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, MessageResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IOtpService _otpService;
+
+    public VerifyEmailCommandHandler(IUserRepository userRepository, IOtpService otpService)
+    {
+        _userRepository = userRepository;
+        _otpService = otpService;
+    }
+
+    public async Task<MessageResponse> Handle(VerifyEmailCommand request, CancellationToken ct)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+        _otpService.Validate(user, request.OtpCode, OtpPurpose.EmailVerification);
+
+        user!.IsEmailVerified = true;
+        user.EmailVerifiedAt = DateTime.UtcNow;
+        _otpService.Clear(user);
+        await _userRepository.UpdateAsync(user, user.Id, ct);
+
+        return new MessageResponse("EMAIL_VERIFIED", SuccessMessages.Resolve("EMAIL_VERIFIED", request.Language));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record VerifyEmailCommand(string Email, string OtpCode) : IRequest<MessageResponse>',
+            aciklama: 'RegisterCommand\'dan (4 alan) FARKLI olarak yalnızca 2 alan taşır — e-posta VE kodun kendisi. Dönüş tipi `MessageResponse` (Bölüm 15\'teki RegisterResponse GİBİ bir DTO DEĞİL) — bu endpoint token DÖNMEZ, yalnızca "işlem başarılı" bilgisini taşır.',
+            neden: 'Bu Command\'ın token DÖNDÜRMEMESİ bilinçlidir: e-posta doğrulamak "giriş yapmak" DEĞİLDİR — kullanıcı hâlâ AYRICA Login akışından (Bölüm 21) geçmelidir, iki adım birbirine KARIŞTIRILMAZ.',
+            olmasaydi: 'Bu Command RegisterResponse gibi bir DTO döndürseydi (ya da token üretseydi), "e-postamı doğruladım" ile "giriş yaptım" arasındaki KAVRAMSAL FARK bulanıklaşırdı — bir saldırganın, çaldığı bir OTP koduyla (giriş yapmadan) doğrudan hesaba erişebileceği YANLIŞ bir güvenlik varsayımı doğardı.'
+          },
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: '`init` (yalnızca oluşturulurken set edilebilir) bir property — Command\'ın gövdesinde (body) GELMEZ, Controller isteğin `Accept-Language` header\'ından okuyup `with` ifadesiyle SONRADAN ekler (A-03.2\'de detaylı göreceğiz).',
+            neden: 'MediatR\'ın Command\'ları `record` olması (Bölüm 12), bu tür "gövdede yok ama Handler\'ın ihtiyaç duyduğu" alanları `init`-only property olarak EKLEMEYİ mümkün kılar — `record`\'un ana constructor parametreleri (Email, OtpCode) JSON\'dan GELİR, bu property JSON DIŞINDA, Controller tarafından doldurulur.',
+            olmasaydi: 'Bu alan olmasaydı, Handler\'ın SON satırındaki `SuccessMessages.Resolve("EMAIL_VERIFIED", request.Language)` çağrısına GEÇİRİLECEK bir dil bilgisi OLMAZDI — mesaj her zaman VARSAYILAN dile (Türkçe) düşerdi, Almanca isteyen bir istemci de Türkçe mesaj alırdı.'
+          },
+          {
+            satir: 'public class VerifyEmailCommandHandler : IRequestHandler<VerifyEmailCommand, MessageResponse>',
+            aciklama: 'Bölüm 15\'teki RegisterCommandHandler ile AYNI desende, MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — bu kez dönüş tipi RegisterResponse DEĞİL, MessageResponse.',
+            neden: 'İmza, yukarıdaki VerifyEmailCommand\'ın `IRequest<MessageResponse>` implemente etmesiyle EŞLEŞİR — MediatR bu iki tipi karşılaştırarak `_mediator.Send(new VerifyEmailCommand(...))` çağrısını DOĞRU Handler\'a yönlendirir.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ ya da YANLIŞ bir Handler\'a yönlendirirdi — bu uyuşmazlık, uygulama AÇILIRKEN DI konteyneri tarafından fark edilip hata olarak fırlatılırdı.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Bölüm 15\'teki RegisterCommandHandler\'daki AYNI arayüz — burada kullanıcıyı e-postasıyla bulmak ve doğrulama sonrası güncellemek için kullanılır.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır — Bölüm 16\'daki "arayüz sayesinde mock\'lanabilir" ilkesi burada da GEÇERLİDİR.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, bu Handler\'ı test etmek (Bölüm 16\'daki desenle) GERÇEK bir SQL Server bağlantısı GEREKTİRİRDİ.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bölüm 15\'teki PAYLAŞILAN OTP servisi — bu Handler\'da OTP üretmek için DEĞİL, doğrulamak (`Validate`) ve temizlemek (`Clear`) için kullanılacak.',
+            neden: 'OTP doğrulama/temizleme mantığı, Register\'daki OTP ÜRETME mantığıyla AYNI serviste toplanır — CLAUDE.md §3\'teki "paylaşılan mantık ortak bir servise çıkarılır" kuralının somut örneği.',
+            olmasaydi: 'Bu servis olmasaydı, OTP doğrulama mantığı (hash karşılaştırma, süre kontrolü) bu Handler\'da AYRICA YAZILIRDI — Register\'daki üretim mantığından KOPUK, tutarsız bir kopya oluşurdu.'
+          },
+          {
+            satir: 'public VerifyEmailCommandHandler(IUserRepository userRepository, IOtpService otpService)',
+            aciklama: 'Yalnızca İKİ bağımlılık olduğu için constructor TEK satırda yazılabiliyor — Bölüm 15\'teki 5 parametreli constructor\'ın AKSİNE, parametre listesi ayrı satırlara BÖLÜNMEZ.',
+            neden: 'Bu Handler\'ın işi (kod doğrula + hesabı aktive et) Register\'dan DAHA DAR kapsamlı — yalnızca e-posta sorgusu ve OTP servisi yeterli, IPasswordService/IEmailService/IMapper GEREKMEZ.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri VerifyEmailCommandHandler\'ı OLUŞTURAMAZ, `_userRepository`/`_otpService` alanları HİÇBİR ZAMAN DOLDURULMAZDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Constructor parametresi, sınıfın ALANINA atanır — Bölüm 15\'teki AYNI atama deseni.',
+            neden: 'Bu atama, DI\'dan gelen nesneyi Handler\'ın YAŞAM SÜRESİ boyunca ERİŞİLEBİLİR kılar — parametre yalnızca constructor içinde geçerliyken, alan `Handle` metodunda da KULLANILABİLİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI — `Handle` metodundaki İLK `_userRepository.GetByEmailAsync(...)` çağrısı NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'Bir üsttekiyle AYNI desen — otpService parametresi, `_otpService` alanına atanır.',
+            neden: 'İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı — `Validate`/`Clear` çağrıları NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<MessageResponse> Handle(VerifyEmailCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın `IRequestHandler` sözleşmesinin ZORUNLU kıldığı tek metot — `_mediator.Send(command)` çağrıldığında ÇALIŞTIRILAN yer BURASIDIR.',
+            neden: 'İmza, Bölüm 15\'teki Handle ile AYNI kalıbı (Command\'ı ve CancellationToken\'ı parametre olarak alma) izler, yalnızca Command/Response tipleri DEĞİŞİR.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, `_mediator.Send(new VerifyEmailCommand(...))` çağrısı çalışma zamanında "Handler bulunamadı" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, ct);',
+            aciklama: 'Bölüm 16\'daki (Repository Katmanı) AYNI `GetByEmailAsync` — soft-delete filtresini BİLEREK yok sayar, çünkü grace-period\'daki bir kullanıcı da e-postasını doğrulayabilmeli.',
+            neden: 'Bu satır, `user` değişkenini `null` DÖNDÜREBİLİR (e-posta yoksa) — ama bir sonraki satırda hemen `_otpService.Validate(user, ...)` çağrılır, `null` kontrolü BURADA yapılmaz, bu BİLİNÇLİ bir tasarım (bir sonraki satıra bak).',
+            olmasaydi: 'Bu satır olmasaydı, `user` değişkeni hiç TANIMLANMAZDI — kodun geri kalanı derlenemezdi.'
+          },
+          {
+            satir: '_otpService.Validate(user, request.OtpCode, OtpPurpose.EmailVerification);',
+            aciklama: 'Bölüm 15\'teki OtpService\'in `Validate` metodu — `user` `null` OLSA BİLE çağrılır; metodun içindeki `isValid` ifadesi `user is not null &&...` ile başladığı için `null` bir kullanıcı DOĞAL olarak "geçersiz" sayılır ve `InvalidOtpException` fırlatılır.',
+            neden: 'Bu, "e-posta numaralandırma" (email enumeration) saldırısına karşı BİLİNÇLİ bir savunma: var olmayan bir e-posta için "kullanıcı yok" DEMEK yerine, var olan ama YANLIŞ kod girilmiş bir e-postayla AYNI hatayı (`InvalidOtpException`, 400) döner — bir saldırgan bu iki durumu birbirinden AYIRT EDEMEZ, hangi e-postaların sistemde kayıtlı olduğunu bu şekilde ÖĞRENEMEZ.',
+            olmasaydi: 'Bu metot yerine önce `if (user is null) throw new EntityNotFoundException(...)` yazılsaydı, "kullanıcı yok" (404) ile "kod yanlış" (400) FARKLI durum kodları/mesajları dönerdi — bir saldırgan, hangi e-postaların sistemde OLDUĞUNU deneme-yanılmayla ÖĞRENEBİLİRDİ.'
+          },
+          {
+            satir: 'user!.IsEmailVerified = true;',
+            aciklama: '`!` (null-forgiving operatör) — bir üstteki `Validate` çağrısı EXCEPTION FIRLATMADAN geçtiyse, `user`\'ın KESİNLİKLE `null` OLMADIĞINI (Validate içindeki `isValid` kontrolü zaten bunu garanti etti) derleyiciye söyler.',
+            neden: 'C# derleyicisi, `Validate` metodunun İÇİNDE `user`\'ı `null`-kontrol ettiğini BİLEMEZ (bu bilgi metot sınırını AŞMAZ) — `!` operatörü, "ben bu satıra kadar geldiysem user\'ın dolu olduğunu BEN garanti ediyorum" demenin C# yoludur.',
+            olmasaydi: '`!` yazılmasaydı, Nullable ayarı açıkken (A-02/01) derleyici bu satırda bir UYARI verirdi ("user null olabilir") — kod YİNE ÇALIŞIRDI ama derleme çıktısı gereksiz uyarılarla KİRLENİRDİ, gerçek null-güvenliği sorunlarını FARK ETMEK zorlaşırdı.'
+          },
+          {
+            satir: 'user.EmailVerifiedAt = DateTime.UtcNow;',
+            aciklama: '"Ne zaman doğrulandı" bilgisi UTC olarak kaydedilir — `IsEmailVerified` bayrağının YANINDA duran bir zaman damgası.',
+            neden: 'Yalnızca `true`/`false` bir bayrak, "NE ZAMAN doğrulandı" sorusunu CEVAPLAYAMAZ — ör. ileride bir destek talebinde "bu kullanıcı e-postasını ne zaman doğruladı" sorusu bu alan olmadan CEVAPSIZ kalırdı.',
+            olmasaydi: 'Bu alan olmasaydı, `IsEmailVerified = true` olsa bile DOĞRULAMA ANI kaybolurdu — audit/destek senaryolarında "ne zaman" bilgisi GERİ GETİRİLEMEZDİ.'
+          },
+          {
+            satir: '_otpService.Clear(user);',
+            aciklama: 'Bölüm 15\'teki OtpService.Clear — kullanılan OTP\'nin `PendingOtpCodeHash`/`ExpiresAt`/`Purpose` alanlarını TEMİZLER.',
+            neden: 'Bir OTP kodu TEK KULLANIMLIKTIR — doğrulama BAŞARILI olduktan sonra AYNI kodun TEKRAR kullanılabilir kalması (ör. biri bu kodu ele geçirdiyse) gereksiz bir güvenlik RİSKİ taşırdı.',
+            olmasaydi: 'Bu satır olmasaydı, kullanılmış OTP kodu veritabanında DOLU kalırdı — kod SÜRESİ dolmadan (10 dakika içinde) BİRİ bu kodu ele geçirirse, AYNI kodu TEKRAR "doğrulama" için kullanabilirdi (pratikte zararsız çünkü `IsEmailVerified` zaten `true`, ama YİNE DE gereksiz bir SALDIRI YÜZEYİ).'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Bölüm 16\'daki Repository<T>.UpdateAsync — `IsEmailVerified`/`EmailVerifiedAt`/OTP temizliği TEK bir veritabanı yazımında KALICI hale gelir.',
+            neden: '`user.Id` burada `userId` parametresi olarak GEÇİRİLİR — Register\'daki `AddAsync(user, ct: ct)`\'ten (userId `null`, çünkü henüz kimlik yoktu) FARKLI olarak, burada zaten kimliği bilinen bir kullanıcı KENDİ kaydını güncelliyor.',
+            olmasaydi: 'Bu satır olmasaydı, `IsEmailVerified = true` değişikliği yalnızca BELLEKTE kalırdı — veritabanında hâlâ `false` görünürdü, kullanıcı Login\'de "e-postanız doğrulanmamış" hatasıyla KARŞILAŞMAYA devam ederdi.'
+          },
+          {
+            satir: 'return new MessageResponse("EMAIL_VERIFIED", SuccessMessages.Resolve("EMAIL_VERIFIED", request.Language));',
+            aciklama: 'Sabit bir KOD (`"EMAIL_VERIFIED"`) + isteğin diline göre ÇÖZÜLMÜŞ bir metin — Bölüm 22\'de (Mesaj Lokalizasyonu) bu deseni tüm ayrıntısıyla göreceğiz.',
+            neden: 'MessageResponse DTO\'su (RegisterResponse gibi bir AutoMapper dönüşümü GEREKTİRMEZ, CLAUDE.md §3\'teki "koşullu AutoMapper" kuralı) ELLE inşa edilir — `Code` sabit, `Message` isteğin diline göre DEĞİŞİR.',
+            olmasaydi: '`SuccessMessages.Resolve(...)` yerine sabit bir Türkçe string ("E-posta doğrulandı.") yazılsaydı, Almanca kullanan bir istemci de Türkçe bir mesaj GÖRÜRDÜ — CLAUDE.md\'nin "istemciye giden mesaj dile göre kalır" kuralı ihlal edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ResendVerificationCommand.cs — Kod Gelmediyse Yenisini İste',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/ResendVerificationCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record ResendVerificationCommand(string Email) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+}
+
+public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificationCommand, MessageResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
+
+    public ResendVerificationCommandHandler(
+        IUserRepository userRepository,
+        IOtpService otpService,
+        IEmailService emailService
+    )
+    {
+        _userRepository = userRepository;
+        _otpService = otpService;
+        _emailService = emailService;
+    }
+
+    public async Task<MessageResponse> Handle(ResendVerificationCommand request, CancellationToken ct)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+        if (user is not null && !user.IsEmailVerified)
+        {
+            var (otpCode, otpHash) = _otpService.Generate();
+            user.PendingOtpCodeHash = otpHash;
+            user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
+            user.PendingOtpCodePurpose = OtpPurpose.EmailVerification;
+            await _userRepository.UpdateAsync(user, user.Id, ct);
+            await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
+        }
+
+        return new MessageResponse(
+            "VERIFICATION_CODE_SENT",
+            SuccessMessages.Resolve("VERIFICATION_CODE_SENT", request.Language)
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record ResendVerificationCommand(string Email) : IRequest<MessageResponse>',
+            aciklama: 'Yalnızca 1 alan (Email) — hangi kod olduğunu bilmiyoruz, hangi kullanıcının YENİ bir kod istediğini biliyoruz.',
+            neden: 'Bu Command "eski kodu geçersiz kıl, yenisini üret" der — eski kodun DEĞERİNİ bilmesine GEREK YOKTUR, çünkü yeni bir `Generate()` çağrısı zaten eski hash\'in ÜZERİNE yazar.',
+            olmasaydi: 'Bu Command da OtpCode alsaydı (VerifyEmailCommand gibi), kullanıcının "eski kodu hatırlaması" GEREKİRDİ — oysa bu endpoint\'in TAM AMACI, kullanıcının eski kodu HİÇ ALMADIĞI/KAYBETTİĞİ senaryodur.'
+          },
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: 'VerifyEmailCommand\'daki (bir üstteki slayt) İLE BİREBİR AYNI desen — Controller, isteğin `Accept-Language` header\'ından okuyup bu alanı SONRADAN doldurur.',
+            neden: 'Bu Command da JSON gövdesi DIŞINDAN gelen bir dil bilgisine ihtiyaç duyar — Handler\'ın SON satırındaki `SuccessMessages.Resolve` çağrısı bu alanı KULLANACAKTIR.',
+            olmasaydi: 'Bu alan olmasaydı, dönen mesaj her zaman VARSAYILAN dile (Türkçe) düşerdi — Almanca isteyen bir istemci de Türkçe "kod gönderildi" mesajı ALIRDI.'
+          },
+          {
+            satir: 'public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificationCommand, MessageResponse>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — VerifyEmailCommandHandler ile AYNI dönüş tipi (MessageResponse), FARKLI Command.',
+            neden: 'İmza, yukarıdaki ResendVerificationCommand\'ın `IRequest<MessageResponse>` implemente etmesiyle EŞLEŞİR — MediatR bu ikisini karşılaştırarak DOĞRU Handler\'ı bulur.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında "Handler bulunamadı" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı e-postasıyla bulmak VE (kod gönderilecekse) OTP alanlarını güncellemek için kullanılır — VerifyEmailCommandHandler\'daki AYNI arayüz.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır — test edilebilirlik (Bölüm 16) burada da GEÇERLİDİR.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, bu Handler\'ı test etmek GERÇEK bir veritabanı bağlantısı GEREKTİRİRDİ.'
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Bölüm 15\'teki PAYLAŞILAN OTP servisi — bu kez `Generate()` metodu, Register\'daki AYNI amaçla (yeni bir kod üretmek için) ÇAĞRILACAK.',
+            neden: 'Yeniden gönderme, "yepyeni bir OTP üret" işlemidir — bu servis olmadan OTP üretim mantığı (rastgele kod + hash) Handler\'da AYRICA YAZILIRDI.',
+            olmasaydi: 'Bu servis olmasaydı, OTP üretim mantığı Register\'daki koddan KOPYALANIRDI — bir gün OTP formatı değişse İKİ yerin de güncellenmesi GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Yeni üretilen kodu KULLANICIYA göndermek için — VerifyEmailCommandHandler\'da HİÇ olmayan, ama Register\'daki (Bölüm 15) AYNI bağımlılık.',
+            neden: 'Bu Command\'ın TÜM amacı "yeni bir doğrulama e-postası gönder" olduğu için, IEmailService bu Handler\'ın ÇEKİRDEK bağımlılıklarından biridir.',
+            olmasaydi: 'Bu bağımlılık olmasaydı, yeni üretilen OTP kodu HİÇBİR ZAMAN kullanıcıya ULAŞMAZDI — veritabanında yeni bir kod dursa bile kullanıcı bunu ASLA GÖREMEZDİ.'
+          },
+          {
+            satir: 'public ResendVerificationCommandHandler(',
+            aciklama: 'Üç bağımlılık olduğu için constructor, Bölüm 15\'teki RegisterCommandHandler gibi PARAMETRELERİ ayrı satırlara BÖLER (VerifyEmailCommandHandler\'ın tek satırlık constructor\'ının AKSİNE).',
+            neden: 'Parametre sayısı arttıkça (2\'den 3\'e), tek satırda yazım OKUNABİLİRLİĞİ bozmaya BAŞLAR — bu proje bu eşikte çok-satırlı yazıma GEÇER.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri ResendVerificationCommandHandler\'ı OLUŞTURAMAZ, üç alan da HİÇBİR ZAMAN DOLDURULMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi — DI konteynerinin OTOMATİK sağladığı repository.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER ama alt çizgi öneki OLMADAN tutulur — hangi parametrenin hangi alana ATANDIĞINI OKUYUCUYA gösterir.',
+            olmasaydi: 'Bu parametre olmasaydı, aşağıdaki `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'İkinci parametre — OTP üretim/doğrulama servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR — kod okuyan birinin hangi alanın hangi parametreye karşılık geldiğini HIZLICA anlamasını sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_otpService = otpService;` atanamaz, Handler YENİ bir OTP kodu ÜRETEMEZDİ.'
+          },
+          {
+            satir: 'IEmailService emailService',
+            aciklama: 'ÜÇÜNCÜ ve SON parametre — sonunda virgül YOK, çünkü parametre listesinin son elemanı.',
+            neden: 'E-posta servisinin de arayüz üzerinden enjekte edilmesi, testte (Bölüm 16\'daki desenle) GERÇEK e-posta göndermeden bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_emailService = emailService;` atanamaz, Handler kullanıcıya YENİ kodu İÇEREN e-postayı ASLA gönderemezdi.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI — bir sonraki satırdaki `{` ile constructor GÖVDESİ başlar.',
+            neden: 'Çok-satırlı parametre listelerinde, kapanış parantezinin KENDİ satırında durması, hangi parametrenin listenin SONU olduğunu görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı (parantez başka bir satırla BİRLEŞTİRİLSEYDİ), kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca çok-satırlı parametre listesi okunması ZORLAŞIRDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama — userRepository parametresi, `_userRepository` alanına atanır.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR — DI constructor\'larında sıkıcı, öngörülebilir tekrar kod incelemesini HIZLANDIRIR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI — `Handle` metodundaki İLK sorgu NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'İKİNCİ atama — otpService parametresi, `_otpService` alanına atanır.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_otpService` null kalırdı — `Generate()` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'SON atama — emailService parametresi, `_emailService` alanına atanır.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_emailService` null kalırdı — kod gönderme çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<MessageResponse> Handle(ResendVerificationCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot — bu Command GÖNDERİLDİĞİNDE çalıştırılan yer.',
+            neden: 'İmza, diğer Handler\'lardaki (Bölüm 15, bir üstteki slayt) AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, ct);',
+            aciklama: 'Bölüm 16\'daki AYNI sorgu — kullanıcı VARSA döner, yoksa `null` döner (bir sonraki satırda `null` durumu AYRICA ele alınacak).',
+            neden: 'Bu Command\'da da (VerifyEmailCommand gibi) `null` kontrolü HEMEN bir exception FIRLATMAZ — e-posta numaralandırma önlemi, bir sonraki `if` satırında UYGULANIR.',
+            olmasaydi: 'Bu satır olmasaydı, `user` değişkeni hiç TANIMLANMAZDI — kodun geri kalanı derlenemezdi.'
+          },
+          {
+            satir: 'if (user is not null && !user.IsEmailVerified)',
+            aciklama: 'İKİ koşul BİRDEN kontrol edilir: kullanıcı VAR MI, VE e-postası HENÜZ doğrulanmamış mı — ikisi de sağlanmazsa hiçbir şey YAPILMAZ (ama fonksiyon YİNE DE aynı başarı mesajıyla DÖNER, bir sonraki slaytta göreceğiz).',
+            neden: 'Bu, ForgotPasswordCommand\'daki (Bölüm 24) İLE BİREBİR AYNI "e-posta numaralandırma önleme" deseni: kullanıcı yoksa VEYA zaten doğrulanmışsa, sistem SESSİZCE hiçbir şey YAPMAZ ama YİNE DE "kod gönderildi" gibi GÖRÜNEN bir yanıt döner — bir saldırgan bu yanıttan "bu e-posta sistemde var mı" bilgisini ÇIKARAMAZ.',
+            olmasaydi: 'Bu kontrol olmasaydı (ya da yalnızca `user is not null` olsaydı), ZATEN doğrulanmış bir e-posta için de YENİ bir OTP üretilip GÖNDERİLİRDİ — hem gereksiz e-posta trafiği hem de "e-postam zaten doğrulanmıştı, neden tekrar kod geldi" gibi kullanıcı KAFA KARIŞIKLIĞI.'
+          },
+          {
+            satir: 'var (otpCode, otpHash) = _otpService.Generate();',
+            aciklama: 'Bölüm 15\'teki RegisterCommandHandler\'daki AYNI çağrı — YENİ bir kod + hash üretir, ESKİ kod (varsa) bir sonraki satırlarda ÜZERİNE YAZILARAK geçersiz kılınır.',
+            neden: 'Yeni bir OTP üretmek, ESKİ OTP\'yi OTOMATİK geçersiz kılar (aynı `PendingOtpCodeHash` alanı ÜZERİNE yazılır) — kullanıcının artık YALNIZCA en son gönderilen kod ile doğrulama yapabilmesi, eski/sızmış bir kodun SONSUZA kadar geçerli KALMAMASINI sağlar.',
+            olmasaydi: 'Yeni bir kod üretilmeseydi, kullanıcı ESKİ (belki spam klasörüne düşmüş, belki süresi dolmuş) koda MAHKUM kalırdı — "kodu tekrar gönder" özelliğinin TÜM AMACI ortadan kalkardı.'
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = otpHash;',
+            aciklama: 'Yeni üretilen OTP\'nin HASH\'i, kullanıcının bekleyen OTP alanına yazılır — Bölüm 15\'teki RegisterCommandHandler\'daki AYNI atama.',
+            neden: 'Bu atama, eski (varsa) hash\'in ÜZERİNE yazar — bu, ResendVerification\'ın "eski kodu geçersiz kıl" davranışının SOMUT gerçekleştiği satırdır.',
+            olmasaydi: 'Bu satır olmasaydı, veritabanındaki hash DEĞİŞMEZDİ — kullanıcı yeni e-postadaki kodu girdiğinde, sistem hâlâ ESKİ hash ile KARŞILAŞTIRMA yapardı, yeni kod HİÇBİR ZAMAN KABUL EDİLMEZDİ.'
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);',
+            aciklama: 'Yeni kodun süresi, ŞU ANDAN itibaren (eski kodun süresi DEĞİL) yeniden hesaplanır.',
+            neden: 'Kullanıcı "kodu tekrar gönder"e bastığında, TAZE bir 10 dakikalık pencere BEKLER — eski kodun kalan süresinden devam etseydi, kullanıcı "az önce istedim ama hâlâ 2 dakikam mı var" gibi ŞAŞIRTICI bir davranışla karşılaşırdı.',
+            olmasaydi: 'Bu satır olmasaydı (eski ExpiresAt korunsaydı), kullanıcı ZATEN süresi dolmak üzere olan bir kodun ÜZERİNE yeni bir kod alır ama SÜRE YİNE DE hemen dolardı — "tekrar gönder" özelliği kullanıcıyı YETERİNCE RAHATLATMAZDI.'
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose = OtpPurpose.EmailVerification;',
+            aciklama: 'OTP\'nin AMACI, yeniden aynı değerle (e-posta doğrulama) SET edilir — Bölüm 15\'teki OtpPurpose alanının AYNI kullanımı.',
+            neden: 'Bu değer teorik olarak DEĞİŞMEDİ (zaten EmailVerification\'dı) — ama Handler bunu AÇIKÇA yeniden yazar, çünkü `Generate()` ile üretilen HER yeni OTP\'nin amacı EXPLICIT olarak belirtilmelidir (CLAUDE.md\'nin "amaç karışıklığı" güvenlik ilkesi, Bölüm 15).',
+            olmasaydi: 'Bu satır olmasaydı (ya da yanlış bir amaç yazılsaydı), bu yeni OTP kodu YANLIŞ bir akışta (ör. şifre sıfırlama) YANLIŞLIKLA kabul edilebilirdi.'
+          },
+          {
+            satir: 'await _userRepository.UpdateAsync(user, user.Id, ct);',
+            aciklama: 'Bölüm 16\'daki Repository<T>.UpdateAsync — üç OTP alanındaki DEĞİŞİKLİK TEK bir veritabanı yazımında KALICI hale gelir.',
+            neden: 'Bu satır, e-posta gönderiminden ÖNCE çalışır — Bölüm 15\'teki Register\'daki AYNI sıralama ilkesi (önce veritabanı, sonra e-posta) burada da UYGULANIR.',
+            olmasaydi: 'Bu satır olmasaydı, yeni OTP hash\'i yalnızca BELLEKTE kalırdı — veritabanında hâlâ ESKİ hash görünürdü, kullanıcı yeni e-postadaki kodu girse bile doğrulama BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);',
+            aciklama: 'Bölüm 15\'teki RegisterCommandHandler\'ın kullandığı AYNI e-posta metodu — kod TEKRAR, aynı şablonla gönderilir.',
+            neden: 'Aynı IEmailService metodunun HEM Register HEM ResendVerification tarafından ÇAĞRILMASI, "e-posta doğrulama kodu" e-postasının TEK bir yerde tanımlı olmasını sağlar — iki farklı Handler, iki farklı e-posta ŞABLONU YAZMAZ.',
+            olmasaydi: 'Register ve ResendVerification FARKLI e-posta metotları/şablonları kullansaydı, bir gün e-posta metninde değişiklik gerektiğinde İKİ yerin de GÜNCELLENMESİ gerekirdi — biri unutulursa kullanıcı TUTARSIZ görünen iki farklı e-posta ALABİLİRDİ.'
+          },
+          {
+            satir: 'return new MessageResponse(',
+            aciklama: 'Fonksiyonun DÖNÜŞ noktası — `if` bloğunun İÇİNDE DEĞİL, DIŞINDA durur: kullanıcı bulunsun ya da bulunmasın, doğrulanmış olsun ya da olmasın, HER ZAMAN AYNI yanıt döner.',
+            neden: 'Bu konumlandırma (if bloğunun dışında, "her koşulda çalışır" şeklinde), e-posta numaralandırma önleminin KOD SEVİYESİNDEKİ karşılığıdır — yanıtın YAPISI, `if` içindeki KARARDAN bağımsızdır.',
+            olmasaydi: 'Bu satır `if` bloğunun İÇİNE taşınıp, `else` dalında FARKLI bir mesaj ("kullanıcı bulunamadı") dönseydi, bir saldırgan bu İKİ farklı yanıtı KARŞILAŞTIRARAK hangi e-postaların sistemde KAYITLI olduğunu ÖĞRENEBİLİRDİ.'
+          },
+          {
+            satir: '"VERIFICATION_CODE_SENT",',
+            aciklama: 'VerifyEmailCommand\'ın döndürdüğü `"EMAIL_VERIFIED"` kodundan FARKLI bir kod — iki Command\'ın SONUÇLARI birbirinden AYIRT EDİLEBİLİR kalır.',
+            neden: 'Frontend, bu koda bakarak "az önce hangi işlem BAŞARILI oldu" bilgisini ANLAR — aynı kod kullanılsaydı, iki FARKLI olayı (doğrulandı / kod gönderildi) birbirinden AYIRAMAZDI.',
+            olmasaydi: 'Aynı `"EMAIL_VERIFIED"` kodu burada da KULLANILSAYDI, frontend "e-postanız doğrulandı" mesajını YANLIŞLIKLA gösterebilirdi — oysa bu noktada e-posta HENÜZ doğrulanmadı, yalnızca kod TEKRAR gönderildi.'
+          },
+          {
+            satir: 'SuccessMessages.Resolve("VERIFICATION_CODE_SENT", request.Language)',
+            aciklama: 'Bölüm 20\'deki (VerifyEmail) AYNI desen — kod, isteğin diline göre insan-okunur bir metne ÇÖZÜLÜR.',
+            neden: 'İki Command da (VerifyEmail, ResendVerification) AYNI `SuccessMessages.Resolve` API\'sini kullanır — Bölüm 22\'de tüm sözlüğü ve bu metodun İÇİNİ detaylı göreceğiz.',
+            olmasaydi: 'Bu çağrı olmasaydı, `Code` alanı DOLU ama `Message` alanı BOŞ/sabit kalırdı — frontend\'in KENDİ tarafında bir mesaj sözlüğü tutması GEREKİRDİ (backend/frontend arasında TUTARSIZLIK riski).'
+          },
+          {
+            satir: ');',
+            aciklama: 'MessageResponse constructor çağrısının ve `return` ifadesinin KAPANIŞI.',
+            neden: 'Çok-satırlı bir constructor çağrısında kapanış parantezinin KENDİ satırında durması, iki parametrenin (Code, Message) NET görülmesini sağlar — Bölüm 20\'deki (VerifyEmail) tek-satırlık `return new MessageResponse("EMAIL_VERIFIED", ...)` çağrısından FARKLI olarak, burada satır UZUN olduğu için bölünür.',
+            olmasaydi: 'Bu satır olmasaydı (parantez kapatılmasaydı), kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'VerifyEmailCommand, Register\'ın gönderdiği OTP\'yi TÜKETİR — IsEmailVerified/EmailVerifiedAt set edilir, OTP temizlenir',
+          'OtpService.Validate, `user`\'ın null olma ihtimalini KENDİ İÇİNDE ele alır — Handler ayrı bir null kontrolü YAZMAZ (e-posta numaralandırma önlemi)',
+          'ResendVerificationCommand, kullanıcı yoksa/zaten doğrulanmışsa SESSİZCE hiçbir şey yapmaz ama AYNI başarı yanıtını döner',
+          'İki Command da `MessageResponse` döner — Code sabit, Message isteğin diline göre SuccessMessages.Resolve ile çözülür'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

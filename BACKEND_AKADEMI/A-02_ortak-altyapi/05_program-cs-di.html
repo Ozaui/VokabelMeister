@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Program.cs — DI Kayıtları ve Paketler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'program-cs-di',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '04_dbcontext.html',
+    sonrakiBolum: '06_middleware-sirasi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'Program.cs — DI Kayıtları ve Paketler',
+        altBaslik: 'Uygulama ayağa kalkarken hangi servisler kuruluyor ve her NuGet paketi tam olarak ne işe yarıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Program.cs = "Composition Root"',
+        aciklama: 'Program.cs, uygulamanın giriş noktası. Burada iki iş yapılır: (1) DI konteynerine "şu arayüz istenirse şu implementasyonu ver" kayıtları yapılır, (2) bir HTTP isteğinin hangi sıradan işlemlerden geçeceği (middleware pipeline, Bölüm 6) kurulur.',
+        neden: 'Tüm servis kayıtlarının TEK bir dosyada (ya da oradan çağrılan extension metotlarda) toplanması, "bu servis nereden geliyor" sorusunun her zaman tek bir başlangıç noktasından takip edilebilmesini sağlar.',
+        olmasaydi: 'Servis kayıtları kod tabanına dağılmış olsaydı (her Controller kendi bağımlılığını kendi kaydetseydi), hangi servisin ne zaman, kaç kez kaydedildiğini takip etmek imkansızlaşırdı — çakışan kayıtlar sessizce birbirinin üzerine yazabilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ADIM 1 — Serilog Kurulumu',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'Program.cs, API projesinin köküdür — .NET\'in "en dıştaki proje bir .exe/host olarak çalışır" konvansiyonu gereği yalnızca API projesi Program.cs barındırır.',
+        kod: `builder.Host.UseSerilog((context, configuration) => configuration
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));`,
+        satirlar: [
+          {
+            satir: 'builder.Host.UseSerilog((context, configuration) => configuration',
+            aciklama: 'ASP.NET Core\'un varsayılan loglama sağlayıcısı yerine Serilog\'u host seviyesinde devreye sokar — bundan sonraki tüm `.MinimumLevel`/`.WriteTo` zinciri bu tek çağrının parçasıdır.',
+            neden: 'Serilog, "yapılandırılmış loglama" (structured logging) sağlar — bir log mesajı yalnızca metin değil, aranabilir/filtrelenebilir alanlar (ör. `UserId`, `RequestPath`) taşır; bu, üretimde büyük log hacimlerinde hata ayıklamayı kolaylaştırır.',
+            olmasaydi: 'Bu satır olmasaydı, uygulama .NET\'in varsayılan (çok daha kısıtlı) ILogger altyapısını kullanırdı — dosyaya loglama, günlük dosya döngüsü (rolling file) gibi özellikler manuel olarak sıfırdan kurulması gerekirdi.'
+          },
+          {
+            satir: '.MinimumLevel.Information()',
+            aciklama: 'Varsayılan log seviyesini "Information" olarak belirler — Debug/Trace gibi daha ayrıntılı seviyeler loglanmaz, Warning/Error/Fatal gibi daha önemli seviyeler loglanır.',
+            neden: 'Information, üretim ortamı için iyi bir denge noktasıdır: "neler oluyor" bilgisini verir ama Debug seviyesindeki AŞIRI ayrıntı (ör. her SQL sorgusunun parametreleri) ile log dosyasını boğmaz.',
+            olmasaydi: 'Seviye Debug\'da bırakılsaydı, üretimde log dosyaları çok hızlı BÜYÜR, disk alanı tükenebilir ve gerçekten önemli olan Warning/Error mesajları binlerce Debug mesajı arasında KAYBOLURDU.'
+          },
+          {
+            satir: '.MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)',
+            aciklama: 'ASP.NET Core\'un kendi dahili loglarını (her istek için "Request starting/finished" gibi) yalnızca Warning ve üstü seviyede göster.',
+            neden: 'RequestResponseLoggingMiddleware (Bölüm 6) zaten her isteği kendi formatında logluyor — framework\'ün kendi "Request starting" logları bununla çakışıp konsolu ikiye katlamasın diye susturulur.',
+            olmasaydi: 'Bu satır olmasaydı, her HTTP isteği için hem framework\'ün kendi logu hem bizim RequestResponseLoggingMiddleware\'imizin logu görünürdü — konsol/log dosyası gereksiz gürültüyle dolar, gerçek hataları bulmak zorlaşırdı.'
+          },
+          {
+            satir: '.Enrich.FromLogContext()',
+            aciklama: 'Log mesajlarına, kodun `LogContext.PushProperty(...)` ile eklediği EK bağlamsal alanları (ör. RequestId, UserId) otomatik olarak dahil eder.',
+            neden: 'Bir isteğin loglarını birbirine BAĞLAMAK için (ör. "bu 5 log satırı AYNI isteğe ait") bir ortak alan gerekir — FromLogContext, bu ortak alanların her log satırına OTOMATİK eklenmesini sağlar, her `_logger.LogInformation` çağrısında elle eklemeye gerek kalmaz.',
+            olmasaydi: 'Bu zenginleştirme olmasaydı, RequestResponseLoggingMiddleware\'in eklediği bağlamsal bilgiler (ör. RequestId) yalnızca KENDİ logladığı satırda görünür, aynı istek sırasında başka yerlerden atılan log satırlarıyla İLİŞKİLENDİRİLEMEZDİ.'
+          },
+          {
+            satir: '.WriteTo.Console()',
+            aciklama: 'Loglar, konsola (terminal/stdout) da yazılır — geliştirme sırasında `dotnet run` çalıştıran ekranda anlık olarak görülebilir.',
+            neden: 'Geliştirme sırasında dosyayı açıp bakmak yerine, terminalde ANLIK log akışını görmek çok daha hızlı bir geri bildirim döngüsü sağlar; ayrıca birçok konteyner/orkestrasyon platformu (ör. Docker) stdout\'u otomatik toplar.',
+            olmasaydi: 'Yalnızca dosyaya loglama olsaydı, geliştirme sırasında her hatayı görmek için sürekli log dosyasını açıp yenilemek gerekirdi — hızlı hata ayıklama (debugging) döngüsü ciddi şekilde YAVAŞLARDI.'
+          },
+          {
+            satir: '.WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));',
+            aciklama: 'Loglar hem konsola hem de her gün yeni bir dosyaya (app-20260712.txt gibi) yazılır.',
+            neden: 'Konsol logları uygulama kapanınca kaybolur; dosyaya yazmak, üretimde bir hata olduğunda geçmişe dönüp inceleme (post-mortem) yapılabilmesini sağlar. Günlük dosya (rolling) tek bir devasa dosya yerine yönetilebilir parçalar oluşturur.',
+            olmasaydi: 'Yalnızca konsola log yazılsaydı, sunucu yeniden başladığında (ya da konsol penceresi kapandığında) TÜM geçmiş log kaybolurdu — üretimde bir gece yaşanan hatayı sabah incelemek imkansız olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ADIM 2 — ValidationFilter Neden Global',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());`,
+        satirlar: [
+          {
+            satir: 'builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());',
+            aciklama: 'Tüm controller\'lara, action çalışmadan ÖNCE otomatik devreye giren bir doğrulama filtresi (ValidationFilter) ekler.',
+            neden: 'Proje `FluentValidation.AspNetCore` paketini KULLANMIYOR (bilinçli tercih) — bunun yerine DI\'a kayıtlı `IValidator<T>` sınıflarını (ör. RegisterCommandValidator, A-03/05) action çalışmadan önce otomatik tetikleyen özel bir global filter yazıldı. Bu sayede her Controller kendi validator\'ını elle çağırmak zorunda kalmaz.',
+            olmasaydi: 'Global filter olmasaydı, her Controller action\'ının başında elle `var result = await _validator.ValidateAsync(command); if (!result.IsValid) return BadRequest(...);` yazmak gerekirdi — 20 endpoint\'te aynı 4 satır tekrar ederdi (DRY ihlali).'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ADIM 4 — Katman Bazlı Toplu Kayıt',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddApplicationServices();`,
+        satirlar: [
+          {
+            satir: 'builder.Services.AddInfrastructureServices(builder.Configuration);',
+            aciklama: 'Infrastructure katmanındaki TÜM servisleri (DbContext, repository\'ler) tek çağrıda kaydeder — gerçek kayıtlar InfrastructureServiceExtensions.cs içinde yaşar (bir sonraki slayt).',
+            neden: 'Program.cs\'i temiz tutar; yeni bir repository eklendiğinde Program.cs\'e DOKUNULMAZ, yalnızca extension metodun içeriği değişir.',
+            olmasaydi: 'Her repository burada tek tek `builder.Services.AddScoped<IUserRepository, UserRepository>()` şeklinde kaydedilseydi, Program.cs zamanla yüzlerce satırlık bir kayıt listesine dönüşürdü — okunabilirlik kaybolurdu.'
+          },
+          {
+            satir: 'builder.Services.AddApplicationServices();',
+            aciklama: 'Application katmanındaki TÜM servisleri (MediatR, AutoMapper, FluentValidation, PasswordService, TokenService...) tek çağrıda kaydeder — gerçek kayıtlar ApplicationServiceExtensions.cs içinde yaşar (iki slayt sonra).',
+            neden: 'Bir üstteki satırla BİREBİR AYNI mantık, yalnızca Application katmanı için — `IConfiguration` parametresi ALMAZ çünkü Application servislerinin çoğu (MediatR, AutoMapper) doğrudan bağlantı dizesi gibi ayarlara ihtiyaç duymaz.',
+            olmasaydi: 'Bu iki satır (AddInfrastructureServices + AddApplicationServices) TEK bir metotta birleştirilseydi, "hangi servisin hangi katmana ait olduğu" bilgisi Program.cs\'te KAYBOLURDU — A-02/02\'deki katman ayrımı, DI kayıtları seviyesinde de bulanıklaşırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'InfrastructureServiceExtensions.cs — DbContext ve Repository Kaydı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Extensions/InfrastructureServiceExtensions.cs',
+        nedenBuKlasor: 'Infrastructure/Extensions/ altında — "hangi servisin nasıl kaydedileceği" de bir altyapı detayıdır, Application katmanı bunu görmez.',
+        kod: `services.AddDbContext<WordLearnerDbContext>(options =>
+    options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
+);
+
+services.AddScoped<IUserRepository, UserRepository>();
+services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();`,
+        satirlar: [
+          {
+            satir: 'services.AddDbContext<WordLearnerDbContext>(options =>',
+            aciklama: 'WordLearnerDbContext\'i (Bölüm 4) DI konteynerine kaydeder — bundan sonra herhangi bir Repository/Handler, constructor\'ında `WordLearnerDbContext` isteyerek bu ÖRNEĞİ alabilir.',
+            neden: '`AddDbContext`, DbContext\'i varsayılan olarak "Scoped" yaşam süresiyle kaydeder — aynı HTTP isteği içindeki TÜM repository\'ler AYNI DbContext örneğini (ve change tracker\'ı) paylaşır, bu da bir işlemdeki (transaction) birden fazla değişikliğin TUTARLI kalmasını sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, hiçbir Repository DI konteynerinden bir WordLearnerDbContext ALAMAZDI — uygulama başlarken "WordLearnerDbContext için bir kayıt bulunamadı" hatasıyla ÇÖKERDİ.'
+          },
+          {
+            satir: 'options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))',
+            aciklama: 'DbContext\'e "hangi veritabanı sağlayıcısını (SQL Server) ve hangi bağlantı dizesini kullanacağını" söyler.',
+            neden: 'Bağlantı dizesi appsettings.json\'dan (Development\'ta gizli değerler appsettings.Development.json\'da, gitignore\'da — REFERENCE/ENV.md) okunur, KOD İÇİNE YAZILMAZ. CLAUDE.md: "hassas değer asla kaynak koda girmez".',
+            olmasaydi: 'Bağlantı dizesi doğrudan kod içine yazılsaydı (`"Server=...;Password=123;"`), bu değer git geçmişine girer, repoyu gören HERKES üretim veritabanı şifresini görürdü — ciddi bir güvenlik açığı.'
+          },
+          {
+            satir: 'services.AddScoped<IUserRepository, UserRepository>();',
+            aciklama: '"Biri IUserRepository isterse, ona UserRepository nesnesi ver" kaydı.',
+            neden: '`AddScoped`, bu nesnenin HER HTTP isteği için bir kez oluşturulacağını, aynı istek içinde tekrar istenirse AYNI örneğin verileceğini belirtir — DbContext ile aynı yaşam süresinde olmalı (aynı request\'te aynı "veritabanı oturumu"nu paylaşmalılar).',
+            olmasaydi: '`AddSingleton` kullanılsaydı (tüm uygulama boyunca TEK bir örnek), aynı DbContext örneği eşzamanlı gelen farklı isteklerde paylaşılırdı — DbContext thread-safe değildir, bu ciddi, ayıklaması zor eşzamanlılık hatalarına yol açardı.'
+          },
+          {
+            satir: 'services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();',
+            aciklama: 'Bir üstteki satırla BİREBİR aynı desen, RefreshToken entity\'si (A-03/11) için — "biri IRefreshTokenRepository isterse, ona RefreshTokenRepository nesnesi ver".',
+            neden: 'Her yeni feature repository\'si (UserRepository, RefreshTokenRepository, QrLoginSessionRepository) bu extension metoda TEK SATIRLIK bir kayıt olarak eklenir — desen ne kadar TEKRARLANABİLİR olursa, yeni bir repository eklemek o kadar MEKANİK ve hatasız bir iş haline gelir.',
+            olmasaydi: 'Bu kayıt eksik olsaydı, RefreshCommandHandler (A-03/11) constructor\'ında IRefreshTokenRepository istediğinde DI konteyneri "bu arayüzü kim implemente ediyor bilmiyorum" hatasıyla uygulama AÇILIŞINDA çökerdi — bu tür hatalar çalışma zamanında değil, başlangıçta yakalanır.'
+          },
+          {
+            satir: 'services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();',
+            aciklama: 'Aynı desenin üçüncü tekrarı, QR ile giriş (A-03.1) akışının geçici oturum kayıtları için.',
+            neden: 'Üç satırın da AYNI şekilde yazılmış olması BİLİNÇLİDİR — DI kayıtlarında "yaratıcılık" ARANMAZ, sıkıcı ve öngörülebilir tekrar, okuyan kişinin (ör. yeni bir geliştirici) deseni ANINDA tanıyıp kendi repository\'sini aynı şekilde ekleyebilmesini sağlar.',
+            olmasaydi: 'Her repository kaydı FARKLI bir yaşam süresiyle (bazısı Scoped, bazısı Transient) yazılsaydı, hangi repository\'nin DbContext ile UYUMLU çalışıp hangisinin çalışmayacağını KESTİRMEK zorlaşırdı — tutarlı desen, bu belirsizliği TAMAMEN ortadan kaldırır.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplicationServiceExtensions.cs — MediatR, AutoMapper, FluentValidation',
+        dosyaYolu: 'backend/WordLearner.Application/Extensions/ApplicationServiceExtensions.cs',
+        nedenBuKlasor: 'Application/Extensions/ altında — bu üç paket (MediatR, AutoMapper, FluentValidation) doğrudan iş mantığı katmanına ait.',
+        kod: `var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+
+services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+services.AddAutoMapper(applicationAssembly);
+services.AddValidatorsFromAssembly(applicationAssembly);`,
+        satirlar: [
+          {
+            satir: 'var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;',
+            aciklama: 'Application projesinin DERLENMİŞ çıktısını (assembly) temsil eden bir referans alır — bu, "bu assembly İÇİNDEKİ tüm ... sınıflarını tara" çağrılarının (aşağıdaki 3 satır) HEPSİNİN paylaştığı ortak bir başlangıç noktasıdır.',
+            neden: '`typeof(ApplicationServiceExtensions).Assembly` deyimi, "bu sınıfın TANIMLI OLDUĞU assembly hangisiyse O" anlamına gelir — Application projesindeki HERHANGİ bir sınıf üzerinden aynı sonucu alırdık, ama extension metodun kendi sınıfını kullanmak en doğal referans noktasıdır.',
+            olmasaydi: 'Bu değişken olmasaydı, aşağıdaki `AddMediatR`/`AddAutoMapper`/`AddValidatorsFromAssembly` çağrılarının HER BİRİ kendi `typeof(...).Assembly` ifadesini TEKRAR yazması gerekirdi — üç kez aynı ifadeyi tekrarlamak yerine BİR KEZ hesaplanıp paylaşılır.'
+          },
+          {
+            satir: 'services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));',
+            aciklama: 'Application projesindeki TÜM `IRequestHandler<TCommand, TResponse>` implementasyonlarını (ör. RegisterCommandHandler) otomatik tarayıp DI\'a kaydeder.',
+            neden: 'Controller\'lar servisleri doğrudan çağırmak yerine `_mediator.Send(command)` çağırır — bu, Controller\'ın hangi somut Handler sınıfının çalışacağını bilmesine GEREK BIRAKMAZ, controller ince (thin) kalır (A-03/10).',
+            olmasaydi: 'MediatR kullanılmasaydı, her Controller kendi ihtiyaç duyduğu servisleri (IPasswordService, IUserRepository, IOtpService...) doğrudan constructor\'ında enjekte etmesi gerekirdi — Controller\'lar zamanla 10\'larca bağımlılık taşıyan, test edilmesi zor devasa sınıflara dönüşürdü.'
+          },
+          {
+            satir: 'services.AddAutoMapper(applicationAssembly);',
+            aciklama: 'Application projesindeki TÜM `Profile` sınıflarını (ör. AuthProfile, A-03/07) otomatik tarayıp AutoMapper\'a kaydeder.',
+            neden: 'Bir üstteki `AddMediatR` satırıyla BİREBİR AYNI desen: assembly taraması. AutoMapper, Entity→DTO dönüşüm KURALLARINI (`CreateMap<User, RegisterResponse>()`) çalışma zamanında bu taramayla BULUR — her yeni Profile sınıfı için Program.cs\'e ekstra bir satır GEREKMEZ.',
+            olmasaydi: 'Bu kayıt olmasaydı, AuthProfile\'daki `CreateMap<User, RegisterResponse>()` tanımı YAZILMIŞ olsa bile HİÇ ÇALIŞMAZDI — A-03/15\'teki `_mapper.Map<RegisterResponse>(user)` çağrısı, "bu dönüşüm için bir konfigürasyon yok" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'services.AddValidatorsFromAssembly(applicationAssembly);',
+            aciklama: 'Application projesindeki TÜM `AbstractValidator<T>` implementasyonlarını (ör. RegisterCommandValidator) otomatik tarayıp DI\'a kaydeder.',
+            neden: 'ValidationFilter (ADIM 2\'de gördük), bir Command için DI\'da kayıtlı bir validator VARSA onu otomatik bulup çalıştırır — yeni bir validator yazmak, onu Program.cs\'e kaydetmeyi GEREKTİRMEZ.',
+            olmasaydi: 'Otomatik tarama olmasaydı, her yeni validator yazıldığında Program.cs\'e `services.AddScoped<IValidator<RegisterCommand>, RegisterCommandValidator>()` gibi bir satır elle eklemek gerekirdi — biri bunu unutursa o Command\'in doğrulaması SESSİZCE hiç çalışmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ADIM 5 — JWT Authentication Kurulumu',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ClockSkew = TimeSpan.Zero
+        };
+    });`,
+        satirlar: [
+          {
+            satir: 'builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)',
+            aciklama: 'DI konteynerine "kimlik doğrulama" (authentication) yeteneğini ekler ve VARSAYILAN şemanın JWT Bearer olacağını belirtir — yani her istekte "Authorization: Bearer &lt;token&gt;" başlığı bu şemayla İŞLENİR.',
+            neden: 'Bu proje Google/Apple/QR gibi farklı giriş YÖNTEMLERİ desteklese de, HEPSİ sonunda AYNI türde bir JWT üretir — bu yüzden tek bir authentication şeması (JwtBearer) yeterlidir, ayrı ayrı şema tanımlamaya gerek yoktur.',
+            olmasaydi: 'Bu satır olmasaydı, `app.UseAuthentication()` (Bölüm 6) çalışacak hiçbir şema BULAMAZDI — [Authorize] öznitelikli TÜM endpoint\'ler, geçerli bir token gönderilse bile kimliği never ÇÖZÜMLEYEMEZ, her istek 401 dönerdi.'
+          },
+          {
+            satir: '.AddJwtBearer(options =>',
+            aciklama: 'JWT Bearer şemasının DAVRANIŞINI (token nasıl doğrulanacak) yapılandıran lambda\'yı başlatır — aşağıdaki `TokenValidationParameters` bloğu bu lambda\'nın içinde tanımlanır.',
+            neden: '`AddAuthentication` yalnızca "hangi şema VARSAYILAN" sorusunu cevaplar; `AddJwtBearer` ise o şemanın GERÇEK doğrulama kurallarını (imza, issuer, audience, süre) tanımlar — ikisi birbirini TAMAMLAR.',
+            olmasaydi: 'Bu çağrı olmasaydı, JwtBearer şeması KAYITLI olur ama HİÇBİR doğrulama kuralı tanımlanmazdı — .NET varsayılan (çok gevşek ya da hatalı) ayarlarla çalışmaya çalışır, imza/issuer/audience kontrolleri EKSİK kalırdı.'
+          },
+          {
+            satir: 'options.TokenValidationParameters = new TokenValidationParameters',
+            aciklama: 'Gelen her JWT token\'ın hangi KRİTERLERE göre "geçerli" sayılacağını tanımlayan nesneyi oluşturur — aşağıdaki her satır bu nesnenin BİR property\'sidir.',
+            neden: 'JWT doğrulaması TEK bir kontrol değil, BİRDEN FAZLA bağımsız kontrolün (imza, issuer, audience, süre) TOPLAMIDIR — bu nesne, hepsini TEK bir yerde, açıkça listeler.',
+            olmasaydi: 'Bu nesne hiç oluşturulmasaydı, JwtBearer middleware\'i doğrulama için HİÇBİR kriter bulamaz, ya varsayılan (güvensiz) davranışa DÜŞERDİ ya da yapılandırma hatasıyla uygulama AÇILIŞTA çökerdi.'
+          },
+          {
+            satir: 'ValidateIssuerSigningKey = true,',
+            aciklama: 'Token\'ın imzasının, bizim BEKLEDİĞİMİZ anahtarla (aşağıdaki IssuerSigningKey) EŞLEŞTİĞİNİN kontrol edilmesini AÇIK OLARAK ister.',
+            neden: 'Bu bayrak AÇIK olmadan, .NET bazı senaryolarda imza kontrolünü ATLAYABİLİR — güvenlik açısından KRİTİK bir kontrolün "isteğe bağlı" değil "ZORUNLU" olduğunu BELİRTMEK gerekir.',
+            olmasaydi: 'Bu satır `false` ya da EKSİK olsaydı, sunucu imzası SAHTE olan bir token\'ı bile GEÇERLİ sayabilirdi — bu, JWT güvenliğinin TEMELİNİ çökertecek en ciddi yanlış yapılandırma türlerinden biridir.'
+          },
+          {
+            satir: 'IssuerSigningKey = new SymmetricSecurityKey(',
+            aciklama: 'JWT token\'ların imzasını doğrulamak için kullanılacak gizli anahtarın İNŞASI başlar — `SymmetricSecurityKey`, aynı anahtarın hem İMZALAMA hem DOĞRULAMA için kullanıldığı simetrik bir kriptografik anahtar türüdür.',
+            neden: 'Bu anahtar, bir token\'ın gerçekten SUNUCUMUZ tarafından üretildiğini kanıtlar. Biri bu anahtarı bilmeden sahte bir token üretemez.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki `Encoding.UTF8.GetBytes(...)` çağrısının SONUCUNU sarmalayacak bir anahtar nesnesi hiç OLUŞMAZDI — `IssuerSigningKey` property\'si atanmadan kalır, doğrulama BAŞLAYAMAZDI.'
+          },
+          {
+            satir: 'Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),',
+            aciklama: 'appsettings\'ten (gizli değer, ENV.md) okunan metin hâlindeki gizli anahtarı, kriptografik işlemlerin beklediği BYTE dizisine çevirir — `!` işareti, "bu değerin null OLMAYACAĞINI ben garanti ediyorum" der derleyiciye.',
+            neden: 'JWT kütüphaneleri anahtarları byte dizisi olarak bekler, düz metin (string) olarak DEĞİL — bu dönüşüm, "Jwt:SecretKey" adlı yapılandırma değerini kriptografik olarak KULLANILABİLİR hale getirir.',
+            olmasaydi: 'Bu anahtar sabit/tahmin edilebilir olsaydı (ör. kod içine yazılmış "secret123"), herhangi biri bu anahtarla kendi sahte JWT token\'ını üretip herhangi bir kullanıcı gibi giriş yapabilirdi — kimlik doğrulamanın tamamı anlamsız hale gelirdi.'
+          },
+          {
+            satir: 'ValidateIssuer = true,',
+            aciklama: 'Token\'ın içindeki "iss" (issuer/yayınlayan) alanının, aşağıda beklenen değerle EŞLEŞTİĞİNİN kontrol edilmesini AÇIK OLARAK ister.',
+            neden: 'Issuer kontrolü, "bu token GERÇEKTEN bizim API\'mizden mi geldi" sorusunu cevaplar — başka bir sistemin ürettiği, ama AYNI imzalama algoritmasıyla üretilmiş bir token\'ın burada KABUL EDİLMESİNİ engeller.',
+            olmasaydi: 'Bu kontrol kapalı olsaydı, farklı bir sistemin (ör. bir test ortamının) ürettiği ama BENZER yapıdaki bir token, bizim API\'mizde de GEÇERLİ sayılabilirdi — sistemler arası token karışıklığı güvenlik riski yaratırdı.'
+          },
+          {
+            satir: 'ValidIssuer = builder.Configuration["Jwt:Issuer"],',
+            aciklama: '"Geçerli sayılacak issuer" değerinin NE OLDUĞUNU appsettings\'ten okur — token\'daki "iss" alanı bu değerle BİREBİR eşleşmelidir.',
+            neden: 'Issuer değerinin appsettings\'te tanımlı olması, bu değerin ortamdan ortama (Development/Production) FARKLI olabilmesini sağlar — kod DEĞİŞMEDEN farklı ortamlarda farklı issuer\'lar kullanılabilir.',
+            olmasaydi: 'Bu satır olmadan `ValidateIssuer = true` anlamsız kalırdı — "hangi issuer\'a göre kontrol edeceğim" bilgisi olmadan doğrulama YAPILAMAZDI, uygulama başlangıçta yapılandırma hatası verirdi.'
+          },
+          {
+            satir: 'ValidateAudience = true,',
+            aciklama: 'Token\'ın içindeki "aud" (audience/hedef kitle) alanının, aşağıda beklenen değerle EŞLEŞTİĞİNİN kontrol edilmesini AÇIK OLARAK ister.',
+            neden: 'Audience kontrolü, "bu token BENİM API\'m İÇİN mi üretildi" sorusunu cevaplar — aynı SecretKey\'i paylaşan başka bir uygulama için üretilmiş bir token\'ın burada YANLIŞLIKLA kabul edilmesini engeller.',
+            olmasaydi: 'Bu kontrol kapalı olsaydı, başka bir hedef için (ör. farklı bir mikroservis için) üretilmiş ama AYNI anahtarla imzalanmış bir token, bu API\'de de GEÇERLİ sayılabilirdi — "token karışması" (token confusion) güvenlik açığı doğardı.'
+          },
+          {
+            satir: 'ValidAudience = builder.Configuration["Jwt:Audience"],',
+            aciklama: '"Geçerli sayılacak audience" değerinin NE OLDUĞUNU appsettings\'ten okur — token\'daki "aud" alanı bu değerle BİREBİR eşleşmelidir.',
+            neden: 'Issuer ile AYNI mantık: bu değer ortamdan ortama değişebilir (ör. Development ve Production farklı audience string\'i kullanabilir), kod DEĞİŞMEDEN yapılandırma üzerinden yönetilir.',
+            olmasaydi: 'Bu satır olmadan `ValidateAudience = true` anlamsız kalırdı — "hangi audience\'a göre kontrol edeceğim" bilgisi eksik kalır, doğrulama YAPILAMAZDI.'
+          },
+          {
+            satir: 'ClockSkew = TimeSpan.Zero',
+            aciklama: 'Token\'ın süresi dolduğunda, sunucu saatleri arasında hiçbir tolerans (ek süre) tanınmaz.',
+            neden: 'Access token zaten kısa ömürlü (15 dakika, REFERENCE/SECURITY.md) — bu kadar kısa bir süre için birkaç dakikalık gevşek tolerans, güvenlik penceresini gereksiz genişletir.',
+            olmasaydi: 'Varsayılan davranış (5 dakika tolerans) kullanılsaydı, süresi dolmuş bir token 5 dakika daha geçerli sayılırdı — kısa ömürlü access token stratejisinin amacını (çalınan bir token\'ın hızla işe yaramaz hale gelmesi) zayıflatırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ADIM 6-7 — CORS ve Rate Limiting',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Services.AddCors(options => options.AddPolicy("Default", policy =>
+    policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+          .AllowAnyMethod()
+          .AllowAnyHeader()));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("anonymous", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 10;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+    });
+});`,
+        satirlar: [
+          {
+            satir: 'builder.Services.AddCors(options => options.AddPolicy("Default", policy =>',
+            aciklama: 'DI konteynerine CORS yeteneğini ekler ve "Default" adında bir politika (policy) tanımlamaya BAŞLAR — bu politika, Bölüm 6\'daki `app.UseCors("Default")` çağrısında AKTİF edilir.',
+            neden: 'Politikaya bir İSİM vermek ("Default"), ileride farklı endpoint gruplarının FARKLI CORS kurallarına ihtiyaç duyması durumunda (ör. Admin panel için daha kısıtlı bir politika) birden fazla politika TANIMLANABİLMESİNİ sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, "Default" adlı bir politika hiç TANIMLANMAZ, Bölüm 6\'daki `app.UseCors("Default")` çağrısı çalışma zamanında "böyle bir politika yok" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])',
+            aciklama: 'Yalnızca appsettings\'te açıkça listelenmiş adreslerden (Web, Admin, Mobil) gelen tarayıcı isteklerine izin verir.',
+            neden: '"*" (herkese izin ver) yerine bilinen bir liste kullanmak, kötü niyetli bir web sitesinin kullanıcının tarayıcısı üzerinden API\'mize gizlice istek atmasını (CSRF benzeri saldırılar) engeller.',
+            olmasaydi: '`AllowAnyOrigin()` kullanılsaydı, herhangi bir web sitesi kullanıcının tarayıcısında oturumu açıkken arka planda API\'mize istek gönderebilirdi — kullanıcı adına istenmeyen işlemler yapılabilirdi.'
+          },
+          {
+            satir: '.AllowAnyMethod()',
+            aciklama: 'İzin verilen origin\'lerden GET/POST/PUT/DELETE gibi TÜM HTTP metotlarına izin verir — yalnızca belirli metotlarla SINIRLAMAZ.',
+            neden: 'API zaten hangi endpoint\'in hangi metodu kabul ettiğini KENDİ İÇİNDE ([HttpPost], [HttpGet] öznitelikleriyle) kontrol ediyor — CORS seviyesinde metot bazlı ek bir kısıtlama, GÜVENLİK açısından ek bir fayda sağlamadan yalnızca karmaşıklık ekler.',
+            olmasaydi: 'Yalnızca belirli metotlara (ör. sadece GET) izin verilseydi, izinli bir origin\'den (ör. Web arayüzü) atılan bir POST isteği (ör. Register) tarayıcı tarafından CORS hatasıyla ENGELLENİRDİ — meşru bir istek, güvenlikle İLGİSİZ bir sebeple reddedilirdi.'
+          },
+          {
+            satir: '.AllowAnyHeader()));',
+            aciklama: 'İzin verilen origin\'lerden gelen isteklerde HERHANGİ bir HTTP başlığına (ör. `Authorization`, `Content-Type`) izin verir; kapanan parantezler `AddPolicy`/`AddCors` çağrılarını sonlandırır.',
+            neden: '`Authorization: Bearer <token>` başlığı (JWT ile kimlik doğrulama için) HER korumalı istekte gönderilir — bu başlığa izin verilmezse tarayıcı isteği CORS preflight aşamasında REDDEDER.',
+            olmasaydi: 'Yalnızca belirli başlıklara izin verilseydi ve `Authorization` bu listede UNUTULSAYDI, [Authorize] gerektiren TÜM endpoint\'lere Web/Admin arayüzünden yapılan istekler CORS hatasıyla başarısız olurdu — kullanıcı hiçbir zaman "giriş yapmış" bir istek ATAMAZDI.'
+          },
+          {
+            satir: 'builder.Services.AddRateLimiter(options =>',
+            aciklama: 'DI konteynerine rate limiting (istek sınırlama) yeteneğini ekler — bundan sonraki blok, hangi isteğin hangi limite tabi olacağını tanımlayan "policy"leri (ör. "anonymous") kurar.',
+            neden: 'Rate limiting, tek bir kaynaktan gelen AŞIRI istek trafiğini (kasıtlı saldırı ya da yanlışlıkla yazılmış bir döngü) sınırlayarak sunucunun diğer meşru kullanıcılara hizmet vermeye devam edebilmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, Bölüm 6\'daki `app.UseRateLimiter()` çağrısının uygulayacağı HİÇBİR limit tanımı olmazdı — [EnableRateLimiting("anonymous")] öznitelikleri "böyle bir policy yok" hatasıyla çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'options.AddFixedWindowLimiter("anonymous", limiterOptions =>',
+            aciklama: '"anonymous" adında SABİT PENCERELİ (fixed window) bir rate limit politikası tanımlar — bu isim, Controller\'larda `[EnableRateLimiting("anonymous")]` ile REFERANS verilir (ör. Register/Login endpoint\'leri).',
+            neden: '"Fixed window" algoritması, belirli bir zaman penceresinde (ör. 1 dakika) en fazla kaç istek kabul edileceğini basit ve ÖNGÖRÜLEBİLİR şekilde sınırlar — kimlik doğrulama gerektirmeyen (dolayısıyla kullanıcı bazlı değil IP bazlı sınırlanan) endpoint\'ler için yeterlidir.',
+            olmasaydi: 'Bu politika tanımlanmasaydı, `[EnableRateLimiting("anonymous")]` öznitelikli endpoint\'ler (Register, Login gibi) hiçbir sınırlamaya TABİ OLMAZDI — bir saldırgan bu endpoint\'lere sınırsız istek gönderebilirdi.'
+          },
+          {
+            satir: 'limiterOptions.PermitLimit = 10;',
+            aciklama: 'Pencere başına (aşağıdaki Window ile birlikte tanımlanan süre içinde) en fazla 10 isteğe izin verir.',
+            neden: 'Register/Login gibi kimlik doğrulama gerektirmeyen endpoint\'ler, otomatik script\'ler (bot) tarafından kötüye kullanılmaya en açık noktalardır — bu sınır, bir saldırganın saniyede binlerce deneme yapmasını (brute-force) engeller.',
+            olmasaydi: 'Bu satır olmasaydı (ya da çok yüksek bir değer verilseydi), rate limiting olmasaydı, bir saldırgan Login endpoint\'ine saniyede binlerce şifre denemesi gönderip kullanıcı hesaplarını brute-force ile ele geçirmeye çalışabilirdi.'
+          },
+          {
+            satir: 'limiterOptions.Window = TimeSpan.FromMinutes(1);',
+            aciklama: 'PermitLimit\'in geçerli olduğu zaman penceresini 1 dakika olarak belirler — yani "1 dakikada en fazla 10 istek" kuralının İKİNCİ yarısı.',
+            neden: 'Pencere süresi, limitin ne kadar SIKI ya da GEVŞEK olduğunu belirler — çok kısa bir pencere (ör. 1 saniye) meşru kullanıcıları bile engelleyebilir, çok uzun bir pencere (ör. 1 saat) saldırganlara geniş bir deneme alanı bırakır; 1 dakika, bu iki uç arasında makul bir denge.',
+            olmasaydi: 'Bu satır olmasaydı, `PermitLimit` hangi ZAMAN ARALIĞI için geçerli olduğu bilinmeden anlamsız kalırdı — .NET rate limiter API\'si bu iki değeri BİRLİKTE ister, biri eksik olursa yapılandırma hatası oluşurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Paketler',
+        terimler: [
+          { terim: 'MediatR (12.1.1)', tanim: 'Controller\'ın Handler\'ları doğrudan çağırmadan, `IMediator.Send(command)` ile "isteği gönderip" ilgili Handler\'ın bulunmasını sağlayan kütüphane.' },
+          { terim: 'AutoMapper (14.0.0)', tanim: 'Entity → DTO dönüşümlerini elle yazmak yerine "Profile" sınıflarıyla tanımlamayı sağlar (YAGNI kuralı: yalnızca gerçek dönüşüm varsa kullanılır).' },
+          { terim: 'FluentValidation (11.9.2)', tanim: 'Bir Command\'in kurallarını (`RuleFor(x => x.Email).ValidEmail()`) okunabilir bir şekilde tanımlamayı sağlar.' },
+          { terim: 'BCrypt.Net-Next (4.0.3)', tanim: 'Şifreleri geri döndürülemez şekilde "hash"leyen (bir yönlü şifreleme) kütüphane — düz metin şifre asla saklanmaz.' },
+          { terim: 'System.IdentityModel.Tokens.Jwt (7.1.2)', tanim: 'JWT (JSON Web Token) üretimi ve doğrulaması için Microsoft\'un resmi kütüphanesi.' },
+          { terim: 'Serilog.AspNetCore + Sinks', tanim: 'Yapılandırılmış (structured) loglama kütüphanesi — logları konsola ve dosyaya "sink" adı verilen çıktılara yazar.' },
+          { terim: 'Swashbuckle.AspNetCore (7.2.0)', tanim: 'Yazılan endpoint\'lerden otomatik olarak canlı, test edilebilir bir API dokümantasyonu (Swagger UI) üretir.' },
+          { terim: 'Microsoft.EntityFrameworkCore.SqlServer (9.0.0)', tanim: 'EF Core\'un SQL Server\'a özel sağlayıcısı (provider) — DbContext\'in hangi veritabanı motoruyla konuşacağını belirler.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Program.cs, DI kayıtlarının ve middleware kurulumunun tek başlangıç noktası (composition root)',
+          'Katman bazlı toplu kayıt (AddInfrastructureServices/AddApplicationServices) Program.cs\'i temiz tutar',
+          'MediatR, Controller\'ları Handler\'lardan ayırır — controller\'lar ince kalır',
+          'ValidationFilter + AddValidatorsFromAssembly, her Command için otomatik doğrulama sağlar',
+          'JWT SecretKey ve DB connection string ASLA koda yazılmaz, appsettings/ENV üzerinden okunur',
+          'CORS whitelist + Rate limiting, dış dünyadan gelen isteklere karşı ilk savunma hattı'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

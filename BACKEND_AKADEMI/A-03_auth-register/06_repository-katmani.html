@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Repository Katmanı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-katmani',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '05_command-validator.html',
+    sonrakiBolum: '07_dto-automapper.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 13 · CLAUDE.md ADIM 7-8',
+        baslik: 'Repository Katmanı',
+        altBaslik: 'IUserRepository (arayüz) ve UserRepository (implementasyon) — ve neden bazı sorgular BİLEREK soft-delete filtresini yok sayıyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserRepository — Application Katmanındaki Arayüz',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IUserRepository.cs',
+        nedenBuKlasor: 'Application/Interfaces/Repositories/ altında — Bölüm 2\'deki kuralın somut hali: Application, "GEREKTİĞİNİ" bilir (bir e-postayla kullanıcı bulunabilmeli), "NASIL bulunacağını" (EF Core sorgusu) bilmez.',
+        kod: `public interface IUserRepository : IRepository<User>
+{
+    Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
+
+    Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default);
+
+    Task<bool> OriginalEmailHashExistsAsync(string emailHash, CancellationToken ct = default);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IUserRepository : IRepository<User>',
+            aciklama: 'A-02/07\'de yazdığımız GENEL `IRepository<T>` arayüzünü (GetByIdAsync, AddAsync, UpdateAsync, SoftDeleteAsync) miras alır, User\'a ÖZGÜ ek sorgular ekler.',
+            neden: 'Register akışı "e-postaya göre kullanıcı bul" ihtiyacı duyar — bu, generic Repository<T>\'de OLAMAZ çünkü "Email" alanı yalnızca User\'a özgüdür, T\'nin genel BaseEntity kısıtlamasında yok.',
+            olmasaydi: 'Bu genişletme yapılmasaydı, RegisterCommandHandler yalnızca `IRepository<User>.GetByIdAsync(int id)` gibi genel metotlara erişebilirdi — "bu e-posta kayıtlı mı" sorusunu SORAMAZDI bile.'
+          },
+          {
+            satir: 'Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);',
+            aciklama: 'Bu metot imzasında, "e-postaya göre bulunan kullanıcının soft-delete filtresini nasıl ele alacağı" HİÇ görünmüyor — bu, bilinçli bir tasarım, çünkü Application katmanı EF Core\'un `IgnoreQueryFilters()` kavramını hiç BİLMEMELİ (bir sonraki slaytta implementasyonda göreceğiz).',
+            neden: 'Arayüz, YALNIZCA "ne" sorusunu cevaplar (bir e-postayla bir kullanıcı bulunabilir) — "nasıl" sorusu (soft-delete\'i görmezden gel) implementasyon detayıdır, Infrastructure\'da yaşar.',
+            olmasaydi: 'Arayüz "soft-delete\'i yok say" bilgisini taşısaydı (ör. metot adı GetByEmailIgnoringSoftDeleteAsync olsaydı), Application katmanı EF Core\'un bir kavramını (query filter) İSMEN bilir hale gelirdi — Bölüm 2\'deki katman izolasyonu zedelenirdi.'
+          },
+          {
+            satir: 'Task<User?> GetByIdIncludingDeletedAsync(int id, CancellationToken ct = default);',
+            aciklama: 'GetByEmailAsync ile AYNI gerekçeyle, ama Id üzerinden arama yapan bir KARDEŞ metot.',
+            neden: 'QR ile giriş (A-03.1) gibi bazı akışlar, kullanıcıyı e-posta yerine DOĞRUDAN Id ile bulmak zorunda — o akışların da grace-period\'daki (soft-delete\'li) bir kullanıcıya erişebilmesi GEREKİR, bu yüzden Repository<T>\'nin filtre UYGULAYAN GetByIdAsync\'inden AYRI, bilinçli bir "hepsini görsün" versiyonu tanımlanır.',
+            olmasaydi: 'Bu metot olmasaydı, QR ile giriş akışı grace-period\'daki bir kullanıcıyı BULAMAZDI — hesabını yeni silmiş ama 30 gün içinde kurtarma penceresinde olan bir kullanıcı, QR ile giriş yapmaya çalıştığında "kullanıcı bulunamadı" gibi YANLIŞ bir hata alırdı.'
+          },
+          {
+            satir: 'Task<bool> OriginalEmailHashExistsAsync(string emailHash, CancellationToken ct = default);',
+            aciklama: 'GetByEmailAsync\'ten TAMAMEN farklı bir soru sorar: "acaba bu e-posta, DAHA ÖNCE anonimleştirilmiş bir hesaba mı aitti?" — dönüş tipi `bool`, tam bir User nesnesi DEĞİL.',
+            neden: 'A-03/08 Handler\'da (Bölüm 15) göreceğimiz İKİNCİ e-posta çakışma kontrolü BU metoda dayanır — anonimleştirme sonrası GERÇEK e-posta veritabanından SİLİNDİĞİ için, bu kontrol GetByEmailAsync\'in YAKALAYAMAYACAĞI bir senaryoyu (REFERENCE/SECURITY.md §9) kapatır.',
+            olmasaydi: 'Bu metot olmasaydı, hesabını sildirip anonimleştirilmiş bir kullanıcı AYNI e-postayla İSTEDİĞİ KADAR yeniden kayıt olabilirdi — "silme kalıcıdır" garantisi (30 gün sonra bu e-posta BİR DAHA kullanılamaz) DELİNMİŞ olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserRepository — IgnoreQueryFilters() Neden Kullanılıyor',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/UserRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ — A-02/07\'deki Repository<T>\'den türeyen GERÇEK, EF Core\'a bağımlı implementasyon burada yaşar.',
+        kod: `public class UserRepository : Repository<User>, IUserRepository
+{
+    public UserRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
+
+    public Task<bool> OriginalEmailHashExistsAsync(
+        string emailHash,
+        CancellationToken ct = default
+    ) => _set.IgnoreQueryFilters().AnyAsync(u => u.OriginalEmailHash == emailHash, ct);
+}`,
+        satirlar: [
+          {
+            satir: 'public class UserRepository : Repository<User>, IUserRepository',
+            aciklama: 'Hem generic `Repository<User>`\'dan (GetByIdAsync, AddAsync, SoftDeleteAsync mirası) HEM DE `IUserRepository` arayüzünden (GetByEmailAsync sözleşmesi) türer.',
+            neden: 'Bu "çift miras" (bir sınıftan implementasyon, bir arayüzden sözleşme), CLAUDE.md §3 Adım 8\'in tam tanımı: "feature repository, temel işlemleri yeniden yazmaz, yalnızca ek sorgular için Repository<T>\'yi miras alır."',
+            olmasaydi: 'UserRepository, Repository<User>\'ı miras ALMASAYDI, GetByIdAsync/AddAsync/UpdateAsync/SoftDeleteAsync metotlarını SIFIRDAN, A-02/07\'dekiyle NEREDEYSE AYNI kodla tekrar yazması gerekirdi.'
+          },
+          {
+            satir: 'public UserRepository(WordLearnerDbContext db)',
+            aciklama: 'Constructor, DbContext\'i ALMAZ, kendisi de OLUŞTURMAZ — doğrudan bir alt satırda (`: base(db)`) taban sınıfa (Repository<User>) DEVREDER.',
+            neden: 'A-02/05\'teki `services.AddScoped<IUserRepository, UserRepository>()` kaydı, DI konteynerinin bu constructor\'ı çağırıp WordLearnerDbContext\'i OTOMATİK enjekte etmesini sağlar — UserRepository, DbContext\'in NEREDEN geldiğiyle hiç İLGİLENMEZ.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri UserRepository\'yi nasıl OLUŞTURACAĞINI bilemez, uygulama açılışında "UserRepository için uygun bir constructor bulunamadı" hatasıyla ÇÖKERDİ.'
+          },
+          {
+            satir: ': base(db) { }',
+            aciklama: 'Alınan `db` parametresini, taban sınıfın (Repository<User>) constructor\'ına AYNEN iletir — gövde boştur (`{ }`), çünkü UserRepository\'nin EK bir kurulum ihtiyacı YOKTUR.',
+            neden: 'Repository<T>\'nin constructor\'ı zaten `_db`/`_set` alanlarını KURUYORDU (A-02/07) — UserRepository bu işi TEKRAR yapmaz, yalnızca parametreyi YUKARI aktarır.',
+            olmasaydi: '`: base(db)` çağrısı olmasaydı, taban sınıfın `_db`/`_set` alanları hiç SET EDİLMEZ, UserRepository\'nin miras aldığı GetByIdAsync/AddAsync gibi metotlar NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: 'public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>',
+            aciklama: 'IUserRepository arayüzünde tanımlanan sözleşmenin GERÇEK implementasyonu — imza, arayüzdekiyle BİREBİR eşleşir.',
+            neden: 'C#\'ta bir arayüzü implemente eden sınıfın metot imzası (parametre tipleri, dönüş tipi) arayüzle TAM eşleşmek ZORUNDADIR — bu, derleyicinin garanti ettiği bir SÖZLEŞMEDİR.',
+            olmasaydi: 'İmza arayüzdekiyle eşleşmeseydi (ör. `ct` parametresi eksik olsaydı), derleyici "IUserRepository implemente edilmedi" hatası verir, proje HİÇ DERLENMEZDİ.'
+          },
+          {
+            satir: 'public Task<bool> OriginalEmailHashExistsAsync(',
+            aciklama: 'OriginalEmailHashExistsAsync metodunun imzası BAŞLAR — parametreler (emailHash, ct) okunabilirlik için AYRI satırlara yayılmıştır (GetByEmailAsync\'in tek satırlık imzasından FARKLI bir biçimlendirme, ama AYNI işlevi görür).',
+            neden: 'Bu metot, GetByEmailAsync\'ten daha uzun bir parametre listesi TAŞIMASA da, dönüş ifadesinin (`=> _set.IgnoreQueryFilters()...`) UZUN olması nedeniyle imza da çok satıra BÖLÜNMÜŞTÜR — okunabilirlik tercihi.',
+            olmasaydi: 'Bu satır olmasaydı, IUserRepository\'deki `OriginalEmailHashExistsAsync` sözleşmesi UserRepository tarafından implemente EDİLMEZ, proje derlenemezdi ("arayüz üyesi eksik" hatası).'
+          },
+          {
+            satir: 'string emailHash,',
+            aciklama: 'Kontrol edilecek e-posta HASH\'inin parametresi — DÜZ metin e-posta DEĞİL, zaten hash\'lenmiş hâli (Handler bu hash\'i Bölüm 15\'te üretir).',
+            neden: 'Bu metot yalnızca hash KARŞILAŞTIRMASI yapar, kendisi hash ÜRETMEZ — hash üretme sorumluluğu (hangi algoritma, hangi salt) çağıran kodda (Handler) kalır, Repository yalnızca "bu hash var mı" sorusuna cevap verir.',
+            olmasaydi: 'Bu parametre yerine düz metin e-posta alınsaydı, Repository\'nin KENDİSİ hash\'leme yapması gerekirdi — hash algoritması Repository ve Handler arasında TUTARSIZ (ör. biri SHA-256, diğeri farklı) uygulanma riski doğardı.'
+          },
+          {
+            satir: 'CancellationToken ct = default',
+            aciklama: 'CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun, bu metodun da varsayılan değerli son parametresi.',
+            neden: 'İstek iptal edilirse (ör. kullanıcı sayfayı kapattı), bu token sayesinde veritabanı sorgusu YARIDA KESİLEBİLİR — sunucu kaynakları gereksiz yere BOŞA harcanmaz.',
+            olmasaydi: 'CancellationToken olmasaydı, iptal edilmiş bir istek için başlatılan sorgu YİNE DE sonuna kadar ÇALIŞMAYA devam ederdi — yüksek trafik altında bu, gereksiz veritabanı yükü biriktirebilirdi.'
+          },
+          {
+            satir: '_set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);',
+            aciklama: 'A-02/04\'te kurduğumuz GLOBAL soft-delete filtresini BİLEREK devre dışı bırakır — yani bu sorgu, IsDeleted=true olan kullanıcıları DA görebilir.',
+            neden: 'Bir kullanıcı hesabını sildiğinde (soft delete), 30 günlük "grace period" (kurtarma süresi) başlar (Bölüm 9\'daki ScheduledDeletionAt alanı). Bu süre içinde AYNI e-postayla TEKRAR kayıt olmaya çalışırsa, sistem bu eski (silinmiş) hesabı GÖREBİLMELİ — "e-posta zaten kullanımda, hesabınızı kurtarmak ister misiniz" gibi bir akışa yönlendirebilmek için.',
+            olmasaydi: '`IgnoreQueryFilters()` kullanılmasaydı, GetByEmailAsync soft-delete\'li (grace period\'daki) bir kullanıcıyı GÖREMEZDİ — DuplicateEmailException hiç fırlatılmaz, kullanıcı AYNI e-postayla İKİNCİ bir hesap açabilirdi; ama veritabanındaki unique index (Bölüm 10) bunu YİNE DE reddederdi çünkü index de soft-delete\'i görmezden gelir — kullanıcı "e-posta zaten kayıtlı" diye anlaşılmaz bir 500 hatası alırdı.'
+          },
+          {
+            satir: ') => _set.IgnoreQueryFilters().AnyAsync(u => u.OriginalEmailHash == emailHash, ct);',
+            aciklama: 'GetByEmailAsync\'ten FARKLI bir sorgu türü: `AnyAsync` — TAM bir User nesnesi DEĞİL, yalnızca "var mı yok mu" (bool) sorusuna cevap verir.',
+            neden: 'Bu metodun çağıranı (Handler, Bölüm 15) TAM kullanıcı verisine (anonimleştirilmiş bir kullanıcının kalan bilgilerine) hiç İHTİYAÇ DUYMUYOR — yalnızca "bu hash daha önce var mıydı" bilgisini istiyor. `AnyAsync`, `FirstOrDefaultAsync`\'ten DAHA UCUZ bir sorgu üretir (SQL Server, tüm satırı ÇEKMEDEN yalnızca EXISTS kontrolü yapar).',
+            olmasaydi: 'Burada da `FirstOrDefaultAsync` kullanılıp dönen nesnenin null olup olmadığına BAKILSAYDI, veritabanından GEREKSİZ YERE tüm kullanıcı satırı ÇEKİLİRDİ — işlevsel olarak AYNI sonucu verirdi ama performans açısından İSRAFLI olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'IgnoreQueryFilters() — Ne Zaman Kullanılır, Ne Zaman Kullanılmaz',
+        iyi: {
+          baslik: 'Bilinçli, gerekçeli kullanım',
+          maddeler: [
+            'GetByEmailAsync: soft-delete\'li hesabı "e-posta çakışması" kontrolü için görmeli',
+            'Her kullanımın yanına NEDEN kullanıldığını açıklayan bir yorum eklenir',
+            'Sonuç, çağıran kod tarafından (Handler) IsDeleted kontrolüyle DEĞERLENDİRİLİR'
+          ]
+        },
+        kotu: {
+          baslik: 'Gerekçesiz, alışkanlık haline gelmiş kullanım',
+          maddeler: [
+            'Her repository metoduna "garanti olsun" diye eklemek',
+            'Silinmiş bir kullanıcının normal bir GetAllAsync sorgusunda GÖRÜNMESİ',
+            'Bir admin panelinde, silinen kelime kartlarının FARKINDA OLMADAN listeye karışması'
+          ]
+        }
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Feature repository (UserRepository), generic Repository<T>\'yi miras alır, yalnızca EK sorgular ekler',
+          'Arayüz (IUserRepository), "ne" sorusunu cevaplar; implementasyon (UserRepository), "nasıl" sorusunu',
+          'IgnoreQueryFilters(), global soft-delete filtresini BİLEREK devre dışı bırakır',
+          'Bu bypass yalnızca gerçek bir iş gerekçesi (hesap kurtarma, e-posta çakışma kontrolü) olduğunda kullanılır — asla varsayılan davranış değildir'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

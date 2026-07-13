@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QrLoginController + Partitioned Rate Limiting</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-ratelimit',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '07_status.html',
+    sonrakiBolum: '09_test.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 8',
+        baslik: 'QrLoginController + Partitioned Rate Limiting',
+        altBaslik: 'Polling, dakikada 30 istek üretir — A-02/05\'teki paylaşımlı "anonymous" (10/dk) limitini SANİYELER içinde tüketir. Çözüm: IP-BAŞINA ayrı pencereler.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginController.cs — Beş Endpoint, İki Farklı Yetki Modeli',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/QrLoginController.cs',
+        nedenBuKlasor: 'API/Controllers/ altında, AuthController.cs (A-03/24) İLE AYNI klasörde — AMA AYRI bir SINIF: KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ, "QR akışı Admin PANELDE YOK (YALNIZCA Web/Mobil), ROTASI da /auth/qr/* ALTINDA TOPLU".',
+        kod: `[ApiController]
+[Route("api/v1/auth/qr")]
+public class QrLoginController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public QrLoginController(IMediator mediator) => _mediator = mediator;
+
+    private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    [HttpPost("generate")]
+    [EnableRateLimiting("qrGenerate")]
+    [ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<QrGenerateResponse>> Generate(CancellationToken ct)
+    {
+        var command = new GenerateQrLoginCommand
+        {
+            ClientIp = ClientIp,
+            DeviceInfo = Request.Headers.UserAgent.ToString(),
+        };
+        return Ok(await _mediator.Send(command, ct));
+    }
+
+    [HttpGet("{token}/status")]
+    [EnableRateLimiting("qrStatus")]
+    [ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
+    public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
+        Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
+
+    [HttpPost("{token}/scan")]
+    [Authorize]
+    [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(typeof(QrScanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
+    public async Task<ActionResult<QrScanResponse>> Scan(string token, CancellationToken ct) =>
+        Ok(await _mediator.Send(new ScanQrLoginCommand(token) { UserId = CurrentUserId }, ct));
+
+    [HttpPost("{token}/confirm")]
+    [Authorize]
+    [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
+    public async Task<IActionResult> Confirm(string token, CancellationToken ct)
+    {
+        await _mediator.Send(new ConfirmQrLoginCommand(token) { UserId = CurrentUserId }, ct);
+        return NoContent();
+    }
+
+    [HttpPost("{token}/deny")]
+    [Authorize]
+    [EnableRateLimiting("authenticated")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
+    public async Task<IActionResult> Deny(string token, CancellationToken ct)
+    {
+        await _mediator.Send(new DenyQrLoginCommand(token) { UserId = CurrentUserId }, ct);
+        return NoContent();
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[ApiController]',
+            aciklama: 'A-03/24\'teki AuthController İLE AYNI öznitelik — otomatik model doğrulama (400 yanıtı), route\'tan parametre çıkarımı gibi API\'ye özgü davranışları ETKİNLEŞTİRİR.',
+            neden: 'Bu Controller da, TÜM diğer API controller\'ları GİBİ, MVC\'nin sayfa-tabanlı davranışları YERİNE saf bir API\'nin davranışlarını KAZANIR.',
+            olmasaydi: 'Bu öznitelik olmasaydı, bazı OTOMATİK davranışlar (ör. route parametrelerinin OTOMATİK bağlanması) ÇALIŞMAZDI.'
+          },
+          {
+            satir: '[Route("api/v1/auth/qr")]',
+            aciklama: 'A-03/24\'teki AuthController\'IN `[Route("api/v1/auth")]`\'INDAN FARKLI, DAHA UZUN bir ÖN EK — TÜM 5 QR endpoint\'İ `api/v1/auth/qr/*` ALTINDA TOPLANIR.',
+            neden: 'BU, AuthController İLE AYNI "auth" ANA YOLUNU PAYLAŞIR (QR girişi, KAVRAMSAL olarak AUTH\'un bir PARÇASIDIR) AMA KENDİ ALT-YOLUNA (`/qr`) SAHİPTİR — İKİ AYRI CONTROLLER\'IN (AYRI SINIFLAR) AYNI URL ÖNEKİ ALTINDA (`/auth`) BİRLEŞMESİNİ SAĞLAR.',
+            olmasaydi: 'AYRI bir ÖN EK (ör. `api/v1/qrlogin`) KULLANILSAYDI, API\'Yİ KULLANAN bir FRONTEND GELİŞTİRİCİSİ, QR akışının Auth İLE İLİŞKİLİ OLDUĞUNU URL\'DEN ANLAYAMAZDI — `/auth/qr/*` DESENİ, BU İLİŞKİYİ AÇIKÇA GÖSTERİR.'
+          },
+          {
+            satir: 'public class QrLoginController : ControllerBase',
+            aciklama: 'A-03/24\'teki AuthController İLE AYNI TABAN sınıf (`ControllerBase`, `Controller` DEĞİL — View DÖNDÜRMEZ, saf API).',
+            neden: 'Bu, TÜM API controller\'larının PAYLAŞTIĞI ORTAK bir TASARIM KARARI — TÜM projede, İSTEMCİYE her zaman JSON/HTTP durum kodu DÖNER, HTML sayfası DEĞİL.',
+            olmasaydi: '`Controller` (MVC tabanı) kullanılsaydı, View render etme GİBİ bu API\'de HİÇ kullanılmayan yetenekler GEREKSİZ yere miras ALINIRDI.'
+          },
+          {
+            satir: 'private readonly IMediator _mediator;',
+            aciklama: 'A-03/24\'teki AuthController\'ın TEK bağımlılığıyla AYNI desen — BEŞ farklı QR endpoint\'i olsa bile, Controller HER ZAMAN TEK bir bağımlılık taşır.',
+            neden: 'MediatR, Controller\'ları Handler\'lardan AYIRIR — QrLoginController, IQrLoginSessionRepository/IPasswordService gibi hiçbir Application-katmanı bağımlılığını DOĞRUDAN görmez.',
+            olmasaydi: 'MediatR olmadan, Controller\'ın constructor\'ı BEŞ endpoint\'in TOPLAM ihtiyaç duyduğu HER bağımlılığı TEK sınıfta TOPLARDI.'
+          },
+          {
+            satir: 'public QrLoginController(IMediator mediator) => _mediator = mediator;',
+            aciklama: 'A-03/24\'teki AuthController constructor\'ı İLE BİREBİR AYNI — expression-bodied member (`=>`) sözdizimiyle TEK satırda yazılır.',
+            neden: 'Bu constructor o kadar BASİT (tek atama) ki, uzun `{ }` bloklu yazım yerine `=>` İLE TEK satırda yazılabilir.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri QrLoginController\'ı OLUŞTURAMAZ, `_mediator` alanı HİÇBİR ZAMAN DOLDURULMAZDI — TÜM 5 endpoint NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();',
+            aciklama: 'A-03/22\'deki VerifyLoginOtpCommand\'a IP geçiren mantığın, BURADA bir Controller PROPERTY\'sine ÇIKARILMIŞ hali — BEŞ endpoint\'ten İKİSİ (Generate, Status) bu değeri KULLANIR.',
+            neden: 'Bu property, HER endpoint\'te `HttpContext.Connection.RemoteIpAddress?.ToString()` YAZMAK yerine TEK bir yerde TANIMLANIR — küçük ama TEKRARI ÖNLEYEN bir YARDIMCI.',
+            olmasaydi: 'Bu property olmasaydı, Generate VE GetStatus action\'larının HER İKİSİ de AYNI IP okuma KODUNU KENDİ İÇLERİNDE TEKRARLARDI.'
+          },
+          {
+            satir: 'private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+            aciklama: 'A-03/24\'teki AuthController.CurrentUserId İLE BİREBİR AYNI SATIR — İKİ AYRI Controller\'IN AYNI KOD PARÇASINI TAŞIMASI, BİLİNÇLİ bir KÜÇÜK TEKRARDIR.',
+            neden: 'Bu TEK SATIRLIK PROPERTY, PAYLAŞILAN bir "BASE CONTROLLER" SINIFINA ÇIKARILACAK KADAR BÜYÜK bir MANTIK TAŞIMIYOR (A-03/26\'daki FakePasswordHashForTiming\'İN "KÜÇÜK, BİLİNÇLİ TEKRAR" GEREKÇESİYLE AYNI) — İKİ Controller ARASINDA bir MİRAS İLİŞKİSİ KURMAK, BU TEK SATIR İÇİN AŞIRI MÜHENDİSLİK OLURDU.',
+            olmasaydi: 'BU KOD PAYLAŞILAN bir `BaseAuthController` SINIFINA ÇIKARILSAYDI, İKİ Controller ARASINDA bir MİRAS BAĞIMLILIĞI KURULURDU — GELECEKTE BİRİNİN BU DAVRANIŞI DEĞİŞTİRMESİ GEREKTİĞİNDE (ör. FARKLI bir CLAIM TİPİ), DİĞERİNİ de ETKİLEME RİSKİ DOĞARDI.'
+          },
+          {
+            satir: '[HttpPost("generate")]',
+            aciklama: 'Bu action\'ın, `[Route("api/v1/auth/qr")]` ile birleşerek `POST /api/v1/auth/qr/generate` adresine YANIT VERECEĞİNİ belirtir.',
+            neden: 'ASP.NET Core, bu attribute\'ları OKUYARAK hangi URL+HTTP metodunun hangi C# metoduna karşılık geldiğini otomatik EŞLEŞTİRİR.',
+            olmasaydi: 'Bu attribute olmasaydı, ASP.NET Core bu metodun hangi URL\'e karşılık geldiğini BİLEMEZDİ — istek HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: '[EnableRateLimiting("qrGenerate")]',
+            aciklama: 'A-03/24\'teki `[EnableRateLimiting("anonymous")]`\'DAN FARKLI, YENİ bir POLİTİKA — Program.cs\'DE (BİR SONRAKİ kod BLOĞU) TANIMLANACAK, YALNIZCA GENERATE İÇİN ÖZEL bir POLİTİKA.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ (A-03/24\'teki AynI KONVANSİYON, BURADA YENİ bir POLİTİKAYA UYGULANIR): "QR GENERATE KÖTÜYE KULLANILIRSA (TOPLU OTURUM AÇIP DB ŞİŞİRME) TEK bir SALDIRGAN IP\'Sİ TÜM kullanıcıların ANONİM LİMİTİNİ TÜKETMEMELİ" — BU YÜZDEN PAYLAŞIMLI "anonymous" YERİNE, KENDİ ÖZEL POLİTİKASI VARDIR.',
+            olmasaydi: 'Bu endpoint PAYLAŞIMLI "anonymous" (10/dk, TÜM anonim TRAFİK ORTAK) POLİTİKASINI KULLANSAYDI, bir SALDIRGAN SANİYELER İÇİNDE BU LİMİTİ TÜKETİP, GERÇEK kullanıcıların Register/Login GİBİ DİĞER ANONİM ENDPOINT\'LERE ERİŞİMİNİ de ENGELLEYEBİLİRDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]',
+            aciklama: 'Bu endpoint BAŞARILI olduğunda, QrGenerateResponse tipinde bir gövdeyle 200 durum kodu DÖNECEĞİNİ Swagger\'a BİLDİRİR.',
+            neden: 'A-03/24\'teki AynI dokümantasyon ÖZNİTELİKLERİ — Swashbuckle bunları okuyup Swagger UI\'da "olası yanıtlar" listesini OTOMATİK üretir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI\'ı kullanan bir frontend geliştiricisi, bu endpoint\'in BAŞARILI durumda TAM OLARAK hangi ŞEKİLDE veri döneceğini KOD\'a bakmadan BİLEMEZDİ.'
+          },
+          {
+            satir: 'public async Task<ActionResult<QrGenerateResponse>> Generate(CancellationToken ct)',
+            aciklama: 'Action metodunun imzası — dönüş tipi `ActionResult<QrGenerateResponse>`, A-03/24\'teki Register action\'ının AYNI deseni.',
+            neden: 'Bu Command HİÇBİR route/query parametresi ALMAZ (Bölüm 5\'te gördüğümüz gibi Generate ANONİM bir istektir) — TEK parametre CancellationToken\'dır.',
+            olmasaydi: 'Dönüş tipi doğrudan `QrGenerateResponse` olsaydı, tip esnekliği (farklı HTTP sonuçları dönebilme) KAYBOLURDU.'
+          },
+          {
+            satir: 'var command = new GenerateQrLoginCommand',
+            aciklama: 'Bölüm 5\'teki Command, object initializer İLE inşa edilmeye BAŞLANIR — Command\'ın gövdesi OLMADIĞI için, TÜM alanlar (ClientIp, DeviceInfo) BURADA, Controller tarafından DOLDURULUR.',
+            neden: 'Bu, A-03/26\'daki RequestAccountDeletionCommand\'ın "gövdesiz Command" deseniyle AYNI — istemciden hiçbir JSON gövdesi BEKLENMEZ.',
+            olmasaydi: 'Bu satır olmasaydı, aşağıdaki alan atamalarının BAĞLI OLACAĞI bir nesne olmazdı — kod derlenemezdi.'
+          },
+          {
+            satir: 'ClientIp = ClientIp,',
+            aciklama: 'Controller\'ın KENDİ `ClientIp` property\'si (bir üstteki kod bloğunda tanımlı), Command\'ın AYNI adlı alanına AKTARILIR.',
+            neden: 'Bu, Bölüm 5\'teki GenerateQrLoginCommand.ClientIp alanının DOLDURULDUĞU YERDİR — Handler, bu değeri `session.RequesterIp`\'ye yazacaktır.',
+            olmasaydi: 'Bu satır olmasaydı, `ClientIp` Command\'da `null` KALIRDI — mobil onay ekranı, web\'in HANGİ IP\'den istek yaptığını GÖSTEREMEZDİ.'
+          },
+          {
+            satir: 'DeviceInfo = Request.Headers.UserAgent.ToString(),',
+            aciklama: 'HTTP isteğinin `User-Agent` header\'ı okunur — Bölüm 5\'teki GenerateQrLoginCommand.DeviceInfo alanının DOLDURULDUĞU YER.',
+            neden: 'Bu, HTTP\'ye özgü bir DETAY (header okuma) olduğu için, Application katmanındaki Command DEĞİL, API katmanındaki bu Controller OKUR.',
+            olmasaydi: 'Bu satır olmasaydı, `DeviceInfo` Command\'da `null` KALIRDI — Bölüm 1\'deki "görsel karşılaştırma" için gerekli cihaz bilgisi HİÇ TOPLANMAZDI.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer bloğunun ve `var command = new GenerateQrLoginCommand` atamasının KAPANIŞI.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, İKİ alanın (ClientIp, DeviceInfo) bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'return Ok(await _mediator.Send(command, ct));',
+            aciklama: 'Command, MediatR üzerinden Handler\'a gönderilir — sonuç, 200 OK durum koduyla (A-03/24\'teki Register\'ın 201 Created\'ından FARKLI) SARILIR.',
+            neden: '200 OK kullanılması (201 DEĞİL), bu isteğin YENİ bir KALICI kaynak OLUŞTURMADIĞINI (QrLoginSession GEÇİCİ, 2 dakikalık bir kayıttır) YANSITIR — REST semantiğinde 201, TİPİK olarak kalıcı KAYNAKLAR için KULLANILIR.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — istek Controller\'a ulaşır ama hiçbir QR oturumu OLUŞTURULMAZDI.'
+          },
+          {
+            satir: '[HttpGet("{token}/status")]',
+            aciklama: '`GET /api/v1/auth/qr/{token}/status` adresine YANIT verir — DİĞER dört endpoint\'ten (Generate, Scan, Confirm, Deny — HEPSİ POST) FARKLI olarak, bu TEK endpoint `HttpGet`\'tir.',
+            neden: 'Status, YALNIZCA veri OKUYAN (hiçbir şeyi DEĞİŞTİRMeyen — süre dolma dışında) bir SORGUDUR — HTTP semantiğine UYGUN olarak GET kullanılır, POST DEĞİL.',
+            olmasaydi: 'Bu attribute olmasaydı, web tarayıcısının polling isteği HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: '[EnableRateLimiting("qrStatus")]',
+            aciklama: '"qrGenerate" İLE AYNI GEREKÇE, İKİNCİ ÖZEL POLİTİKA — Bölüm 7\'nin BAŞINDAKİ AÇIKLAMADA GÖRDÜĞÜMÜZ "~2 SANİYEDE bir POLLING" (~30 İSTEK/DK) BU ENDPOINT\'İN NORMAL KULLANIM DESENİDİR.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "TEK bir AÇIK QR EKRANI ~20 SANİYE İÇİNDE bu BÜTÇEYİ (10/dk PAYLAŞIMLI) TÜKETİP SUNUCUDAKİ TÜM ANONİM kullanıcıları KİLİTLER — POLLING KENDİ KENDİNİ ve BAŞKALARINI KİLİTLEMİŞ OLURDU."',
+            olmasaydi: 'GetStatus PAYLAŞIMLI "anonymous" POLİTİKASINI KULLANSAYDI, TEK bir AÇIK QR EKRANININ NORMAL POLLING DAVRANIŞI (30/DK), TÜM anonim kullanıcıların (Register/Login DAHİL) LİMİTİNİ KENDİ BAŞINA TÜKETİRDİ — BU, KAYNAK KODDAKİ YORUMDA "POLLING KENDİ KENDİNİ ve BAŞKALARINI KİLİTLEMİŞ OLURDU" OLARAK TARİF EDİLEN, GERÇEK bir TASARIM HATASI OLURDU.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]',
+            aciklama: 'Başarılı (VE hattâ Pending/Scanned/Denied/Expired durumları DAHİL — hiçbiri hata SAYILMADIĞI için) YANIT şeklini BELGELER.',
+            neden: 'Bölüm 7\'de gördüğümüz gibi, bu endpoint\'in "başarı" durumu BEŞ farklı Status DEĞERİNİ (Confirmed DAHİL) kapsar — hepsi AYNI 200 koduyla döner.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI bu endpoint\'in başarı durumunda hangi ŞEKİLDE veri döndüğünü BELGELEMEZDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]',
+            aciklama: 'Bu SLAYTTA ÜÇ endpoint\'te (Status, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — sahiplik ihlali durumunda dönen 403\'ü BELGELER (Bölüm 4\'teki QrSessionForbiddenException).',
+            neden: 'Kod editörü İÇERİĞE göre eşleştirdiği için, TEK açıklama bu ÜÇ fiziksel satıra da uygulanır — Confirm/Deny\'da "yanlış cihaz onaylamaya ÇALIŞIYOR", Status\'ta İSE (Bölüm 7\'de göreceğimiz) TEORİK bir senaryo YOKTUR ama TUTARLILIK için belgelenir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger dokümantasyonu bu endpoint\'lerin 403 döndüğü senaryoyu HİÇ BELİRTMEZDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]',
+            aciklama: 'Bu SLAYTTA DÖRT endpoint\'te (Status, Scan, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — geçersiz/uydurma bir QR token\'ı GÖNDERİLDİĞİNDE dönen 404\'ü BELGELER (Bölüm 5-6\'daki EntityNotFoundException).',
+            neden: 'DÖRT endpoint de HANDLE metodunun İLK adımında `GetByTokenHashAsync(...) ?? throw new EntityNotFoundException(...)` çağırır — bu YÜZDEN dördü de AYNI 404 olasılığını TAŞIR.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger dokümantasyonu bu endpoint\'lerin "token bulunamadı" senaryosunda 404 döndüğünü HİÇ belirtmezdi.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]',
+            aciklama: 'Bu SLAYTTA DÖRT endpoint\'te (Status, Scan, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — Bölüm 4\'te tanımladığımız YENİ HTTP durum kodunu BELGELER.',
+            neden: 'DÖRT endpoint de, oturumun süresi DOLMUŞSA VEYA yanlış durumdaysa QrSessionGoneException (Bölüm 4-7) fırlatabilir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI\'ı kullanan bir frontend geliştiricisi, 410 durumunu (nispeten SIRADIŞI bir HTTP kodu) hiç BEKLEMEZDİ.'
+          },
+          {
+            satir: 'public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>',
+            aciklama: 'Action metodunun imzası — `token` parametresi, `[HttpGet("{token}/status")]` route\'undaki `{token}` PLACEHOLDER\'ından OTOMATİK bağlanır (route parametresi, gövde DEĞİL).',
+            neden: 'Metot gövdesinin `=>` (expression body) İLE yazılması, TEK bir ifadeden OLUŞAN bu action\'ı (tek satırlık bir Ok() çağrısı) DAHA KISA gösterir.',
+            olmasaydi: 'Dönüş tipi doğrudan `QrStatusResponse` olsaydı, tip esnekliği KAYBOLURDU.'
+          },
+          {
+            satir: 'Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));',
+            aciklama: 'Command, ROUTE\'tan gelen `token` İLE İNŞA EDİLİR, `ClientIp` `with`-benzeri bir object initializer İLE (Bölüm 7\'de gördüğümüz `init`-only property) EKLENİR.',
+            neden: 'Bu, A-03/22\'deki VerifyLoginOtpCommand\'ın Controller\'da NASIL İNŞA EDİLDİĞİYLE AYNI desen — record\'un ANA constructor parametresi (token) İLE `init`-only property\'sinin (ClientIp) BİRLİKTE doldurulması.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — web istemcisi HİÇBİR ZAMAN oturum durumunu SORGULAYAMAZDI.'
+          },
+          {
+            satir: '[HttpPost("{token}/scan")]',
+            aciklama: '`POST /api/v1/auth/qr/{token}/scan` adresine YANIT verir — `{token}` route parametresi, Generate\'in DÖNDÜRDÜĞÜ QR token\'dır.',
+            neden: 'ASP.NET Core, bu attribute\'ları OKUYARAK hangi URL+HTTP metodunun hangi C# metoduna karşılık geldiğini otomatik EŞLEŞTİRİR.',
+            olmasaydi: 'Bu attribute olmasaydı, mobil uygulamanın TARADIĞI QR isteği HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: 'Bu SLAYTTA ÜÇ endpoint\'te (Scan, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — bu üç eylem, YALNIZCA ZATEN giriş yapmış (JWT\'si GEÇERLİ) bir mobil uygulama tarafından yapılabilir.',
+            neden: 'Bölüm 1\'de gördüğümüz gibi, mobil uygulama QR akışına GİRMEDEN ÖNCE ZATEN kendi hesabına giriş YAPMIŞ olmalıdır — Generate/Status\'tan FARKLI olarak, bu üç eylem ANONİM OLAMAZ.',
+            olmasaydi: 'Bu öznitelik olmasaydı, kimliği doğrulanmamış biri BİR oturumu TARAYABİLİR/ONAYLAYABİLİRDİ — `CurrentUserId` property\'si (JWT claim\'inden okur) İSTİSNA fırlatırdı ÇÜNKÜ kimliği doğrulanmamış bir istekte BU claim HİÇ YOKTUR.'
+          },
+          {
+            satir: '[EnableRateLimiting("authenticated")]',
+            aciklama: 'Bu SLAYTTA ÜÇ endpoint\'te (Scan, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — A-02/05\'teki PAYLAŞIMLI "authenticated" (100/dk) politikasını KULLANIR, qrGenerate/qrStatus GİBİ ÖZEL bir politika DEĞİL.',
+            neden: 'Bu üç eylem `[Authorize]` OLDUĞU İÇİN, ZATEN kimliği doğrulanmış bir kullanıcının NORMAL kullanım deseni (TEK bir tarama, TEK bir onay/red) qrGenerate/qrStatus KADAR SIK ÇAĞRILMAZ — paylaşımlı "authenticated" limiti YETERLİDİR.',
+            olmasaydi: 'Bu öznitelik unutulsaydı (ya da hiç rate limit OLMASAYDI), bu üç endpoint SINIRSIZ istek KABUL EDERDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(QrScanResponse), StatusCodes.Status200OK)]',
+            aciklama: 'Scan başarılı olduğunda, Bölüm 4\'te tanımladığımız QrScanResponse (RequesterDeviceInfo/RequesterIp/PairingCode) DÖNDÜĞÜNÜ BELGELER.',
+            neden: 'Bu, Swagger dokümantasyonunda mobil uygulama geliştiricisinin GÖRSEL KARŞILAŞTIRMA için hangi alanları BEKLEMESİ gerektiğini AÇIKÇA gösterir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, mobil geliştirici Scan\'in TAM OLARAK hangi veriyi DÖNDÜĞÜNÜ koda bakmadan BİLEMEZDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(StatusCodes.Status401Unauthorized)]',
+            aciklama: 'Bu SLAYTTA ÜÇ endpoint\'te (Scan, Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — `[Authorize]`\'ın OTOMATİK ürettiği 401 yanıtını BELGELER (`typeof` parametresi YOK, çünkü 401 gövdesiz bir yanıttır).',
+            neden: 'Bu üç endpoint `[Authorize]` OLDUĞU İÇİN, JWT eksik/geçersizse ASP.NET Core OTOMATİK olarak 401 döner — bu dokümantasyon, bu OTOMATİK davranışı Swagger\'a YANSITIR.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI bu endpoint\'lerin kimlik doğrulama GEREKTİRDİĞİNİ (VE 401 dönebileceğini) BELGELEMEZDİ.'
+          },
+          {
+            satir: 'public async Task<ActionResult<QrScanResponse>> Scan(string token, CancellationToken ct) =>',
+            aciklama: 'Action metodunun imzası — `token` route\'tan, kullanıcı kimliği (`CurrentUserId` property\'si üzerinden) JWT\'den gelir.',
+            neden: 'Metot gövdesinin `=>` İLE yazılması, GetStatus/Scan gibi TEK satırlık action\'lar İÇİN TUTARLI bir BİÇİMLENDİRME.',
+            olmasaydi: 'Dönüş tipi doğrudan `QrScanResponse` olsaydı, tip esnekliği KAYBOLURDU.'
+          },
+          {
+            satir: 'Ok(await _mediator.Send(new ScanQrLoginCommand(token) { UserId = CurrentUserId }, ct));',
+            aciklama: 'Command, ROUTE\'tan gelen `token` İLE İNŞA EDİLİR, `UserId` Controller\'ın `CurrentUserId` property\'sinden (JWT\'den) EKLENİR.',
+            neden: 'Bu, A-03/23\'teki LogoutCommand\'ın Controller\'da NASIL İNŞA EDİLDİĞİYLE AYNI desen — `UserId` İSTEMCİDEN (gövdeden) DEĞİL, GÜVENİLİR JWT claim\'inden GELİR.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — mobil uygulama HİÇBİR ZAMAN bir oturumu TARAYAMAZDI.'
+          },
+          {
+            satir: '[HttpPost("{token}/confirm")]',
+            aciklama: '`POST /api/v1/auth/qr/{token}/confirm` adresine YANIT verir.',
+            neden: 'ASP.NET Core, bu attribute\'ları OKUYARAK hangi URL+HTTP metodunun hangi C# metoduna karşılık geldiğini otomatik EŞLEŞTİRİR.',
+            olmasaydi: 'Bu attribute olmasaydı, mobil uygulamanın "onayla" isteği HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: '[ProducesResponseType(StatusCodes.Status204NoContent)]',
+            aciklama: 'Bu SLAYTTA İKİ endpoint\'te (Confirm, Deny) tekrarlanan, BİREBİR AYNI öznitelik — Bölüm 6\'daki `Unit` dönüşünün, HTTP seviyesindeki KARŞILIĞI.',
+            neden: 'Confirm/Deny, İSTEMCİYE hiçbir VERİ döndürmez, yalnızca "işlem BAŞARILI" bilgisini TAŞIR — 204 No Content, HTTP standardının BU durum İÇİN doğru KARŞILIĞIDIR.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI bu iki endpoint\'in BAŞARI durumunda hiçbir gövde DÖNDÜRMEDİĞİNİ BELGELEMEZDİ.'
+          },
+          {
+            satir: 'public async Task<IActionResult> Confirm(string token, CancellationToken ct)',
+            aciklama: 'Dönüş tipi `ActionResult<T>` DEĞİL, `IActionResult` — Confirm HİÇBİR VERİ döndürmediği için (yalnızca `NoContent()`), generic bir dönüş TİPİNE gerek YOKTUR.',
+            neden: 'Bu, `Unit` dönen bir MediatR Handler\'ının (Bölüm 6) HTTP katmanındaki DOĞAL karşılığıdır — dönecek bir VERİ olmadığı için `IActionResult` YETERLİDİR.',
+            olmasaydi: '`ActionResult<QrScanResponse>` gibi bir tip kullanılsaydı, "dönecek veri VAR" gibi YANLIŞ bir izlenim VERİRDİ — Confirm hiçbir zaman gövde İÇEREN bir yanıt DÖNMEZ.'
+          },
+          {
+            satir: 'await _mediator.Send(new ConfirmQrLoginCommand(token) { UserId = CurrentUserId }, ct);',
+            aciklama: 'Command, ROUTE\'tan gelen `token` İLE İNŞA EDİLİR, `UserId` JWT\'den EKLENİR — Scan İLE AYNI desen, farklı Command tipi.',
+            neden: 'Bölüm 6\'daki ConfirmQrLoginCommand\'ın `IRequest<Unit>` implemente etmesi, buradaki `await` çağrısının bir DÖNÜŞ değeri BEKLEMEMESİNİ (sonucu bir değişkene ATAMAMASINI) açıklar.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — mobil uygulama HİÇBİR ZAMAN bir girişi ONAYLAYAMAZDI.'
+          },
+          {
+            satir: 'return NoContent();',
+            aciklama: 'Bu SLAYTTA İKİ endpoint\'te (Confirm, Deny) tekrarlanan, BİREBİR AYNI satır — 204 No Content durum kodunu döndürür.',
+            neden: 'Bu, bir üstteki `[ProducesResponseType(StatusCodes.Status204NoContent)]` özniteliğinin BELGELEDİĞİ davranışın, GERÇEK ÇALIŞMA ZAMANI karşılığıdır.',
+            olmasaydi: 'Bu satır olmasaydı, metot bir DÖNÜŞ değeri VERMEZDİ — `Task<IActionResult>` dönüş tipini KARŞILAMAZDI, kod DERLENEMEZDİ.'
+          },
+          {
+            satir: '[HttpPost("{token}/deny")]',
+            aciklama: '`POST /api/v1/auth/qr/{token}/deny` adresine YANIT verir — Confirm\'in AYNASI, farklı bir SONUÇ durumuna geçen KARŞIT eylem.',
+            neden: 'Bölüm 6\'nın karşılaştırma slaydında GÖRDÜĞÜMÜZ gibi, Confirm/Deny AYRI HTTP endpoint\'leri OLARAK tasarlanır (TEK bir Command + bool flag DEĞİL) — İSTEMCİ "hangi eylemi" AÇIKÇA URL\'den SEÇER.',
+            olmasaydi: 'Bu attribute olmasaydı, mobil uygulamanın "reddet" isteği HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: 'public async Task<IActionResult> Deny(string token, CancellationToken ct)',
+            aciklama: 'Confirm İLE BİREBİR AYNI imza deseni — dönüş tipi `IActionResult`, çünkü Deny de HİÇBİR VERİ döndürmez.',
+            neden: 'Confirm/Deny\'ın imzalarının SİMETRİK olması, bu iki eylemin KAVRAMSAL olarak BİRBİRİNİN KARŞITI olduğunu KOD SEVİYESİNDE de YANSITIR.',
+            olmasaydi: 'Farklı bir dönüş tipi kullanılsaydı, iki SİMETRİK eylem arasında GEREKSİZ bir ASİMETRİ oluşurdu.'
+          },
+          {
+            satir: 'await _mediator.Send(new DenyQrLoginCommand(token) { UserId = CurrentUserId }, ct);',
+            aciklama: 'Confirm İLE BİREBİR AYNI desen, farklı Command tipi (`DenyQrLoginCommand`) — token route\'tan, UserId JWT\'den.',
+            neden: 'Bölüm 6\'nın karşılaştırma slaydında gördüğümüz gibi, DenyQrLoginCommandHandler, ConfirmQrLoginCommandHandler İLE AYNI QrLoginSessionOwnershipHelper.LoadScannedOwnedSessionAsync çağrısını kullanır — yalnızca hedef durum (`Denied`) FARKLIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — mobil uygulama HİÇBİR ZAMAN bir girişi REDDEDEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — Partitioned (IP-Başına) Rate Limiting',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'A-02/05\'teki AYNI `AddRateLimiter` BLOĞUNUN İÇİNDE, "anonymous"/"authenticated" POLİTİKALARINDAN SONRA EKLENİR.',
+        kod: `options.AddPolicy(
+    "qrGenerate",
+    context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromHours(1),
+                QueueLimit = 0,
+            }
+        )
+);
+
+options.AddPolicy(
+    "qrStatus",
+    context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 40,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }
+        )
+);`,
+        satirlar: [
+          {
+            satir: 'options.AddPolicy(',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika TANIMI (qrGenerate, qrStatus) İÇİN AÇILAN, BİREBİR AYNI görünen satır — kod editörü İÇERİĞE göre eşleştirdiği için TEK açıklama HER İKİ fiziksel satıra da uygulanır. A-02/05\'teki `options.AddFixedWindowLimiter("anonymous", ...)` İLE FARKLI bir METOT — `AddPolicy`, DAHA ESNEK bir API SUNAR: HER İSTEK İÇİN DİNAMİK bir PARTITION (BÖLÜM) HESAPLAYAN bir FONKSİYON ALIR.',
+            neden: '`AddFixedWindowLimiter`, TÜM İSTEKLER İÇİN TEK bir PAYLAŞIMLI PENCERE KURAR (A-02/05\'teki "anonymous" GİBİ) — `AddPolicy` + `RateLimitPartition.GetFixedWindowLimiter` İSE, HER FARKLI PARTITION KEY (BURADA: IP ADRESİ) İÇİN AYRI bir PENCERE OLUŞTURUR.',
+            olmasaydi: '`AddFixedWindowLimiter` KULLANILSAYDI, TÜM IP\'LER AYNI PAYLAŞIMLI PENCEREYİ KULLANIRDI — Bölüm 8\'in BAŞINDAKİ "TEK bir SALDIRGAN IP\'Sİ TÜM kullanıcıları KİLİTLEMESİN" AMACI GERÇEKLEŞTİRİLEMEZDİ.'
+          },
+          {
+            satir: '"qrGenerate",',
+            aciklama: 'Politikanın ADI — Bölüm 8\'in İLK slaydındaki `[EnableRateLimiting("qrGenerate")]` özniteliğiyle EŞLEŞEN, BENZERSİZ bir STRING.',
+            neden: 'Bu isim, Controller\'daki öznitelik İLE Program.cs\'teki bu politika TANIMI ARASINDAKİ BAĞLANTIYI KURAR — ASP.NET Core, İSİM EŞLEŞMESİNE göre HANGİ isteğin HANGİ politikayı KULLANACAĞINA KARAR VERİR.',
+            olmasaydi: 'Bu isim, Controller\'daki `[EnableRateLimiting("qrGenerate")]` İLE EŞLEŞMESEYDİ (ör. YAZIM HATASI), ASP.NET Core "policy BULUNAMADI" hatasıyla ÇALIŞMA ZAMANINDA PATLARDI.'
+          },
+          {
+            satir: 'context =>',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında (qrGenerate, qrStatus) tekrarlanan, BİREBİR AYNI lambda BAŞLANGICI — HER İSTEĞİN `HttpContext`\'İNİ alıp bir `RateLimitPartition` DÖNDÜREN fonksiyonun BAŞLANGICI.',
+            neden: 'Bu, `AddPolicy`\'nin İKİNCİ parametresi — HER istek GELDİĞİNDE ÇALIŞTIRILIR, "bu istek HANGİ partition\'A ait" SORUSUNU CEVAPLAR.',
+            olmasaydi: 'Bu satır olmasaydı, `AddPolicy` HANGİ partition\'ın KULLANILACAĞINI HESAPLAYAMAZDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında tekrarlanan, BİREBİR AYNI satır — "SABİT PENCERE" algoritmasını, HER partition (IP) İÇİN AYRI AYRI KURAR.',
+            neden: 'ASP.NET Core Rate Limiting, birden FAZLA algoritma sunar (fixed window, sliding window, token bucket) — bu proje, A-02/05\'teki "anonymous"/"authenticated" İLE AYNI BASİT algoritmayı (fixed window) burada da TERCİH eder.',
+            olmasaydi: 'Bu çağrı olmasaydı, `context =>` lambda\'sı bir `RateLimitPartition` DÖNDÜREMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",',
+            aciklama: 'HER İSTEĞİN "HANGİ PENCEREYE AİT OLDUĞU" (partition), İSTEĞİ ATAN CİHAZIN IP ADRESİYLE BELİRLENİR — A-03/24\'teki AuthController.ClientIp İLE AYNI KAYNAKTAN (`RemoteIpAddress`) OKUNUR. `?? "unknown"`, IP adresi (NADİREN) OKUNAMAZSA (`RemoteIpAddress` `null` İSE) TÜM BU İSTEKLERİN "unknown" ADLI TEK bir ORTAK PARTITION\'A DÜŞMESİNİ SAĞLAYAN SAVUNMACI bir VARSAYILAN.',
+            neden: 'Bu, "PARTITIONED" (BÖLÜMLENMİŞ) RATE LIMITING\'İN TEMEL FİKRİDİR: HER IP, KENDİ AYRI SAYACINA SAHİPTİR — 1.2.3.4 IP\'sinden GELEN 20 İSTEK, 5.6.7.8 IP\'sinin LİMİTİNİ HİÇ ETKİLEMEZ. `?? "unknown"` OLMASAYDI, `partitionKey`\'İN TİPİ `string?` (nullable) OLURDU — `RateLimitPartition.GetFixedWindowLimiter`\'IN BEKLEDİĞİ non-nullable `string` PARAMETRESİYLE UYUŞMAZDI.',
+            olmasaydi: 'Bu satır OLMASAYDI (ya da SABİT bir DEĞER OLSAYDI, ör. `"global"`), TÜM İSTEKLER AYNI TEK PENCEREYİ PAYLAŞIRDI — Bölüm 8\'İN BAŞINDAKİ TÜM "IP-BAŞINA AYRI PENCERE" AMACI ORTADAN KALKARDI. `??` KISMI OLMASAYDI İSE, IP OKUNAMAYAN NADİR bir İSTEKTE KOD ÇALIŞMA ZAMANI HATASI (ya da DERLEME HATASI) FIRLATIRDI.'
+          },
+          {
+            satir: 'factory: _ => new FixedWindowRateLimiterOptions',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında tekrarlanan, BİREBİR AYNI satır — HER partition İÇİN GERÇEK limit AYARLARINI (PermitLimit, Window, QueueLimit) İNŞA EDEN bir FABRİKA fonksiyonu.',
+            neden: 'Parametre adı `_` (kullanılmayan bir parametre İÇİN C# konvansiyonu) — `RateLimitPartition.GetFixedWindowLimiter`\'ın BEKLEDİĞİ factory imzası bir PARAMETRE alır ama BU parametreye BURADA İHTİYAÇ YOKTUR (her partition AYNI limit AYARLARINI kullanır).',
+            olmasaydi: 'Bu factory olmasaydı, `RateLimitPartition.GetFixedWindowLimiter` HANGİ limit AYARLARININ (PermitLimit, Window) KULLANILACAĞINI BİLEMEZDİ.'
+          },
+          {
+            satir: 'PermitLimit = 20,',
+            aciklama: 'A-02/05\'teki "anonymous"UN 10/dk\'sından FARKLI bir SAYI, VE FARKLI bir PENCERE (BİR SONRAKİ satır, SAAT — DAKİKA DEĞİL) — SAATTE 20 QR OLUŞTURMA.',
+            neden: 'Bölüm 5\'İN BAŞINDAKİ `ExpirySeconds = 120` (2 DAKİKA) İLE KARŞILAŞTIRILDIĞINDA, 20/SAAT MAKUL bir SINIRDIR: NORMAL bir kullanıcı SAATTE BİRKAÇ KEZ QR ÜRETEBİLİR (ör. QR SÜRESİ DOLDUYSA YENİDEN DENEME) AMA TOPLU OTURUM AÇMA SALDIRISI (Bölüm 8\'İN BAŞINDAKİ RİSK) BU SINIRDA ENGELLENİR.',
+            olmasaydi: 'BU LİMİT ÇOK YÜKSEK OLSAYDI (ör. 1000/saat), bir SALDIRGAN BİNLERCE BOŞ QrLoginSession KAYDI OLUŞTURUP VERİTABANINI ŞİŞİREBİLİRDİ — ÇOK DÜŞÜK OLSAYDI (ör. 2/saat), MEŞRU bir kullanıcı QR SÜRESİ SIK SIK DOLDUĞUNDA (ör. YAVAŞ İNTERNET NEDENİYLE TARAYAMADIYSA) HIZLA LİMİTE TAKILIRDI.'
+          },
+          {
+            satir: 'Window = TimeSpan.FromHours(1),',
+            aciklama: '"qrGenerate" İÇİN PENCERE, A-02/05\'teki "anonymous"UN DAKİKALIK PENCERESİNDEN (`TimeSpan.FromMinutes(1)`) FARKLI olarak SAATLİKTİR.',
+            neden: 'Generate, POLLING GİBİ SIK ÇAĞRILAN bir ENDPOINT DEĞİLDİR (kullanıcı BAŞINA, TİPİK olarak SEYREK) — DAHA UZUN bir PENCERE (SAAT), "20 İSTEK/SAAT" GİBİ DAHA ANLAMLI bir SINIR İFADE EDER.',
+            olmasaydi: 'DAKİKALIK bir PENCERE (A-02/05\'teki "anonymous" İLE AYNI) KULLANILSAYDI, "PermitLimit = 20" O ZAMAN "20/DAKİKA" ANLAMINA GELİRDİ — BU, Bölüm 8\'İN BAŞINDAKİ "TOPLU OTURUM AÇMAYI ENGELLEME" AMACI İÇİN ÇOK GEVŞEK bir SINIR OLURDU (dakikada 20 = SAATTE 1200 OLASI SAHTE OTURUM).'
+          },
+          {
+            satir: 'QueueLimit = 0,',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında tekrarlanan, BİREBİR AYNI satır — A-02/05\'teki "anonymous"/"authenticated" politikalarıyla AYNI karar: limit AŞILAN istekler bir SIRAYA ALINMAZ, DOĞRUDAN reddedilir (429).',
+            neden: 'QR akışında bir isteği "SIRAYA ALIP birkaç saniye SONRA işlemek" ANLAMSIZDIR — kullanıcı ANLIK bir yanıt BEKLER, gecikmeli bir yanıt KULLANICI DENEYİMİNİ BOZAR.',
+            olmasaydi: 'QueueLimit sıfırdan BÜYÜK olsaydı, limit AŞAN istekler BELLEKTE BEKLETİLİRDİ — yoğun bir saldırı ALTINDA bu, SUNUCU BELLEĞİNİ TÜKETEBİLECEK bir RİSK OLUŞTURURDU.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında tekrarlanan, BİREBİR AYNI kapanış — `RateLimitPartition.GetFixedWindowLimiter(...)` çağrısının parametre listesinin SONU.',
+            neden: 'Çok-satırlı bir metot çağrısında kapanış parantezinin KENDİ satırında durması OKUNABİLİRLİĞİ artırır.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: ');',
+            aciklama: 'Bu SLAYTTA İKİ AYRI politika tanımında tekrarlanan, BİREBİR AYNI kapanış — `options.AddPolicy(...)` çağrısının VE bu politika TANIMININ tamamının SONU.',
+            neden: 'Çok-satırlı bir metot çağrısında kapanış parantezinin KENDİ satırında durması OKUNABİLİRLİĞİ artırır.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: '"qrStatus",',
+            aciklama: 'İKİNCİ politikanın ADI — Bölüm 8\'in İLK slaydındaki `[EnableRateLimiting("qrStatus")]` özniteliğiyle EŞLEŞEN, BENZERSİZ bir STRING.',
+            neden: 'Bu isim, GetStatus action\'ındaki öznitelik İLE bu politika TANIMI ARASINDAKİ BAĞLANTIYI KURAR.',
+            olmasaydi: 'Bu isim, Controller\'daki `[EnableRateLimiting("qrStatus")]` İLE EŞLEŞMESEYDİ, ASP.NET Core "policy BULUNAMADI" hatasıyla ÇALIŞMA ZAMANINDA PATLARDI.'
+          },
+          {
+            satir: 'PermitLimit = 40,',
+            aciklama: '"qrStatus" İÇİN LİMİT — KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ, "POLLING HIZININ (30/dk) ÜSTÜNDE bir TAMPON PAYIYLA BELİRLENDİ".',
+            neden: 'Bölüm 7\'nin BAŞINDAKİ "~2 SANİYEDE bir POLLING" (~30 İSTEK/DK) NORMAL DESENİNİ KARŞILAYABİLMESİ İÇİN, LİMİT bu SAYININ ÜZERİNDE (40) OLMALIDIR — AKSİ HALDE MEŞRU bir POLLING DÖNGÜSÜ BİLE KENDİ LİMİTİNE TAKILIRDI.',
+            olmasaydi: 'BU LİMİT 30\'UN ALTINDA (ör. 20) OLSAYDI, NORMAL bir polling DÖNGÜSÜ (30/dk) BİLE, ~40 SANİYE İÇİNDE KENDİ LİMİTİNE TAKILIP 429 (Too Many Requests) HATASI ALIRDI — MEŞRU bir kullanıcı, GİRİŞ SÜRECİNİN ORTASINDA ANİDEN ENGELLENMİŞ OLURDU.'
+          },
+          {
+            satir: 'Window = TimeSpan.FromMinutes(1),',
+            aciklama: '"qrStatus" İÇİN PENCERE — "qrGenerate"in SAATLİK PENCERESİNDEN (BİR ÖNCEKİ kod BLOĞU) FARKLI olarak, A-02/05\'teki "anonymous"LA AYNI (DAKİKALIK).',
+            neden: 'POLLING, SÜREKLİ VE SIK bir DAVRANIŞ OLDUĞU İÇİN, DAKİKALIK bir PENCERE (SAATLİK DEĞİL) DAHA UYGUN GRANÜLERLİKTİR — 40/DAKİKA, KULLANICININ TİPİK KULLANIM SÜRESİ (BİRKAÇ DAKİKALIK bir GİRİŞ İŞLEMİ) İÇİN ANLAMLI bir SINIRDIR.',
+            olmasaydi: 'SAATLİK bir PENCERE ("qrGenerate" GİBİ) KULLANILSAYDI, "PermitLimit = 40" O ZAMAN "40/SAAT" ANLAMINA GELİRDİ — BU, DAKİKADA 30 İSTEK ÜRETEN NORMAL bir POLLING DÖNGÜSÜNÜ SANİYELER İÇİNDE LİMİTE TAKARDI (40/saat, DAKİKADA YALNIZCA 0.67 İSTEĞE İZİN VERİR).'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrLoginController, AuthController\'dan AYRI bir sınıftır — /auth/qr/* alt-yolu, TÜM 5 QR endpoint\'ini TOPLAR',
+          'Generate/Confirm/Deny/Scan [Authorize] gerektirir (mobil, ZATEN giriş yapmış) — Status ANONİMDİR (web, TAM OLARAK giriş yapmak İÇİN kullanıyor)',
+          'qrGenerate VE qrStatus, PAYLAŞIMLI "anonymous" (A-02/05) YERİNE PARTITIONED (IP-başına AYRI) rate limit KULLANIR',
+          'qrGenerate: 20/SAAT (seyrek çağrı, toplu oturum açmayı ENGELLER) — qrStatus: 40/DAKİKA (sık polling, ~30/dk normal desenin ÜZERİNDE tampon payı)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Middleware Sırası</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'middleware-sirasi',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '05_program-cs-di.html',
+    sonrakiBolum: '07_generic-repository.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'Middleware Sırası',
+        altBaslik: 'Bir HTTP isteği sunucuya girdiğinde hangi sıradan geçer — ve bu sıranın neden RASTGELE olmadığı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Middleware Nedir?',
+        aciklama: 'Bir HTTP isteği, Controller\'a ulaşmadan önce bir dizi "istasyon"dan geçer — her istasyona middleware denir. Her middleware isteği inceleyebilir, değiştirebilir, hatta isteği durdurup kendi cevabını verebilir (ör. yetkisiz istekleri reddetmek). Sonra isteği bir sonraki middleware\'e "iletir" (next).',
+        neden: 'Loglama, güvenlik başlıkları ekleme, hata yakalama, kimlik doğrulama gibi HER isteğe uygulanması gereken ortak işlemler, her Controller\'da tekrar tekrar yazılmak yerine TEK bir yerde, boru hattı (pipeline) şeklinde kurulur.',
+        olmasaydi: 'Middleware olmasaydı, her Controller\'ın kendi başında "kullanıcı giriş yapmış mı", "istek loglanmalı mı" gibi kontrolleri elle yazması gerekirdi — 30 Controller\'da aynı 10 satır tekrar ederdi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Sıra Neden Önemli — Zincir Benzetmesi',
+        aciklama: 'Middleware\'ler bir zincir gibi çalışır: `app.UseX()` çağrı sırası, isteğin GİDERKEN hangi sırayla, cevabın DÖNERKEN ise TERS sırayla bu istasyonlardan geçeceğini belirler. Bir middleware\'i yanlış sıraya koymak, o middleware\'in ya hiç çalışmamasına ya da yanlış veriyle çalışmasına yol açar.',
+        neden: 'Örnek: kimlik doğrulama (Authentication), yetkilendirmeden (Authorization) ÖNCE gelmeli — "bu kullanıcı kim" bilinmeden "bu kullanıcının yetkisi var mı" sorusu cevaplanamaz.',
+        olmasaydi: 'Sıra tersine çevrilseydi (Authorization önce, Authentication sonra), her istek "kimliği henüz bilinmiyor" durumunda yetki kontrolünden geçmeye çalışırdı — ya her istek reddedilirdi ya da kontrol anlamsızca hep aynı sonucu verirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — Middleware Pipeline (ADIM 8)',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'Program.cs\'in en sonunda, DI kayıtlarından (ADIM 1-7) sonra — çünkü middleware\'ler DI konteynerinden servis alabilir (ör. ExceptionHandlingMiddleware, ILogger enjekte eder), önce servislerin kayıtlı olması gerekir.',
+        kod: `app.UseHttpsRedirection();
+
+app.UseMiddleware<RequestResponseLoggingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+app.UseCors("Default");
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.UseRateLimiter();
+
+app.MapControllers();`,
+        satirlar: [
+          {
+            satir: 'app.UseHttpsRedirection();',
+            aciklama: 'EN BAŞTA durur — düz HTTP ile gelen bir istek, hiçbir iş yapılmadan (loglanmadan, başlık eklenmeden) doğrudan HTTPS\'e yönlendirilir.',
+            neden: 'Bu, ASP.NET Core\'un standart konvansiyonudur: şifrelenmemiş bir bağlantı üzerinden akan veri, henüz güvenli değilken üzerinde iş yapmanın (loglama, güvenlik başlığı ekleme) bir anlamı yok — direkt güvenli kanala yönlendirilmeli.',
+            olmasaydi: 'Bu proje bir dönem (2026-07-12\'ye kadar) bu satırı loglama/güvenlik middleware\'lerinden SONRAYA koymuştu — düz HTTP isteği gereksiz yere loglanıp güvenlik başlığı eklendikten SONRA yönlendiriliyordu; konvansiyona aykırı olduğu fark edilip düzeltildi.'
+          },
+          {
+            satir: 'app.UseMiddleware<RequestResponseLoggingMiddleware>();',
+            aciklama: 'Loglama, EN DIŞTA (diğer tüm middleware\'lerden önce) durur.',
+            neden: 'Eğer bir sonraki middleware\'lerden biri (ör. ExceptionHandlingMiddleware yakalayamadığı bir hata) patlarsa bile, bu dıştaki middleware isteğin GERÇEK süresini ve NİHAİ durum kodunu (500 dahil) loglayabilsin diye en dışta durur.',
+            olmasaydi: 'Loglama daha içeride (ör. ExceptionHandling\'den sonra) olsaydı, ExceptionHandling içinde beklenmedik bir hata oluşursa bu istek HİÇ loglanmazdı — üretimde "neden bu isteğin logu yok" sorusuna cevap bulmak imkansız olurdu.'
+          },
+          {
+            satir: 'app.UseMiddleware<SecurityHeadersMiddleware>();',
+            aciklama: 'Loglamadan SONRA, ama ExceptionHandling\'den ÖNCE durur — yanıta güvenlik başlıkları (ör. X-Content-Type-Options, X-Frame-Options) ekler.',
+            neden: 'Bu başlıklar HER yanıta (başarılı VEYA hata yanıtı) eklenmeli — ExceptionHandlingMiddleware\'den ÖNCE durması, bir hata oluşsa bile hata yanıtının da bu güvenlik başlıklarını TAŞIMASINI garanti eder.',
+            olmasaydi: 'Bu middleware ExceptionHandling\'den SONRA olsaydı, bir istek hata ile sonuçlandığında (ör. 500) o yanıt güvenlik başlıklarından YOKSUN kalırdı — tarayıcı, o TEK yanıt için tarayıcı-seviyesi korumaları (clickjacking, MIME sniffing önleme) UYGULAMAZDI.'
+          },
+          {
+            satir: 'app.UseMiddleware<ExceptionHandlingMiddleware>();',
+            aciklama: 'Güvenlik başlıklarından (SecurityHeadersMiddleware) SONRA, ama Authentication\'dan ÖNCE durur.',
+            neden: 'Bu middleware, kendinden SONRAKİ her şeyde (Controller dahil) oluşan beklenmedik hataları yakalayıp düzgün bir JSON hata yanıtına çevirir. Güvenlik başlıklarının hata yanıtlarına DA eklenmesi gerektiği için bu middleware\'den önce durmalılar.',
+            olmasaydi: 'ExceptionHandlingMiddleware olmasaydı, Controller\'da fırlatılan yakalanmamış bir exception, kullanıcıya .NET\'in ham stack trace\'ini (dosya yolları, satır numaraları dahil) gösterebilirdi — bu, saldırgana sunucu hakkında değerli bilgi verir (bilgi sızıntısı).'
+          },
+          {
+            satir: 'app.UseCors("Default");',
+            aciklama: 'ExceptionHandling\'den SONRA, Authentication\'dan ÖNCE durur — A-02/05\'te tanımladığımız "Default" CORS politikasını (yalnızca bilinen origin\'ler) devreye sokar.',
+            neden: 'CORS kontrolü, kimlik doğrulamadan ÖNCE yapılmalı — tarayıcı, bir isteğin CORS tarafından reddedileceğini önceden (preflight OPTIONS isteğiyle) öğrenmek ister; bu bilgiyi Authentication\'ın ARKASINDA saklamanın bir faydası yoktur.',
+            olmasaydi: 'CORS middleware\'i hiç eklenmeseydi (ya da yanlış sırada olsaydı), tarayıcı güvenlik modeli (Same-Origin Policy) izin vermediği için Web/Admin arayüzü API\'ye istek ATAMAZ, tüm istekler tarayıcı konsolunda "CORS error" ile SESSİZCE engellenirdi.'
+          },
+          {
+            satir: 'app.UseAuthentication();',
+            aciklama: 'Önce "bu istek kim gönderdi" sorusu cevaplanır — Authorization\'dan MUTLAKA önce çalışması gerekir; JWT token burada çözümlenip kullanıcı kimliği (`HttpContext.User`) doldurulur.',
+            neden: 'Yetkilendirme, kimliğe bağlı bir karar verir — kimlik bilinmeden yetki kontrolü anlamsızdır. Bu ikisinin sırası ASP.NET Core\'da DEĞİŞTİRİLEMEZ bir mantıksal zorunluluktur.',
+            olmasaydi: 'Bu satır UseAuthorization\'dan SONRAYA konsaydı, Authorization çalıştığı anda `HttpContext.User` henüz boş olurdu — [Authorize] öznitelikli TÜM endpoint\'ler, geçerli bir token gönderilse bile "kimlik yok" sanıp 401 dönerdi.'
+          },
+          {
+            satir: 'app.UseAuthorization();',
+            aciklama: 'Authentication\'ın hemen ardından çalışır — bir önceki adımda çözümlenen kimliğe bakarak "bu kullanıcının bu işlemi yapmaya yetkisi var mı" ([Authorize(Roles="Admin")] gibi) kontrolünü yapar.',
+            neden: 'Authorization, Authentication\'ın ürettiği kimlik bilgisine bağımlı çalışır; ikisi arasına başka bir middleware girmemesi (özellikle rate limiter gibi kimlik-bağımsız kontrollerin sonradan gelmesi) akışın mantığını korur.',
+            olmasaydi: 'Authorization, Authentication\'dan önce çalışsaydı, henüz kimliği bilinmeyen bir istek için rol kontrolü yapılmaya çalışılır ve her istek (admin olsa bile) yetkisiz sayılırdı.'
+          },
+          {
+            satir: 'app.UseRateLimiter();',
+            aciklama: 'Authorization\'dan SONRA, Controller\'a (MapControllers) ulaşmadan hemen önce durur.',
+            neden: '[EnableRateLimiting("...")] öznitelikleri Controller action\'larında tanımlı — rate limiter, hangi policy\'nin uygulanacağını bilmek için action\'a en yakın noktada, ama action ÇALIŞMADAN önce devreye girmeli (limit aşılmışsa Controller kodu hiç çalışmamalı).',
+            olmasaydi: 'Rate limiter Authentication\'dan ÖNCE olsaydı, kimliği doğrulanmış (authenticated) ve anonim isteklere AYNI limit uygulanırdı — oysa "anonymous" ve "authenticated" policy\'leri (Bölüm 5) farklı limitler taşıyor, bu ayrımı yapabilmek için kimliğin önce bilinmesi gerekir.'
+          },
+          {
+            satir: 'app.MapControllers();',
+            aciklama: 'Pipeline\'ın EN SONUNDA durur — gelen istek, üstteki tüm middleware\'lerden geçtikten sonra, route\'una uyan Controller action\'ına burada yönlendirilir.',
+            neden: 'Controller\'lar iş mantığının son durağıdır; loglama, güvenlik, kimlik doğrulama, yetkilendirme ve rate limiting gibi TÜM ortak kontroller tamamlanmadan action kodu çalıştırılmamalı.',
+            olmasaydi: 'Bu satır daha yukarıya (ör. Authentication\'dan önce) taşınsaydı, kimliği doğrulanmamış istekler doğrudan Controller action\'ına ulaşır — [Authorize] kontrolleri en baştan devre dışı kalmış gibi davranırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Sık Yapılan Sıralama Hatası',
+        iyi: {
+          baslik: 'Loglama en dışta, Auth ortada, RateLimiter en içte',
+          maddeler: [
+            'Her isteğin gerçek süresi ve nihai durum kodu loglanır',
+            'Authentication → Authorization sırası korunur',
+            'Rate limiter, hangi limitin (anonim/authenticated) uygulanacağını bilir'
+          ]
+        },
+        kotu: {
+          baslik: 'Loglamayı Controller\'a en yakına koymak',
+          maddeler: [
+            'Bir üstteki middleware patlarsa (exception) istek HİÇ loglanmaz',
+            'Üretimde "bu isteğe ne oldu" sorusu cevapsız kalır',
+            'Hata ayıklama (debugging) süresi ciddi şekilde uzar'
+          ]
+        }
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Middleware = bir HTTP isteğinin Controller\'a ulaşmadan önce geçtiği istasyonlar zinciri',
+          'Sıra rastgele değil — her middleware bir öncekinin/sonrakinin varsayımına dayanır',
+          'HttpsRedirection en başta, loglama en dışta (hata olsa bile loglanabilsin diye)',
+          'Authentication her zaman Authorization\'dan ÖNCE gelir (kimlik bilinmeden yetki kontrolü anlamsız)',
+          'Rate limiter, Authorization\'dan sonra, Controller\'dan hemen önce çalışır'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

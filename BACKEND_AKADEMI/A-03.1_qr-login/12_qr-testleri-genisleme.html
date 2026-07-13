@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QR Testlerinin Genişlemesi — Generate ve Repository</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-testleri-genisleme',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '11_deny-ve-forbidden-exception.html',
+    sonrakiBolum: '13_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 12',
+        baslik: 'QR Testlerinin Genişlemesi — Generate ve Repository',
+        altBaslik: "Bölüm 9 yalnızca Status VE Confirm testlerini gösterdi. CLAUDE.md'nin \"her Handler/repository'nin kendi testi\" kuralı burada İKİ yeni örnekle DEVAM ediyor."
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bir Bölüm Daha — Test Kapsamı Tek Örnekle Kanıtlanmaz',
+        aciklama: "Bölüm 9, A-03.1'in test disiplinini YALNIZCA İKİ dosyayla (GetQrLoginStatusCommandHandlerTests, ConfirmQrLoginCommandHandlerTests) TANITTI. AMA CLAUDE.md §Test kuralı \"her public servis/Handler metodunun BİRİM testi AYNI task içinde YAZILIR\" der — bu, GenerateQrLoginCommandHandler, ScanQrLoginCommandHandler, DenyQrLoginCommandHandler VE QrLoginSessionRepository İÇİN de GEÇERLİDİR. Bu bölümde İKİ TEMSİLİ örnek daha görüyoruz: BİRİ bir Handler testi (Generate — DB'ye YAZAN bir Command), DİĞERİ bir Repository testi (GERÇEK bir EF Core in-memory bağlamına KARŞI çalışan SORGU testi).",
+        neden: "Handler testleri (Moq İLE repository'yi SAHTELEYEN) VE Repository testleri (GERÇEK bir DbContext'e KARŞI çalışan) FARKLI KATMANLARI doğrular — Handler testi \"Handler DOĞRU repository metodunu DOĞRU parametrelerle ÇAĞIRIYOR MU\" sorusuna, Repository testi İSE \"o metot, GERÇEK bir veritabanı sorgusuna ÇEVRİLDİĞİNDE DOĞRU sonucu DÖNÜYOR MU\" sorusuna CEVAP verir — İKİSİ de GEREKLİDİR, biri DİĞERİNİN yerine GEÇMEZ.",
+        olmasaydi: "Yalnızca Handler testleri (mock'lu) YAZILSAYDI, `GetByTokenHashAsync`IN GERÇEK EF Core sorgu İFADESİNDEKİ bir hata (ör. YANLIŞ kolona GÖRE filtreleme) HİÇBİR test tarafından YAKALANMAZDI — mock, HER ZAMAN \"doğru\" cevabı VERİR, GERÇEK SQL çeviri hiç ÇALIŞTIRILMAZ."
+      },
+      {
+        tur: 'kod',
+        baslik: 'GenerateQrLoginCommandHandlerTests.cs — Mutlu Yol ve URL-Safe Token',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/QrLogin/GenerateQrLoginCommandHandlerTests.cs',
+        nedenBuKlasor: "Tests/Features/QrLogin/ altında — Bölüm 9'daki AYNI konvansiyon: hangi kodun testi OLDUĞU, KLASÖR yolundan ANINDA anlaşılır.",
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// GenerateQrLoginCommandHandlerTests.cs
+//
+// AMAÇ: GenerateQrLoginCommandHandler'ın oturumu Pending olarak oluşturduğunu,
+//       ham token'ın URL-safe olduğunu ve 4 haneli PairingCode ürettiğini doğrulamak.
+// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Text.RegularExpressions;
+using FluentAssertions;
+using Moq;
+using WordLearner.Application.Features.QrLogin;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.QrLogin;
+
+public class GenerateQrLoginCommandHandlerTests
+{
+    private readonly Mock<IQrLoginSessionRepository> _qrRepo = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+
+    private GenerateQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
+
+    /// <summary>
+    /// Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode
+    ///
+    /// AMAÇ: Yeni oturumun Pending durumunda, isteği atan (web) tarafın IP/cihaz
+    ///       bilgisiyle DB'ye eklendiğini ve yanıtta ham token+4 haneli PairingCode+120sn döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        QrLoginSession? savedSession = null;
+        _qrRepo
+            .Setup(r => r.AddAsync(It.IsAny<QrLoginSession>(), null, default))
+            .Callback<QrLoginSession, int?, CancellationToken>((s, _, _) => savedSession = s)
+            .ReturnsAsync((QrLoginSession s, int? _, CancellationToken _) => s);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(
+            new GenerateQrLoginCommand { ClientIp = "1.2.3.4", DeviceInfo = "Chrome/Windows" },
+            default
+        );
+
+        // ASSERT
+        result.ExpiresIn.Should().Be(120);
+        result.QrToken.Should().NotBeNullOrWhiteSpace();
+        result.PairingCode.Should().MatchRegex("^[0-9]{4}$");
+        savedSession.Should().NotBeNull();
+        savedSession!.Status.Should().Be(QrLoginStatus.Pending);
+        savedSession.RequesterIp.Should().Be("1.2.3.4");
+        savedSession.RequesterDeviceInfo.Should().Be("Chrome/Windows");
+        savedSession.QrTokenHash.Should().Be("hash");
+    }
+
+    /// <summary>
+    /// Generate_GeneratedToken_IsUrlSafeBase64
+    ///
+    /// AMAÇ: Ham token'ın route parametresi olarak kullanılacağı için standart
+    ///       Base64'teki '+'/'/' karakterlerini İÇERMEDİĞİNİ doğrulamak.
+    /// NEDEN: '+' ve '/' path segment'inde routing hatasına yol açar.
+    /// </summary>
+    [Fact]
+    public async Task Generate_GeneratedToken_IsUrlSafeBase64()
+    {
+        // ARRANGE
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _qrRepo
+            .Setup(r => r.AddAsync(It.IsAny<QrLoginSession>(), null, default))
+            .ReturnsAsync((QrLoginSession s, int? _, CancellationToken _) => s);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new GenerateQrLoginCommand(), default);
+
+        // ASSERT
+        Regex.IsMatch(result.QrToken, "^[A-Za-z0-9_-]+$").Should().BeTrue();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private readonly Mock<IQrLoginSessionRepository> _qrRepo = new();',
+            aciklama: "Bölüm 9'daki testlerle AYNI mock alanı — GERÇEK bir veritabanı yerine, DAVRANIŞI test İÇİNDE KURULAN sahte bir repository.",
+            neden: "Bir Handler testinde AMAÇ, GERÇEK SQL/EF davranışını DEĞİL, Handler'IN İÇİNDEKİ MANTIĞI (hangi metodu, HANGİ parametrelerle ÇAĞIRDIĞINI) İZOLE ETMEKTİR.",
+            olmasaydi: "Bu mock OLMASAYDI, testin ÇALIŞMASI İÇİN GERÇEK bir veritabanı BAĞLANTISI GEREKİRDİ — test YAVAŞLARDI VE veritabanı DURUMUNA BAĞIMLI HALE GELİRDİ."
+          },
+          {
+            satir: 'private GenerateQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);',
+            aciklama: "Bölüm 9'daki `CreateHandler()` yardımcı metoduyla AYNI DESEN — TÜM testlerde TEKRARLANAN Handler İNŞASI TEK bir yere TOPLANIR.",
+            neden: "Her test AYRI AYRI `new GenerateQrLoginCommandHandler(_qrRepo.Object, _passwordService.Object)` YAZSAYDI, Handler'IN constructor İMZASI DEĞİŞTİĞİNDE (ör. YENİ bir bağımlılık EKLENDİĞİNDE) HER test METODUNUN GÜNCELLENMESİ GEREKİRDİ.",
+            olmasaydi: "Bu yardımcı OLMASAYDI, İKİ test metodu da KENDİ İÇİNDE Handler'ı TEKRAR İNŞA EDERDİ — DRY İHLALİ."
+          },
+          {
+            satir: '_passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");',
+            aciklama: "Bölüm 9'daki testlerle AYNI Setup — 'hangi token GELİRSE gelsin, sabit \"hash\" DEĞERİNİ dön' der.",
+            neden: "Bu testin İLGİ ALANI hash'in TAM değeri DEĞİL, oturumun DOĞRU alanlarla OLUŞTURULMASIDIR.",
+            olmasaydi: "Bu Setup yazılmasaydı, mock varsayılan olarak `null` DÖNERDİ — `QrTokenHash` ALANINA ATANACAK bir DEĞER OLMAZDI."
+          },
+          {
+            satir: 'QrLoginSession? savedSession = null;',
+            aciklama: "Testin İÇİNDE tanımlanan, `AddAsync` çağrısının 'yakalayacağı' nesneyi TUTACAK yerel DEĞİŞKEN.",
+            neden: "GenerateQrLoginCommandHandler.Handle'ın DÖNÜŞ değeri (result) DTO'DUR, ENTİTE DEĞİL — oturumun VERİTABANINA HANGİ ALANLARLA YAZILDIĞINI GÖRMEK İÇİN, `AddAsync`A GEÇİRİLEN NESNEYİ ayrıca YAKALAMAK GEREKİR.",
+            olmasaydi: "Bu değişken OLMASAYDI, `savedSession!.Status.Should().Be(QrLoginStatus.Pending);` GİBİ ASSERT'LER YAZILAMAZDI — test YALNIZCA DTO'YU KONTROL EDEBİLİRDİ, VERİTABANINA GİDECEK GERÇEK DURUMU DEĞİL."
+          },
+          {
+            satir: '_qrRepo',
+            aciklama: "Bir sonraki ÜÇ satırla BİRLİKTE, çok-satırlı TEK bir Setup ZİNCİRİNİN BAŞLANGICI.",
+            neden: "Setup + Callback + ReturnsAsync ÜÇLÜSÜNÜN AYRI satırlara YAYILMASI, HER birinin AYRI bir SORUMLULUĞUNU (eşleştirme, YAN ETKİ yakalama, dönüş değeri) NET GÖSTERİR.",
+            olmasaydi: "Bu satır olmasaydı, aşağıdaki `.Setup(...)` çağrısının HANGİ nesneye AİT olduğu belirsiz KALIRDI — kod DERLENEMEZDİ."
+          },
+          {
+            satir: '.Setup(r => r.AddAsync(It.IsAny<QrLoginSession>(), null, default))',
+            aciklama: "`AddAsync` çağrısının EŞLEŞME koşulu — HERHANGİ bir QrLoginSession NESNESİYLE, `userId` PARAMETRESİ `null` İKEN (ANONİM EKLEME, henüz KİMLİĞİ doğrulanmış bir kullanıcı YOK) çağrılırsa TETİKLENİR.",
+            neden: "Generate adımı, HENÜZ HİÇBİR kullanıcıya BAĞLI DEĞİLDİR (Bölüm 1'deki AKIŞ: web, GİRİŞ YAPMADAN ÖNCE QR üretir) — `userId: null` bu GERÇEĞİ YANSITIR.",
+            olmasaydi: "`userId` parametresi `It.IsAny<int?>()` OLSAYDI, test 'anonim EKLEME' varsayımını AÇIKÇA DOĞRULAMAZDI — bir Handler HATASI (ör. YANLIŞLIKLA bir userId GEÇİRMEK) FARK EDİLMEZDİ."
+          },
+          {
+            satir: '.Callback<QrLoginSession, int?, CancellationToken>((s, _, _) => savedSession = s)',
+            aciklama: "Moq'un `Callback`İ — GERÇEK metot ÇAĞRILDIĞINDA, argümanlardan İLKİNİ (`s`, YANİ QrLoginSession NESNESİ) `savedSession` DEĞİŞKENİNE ATAR.",
+            neden: "Bu, Bölüm 6'daki `savedSession = s` DESENİYLE AYNI amaç — Handler'ın VERİTABANINA GÖNDERDİĞİ NESNENİN GERÇEK İÇERİĞİNİ (Status, RequesterIp GİBİ) TEST'İN DIŞARIDAN İNCELEYEBİLMESİ.",
+            olmasaydi: "Bu Callback OLMASAYDI, test YALNIZCA `AddAsync`'İN ÇAĞRILDIĞINI DOĞRULAYABİLİRDİ — HANGİ ALANLARLA ÇAĞRILDIĞINI DEĞİL."
+          },
+          {
+            satir: '.ReturnsAsync((QrLoginSession s, int? _, CancellationToken _) => s);',
+            aciklama: "Gerçek repository'nin DAVRANIŞINI TAKLİT eder — `AddAsync`, KENDİSİNE VERİLEN NESNEYİ (ID atanmış HALDE) GERİ DÖNDÜRÜR.",
+            neden: "Handler, `AddAsync`'İN DÖNÜŞ değerini (ID İÇEREN nesne) KULLANARAK yanıt DTO'SUNU OLUŞTURABİLİR — mock BU GERÇEK davranışı SİMÜLE ETMELİDİR.",
+            olmasaydi: "Bu satır olmasaydı, `AddAsync` VARSAYILAN olarak `null` DÖNERDİ — Handler, DÖNEN nesneyi KULLANMAYA ÇALIŞTIĞINDA bir `NullReferenceException` FIRLATIRDI."
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: "ARRANGE bölümünün SON adımı — TÜM mock'larla DONATILMIŞ bir Handler örneği ELDE edilir.",
+            neden: "Bundan SONRA ACT bölümünde bu `handler` ÜZERİNDE GERÇEK metot ÇAĞRILACAKTIR.",
+            olmasaydi: "Bu satır olmasaydı, ACT bölümündeki `handler.Handle(...)` çağrısı için bir `handler` DEĞİŞKENİ OLMAZDI."
+          },
+          {
+            satir: 'var result = await handler.Handle(',
+            aciklama: "Bu SLAYTTA İKİ testte de tekrarlanan, xUnit'in ACT adımı — GERÇEK Handle çağrısı.",
+            neden: "Bir EXCEPTION BEKLENMEDİĞİ İÇİN (Bölüm 9'daki `act` fonksiyonuna SARMA deseninin AKSİNE), metot DOĞRUDAN `await` İLE çağrılır.",
+            olmasaydi: "Bu satır olmasaydı, ASSERT bölümünde İNCELENECEK bir `result` DEĞİŞKENİ OLMAZDI."
+          },
+          {
+            satir: 'new GenerateQrLoginCommand { ClientIp = "1.2.3.4", DeviceInfo = "Chrome/Windows" },',
+            aciklama: "Command, object initializer İLE İNŞA EDİLİR — `ClientIp`/`DeviceInfo`, Controller'IN İSTEK BAĞLAMINDAN (HTTP context) OKUYUP EKLEYECEĞİ değerleri TEMSİL eder.",
+            neden: "Bu İKİ alan, `savedSession.RequesterIp`/`RequesterDeviceInfo` ASSERT'LERİNDE DOĞRULANACAK — test, Handler'ın BU BİLGİLERİ DOĞRU şekilde ENTİTEYE AKTARDIĞINI KANITLAR.",
+            olmasaydi: "Bu alanlar BOŞ BIRAKILSAYDI, `savedSession.RequesterIp.Should().Be(\"1.2.3.4\");` GİBİ ASSERT'LER ANLAMSIZ (HER İKİ TARAF da null) OLURDU."
+          },
+          {
+            satir: 'default',
+            aciklama: "ACT çağrısının İKİNCİ argümanı — CancellationToken.",
+            neden: "Bölüm 9'daki TÜM testlerle AYNI KONVANSİYON: testlerde GERÇEK bir İPTAL senaryosu TEST EDİLMEDİĞİ İÇİN `default` YETERLİDİR.",
+            olmasaydi: "Bu argüman olmasaydı, `Handle` metodunun İKİNCİ parametresi KARŞILANMAZDI — kod DERLENEMEZDİ."
+          },
+          {
+            satir: ');',
+            aciklama: "`handler.Handle(...)` çağrısının VE `var result = await ...` atamasının KAPANIŞI.",
+            neden: "İKİ argümanlı (Command + CancellationToken) bu çağrının çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.",
+            olmasaydi: "Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ."
+          },
+          {
+            satir: 'result.ExpiresIn.Should().Be(120);',
+            aciklama: "Yanıt DTO'sundaki SABİT süre — Bölüm 1'deki AKIŞ tanımında BELİRTİLEN 120 SANİYELİK QR geçerlilik SÜRESİ.",
+            neden: "Bu değer, Bölüm 7'deki `IsExpired` KONTROLÜNÜN DAYANDIĞI `ExpiresAt` alanının HESAPLANDIĞI SABİTTİR — web İSTEMCİSİ, GERİ SAYIM göstergesini BU değere GÖRE ÇİZER.",
+            olmasaydi: "Bu ASSERT OLMASAYDI, bir REFACTOR SIRASINDA bu SABİT YANLIŞLIKLA değiştirilse (ör. 60 SANİYEYE İNDİRİLSE) FARK EDİLMEZDİ — istemci UI'ı GERÇEK süreyle UYUMSUZ HALE GELİRDİ."
+          },
+          {
+            satir: 'result.QrToken.Should().NotBeNullOrWhiteSpace();',
+            aciklama: "Üretilen HAM token'ın BOŞ OLMADIĞININ temel DOĞRULAMASI.",
+            neden: "QR kodun İÇİNE KODLANACAK değer BUDUR — boş bir token, TARANAMAZ bir QR KOD ÜRETİRDİ.",
+            olmasaydi: "Bu ASSERT olmasaydı, token ÜRETİM MANTIĞINDA bir HATA (ör. boş string DÖNMESİ) TESTİN GEÇMESİNİ ENGELLEMEZDİ."
+          },
+          {
+            satir: 'result.PairingCode.Should().MatchRegex("^[0-9]{4}$");',
+            aciklama: "Bölüm 1'deki GÖRSEL karşılaştırma KODUNUN (PairingCode) TAM OLARAK 4 haneli, YALNIZCA RAKAMLARDAN oluştuğunun doğrulanması.",
+            neden: "PairingCode, kullanıcının GÖZLE web VE mobil EKRANLARI KARŞILAŞTIRMASI İÇİN tasarlanmıştır (Bölüm 10'daki 'PairingCode' sözlük tanımı) — 4 haneli bir SAYI, İNSAN GÖZÜYLE HIZLI KARŞILAŞTIRILABİLİR bir FORMATTIR.",
+            olmasaydi: "Bu ASSERT olmasaydı, bir HATA (ör. 3 haneli VEYA harf İÇEREN bir kod ÜRETİLMESİ) test tarafından YAKALANMAZDI — kullanıcı EKRANDA BEKLENMEDİK bir FORMAT GÖRÜRDÜ."
+          },
+          {
+            satir: 'savedSession.Should().NotBeNull();',
+            aciklama: "Callback'İN GERÇEKTEN ÇALIŞTIĞININ (yani `AddAsync`'İN ÇAĞRILDIĞININ) ilk DOĞRULAMASI.",
+            neden: "Bir sonraki SATIRLARDAKİ `savedSession!.Status` GİBİ ERİŞİMLERİN GÜVENLİ olması İÇİN, ÖNCE `null` OLMADIĞI KANITLANIR.",
+            olmasaydi: "Bu ASSERT OLMASAYDI VE `savedSession` GERÇEKTEN null KALSAYDI, bir SONRAKİ satırdaki `savedSession!.Status` bir `NullReferenceException` İLE test'i (YANLIŞ bir SEBEPLE) KIRMIZI YAPARDI — HATA MESAJI YANILTICI OLURDU."
+          },
+          {
+            satir: "savedSession!.Status.Should().Be(QrLoginStatus.Pending);",
+            aciklama: "Bölüm 1'deki DÖRT-durum ZİNCİRİNİN BAŞLANGIÇ noktası — YENİ oluşturulan HER oturum, Pending İLE BAŞLAR.",
+            neden: "Bu, Generate Handler'IN TEMEL SORUMLULUĞUDUR — oturumu BAŞLANGIÇ durumunda OLUŞTURMAK; Scanned/Confirmed/Denied GİBİ SONRAKİ durumlar BAŞKA Handler'LARIN (Bölüm 5-6) İŞİDİR.",
+            olmasaydi: "Bu ASSERT olmasaydı, Handler'ın YANLIŞLIKLA farklı bir BAŞLANGIÇ durumu (ör. Scanned) ATAMASI FARK EDİLMEZDİ — SONRAKİ tüm durum GEÇİŞLERİ BOZULURDU."
+          },
+          {
+            satir: 'savedSession.RequesterIp.Should().Be("1.2.3.4");',
+            aciklama: "Command'daki `ClientIp` alanının, ENTİTEDEKİ `RequesterIp` alanına DOĞRU AKTARILDIĞININ doğrulanması.",
+            neden: "Bu IP, Bölüm 8'deki PARTITIONED rate limiting'İN DAYANDIĞI aynı türden bir BİLGİDİR VE GÜVENLİK incelemelerinde (Bölüm 1'deki AUDIT amaçlı alanlar) KULLANILIR.",
+            olmasaydi: "Bu ASSERT olmasaydı, Handler'ın Command'daki IP'yi ENTİTEYE AKTARMAYI UNUTMASI (ör. YANLIŞ bir alan İSMİYLE eşleştirme) FARK EDİLMEZDİ."
+          },
+          {
+            satir: 'savedSession.RequesterDeviceInfo.Should().Be("Chrome/Windows");',
+            aciklama: "AYNI DESEN, cihaz BİLGİSİ İÇİN — `DeviceInfo` Command alanının `RequesterDeviceInfo` ENTİTE alanına DOĞRU AKTARILDIĞININ doğrulanması.",
+            neden: "Bu bilgi, İLERİDE bir GÜVENLİK incelemesinde 'bu oturum HANGİ TARAYICI/İŞLETİM SİSTEMİNDEN İSTENDİ' SORUSUNA CEVAP verir.",
+            olmasaydi: "Bu ASSERT olmasaydı, cihaz bilgisinin YANLIŞ AKTARILMASI (ör. YANLIŞLIKLA IP alanına YAZILMASI) FARK EDİLMEZDİ."
+          },
+          {
+            satir: 'savedSession.QrTokenHash.Should().Be("hash");',
+            aciklama: "Handler'ın, HAM token'ı DEĞİL, HASH'İNİ (`_passwordService.HashToken` Setup'ının DÖNDÜRDÜĞÜ SABİT 'hash' DEĞERİNİ) VERİTABANINA YAZDIĞININ KANITI.",
+            neden: "Bölüm 4-6'da DEFALARCA GÖRDÜĞÜMÜZ 'veritabanında YALNIZCA hash SAKLANIR' İLKESİNİN, ÜRETİM (Generate) AŞAMASINDA da UYGULANDIĞININ doğrulaması.",
+            olmasaydi: "Bu ASSERT OLMASAYDI, Handler'ın YANLIŞLIKLA HAM token'ı `QrTokenHash` ALANINA YAZMASI (bir GÜVENLİK AÇIĞI) test TARAFINDAN YAKALANMAZDI."
+          },
+          {
+            satir: 'Regex.IsMatch(result.QrToken, "^[A-Za-z0-9_-]+$").Should().BeTrue();',
+            aciklama: "İKİNCİ testin TEK ASSERT'İ — üretilen token'IN, YALNIZCA URL-safe Base64 KARAKTER SETİNDEN (harf, rakam, `_`, `-`) OLUŞTUĞUNUN doğrulanması.",
+            neden: "Standart Base64'teki `+` VE `/` karakterleri, bir HTTP route SEGMENTİNDE (ör. `/auth/qr/{token}/confirm`) ÖZEL anlam TAŞIYABİLİR VEYA KAÇIŞ (encoding) GEREKTİREBİLİR — bu test, Handler'ın URL-SAFE bir VARYANT (ör. Base64Url) KULLANDIĞINI KANITLAR.",
+            olmasaydi: "Bu ASSERT olmasaydı, standart Base64 KULLANAN bir REGRESYON (ör. bir kütüphane GÜNCELLEMESİ SONRASI) FARK EDİLMEZDİ — bazı token'LAR (`+`/`/` İÇERENLER) route'ta 404/400 HATASINA YOL AÇARDI, AMA bu YALNIZCA BELİRLİ ÜRETİMLERDE (ŞANSA BAĞLI) ORTAYA ÇIKARDI."
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionRepositoryTests.cs — Gerçek EF Core Sorgusu',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/QrLoginSessionRepositoryTests.cs',
+        nedenBuKlasor: "Tests/Repositories/ altında — A-03'teki UserRepositoryTests İLE AYNI KONVANSİYON: BU testler MOCK KULLANMAZ, In-Memory bir EF Core DbContext'e KARŞI ÇALIŞIR.",
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// QrLoginSessionRepositoryTests.cs
+//
+// AMAÇ: QrLoginSessionRepository'nin QrTokenHash'e göre arama sorgusunu gerçek bir
+//       in-memory EF Core bağlamına karşı doğrulamak.
+// NEDEN: bkz. UserRepositoryTests.cs dosya başı.
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.QrLoginSessionRepository.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Repositories;
+using WordLearner.Tests.Common;
+
+namespace WordLearner.Tests.Repositories;
+
+public class QrLoginSessionRepositoryTests
+{
+    /// <summary>
+    /// GetByTokenHashAsync_RecordExists_ReturnsSession
+    ///
+    /// AMAÇ: Mutlu yol — hash'e göre QR oturumunun bulunduğunu doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_RecordExists_ReturnsSession()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new QrLoginSessionRepository(context);
+        var eklenen = await repo.AddAsync(
+            new QrLoginSession
+            {
+                QrTokenHash = "qr-hash-abc",
+                PairingCode = "1234",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(2),
+            }
+        );
+
+        // ACT
+        var bulunan = await repo.GetByTokenHashAsync("qr-hash-abc");
+
+        // ASSERT
+        bulunan.Should().NotBeNull();
+        bulunan!.Id.Should().Be(eklenen.Id);
+    }
+
+    /// <summary>
+    /// GetByTokenHashAsync_NotFound_ReturnsNull
+    ///
+    /// AMAÇ: Eşleşen bir hash yoksa null döndüğünü doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetByTokenHashAsync_NotFound_ReturnsNull()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new QrLoginSessionRepository(context);
+
+        // ACT
+        var sonuc = await repo.GetByTokenHashAsync("hic-yok-hash");
+
+        // ASSERT
+        sonuc.Should().BeNull();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories;',
+            aciklama: "Diğer tüm bölümlerdeki Handler testlerinden FARKLI olarak, BURADA `IQrLoginSessionRepository` ARAYÜZÜ DEĞİL, `QrLoginSessionRepository` SOMUT SINIFININ KENDİSİ import EDİLİR.",
+            neden: "Bu testin AMACI, ARAYÜZÜ MOCK'LAMAK DEĞİL, GERÇEK SINIFIN İÇİNDEKİ EF Core LINQ İFADESİNİN (`Where(x => x.QrTokenHash == hash)` GİBİ) GERÇEKTEN ÇALIŞTIĞINI KANITLAMAKTIR.",
+            olmasaydi: "Yalnızca arayüz import EDİLSEYDİ, GERÇEK SORGU İMPLEMENTASYONUNA hiç ERİŞİLEMEZDİ — test bir Handler testinden FARKSIZ (mock'lu) OLURDU."
+          },
+          {
+            satir: 'using WordLearner.Tests.Common;',
+            aciklama: "`InMemoryDbContextFactory` yardımcı SINIFININ bulunduğu ORTAK test namespace'i — Bölüm 9'daki `CreateHandler()` YARDIMCISI GİBİ, TÜM repository testlerinin PAYLAŞTIĞI bir kurulum aracı.",
+            neden: "Her repository test DOSYASI KENDİ İÇİNDE bir In-Memory context OLUŞTURMA MANTIĞI YAZSAYDI, EF Core paket sürümü DEĞİŞTİĞİNDE HER dosyanın AYRI AYRI GÜNCELLENMESİ GEREKİRDİ.",
+            olmasaydi: "Bu ORTAK yardımcı OLMASAYDI, HER repository test SINIFI KENDİ context KURULUM KODUNU TEKRAR YAZARDI — DRY İHLALİ."
+          },
+          {
+            satir: 'public class QrLoginSessionRepositoryTests',
+            aciklama: "Bu sınıf, Bölüm 9'daki Handler test SINIFLARININ AKSİNE, HİÇBİR `Mock<T>` alanı TAŞIMAZ — CONSTRUCTOR'I bile YOKTUR, HER test KENDİ context'ini KENDİ İÇİNDE OLUŞTURUR.",
+            neden: "Repository testleri, PAYLAŞILAN bir DURUM (state) TAŞIMAMALIDIR — HER test KENDİ İZOLE VERİTABANI ÖRNEĞİNDE (In-Memory context) ÇALIŞMALIDIR ki BİR testin YAZDIĞI veri, DİĞERİNİ ETKİLEMESİN.",
+            olmasaydi: "Testler PAYLAŞILAN bir context KULLANSAYDI, testlerin ÇALIŞMA SIRASI SONUCU DEĞİŞTİREBİLİRDİ (ör. BİRİNİN eklediği bir kayıt, DİĞERİNİN 'bulunamadı' BEKLENTİSİNİ BOZARDI) — testler ARTIK BİRBİRİNDEN BAĞIMSIZ (deterministik) OLMAZDI."
+          },
+          {
+            satir: 'public async Task GetByTokenHashAsync_RecordExists_ReturnsSession()',
+            aciklama: "Test adı, Bölüm 9'daki AYNI formülü izler: GetByTokenHashAsync (metot) + RecordExists (koşul) + ReturnsSession (beklenen sonuç).",
+            neden: "İsim, bu testin 'mutlu yol' (happy path) senaryosunu test ETTİĞİNİ AÇIKÇA belirtir.",
+            olmasaydi: "Test anlamsız bir isimle yazılsaydı, CI raporunda bu test KIRMIZI olduğunda HANGİ sorgu davranışının BOZULDUĞU anlaşılmazdı."
+          },
+          {
+            satir: 'await using var context = InMemoryDbContextFactory.CreateContext();',
+            aciklama: "Her test METODUNA ÖZEL, TAZE ve BOŞ bir In-Memory EF Core context OLUŞTURULUR — `await using`, context'in test SONUNDA OTOMATİK OLARAK TEMİZLENMESİNİ (dispose) sağlar.",
+            neden: "`DbContext` bir `IAsyncDisposable`DIR — KAYNAKLARIN (bellek, İÇ SIRADA bekleyen değişiklik izleyicisi) test SONUNDA SERBEST BIRAKILMASI GEREKİR.",
+            olmasaydi: "`await using` KULLANILMASAYDI, context NESNESİ test SONRASI BELLEKTE KALMAYA DEVAM EDERDİ — ÇOK sayıda test ÇALIŞTIRILDIĞINDA (BÜTÜN test SUITE'İ) BELLEK SIZINTISINA yol AÇARDI."
+          },
+          {
+            satir: 'var repo = new QrLoginSessionRepository(context);',
+            aciklama: "Repository, MOCK EDİLMİŞ bir bağımlılıkla DEĞİL, GERÇEK (AMA In-Memory) bir DbContext İLE İNŞA EDİLİR.",
+            neden: "Bu, testin ADININDAKİ 'gerçek EF Core sorgu' İDDİASININ TEMELİDİR — repository, PRODUCTION'DA çalışacağı GİBİ, GERÇEK bir DbContext ÜZERİNDE ÇALIŞIR.",
+            olmasaydi: "Repository MOCK'LANSAYDI, bu ARTIK bir REPOSITORY testi DEĞİL, bir Handler testi OLURDU — GERÇEK LINQ sorgusunun DOĞRULUĞU HİÇ TEST EDİLMEZDİ."
+          },
+          {
+            satir: 'var eklenen = await repo.AddAsync(',
+            aciklama: "Test VERİSİ, GERÇEK repository'nin `AddAsync` metodu ÜZERİNDEN EKLENİR — Handler testlerindeki mock Setup'ların AKSİNE, BURADA GERÇEK bir EKLEME işlemi (VE onun GERİ DÖNDÜRDÜĞÜ ID'Lİ nesne) KULLANILIR.",
+            neden: "Bu, TEST'İN 'GERÇEK bir kayıt VAR MI' senaryosunu, GERÇEK bir EKLEME akışıyla KURMASINI sağlar — ARANACAK VERİ, TESADÜFEN DEĞİL, GERÇEK bir yazma İŞLEMİYLE VERİTABANINA (In-Memory) girer.",
+            olmasaydi: "`AddAsync` YERİNE `context.QrLoginSessions.Add(...)` DOĞRUDAN ÇAĞRILSAYDI, repository'nin KENDİ EKLEME MANTIĞI (varsa EK doğrulama/dönüşüm) TEST DIŞI BIRAKILIRDI."
+          },
+          {
+            satir: 'new QrLoginSession',
+            aciklama: "Bölüm 9'daki Handler testlerinde GÖRDÜĞÜMÜZ AYNI DOĞRUDAN ENTİTE İNŞASI — GERÇEK bir C# nesnesi.",
+            neden: "Bu testte MOCK bir 'session' YOKTUR — nesne, GERÇEKTEN veritabanına (In-Memory) YAZILACAK GERÇEK bir KAYITTIR.",
+            olmasaydi: "Bu satır olmasaydı, `AddAsync`'e GEÇİRİLECEK bir nesne OLMAZDI."
+          },
+          {
+            satir: 'QrTokenHash = "qr-hash-abc",',
+            aciklama: "Bir sonraki ACT adımında ARANACAK ANAHTAR değer — Handler testlerindeki `_passwordService.Setup(...).Returns(\"hash\")` DESENİNİN, BURADA GERÇEK bir SABİT DEĞER olarak KARŞILIĞI.",
+            neden: "Bu repository testinde `IPasswordService` YOKTUR (repository, hash'leme YAPMAZ — Bölüm 5-6'da GÖRDÜĞÜMÜZ GİBİ hash'leme HANDLER/YARDIMCI SEVİYESİNDE YAPILIR) — bu YÜZDEN test, ZATEN hash'lenmiş SAYILAN SABİT bir STRING KULLANIR.",
+            olmasaydi: "Bu alan BOŞ BIRAKILSAYDI, `GetByTokenHashAsync(\"qr-hash-abc\")` ÇAĞRISI HİÇBİR kayıtla EŞLEŞMEZDİ — test 'BULUNDU' senaryosunu TEST EDEMEZDİ."
+          },
+          {
+            satir: 'PairingCode = "1234",',
+            aciklama: "Bölüm 1'deki GÖRSEL karşılaştırma kodu — bu ENTİTENİN ZORUNLU (non-nullable) bir ALANI OLDUĞU İÇİN test verisinde de DOLDURULUR.",
+            neden: "EF Core In-Memory sağlayıcısı, VERİTABANI SEVİYESİNDE NOT NULL kısıtlarını TAM OLARAK UYGULAMAYABİLİR AMA BU alanı doldurmak, testin GERÇEKÇİ bir kayıt TEMSİL etmesini sağlar.",
+            olmasaydi: "Bu alan BOŞ BIRAKILSAYDI, kod YİNE DE (In-Memory sağlayıcı ESNEK OLDUĞU İÇİN) ÇALIŞABİLİRDİ AMA test, GERÇEK bir PRODUCTION KAYDINI DOĞRU TEMSİL ETMEZDİ."
+          },
+          {
+            satir: 'ExpiresAt = DateTime.UtcNow.AddMinutes(2),',
+            aciklama: "Bölüm 9'daki testlerde GÖRDÜĞÜMÜZ AYNI DESEN — GELECEKTE bir SÜRE, oturumun HENÜZ SÜRESİ DOLMAMIŞ olarak KURULMASI için.",
+            neden: "Bu test, SÜRE DOLMA MANTIĞINI (`IsExpired`) DEĞİL, SADECE `GetByTokenHashAsync` SORGUSUNU TEST ETTİĞİ İÇİN, ExpiresAt DEĞERİNİN TAM OLARAK NE OLDUĞU KRİTİK DEĞİLDİR — YALNIZCA ZORUNLU bir ALAN OLDUĞU İÇİN DOLDURULUR.",
+            olmasaydi: "Bu alan BOŞ (varsayılan `DateTime` DEĞERİ) BIRAKILSAYDI, TEST YİNE ÇALIŞIRDI (BU testin İLGİ ALANI SÜRE DEĞİL) AMA GERÇEKÇİ bir KAYDI TEMSİL ETMEZDİ."
+          },
+          {
+            satir: ');',
+            aciklama: "`AddAsync(...)` çağrısının VE `var eklenen = await ...` atamasının KAPANIŞI.",
+            neden: "Object initializer İÇEREN bu çok-satırlı çağrının, kapanışın KENDİ satırında OLMASINI GEREKTİRİR.",
+            olmasaydi: "Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ."
+          },
+          {
+            satir: 'var bulunan = await repo.GetByTokenHashAsync("qr-hash-abc");',
+            aciklama: "TEST'İN ASIL AMACI — repository'nin GERÇEK sorgu metodu, YUKARIDA EKLENEN kaydın QrTokenHash DEĞERİYLE ÇAĞRILIR.",
+            neden: "Bu satır, Bölüm 4-11'de DEFALARCA GÖRDÜĞÜMÜZ `repository.GetByTokenHashAsync(tokenHash, ct)` ÇAĞRISININ (Handler'LARDA MOCK'LANAN) GERÇEK İMPLEMENTASYONUNU ÇALIŞTIRIR.",
+            olmasaydi: "Bu satır olmasaydı, TEST'İN ASIL DOĞRULAMAK İSTEDİĞİ SORGU HİÇ ÇALIŞTIRILMAZDI."
+          },
+          {
+            satir: 'bulunan.Should().NotBeNull();',
+            aciklama: "TEMEL doğrulama — EKLENEN kayıt, HASH'İYLE ARANDIĞINDA BULUNABİLMELİDİR.",
+            neden: "Bu, sorgunun EN BASİT BEKLENTİSİDİR — 'VAR OLAN bir kaydı SORGULARSAN, ONU GERİ ALIRSIN'.",
+            olmasaydi: "Bu ASSERT OLMASAYDI, bir SONRAKİ satırdaki `bulunan!.Id` ERİŞİMİ, `bulunan` GERÇEKTEN null İSE bir `NullReferenceException` İLE YANILTICI bir HATA VERİRDİ."
+          },
+          {
+            satir: 'bulunan!.Id.Should().Be(eklenen.Id);',
+            aciklama: "SORGUNUN, DOĞRU KAYDI (RASTGELE bir kaydı DEĞİL) DÖNDÜRDÜĞÜNÜN kanıtı — bulunan kaydın ID'si, EKLENEN kaydın ID'siyle EŞLEŞMELİDİR.",
+            neden: "Bu ASSERT, YALNIZCA 'BİR ŞEY bulundu' DEĞİL, 'DOĞRU ŞEY bulundu' İDDİASINI KANITLAR — EF Core'un OTOMATİK ATADIĞI ID, SORGUDAN DÖNEN nesnedeki ID İLE TUTARLI OLMALIDIR.",
+            olmasaydi: "Bu ASSERT olmasaydı, bir SORGU HATASI (ör. YANLIŞLIKLA İLK kaydı DÖNDÜREN bir `.FirstOrDefault()` KULLANIMI, HASH FİLTRESİ OLMADAN) FARK EDİLMEZDİ — BİRDEN FAZLA kayıt OLDUĞUNDA test HÂLÂ 'BAŞARILI' GÖRÜNÜRDÜ."
+          },
+          {
+            satir: 'public async Task GetByTokenHashAsync_NotFound_ReturnsNull()',
+            aciklama: "İKİNCİ test — 'olumsuz yol' (negative path): EŞLEŞEN bir kayıt OLMADIĞINDA sorgunun DAVRANIŞI.",
+            neden: "Bölüm 4-6'daki `?? throw new EntityNotFoundException(...)` DESENİNİN DAYANDIĞI VARSAYIM (sorgu, BULUNAMADIĞINDA `null` DÖNER, EXCEPTION FIRLATMAZ) BU testle KANITLANIR.",
+            olmasaydi: "Bu test OLMASAYDI, repository METODUNUN 'BULUNAMADI' durumunda `null` YERİNE (ör. YANLIŞLIKLA) bir EXCEPTION FIRLATMASI FARK EDİLMEZDİ — Handler'LARDAKİ `??` operatörü HİÇBİR ZAMAN TETİKLENMEZ, BEKLENMEDİK bir EXCEPTION TÜRÜ (EF Core'un KENDİ hatası) İSTEMCİYE SIZARDI."
+          },
+          {
+            satir: 'await using var context = InMemoryDbContextFactory.CreateContext();',
+            aciklama: "İKİNCİ testte de, İLK testten TAMAMEN BAĞIMSIZ, YENİ ve BOŞ bir context OLUŞTURULUR.",
+            neden: "Bu, İKİ testin BİRBİRİNİN VERİSİNDEN ETKİLENMEMESİNİ (test İZOLASYONU) sağlar.",
+            olmasaydi: "Testler AYNI context'İ PAYLAŞSAYDI, İLK testte EKLENEN 'qr-hash-abc' kaydı, İKİNCİ testin 'HİÇBİR eşleşme YOK' VARSAYIMINI BOZARDI (BAŞKA bir hash İLE ARANDIĞI İÇİN BU ÖZEL durumda SORUN ÇIKMAZ AMA GENEL OLARAK TEHLİKELİDİR)."
+          },
+          {
+            satir: 'var repo = new QrLoginSessionRepository(context);',
+            aciklama: "İLK testteki AYNI kurulum — GERÇEK repository, BOŞ context İLE İNŞA EDİLİR.",
+            neden: "Bu context'te HİÇBİR QrLoginSession kaydı YOKTUR — bu, 'BULUNAMADI' senaryosunun DOĞAL bir SONUCUDUR.",
+            olmasaydi: "Repository FARKLI bir şekilde İNŞA EDİLSEYDİ, test AMACINDAN SAPARDI."
+          },
+          {
+            satir: 'var sonuc = await repo.GetByTokenHashAsync("hic-yok-hash");',
+            aciklama: "BOŞ context'te, HİÇBİR kayda AİT OLMAYAN bir hash DEĞERİYLE arama YAPILIR.",
+            neden: "'hic-yok-hash', BİLEREK SEÇİLMİŞ, HİÇBİR eklenmiş kayıtla EŞLEŞMEYEN bir DEĞERDİR — 'BULUNAMADI' senaryosunu NET olarak KURAR.",
+            olmasaydi: "Context'te GERÇEKTEN bir kayıt OLSAYDI VE bu hash O kayıtla EŞLEŞSEYDİ, test 'BULUNAMADI' senaryosunu DEĞİL, YANLIŞLIKLA 'BULUNDU' senaryosunu test ETMİŞ OLURDU."
+          },
+          {
+            satir: 'sonuc.Should().BeNull();',
+            aciklama: "TEST'İN ASIL İDDİASI — EŞLEŞEN bir kayıt YOKSA, sorgu `null` DÖNER (EXCEPTION FIRLATMAZ).",
+            neden: "Bu, Bölüm 4-6'daki `?? throw new EntityNotFoundException(...)` DESENİNİN, GERÇEK bir EF Core sorgusuyla DA GEÇERLİ OLDUĞUNU KANITLAR.",
+            olmasaydi: "Bu ASSERT OLMASAYDI, TEST'İN 'başarılı' GEÇMESİ İÇİN HİÇBİR gerçek KOŞUL KALMAZDI — TEST ANLAMSIZ HALE GELİRDİ."
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bölüm 12 — Terimler ve Kalan Testler',
+        terimler: [
+          { terim: 'In-Memory EF Core Sağlayıcısı', tanim: "Gerçek bir SQL Server/PostgreSQL YERİNE, BELLEKTE ÇALIŞAN, testler İÇİN TASARLANMIŞ bir EF Core sağlayıcısı — GERÇEK LINQ SORGULARININ çevrildiğini DOĞRULAR AMA GERÇEK bir veritabanı SUNUCUSU GEREKTİRMEZ." },
+          { terim: 'Test İzolasyonu', tanim: "Her testin, DİĞER testlerin VERİSİNDEN/DURUMUNDAN ETKİLENMEDEN, BAĞIMSIZ olarak ÇALIŞABİLMESİ — QrLoginSessionRepositoryTests'te HER test KENDİ TAZE context'ini OLUŞTURARAK bunu SAĞLAR." },
+          { terim: 'Callback (Moq)', tanim: "Bir mock metodu ÇAĞRILDIĞINDA, GEÇİRİLEN ARGÜMANLARI YAKALAYIP TEST İÇİNDE İNCELENEBİLİR bir DEĞİŞKENE AKTARAN Moq özelliği — GenerateQrLoginCommandHandlerTests'teki `savedSession` bu şekilde DOLDURULUR." },
+          { terim: "ScanQrLoginCommandHandlerTests.cs / DenyQrLoginCommandHandlerTests.cs", tanim: "Bu iki dosya, tests/Features/QrLogin/ altında bu bölümde GÖRDÜĞÜMÜZ AYNI PATTERN'İ (mock repository+passwordService, CreateHandler() yardımcı metodu, Arrange/Act/Assert, mutlu-yol + hata-yolu ayrımı) izler — Scan İÇİN 'zaten Pending DIŞINDA bir DURUMDAKİ oturum TARANAMAZ' senaryosunu, Deny İÇİN İSE Bölüm 11'deki `QrSessionForbiddenException`IN sahiplik uyuşmazlığında FIRLATILDIĞINI KANITLAR." }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          "GenerateQrLoginCommandHandlerTests, Callback+ReturnsAsync İLE `AddAsync`'e GEÇİRİLEN GERÇEK entity İçeriğini (Status, RequesterIp, QrTokenHash) DOĞRULAR",
+          "URL-safe token testi, standart Base64'teki `+`/`/` karakterlerinin route'ta SORUN ÇIKARABİLECEĞİ bir REGRESYONU YAKALAR",
+          "QrLoginSessionRepositoryTests, MOCK KULLANMAZ — GERÇEK bir In-Memory EF Core context'e KARŞI GERÇEK LINQ sorgusunu ÇALIŞTIRIR",
+          "Mutlu-yol + 'bulunamadı' İKİLİSİ, Handler'lardaki `?? throw new EntityNotFoundException(...)` DESENİNİN DAYANDIĞI 'sorgu null DÖNER, EXCEPTION FIRLATMAZ' VARSAYIMINI KANITLAR",
+          "ScanQrLoginCommandHandlerTests ve DenyQrLoginCommandHandlerTests, BURADA gösterilenlerle AYNI PATTERN'İ izleyerek CLAUDE.md'nin 'her Handler'IN testi' kuralını TAMAMLAR"
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

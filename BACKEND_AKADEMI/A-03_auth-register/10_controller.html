@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Controller — İnce Katman</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '09_test.html',
+    sonrakiBolum: '11_jwt-refresh-token.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 17 · CLAUDE.md ADIM 13',
+        baslik: 'Controller — İnce Katman',
+        altBaslik: 'Dikey dilimin SON adımı — ve en KISA dosyalardan biri. Neden bu kadar az kod var?'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Controller Neden En Son Yazılır?',
+        aciklama: 'Controller, HTTP dünyası (route, status code, header) ile MediatR dünyası (Command, Handler) arasındaki KAPIDIR. Önceki 8 bölümde tüm iş mantığını yazdık — Controller\'ın yapması gereken TEK şey, gelen isteği bir RegisterCommand\'a çevirip `_mediator.Send()` ile Handler\'a İLETMEK.',
+        neden: 'Bu proje "ince controller" (thin controller) desenini BENİMSER — CODING_STANDARDS.md: "ince katman: JWT\'den userId al, servisi çağır, DTO döndür. İş mantığı YOK." İş mantığının TAMAMI Handler\'da yaşadığı için Controller\'ın son adımda, neredeyse "otomatik" yazılması BEKLENİR.',
+        olmasaydi: 'Controller ilk yazılsaydı, henüz hangi Command\'ın hangi alanları taşıyacağı (Bölüm 12), Handler\'ın hangi exception\'ları fırlatacağı (Bölüm 15) BELLİ OLMAZDI — Controller boş bir iskeletten öteye geçemezdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AuthController.Register — Tüm Kod',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        nedenBuKlasor: 'API/Controllers/ altında — CLAUDE.md §3 Adım 13: Controller\'lar HER ZAMAN en dış katmanda (API projesi), çünkü HTTP\'ye özgü sınıflar ([ApiController], ActionResult) yalnızca bu projede mevcut.',
+        kod: `[ApiController]
+[Route("api/v1/auth")]
+public class AuthController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public AuthController(IMediator mediator) => _mediator = mediator;
+
+    [HttpPost("register")]
+    [EnableRateLimiting("anonymous")]
+    [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RegisterResponse>> Register(
+        RegisterCommand command,
+        CancellationToken ct
+    )
+    {
+        var response = await _mediator.Send(command, ct);
+        return StatusCode(StatusCodes.Status201Created, response);
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[ApiController]',
+            aciklama: 'ASP.NET Core\'a "bu sınıf bir API controller\'dır" der — otomatik model doğrulama (400 yanıtı), route\'tan parametre çıkarımı gibi API\'ye özgü DAVRANIŞLARI etkinleştirir.',
+            neden: 'Bu öznitelik, Controller\'a MVC\'nin (View döndüren, sayfa tabanlı) DAVRANIŞLARI yerine, SAF bir API\'nin (yalnızca JSON/HTTP durum kodu döndüren) davranışlarını KAZANDIRIR.',
+            olmasaydi: 'Bu öznitelik olmasaydı, bazı OTOMATİK davranışlar (ör. `[FromBody]` yazılmadan gövdenin OTOMATİK bağlanması) ÇALIŞMAZDI — model binding daha FAZLA elle yazılan kod GEREKTİRİRDİ.'
+          },
+          {
+            satir: '[Route("api/v1/auth")]',
+            aciklama: 'Bu Controller\'daki TÜM action\'ların ORTAK ön ekini (`api/v1/auth`) tanımlar — `[HttpPost("register")]` ile BİRLEŞİP `api/v1/auth/register` adresini OLUŞTURUR.',
+            neden: '"v1" ön eki, API\'nin SÜRÜMLENEBİLİR olmasını sağlar — ileride "v2" bir sürüm çıkarsa, eski istemciler (v1\'i kullanan mobil uygulamalar) ETKİLENMEDEN yeni bir Controller EKLENEBİLİR.',
+            olmasaydi: 'Route öneki olmasaydı, HER action kendi TAM yolunu (`api/v1/auth/register`) TEKRAR TEKRAR yazmak zorunda kalırdı — 13 Auth endpoint\'inde bu önek 13 KEZ tekrarlanır, biri YANLIŞ yazılırsa (ör. "aut" yazım hatası) o endpoint SESSİZCE erişilemez hale gelirdi.'
+          },
+          {
+            satir: 'private readonly IMediator _mediator;',
+            aciklama: 'AuthController\'ın TEK bağımlılığı bu — ne IUserRepository, ne IPasswordService, HİÇBİRİ doğrudan buraya enjekte edilmez.',
+            neden: 'A-02/05\'te MediatR\'ın "Controller\'ları Handler\'lardan ayırma" rolünü görmüştük — bu, tam olarak burada meyvesini verir: 13 farklı Auth endpoint\'i (Register, Login, Refresh, VerifyEmail...) olsa bile, AuthController HER ZAMAN TEK bir bağımlılık taşır.',
+            olmasaydi: 'MediatR olmadan, AuthController\'ın constructor\'ı IUserRepository, IPasswordService, IOtpService, IEmailService gibi 13 endpoint\'in TOPLAM ihtiyaç duyduğu her bağımlılığı TEK SINIFTA toplardı — bakımı, testi ZORLAŞAN dev bir sınıf.'
+          },
+          {
+            satir: 'public AuthController(IMediator mediator) => _mediator = mediator;',
+            aciklama: 'Constructor, TEK satırda — DI konteynerinden alınan IMediator, doğrudan `_mediator` alanına atanır (expression-bodied member sözdizimi).',
+            neden: 'Bu constructor o kadar BASİT (tek atama) ki, `{ }` bloklu uzun yazım yerine `=>` (expression body) ile TEK satırda yazılabilir — CLAUDE.md\'nin "junior eğitimi, kod kendini anlatır" felsefesiyle TUTARLI, gereksiz görsel gürültü YARATMAZ.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri AuthController\'ı OLUŞTURAMAZ, `_mediator` alanı hiçbir zaman DOLDURULMAZDI — TÜM Auth endpoint\'leri (13 tanesi) çalışma zamanında NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '[HttpPost("register")]',
+            aciklama: 'Bu action\'ın, `[Route("api/v1/auth")]` ile birleşerek `POST /api/v1/auth/register` adresine YANIT VERECEĞİNİ belirtir.',
+            neden: 'ASP.NET Core, bu attribute\'ları OKUYARAK hangi URL+HTTP metodunun hangi C# metoduna karşılık geldiğini otomatik EŞLEŞTİRİR — Program.cs\'teki `MapControllers()` (A-02/06) bu eşleştirmeyi AKTİF eder.',
+            olmasaydi: 'Bu attribute olmasaydı, ASP.NET Core bu metodun hangi URL\'e karşılık geldiğini BİLEMEZDİ — istek HİÇBİR ZAMAN bu koda ULAŞMAZDI.'
+          },
+          {
+            satir: '[EnableRateLimiting("anonymous")]',
+            aciklama: 'A-02/05\'te tanımladığımız "anonymous" politikasını (dakikada 10 istek) BU endpoint\'e bağlar.',
+            neden: 'Register, kimlik doğrulama GEREKTİRMEYEN (anonim) bir endpoint — bu yüzden "authenticated" (dakikada 100) değil, daha SIKI olan "anonymous" limitini kullanır; bot/brute-force denemelerine karşı en açık noktalardan biri.',
+            olmasaydi: 'Bu attribute unutulsaydı, Register endpoint\'i HİÇBİR rate limit taşımazdı — bir saldırgan saniyede binlerce sahte kayıt isteği göndererek veritabanını ŞİŞİREBİLİR ya da e-posta gönderim SERVİSİNİ (Bölüm 15\'teki SendEmailVerificationOtpAsync) İSTİSMAR EDEBİLİRDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status201Created)]',
+            aciklama: 'Bu endpoint BAŞARILI olduğunda, RegisterResponse tipinde bir gövdeyle 201 durum kodu DÖNECEĞİNİ Swagger\'a (ve dolayısıyla API dokümantasyonuna) BİLDİRİR.',
+            neden: 'Bu öznitelikler, GERÇEK davranışı DEĞİŞTİRMEZ — yalnızca DOKÜMANTASYON amaçlıdır; Swashbuckle (A-02/01\'de gördüğümüz paket) bunları OKUYUP Swagger UI\'da "olası yanıtlar" listesini OTOMATİK üretir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI\'ı kullanan bir frontend geliştiricisi, bu endpoint\'in BAŞARILI durumda TAM OLARAK hangi ŞEKİLDE veri döneceğini KOD\'a bakmadan BİLEMEZDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]',
+            aciklama: 'Bir üstteki desenle AYNI, ama BAŞARISIZ (doğrulama hatası) durumu için — 400 durumunda ApiErrorResponse şeklinde bir gövde DÖNECEĞİNİ belgeler.',
+            neden: 'Bu 400 yanıtı, A-02/05\'teki ValidationFilter\'ın (RegisterCommandValidator, Bölüm 12 kuralları GEÇMEZSE) OTOMATİK ÜRETTİĞİ yanıttır — Controller\'ın KENDİSİ bu 400\'ü ELLE fırlatmaz, ama Swagger dokümantasyonunda bu OLASILIĞIN belirtilmesi gerekir.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger UI\'da bu endpoint yalnızca "başarılı" senaryoyu GÖSTERİR, bir frontend geliştiricisi doğrulama HATALARINI nasıl ELE ALACAĞINI dokümantasyondan ÖĞRENEMEZDİ.'
+          },
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]',
+            aciklama: 'ÜÇÜNCÜ olası yanıt: 409 Conflict — Bölüm 15\'teki `DuplicateEmailException` fırlatıldığında (global exception handler tarafından) ÜRETİLEN durum kodu.',
+            neden: '409 (200/400\'den FARKLI bir durum kodu), "e-posta zaten kayıtlı" durumunun bir DOĞRULAMA hatası (400) DEĞİL, bir ÇAKIŞMA (conflict — var olan bir kaynakla İSTEK arasında) olduğunu HTTP standardına UYGUN şekilde ifade eder.',
+            olmasaydi: 'Bu öznitelik olmasaydı, Swagger dokümantasyonu bu endpoint\'in "e-posta çakışması" senaryosunda 409 DÖNDÜĞÜNÜ HİÇ BELİRTMEZDİ — bir frontend geliştiricisi bu durumu YAKALAMAK için hangi durum kodunu KONTROL ETMESİ gerektiğini TAHMİN ETMEK zorunda kalırdı.'
+          },
+          {
+            satir: 'public async Task<ActionResult<RegisterResponse>> Register(',
+            aciklama: 'Action metodunun imzası BAŞLAR — dönüş tipi `ActionResult<RegisterResponse>`, hem "201 + RegisterResponse" hem de (teorik olarak) başka bir HTTP sonucu DÖNDÜREBİLME esnekliği sağlar.',
+            neden: '`ActionResult<T>` kullanılması, `StatusCode(...)` gibi ÇEŞİTLİ HTTP sonuç türlerini (yalnızca `RegisterResponse` DEĞİL) dönebilmeyi sağlar — Handler\'daki exception\'lar zaten global handler TARAFINDAN yakalandığı için, bu action GENELDE yalnızca 201 döner ama tip esnekliği KORUNUR.',
+            olmasaydi: 'Dönüş tipi doğrudan `RegisterResponse` olsaydı, `StatusCode(StatusCodes.Status201Created, response)` gibi AÇIKÇA durum kodu BELİRTEN bir dönüş YAZILAMAZDI — yalnızca `200 OK` ile OTOMATİK dönerdi, "201 Created" semantiği KAYBOLURDU.'
+          },
+          {
+            satir: 'RegisterCommand command,',
+            aciklama: 'ASP.NET Core, gelen JSON gövdesini (`{"email": "...", "password": "..."}`) OTOMATİK olarak RegisterCommand nesnesine dönüştürür (model binding) — Controller\'ın bunu ELLE yapmasına GEREK YOKTUR.',
+            neden: 'Bölüm 12\'deki RegisterCommand, bir "record" olarak yalnızca 4 basit alan taşıyor — ASP.NET Core\'un model binding\'i, JSON\'daki alan isimleriyle record\'un constructor parametrelerini EŞLEŞTİRİR.',
+            olmasaydi: 'Model binding olmasaydı, Controller\'ın HTTP gövdesini elle OKUYUP (`Request.Body`), JSON\'u elle ÇÖZÜMLEYİP RegisterCommand nesnesine ELLE dönüştürmesi gerekirdi — her endpoint\'te tekrar eden, hataya AÇIK bir iş.'
+          },
+          {
+            satir: 'CancellationToken ct',
+            aciklama: 'CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun son parametre — ASP.NET Core, bu parametreyi OTOMATİK olarak isteğin İPTAL sinyaliyle DOLDURUR (model binding GEREKTİRMEZ, framework tarafından ÖZEL olarak tanınır).',
+            neden: 'Bu token, `_mediator.Send(command, ct)` çağrısına AKTARILIR — istemci bağlantıyı KESERSE (ör. mobil uygulamadan çıkış), bu sinyal Handler\'a kadar İLETİLİR ve YARIM kalan iş İPTAL EDİLEBİLİR.',
+            olmasaydi: 'Bu parametre olmasaydı, `_mediator.Send(command, ct)` çağrısına GEÇİRİLECEK bir token OLMAZDI — istek iptal edilse bile Handler\'daki veritabanı sorgusu SONUNA kadar ÇALIŞMAYA devam ederdi.'
+          },
+          {
+            satir: 'var response = await _mediator.Send(command, ct);',
+            aciklama: 'Command, MediatR ÜZERİNDEN Handler\'a GÖNDERİLİR — Controller, HANGİ somut Handler\'ın çalışacağını hiç BİLMEZ, yalnızca "bu Command\'ı işleyen biri VAR" der.',
+            neden: 'Bu TEK satır, Bölüm 15\'te yazdığımız TÜM iş mantığını (çifte e-posta kontrolü, şifre hash\'leme, OTP üretimi, e-posta gönderimi) TETİKLER — Controller\'ın kendisi bu adımların HİÇBİRİNİ BİLMEZ.',
+            olmasaydi: 'Bu satır olmasaydı, Handler HİÇBİR ZAMAN ÇAĞRILMAZDI — istek Controller\'a ulaşır ama hiçbir iş mantığı ÇALIŞMAZ, kullanıcı HİÇBİR ZAMAN kaydedilmezdi.'
+          },
+          {
+            satir: 'return StatusCode(StatusCodes.Status201Created, response);',
+            aciklama: 'Handler\'dan dönen RegisterResponse, "201 Created" durum koduyla İSTEMCİYE dön.',
+            neden: '201 Created (200 OK DEĞİL), HTTP standardının "yeni bir kaynak OLUŞTURULDU" anlamına gelen doğru durum koduydur — REST konvansiyonlarına uyum, API\'yi tüketen istemcilerin (özellikle otomatik araçların) davranışı DOĞRU yorumlamasını sağlar.',
+            olmasaydi: '`Ok(response)` (200) kullanılsaydı, İŞLEVSEL olarak istemci yine veriyi ALIRDI ama HTTP semantiği YANLIŞ olurdu — "var olan bir kaynak okundu" ile "YENİ bir kaynak OLUŞTURULDU" arasındaki fark KAYBOLURDU, REST prensiplerine SIKI uyan istemciler (ör. otomatik test araçları) YANLIŞ yorumlayabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'İnce Controller mı, Şişman Controller mı?',
+        iyi: {
+          baslik: 'Bu projenin deseni: ince controller',
+          maddeler: [
+            'Controller yalnızca: Command oluştur → Mediator\'a gönder → sonucu dön',
+            'İş mantığının TAMAMI Handler\'da (test edilebilir, HTTP\'den bağımsız)',
+            'Aynı iş mantığı bir arka plan işinden de (HTTP olmadan) çağrılabilir'
+          ]
+        },
+        kotu: {
+          baslik: 'Yaygın anti-desen: şişman controller',
+          maddeler: [
+            'Controller içinde doğrudan DbContext sorguları',
+            'İş kuralları (e-posta çakışma kontrolü vb.) Controller\'da tekrarlanır',
+            'Aynı mantığı test etmek, sahte bir HTTP isteği kurmayı GEREKTİRİR'
+          ]
+        }
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-03 Tamamlandı — Register API Baştan Sona Yazıldı',
+        maddeler: [
+          'Controller, HTTP dünyası ile Handler dünyası arasındaki İNCE kapı',
+          'Tek bağımlılık: IMediator — 13 Auth endpoint\'i olsa bile bu DEĞİŞMEZ',
+          '[EnableRateLimiting], [HttpPost] gibi attribute\'lar davranışı DEKLARATİF olarak tanımlar',
+          '201 Created, "yeni kaynak oluşturuldu" anlamına gelen doğru HTTP durum kodu',
+          '',
+          'Entity → EF Config → Migration → Command+Validator → Repository → DTO+AutoMapper → Handler → Test → Controller: 9 bölümde bir API\'yi BAŞTAN SONA yazdık.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

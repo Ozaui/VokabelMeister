@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GetQrLoginStatusCommand — Polling ve Tek Seferlik Token</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'status',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '06_confirm-deny.html',
+    sonrakiBolum: '08_controller-ratelimit.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'GetQrLoginStatusCommand',
+        altBaslik: 'Akışın EN karmaşık parçası: A-03\'ün TÜM giriş altyapısıyla BURADA buluşuyoruz — VE "Expired NEDEN 410 DEĞİL 200" sorusunun CEVABI burada.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Expired 410 DEĞİL, 200 + "Expired" Durumu',
+        aciklama: 'Bölüm 5\'teki ScanQrLoginCommand, SÜRESİ DOLMUŞ bir OTURUMDA 410 Gone FIRLATIYORDU. GetQrLoginStatusCommand İSE AYNI DURUMDA (SÜRE DOLMUŞ) 410 DEĞİL, 200 OK + `{status: "Expired"}` DÖNER. Bu, İKİ Handler ARASINDAKİ, İLK BAKIŞTA TUTARSIZ GÖRÜNEN AMA BİLİNÇLİ bir FARKTIR.',
+        neden: 'Scan, "BİR EYLEM DENEDİM, BAŞARISIZ OLDU" ANLAMINA GELİR (410, "bu EYLEMİ YAPAMAZSIN, KAYNAK ARTIK YOK") — Status İSE BİR POLLING İSTEĞİDİR, HER 2 SANİYEDE bir NORMAL OLARAK TEKRARLANIR; "Expired" bir HATA DEĞİL, WEB\'İN BEKLEDİĞİ OLASI SONUÇLARDAN BİRİDİR (Bölüm 1\'deki DÖRT TERMİNAL durumdan biri) — WEB, BU BİLGİYİ "YENİ bir QR ÜRET" SİNYALİ OLARAK KULLANIR, bir İSTİSNA (exception) OLARAK DEĞİL.',
+        olmasaydi: 'Status DA 410 DÖNSEYDİ, web\'İN POLLING KODU HER "Expired" DURUMUNU bir HTTP HATASI OLARAK ELE ALMASI GEREKİRDİ (try/catch İÇİNDE) — OYSA Pending/Scanned/Denied/Expired HEPSİ AYNI "NORMAL, BAŞARILI bir SORGU" AKIŞININ PARÇASIDIR; YALNIZCA Confirmed\'İN TÜKETİLMİŞ HALİ (Consumed) GERÇEKTEN bir HATA (410) SAYILIR.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetQrLoginStatusCommand.cs — Bağımlılıklar',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/GetQrLoginStatusCommand.cs',
+        nedenBuKlasor: 'Features/QrLogin/ altında, DÖRT KARDEŞ Command\'IYLA (Generate/Scan/Confirm/Deny) AYNI KLASÖRDE.',
+        kod: `public record GetQrLoginStatusCommand(string QrToken) : IRequest<QrStatusResponse>
+{
+    public string? ClientIp { get; init; }
+}
+
+public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCommand, QrStatusResponse>
+{
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IUserRepository _userRepository;
+    private readonly ILoginCompletionService _loginCompletionService;
+
+    public GetQrLoginStatusCommandHandler(
+        IQrLoginSessionRepository qrLoginSessionRepository,
+        IPasswordService passwordService,
+        IUserRepository userRepository,
+        ILoginCompletionService loginCompletionService
+    )
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+        _userRepository = userRepository;
+        _loginCompletionService = loginCompletionService;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record GetQrLoginStatusCommand(string QrToken) : IRequest<QrStatusResponse>',
+            aciklama: 'Bölüm 4\'te TANIMLADIĞIMIZ, "Pending/Scanned/Confirmed/Denied/Expired" HEPSİNİ KARŞILAYABİLEN SÜPERKÜME DTO — Scan\'İN AKSİNE, BU Command `[Authorize]` DEĞİLDİR (Bölüm 8\'de GÖRECEĞİZ), ÇÜNKÜ WEB (POLLING YAPAN TARAF) HENÜZ GİRİŞ YAPMAMIŞTIR.',
+            neden: 'Web, oturumun BAŞLANGICINDAN (Generate) İTİBAREN ANONİMDİR — POLLING İSTEĞİ de ANONİM KALMALIDIR, ÇÜNKÜ TAM OLARAK BU İSTEĞİN AMACI "ANONİM bir TARAYICIYA KİMLİK KAZANDIRMAKTIR".',
+            olmasaydi: 'Bu endpoint `[Authorize]` OLSAYDI, WEB TARAYICISININ POLLING YAPABİLMESİ İÇİN ÖNCEDEN bir JWT\'YE SAHİP OLMASI GEREKİRDİ — AMA WEB, TAM OLARAK JWT ALMAK İÇİN BU AKIŞI KULLANIYOR, BU bir "TAVUK-YUMURTA" ÇELİŞKİSİ OLURDU.'
+          },
+          {
+            satir: 'public string? ClientIp { get; init; }',
+            aciklama: 'Bölüm 5\'teki GenerateQrLoginCommand.ClientIp İLE AYNI desen — gövdede GELMEZ, Controller `HttpContext.Connection.RemoteIpAddress`\'ten okuyup `with` İLE EKLER.',
+            neden: 'Bu IP, Handler\'ın SON aşamasında `CompleteLoginAsync` çağrısına GEÇİRİLİR — KAYNAK KODDAKİ yorumda belirtildiği gibi "telefonun DEĞİL, web\'in IP\'si".',
+            olmasaydi: 'Bu alan olmasaydı, üretilen RefreshToken\'ın IpAddress alanı HER ZAMAN `null` KALIRDI.'
+          },
+          {
+            satir: 'public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCommand, QrStatusResponse>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder.',
+            neden: 'İmza, yukarıdaki GetQrLoginStatusCommand\'ın `IRequest<QrStatusResponse>` implemente etmesiyle EŞLEŞİR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: 'Oturumu HASH\'ine göre bulmak VE güncellemek için — Bölüm 4\'te yazdığımız AYNI repository.',
+            neden: 'Bu Handler da somut repository DEĞİL, arayüze bağımlıdır.',
+            olmasaydi: 'Somut repository enjekte edilseydi, testte GERÇEK bir veritabanı bağlantısı GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'İstemciden GELEN HAM token\'ı hash\'lemek için — Generate/Scan/Confirm\'deki AYNI servis.',
+            neden: 'Karşılaştırma yapabilmek için, elimizdeki HAM token\'ı da AYNI algoritmayla hash\'lememiz GEREKİR.',
+            olmasaydi: 'Bu servis olmasaydı, Handler HAM token\'ı NASIL hash\'leyeceğini BİLEMEZDİ.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'DÖRT KARDEŞ Command\'IN (Generate/Scan/Confirm/Deny) HİÇBİRİNDE GÖRMEDİĞİMİZ YENİ bir BAĞIMLILIK — ÇÜNKÜ YALNIZCA BU Command, GERÇEKTEN bir kullanıcı YÜKLEMESİ (VE token ÜRETMESİ) GEREKİR.',
+            neden: 'Confirmed bir OTURUMUN token ÜRETEBİLMESİ İÇİN, o OTURUMA BAĞLI User NESNESİNE (Bölüm 5\'te Scan\'de SET EDİLEN `UserId`) İHTİYAÇ VARDIR — A-03/22\'deki ILoginCompletionService.CompleteLoginAsync, bir `User` NESNESİ BEKLER, bir Id DEĞİL.',
+            olmasaydi: 'Bu BAĞIMLILIK OLMASAYDI, Handler `session.UserId`\'yi BİLİR AMA GERÇEK User NESNESİNİ (Email, IsActive, ThemePreference GİBİ ALANLARI) YÜKLEYEMEZDİ — CompleteLoginAsync ÇAĞRILAMAZDI.'
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: 'A-03/21-22\'de DETAYLI GÖRDÜĞÜMÜZ, OTP/Google/Apple GİRİŞLERİNİN PAYLAŞTIĞI AYNI SERVİS — Bölüm 1\'deki "QR akışı KENDİ token\'ını ÜRETMEZ" İDDİASININ SOMUT KANITI, BURADA, KOD SEVİYESİNDE.',
+            neden: 'Bu satır, A-03 (Auth API) İLE A-03.1 (QR Login) ARASINDAKİ EN GÜÇLÜ BAĞLANTIDIR — QR akışı, A-03\'TE YAZILAN grace-period KURTARMA, IsActive KONTROLÜ, RefreshToken/TokenFamily ÜRETİMİ GİBİ TÜM MANTIĞI, TEK bir BAĞIMLILIK ÜZERİNDEN, HİÇ TEKRAR YAZMADAN MİRAS ALIR.',
+            olmasaydi: 'Bu servis YERİNE, Handler KENDİ token ÜRETİM/grace-period KODUNU YAZSAYDI, A-03/22\'deki 30 SATIRLIK CompleteLoginAsync METODUNUN NEREDEYSE BİREBİR AYNISI, DÖRDÜNCÜ KEZ (OTP, Google, Apple\'DAN SONRA) TEKRARLANIRDI.'
+          },
+          {
+            satir: 'public GetQrLoginStatusCommandHandler(',
+            aciklama: 'DÖRT bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER — bu Handler, DÖRT KARDEŞ Command\'ın (Generate/Scan/Confirm/Deny) EN ÇOK bağımlılığa sahip olanıdır.',
+            neden: 'Çok-satırlı yazım, dört parametrenin OKUNABİLİRLİĞİNİ KORUR.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri GetQrLoginStatusCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IQrLoginSessionRepository qrLoginSessionRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_qrLoginSessionRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_qrLoginSessionRepository = qrLoginSessionRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'İkinci parametre — hash\'leme servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler HAM token\'ı ASLA hash\'leyemezdi.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Üçüncü parametre — kullanıcı repository\'sini enjekte eder.',
+            neden: 'Bu Handler, DÖRT KARDEŞİNDEN farklı olarak GERÇEKTEN bir User nesnesi YÜKLEMEK zorundadır.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler Confirmed bir oturumun kullanıcısını ASLA YÜKLEYEMEZDİ.'
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService',
+            aciklama: 'DÖRDÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Bu servisin de arayüz üzerinden enjekte edilmesi, testte GERÇEK token üretimi OLMADAN bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, Handler token ÜRETEMEZDİ — QR akışının TÜM amacı BOŞA çıkardı.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, dört parametrenin NET görülmesini sağlar.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_qrLoginSessionRepository` null KALIRDI.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'İKİNCİ atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'ÜÇÜNCÜ atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null kalırdı.'
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'SON atama.',
+            neden: 'Dört atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_loginCompletionService` null kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Handle() — Beş Farklı Sonuç, Tek Metot',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/GetQrLoginStatusCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<QrStatusResponse> Handle(GetQrLoginStatusCommand request, CancellationToken ct)
+{
+    var tokenHash = _passwordService.HashToken(request.QrToken);
+    var session =
+        await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)
+        ?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);
+
+    if (session.IsExpired(DateTime.UtcNow))
+    {
+        await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
+        return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
+    }
+
+    if (session.Status == QrLoginStatus.Consumed)
+        throw new QrSessionGoneException();
+
+    if (session.Status != QrLoginStatus.Confirmed)
+        return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
+
+    var user =
+        await _userRepository.GetByIdIncludingDeletedAsync(session.UserId!.Value, ct)
+        ?? throw new EntityNotFoundException(typeof(User), session.UserId.Value);
+
+    if (!user.IsActive)
+        throw new AccountNotActiveException();
+
+    var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
+
+    session.Status = QrLoginStatus.Consumed;
+    await _qrLoginSessionRepository.UpdateAsync(session, user.Id, ct);
+
+    return new QrStatusResponse(
+        QrLoginStatus.Confirmed.ToString(),
+        authResponse.AccessToken,
+        authResponse.RefreshToken,
+        authResponse.ExpiresIn,
+        authResponse.User
+    );
+}`,
+        satirlar: [
+          {
+            satir: 'public async Task<QrStatusResponse> Handle(GetQrLoginStatusCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot — dönüş tipi `QrStatusResponse`, BEŞ farklı SONUCU (Pending/Scanned/Denied/Expired/Confirmed) TEK bir DTO şeklinde KAPSAR.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var tokenHash = _passwordService.HashToken(request.QrToken);',
+            aciklama: 'Bölüm 5-6\'daki AYNI desen — istemciden gelen HAM token, veritabanındaki HASH İLE karşılaştırılabilmesi için hash\'lenir.',
+            neden: 'GetByTokenHashAsync HASH bekler, HAM token DEĞİL.',
+            olmasaydi: 'Bu satır olmasaydı, bir sonraki sorguya GEÇİRİLECEK bir DEĞER OLMAZDI.'
+          },
+          {
+            satir: 'var session =',
+            aciklama: 'Bölüm 5-6\'daki AYNI desen — sonucu İKİNCİ satırda DEVAM eden bir DEĞİŞKEN tanımı.',
+            neden: 'Bu satır, bir SONRAKİ satırdaki `await` ifadesiyle BİRLİKTE İKİ satırlık TEK bir ifadeyi OLUŞTURUR.',
+            olmasaydi: 'Bu satır olmasaydı, sorgu SONUCUNA ATANACAK bir DEĞİŞKEN OLMAZDI.'
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.GetByTokenHashAsync(tokenHash, ct)',
+            aciklama: 'Bölüm 4\'te yazdığımız TEK ek sorgu — hash\'e KARŞILIK gelen oturumu bulur.',
+            neden: 'Bu sorgu `null` DÖNEBİLİR (geçersiz/uydurma bir token gönderilmişse).',
+            olmasaydi: 'Bu satır olmasaydı, `session` değişkenine ATANACAK bir sorgu sonucu OLMAZDI.'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(QrLoginSession), tokenHash);',
+            aciklama: 'Bölüm 5-6\'daki AYNI desen — exception mesajı HAM token\'ı DEĞİL, hash\'ini TAŞIR.',
+            neden: 'HAM token bir SIRDIR, LOG dosyalarına SIZDIRILMAMALIDIR.',
+            olmasaydi: 'HAM token loglansaydı, log dosyalarına erişimi olan biri BU token\'ı KULLANARAK gerçek bir istek ATABİLİRDİ.'
+          },
+          {
+            satir: 'if (session.IsExpired(DateTime.UtcNow))',
+            aciklama: 'Bölüm 5\'teki AYNI EXTENSION METOT — AMA Scan\'DEKİNDEN (`throw`) FARKLI olarak, BURADA bir SONUÇ DÖNER, EXCEPTION FIRLATILMAZ.',
+            neden: 'Bu, Bölüm 7\'nin BAŞINDAKİ "Expired 410 DEĞİL, 200" KARARININ TAM OLARAK UYGULANDIĞI SATIRDIR — AYNI `IsExpired` metodu, İKİ FARKLI Handler\'da (Scan: throw, Status: return) FARKLI SONUÇLANDIRILIR.',
+            olmasaydi: 'Bu satır `throw new QrSessionGoneException()` OLSAYDI (Scan\'DEKİ GİBİ), Bölüm 7\'nin BAŞINDAKİ TÜM GEREKÇE (polling\'İN "NORMAL" bir SONUCU OLMASI) ÇÖKERDİ — web\'İN HER polling DÖNGÜSÜ, ExpiresAt DOLDUĞUNDA bir HTTP HATASIYLA KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);',
+            aciklama: '`IsExpired` metodunun (Bölüm 5) BELLEKTE yaptığı durum değişikliğini (Pending/Scanned→Expired) veritabanına yazar — `userId` verilmez (ANONİM, sistem tarafından otomatik yapılan güncelleme).',
+            neden: 'Bölüm 5\'teki YARDIMCI metot, kendisi veritabanına YAZMIYORDU — bu sorumluluk, ÇAĞIRAN Handler\'a (burası) AİTTİR.',
+            olmasaydi: 'Bu satır olmasaydı, `session.Status = Expired` değişikliği yalnızca BELLEKTE kalırdı — bir SONRAKİ polling isteği bu geçişi hiç GÖRMEZDİ, aynı süre kontrolünü TEKRAR TEKRAR yapardı.'
+          },
+          {
+            satir: 'return new QrStatusResponse(session.Status.ToString(), null, null, null, null);',
+            aciklama: 'Bölüm 6\'daki `Unit.Value` İLE FARKLI bir "BOŞ" DÖNÜŞ DESENİ — `Status` ALANI DOLU (`.ToString()` İLE enum STRING\'E ÇEVRİLİR), DİĞER DÖRT ALAN (token\'lar+User) `null`.',
+            neden: '`session.Status.ToString()`, Bölüm 5\'teki `IsExpired` metodunun İÇİNDE `session.Status = QrLoginStatus.Expired` OLARAK GÜNCELLENMİŞ OLAN DEĞERİ YANSITIR — bu YÜZDEN "Expired" DÖNER, "Pending" DEĞİL (SÜRE zaten DOLDUĞU İÇİN).',
+            olmasaydi: 'Bu satır YERİNE `session.Status` (ENUM, STRING DEĞİL) DOĞRUDAN DTO\'YA GEÇİRİLSEYDİ, `QrStatusResponse.Status` (bir `string`) TİPİYLE UYUŞMAZDI — KOD DERLENEMEZDİ.'
+          },
+          {
+            satir: 'if (session.Status == QrLoginStatus.Consumed)',
+            aciklama: 'SÜRE KONTROLÜNDEN SONRAKİ İKİNCİ KONTROL — YALNIZCA BU KOŞUL (Consumed) GERÇEKTEN bir "hata" (410) SAYILIR, Bölüm 7\'nin BAŞINDAKİ AÇIKLAMADA belirtildiği GİBİ.',
+            neden: 'Bu, Bölüm 2\'deki QrLoginStatus.Consumed AÇIKLAMASINDAKİ "token\'LAR YALNIZCA BİR KEZ döner" GARANTİSİNİN UYGULANDIĞI SATIRDIR — İKİNCİ bir OKUMA GİRİŞİMİ, GERÇEKTEN bir HATA DURUMUDUR (token ARTIK YOK, SIZDIRILAMAZ).',
+            olmasaydi: 'Bu KONTROL OLMASAYDI, Consumed bir OTURUM, BİR SONRAKİ `if (session.Status != QrLoginStatus.Confirmed)` KONTROLÜNDE "Confirmed DEĞİL" OLARAK DEĞERLENDİRİLİP `{status: "Consumed"}` DÖNERDİ — İŞLEVSEL olarak ZARARSIZ GİBİ GÖRÜNSE de, "TÜKETİLMİŞ bir KAYNAĞA TEKRAR ERİŞİM" SEMANTİK OLARAK 410 İLE İFADE EDİLMELİDİR (REST KONVANSİYONU).'
+          },
+          {
+            satir: 'throw new QrSessionGoneException();',
+            aciklama: 'Consumed bir oturuma yönelik İKİNCİ (ya da SONRAKİ) bir status isteği, Bölüm 4\'teki AYNI exception İLE reddedilir.',
+            neden: 'Bölüm 2\'deki "token\'lar yalnızca BİR KEZ döner" garantisinin, status endpoint\'indeki UYGULAMA noktası — bir üstteki satırın açıklamasında detaylandırıldığı gibi.',
+            olmasaydi: 'Bu exception fırlatılmasaydı, kod devam eder ve Consumed bir oturum "Confirmed DEĞİL" olarak YANLIŞ sınıflandırılırdı.'
+          },
+          {
+            satir: 'if (session.Status != QrLoginStatus.Confirmed)',
+            aciklama: 'ÜÇÜNCÜ KONTROL — Pending/Scanned/Denied (Consumed VE Expired ZATEN ELENDİ) DURUMLARININ HEPSİ BU DALA DÜŞER, YALNIZCA `Status` İLE, TOKEN\'SIZ DÖNER.',
+            neden: 'Bu, DÖRT ARA/TERMİNAL durumu (Pending, Scanned, Denied — Consumed/Expired ZATEN AYRILDI) TEK bir GENEL DAVRANIŞTA (yalnızca STATUS BİLGİSİ DÖN) BİRLEŞTİRİR — WEB, "HENÜZ TAMAMLANMADI" TÜM DURUMLARI AYNI ŞEKİLDE (POLLING\'E DEVAM ET) İŞLER.',
+            olmasaydi: 'Bu KONTROL OLMASAYDI, KOD DOĞRUDAN AŞAĞIDAKİ (Confirmed-ÖZGÜ) SATIRLARA DEVAM EDERDİ — Pending bir OTURUM İÇİN `session.UserId!.Value` ÇAĞRILMAYA ÇALIŞILIRDI, AMA UserId HENÜZ `null` (KİMSE TARAMADI) OLDUĞU İÇİN bir NullReferenceException (`!` OPERATÖRÜNÜN YANLIŞ KULLANIMI) FIRLATILIRDI.'
+          },
+          {
+            satir: 'var user =',
+            aciklama: 'BU NOKTAYA GELİNDİYSE, oturum KESİNLİKLE Confirmed\'DİR — kullanıcı, Bölüm 5\'teki Scan\'DE YAZILAN `UserId` ÜZERİNDEN YÜKLENİR.',
+            neden: 'Bu satırdan İTİBAREN, Handler ARTIK QR\'A ÖZGÜ MANTIKTAN ÇIKIP, A-03\'teki STANDART "LOGIN TAMAMLAMA" AKIŞINA (A-03/22) GEÇİŞ YAPAR.',
+            olmasaydi: 'Bu satır OLMASAYDI, `authResponse` ÜRETİMİ İÇİN GEREKLİ `User` NESNESİ HİÇ OLMAZDI — CompleteLoginAsync ÇAĞRILAMAZDI.'
+          },
+          {
+            satir: 'await _userRepository.GetByIdIncludingDeletedAsync(session.UserId!.Value, ct)',
+            aciklama: 'A-03/13\'te TANITTIĞIMIZ, `GetByIdAsync` (FİLTRELİ) DEĞİL, ÖZEL "TÜMÜNÜ GÖSTER" metodu — normal LOGIN\'İN (A-03/22) `GetByEmailAsync` İLE soft-delete\'İ YOK SAYMASIYLA AYNI AMACA HİZMET EDER.',
+            neden: 'KAYNAK KODDAKİ YORUMDA (Bölüm 9\'daki TESTLERDE de GÖRECEĞİZ) belirtildiği GİBİ: "NORMAL login (LoginCommand/LoginWithGoogle/Apple) kullanıcıyı GetByEmailAsync İLE soft-delete FİLTRESİ YOK SAYILARAK BULUR, BÖYLECE CompleteLoginAsync\'İN GRACE-PERIOD KURTARMA MANTIĞI ÇALIŞABİLİR" — QR akışı da AYNI DAVRANIŞA UYMALIDIR, TUTARLILIK İÇİN.',
+            olmasaydi: 'FİLTRELİ `GetByIdAsync` KULLANILSAYDI, HESABINI YENİ SİLMİŞ (soft-delete\'Lİ, GRACE PERIOD İÇİNDEKİ) bir kullanıcı, QR İLE giriş YAPMAYA ÇALIŞTIĞINDA ANLAMSIZ bir 404 ALIRDI — DİĞER giriş YÖNTEMLERİYLE (OTP, Google, Apple) TUTARSIZ bir DAVRANIŞ OLURDU (BU, TESTLERDE BULUNAN GERÇEK bir REGRESYONDU, Bölüm 9\'da DETAYLI GÖRECEĞİZ).'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(User), session.UserId.Value);',
+            aciklama: 'Bölüm 5-6\'daki AYNI DESEN — TARANMIŞ bir OTURUMUN UserId\'si VERİTABANINDA BULUNAMAZSA (PRATİKTE NEREDEYSE HİÇ OLMAZ, SAVUNMACI programlama).',
+            neden: 'Bu, A-03/26\'daki RequestAccountDeletionCommand\'DAKİ AYNI "SAVUNMACI KONTROL" GEREKÇESİDİR — RACE CONDITION (kullanıcı TAM O ANDA KALICI OLARAK SİLİNMİŞSE) GİBİ NADİR SENARYOLARA KARŞI.',
+            olmasaydi: 'Bu kontrol OLMASAYDI VE `user` `null` DÖNSEYDİ, bir SONRAKİ `user.IsActive` ERİŞİMİ NullReferenceException FIRLATIRDI.'
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: 'A-03/21-22\'deki LoginCommand/LoginWithGoogle/Apple İLE AYNI KONTROL — Bölüm 9\'daki TESTLERDE (KAYNAK KODUN YORUMUNDA belirtildiği GİBİ) SONRADAN EKLENEN bir REGRESYON DÜZELTMESİ.',
+            neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "LoginCommand/LoginWithGoogleCommand/LoginWithAppleCommand\'IN HEPSİ CompleteLoginAsync\'E GİRMEDEN ÖNCE IsActive KONTROLÜ YAPIYOR — QR akışının TOKEN ÜRETİMİ de AYNI ORTAK SON ADIMDAN GEÇTİĞİ İÇİN AYNI KONTROLE TABİ OLMALI."',
+            olmasaydi: 'Bu KONTROL OLMASAYDI, Admin TARAFINDAN DONDURULMUŞ bir HESAP, QR İLE giriş YAPABİLİRDİ — DİĞER ÜÇ giriş YÖNTEMİNDE (OTP, Google, Apple) ENGELLENEN bir kullanıcı, QR\'DA bir ARKA KAPI BULMUŞ OLURDU (A-03/22\'deki AYNI GÜVENLİK AÇIĞI RİSKİ).'
+          },
+          {
+            satir: 'throw new AccountNotActiveException();',
+            aciklama: 'A-03/21-22\'deki AYNI exception — hesap DONDURULMUŞSA fırlatılır, Controller katmanında 403 Forbidden\'a EŞLENİR.',
+            neden: 'AYNI exception türünün TÜM giriş yöntemlerinde KULLANILMASI, istemcinin "hesap dondurulmuş" durumunu TEK bir kod yoluyla, giriş yönteminden BAĞIMSIZ ele ALABİLMESİNİ sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, dondurulmuş bir hesap QR İLE giriş YAPMAYA DEVAM EDER, `CompleteLoginAsync` ÇAĞRILIR, kullanıcı BAŞARIYLA token ALIRDI — hesap dondurmanın AMACI TAMAMEN BOŞA çıkardı.'
+          },
+          {
+            satir: 'var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);',
+            aciklama: 'A-03/21-22\'deki AYNI ÇAĞRI, DÖRDÜNCÜ KEZ (OTP, Google, Apple\'DAN SONRA) — grace-period KURTARMA, İSTATİSTİKLER, TOKEN+RefreshToken ÜRETİMİ, HEPSİ TEK satırda.',
+            neden: '`request.ClientIp`, Controller\'IN (Bölüm 8) WEB\'İN IP\'SİNDEN OKUDUĞU DEĞERDİR — KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ, "TELEFONUN IP\'Sİ DEĞİL", token\'ı ÜRETEN/KULLANACAK OLAN web TARAFININ IP\'Sİ.',
+            olmasaydi: 'Bu ÇAĞRI OLMASAYDI, `authResponse` (access+refresh token) HİÇ ÜRETİLMEZDİ — QR akışının TÜM AMACI (WEB\'E GİRİŞ SAĞLAMAK) GERÇEKLEŞMEZDİ.'
+          },
+          {
+            satir: 'session.Status = QrLoginStatus.Consumed;',
+            aciklama: 'DÖRDÜNCÜ VE SON durum GEÇİŞİ (Bölüm 1) — Confirmed\'DEN Consumed\'E, token ÜRETİLDİKTEN HEMEN SONRA.',
+            neden: 'Bu satırın `CompleteLoginAsync` ÇAĞRISINDAN SONRA GELMESİ ÖNEMLİDİR — TOKEN ÜRETİMİ BAŞARISIZ OLURSA (ör. `CompleteLoginAsync` bir exception FIRLATIRSA), oturum Consumed\'E GEÇMEZ, BİR SONRAKİ POLLING İSTEĞİ TEKRAR DENEYEBİLİR.',
+            olmasaydi: 'Bu satır `CompleteLoginAsync` ÇAĞRISINDAN ÖNCE OLSAYDI, TOKEN ÜRETİMİ BAŞARISIZ OLSA BİLE oturum Consumed\'E GEÇERDİ — kullanıcı, BAŞARISIZ bir GİRİŞTEN SONRA TEKRAR DENEYEMEZ, YENİ bir QR OLUŞTURMAK ZORUNDA KALIRDI (GEREKSİZ bir SÜRTÜNME).'
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.UpdateAsync(session, user.Id, ct);',
+            aciklama: 'Bölüm 5-6\'daki AYNI DESEN — `userId`, TOKEN\'I ALAN kullanıcının Id\'sidir (`user.Id`, `request.UserId` DEĞİL, ÇÜNKÜ BU Command\'IN BİR UserId ALANI YOKTUR — WEB ANONİMDİR).',
+            neden: 'Bu, Bölüm 4\'teki QrScanResponse.RequesterIp/DeviceInfo GİBİ, "İSTEĞİ ATAN" (web, ANONİM) İLE "İŞLEMİN GERÇEK SAHİBİ" (user, ARTIK BİLİNEN) ARASINDAKİ FARKI GÖSTERİR — audit ALANI, GERÇEK SAHİBİ (`user.Id`) YANSITIR.',
+            olmasaydi: 'Bu satır OLMASAYDI, `session.Status = Consumed` DEĞİŞİKLİĞİ YALNIZCA BELLEKTE KALIRDI — bir SONRAKİ polling İSTEĞİ, oturumu HÂLÂ Confirmed GÖRÜR, TOKEN\'I İKİNCİ KEZ ÜRETİP DÖNDÜREBİLİRDİ (Bölüm 2\'deki Consumed durumunun ÖNLEMEK İSTEDİĞİ TAM OLARAK BU SENARYO).'
+          },
+          {
+            satir: 'return new QrStatusResponse(',
+            aciklama: 'BAŞARILI YANITIN İNŞASI — `QrLoginStatus.Confirmed.ToString()` (SABİT "Confirmed" STRING\'İ, `session.Status`\'UN GÜNCEL DEĞERİ DEĞİL, ÇÜNKÜ `session.Status` ARTIK Consumed\'DİR).',
+            neden: 'İSTEMCİYE (web) DÖNEN Status ALANI, "SEN, TOKEN\'I İLK KEZ ALAN İSTEKSİN, VE OTURUM SENİN AÇINDAN Confirmed OLARAK SONUÇLANDI" DER — VERİTABANINDAKİ `Consumed` (İÇ DURUM) İLE İSTEMCİYE GÖSTERİLEN "Confirmed" (DIŞ SONUÇ) BİLEREK FARKLILAŞTIRILMIŞTIR.',
+            olmasaydi: '`session.Status.ToString()` (Consumed) DÖNDÜRÜLSEYDİ, WEB İSTEMCİSİ "Consumed" DİYE bir DURUMU HİÇ BEKLEMİYOR OLABİLİRDİ (YALNIZCA Pending/Scanned/Confirmed/Denied/Expired BEKLENEN DEĞERLER) — İSTEMCİ TARAFINDAKİ `switch` İFADESİ BU DEĞERİ TANIMAYIP HATA VEREBİLİRDİ.'
+          },
+          {
+            satir: 'QrLoginStatus.Confirmed.ToString(),',
+            aciklama: 'İSTEMCİYE dönen SABİT "Confirmed" değeri — bir üstteki satırın açıklamasında detaylandırıldığı gibi, veritabanındaki GÜNCEL (Consumed) değer DEĞİL.',
+            neden: 'İstemci açısından bu istek "onaylandı, token aldım" ANLAMINA gelir — VERİTABANI seviyesindeki "artık tüketildi" (Consumed) iç detayı, İSTEMCİYE SIZDIRILMAZ.',
+            olmasaydi: '`session.Status.ToString()` kullanılsaydı, "Consumed" değeri istemciye dönerdi — istemcinin BEKLEMEDİĞİ bir durum DEĞERİ, hata işleme kodunu BOZARDI.'
+          },
+          {
+            satir: 'authResponse.AccessToken,',
+            aciklama: 'CompleteLoginAsync\'in ÜRETTİĞİ JWT — web istemcisinin `Authorization` header\'ında TAŞIYACAĞI değer.',
+            neden: 'A-03/22\'deki AuthTokenResponse.AccessToken İLE AYNI değer, yalnızca QrStatusResponse şekline TAŞINMIŞ.',
+            olmasaydi: 'Bu alan olmasaydı, web istemcisi HİÇBİR API isteği ATAMAZDı.'
+          },
+          {
+            satir: 'authResponse.RefreshToken,',
+            aciklama: 'CompleteLoginAsync\'in ÜRETTİĞİ HAM refresh token.',
+            neden: 'Web istemcisi, access token\'ın süresi DOLDUĞUNDA bu değeri KULLANARAK yeni bir access token İSTEYECEK (A-03/18\'deki RefreshCommand).',
+            olmasaydi: 'Bu alan olmasaydı, web istemcisi YALNIZCA 15 dakikalık access token İLE SINIRLI kalırdı.'
+          },
+          {
+            satir: 'authResponse.ExpiresIn,',
+            aciklama: 'Access token\'ın kaç SANİYE sonra süresinin DOLACAĞI.',
+            neden: 'A-03/21\'deki `ExpiresInSeconds()` İLE AYNI değer, QrStatusResponse şekline TAŞINMIŞ.',
+            olmasaydi: 'Bu alan olmasaydı, web istemcisi access token\'ın NE ZAMAN DOLACAĞINI bilemezdi.'
+          },
+          {
+            satir: 'authResponse.User',
+            aciklama: 'SON parametre — A-03/14\'teki AuthUserDto, virgülsüz (parametre listesinin sonu).',
+            neden: 'Web istemcisi, giriş YAPTIĞI ANDA kullanıcının seviyesini VE tema tercihini BİLİR — ayrı bir "GET /users/me" çağrısı GEREKMEZ.',
+            olmasaydi: 'Bu parametre olmasaydı, `QrStatusResponse`\'un YAPISI EKSİK KALIRDI — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: ');',
+            aciklama: 'QrStatusResponse constructor çağrısının ve `return` ifadesinin KAPANIŞI — metodun SON satırı.',
+            neden: 'BEŞ parametreli bu çağrının çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Consumed, GERÇEKTEN 410 döner — Expired İSE 200+"Expired" — polling\'in NORMAL sonucu İLE gerçek bir HATA arasındaki AYRIM',
+          'GetQrLoginStatusCommand, A-03\'teki ILoginCompletionService.CompleteLoginAsync\'i ÇAĞIRAN TEK QrLogin Command\'ıdır — DÖRDÜNCÜ giriş yöntemi',
+          'GetByIdIncludingDeletedAsync + IsActive kontrolü, DİĞER giriş yöntemleriyle (OTP/Google/Apple) TUTARLILIK sağlar — regresyon TESTLERİYLE doğrulanmıştır (Bölüm 9)',
+          'Consumed geçişi, TOKEN üretiminden SONRA yapılır — başarısız bir üretim, oturumu TÜKETMEZ, TEKRAR denemeye izin verir'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

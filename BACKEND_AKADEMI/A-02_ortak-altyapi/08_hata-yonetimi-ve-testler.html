@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hata Yönetimi: NotFound + Hata Gövdesi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'hata-yonetimi-ve-testler',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '07_generic-repository.html',
+    sonrakiBolum: '../A-03_auth-register/01_dikey-dilim-nedir.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 8',
+        baslik: 'Hata Yönetimi: NotFound + Hata Gövdesi',
+        altBaslik: 'Bu bölümde merkezi bir "bulunamadı" hatasının ve tüm API\'nin ortak hata cevap şeklinin nasıl kurulduğunu öğreneceğiz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Merkezi Bir NotFound + Tek Tip Hata Gövdesi?',
+        aciklama: 'İki ayrı ama birbirine bağlı sorun var: (1) "istenen kayıt DB\'de yok" durumunu her Repository/Handler kendi başına nasıl anlatacak? (2) İstemciye giden HER hata yanıtı (404, 400, 401...) hangi JSON şeklinde olacak? Bu bölüm ikisine de TEK bir cevap veriyor: `EntityNotFoundException` (Bölüm 7\'de Repository<T>.SoftDeleteAsync içinde zaten görmüştük) ve `ApiErrorResponse`.',
+        neden: 'Bölüm 6\'daki `ExceptionHandlingMiddleware`, pipeline\'da fırlatılan HER exception\'ı TEK bir yerde yakalar ve `ApiErrorResponse`\'a çevirir. Bu yakalama noktasının işe yarayabilmesi için (a) "bulunamadı" durumunun özel, tanınabilir bir TİP olması gerekir (genel `Exception` yakalanırsa her hata 500 döner), (b) çevrilecek hedef şeklin (code+message) sabit ve tahmin edilebilir olması gerekir — aksi halde her Controller kendi try/catch\'ini ve kendi JSON şeklini yazardı.',
+        olmasaydi: 'Merkezi bir `EntityNotFoundException` olmasaydı, her Repository/Handler "kayıt yok" durumunda ya `null` döner (çağıran unutursa NullReferenceException), ya da rastgele bir `Exception("bulunamadı")` fırlatırdı — middleware bunu ayırt edemez, HER "bulunamadı" durumu istemciye 500 Internal Server Error olarak dönerdı. `ApiErrorResponse` gibi ortak bir zarf olmasaydı, her endpoint kendi hata JSON\'unu elle kurardı (biri `{error: "..."}`, diğeri `{message: "..."}` yazardı) — frontend her endpoint için AYRI bir hata ayrıştırma mantığı yazmak zorunda kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'EntityNotFoundException.cs — Özel "Bulunamadı" Tipi',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/EntityNotFoundException.cs',
+        nedenBuKlasor: 'Application/Common/Exceptions/ altında — bu exception hiçbir katmana (EF Core, HTTP) bağımlı değil, saf bir C# sınıfı; Application katmanı Domain\'in üzerinde ama Infrastructure/API\'nin altında olduğu için, hem Repository (Infrastructure) hem Controller/Middleware (API) bu tipi görüp fırlatabilir/yakalayabilir (CLAUDE.md §5 bağımlılık yönü).',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// EntityNotFoundException.cs
+//
+// AMAÇ: İstenilen entity DB'de bulunamadığında fırlatılan özel exception.
+// NEDEN: Genel KeyNotFoundException veya Exception yerine özel tip kullanmak,
+//        global exception middleware'inin bu durumu yakalayıp 404 döndürmesini sağlar.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class EntityNotFoundException : Exception
+{
+    public EntityNotFoundException(string message)
+        : base(message) { }
+
+    // AMAÇ: Entity tipini ve aranan anahtarı alıp standart formatta mesaj üreten kısayol.
+    // NEDEN: Repository<T> gibi çağıranların "{Entity} not found: Id={key}" string'ini
+    //        elle interpolate etmesini önler; format tek yerden yönetilir. Mesaj İngilizce
+    //        yazılır (CODING_STANDARDS.md §1 — log/exception .Message İngilizce kuralı).
+    public EntityNotFoundException(Type entityType, object key)
+        : base($"{entityType.Name} not found: Id={key}") { }
+}`,
+        satirlar: [
+          {
+            satir: 'public class EntityNotFoundException : Exception',
+            aciklama: 'Genel `System.Exception`\'dan türeyen, ama kendi TİPİ olan özel bir exception sınıfı.',
+            neden: '`ExceptionHandlingMiddleware`, `catch (Exception ex)` ile yakaladığı nesneyi `ex switch { EntityNotFoundException => ... }` şeklinde TİP eşleştirmesiyle ayırt eder — bu ayrımın mümkün olması için "bulunamadı" durumunun kendi somut tipi olması ŞARTTIR.',
+            olmasaydi: 'Bu özel tip olmasaydı, "bulunamadı" durumu için genel `Exception("...")` fırlatılırdı; middleware bunu diğer TÜM beklenmeyen hatalardan (ör. gerçek bir bug, DB bağlantı kopması) AYIRT EDEMEZDİ — hepsi aynı 500 Internal Server Error yoluna düşerdi.'
+          },
+          {
+            satir: 'public EntityNotFoundException(string message)',
+            aciklama: 'Çağıranın mesajı kendi elleriyle tam olarak yazmak istediği durumlar için düz bir constructor.',
+            neden: 'Bazı senaryolarda entity tipi + Id formatı yeterli olmayabilir (ör. birleşik anahtarla arama) — bu overload, çağırana serbest metin mesajı yazma esnekliği bırakır.',
+            olmasaydi: 'Bu overload olmasaydı, HER çağıran zorunlu olarak Type+key overload\'ını kullanmak zorunda kalırdı — birleşik anahtar gibi Type+key kalıbına UYMAYAN senaryolarda mesaj anlamsız/eksik olurdu.'
+          },
+          {
+            satir: 'public EntityNotFoundException(Type entityType, object key)',
+            aciklama: 'Repository<T>.SoftDeleteAsync\'in (Bölüm 7) kullandığı, entity tipini ve aranan Id\'yi alıp standart mesaj üreten kısayol constructor.',
+            neden: '`typeof(T)` generic Repository içinde her zaman ELDE olan bir bilgidir — bu overload, "hangi entity, hangi Id" bilgisini TEK satırda, tutarlı bir formatta ifade etmeyi sağlar.',
+            olmasaydi: 'Bu overload olmasaydı, Repository<T> içinde her SoftDeleteAsync/GetByIdAsync-benzeri yerde `$"{typeof(T).Name} not found: Id={id}"` string\'i ELLE tekrar tekrar yazılırdı — biri format\'ı yanlış yazarsa (ör. "Id:" yerine "id="), hata mesajları TUTARSIZLAŞIRDI.'
+          },
+          {
+            satir: ': base($"{entityType.Name} not found: Id={key}") { }',
+            aciklama: 'C#\'ın `base(...)` çağrısıyla, üretilen mesaj doğrudan `Exception.Message`\'a (temel sınıfın constructor\'ına) aktarılır.',
+            neden: 'Mesaj İngilizce yazılır (CODING_STANDARDS.md §1) çünkü bu, geliştirici/log tarafına giden bir mesajdır — istemciye giden dile-özel mesaj AYRI bir kanaldan (ErrorMessages sözlüğü, AppException.Code) gelir; EntityNotFoundException bu ayrımın DIŞINDA kalan tek istisnadır (ExceptionHandlingMiddleware bu mesajı doğrudan kullanır).',
+            olmasaydi: 'Mesaj `base(...)`\'a değil de sınıfın kendi alanına atansaydı, `Exception.Message`\'ı okuyan standart .NET araçları (loglama, debugger) bu bilgiyi GÖREMEZDİ — `Exception.Message`, framework genelinde "bu hatayı açıkla" için standart sözleşmedir.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApiErrorResponse.cs — Tüm Hataların Ortak Zarfı',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Models/ApiErrorResponse.cs',
+        nedenBuKlasor: 'Application/Common/Models/ altında — bu tip HERHANGİ bir Handler\'ın DTO\'su değil, tüm API\'nin ortak sözleşmesinin bir parçası; Common/ klasörü tek bir feature\'a ait olmayan, projenin GENELİNDE paylaşılan tipler için ayrılmıştır.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ApiErrorResponse.cs
+//
+// AMAÇ: Tüm hatalı endpoint yanıtlarının sarıldığı standart zarf (envelope).
+// NEDEN: REFERENCE/API_ENDPOINTS.md §1'deki "Standart Yanıt" sözleşmesinin hata
+//        kolunu somutlaştırır; ExceptionHandlingMiddleware her exception'ı bu
+//        tipe çevirip döner — istemci hata objesinin şeklini her zaman bilir.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Models;
+
+// AMAÇ: Hata kodunu (makine tarafından okunabilir) ve mesajı (kullanıcıya gösterilebilir) taşır.
+// NEDEN: "code" alanı sabit bir sözlük gibi davranır (örn. INVALID_CREDENTIALS, NOT_FOUND) —
+//        frontend, mesajı doğrudan göstermek yerine "code"a göre özel davranış (yönlendirme,
+//        özel ikon) tetikleyebilir; "message" ise her durumda insan-okunur açıklamadır.
+public record ApiErrorDetail(string Code, string Message);
+
+// NEDEN record (2026-07-12'de class'tan çevrildi): DTOs/'daki her şey (MessageResponse,
+//       AuthTokenResponse, ApiErrorDetail'in kendisi vb.) immutable record — bu tip tek
+//       istisnaydı, tutarlılık için hizalandı.
+public record ApiErrorResponse(ApiErrorDetail Error)
+{
+    // AMAÇ: İşlemin başarısız olduğunu belirtir. Bu tip yalnızca hata yolunda
+    //       kullanıldığı için sabit false'dur.
+    public bool Success => false;
+
+    // AMAÇ: (code, message) çağıranlar için kısayol — ExceptionHandlingMiddleware/
+    //       ValidationFilter'daki mevcut çağrı şeklini değiştirmeden Error'ı kurar.
+    public ApiErrorResponse(string code, string message)
+        : this(new ApiErrorDetail(code, message)) { }
+}`,
+        satirlar: [
+          {
+            satir: 'public record ApiErrorDetail(string Code, string Message);',
+            aciklama: 'Hatanın iki parçasını taşıyan küçük, immutable (değişmez) bir veri taşıyıcı: `Code` makineye, `Message` insana yönelik.',
+            neden: '`record` kullanımı, bu tipin yalnızca VERİ taşıdığını (davranışı olmadığını) ve bir kez oluşturulduktan sonra DEĞİŞTİRİLEMEYECEĞİNİ ifade eder — bir hata nesnesi oluşturulduktan sonra "yolda" başka bir kod tarafından mutasyona uğratılmamalı.',
+            olmasaydi: 'Code ve Message ayrı iki alan olarak DEĞİL de tek bir string olarak birleştirilseydi (ör. "NOT_FOUND: User not found"), frontend bu string\'i PARSE ETMEK zorunda kalırdı — hangi kısmın kod, hangi kısmın mesaj olduğunu string\'i bölerek bulmak KIRILGAN bir yaklaşımdır.'
+          },
+          {
+            satir: 'public record ApiErrorResponse(ApiErrorDetail Error)',
+            aciklama: 'Tüm hata yanıtlarının dıştaki ZARFI — içinde tek bir `Error` alanı taşır (REFERENCE/API_ENDPOINTS.md §1\'deki standart yanıt sözleşmesinin hata kolu).',
+            neden: 'Başarılı ve hatalı yanıtların İKİSİ de aynı üst-düzey şekle (bir `Success` bayrağı + ilgili veri) sahip olursa, istemci HER yanıtı aynı şekilde ayrıştırabilir — başarı yanıtı `data` taşırken hata yanıtı `error` taşır, ama ikisinin de bir `success` alanı vardır.',
+            olmasaydi: 'Her endpoint kendi hata şeklini icat etseydi (biri `{error: "..."}`, biri `{message: "..."}`, biri düz string), frontend HER endpoint için ayrı bir hata ayrıştırma kodu yazmak zorunda kalırdı — bu, tam da bu tipin ÖNLEMEK için var olduğu sorundur.'
+          },
+          {
+            satir: 'public bool Success => false;',
+            aciklama: 'Hesaplanmış (computed) bir property — hiçbir zaman set edilmez, HER ZAMAN `false` döner çünkü bu tip yalnızca hata yolunda kullanılır.',
+            neden: '`=>` (expression-bodied property) ile yazılması, bu değerin asla YANLIŞLIKLA `true` olarak set edilemeyeceğini garanti eder — normal bir `{ get; set; }` property olsaydı, bir yerlerde yanlışlıkla `Success = true` yazılabilirdi.',
+            olmasaydi: 'Bu alan hiç olmasaydı, istemci başarılı/başarısız yanıtı ayırt etmek için yalnızca HTTP durum koduna (404, 500...) güvenmek zorunda kalırdı — JSON gövdesinin kendisi bu bilgiyi taşımazdı, bazı frontend senaryolarında (ör. gövdeyi loglama) durum kodu elde olmayabilir.'
+          },
+          {
+            satir: 'public ApiErrorResponse(string code, string message)',
+            aciklama: 'İkinci bir constructor — `ApiErrorDetail`\'i elle kurmak yerine doğrudan `code` ve `message`\'ı vererek `ApiErrorResponse` oluşturmayı sağlayan kısayol.',
+            neden: 'ExceptionHandlingMiddleware ve ValidationFilter gibi çağıranların kodu `new ApiErrorResponse("NOT_FOUND", mesaj)` gibi TEK satırda kalır — `new ApiErrorResponse(new ApiErrorDetail("NOT_FOUND", mesaj))` yazmaya gerek KALMAZ.',
+            olmasaydi: 'Bu kısayol olmasaydı, her çağıran nokta iki adımda (`ApiErrorDetail` kurup sonra `ApiErrorResponse`\'a sarmalayarak) yazmak zorunda kalırdı — küçük ama gereksiz bir tekrar, birden çok çağıran noktada (middleware + validation filter) İKİ KATINA çıkardı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RepositoryTests.cs — Repository<T>\'nin Birim Testleri',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/RepositoryTests.cs',
+        nedenBuKlasor: 'Tests/Repositories/ altında — CLAUDE.md §1 "her public servis/Handler metodunun birim testi AYNI task içinde yazılır" kuralı gereği, Bölüm 7\'de yazılan Repository<T> için testler AYNI A-02 görevinin parçasıdır; klasör yapısı, test edilen sınıfın (Infrastructure/Repositories/) yolunu YANSITIR.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RepositoryTests.cs
+//
+// AMAÇ: Repository<T> generic taban sınıfının CRUD işlemlerini ve
+//       WordLearnerDbContext'teki soft delete global filtresini doğrulamak.
+// NEDEN: A-03'ten itibaren yazılacak tüm feature repository'ler (UserRepository,
+//        WordRepository ...) bu sınıfı miras alacak; taban sınıf hatalıysa
+//        hata her feature'a yayılır. Bu yüzden A-02'de, hiçbir feature entity'si
+//        yokken bile, generic davranış test edilir (CODING_STANDARDS.md §7.4).
+// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
+//                WordLearner.Infrastructure.Repositories.Repository<T>,
+//                WordLearner.Infrastructure.Data.WordLearnerDbContext.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Domain.Entities;
+using WordLearner.Infrastructure.Data;
+using WordLearner.Infrastructure.Repositories;
+
+namespace WordLearner.Tests.Repositories;
+
+// AMAÇ: Repository<T> testleri için kullanılan, yalnızca bu test dosyasına özel minimal entity.
+// NEDEN: Projede henüz (A-02 aşamasında) hiçbir feature entity'si yok; gerçek bir entity
+//        yazmak yerine BaseEntity'den türeyen sahte bir sınıf kullanmak, testi gerçek
+//        feature'lardan (A-03+) bağımsız ve DB'ye dokunmadan (in-memory) çalıştırmayı sağlar.
+public class TestEntity : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+}
+
+// AMAÇ: TestEntity'yi EF Core modeline dahil eden, yalnızca test projesinde kullanılan DbContext.
+// NEDEN: WordLearnerDbContext'te TestEntity için bir DbSet property'si yok (ve olmamalı —
+//        test entity'si production koduna sızmamalı); bu alt sınıf OnModelCreating'i override
+//        ederek TestEntity'yi modele elle ekler. Böylece WordLearnerDbContext'in gerçek
+//        (BaseEntity.IsDeleted'a bağlı) soft delete filtresi TestEntity üzerinde de çalışır.
+public class TestDbContext : WordLearnerDbContext
+{
+    public TestDbContext(DbContextOptions<WordLearnerDbContext> options)
+        : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // NEDEN: base.OnModelCreating soft delete filtresini modeldeki tüm BaseEntity
+        //        türevlerine uygular; TestEntity bu döngüden önce modele eklenmeli.
+        modelBuilder.Entity<TestEntity>();
+        base.OnModelCreating(modelBuilder);
+    }
+}
+
+public class RepositoryTests
+{
+    // AMAÇ: Her test için izole, benzersiz isimli bir in-memory veritabanı oluşturur.
+    // NEDEN: Testler paralel/sırayla çalışırken aynı veritabanı adını paylaşırsa
+    //        kayıtlar birbirine karışır; Guid ile her test kendi temiz DB'sinde çalışır.
+    private static TestDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<WordLearnerDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new TestDbContext(options);
+    }
+
+    /// <summary>
+    /// AddAsync_ValidEntity_AssignsIdAndSaves
+    ///
+    /// AMAÇ: Yeni bir entity eklendiğinde DB'ye yazıldığını ve otomatik Id atandığını doğrulamak.
+    /// NEDEN: Controller'lar 201 Created response'unda AddAsync'in döndürdüğü Id'yi kullanır;
+    ///        Id atanmazsa tüm "oluştur" endpoint'leri hatalı response döner.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_ValidEntity_AssignsIdAndSaves()
+    {
+        // ARRANGE — temiz context + repository + Id'siz yeni entity
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var entity = new TestEntity { Name = "Apfel" };
+
+        // ACT — entity'yi ekle
+        var sonuc = await repo.AddAsync(entity);
+
+        // ASSERT — Id atanmış ve DB'de tek kayıt olmalı
+        sonuc.Id.Should().BeGreaterThan(0);
+        (await context.Set<TestEntity>().CountAsync()).Should().Be(1);
+    }
+
+    /// <summary>
+    /// AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser
+    ///
+    /// AMAÇ: AddAsync'e userId geçildiğinde BaseEntity.CreatedByUserId ve UpdatedByUserId'nin
+    ///       aynı kullanıcıya set edildiğini doğrulamak.
+    /// NEDEN: "Kim oluşturdu" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanmalı;
+    ///        Auth (A-03) tamamlanana kadar servis katmanı userId geçmeyecek, bu durumda
+    ///        alan null kalmalı — bu yüzden hem dolu hem null senaryo test edilir.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_UserIdProvided_SetsCreatedByAndUpdatedByToSameUser()
+    {
+        // ARRANGE — temiz context + repository
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — userId ile ekle, userId'siz ekle
+        var userIdIle = await repo.AddAsync(new TestEntity { Name = "Kartoffel" }, userId: 42);
+        var userIdSiz = await repo.AddAsync(new TestEntity { Name = "Zwiebel" });
+
+        // ASSERT — verilen userId her iki alana da yazılmalı; verilmezse null kalmalı
+        userIdIle.CreatedByUserId.Should().Be(42);
+        userIdIle.UpdatedByUserId.Should().Be(42);
+        userIdSiz.CreatedByUserId.Should().BeNull();
+        userIdSiz.UpdatedByUserId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// AddAsync_ValidEntity_LeavesUpdatedAtNull
+    ///
+    /// AMAÇ: Yeni bir entity eklendiğinde UpdatedAt alanının null kaldığını doğrulamak.
+    /// NEDEN: BaseEntity.UpdatedAt nullable'dır ve yalnızca gerçek bir güncellemede
+    ///        (WordLearnerDbContext.SaveChangesAsync, EntityState.Modified) set edilir;
+    ///        insert'te CreatedAt'e eşit bir değer atanırsa "hiç güncellenmedi" bilgisi kaybolur.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_ValidEntity_LeavesUpdatedAtNull()
+    {
+        // ARRANGE — temiz context + repository
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — yeni entity ekle
+        var sonuc = await repo.AddAsync(new TestEntity { Name = "Gurke" });
+
+        // ASSERT — UpdatedAt henüz hiç güncelleme olmadığı için null olmalı
+        sonuc.UpdatedAt.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetByIdAsync_RecordExists_ReturnsEntity
+    ///
+    /// AMAÇ: Var olan bir kaydın Id'sine göre doğru şekilde getirildiğini doğrulamak (mutlu yol).
+    /// NEDEN: Servis katmanındaki tüm "detay getir" ve "güncelle" akışları bu metoda dayanır.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdAsync_RecordExists_ReturnsEntity()
+    {
+        // ARRANGE — bir entity ekle
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var eklenen = await repo.AddAsync(new TestEntity { Name = "Birne" });
+
+        // ACT — eklenen kaydı Id'siyle sorgula
+        var bulunan = await repo.GetByIdAsync(eklenen.Id);
+
+        // ASSERT — aynı kayıt (aynı Name ile) dönmeli
+        bulunan.Should().NotBeNull();
+        bulunan!.Name.Should().Be("Birne");
+    }
+
+    /// <summary>
+    /// GetByIdAsync_RecordNotFound_ReturnsNull
+    ///
+    /// AMAÇ: Olmayan bir Id sorgulandığında exception değil null döndüğünü doğrulamak.
+    /// NEDEN: IRepository.cs'teki sözleşme gereği "bulunamadı" durumu null ile ifade edilir;
+    ///        servis katmanı bu null'ı kontrol edip EntityNotFoundException fırlatır — repository
+    ///        katmanının kendisi bu exception'ı GetByIdAsync'te fırlatmamalı.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdAsync_RecordNotFound_ReturnsNull()
+    {
+        // ARRANGE — boş context (hiç kayıt yok)
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — var olmayan bir Id sorgula
+        var sonuc = await repo.GetByIdAsync(999);
+
+        // ASSERT — null dönmeli, exception fırlatılmamalı
+        sonuc.Should().BeNull();
+    }
+
+    /// <summary>
+    /// GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords
+    ///
+    /// AMAÇ: WordLearnerDbContext'teki global soft delete query filter'ının GetAllAsync
+    ///       sonucundan silinmiş (IsDeleted=true) kayıtları otomatik çıkardığını doğrulamak.
+    /// NEDEN: Bu, A-02'nin en kritik davranışıdır — filtre çalışmazsa silinmiş kullanıcı
+    ///        kartları, kelimeler vb. tüm listelerde yanlışlıkla görünmeye devam eder.
+    /// </summary>
+    [Fact]
+    public async Task GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords()
+    {
+        // ARRANGE — iki kayıt ekle, birini soft-delete et
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var kalacak = await repo.AddAsync(new TestEntity { Name = "Kirsche" });
+        var silinecek = await repo.AddAsync(new TestEntity { Name = "Pflaume" });
+        await repo.SoftDeleteAsync(silinecek.Id);
+
+        // ACT — tüm (filtrelenmiş) kayıtları getir
+        var liste = await repo.GetAllAsync();
+
+        // ASSERT — yalnızca silinmemiş kayıt dönmeli
+        // NEDEN: Global query filter (WordLearnerDbContext.OnModelCreating) IsDeleted==true
+        //        olan kayıtları sorgudan tamamen çıkarır; liste toplamı 1 olmalı.
+        liste.Should().ContainSingle(e => e.Id == kalacak.Id);
+        liste.Should().NotContain(e => e.Id == silinecek.Id);
+    }
+
+    /// <summary>
+    /// UpdateAsync_ExistingEntity_AutoUpdatesUpdatedAt
+    ///
+    /// AMAÇ: WordLearnerDbContext.SaveChangesAsync override'ının, güncellenen entity'nin
+    ///       UpdatedAt alanını elle set edilmeden otomatik olarak günceli tarihe çektiğini doğrulamak.
+    /// NEDEN: Servis katmanında hiçbir yerde "entity.UpdatedAt = DateTime.UtcNow" yazılmayacak
+    ///        (BaseEntity.md/WordLearnerDbContext.md kararı) — bu davranış merkezi override'a bağlı.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_ExistingEntity_AutoUpdatesUpdatedAt()
+    {
+        // ARRANGE — kaydı ekle, UpdatedAt'i bilinçli olarak eskiye çek (dünkü zaman)
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var eklenen = await repo.AddAsync(new TestEntity { Name = "Traube" });
+        eklenen.UpdatedAt = DateTime.UtcNow.AddDays(-1);
+        eklenen.Name = "Traube (güncellendi)";
+
+        // ACT — entity'yi güncelle
+        await repo.UpdateAsync(eklenen);
+
+        // ASSERT — UpdatedAt otomatik olarak "şimdi"ye yakın bir değere çekilmiş olmalı
+        eklenen.UpdatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// UpdateAsync_UserIdProvided_UpdatesUpdatedByUserId
+    ///
+    /// AMAÇ: UpdateAsync'e userId geçildiğinde BaseEntity.UpdatedByUserId'nin o kullanıcıya
+    ///       set edildiğini, önceki (farklı) değerin üzerine yazıldığını doğrulamak.
+    /// NEDEN: "Son güncelleyen kim" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanmalı;
+    ///        her UpdateAsync çağrısı en son işlemi yapan kullanıcıyı yansıtmalı.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_UserIdProvided_UpdatesUpdatedByUserId()
+    {
+        // ARRANGE — kaydı kullanıcı 1 olarak ekle
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var eklenen = await repo.AddAsync(new TestEntity { Name = "Rettich" }, userId: 1);
+
+        // ACT — kaydı kullanıcı 2 olarak güncelle
+        eklenen.Name = "Rettich (güncellendi)";
+        await repo.UpdateAsync(eklenen, userId: 2);
+
+        // ASSERT — UpdatedByUserId son güncelleyeni (2) yansıtmalı, CreatedByUserId (1) değişmemeli
+        eklenen.UpdatedByUserId.Should().Be(2);
+        eklenen.CreatedByUserId.Should().Be(1);
+    }
+
+    /// <summary>
+    /// SoftDeleteAsync_RecordExists_SetsIsDeletedTrueAndHidesFromQuery
+    ///
+    /// AMAÇ: SoftDeleteAsync'in kaydı fiziksel silmek yerine IsDeleted/DeletedAt alanlarını
+    ///       set ettiğini ve bu sayede kaydın sonraki sorgulardan (filtre yüzünden) kaybolduğunu
+    ///       doğrulamak.
+    /// NEDEN: Fiziksel silme geri alınamaz ve audit trail'i bozar; soft delete kuralı
+    ///        Repository.cs'in NEDEN yorumunda açıkça belirtilmiş kritik bir davranış.
+    /// </summary>
+    [Fact]
+    public async Task SoftDeleteAsync_RecordExists_SetsIsDeletedTrueAndHidesFromQuery()
+    {
+        // ARRANGE — bir kayıt ekle
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+        var eklenen = await repo.AddAsync(new TestEntity { Name = "Zwetschge" });
+
+        // ACT — kaydı soft-delete et
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ASSERT — normal sorguda görünmemeli, ama IgnoreQueryFilters ile ham veri hâlâ DB'de olmalı
+        // NEDEN: "Görünmüyor" ile "fiziksel olarak silindi" farklı şeylerdir; ikisini de doğrulamak gerekir.
+        (await repo.GetByIdAsync(eklenen.Id))
+            .Should()
+            .BeNull();
+
+        var hamKayit = await context
+            .Set<TestEntity>()
+            .IgnoreQueryFilters()
+            .FirstAsync(e => e.Id == eklenen.Id);
+        hamKayit.IsDeleted.Should().BeTrue();
+        hamKayit.DeletedAt.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// SoftDeleteAsync_RecordNotFound_ThrowsEntityNotFoundException
+    ///
+    /// AMAÇ: Olmayan bir Id ile SoftDeleteAsync çağrıldığında EntityNotFoundException
+    ///       fırlatıldığını doğrulamak (bulunamadı durumu — CODING_STANDARDS.md §7.5 zorunlu senaryo).
+    /// NEDEN: Global exception middleware'i (A-02'nin sonraki bir adımı) bu exception tipini
+    ///        yakalayıp 404 döndürecek; yanlış exception tipi fırlatılırsa 500 döner.
+    /// </summary>
+    [Fact]
+    public async Task SoftDeleteAsync_RecordNotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE — boş context (hiç kayıt yok)
+        await using var context = CreateContext();
+        var repo = new Repository<TestEntity>(context);
+
+        // ACT — var olmayan bir Id'yi silmeyi dene
+        var act = () => repo.SoftDeleteAsync(999);
+
+        // ASSERT — EntityNotFoundException fırlatılmalı
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class TestEntity : BaseEntity',
+            aciklama: 'Bu dosyaya ÖZEL, gerçek bir feature entity\'si (User, Word...) olmayan sahte (fake) bir sınıf — yalnızca BaseEntity\'den türer ve bir `Name` alanı ekler.',
+            neden: 'A-02 aşamasında projede henüz TEK bir feature entity\'si yok; Repository<T>\'nin generic davranışını test etmek için gerçek bir entity BEKLEMEK yerine, testler kendi minimal sahte tipini tanımlar — bu da Repository<T>\'nin testlerini A-03+\'ta yazılacak gerçek feature\'lardan TAMAMEN bağımsız kılar.',
+            olmasaydi: 'Sahte bir TestEntity olmasaydı, Repository<T>\'nin CRUD davranışı ya HİÇ test edilmezdi (A-03\'e kadar beklenirdi — CLAUDE.md\'nin "testi aynı task içinde yaz" kuralına aykırı), ya da testler gerçek bir feature entity\'sine (ör. User) bağımlı yazılırdı — bu durumda User\'ın kendi iş kuralları (ör. email validasyonu) generic Repository testlerine SIZARDI.'
+          },
+          {
+            satir: '.UseInMemoryDatabase(Guid.NewGuid().ToString())',
+            aciklama: 'Her test çalıştığında `CreateContext()` çağrısı, RASTGELE bir Guid\'i veritabanı adı olarak kullanan yeni bir in-memory EF Core context\'i kurar.',
+            neden: 'xUnit varsayılan olarak testleri paralel çalıştırabilir — eğer tüm testler AYNI in-memory veritabanı adını paylaşsaydı, bir testin eklediği kayıt başka bir testin `CountAsync()` gibi sayım assert\'lerini BOZARDI (testler birbirinin verisini görürdü).',
+            olmasaydi: 'Sabit bir veritabanı adı kullanılsaydı (ör. hep "TestDb"), testler sırayla çalışsa bile bir önceki testin BIRAKTIĞI kayıtlar bir sonraki testte hâlâ dururdu — `AddAsync_ValidEntity_AssignsIdAndSaves` testindeki `CountAsync().Should().Be(1)` assert\'i, başka testler önce çalıştıysa YANLIŞLIKLA başarısız olurdu.'
+          },
+          {
+            satir: 'liste.Should().ContainSingle(e => e.Id == kalacak.Id);',
+            aciklama: 'A-02\'nin en kritik testinin (`GetAllAsync_SoftDeleteFilterActive_ReturnsOnlyNonDeletedRecords`) ana assert\'i: iki kayıttan biri soft-delete edildikten SONRA, listede yalnızca SİLİNMEYEN kaydın kaldığını doğrular.',
+            neden: 'Bu tek satır, WordLearnerDbContext\'teki (Bölüm 4) global soft-delete query filter\'ının GERÇEKTEN çalıştığını kanıtlar — filtre yalnızca "var" demekle YETİNMEZ, bu test onu somut bir senaryoyla (ekle, sil, listele) doğrular.',
+            olmasaydi: 'Bu assert olmasaydı, global filtreyi bozan bir değişiklik (ör. `OnModelCreating`\'de yanlışlıkla silinen bir satır) test paketi TAMAMEN yeşil kalırken PRODUCTION\'da fark edilirdi — silinmiş kullanıcı kartları/kelimeler tüm listelerde YENİDEN görünmeye başlardı.'
+          },
+          {
+            satir: 'var act = () => repo.SoftDeleteAsync(999);',
+            aciklama: 'Asenkron çağrı hemen `await`lenmez — bunun yerine, çağrıyı SONRADAN tetikleyecek bir lambda (`Func<Task>`) değişkene atanır.',
+            neden: 'FluentAssertions\'ın `ThrowAsync<T>()` metodu, exception fırlatan kodu KENDİSİ çalıştırıp yakalamak için bir DELEGE (lambda) bekler — eğer `await repo.SoftDeleteAsync(999)` doğrudan çağrılsaydı, exception `ThrowAsync` mekanizması devreye girmeden test metodunun kendisinde fırlar ve testi YANLIŞ sebeple ("beklenmeyen hata") başarısız gösterirdi.',
+            olmasaydi: 'Lambda\'ya sarmadan doğrudan `await repo.SoftDeleteAsync(999);` yazılsaydı, `EntityNotFoundException` test metodunun İÇİNDE, hiçbir assert çalışmadan fırlardı — xUnit bu durumu "test exception fırlattığı için BAŞARISIZ" olarak işaretlerdi, oysa bu exception aslında BEKLENEN, doğru davranıştı.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();',
+            aciklama: 'Bu bölümün konusuyla doğrudan bağlantılı satır: yukarıdaki lambda\'yı ÇALIŞTIRIR ve fırlatılan exception\'ın TAM OLARAK `EntityNotFoundException` tipinde olduğunu doğrular.',
+            neden: 'Tip kontrolü SADECE "bir exception fırlatıldı mı" ile YETİNMEZ — yanlış tipte bir exception (ör. generic `Exception`) fırlatılsaydı bile bu test YİNE geçebilirdi eğer sadece "fırlatıldı mı" kontrol edilseydi; `<EntityNotFoundException>` tipini ZORUNLU kılmak, ExceptionHandlingMiddleware\'in bu durumu 404\'e çevirebileceğini GARANTİ eder.',
+            olmasaydi: 'Yalnızca "bir exception fırladı mı" kontrol edilseydi (tip belirtilmeden), Repository<T>.SoftDeleteAsync içinde biri yanlışlıkla `EntityNotFoundException` yerine genel bir `Exception` fırlatsaydı test HÂLÂ YEŞİL kalırdı — ama production\'da bu kayıt bulunamadı durumu YANLIŞLIKLA 500 Internal Server Error olarak dönerdi, 404 değil.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'EntityNotFoundException', tanim: 'İstenen bir kaydın DB\'de bulunamadığını ifade eden özel exception tipi; ExceptionHandlingMiddleware bunu yakalayıp HTTP 404 olarak döner.' },
+          { terim: 'ApiErrorResponse', tanim: 'Tüm hatalı API yanıtlarının ortak zarfı — içinde bir `ApiErrorDetail` (Code + Message) taşır; `Success` her zaman `false`.' },
+          { terim: 'ApiErrorDetail', tanim: 'Hata kodunu (Code, makineye yönelik, ör. NOT_FOUND) ve mesajı (Message, insana yönelik) birlikte taşıyan immutable record.' },
+          { terim: 'ExceptionHandlingMiddleware', tanim: 'Bölüm 6\'da geçen pipeline\'ın en dışındaki middleware — yakaladığı her exception\'ı tipine göre HTTP durum kodu + ApiErrorResponse\'a çevirir.' },
+          { terim: 'EntityNotFoundExceptionTests.cs', tanim: 'EntityNotFoundException\'ın Type+key overload\'ının doğru mesaj formatını ürettiğini doğrulayan test dosyası — RepositoryTests.cs ile AYNI Arrange-Act-Assert pattern\'ini izler, ayrı anlatılmadı.' },
+          { terim: 'Arrange-Act-Assert (AAA)', tanim: 'Bir test metodunun üç net bölüme ayrılması: ARRANGE (test verisini hazırla), ACT (test edilen kodu çalıştır), ASSERT (sonucu doğrula) — bu bölümdeki iki test dosyasının da ortak deseni.' },
+          { terim: 'In-Memory Database', tanim: 'Microsoft.EntityFrameworkCore.InMemory paketinin sağladığı, gerçek bir SQL Server\'a bağlanmadan RAM üzerinde çalışan sahte veritabanı — testleri hızlı ve izole çalıştırmayı sağlar.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-02 Ortak Altyapı — Hata Yönetimi Bitti',
+        maddeler: [
+          'EntityNotFoundException, DB\'de bulunamayan kayıtlar için TEK bir merkezi exception tipi sağlar — Repository<T>.SoftDeleteAsync (Bölüm 7) bunu zaten fırlatıyordu, şimdi bu tipin kendisini gördük.',
+          'ApiErrorResponse, tüm hatalı API yanıtlarının ortak zarfıdır (Code + Message); ExceptionHandlingMiddleware her exception\'ı bu şekle çevirip uygun HTTP durum koduyla döner.',
+          'RepositoryTests.cs, Repository<T>\'nin generic CRUD davranışını (Add/Update/SoftDelete + soft delete filtresi) gerçek bir feature entity\'si olmadan, sahte bir TestEntity ile doğrular — bu desen A-03+\'ta yazılacak her feature repository testine ŞABLON olur.',
+          'Testler tek bir standart desende yazılır: Arrange-Act-Assert; EntityNotFoundExceptionTests.cs bile aynı deseni izler.',
+          '',
+          'Ortak altyapı burada bitti. Sırada: A-03 — gerçek bir API\'yi (Register) baştan sona yazmak.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

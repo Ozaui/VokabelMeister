@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RefreshToken: EF Config + Repository</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'refresh-token-repository',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '21_destek-servisleri.html',
+    sonrakiBolum: '23_validator-katmani-ve-filter.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 22 · BACKEND ALTYAPI DERİNLEŞTİRME',
+        baslik: 'RefreshToken: EF Config + Repository',
+        altBaslik: 'Bölüm 11\'de RefreshToken entity\'sini ve Token Family Pattern\'in Handler içindeki mantığını gördük — o mantığın ÇAĞIRDIĞI RevokeFamilyAsync gibi sorguların GERÇEKTE NEREDE yaşadığını bu bölümde tamamlıyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'RefreshToken\'ın Neden Kendi Repository\'si Var',
+        aciklama: 'A-02\'deki genel `Repository<T>` sınıfı, HER entity için AddAsync/GetByIdAsync/UpdateAsync/SoftDeleteAsync gibi ORTAK CRUD işlemlerini SAĞLAR. Ama RefreshToken\'ın İHTİYAÇ DUYDUĞU sorgular bunlardan FARKLI: "bu hash\'e sahip token\'ı BUL" (`GetByTokenHashAsync`), "bu family\'deki TÜM token\'ları İPTAL et" (`RevokeFamilyAsync`), "bu kullanıcının TÜM token\'larını İPTAL et" (`RevokeAllForUserAsync`) — bunların hiçbiri TEK bir Id\'ye göre ÇALIŞMAZ, TOPLU ve ALANA ÖZGÜDÜR.',
+        neden: 'CLAUDE.md §3\'ün "Repository arayüz → Application/Interfaces/Repositories/IXxxRepository" adımı, HER entity için TEK BİR repository DEĞİL, o entity\'nin KENDİNE ÖZGÜ sorgu ihtiyacı VARSA AYRI bir repository YAZILMASINI ÖNGÖRÜR — `IRefreshTokenRepository : IRepository<RefreshToken>` bu sayede genel CRUD\'u MİRAS ALIP yalnızca EK sorguları TANIMLAR.',
+        olmasaydi: 'Bu üç metot RefreshTokenRepository\'de OLMASAYDI, Bölüm 11\'deki `RefreshCommandHandler`\'ın `RevokeFamilyAsync` çağrısı YAPACAK bir yeri OLMAZDI — replay tespit EDİLDİĞİNDE, o family\'deki token\'ları İPTAL etmek için Handler\'ın İÇİNE HAM SQL/LINQ sorgusu YAZILMASI GEREKİRDİ, bu da CLAUDE.md\'nin "iş mantığı Handler\'da, veri erişimi Repository\'de" AYRIMINI İHLAL EDERDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshTokenConfiguration.cs — EF Core Tablo Eşlemesi',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/RefreshTokenConfiguration.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RefreshTokenConfiguration.cs
+//
+// AMAÇ: RefreshToken entity'sinin EF Core tablo eşlemesini tanımlar.
+// NEDEN: TokenHash/TokenFamily üzerinde arama sık yapılır (refresh/replay tespiti);
+//        User silindiğinde token'ların da silinmesi (CASCADE) veri bütünlüğünü korur.
+// BAĞIMLILIKLAR: EF Core, RefreshToken entity, User entity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        // NEDEN 44: PasswordService.HashToken → SHA-256 (32 byte) → Base64 = sabit 44 karakter.
+        builder.Property(r => r.TokenHash).HasMaxLength(44).IsRequired();
+        builder.Property(r => r.TokenFamily).HasMaxLength(36).IsRequired();
+        builder.Property(r => r.DeviceInfo).HasMaxLength(500);
+        builder.Property(r => r.IpAddress).HasMaxLength(45);
+
+        // NEDEN: Her refresh/logout isteğinde token hash'e göre arama yapılır.
+        builder.HasIndex(r => r.TokenHash);
+        // NEDEN: Replay tespitinde aynı family'deki tüm token'lar tek sorguda bulunur.
+        builder.HasIndex(r => r.TokenFamily);
+
+        builder
+            .HasOne(r => r.User)
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'builder.Property(r => r.TokenHash).HasMaxLength(44).IsRequired();',
+            aciklama: 'TokenHash kolonunun UZUNLUĞUNU sabit 44 karaktere KISITLAR — bu, Bölüm 21\'de gördüğümüz `PasswordService.HashToken`\'ın ÇIKTISIYLA (32 byte SHA-256 hash\'in Base64 KODLAMASI) BİREBİR eşleşen bir SAYIDIR, GELİŞİGÜZEL seçilmiş DEĞİL.',
+            neden: 'Base64 kodlama, HER 3 byte\'ı 4 karaktere ÇEVİRİR; 32 byte için `ceil(32/3)*4 = 44` karakter (padding DAHİL) SABİT bir SONUÇTUR — bu sabitliği BİLEREK kolonu TAM 44 karakterle SINIRLAMAK, hem depolama alanını OPTİMİZE eder hem de "beklenenden UZUN bir değer YANLIŞLIKLA buraya YAZILDI mı" sorusuna veritabanı SEVİYESİNDE bir GÜVENCE verir.',
+            olmasaydi: 'Uzunluk SINIRLANMASAYDI (ör. `nvarchar(max)`), veritabanı bu kolonu GEREKSİZ yere GENİŞ ayırırdı — ayrıca `HasIndex(r => r.TokenHash)`\'in ALTINDAKİ INDEX, sınırsız uzunluklu bir kolonda DAHA AZ VERİMLİ çalışırdı (SQL Server\'da index\'lenen kolonların boyut SINIRI vardır).'
+          },
+          {
+            satir: 'builder.Property(r => r.TokenFamily).HasMaxLength(36).IsRequired();',
+            aciklama: '36 karakter — standart bir GUID\'in tire (`-`) DAHİL string GÖSTERİMİNİN TAM uzunluğu (`8-4-4-4-12` haneli GRUPLAR + 4 tire).',
+            neden: 'Bölüm 11\'de gördüğümüz gibi TokenFamily, "aynı login OTURUMUNDAN türeyen TÜM token\'ları GRUPLAYAN bir GUID" — bu ALAN da (TokenHash gibi) ÜRETİM ŞEKLİNE göre SABİT bir uzunluğa SAHİPTİR, KEYFİ bir sınır DEĞİLDİR.',
+            olmasaydi: 'Bu sınır OLMASAYDI, TokenFamily kolonu da GEREKSİZ genişlikte AYRILIRDI — ayrıca bir GELİŞTİRİCİ yanlışlıkla GUID DIŞINDA bir DEĞER (ör. kullanıcı adı) atamaya ÇALIŞSA bile, veritabanı bunu 36 karakterden UZUN olmadığı sürece SESSİZCE KABUL EDERDİ; UZUNLUK sınırı en azından BÜYÜK yanlışları YAKALAR.'
+          },
+          {
+            satir: 'builder.HasIndex(r => r.TokenHash);',
+            aciklama: 'TokenHash kolonu ÜZERİNE bir veritabanı INDEX\'i EKLER — Bölüm 22\'nin bir sonraki slaytındaki `GetByTokenHashAsync`\'in çalıştırdığı `WHERE TokenHash = @hash` sorgusunu HIZLANDIRIR.',
+            neden: 'HER refresh İSTEĞİNDE (yani HER 15 dakikada bir, HER aktif kullanıcı İÇİN) bu sorgu ÇALIŞIR — index OLMADAN, veritabanı HER seferinde TÜM RefreshTokens tablosunu TARAMAK ZORUNDA KALIRDI (full table scan), kullanıcı sayısı ARTTIKÇA bu sorgu GİDEREK YAVAŞLARDI.',
+            olmasaydi: 'Index OLMASAYDI, tablo BÜYÜDÜKÇE (milyonlarca SATIRA ulaştıkça) her refresh İSTEĞİ SANİYELER SÜREBİLİRDİ — A-02\'deki rate LIMITING (100 istek/dakika) bile bu YAVAŞLIĞI TELAFİ EDEMEZDİ, kullanıcı DENEYİMİ ciddi şekilde BOZULURDU.'
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir User FİZİKSEL olarak silinirse (soft-delete DEĞİL — CLAUDE.md\'de soft-delete zorunlu ama CASCADE kuralı yine de veritabanı SEVİYESİNDE bir GÜVENCE olarak TANIMLANIR), o kullanıcıya ait TÜM RefreshToken KAYITLARI da OTOMATİK silinir.',
+            neden: 'RefreshToken, `UserId` ÜZERİNDEN User\'a bağımlı bir kayıttır — "sahipsiz" bir RefreshToken (User\'ı OLMAYAN) hiçbir anlamlı SENARYODA var OLAMAZ, bu yüzden veritabanı SEVİYESİNDE bu bütünlük KURALI TANIMLANIR.',
+            olmasaydi: '`Cascade` yerine VARSAYILAN davranış (`Restrict`) OLSAYDI, bir User\'ı silmeye ÇALIŞMAK, ona bağlı RefreshToken KAYITLARI VARSA bir FOREIGN KEY hatasıyla BAŞARISIZ OLURDU — geliştiricinin ÖNCE tüm token\'ları ELLE silmesi GEREKİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IRefreshTokenRepository.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IRefreshTokenRepository.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IRefreshTokenRepository.cs
+//
+// AMAÇ: RefreshToken'a özel sorguları (hash ile arama, family iptali) IRepository<T>'nin
+//       genel CRUD'una ekler.
+// NEDEN: Token Family Pattern (REFERENCE/SECURITY.md §1) — refresh/replay tespiti ve
+//        "tüm cihazlardan çıkış" (şifre sıfırlama, hesap silme) bu metotları gerektirir.
+// BAĞIMLILIKLAR: IRepository<T>, WordLearner.Domain.Entities.RefreshToken.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Repositories;
+
+public interface IRefreshTokenRepository : IRepository<RefreshToken>
+{
+    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
+    // NEDEN: İstemciden gelen ham token asla saklanmadığı için, doğrulama her zaman
+    //        hash üzerinden yapılır (IPasswordService.HashToken).
+    Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default);
+
+    // AMAÇ: Aynı TokenFamily'e ait tüm refresh token'ları iptal eder (RevokedAt=UtcNow).
+    // NEDEN: Replay tespit edildiğinde (kullanılmış bir token tekrar geldiğinde) o
+    //        family'nin tamamı güvenli kabul edilmez, hepsi iptal edilir.
+    Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default);
+
+    // AMAÇ: Bir kullanıcının TÜM refresh token'larını iptal eder (family'den bağımsız).
+    // NEDEN: Şifre sıfırlama ve hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi
+    //        (REFERENCE/SECURITY.md §7) — o kullanıcıya ait her token, hangi family'den
+    //        olursa olsun geçersiz kılınır.
+    Task RevokeAllForUserAsync(int userId, CancellationToken ct = default);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IRefreshTokenRepository : IRepository<RefreshToken>',
+            aciklama: 'A-02\'deki genel `IRepository<T>`\'yi MİRAS ALIR — bu, `AddAsync`, `GetByIdAsync`, `UpdateAsync`, `SoftDeleteAsync` gibi metotların BURADA TEKRAR TANIMLANMASINA gerek OLMADIĞI anlamına gelir, bu arayüz yalnızca EK olanları TANIMLAR.',
+            neden: 'Bölüm 11\'deki `RefreshCommandHandler`\'da GÖRDÜĞÜMÜZ `_refreshTokenRepository.UpdateAsync(existingToken, ...)` çağrısı, genel `IRepository<T>.UpdateAsync`\'den GELİR — bu MİRAS sayesinde RefreshTokenRepository hem GENEL CRUD\'a hem de ÖZEL sorgulara TEK bir arayüz ÜZERİNDEN sahip OLUR.',
+            olmasaydi: '`IRepository<RefreshToken>`\'dan MİRAS ALINMASAYDI, `AddAsync`/`UpdateAsync` gibi TEMEL metotların da BU arayüze AYRI AYRI EKLENMESİ gerekirdi — A-02\'deki genel Repository SOYUTLAMASININ TÜM amacı (kod TEKRARINI önlemek) BOŞA ÇIKARDI.'
+          },
+          {
+            satir: 'Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default);',
+            aciklama: 'Dönüş tipi `RefreshToken?` (NULLABLE) — token BULUNAMAZSA (ör. geçersiz/uydurma bir değer GELDİYSE) exception FIRLATMAZ, `null` DÖNER.',
+            neden: 'Bölüm 11\'deki Handler, bu `null` durumunu KENDİSİ YORUMLAYIP `InvalidRefreshTokenException` (Bölüm 20) FIRLATIR — repository katmanı, "bu durumun NASIL bir HATAYA dönüşeceğine" karar VERMEZ, yalnızca "buldum/bulamadım" GERÇEĞİNİ RAPOR EDER; iş KURALI (hangi exception, hangi HTTP kodu) Application katmanında KALIR.',
+            olmasaydi: 'Bu metot `null` yerine BULAMADIĞINDA exception FIRLATSAYDI, Repository katmanı `InvalidRefreshTokenException` gibi Application\'a ÖZGÜ bir TİPİ BİLMEK ZORUNDA kalırdı — CLAUDE.md\'nin "Domain ← Application ← Infrastructure" BAĞIMLILIK YÖNÜ İHLAL EDİLİRDİ (Infrastructure, Application\'ın exception TİPLERİNE bağımlı OLAMAZ).'
+          },
+          {
+            satir: 'Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default);',
+            aciklama: 'Bölüm 11\'de replay TESPİT edildiğinde çağrılan metot — parametre olarak TEK bir token DEĞİL, bir `tokenFamily` (GUID string) ALIR, çünkü işlem TOPLUDUR.',
+            neden: 'Bu, "TEK bir token\'ı DEĞİL, TÜM aileyi iptal ET" GÜVENLİK kararının (Bölüm 11\'in "fail-safe" ilkesi) REPOSITORY imzasına YANSIMASIDIR — metot isMİ ve parametresi, o güvenlik KARARINI KOD SEVİYESİNDE somutlaştırır.',
+            olmasaydi: 'Bu metot yerine yalnızca "tek bir token\'ı iptal ET" (`RevokeAsync(int tokenId)`) OLSAYDI, Handler KENDİSİ o family\'deki TÜM token\'ları ÖNCE SORGULAYIP SONRA TEK TEK iptal ETMESİ gerekirdi — hem DAHA FAZLA kod hem de "hepsini İPTAL ET" ATOMİK bir İŞLEM olmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshTokenRepository.cs — İmplementasyon',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/RefreshTokenRepository.cs',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// RefreshTokenRepository.cs
+//
+// AMAÇ: IRefreshTokenRepository'nin EF Core implementasyonu.
+// NEDEN: Repository<T>'yi miras alarak genel CRUD'u yeniden yazmadan yalnızca
+//        RefreshToken'a özgü sorguları (hash arama, family/kullanıcı iptali) ekler.
+// BAĞIMLILIKLAR: EF Core, Repository<T>, WordLearnerDbContext, RefreshToken entity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories;
+
+public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRepository
+{
+    public RefreshTokenRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
+    public Task<RefreshToken?> GetByTokenHashAsync(
+        string tokenHash,
+        CancellationToken ct = default
+    ) => _set.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
+
+    // AMAÇ: Aynı TokenFamily'e ait, henüz iptal edilmemiş tüm token'ları RevokedAt=UtcNow yapar.
+    // NEDEN: Replay tespitinde tüm family güvensiz sayılır — tek bir token değil, hepsi iptal edilir.
+    public async Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default)
+    {
+        var tokens = await _set.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
+            .ToListAsync(ct);
+
+        foreach (var token in tokens)
+            token.RevokedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    // AMAÇ: Bir kullanıcının, hangi family'den olursa olsun, henüz iptal edilmemiş
+    //       tüm refresh token'larını RevokedAt=UtcNow yapar.
+    // NEDEN: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi.
+    public async Task RevokeAllForUserAsync(int userId, CancellationToken ct = default)
+    {
+        var tokens = await _set.Where(t => t.UserId == userId && t.RevokedAt == null)
+            .ToListAsync(ct);
+
+        foreach (var token in tokens)
+            token.RevokedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRepository',
+            aciklama: 'İKİ ŞEYDEN MİRAS ALIR/UYGULAR: `Repository<RefreshToken>` (SOMUT sınıf, genel CRUD KODUNU sağlar) VE `IRefreshTokenRepository` (arayüz, DI\'ın hangi sözleşmeyi ÇÖZECEĞİNİ BELİRLER).',
+            neden: 'Bu ikili MİRAS/UYGULAMA, "genel CRUD kodunu TEKRAR YAZMA, yalnızca EK olanı EKLE" YAKLAŞIMININ somut hâlidir — `Repository<T>`\'nin İÇİNDEKİ `_set` (DbSet<RefreshToken>) ve `_db` (DbContext) alanları, aşağıdaki üç metotta DOĞRUDAN KULLANILABİLİR.',
+            olmasaydi: '`Repository<RefreshToken>`\'dan MİRAS alınmasaydı, `_set` ve `_db` gibi TEMEL alanların (ve ÜZERLERİNE kurulu AddAsync/UpdateAsync gibi metotların) TAMAMI bu sınıfta YENİDEN YAZILMASI GEREKİRDİ.'
+          },
+          {
+            satir: ') => _set.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);',
+            aciklama: '`_set`, MİRAS alınan `Repository<T>`\'den GELEN `DbSet<RefreshToken>` — bu satır, bir önceki KOD SLAYTINDA gördüğümüz `HasIndex(r => r.TokenHash)`\'in HIZLANDIRDIĞI TAM OLARAK BU sorgudur.',
+            neden: '`FirstOrDefaultAsync` (`FirstAsync` DEĞİL) KULLANILMASI — eşleşme BULUNAMAZSA exception FIRLATMAK yerine `null` DÖNMESİNİ sağlar; bu, bir ÖNCEKİ kod SLAYTINDAKİ `IRefreshTokenRepository.GetByTokenHashAsync`\'in `RefreshToken?` (nullable) DÖNÜŞ tipiyle TUTARLIDIR.',
+            olmasaydi: '`FirstAsync` KULLANILSAYDI, geçersiz/uydurma bir refresh token GÖNDERİLDİĞİNDE (ki bu NORMAL bir SENARYODUR — kullanıcı ESKİ bir token\'ı DENEYEBİLİR) bu satır bir `InvalidOperationException` FIRLATIRDI; Handler bunu YAKALAMAK ZORUNDA kalırdı, "bulunamadı" DURUMU normal bir İŞ AKIŞI DEĞİL bir İSTİSNAİ durum GİBİ ELE ALINIRDI.'
+          },
+          {
+            satir: 'var tokens = await _set.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)',
+            aciklama: 'Yalnızca HENÜZ iptal EDİLMEMİŞ (`RevokedAt == null`) token\'ları SEÇER — DAHA ÖNCE iptal EDİLMİŞ token\'lar bu SORGUYA hiç DAHİL EDİLMEZ.',
+            neden: 'Bu FİLTRE, gereksiz bir "zaten iptal EDİLMİŞ token\'ı TEKRAR iptal ET" İŞLEMİNİ ÖNLER — hem PERFORMANS açısından (daha AZ SATIR güncellenir) hem de MANTIKSAL açıdan (RevokedAt zaten DOLU olan bir SATIRIN üzerine TEKRAR `DateTime.UtcNow` YAZILMASI anlamsız OLURDU, İLK iptal ANINI KAYBEDERDİ) doğru.',
+            olmasaydi: 'Bu koşul OLMASAYDI, HER `RevokeFamilyAsync` çağrısı O family\'deki TÜM token\'ları (zaten iptal EDİLENLER DAHİL) TEKRAR GÜNCELLERDİ — ilk iptal ZAMANI (ör. bir GÜVENLİK olayının NE ZAMAN GERÇEKLEŞTİĞİ) HER seferinde EN SON çağrının ZAMANIYLA EZİLİRDİ, adli/log ANALİZİ YANILTICI hâle GELİRDİ.'
+          },
+          {
+            satir: 'foreach (var token in tokens)',
+            aciklama: 'Bulunan TÜM token KAYITLARI üzerinde TEK TEK gezinir — EF Core\'un DEĞİŞİKLİK İZLEME (change tracking) mekanizması, bu döngüde YAPILAN her `token.RevokedAt = ...` ATAMASINI OTOMATİK olarak FARK EDER.',
+            neden: 'EF Core, `_set.Where(...).ToListAsync()` ile ÇEKİLEN entity\'leri (nesneleri) OTOMATİK olarak İZLEMEYE ALIR — bu döngüdeki `token.RevokedAt = DateTime.UtcNow` satırı, AYRI bir "Update" ÇAĞRISI GEREKTİRMEZ, yalnızca alt taraftaki `SaveChangesAsync` bu DEĞİŞİKLİKLERİ VERİTABANINA YAZAR.',
+            olmasaydi: 'EF Core\'un DEĞİŞİKLİK izleme mekanizması KULLANILMASAYDI (ör. `AsNoTracking()` ile ÇEKİLSEYDİ), bu döngüdeki atamalar YALNIZCA BELLEKTEKİ nesneleri DEĞİŞTİRİRDİ, `SaveChangesAsync` HİÇBİR VERİTABANI GÜNCELLEMESİ ÜRETMEZDİ — TÜM token\'lar "iptal EDİLDİ" GİBİ GÖRÜNÜP AslınDA hâlâ GEÇERLİ KALIRDI, GÜVENLİK açısından KRİTİK bir HATA.'
+          },
+          {
+            satir: 'await _db.SaveChangesAsync(ct);',
+            aciklama: '`_db`, MİRAS alınan `WordLearnerDbContext` — DÖNGÜDE yapılan TÜM `RevokedAt` ATAMALARI, BU TEK ÇAĞRIYLA, TEK bir veritabanı İŞLEMİNDE (transaction) VERİTABANINA YAZILIR.',
+            neden: 'TEK bir `SaveChangesAsync` ÇAĞRISI, TÜM güncellemelerin YA HEPSİNİN YA HİÇBİRİNİN uygulanmasını SAĞLAR (atomicity) — family\'deki 3 token\'dan 2\'sinin İPTAL EDİLİP 1\'inin YARIM KALMASI gibi bir TUTARSIZ DURUM OLUŞMAZ.',
+            olmasaydi: 'Döngü İÇİNDE HER token İÇİN AYRI bir `SaveChangesAsync` ÇAĞRILSAYDI, hem PERFORMANS (N ayrı veritabanı GİDİŞ-DÖNÜŞÜ) KÖTÜLEŞİRDİ hem de İKİNCİ token GÜNCELLENMEDEN ÖNCE bir HATA OLUŞURSA, family\'nin YARISI iptal EDİLMİŞ YARISI EDİLMEMİŞ TUTARSIZ bir DURUMDA KALABİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'DbSet<T>', tanim: 'EF Core\'da bir tabloyu temsil eden, LINQ sorgularının üzerinde çalıştığı koleksiyon — Repository\'lerde `_set` olarak erişilir.' },
+          { terim: 'Change Tracking (Değişiklik İzleme)', tanim: 'EF Core\'un, veritabanından çekilen entity nesnelerindeki değişiklikleri otomatik fark edip SaveChangesAsync ile veritabanına yansıtma mekanizması.' },
+          { terim: 'HasIndex', tanim: 'EF Core Fluent API\'de bir kolona veritabanı indeksi ekleyen metot — sık aranan kolonlarda sorgu performansını artırır.' },
+          { terim: 'OnDelete(DeleteBehavior.Cascade)', tanim: 'Bir üst kayıt (User) silindiğinde, ona bağlı alt kayıtların (RefreshToken) da otomatik silinmesini sağlayan foreign key kuralı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'RefreshToken\'ın kendi repository\'si var çünkü ihtiyaç duyduğu sorgular (hash arama, toplu iptal) genel CRUD\'a uymuyor',
+          'TokenHash=44 ve TokenFamily=36 kolon uzunlukları rastgele değil — SHA-256+Base64 ve GUID formatlarının matematiksel sonucu',
+          'HasIndex(TokenHash) ve HasIndex(TokenFamily), her refresh isteğinde ve replay tespitinde çalışan sorguları hızlandırır',
+          'RevokeFamilyAsync ve RevokeAllForUserAsync, EF Core\'un change tracking\'ini kullanarak TEK bir SaveChangesAsync ile ATOMİK toplu güncelleme yapar',
+          'GetByTokenHashAsync null döner (exception fırlatmaz) — "bulunamadı" durumunun hangi exception\'a dönüşeceğine Application katmanı (Handler) karar verir'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

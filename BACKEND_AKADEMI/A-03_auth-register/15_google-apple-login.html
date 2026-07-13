@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LoginWithGoogle + LoginWithApple</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'google-apple-login',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '14_login-otp.html',
+    sonrakiBolum: '16_logout.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 22',
+        baslik: 'LoginWithGoogle + LoginWithApple',
+        altBaslik: 'Google/Apple zaten kimliği doğruladı — 2FA OTP adımı GEREKMEZ. Ama "hesap yoksa OLUŞTUR, e-postası eşleşen bir hesap VARSA BAĞLA" mantığı nasıl çalışıyor?'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Sosyal Giriş, Neden OTP\'siz',
+        aciklama: 'LoginCommand (Bölüm 21) şifreyi KENDİMİZ doğruluyorduk, bu yüzden İKİNCİ bir kanıt (OTP) istiyorduk. Google/Apple ile girişte ise kimlik doğrulama ZATEN Google/Apple\'ın SUNUCUSUNDA yapıldı — istemci bize yalnızca "Google/Apple bu kullanıcıyı DOĞRULADI" diyen imzalı bir token (ID token/identity token) getirir. Biz bu token\'ı DOĞRULARIZ (imza, issuer, audience, süre) ve GÜVENİRİZ — ayrıca bir OTP adımına GEREK YOKTUR.',
+        neden: 'Google/Apple\'ın kendi kimlik doğrulama altyapısı (genelde kullanıcının ZATEN aktif olduğu bir Google/Apple hesabı, çoğu zaman KENDİ 2FA\'sıyla korunan) bizim OTP adımımızın SAĞLADIĞI güvenceyi ZATEN VERİYOR — aynı korumayı İKİNCİ kez istemek, kullanıcı deneyimini gereksiz yere ZORLAŞTIRIRDI.',
+        olmasaydi: 'Google/Apple girişinden sonra da bir OTP adımı İSTENSEYDİ, kullanıcı "zaten Google\'a giriş yaptım, neden TEKRAR bir kod bekleyeyim" diye HAKLI olarak ŞAŞIRIRDI — sosyal girişin TÜM AVANTAJI (tek tıkla, HIZLI giriş) ORTADAN kalkardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithGoogleCommand.cs — Bul, Bağla veya Oluştur',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginWithGoogleCommand.cs',
+        nedenBuKlasor: 'Features/Auth/ altında, diğer Auth Command\'larıyla aynı klasörde.',
+        kod: `public record LoginWithGoogleCommand(string IdToken) : IRequest<AuthTokenResponse>
+{
+    public string? ClientIp { get; init; }
+}
+
+public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleCommand, AuthTokenResponse>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IGoogleTokenValidator _googleTokenValidator;
+    private readonly ILoginCompletionService _loginCompletionService;
+
+    public LoginWithGoogleCommandHandler(
+        IUserRepository userRepository,
+        IGoogleTokenValidator googleTokenValidator,
+        ILoginCompletionService loginCompletionService
+    )
+    {
+        _userRepository = userRepository;
+        _googleTokenValidator = googleTokenValidator;
+        _loginCompletionService = loginCompletionService;
+    }
+
+    public async Task<AuthTokenResponse> Handle(LoginWithGoogleCommand request, CancellationToken ct)
+    {
+        var payload =
+            await _googleTokenValidator.ValidateAsync(request.IdToken, ct)
+            ?? throw new InvalidSocialTokenException();
+
+        var user = await _userRepository.GetByGoogleIdAsync(payload.GoogleId, ct);
+        if (user is null)
+        {
+            user = await _userRepository.GetByEmailAsync(payload.Email, ct);
+            if (user is not null)
+            {
+                user.GoogleId = payload.GoogleId;
+            }
+            else
+            {
+                user = new User
+                {
+                    Email = payload.Email,
+                    FirstName = payload.FirstName ?? "Kullanıcı",
+                    LastName = payload.LastName ?? string.Empty,
+                    AuthProvider = "Google",
+                    GoogleId = payload.GoogleId,
+                    IsEmailVerified = true,
+                };
+                await _userRepository.AddAsync(user, ct: ct);
+            }
+        }
+
+        if (!user.IsActive)
+            throw new AccountNotActiveException();
+
+        return await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record LoginWithGoogleCommand(string IdToken) : IRequest<AuthTokenResponse>',
+            aciklama: 'Tek alan: `IdToken` — Google Sign-In SDK\'sının İSTEMCİDE (mobil/web) ürettiği, KENDİ İÇİNDE imzalı bir JWT. Şifre/e-posta gibi başka HİÇBİR alan YOKTUR, çünkü kimlik bilgisi TAMAMEN bu token\'ın İÇİNDE gömülüdür.',
+            neden: 'İstemci, kullanıcının Google e-postasını/adını AYRICA GÖNDERMEZ — bu bilgiler token\'ın İÇİNDE zaten VAR ve bir sonraki satırda `_googleTokenValidator` tarafından ÇÖZÜLECEK; istemcinin gönderdiği DÜZ METİN bir e-posta/ad ASLA GÜVENİLMEZ (istemci taraflı veriler MANİPÜLE edilebilir).',
+            olmasaydi: 'Command\'a AYRICA bir `Email`/`FirstName` alanı EKLENSEYDİ VE Handler bunlara GÜVENSEYDİ, bir saldırgan KENDİ ID token\'ıyla (kendi Google hesabıyla) giriş yapıp `Email` alanına BAŞKA birinin e-postasını YAZARAK o kullanıcının HESABINA erişim TALEP EDEBİLİRDİ.'
+          },
+          {
+            satir: 'public string? ClientIp { get; init; }',
+            aciklama: 'Bölüm 21\'deki VerifyLoginOtpCommand İLE AYNI desen — gövdede GELMEZ, Controller `HttpContext.Connection.RemoteIpAddress`\'ten okuyup `with` İLE EKLER.',
+            neden: 'Bu IP, Handler\'ın SON satırındaki `CompleteLoginAsync` çağrısına GEÇİRİLİR — Bölüm 21\'deki AYNI audit AMACIYLA (LastLoginIP, RefreshToken.IpAddress).',
+            olmasaydi: 'Bu alan olmasaydı, Google İLE giriş yapan kullanıcıların IP bilgisi HİÇ KAYDEDİLMEZDİ — TÜM giriş yöntemleri ARASINDA TUTARLILIK BOZULURDU.'
+          },
+          {
+            satir: 'public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleCommand, AuthTokenResponse>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — dönüş tipi Bölüm 21\'deki VerifyLoginOtpCommandHandler İLE AYNI (`AuthTokenResponse`).',
+            neden: 'İmza, yukarıdaki LoginWithGoogleCommand\'ın `IRequest<AuthTokenResponse>` implemente etmesiyle EŞLEŞİR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı GoogleId ya da e-postayla bulmak VE gerekirse YENİ kayıt oluşturmak için — Bölüm 15/20/21\'deki AYNI arayüz.',
+            neden: 'Bu Handler da somut UserRepository DEĞİL, arayüze bağımlıdır.',
+            olmasaydi: 'Somut UserRepository enjekte edilseydi, testte GERÇEK bir veritabanı bağlantısı GEREKİRDİ.'
+          },
+          {
+            satir: 'private readonly IGoogleTokenValidator _googleTokenValidator;',
+            aciklama: 'BU Handler\'a ÖZGÜ, YENİ bir bağımlılık — Google\'ın ID token\'ını (imza, issuer, audience, süre) DOĞRULAYAN, Google\'ın KENDİ kütüphanesini SARAN bir arayüz.',
+            neden: 'Bu KARMAŞIK doğrulama mantığı arayüz ARKASINA GİZLENİR — testte (Bölüm 16\'daki desenle) GERÇEK bir Google sunucusuna İSTEK ATMADAN bu Handler ÇALIŞTIRILABİLİR.',
+            olmasaydi: 'Handler doğrudan Google\'ın kütüphanesini ÇAĞIRSAYDI, testte HER ÇALIŞTIRMADA GERÇEK bir ağ İSTEĞİ gerekirdi — test YAVAŞLAR, internet KESİNTİSİNDE BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: 'Bölüm 21\'de detaylı GÖRDÜĞÜMÜZ PAYLAŞILAN servis — token üretimi/RefreshToken/grace-period kurtarma mantığının TAMAMI burada da KULLANILACAK.',
+            neden: 'CLAUDE.md §3\'teki "paylaşılan mantık ortak bir servise çıkarılır" kuralı — Login (OTP) İLE Google girişinin "girişi TAMAMLAMA" adımı TEK bir yerde YAŞAR.',
+            olmasaydi: 'Bu servis olmasaydı, token üretim/RefreshToken/grace-period KODU (yaklaşık 30 satır) Bölüm 21\'deki VerifyLoginOtpCommandHandler\'DAN KOPYALANIRDI — DRY ihlali.'
+          },
+          {
+            satir: 'public LoginWithGoogleCommandHandler(',
+            aciklama: 'Üç bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER — Bölüm 21\'deki VerifyLoginOtpCommandHandler İLE AYNI eşik.',
+            neden: 'Çok-satırlı yazım, üç parametrenin OKUNABİLİRLİĞİNİ KORUR.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri LoginWithGoogleCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_userRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_userRepository = userRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IGoogleTokenValidator googleTokenValidator,',
+            aciklama: 'İkinci parametre — Google token doğrulama servisini enjekte eder.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, `_googleTokenValidator = googleTokenValidator;` atanamaz, Handler ID token\'ı ASLA DOĞRULAYAMAZDI.'
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService',
+            aciklama: 'ÜÇÜNCÜ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Bu servisin de arayüz üzerinden enjekte edilmesi, testte GERÇEK token üretimi OLMADAN bu Handler\'ı çalıştırabilmeyi sağlar.',
+            olmasaydi: 'Bu parametre olmasaydı, `_loginCompletionService = loginCompletionService;` atanamaz, Handler doğrulama BAŞARILI olsa bile TOKEN ÜRETEMEZDİ.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_userRepository` null KALIRDI.'
+          },
+          {
+            satir: '_googleTokenValidator = googleTokenValidator;',
+            aciklama: 'İKİNCİ atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_googleTokenValidator` null kalırdı — `ValidateAsync` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'SON atama.',
+            neden: 'Üç atamanın HEPSİ AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_loginCompletionService` null kalırdı — Handler\'ın SON satırı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<AuthTokenResponse> Handle(LoginWithGoogleCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var payload =',
+            aciklama: 'Bir sonraki satırdaki `await` ifadesinin SONUCUNU tutacak değişken — çok-satırlı bir atama (uzun bir ifade OLDUĞU İÇİN böldürülür).',
+            neden: 'Bu satır, `??` ile bir sonraki satırdaki exception fırlatma DALINI da (aşağıda) İÇİNE ALAN, İKİ satırlık TEK bir ifadenin BAŞLANGICIDIR.',
+            olmasaydi: 'Bu satır olmasaydı, `await _googleTokenValidator.ValidateAsync(...)` çağrısının SONUCU HİÇBİR DEĞİŞKENE ATANMAZDI — bir sonraki satırlardaki `payload.GoogleId` erişimleri DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await _googleTokenValidator.ValidateAsync(request.IdToken, ct)',
+            aciklama: 'ID token, Google\'ın YAYINLADIĞI genel anahtarlarla İMZA doğrulanır, issuer/audience/süre KONTROL EDİLİR — BAŞARILIYSA token\'ın İÇİNDEKİ kullanıcı bilgilerini (GoogleId, Email, FirstName, LastName) taşıyan bir `payload` NESNESİ döner.',
+            neden: 'Bu doğrulama, A-02/05\'teki JWT doğrulamasıyla (issuer/audience/imza) AYNI İLKELERİ İZLER — ama BURADA imzalayan Google\'DIR, biz DEĞİLİZ; `IGoogleTokenValidator` bu KARMAŞIK doğrulamayı (Google\'ın KENDİ kütüphanesini SARARAK) TEK bir arayüz ARKASINA GİZLER.',
+            olmasaydi: 'Bu doğrulama YAPILMASAYDI (ör. token\'ın İÇERİĞİ KÖRÜKÖRÜNE OKUNSAYDI), bir saldırgan KENDİ ürettiği SAHTE bir "Google token\'ı" ile SİSTEME giriş YAPABİLİRDİ — Google\'ın İMZASI olmadan bir token\'a GÜVENMEK, kimlik doğrulamanın TAMAMINI ANLAMSIZ kılardı.'
+          },
+          {
+            satir: '?? throw new InvalidSocialTokenException();',
+            aciklama: 'Doğrulama BAŞARISIZSA (`ValidateAsync` `null` DÖNERSE — süresi dolmuş, imzası GEÇERSİZ, YANLIŞ audience) TEK bir genel exception FIRLATILIR.',
+            neden: 'ExceptionHandlingMiddleware (Bölüm 6, A-02) BU exception\'ı 401 Unauthorized\'A ÇEVİRİR — LoginCommand\'daki `InvalidCredentialsException` İLE AYNI ROLÜ oynar, yalnızca SOSYAL giriş bağlamında.',
+            olmasaydi: 'Bu kontrol olmasaydı, `payload` DEĞİŞKENİ `null` OLARAK bir SONRAKİ satıra GEÇERDİ — `payload.GoogleId` erişimi bir NullReferenceException FIRLATIRDI, kullanıcı ANLAMSIZ bir 500 HATASI ALIRDI (geçersiz bir token yüzünden, KENDİ hatası olmayan bir 500).'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByGoogleIdAsync(payload.GoogleId, ct);',
+            aciklama: 'İLK ARAMA: bu Google hesabı DAHA ÖNCE bu SİSTEME BAĞLANMIŞ MI? — `IUserRepository`\'nin, Bölüm 16\'daki `GetByEmailAsync`/`OriginalEmailHashExistsAsync` İLE AYNI ailede, GoogleId\'YE özgü BİR SORGU metodudur.',
+            neden: 'Bu, EN HIZLI/EN GÜVENİLİR arama YOLUDUR — bir GoogleId, TASARIM GEREĞİ benzersizdir (Google ATAR), bu yüzden e-posta ARAMASINDAN ÖNCE denenir: kullanıcı e-postasını SONRADAN DEĞİŞTİRMİŞ olsa bile GoogleId AYNI KALIR.',
+            olmasaydi: 'Doğrudan `GetByEmailAsync` İLE aransaydı, kullanıcı Google\'DA e-postasını DEĞİŞTİRDİĞİNDE (GoogleId AYNI kalsa da) SİSTEM onu TANIYAMAZ, YANLIŞLIKLA İKİNCİ bir hesap AÇARDI.'
+          },
+          {
+            satir: 'if (user is null)',
+            aciklama: 'GoogleId İLE bir eşleşme BULUNAMADIYSA (bu Google hesabı bu sisteme İLK KEZ giriyor), bir sonraki bloktaki "e-postayla ARA ya da YENİ oluştur" mantığı DEVREYE girer.',
+            neden: 'Bu `if` bloğu, "bu Google hesabı ZATEN TANINIYOR" (kısayol — bloğa hiç GİRMEDEN direkt IsActive kontrolüne GEÇİLİR) İLE "TANINMIYOR, araştır" durumlarını AYIRIR.',
+            olmasaydi: 'Bu kontrol olmasaydı, ZATEN TANINAN bir kullanıcı İÇİN de gereksiz yere e-posta ARAMASI/YENİ kayıt mantığı ÇALIŞTIRILMAYA ÇALIŞILIRDI — kod YANLIŞ dallara girerdi.'
+          },
+          {
+            satir: 'user = await _userRepository.GetByEmailAsync(payload.Email, ct);',
+            aciklama: 'GoogleId İLE bulunamadıysa (bu Google hesabı İLK KEZ görülüyor), İKİNCİ arama: bu E-POSTAYLA daha ÖNCE (Local ya da BAŞKA bir sağlayıcıyla) kayıtlı bir hesap VAR MI?',
+            neden: 'Bu, "account linking" (hesap BAĞLAMA) senaryosunun İLK ADIMIDIR — bir kullanıcı ÖNCE e-posta+şifre İLE kayıt OLMUŞ, SONRA "Google ile giriş YAP"A basmış OLABİLİR; bu İKİ girişin AYNI kişiye AİT olduğunu e-posta ÜZERİNDEN ANLARIZ.',
+            olmasaydi: 'Bu arama YAPILMASAYDI, AYNI e-postaya sahip AMA farklı `AuthProvider`\'LARLA (biri Local, biri Google) İKİ AYRI User kaydı OLUŞURDU — kullanıcı "hangi hesabımla giriş YAPMALIYIM" diye KAFASI KARIŞIRDI, iki hesabın VERİLERİ (öğrenme İLERLEMESİ) AYRIŞIRDI.'
+          },
+          {
+            satir: 'if (user is not null)',
+            aciklama: 'E-postayla bir eşleşme BULUNDUYSA (bu kişi DAHA ÖNCE Local/başka bir sağlayıcıyla KAYITLI), "account linking" (hesap BAĞLAMA) dalına GİRİLİR.',
+            neden: 'Bu `if`, "e-posta EŞLEŞTİ, mevcut hesaba BAĞLA" İLE "e-posta da EŞLEŞMEDİ, TAMAMEN YENİ kayıt AÇ" dallarını AYIRIR.',
+            olmasaydi: 'Bu kontrol olmasaydı, `user` `null` OLSA bile `user.GoogleId = ...` çağrılmaya ÇALIŞILIR, NullReferenceException FIRLATILIRDI.'
+          },
+          {
+            satir: 'user.GoogleId = payload.GoogleId;',
+            aciklama: 'E-postayla BULUNAN mevcut hesaba, GoogleId BAĞLANIR — YENİ bir kayıt AÇILMAZ, VAR OLAN hesap GÜNCELLENİR.',
+            neden: 'Bu satır, Bölüm 9\'daki (A-03/02) "bir kullanıcı HEM Local HEM Google HEM Apple İLE giriş yapmış OLABİLİR" tasarım KARARININ SOMUT UYGULAMASI — User.GoogleId nullable OLDUĞU İÇİN, SONRADAN doldurulabilir.',
+            olmasaydi: 'Bu satır olmasaydı (YENİ bir User HER ZAMAN OLUŞTURULSAYDI), AYNI e-postaya sahip İKİ AYRI hesap (biri şifreyle, biri Google\'LA) oluşur, kullanıcının ÖĞRENME VERİSİ (kelime kartları, XP) İKİ hesap ARASINDA BÖLÜNÜRDÜ.'
+          },
+          {
+            satir: 'else',
+            aciklama: 'Hem GoogleId hem e-posta ARAMASI SONUÇSUZ KALDIYSA (bu kişi sistem TARAFINDAN HİÇ TANINMIYOR) çalışan dal — TAMAMEN YENİ bir kayıt AÇILACAK.',
+            neden: 'Bu `else`, "mevcut hesaba BAĞLA" (bir üstteki `if`) İLE "YENİ hesap OLUŞTUR" davranışlarını BİRBİRİNDEN AYIRAN son DALLANMA NOKTASI.',
+            olmasaydi: 'Bu `else` olmasaydı, KOD hem "mevcut hesaba BAĞLA" hem "YENİ hesap OLUŞTUR" mantığını AYNI ANDA ÇALIŞTIRMAYA ÇALIŞIRDI — SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'user = new User',
+            aciklama: 'Hem GoogleId hem e-posta ARAMASI SONUÇSUZ KALDIYSA (bu KİŞİYİ sistem HİÇ TANIMIYOR), TAMAMEN YENİ bir User NESNESİ İNŞA EDİLİR — Register\'daki (Bölüm 15) object initializer İLE AYNI SÖZDİZİMİ.',
+            neden: 'Sosyal giriş, "önce Register OL, SONRA giriş YAP" İKİ AŞAMALI akışını GEREKTİRMEZ — kullanıcı DAHA ÖNCE HİÇ kayıt OLMAMIŞ olsa bile, "Google İLE giriş YAP" TEK TIKLA HEM kayıt HEM giriş İŞLEVİ GÖRÜR.',
+            olmasaydi: 'Bu dal OLMASAYDI, sistemi İLK KEZ Google İLE deneyen bir kullanıcı "böyle bir hesap YOK" hatasıyla KARŞILAŞIR, ÖNCE ayrı bir Register FORMUYLA kayıt OLMAK ZORUNDA kalırdı — sosyal girişin TÜM KOLAYLIK VAADİ BOZULURDU.'
+          },
+          {
+            satir: 'Email = payload.Email,',
+            aciklama: 'Google\'ın DOĞRULADIĞI (ve `email_verified` claim\'ine sahip) e-posta, DOĞRUDAN YENİ User nesnesine YAZILIR.',
+            neden: 'Bölüm 15\'teki Register\'daki AYNI atama deseni — ama BURADA e-posta İSTEMCİDEN DEĞİL, Google\'ın DOĞRULADIĞI `payload`\'DAN gelir, bu yüzden AYRICA bir "e-posta zaten VAR MI" kontrolüne (Bölüm 15\'teki İKİLİ kontrol) GEREK YOKTUR — YUKARIDAKİ GetByEmailAsync ARAMASI ZATEN bunu KAPSADI.',
+            olmasaydi: 'Bu satır olmasaydı, Email alanı VARSAYILAN değeriyle (string.Empty) KALIRDI — kullanıcı boş bir e-postayla OLUŞTURULMUŞ GİBİ görünürdü.'
+          },
+          {
+            satir: 'FirstName = payload.FirstName ?? "Kullanıcı",',
+            aciklama: 'Google\'ın DÖNDÜRDÜĞÜ ad BOŞ OLABİLİR (kullanıcı Google PROFİLİNDE ad PAYLAŞMAMIŞ OLABİLİR) — `??` İLE bir VARSAYILAN metin ("Kullanıcı") KULLANILIR.',
+            neden: 'User.FirstName (A-03/02) NON-NULLABLE bir alandır (`string.Empty` VARSAYILANLI) — Google\'DAN gelen POTANSİYEL `null` değeri BU ALANA doğrudan YAZILAMAZ, bir GEÇERLİ VARSAYILAN GEREKİR.',
+            olmasaydi: '`??` YAZILMASAYDI VE `payload.FirstName` `null` OLSAYDI, `FirstName = null` atanmaya ÇALIŞILIR — Nullable ayarı (A-02/01) AÇIKKEN bu ya DERLEME UYARISI verirdi ya da (nullable olmayan bir TİPE zorla `null` atanmaya ÇALIŞILDIĞINDA) çalışma zamanında BEKLENMEDİK bir davranışa YOL AÇARDI.'
+          },
+          {
+            satir: 'LastName = payload.LastName ?? string.Empty,',
+            aciklama: 'FirstName İLE AYNI desen — ama VARSAYILAN DEĞER FARKLI: boş STRING, "Kullanıcı" GİBİ bir YER TUTUCU METİN DEĞİL.',
+            neden: 'Soyad, GENELDE İSTEĞE BAĞLI bir ALANDIR (birçok Google hesabı SOYADI PAYLAŞMAZ) — boş bırakmak, "Kullanıcı Kullanıcı" gibi TUHAF bir GÖRÜNÜMDEN DAHA DOĞAL bir SONUÇ verir (yalnızca ad GÖSTERİLİR).',
+            olmasaydi: 'LastName İÇİN de "Kullanıcı" VARSAYILANI KULLANILSAYDI, bir kullanıcının profili "Ahmet Kullanıcı" gibi GARİP GÖRÜNÜRDÜ — küçük ama GERÇEK bir kullanıcı DENEYİMİ SORUNU.'
+          },
+          {
+            satir: 'AuthProvider = "Google",',
+            aciklama: 'A-03/02\'deki User.cs\'te GÖRDÜĞÜMÜZ `AuthProvider` alanı — bu YENİ kaydın "Local" DEĞİL, "Google" İLE OLUŞTURULDUĞUNU BELİRTİR.',
+            neden: 'Bu, Bölüm 9\'daki CHECK constraint\'in (CK_Users_AuthProvider) İZİN VERDİĞİ üç DEĞERDEN biri — bir Admin panelinde "kaç kullanıcı Google İLE kayıt OLDU" gibi bir İSTATİSTİK, DOĞRUDAN bu ALANA DAYANIR.',
+            olmasaydi: 'Bu satır olmasaydı, AuthProvider User.cs\'teki VARSAYILAN değeriyle ("Local") KALIRDI — bir Google İLE oluşturulan hesap, YANLIŞLIKLA "yerel şifre İLE OLUŞTURULMUŞ" GİBİ GÖRÜNÜRDÜ; bu kullanıcının PasswordHash\'i HİÇ OLMADIĞI İÇİN Login (Bölüm 21) İLE giriş DENEMESİ TIMING-ATTACK korumasına RAĞMEN her zaman BAŞARISIZ olurdu — kafa KARIŞTIRICI bir DURUM.'
+          },
+          {
+            satir: 'GoogleId = payload.GoogleId,',
+            aciklama: 'YENİ kullanıcının GoogleId\'si SET edilir — bir üstteki `if (user is not null) user.GoogleId = ...` dalıyla AYNI DEĞERİ, ama BURADA bir object initializer İÇİNDE.',
+            neden: 'Bu alan, BİR SONRAKİ Google girişinde `GetByGoogleIdAsync` sorgusunun bu kullanıcıyı DOĞRUDAN, e-posta ARAMASINA gerek KALMADAN BULMASINI sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, GoogleId alanı `null` KALIRDI — bu kullanıcı bir SONRAKİ girişinde YİNE "TANINMIYOR" sayılır, GEREKSİZ bir e-posta ARAMASI YAPILIR, hatta YANLIŞLIKLA İKİNCİ bir kayıt AÇILABİLİRDİ.'
+          },
+          {
+            satir: 'IsEmailVerified = true,',
+            aciklama: 'Local kayıtta (Bölüm 15) BU ALAN `false` BAŞLAR VE VerifyEmailCommand (Bölüm 20) İLE `true` OLUR — sosyal girişte İSE DOĞRUDAN `true` SET EDİLİR, AYRI bir DOĞRULAMA ADIMI HİÇ OLMAZ.',
+            neden: 'Google/Apple, kullanıcının E-POSTASINI ZATEN KENDİ TARAFLARINDA DOĞRULAMIŞTIR (payload\'daki e-posta, Google\'ın "email_verified" CLAIM\'İNE DAYANIR) — SİSTEMİMİZİN AYRICA bir OTP İLE bunu TEKRAR doğrulaması GEREKSİZDİR.',
+            olmasaydi: 'Bu satır `false` BIRAKILSAYDI, Google İLE giriş YAPAN her YENİ kullanıcı "e-postanızı doğrulayın" gibi BİR EKRANLA KARŞILAŞIRDI — ama BU kullanıcının doğrulayacağı bir OTP kodu ZATEN HİÇ ÜRETİLMEDİ (Register akışından GEÇMEDİ), kullanıcı SONSUZA kadar "doğrulanmamış" GÖRÜNÜRDÜ.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer bloğunun ve `user = new User` atamasının KAPANIŞI.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, ALTI alanın (Email, FirstName, LastName, AuthProvider, GoogleId, IsEmailVerified) bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await _userRepository.AddAsync(user, ct: ct);',
+            aciklama: 'Bölüm 15\'teki (Register) İLE BİREBİR AYNI çağrı — YENİ kullanıcı VERİTABANINA YAZILIR, `userId` YİNE `null` (anonim OLUŞTURMA, KİMSE "onun adına" OLUŞTURMUYOR).',
+            neden: 'Google/Apple İLE İLK KEZ giriş, KAVRAMSAL olarak Register İLE AYNI "kimliksiz bir işlem" TÜRÜDÜR — Repository<T>.AddAsync (A-02/07) BU İKİ senaryoyu (Local Register, Sosyal İLK giriş) AYNI ŞEKİLDE ELE ALIR.',
+            olmasaydi: 'Bu satır olmasaydı, YUKARIDA inşa edilen `user` NESNESİ yalnızca BELLEKTE KALIRDI — bir SONRAKİ satırdaki `CompleteLoginAsync` çağrısı, VERİTABANINDA HİÇ VAR OLMAYAN bir kullanıcı İÇİN token ÜRETMEYE ÇALIŞIRDI.'
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: 'Bölüm 21\'deki LoginCommand İLE BİREBİR AYNI kontrol — Admin TARAFINDAN DONDURULMUŞ bir hesap, Google İLE giriş YAPSA BİLE REDDEDİLİR.',
+            neden: 'Bu kontrolün ÜÇ giriş yönteminde de (Local, Google, Apple) AYNI ŞEKİLDE UYGULANMASI, "hesap DONDURMA" ÖZELLİĞİNİN GİRİŞ YÖNTEMİNDEN BAĞIMSIZ, TUTARLI ÇALIŞMASINI SAĞLAR.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, bir kullanıcı Admin TARAFINDAN dondurulsa bile Google/Apple İLE giriş YAPMAYA DEVAM edebilirdi — Local girişte ENGELLENEN bir kullanıcı, sosyal girişte bir ARKA KAPI BULMUŞ olurdu.'
+          },
+          {
+            satir: 'throw new AccountNotActiveException();',
+            aciklama: 'Bölüm 21\'deki LoginCommand İLE AYNI exception — hesap DONDURULMUŞSA fırlatılır, Controller katmanında 403 Forbidden\'A EŞLENİR.',
+            neden: 'AYNI exception türünün TÜM giriş yöntemlerinde (Local, Google, Apple) KULLANILMASI, istemcinin "hesap dondurulmuş" durumunu TEK bir kod yoluyla, giriş yönteminden BAĞIMSIZ ele ALABİLMESİNİ sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, dondurulmuş bir hesap Google İLE giriş YAPMAYA DEVAM EDER, `CompleteLoginAsync` ÇAĞRILIR, kullanıcı BAŞARIYLA token ALIRDI — hesap dondurmanın AMACI TAMAMEN BOŞA çıkardı.'
+          },
+          {
+            satir: 'return await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);',
+            aciklama: 'Bölüm 21\'de DETAYLI GÖRDÜĞÜMÜZ AYNI PAYLAŞILAN servis — token ÜRETİMİ, grace-period KURTARMA, giriş İSTATİSTİKLERİ TAMAMEN AYNI KOD YOLUNDAN GEÇER.',
+            neden: 'Bu satırın Bölüm 21\'deki VerifyLoginOtpCommand\'IN SON satırıyla NEREDEYSE BİREBİR AYNI OLMASI TESADÜF DEĞİL — TÜM giriş yöntemlerinin "token ÜRET" AŞAMASI TEK bir yerde BİRLEŞİR, DRY İLKESİNİN EN NET ÖRNEĞİ.',
+            olmasaydi: 'Bu servis PAYLAŞILMASAYDI, LoginWithGoogleCommandHandler KENDİ token ÜRETİM/grace-period/RefreshToken KODUNU YAZARDI — VerifyLoginOtpCommandHandler İLE NEREDEYSE BİREBİR AYNI 30 SATIR, İKİNCİ kez TEKRARLANIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'LoginWithApple — Google\'dan Tek Farkı: E-posta Garantisi YOK',
+        iyi: {
+          baslik: 'LoginWithAppleCommand — savunmacı e-posta kontrolü',
+          maddeler: [
+            'AppleId İLE bulunamazsa, `payload.Email is not null` İSE e-postayla ARANIR (Google\'DA koşulsuz)',
+            'E-posta hem AppleId hem kayıt ARAMASINDA `null` İSE, YENİ kayıt AÇILMADAN InvalidSocialTokenException FIRLATILIR',
+            'NEDEN: Apple yalnızca İLK yetkilendirmede e-posta VERİR — sonraki girişlerde payload.Email `null` OLABİLİR; DB\'deki mevcut e-posta ASLA üzerine YAZILMAZ'
+          ]
+        },
+        kotu: {
+          baslik: 'Google\'daki kod BİREBİR kopyalansaydı (Apple\'a UYARLANMADAN)',
+          maddeler: [
+            '`GetByEmailAsync(payload.Email, ct)` DOĞRUDAN çağrılırdı — payload.Email `null` İSE bu ARAMA BOŞ/hatalı SONUÇ verirdi',
+            'Yeni kullanıcı OLUŞTURMA dalında `Email = payload.Email` YAZILIRDI — `null` bir E-POSTAYLA User OLUŞTURULMAYA ÇALIŞILIRDI (User.Email NON-NULLABLE)',
+            'Sonuç: ikinci girişte (Apple e-postayı ARTIK GÖNDERMEDİĞİNDE) kullanıcı YANLIŞLIKLA YENİ bir hesaba yönlendirilir ya da ÇÖKME yaşanırdı'
+          ]
+        }
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithAppleCommand.cs — E-posta Garantisi Olmayan Tek Fark',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginWithAppleCommand.cs',
+        nedenBuKlasor: null,
+        kod: `var user = await _userRepository.GetByAppleIdAsync(payload.AppleId, ct);
+if (user is null)
+{
+    if (payload.Email is not null)
+        user = await _userRepository.GetByEmailAsync(payload.Email, ct);
+
+    if (user is not null)
+    {
+        user.AppleId = payload.AppleId;
+    }
+    else
+    {
+        if (payload.Email is null)
+            throw new InvalidSocialTokenException();
+
+        user = new User
+        {
+            Email = payload.Email,
+            FirstName = "Kullanıcı",
+            LastName = string.Empty,
+            AuthProvider = "Apple",
+            AppleId = payload.AppleId,
+            IsEmailVerified = true,
+        };
+        await _userRepository.AddAsync(user, ct: ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var user = await _userRepository.GetByAppleIdAsync(payload.AppleId, ct);',
+            aciklama: 'Google\'daki `GetByGoogleIdAsync` İLE AYNI DESEN — İLK arama, AppleId ÜZERİNDEN yapılır (Apple TARAFINDAN atanan, DEĞİŞMEYEN bir kimlik).',
+            neden: 'AppleId, kullanıcının e-postasını DEĞİŞTİRMESİNDEN (ya da e-postayı GİZLEMESİNDEN, "Hide My Email" özelliği) ETKİLENMEZ — bu yüzden EN GÜVENİLİR arama YOLU BUDUR.',
+            olmasaydi: 'Doğrudan e-postayla aransaydı, Apple\'ın "Hide My Email" (özel, RASTGELE ÜRETİLMİŞ bir relay e-postası) özelliğini kullanan bir kullanıcı, her girişte FARKLI bir e-postayla GÖRÜNEBİLİR, sistem onu HER SEFERİNDE YENİ bir kullanıcı SANARDI.'
+          },
+          {
+            satir: 'if (user is null)',
+            aciklama: 'AppleId İLE bir eşleşme BULUNAMADIYSA, e-postayla arama VE gerekirse YENİ kayıt oluşturma mantığına GİRİLİR — Google\'daki AYNI dallanma YAPISI.',
+            neden: 'Bu `if`, "bu Apple hesabı ZATEN TANINIYOR" İLE "TANINMIYOR, araştır" durumlarını AYIRIR.',
+            olmasaydi: 'Bu kontrol olmasaydı, ZATEN TANINAN bir kullanıcı İÇİN de gereksiz yere e-posta ARAMASI/YENİ kayıt mantığı ÇALIŞTIRILMAYA ÇALIŞILIRDI.'
+          },
+          {
+            satir: 'if (payload.Email is not null)',
+            aciklama: 'Google\'daki KOŞULSUZ `GetByEmailAsync` ÇAĞRISINDAN FARKLI olarak, BURADA ÖNCE e-postanın DOLU OLUP OLMADIĞI KONTROL EDİLİR.',
+            neden: 'Apple, KULLANICI GİZLİLİĞİ POLİTİKASI GEREĞİ e-postayı YALNIZCA İLK yetkilendirmede (kullanıcının İLK "Sign in with Apple" ONAYINDA) VERİR — sonraki girişlerde `payload.Email` `null` OLABİLİR, bu Google\'DAN TEMEL bir DAVRANIŞ FARKIDIR.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, `GetByEmailAsync(null, ct)` GİBİ bir ÇAĞRI YAPILIRDI — ya İSTİSNA (bazı repository implementasyonlarında) ya da HİÇBİR ZAMAN eşleşmeyen bir SORGU ÇALIŞIRDI, İKİ Apple girişi ARASINDA TUTARSIZ DAVRANIŞA YOL AÇARDI.'
+          },
+          {
+            satir: 'user = await _userRepository.GetByEmailAsync(payload.Email, ct);',
+            aciklama: 'Yalnızca `payload.Email` DOLUYSA çalışan İKİNCİ arama — Google\'daki "account linking" mantığının AYNISI, ama SAVUNMACI bir ÖN KOŞULLA korunmuş hali.',
+            neden: 'Bu satır, bir üstteki `if` bloğunun İÇİNDE olduğu İÇİN, YALNIZCA e-posta BİLİNDİĞİNDE ÇALIŞIR — `payload.Email` `null`SA bu satır HİÇ ÇALIŞTIRILMAZ, `user` `null` OLARAK KALIR.',
+            olmasaydi: 'Bu satır olmasaydı, e-postası BİLİNEN bir kullanıcı bile ASLA mevcut hesabına BAĞLANAMAZ, HER SEFERİNDE YENİ bir kayıt AÇILMAYA ÇALIŞILIRDI.'
+          },
+          {
+            satir: 'if (user is not null)',
+            aciklama: 'E-postayla bir eşleşme BULUNDUYSA (ya da yukarıdaki arama hiç ÇALIŞMADIYSA ama `user` başka bir şekilde doluysa), "hesap BAĞLAMA" dalına GİRİLİR.',
+            neden: 'Google\'daki AYNI `if (user is not null)` mantığı — e-posta EŞLEŞTİYSE mevcut hesaba BAĞLANIR, EŞLEŞMEDİYSE YENİ kayıt DALINA geçilir.',
+            olmasaydi: 'Bu kontrol olmasaydı, `user` `null` OLSA bile `user.AppleId = ...` çağrılmaya ÇALIŞILIR, NullReferenceException FIRLATILIRDI.'
+          },
+          {
+            satir: 'user.AppleId = payload.AppleId;',
+            aciklama: 'Google\'daki `user.GoogleId = payload.GoogleId;` İLE BİREBİR AYNI DESEN — e-postayla BULUNAN mevcut hesaba, AppleId BAĞLANIR.',
+            neden: 'User.AppleId (A-03/02) nullable OLDUĞU İÇİN, SONRADAN doldurulabilir — bu, bir kullanıcının HEM Local HEM Apple İLE giriş YAPABİLMESİNİ SAĞLAR.',
+            olmasaydi: 'Bu satır olmasaydı (YENİ bir User HER ZAMAN OLUŞTURULSAYDI), AYNI e-postaya sahip İKİ AYRI hesap OLUŞUR, kullanıcının ÖĞRENME VERİSİ İKİ hesap ARASINDA BÖLÜNÜRDÜ.'
+          },
+          {
+            satir: 'else',
+            aciklama: 'Hem AppleId hem (varsa) e-posta ARAMASI SONUÇSUZ KALDIYSA çalışan dal — YENİ bir kayıt AÇILACAK (ya da e-posta HİÇ YOKSA hata FIRLATILACAK).',
+            neden: 'Bu `else`, "mevcut hesaba BAĞLA" İLE "YENİ hesap OLUŞTUR/hata VER" davranışlarını BİRBİRİNDEN AYIRIR.',
+            olmasaydi: 'Bu `else` olmasaydı, KOD SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'if (payload.Email is null)',
+            aciklama: 'Hem AppleId hem (varsa) e-posta ARAMASI SONUÇSUZ KALDIYSA VE e-posta HÂLÂ `null`SA, YENİ bir kayıt AÇILMAZ — SAVUNMACI bir DURDURMA.',
+            neden: 'Yorum SATIRINDA belirtildiği gibi (kaynak KODDA), "İLK yetkilendirmede e-mail GELMEMESİ TEORİK olarak BEKLENMEZ" — ama BU olursa (beklenmeyen bir Apple API DAVRANIŞI), e-postasız bir User OLUŞTURULMAYA ÇALIŞMAK YERİNE AÇIKÇA bir HATA FIRLATILIR.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, bir SONRAKİ satırdaki `Email = payload.Email` İFADESİ `Email = null` ATAMAYA ÇALIŞIRDI — User.Email NON-NULLABLE bir ALAN OLDUĞU İÇİN (A-03/02, `= string.Empty` VARSAYILANLI), bu ya DERLEME UYARISI ya da VERİTABANI SEVİYESİNDE bir NOT NULL İHLALİYLE SONUÇLANIRDI.'
+          },
+          {
+            satir: 'throw new InvalidSocialTokenException();',
+            aciklama: 'E-posta hiçbir zaman GELMEDİYSE (ne AppleId ARAMASI ne bu YENİ oturumdaki payload), Google\'daki AYNI exception FIRLATILIR — SAVUNMACI bir DURDURMA noktası.',
+            neden: 'Bu SATIR, "GERÇEKTE OLMASI BEKLENMEYEN ama TEORİK olarak MÜMKÜN olan" bir DURUMU (Apple\'ın İLK yetkilendirmede e-posta VERMEMESİ) SESSİZCE YOKSAYMAK YERİNE AÇIKÇA bir HATAYA ÇEVİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, bir SONRAKİ satırdaki `Email = payload.Email` (payload.Email `null`) User.Email\'e YAZILMAYA ÇALIŞILIR, NON-NULLABLE alan İHLALİ ya DERLEME UYARISI ya da ÇALIŞMA ZAMANI HATASINA yol AÇARDI.'
+          },
+          {
+            satir: 'user = new User',
+            aciklama: 'Google\'daki `user = new User` İLE AYNI object initializer BAŞLANGICI — bu KİŞİYİ sistem HİÇ TANIMIYOR, TAMAMEN YENİ bir kayıt İNŞA EDİLİYOR.',
+            neden: 'Sosyal giriş, Apple İÇİN de "önce Register OL, SONRA giriş YAP" İKİ AŞAMALI akışını GEREKTİRMEZ.',
+            olmasaydi: 'Bu dal OLMASAYDI, sistemi İLK KEZ Apple İLE deneyen bir kullanıcı "böyle bir hesap YOK" hatasıyla KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'Email = payload.Email,',
+            aciklama: 'Bu noktada `payload.Email`\'in `null` OLMADIĞI GARANTİ EDİLMİŞTİR (bir üstteki `if (payload.Email is null) throw ...` kontrolü BUNU SAĞLADI) — Apple\'ın DOĞRULADIĞI e-posta YAZILIR.',
+            neden: 'C# derleyicisi bu noktada `payload.Email`\'in non-null OLDUĞUNU (flow analysis İLE) ANLAYABİLİR — bu yüzden `!` ya da `??` GEREKMEZ, YUKARIDAKİ kontrol ZATEN bunu KANITLADI.',
+            olmasaydi: 'Bu satır olmasaydı, Email alanı VARSAYILAN değeriyle (string.Empty) KALIRDI — kullanıcı boş bir e-postayla OLUŞTURULMUŞ GİBİ görünürdü.'
+          },
+          {
+            satir: 'FirstName = "Kullanıcı",',
+            aciklama: 'Google\'daki `payload.FirstName ?? "Kullanıcı"`\'DAN FARKLI olarak, Apple payload\'ı GENELDE ad/soyad TAŞIMAZ — DOĞRUDAN SABİT bir VARSAYILAN KULLANILIR.',
+            neden: 'Apple\'ın identity token\'ı (JWT) yalnızca e-posta VE AppleId TAŞIR — ad/soyad AYRI bir "ASAuthorizationAppleIDCredential" NESNESİNDEN gelir ki BU bilgi genelde İSTEMCİ TARAFINDA (token\'IN DIŞINDA) İŞLENİR VE bu Command\'A HİÇ ULAŞMAZ.',
+            olmasaydi: '`payload.FirstName` GİBİ VAR OLMAYAN bir ALANA ERİŞİLMEYE ÇALIŞILSAYDI, KOD DERLENEMEZDİ — AppleTokenPayload SÖZLEŞMESİ (IAppleTokenValidator ARAYÜZÜ) ZATEN böyle bir ALAN SUNMAZ.'
+          },
+          {
+            satir: 'LastName = string.Empty,',
+            aciklama: 'FirstName İLE AYNI GEREKÇEYLE — Apple soyad da VERMEDİĞİ İÇİN, DOĞRUDAN boş STRING KULLANILIR (Google\'DAKİ `payload.LastName ?? string.Empty` İLE AYNI SONUÇ, ama Apple\'da payload\'DA soyad ALANI hiç OLMADIĞI İÇİN `??` GEREKMEZ).',
+            neden: 'Boş bırakmak, LastName İÇİN de "Kullanıcı" gibi bir YER TUTUCU KULLANMAKTAN DAHA DOĞAL bir SONUÇ verir — Google\'daki AYNI kullanıcı deneyimi GEREKÇESİ.',
+            olmasaydi: 'LastName İÇİN de bir YER TUTUCU METİN KULLANILSAYDI, kullanıcının profili GARİP GÖRÜNÜRDÜ.'
+          },
+          {
+            satir: 'AuthProvider = "Apple",',
+            aciklama: 'Google\'daki `"Google"` İLE AYNI DESEN — CK_Users_AuthProvider CONSTRAINT\'İNİN (Bölüm 9) İZİN VERDİĞİ ÜÇÜNCÜ DEĞER.',
+            neden: 'Bu ALAN, HANGİ sosyal SAĞLAYICI İLE oluşturulduğunu AYIRT EDER — Google İLE Apple ARASINDAKİ FARK (e-posta GARANTİSİ, ad/soyad EKSİKLİĞİ) SONRADAN İNCELENDİĞİNDE bu ALAN üzerinden KOLAYCA FİLTRELENEBİLİR.',
+            olmasaydi: 'Bu satır olmasaydı, Apple İLE oluşturulan bir hesap VARSAYILAN "Local" DEĞERİYLE KALIRDI — Google\'daki AYNI SORUN (Login\'in TIMING-ATTACK korumalı ama HER ZAMAN BAŞARISIZ OLAN karşılaştırmasıyla KARŞILAŞMA) BURADA da OLUŞURDU.'
+          },
+          {
+            satir: 'AppleId = payload.AppleId,',
+            aciklama: 'YENİ kullanıcının AppleId\'si SET edilir — Google\'daki `GoogleId = payload.GoogleId,` İLE AYNI DESEN.',
+            neden: 'Bu alan, BİR SONRAKİ Apple girişinde `GetByAppleIdAsync` sorgusunun bu kullanıcıyı DOĞRUDAN BULMASINI sağlar — özellikle Apple\'ın e-postayı SONRAKİ girişlerde GÖNDERMEME İHTİMALİ VARKEN, BU alan TEK GÜVENİLİR ANAHTAR haline gelir.',
+            olmasaydi: 'Bu satır olmasaydı, AppleId alanı `null` KALIRDI — bu kullanıcı bir SONRAKİ girişinde (e-posta da GELMEZSE) HİÇBİR ŞEKİLDE TANINAMAZ, YENİ bir kayıt AÇILMAYA ÇALIŞILIP `InvalidSocialTokenException` FIRLATILIRDI.'
+          },
+          {
+            satir: 'IsEmailVerified = true,',
+            aciklama: 'Google\'daki AYNI GEREKÇE — Apple da e-postayı KENDİ tarafında DOĞRULAMIŞTIR, sistemin AYRICA bir OTP İLE bunu TEKRAR doğrulamasına GEREK YOKTUR.',
+            neden: 'Apple\'ın "Sign in with Apple" akışı, kullanıcının e-postasının GEÇERLİLİĞİNİ Apple\'ın KENDİ altyapısında GARANTİ eder.',
+            olmasaydi: 'Bu satır `false` BIRAKILSAYDI, Apple İLE giriş YAPAN her YENİ kullanıcı "e-postanızı doğrulayın" EKRANIYLA KARŞILAŞIRDI ama doğrulayacağı bir OTP kodu HİÇ ÜRETİLMEMİŞTİ.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer bloğunun ve `user = new User` atamasının KAPANIŞI.',
+            neden: 'Kapanış süslü parantezinin KENDİ satırında durması, ALTI alanın bir BÜTÜN olarak NET görülmesini sağlar.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'await _userRepository.AddAsync(user, ct: ct);',
+            aciklama: 'Google\'daki (Bölüm 15) İLE BİREBİR AYNI çağrı — YENİ kullanıcı VERİTABANINA YAZILIR.',
+            neden: 'Google/Apple İLE İLK KEZ giriş, KAVRAMSAL olarak Register İLE AYNI "kimliksiz bir işlem" TÜRÜDÜR.',
+            olmasaydi: 'Bu satır olmasaydı, YUKARIDA inşa edilen `user` NESNESİ yalnızca BELLEKTE KALIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Sosyal giriş (Google/Apple), kimlik doğrulamasını SAĞLAYICIYA DEVREDER — İKİNCİ bir OTP adımına GEREK YOKTUR',
+          'Arama sırası: ÖNCE sağlayıcı Id\'si (GoogleId/AppleId), SONRA e-posta (account linking), SON ÇARE yeni kayıt',
+          'Aynı e-postayla farklı sağlayıcılardan giriş, YENİ hesap AÇMAZ — VAR OLAN hesaba sağlayıcı Id\'si BAĞLANIR',
+          'Apple, Google\'dan FARKLI olarak e-posta GARANTİSİ VERMEZ — bu fark KODA savunmacı `null` kontrolleriyle YANSIR',
+          'Sosyal girişte de IsActive kontrolü VE ILoginCompletionService.CompleteLoginAsync AYNEN ÇALIŞIR — giriş yönteminden BAĞIMSIZ TUTARLILIK'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

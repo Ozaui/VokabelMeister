@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Logout — Sahiplik Kontrolü</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'logout',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '15_google-apple-login.html',
+    sonrakiBolum: '17_forgot-reset-password.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 23',
+        baslik: 'Logout — Sahiplik Kontrolü',
+        altBaslik: 'En kısa Auth Command\'ı — ama "başkasının token\'ını iptal edemezsin" kuralı nereden geliyor?'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Logout Aslında Ne Yapıyor?',
+        aciklama: 'JWT access token\'lar (Bölüm 18) KENDİ KENDİNİ doğrular — sunucu bir "aktif token listesi" TUTMAZ, bu yüzden bir access token\'ı "iptal etmek" TEKNİK olarak MÜMKÜN DEĞİLDİR (15 dakikalık ömrü DOLANA kadar geçerli KALIR). Logout\'un GERÇEKTEN yaptığı şey, o access token\'ı ÜRETMEK için kullanılacak REFRESH token\'ı VERİTABANINDA İPTAL ETMEKTİR — kullanıcı bir SONRAKİ token yenilemesinde (RefreshCommand, Bölüm 18) ARTIK YENİ bir access token ALAMAZ.',
+        neden: 'Bu, Bölüm 18\'de gördüğümüz "access KISA ömürlü + JWT, refresh UZUN ömürlü + VERİTABANINDA saklı" TASARIMININ DOĞAL SONUCUDUR — İPTAL EDİLEBİLİR olan, YALNIZCA veritabanında YAŞAYAN taraftır.',
+        olmasaydi: 'Logout OLMASAYDI (ya da yalnızca İSTEMCİ tarafında token SİLİNSEYDİ), o refresh token VERİTABANINDA GEÇERLİ KALMAYA devam ederdi — token ÇALINMIŞSA (ör. cihaz KAYBOLDUYSA), "çıkış YAPTIM" SANAN kullanıcının ESKİ token\'ı BAŞKASI tarafından HÂLÂ KULLANILABİLİRDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogoutCommand.cs — Sahiplik Kontrolü + İptal',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LogoutCommand.cs',
+        nedenBuKlasor: 'Features/Auth/ altında — RefreshCommand ile AYNI klasörde ama AYRI dosyada (Bölüm 18\'deki notu HATIRLA: ikisi ESKİDEN tek bir RefreshRequest DTO\'sunu paylaşıyordu, MediatR dönüş tipi FARKLI olduğu için AYRILDILAR).',
+        kod: `public record LogoutCommand(string RefreshToken) : IRequest<Unit>
+{
+    public int UserId { get; init; }
+}
+
+public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>
+{
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IPasswordService _passwordService;
+
+    public LogoutCommandHandler(
+        IRefreshTokenRepository refreshTokenRepository,
+        IPasswordService passwordService
+    )
+    {
+        _refreshTokenRepository = refreshTokenRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<Unit> Handle(LogoutCommand request, CancellationToken ct)
+    {
+        var tokenHash = _passwordService.HashToken(request.RefreshToken);
+        var token = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, ct);
+
+        if (token is null || token.UserId != request.UserId)
+            throw new InvalidRefreshTokenException();
+
+        token.RevokedAt = DateTime.UtcNow;
+        await _refreshTokenRepository.UpdateAsync(token, request.UserId, ct);
+
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record LogoutCommand(string RefreshToken) : IRequest<Unit>',
+            aciklama: 'Dönüş tipi `Unit` (MediatR\'ın "boş dönüş" tipi, C#\'ın `void`\'inin GENERIC KARŞILIĞI) — Logout, İSTEMCİYE hiçbir VERİ DÖNMEZ, yalnızca "işlem BAŞARILI" bilgisini TAŞIR (Controller 204 No Content DÖNECEK, bir SONRAKİ slaytta A-03/10\'daki AuthController\'da GÖRECEĞİZ).',
+            neden: '`IRequest<T>` bir DÖNÜŞ TİPİ GEREKTİRİR (Bölüm 12\'deki RegisterCommand\'ın `IRequest<RegisterResponse>` OLMASI GİBİ) — MediatR\'ın "hiçbir şey DÖNMEYEN" bir Command\'ı DA temsil edebilmesi İÇİN `Unit` SAĞLANIR (void`\'in generic KARŞILIĞI YOK, C#\'ta).',
+            olmasaydi: '`IRequest<Unit>` YERİNE, MediatR\'IN AYRI bir `IRequest` (dönüşsüz) ARAYÜZÜ KULLANILABİLİRDİ AMA bu proje TUTARLI olarak `IRequest<T>` KULLANIR (RefreshCommand, VerifyLoginOtpCommand HEPSİ AYNI DESEN) — `Unit`, "dönüşsüz" durumu BİLE AYNI JENERİK KALIBA UYDURUR.'
+          },
+          {
+            satir: 'public int UserId { get; init; }',
+            aciklama: 'VerifyLoginOtpCommand\'daki `ClientIp` İLE AYNI DESEN — gövdede GELMEZ, JWT\'DEN (Bölüm 17\'deki AuthController.CurrentUserId) OKUNUP `with` İLE EKLENİR.',
+            neden: 'Bu, TAM OLARAK sahiplik KONTROLÜNÜN GÜVENLİK TEMELİDİR: `UserId`, İSTEMCİNİN GÖVDEDE GÖNDERDİĞİ bir DEĞER DEĞİL, sunucunun JWT\'DEN ÇÖZDÜĞÜ, GÜVENİLİR bir DEĞERDİR — bir SALDIRGAN bu ALANI MANİPÜLE EDEMEZ.',
+            olmasaydi: '`UserId` GÖVDEDEN alınsaydı (`{"refreshToken": "...", "userId": 5}` GİBİ), BİR kullanıcı KENDİ isteğinde BAŞKA birinin `userId`\'sini GÖNDEREREK O KİŞİNİN oturumunu İPTAL ETMEYE ÇALIŞABİLİRDİ — CLAUDE.md\'nin "kişisel içerikte her sorguda UserId FİLTRESİ ZORUNLU" KURALININ TAM TERSİ bir GÜVENLİK AÇIĞI olurdu.'
+          },
+          {
+            satir: 'public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>',
+            aciklama: 'MediatR\'ın `IRequestHandler<TCommand, TResponse>` sözleşmesini implemente eder — dönüş tipi `Unit`, yukarıdaki LogoutCommand\'ın `IRequest<Unit>` implemente etmesiyle EŞLEŞİR.',
+            neden: 'İmza uyumu, MediatR\'ın `_mediator.Send(new LogoutCommand(...))` çağrısını DOĞRU Handler\'a yönlendirmesini SAĞLAR.',
+            olmasaydi: 'İmza uyuşmasaydı, MediatR bu Command için Handler BULAMAZ, çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: 'Bölüm 18\'deki RefreshToken kayıtlarını sorgulamak/güncellemek için — IUserRepository\'den FARKLI, RefreshToken\'a ÖZGÜ bir repository.',
+            neden: 'Bu Handler, User tablosuna HİÇ dokunmaz — yalnızca RefreshTokens tablosunda ÇALIŞIR, bu yüzden IUserRepository DEĞİL, IRefreshTokenRepository enjekte edilir.',
+            olmasaydi: 'Bu servis olmasaydı, Handler refresh token\'ı VERİTABANINDA ARAYAMAZ, İPTAL EDEMEZDİ.'
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Şifre hash\'leme İÇİN DEĞİL, bu kez `HashToken` metodu İÇİN — istemciden gelen HAM refresh token\'ı VERİTABANINDAKİ hash İLE KARŞILAŞTIRABİLMEK için.',
+            neden: 'Bölüm 18\'de gördüğümüz AYNI servis, AYNI `HashToken` metodu — refresh token hash\'leme mantığı TEK bir yerde YAŞAR, HER Handler kendi hash\'leme kodunu YAZMAZ.',
+            olmasaydi: 'Bu servis olmasaydı, Handler HAM token\'ı NASIL hash\'leyeceğini BİLEMEZDİ — `GetByTokenHashAsync` çağrısına GEÇİRİLECEK bir hash DEĞERİ ÜRETİLEMEZDİ.'
+          },
+          {
+            satir: 'public LogoutCommandHandler(',
+            aciklama: 'İki bağımlılık olduğu için constructor, parametreleri ayrı satırlara BÖLER.',
+            neden: 'Çok-satırlı yazım, iki parametrenin OKUNABİLİRLİĞİNİ KORUR — Bölüm 20\'deki VerifyEmailCommandHandler (2 parametre, TEK satır) İLE KARŞILAŞTIRILDIĞINDA, bu proje kesin bir EŞİK KURALI GÜTMEZ, ama TUTARLI bir TERCİH sergiler.',
+            olmasaydi: 'Bu constructor olmasaydı, DI konteyneri LogoutCommandHandler\'ı OLUŞTURAMAZDI.'
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: 'Constructor\'ın ilk parametresi.',
+            neden: 'Parametre adı, alan adıyla (`_refreshTokenRepository`) BİLİNÇLİ olarak BENZER tutulur.',
+            olmasaydi: 'Bu parametre olmasaydı, `_refreshTokenRepository = refreshTokenRepository;` ataması YAZILAMAZDI.'
+          },
+          {
+            satir: 'IPasswordService passwordService',
+            aciklama: 'İKİNCİ ve SON parametre — sonunda virgül YOK.',
+            neden: 'Parametrelerin sırası, alanların class içinde TANIMLANDIĞI sırayla AYNIDIR.',
+            olmasaydi: 'Bu parametre olmasaydı, `_passwordService = passwordService;` atanamaz, Handler HAM token\'ı ASLA hash\'leyemezdi.'
+          },
+          {
+            satir: ')',
+            aciklama: 'Parametre listesinin KAPANIŞI.',
+            neden: 'Kapanış parantezinin KENDİ satırında durması, çok-satırlı parametre listesinin SONUNU görsel olarak NETLEŞTİRİR.',
+            olmasaydi: 'Kod İŞLEVSEL olarak AYNI çalışırdı — yalnızca okunabilirlik AZALIRDI.'
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'İLK atama.',
+            neden: 'İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_refreshTokenRepository` null KALIRDI — `Handle` metodundaki İLK sorgu NullReferenceException fırlatırdı.'
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'SON atama.',
+            neden: 'İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR.',
+            olmasaydi: 'Bu atama yapılmasaydı, `_passwordService` null kalırdı — `HashToken` çağrısı NullReferenceException ile PATLARDI.'
+          },
+          {
+            satir: 'public async Task<Unit> Handle(LogoutCommand request, CancellationToken ct)',
+            aciklama: 'MediatR\'ın ZORUNLU kıldığı tek metot — dönüş tipi `Unit`, yukarıdaki LogoutCommand İLE EŞLEŞİR.',
+            neden: 'İmza, diğer Handler\'lardaki AYNI kalıbı izler.',
+            olmasaydi: 'Bu imza YANLIŞ yazılsaydı, MediatR bu sınıfı Handler olarak TANIMAZ, çağrı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'var tokenHash = _passwordService.HashToken(request.RefreshToken);',
+            aciklama: 'Bölüm 18\'de GÖRDÜĞÜMÜZ AYNI HashToken metodu — istemcinin GÖNDERDİĞİ HAM refresh token, VERİTABANINDAKİ HASH İLE KARŞILAŞTIRILABİLMESİ İÇİN AYNI ALGORİTMAYLA HASH\'LENİR.',
+            neden: 'RefreshTokens.TokenHash (Bölüm 18) DÜZ METİN DEĞİL, HASH SAKLAR — bir KARŞILAŞTIRMA YAPABİLMEK İÇİN, elimizdeki HAM token\'ı da AYNI YÖNTEMLE HASH\'LEMEMİZ GEREKİR (PasswordService.Verify GİBİ "hash\'i ÇÖZ" bir METOT YOKTUR, SHA-256 TEK YÖNLÜDÜR).',
+            olmasaydi: 'Bu satır OLMASAYDI, bir SONRAKİ satırdaki `GetByTokenHashAsync` çağrısına GEÇİRİLECEK bir DEĞER OLMAZDI — YA HAM token DOĞRUDAN veritabanı SORGUSUNA geçirilir (ki VERİTABANINDA hash SAKLANDIĞI İÇİN HİÇBİR ZAMAN EŞLEŞMEZ), YA DA kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'var token = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, ct);',
+            aciklama: 'IRefreshTokenRepository\'nin, IUserRepository.GetByEmailAsync (Bölüm 16) İLE AYNI AİLEDEN bir SORGU METODU — hash\'e KARŞILIK gelen RefreshToken kaydını BULUR.',
+            neden: 'Bu SORGU, `token`\'ı `null` DÖNDÜREBİLİR (GEÇERSİZ/UYDURMA bir token GÖNDERİLMİŞSE) — BİR SONRAKİ satırda BU durum EXPLICIT olarak KONTROL EDİLİR.',
+            olmasaydi: 'Bu satır OLMASAYDI, `token` DEĞİŞKENİ hiç TANIMLANMAZDI — kodun GERİ KALANI DERLENEMEZDİ.'
+          },
+          {
+            satir: 'if (token is null || token.UserId != request.UserId)',
+            aciklama: 'İKİ FARKLI başarısızlık SENARYOSU TEK bir KOŞULDA BİRLEŞİR: token HİÇ YOK, VEYA token VAR ama BAŞKA bir kullanıcıya AİT — İKİSİ DE AYNI exception\'A (`InvalidRefreshTokenException`) YOL AÇAR.',
+            neden: 'Bu, TAM OLARAK sahiplik KONTROLÜDÜR — CLAUDE.md §1: "kişisel içerik yalnızca SAHİBİ [...] her sorguda UserId FİLTRESİ ZORUNLU, BAŞKASININ kaydı 404/403". BURADA `token.UserId != request.UserId` KONTROLÜ, TAM OLARAK bu İLKENİN Auth KATMANINDAKİ KARŞILIĞIDIR.',
+            olmasaydi: '`token.UserId != request.UserId` KONTROLÜ ATLANSAYDI, HERHANGİ bir kimliği DOĞRULANMIŞ kullanıcı (KENDİ JWT\'siyle), BAŞKA bir kullanıcının refresh token\'ının HASH\'İNİ (bir şekilde ELE GEÇİRİRSE — ör. bir LOG SIZINTISINDAN) GÖNDEREREK O KULLANICIYI ZORLA ÇIKIŞ YAPTIRABİLİRDİ — bir HİZMET REDDİ (DoS) SALDIRISI TÜRÜ.'
+          },
+          {
+            satir: 'throw new InvalidRefreshTokenException();',
+            aciklama: 'Bölüm 18\'de RefreshCommandHandler\'IN REPLAY tespitinde FIRLATTIĞI AYNI exception — burada da AYNI 401 HTTP DURUM KODUNA (ExceptionHandlingMiddleware, Bölüm 22\'de detaylı GÖRECEĞİZ) ÇEVRİLİR.',
+            neden: '"Token BULUNAMADI" İLE "token BAŞKASINA AİT" senaryolarının AYNI exception\'I PAYLAŞMASI, BİR saldırgana "acaba BU token GEÇERLİ ama BAŞKASINA MI ait, YOKSA HİÇ GEÇERSİZ Mİ" AYRIMINI YAPMA İMKANI VERMEZ — Bölüm 21\'deki InvalidCredentialsException İLE AYNI "GENELLEŞTİRİLMİŞ hata" İLKESİ.',
+            olmasaydi: 'AYRI exception türleri (ör. `RefreshTokenNotFoundException` VE `RefreshTokenOwnershipException`) KULLANILSAYDI, İSTEMCİ tarafındaki hata MESAJLARI farklılaşır VE bir saldırgan bu farkı KULLANARAK hangi refresh token HASH\'LERİNİN VERİTABANINDA VAR OLDUĞUNU (SAHİBİ kim OLURSA OLSUN) ÇIKARSAYABİLİRDİ.'
+          },
+          {
+            satir: 'token.RevokedAt = DateTime.UtcNow;',
+            aciklama: 'Bölüm 18\'deki RefreshToken entity\'sinde GÖRDÜĞÜMÜZ `RevokedAt` alanı — "SÜRESİ DOLMADAN, BİLEREK NE ZAMAN İPTAL EDİLDİ" bilgisini KAYDEDER.',
+            neden: 'Bu, `ExpiresAt` (DOĞAL süre DOLUMU) İLE `RevokedAt`in (ERKEN, BİLİNÇLİ iptal) AYRIMININ (Bölüm 18) TAM OLARAK KULLANILDIĞI YERDİR — Logout, token HENÜZ SÜRESİ DOLMADAN ONU GEÇERSİZ kılan bir "BİLİNÇLİ İPTAL" senaryosudur.',
+            olmasaydi: 'Bu satır OLMASAYDI, token VERİTABANINDA "İPTAL EDİLMEMİŞ" GİBİ GÖRÜNMEYE devam EDERDİ — RefreshCommand (Bölüm 18) bu token\'I YİNE DE GEÇERLİ SAYARDI, "çıkış YAPTIM" SANAN kullanıcının OTURUMU Aslında HİÇ SONA ERMEMİŞ olurdu.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.UpdateAsync(token, request.UserId, ct);',
+            aciklama: 'A-02/07\'deki UpdateAsync DESENİNİN AYNISI — DEĞİŞİKLİK (RevokedAt) KALICI hale GELİR.',
+            neden: '`request.UserId` (İSTEMCİDEN DEĞİL, JWT\'DEN gelen GÜVENİLİR DEĞER) "bu GÜNCELLEMEYİ KİM yaptı" bilgisi olarak GEÇİRİLİR — Bölüm 21\'deki VerifyLoginOtpCommand\'daki `user.Id` KULLANIMIYLA AYNI MANTIK.',
+            olmasaydi: 'Bu satır OLMASAYDI, `RevokedAt = DateTime.UtcNow` DEĞİŞİKLİĞİ YALNIZCA BELLEKTE KALIRDI — VERİTABANINA HİÇ YAZILMAZDI, token TEKNİK olarak HÂLÂ AKTİF SAYILIRDI.'
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: 'MediatR\'ın "BOŞ DEĞER" SABİTİ — `Unit` tipinin TEK BİR ÖRNEĞİ, "İŞLEM BAŞARIYLA TAMAMLANDI, DÖNECEK VERİ YOK" ANLAMINA GELİR.',
+            neden: 'C#\'ta `void` bir DÖNÜŞ DEĞERİ değildir (bir DEĞİŞKENE ATANAMAZ, GENERIC BİR PARAMETRE OLAMAZ) — `Unit.Value`, MediatR\'IN bu SINIRLAMAYI AŞMAK İÇİN sağladığı "SOMUT AMA ANLAMSIZ" bir DEĞERDİR.',
+            olmasaydi: 'Bu satır OLMASAYDI (VEYA `return;` YAZILSAYDI), metot `Task<Unit>` DÖNÜŞ TİPİNİ KARŞILAMAZDI — kod DERLENEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Logout, access token\'ı "iptal EDEMEZ" (JWT KENDİ KENDİNİ doğrular) — GERÇEKTE iptal ettiği şey, veritabanındaki REFRESH token',
+          'UserId, GÖVDEDEN DEĞİL JWT\'den (Controller `with` İLE) gelir — sahiplik kontrolü BU GÜVENİLİR DEĞERE DAYANIR',
+          'token.UserId != request.UserId kontrolü, "BAŞKASININ token\'ını İPTAL EDEMEZSİN" kuralının SOMUT UYGULAMASI',
+          'InvalidRefreshTokenException, "token YOK" ile "token BAŞKASINA AİT" senaryolarını TEK bir GENEL hataya BİRLEŞTİRİR (bilgi SIZINTISI önleme)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

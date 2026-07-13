@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exception'lar + DTO'lar + Repository</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'exceptions-dtos-repository',
+    bolumBaslik: 'A-03.1 — QR ile Giriş',
+    oncekiBolum: '03_migration.html',
+    sonrakiBolum: '05_generate-scan.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'Exception\'lar + DTO\'lar + Repository',
+        altBaslik: 'İki YENİ HTTP durum kodu (410, 403) — ve DÖRT farklı yanıt şekli, HER adımın kendi ihtiyacına göre.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrSessionGoneException + QrSessionForbiddenException',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/QrSessionGoneException.cs',
+        nedenBuKlasor: 'Common/Exceptions/ altında, A-03/09\'daki InvalidCredentialsException/InvalidOtpException İLE AYNI klasörde — Auth\'A ÖZGÜ DEĞİL, TÜM `AppException` alt tiplerinin PAYLAŞTIĞI bir KONUM.',
+        kod: `public class QrSessionGoneException : AppException
+{
+    public QrSessionGoneException()
+        : base("QR_SESSION_GONE", "QR login session expired, consumed, or not in expected state.") { }
+}
+
+public class QrSessionForbiddenException : AppException
+{
+    public QrSessionForbiddenException()
+        : base("QR_SESSION_FORBIDDEN", "User does not own this QR login session.") { }
+}`,
+        satirlar: [
+          {
+            satir: 'public class QrSessionGoneException : AppException',
+            aciklama: 'A-03/09\'daki `AppException`\'DAN (A-02/02) türer — TÜM Auth exception\'larıyla AYNI "Code + dile GÖRE ÇÖZÜLEN mesaj" DESENİNE UYAR.',
+            neden: 'BU exception, ÜÇ FARKLI senaryoyu (SÜRESİ DOLMUŞ, ZATEN TÜKETİLMİŞ, BEKLENEN AŞAMADA DEĞİL) TEK bir TÜRDE BİRLEŞTİRİR — İSTEMCİYE "bu QR ARTIK GEÇERSİZ, YENİ bir TANE ÜRET" DIŞINDA bir AYRINTI SIZDIRMAZ (Bölüm 20\'deki E-POSTA NUMARALANDIRMA ÖNLEMİYLE AYNI FELSEFE).',
+            olmasaydi: 'ÜÇ AYRI exception (ör. `QrSessionExpiredException`, `QrSessionConsumedException`, `QrSessionWrongStateException`) TANIMLANSAYDI, ExceptionHandlingMiddleware\'E (Bölüm 8) ÜÇ AYRI CASE EKLEMEK GEREKİRDİ — HEPSİ AYNI 410 DURUM KODUNA ÇEVRİLECEĞİ İÇİN, BU AYRIM GEREKSİZ KARMAŞIKLIK OLURDU.'
+          },
+          {
+            satir: 'public QrSessionGoneException()',
+            aciklama: 'Parametresiz constructor — A-03/09\'daki `InvalidCredentialsException()` GİBİ, bu exception HİÇBİR EK bilgi (ör. "hangi oturum") TAŞIMAZ, yalnızca "BU tür bir hata OLUŞTU" der.',
+            neden: 'İçeriye alınan bilgi ne kadar AZ olursa, İSTEMCİYE sızabilecek bilgi de o kadar AZ olur — Bölüm 8\'deki "amaç KARIŞIKLIĞI önleme" felsefesiyle TUTARLI bir minimal TASARIM.',
+            olmasaydi: 'Bu constructor OLMASAYDI, `throw new QrSessionGoneException()` çağrısı DERLENEMEZDİ — bir Handler\'ın bu exception\'ı FIRLATABİLMESİ İÇİN EN AZ bir constructor GEREKİR.'
+          },
+          {
+            satir: ': base("QR_SESSION_GONE", "QR login session expired, consumed, or not in expected state.") { }',
+            aciklama: 'A-03/09\'daki `InvalidRefreshTokenException` İLE AYNI ÇAĞRI ŞEKLİ — İLK PARAMETRE (Code) İSTEMCİYE GİDECEK, İKİNCİ PARAMETRE (developerMessage) YALNIZCA LOG/GELİŞTİRİCİ İÇİN, İNGİLİZCE.',
+            neden: '`"QR_SESSION_GONE"` KODU, Bölüm 8\'de GÖRECEĞİMİZ ErrorMessages SÖZLÜĞÜNDE (A-03.2\'de DETAYLI İNCELENECEK) tr/de KARŞILIKLARIYLA EŞLEŞECEK — TÜM Auth exception\'larıyla AYNI LOKALİZASYON BORU HATTINDAN GEÇER.',
+            olmasaydi: 'developerMessage İNGİLİZCE DEĞİL de TÜRKÇE YAZILSAYDI, CLAUDE.md\'nin "log/exception .Message\'ları İNGİLİZCE" KURALI İHLAL EDİLİRDİ — bir SONRAKİ geliştirici, LOG DOSYALARINDA KARIŞIK dilli (BAZI İNGİLİZCE, BAZI TÜRKÇE) MESAJLARLA KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'public class QrSessionForbiddenException : AppException',
+            aciklama: 'QrSessionGoneException İLE AYNI DESEN, FARKLI bir SENARYO İÇİN — "OTURUM GEÇERSİZ" (410) İLE "OTURUM GEÇERLİ AMA BU KULLANICIYA AİT DEĞİL" (403) AYRI TÜRLERDİR.',
+            neden: 'BU İKİ HTTP DURUM KODU (410, 403) SEMANTİK OLARAK FARKLIDIR — 410, "BU KAYNAK ARTIK YOK"; 403, "BU KAYNAK VAR AMA SENİN DEĞİL" DER. Bölüm 23\'teki (A-03) LogoutCommand\'daki `InvalidRefreshTokenException` (BAŞKASININ token\'ı İÇİN de AYNI GENEL hata) İLE FARKLI bir TERCİH: BURADA sahiplik İHLALİ, KENDİ AYRI HTTP KODUYLA (403) BELİRGİNLEŞTİRİLİR.',
+            olmasaydi: 'QrSessionGoneException BU senaryoda da KULLANILSAYDI, "OTURUM SÜRESİ DOLMUŞ" İLE "OTURUM BAŞKASINA AİT" AYNI 410 KODUYLA DÖNERDİ — mobil UYGULAMA, "NEDEN REDDEDİLDİM" SORUSUNA (YENİ bir QR MI ÜRETMELİYİM, YOKSA DOĞRU CİHAZ MI DEĞİLİM) FARKLI TEPKİLER VEREMEZDİ.'
+          },
+          {
+            satir: 'public QrSessionForbiddenException()',
+            aciklama: 'Parametresiz constructor — QrSessionGoneException İLE AYNI minimal TASARIM: hangi kullanıcının GERÇEK sahip OLDUĞU gibi bir bilgi TAŞIMAZ.',
+            neden: 'Sahiplik ihlali durumunda BİLE, GERÇEK sahibin kimliği İSTEMCİYE (yanlış kullanıcıya) SIZDIRILMAMALIDIR — bu, Bölüm 23\'teki (A-03) "başkasının token\'ını iptal edemezsin" ilkesindeki AYNI bilgi gizleme YAKLAŞIMI.',
+            olmasaydi: 'Bu constructor OLMASAYDI, `throw new QrSessionForbiddenException()` çağrısı DERLENEMEZDİ.'
+          },
+          {
+            satir: ': base("QR_SESSION_FORBIDDEN", "User does not own this QR login session.") { }',
+            aciklama: 'QrSessionGoneException İLE AYNI ÇAĞRI ŞEKLİ — BENZERSİZ bir KOD (`"QR_SESSION_FORBIDDEN"`) VE İNGİLİZCE bir LOG MESAJI.',
+            neden: 'Bu KOD, Bölüm 8\'deki ErrorMessages SÖZLÜĞÜNDE "BU QR oturumunu YALNIZCA onu TARAYAN CİHAZ ONAYLAYABİLİR/REDDEDEBİLİR" GİBİ bir MESAJA ÇEVRİLECEK — SAHİPLİK KONTROLÜNÜN NEDEN BAŞARISIZ OLDUĞUNU AÇIKLAYAN, AMA HANGİ kullanıcının GERÇEK SAHİP OLDUĞUNU SIZDIRMAYAN bir MESAJ.',
+            olmasaydi: 'Bu exception OLMASAYDI, Bölüm 6\'daki QrLoginSessionOwnershipHelper (BİR SONRAKİ bölümlerde GÖRECEĞİZ) "yanlış kullanıcı" DURUMUNU AYIRT EDEMEZDİ — YA GENEL bir hata (404/410) DÖNERDİ YA DA (DAHA KÖTÜSÜ) HATA VERMEDEN İŞLEME DEVAM EDERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginDtos.cs — Dört Adım, Dört Farklı Yanıt Şekli',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/QrLoginDtos.cs',
+        nedenBuKlasor: 'DTOs/Auth/ altında, RegisterDtos.cs (A-03/14) İLE AYNI klasörde — QR girişi, Auth DOMAİNİNİN bir PARÇASI OLDUĞU İÇİN AYRI bir "DTOs/QrLogin/" klasörü AÇILMAZ.',
+        kod: `public record QrGenerateResponse(string QrToken, string PairingCode, int ExpiresIn);
+
+public record QrScanResponse(string? RequesterDeviceInfo, string? RequesterIp, string PairingCode);
+
+public record QrStatusResponse(
+    string Status,
+    string? AccessToken,
+    string? RefreshToken,
+    int? ExpiresIn,
+    AuthUserDto? User
+);`,
+        satirlar: [
+          {
+            satir: 'public record QrGenerateResponse(string QrToken, string PairingCode, int ExpiresIn);',
+            aciklama: 'GENERATE ADIMININ yanıtı — HAM (HASH\'LENMEMİŞ) token, WEB TARAFINDAN QR koduna GÖMÜLECEK; PairingCode, YAN YANA GÖSTERİLECEK; ExpiresIn, GERİ SAYIM SAYACI İÇİN saniye CİNSİNDEN SÜRE.',
+            neden: 'BU, oturumun ÖMRÜ BOYUNCA HAM token\'IN GÖRÜNDÜĞÜ TEK ANDIR (A-03/17\'deki `AuthTokenResponse`\'un REFRESH token\'ı YALNIZCA BİR KEZ DÖNMESİYLE AYNI İLKE) — SONRAKİ TÜM İSTEKLER (scan/confirm/status) BU HAM DEĞERİ TEKRAR GÖRMEZ, YALNIZCA HASH\'İ VERİTABANINDA KARŞILAŞTIRILIR.',
+            olmasaydi: 'QrToken bu yanıtta DÖNMESEYDİ, web TARAFI QR koduna GÖMECEĞİ bir DEĞERE HİÇ SAHİP OLMAZDI — GENERATE İSTEĞİNİN TÜM AMACI (bir QR GÖSTEREBİLMEK) BOŞA ÇIKARDI.'
+          },
+          {
+            satir: 'public record QrScanResponse(string? RequesterDeviceInfo, string? RequesterIp, string PairingCode);',
+            aciklama: 'SCAN adımının yanıtı — Bölüm 2\'deki QrLoginSession.RequesterDeviceInfo/RequesterIp alanlarının, mobil EKRANA (GÖRSEL KARŞILAŞTIRMA İÇİN) DÖNDÜRÜLMÜŞ HALİ.',
+            neden: 'Bu DTO, `AuthUserDto`/`AuthTokenResponse` (A-03/14) GİBİ BİR "başarı" YANITI DEĞİL — TARAMA HENÜZ bir GİRİŞ DEĞİLDİR, YALNIZCA "İŞTE KARŞILAŞTIRACAĞIN BİLGİLER" DER; kullanıcı BUNLARA BAKARAK Confirm/Deny KARARI VERİR.',
+            olmasaydi: 'Scan İSTEĞİ hiçbir VERİ DÖNMESEYDİ (ör. yalnızca 204 No Content), mobil EKRAN "kimin İSTEĞİ ONAYLIYORUM" SORUSUNU CEVAPLAYACAK bir BİLGİYE SAHİP OLMAZDI — Bölüm 1\'deki "GÖRSEL KARŞILAŞTIRMA" GÜVENLİK ÖNLEMİNİN TÜM AMACI ORTADAN KALKARDI.'
+          },
+          {
+            satir: 'public record QrStatusResponse(',
+            aciklama: 'STATUS (polling) ADIMININ yanıtı — TÜM alanlar (AccessToken\'dan İTİBAREN) NULLABLE, ÇÜNKÜ Confirmed DIŞINDAKİ durumlarda YALNIZCA `Status` DOLUDUR.',
+            neden: 'Bu DTO, A-03/14\'teki `AuthTokenResponse`\'u (`AccessToken`, `RefreshToken`, `ExpiresIn`, `User`) SARAN, AMA "HENÜZ TOKEN YOK" DURUMUNU da TEMSİL EDEBİLEN bir SÜPERKÜMEDİR — TEK bir DTO, HEM "beklemede" HEM "başarıyla TAMAMLANDI" DURUMLARINI KARŞILAR.',
+            olmasaydi: 'Bekleme DURUMU (Pending/Scanned) İÇİN AYRI bir DTO, BAŞARI DURUMU (Confirmed) İÇİN AYRI bir DTO KULLANILSAYDI, web İSTEMCİSİNİN HER polling YANITINDA "HANGİ TİPİ PARSE ETMELİYİM" SORUSUNU CEVAPLAMASI GEREKİRDİ — TEK bir SABİT ŞEKİL, İSTEMCİ TARAFINDAKİ KODU BASİTLEŞTİRİR.'
+          },
+          {
+            satir: 'string Status,',
+            aciklama: 'TEK non-nullable alan — Bölüm 2\'deki QrLoginStatus enum\'ının STRING karşılığı (`ToString()` İLE), web istemcisi HER ZAMAN bu alanı OKUYABİLİR.',
+            neden: 'İstemci, POLLING döngüsünde ÖNCE bu alana BAKAR — "Pending"/"Scanned" İSE beklemeye DEVAM eder, "Confirmed" İSE token alanlarını OKUR, "Denied"/"Expired" İSE hata GÖSTERİR.',
+            olmasaydi: 'Bu alan olmasaydı, istemci HANGİ durumda OLDUĞUNU HİÇ BİLEMEZDİ — polling döngüsü NE ZAMAN duracağını ANLAYAMAZDI.'
+          },
+          {
+            satir: 'string? AccessToken,',
+            aciklama: 'YALNIZCA Status "Confirmed" İSE DOLU — diğer TÜM durumlarda `null`.',
+            neden: 'A-03/14\'teki AuthTokenResponse.AccessToken İLE AYNI KAVRAM, ama NULLABLE — çünkü bu DTO "henüz token YOK" durumunu da TEMSİL ETMEK ZORUNDA.',
+            olmasaydi: 'Bu alan olmasaydı, Confirmed durumunda üretilen access token İSTEMCİYE HİÇ ULAŞMAZDI — QR ile giriş TAMAMLANAMAZDI.'
+          },
+          {
+            satir: 'string? RefreshToken,',
+            aciklama: 'AccessToken İLE AYNI desen — YALNIZCA Confirmed durumunda DOLU.',
+            neden: 'A-03/14\'teki AuthTokenResponse.RefreshToken İLE AYNI KAVRAM.',
+            olmasaydi: 'Bu alan olmasaydı, istemci kalıcı bir OTURUM açamazdı — YALNIZCA 15 dakikalık access token İLE SINIRLI kalırdı.'
+          },
+          {
+            satir: 'int? ExpiresIn,',
+            aciklama: 'AccessToken\'ın kaç SANİYE sonra süresinin DOLACAĞı — A-03/21\'deki `ExpiresInSeconds()` İLE AYNI KAVRAM.',
+            neden: 'İstemci, bu değeri KULLANARAK access token\'ı NE ZAMAN yenilemesi GEREKTİĞİNİ hesaplayabilir.',
+            olmasaydi: 'Bu alan olmasaydı, istemci access token\'ın NE ZAMAN DOLACAĞINI bilemezdi.'
+          },
+          {
+            satir: ');',
+            aciklama: 'Record başlığının çok-satırlı parametre listesinin KAPANIŞI.',
+            neden: 'Beş parametreli (Status, AccessToken, RefreshToken, ExpiresIn, User) bu record\'ın çok-satırlı yazılması, kapanışın KENDİ satırında olmasını GEREKTİRİR.',
+            olmasaydi: 'Bu satır olmasaydı, kod SÖZ DİZİMİ hatasıyla DERLENEMEZDİ.'
+          },
+          {
+            satir: 'AuthUserDto? User',
+            aciklama: 'A-03/14\'teki AYNI `AuthUserDto` (Id, CurrentLevel, ThemePreference) — QR GİRİŞİ de, DİĞER TÜM giriş YÖNTEMLERİYLE (OTP, Google, Apple) AYNI kullanıcı ÖZETİNİ DÖNER.',
+            neden: 'Bu, Bölüm 1\'deki "QR akışı KENDİ token\'ını ÜRETMEZ, A-03\'teki ORTAK ILoginCompletionService\'İ ÇAĞIRIR" İLKESİNİN DTO SEVİYESİNDEKİ YANSIMASIDIR — AYNI SERVİS, AYNI DTO\'YU ÜRETİR.',
+            olmasaydi: 'QR girişi KENDİ ÖZEL "QrAuthUserDto"SUNU TANIMLASAYDI, A-03/14\'teki AuthProfile\'A (AutoMapper) YENİ bir `CreateMap<User, QrAuthUserDto>()` KAYDI EKLEMEK GEREKİRDİ — AYNI VERİYİ TAŞIYAN İKİ FARKLI DTO, GEREKSİZ bir KOD TEKRARI OLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionRepository.cs — Tek Bir Ek Sorgu',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/QrLoginSessionRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ altında, UserRepository.cs (A-03/13) İLE AYNI KLASÖRDE — A-02/07\'deki Repository<T>\'DEN türeyen, GERÇEK EF Core İMPLEMENTASYONU.',
+        kod: `public class QrLoginSessionRepository : Repository<QrLoginSession>, IQrLoginSessionRepository
+{
+    public QrLoginSessionRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    public Task<QrLoginSession?> GetByTokenHashAsync(
+        string tokenHash,
+        CancellationToken ct = default
+    ) => _set.FirstOrDefaultAsync(q => q.QrTokenHash == tokenHash, ct);
+}`,
+        satirlar: [
+          {
+            satir: 'public class QrLoginSessionRepository : Repository<QrLoginSession>, IQrLoginSessionRepository',
+            aciklama: 'A-03/13\'teki `UserRepository : Repository<User>, IUserRepository` İLE BİREBİR AYNI DESEN — GENERIC Repository<T>\'YI MİRAS ALIR, ARAYÜZÜ İMPLEMENTE EDER.',
+            neden: 'Bu, CLAUDE.md §3 ADIM 8\'İN (A-03/13\'te DETAYLI GÖRDÜĞÜMÜZ) "feature repository, TEMEL İŞLEMLERİ YENİDEN YAZMAZ" KURALININ, BAŞKA bir ENTİTE (User DEĞİL, QrLoginSession) İÇİN TEKRARIDIR — GetByIdAsync/AddAsync/UpdateAsync HİÇBİRİ BURADA YENİDEN YAZILMAZ.',
+            olmasaydi: 'Repository<QrLoginSession>\'I MİRAS ALMASAYDI, GetByIdAsync/AddAsync/UpdateAsync GİBİ TEMEL İŞLEMLERİ SIFIRDAN YAZMAK GEREKİRDİ — A-02/07\'deki AYNI KOD TEKRARI SORUNU, BU ENTİTE İÇİN de OLUŞURDU.'
+          },
+          {
+            satir: 'public QrLoginSessionRepository(WordLearnerDbContext db)',
+            aciklama: 'A-03/13\'teki `UserRepository(WordLearnerDbContext db)` İLE AYNI CONSTRUCTOR DESENİ.',
+            neden: 'DI konteynerinin (Bölüm 8\'de PROGRAM.CS KAYDINI GÖRECEĞİZ) BU sınıfı OLUŞTURABİLMESİ İÇİN, WordLearnerDbContext\'İ ALAN bir CONSTRUCTOR GEREKİR — A-02/07\'deki Repository<T>\'nin BEKLEDİĞİ İMZAYLA TUTARLI.',
+            olmasaydi: 'Bu constructor OLMASAYDI, DI konteyneri BU sınıfı NASIL OLUŞTURACAĞINI BİLEMEZ, UYGULAMA AÇILIŞINDA HATA VERİRDİ (A-02/05\'teki AYNI GEREKÇE).'
+          },
+          {
+            satir: ': base(db) { }',
+            aciklama: 'A-03/13\'teki AYNI DESEN — `db` parametresi, TABAN sınıfın (Repository<QrLoginSession>) CONSTRUCTOR\'INA AYNEN İLETİLİR.',
+            neden: 'Repository<T>\'nin CONSTRUCTOR\'I ZATEN `_db`/`_set` ALANLARINI KURUYORDU (A-02/07) — QrLoginSessionRepository BU İŞİ TEKRAR YAPMAZ.',
+            olmasaydi: '`: base(db)` ÇAĞRISI OLMASAYDI, TABAN sınıfın `_db`/`_set` ALANLARI HİÇ SET EDİLMEZ, MİRAS ALINAN GetByIdAsync/AddAsync GİBİ METOTLAR NullReferenceException FIRLATIRDI.'
+          },
+          {
+            satir: 'public Task<QrLoginSession?> GetByTokenHashAsync(',
+            aciklama: 'A-03/13\'teki `GetByEmailAsync` İLE AYNI AİLEDEN, TEK bir EK SORGU — QR akışının TÜM (Scan/Confirm/Deny/Status) Handler\'larının PAYLAŞTIĞI, TOKEN HASH\'İNE GÖRE ARAMA.',
+            neden: 'A-03/13\'teki IUserRepository\'nin ÜÇ EK METODUNUN (GetByEmailAsync, GetByIdIncludingDeletedAsync, OriginalEmailHashExistsAsync) AKSİNE, IQrLoginSessionRepository\'nin YALNIZCA TEK bir EK METODU VAR — BU ENTİTENİN SORGU İHTİYACININ NE KADAR DAR OLDUĞUNU GÖSTERİR (YAGNI).',
+            olmasaydi: 'Bu metot OLMASAYDI, Scan/Confirm/Deny/Status Handler\'larının HER BİRİ (Bölüm 5-7), Repository<T>\'nin GENEL `GetByIdAsync(int id)` metoduyla ÇALIŞMAK ZORUNDA KALIRDI — AMA elimizde bir HASH VAR, bir Id DEĞİL; bu metot OLMADAN bu ARAMA HİÇ YAPILAMAZDI.'
+          },
+          {
+            satir: 'string tokenHash,',
+            aciklama: 'Metodun İLK parametresi — aranacak HASH DEĞERİ (HAM token DEĞİL).',
+            neden: 'Çağıran Handler\'lar (Bölüm 5-7), `IPasswordService.HashToken(...)` İLE ÖNCE HAM token\'ı hash\'ler, SONRA bu metodu ÇAĞIRIR — repository KATMANI, HAM bir token GÖRMEZ.',
+            olmasaydi: 'Bu parametre olmasaydı, metot NEYİ ARAYACAĞINI BİLEMEZDİ — kod DERLENEMEZDİ.'
+          },
+          {
+            satir: 'CancellationToken ct = default',
+            aciklama: 'CLAUDE.md\'nin "her I/O metodunda CancellationToken" kuralına uygun, VARSAYILAN değerli SON parametre.',
+            neden: 'Varsayılan değer, bu metodun BAZI çağrı noktalarında CancellationToken GEÇİRİLMEDEN de ÇAĞRILABİLMESİNİ sağlar — A-02/07\'deki Repository<T> metotlarıyla AYNI konvansiyon.',
+            olmasaydi: 'Varsayılan değer OLMASAYDI, bu metodu çağıran HER yerin MUTLAKA bir CancellationToken GEÇİRMESİ GEREKİRDİ.'
+          },
+          {
+            satir: ') => _set.FirstOrDefaultAsync(q => q.QrTokenHash == tokenHash, ct);',
+            aciklama: 'A-03/13\'teki `GetByEmailAsync`\'İN AKSİNE, `IgnoreQueryFilters()` ÇAĞRILMAZ — soft-delete FİLTRESİ BURADA BİLEREK UYGULANIR (varsayılan DAVRANIŞ).',
+            neden: 'A-03/13\'te "soft-delete\'İ YOK SAYMANIN" NEDEN GEREKÇELİ bir İSTİSNA OLDUĞUNU GÖRMÜŞTÜK — QR oturumları İÇİN böyle bir GEREKÇE YOKTUR (soft-delete\'Lİ bir oturumu "KURTARMAK" GİBİ bir SENARYO YOKTUR), bu YÜZDEN VARSAYILAN FİLTRELİ DAVRANIŞ KORUNUR.',
+            olmasaydi: '`IgnoreQueryFilters()` GEREKSİZ YERE EKLENSEYDİ, bir Admin TARAFINDAN soft-delete İLE "GİZLENMİŞ" (Bölüm 2\'deki AUDIT SENARYOSU) bir QR oturumu YİNE DE scan/confirm/status İSTEKLERİNDE BULUNABİLİR OLURDU — Admin\'İN "bu oturumu GİZLE" KARARI ETKİSİZ KALIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrSessionGoneException (410) ve QrSessionForbiddenException (403), YENİ iki HTTP durum kodu — "oturum yok" ile "oturum başkasına AİT" AYRI kavramlardır',
+          'QrGenerateResponse/QrScanResponse/QrStatusResponse — HER adımın kendi yanıt şekli, QrStatusResponse ise "beklemede/başarılı" ikisini de kapsayan bir SÜPERKÜME',
+          'QrStatusResponse.User, A-03/14\'teki AYNI AuthUserDto\'yu kullanır — QR girişi, A-03\'teki ORTAK login altyapısıyla TUTARLI',
+          'QrLoginSessionRepository, YALNIZCA TEK bir ek sorgu (GetByTokenHashAsync) EKLER — soft-delete filtresi burada BİLEREK YOK SAYILMAZ (User\'daki GİBİ değil)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
