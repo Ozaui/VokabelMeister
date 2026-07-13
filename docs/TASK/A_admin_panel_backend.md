@@ -1,9 +1,8 @@
 # FAZ A — Admin Panel Backend
 
-> **Yöntem/standart:** Bu dosyadaki her task, `../TASK.md`'deki **⭐ Çalışma Yöntemi** ve
-> **Her Parça İçin Döngü** kurallarına göre yazılır (dikey dilim, parça yazılır yazılmaz
-> API Yol Haritası'na işlenir). O bölümler değişmez standarttır — burada tekrar edilmez,
-> her zaman `../TASK.md`'ye bakılır.
+> **Yöntem/standart:** Bu dosyadaki her task, `../../CLAUDE.md` §3/§6 kurallarına göre yazılır
+> (dikey dilim, parça yazılır yazılmaz `BACKEND_AKADEMI/`ye işlenir). O bölümler değişmez
+> standarttır — burada tekrar edilmez, her zaman `../../CLAUDE.md`'ye bakılır.
 
 ### A-01 — Proje İskeleti ✅
 **Referans:** REFERENCE/DEVELOPMENT_SETUP.md §3, REFERENCE/ENV.md
@@ -14,42 +13,40 @@
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
 - [x] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
-- [x] ➜ **API Yol Haritası'na işle** 
+- [x] ➜ **BACKEND_AKADEMI'ye işle** 
 - [x] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazıldı)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB ile CRUD + soft delete filtresi + exception mesaj formatı — sonraki tüm API'lar bunu kullanır)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] Ortak hata tipi: `ApiErrorResponse` (`ExceptionHandlingMiddleware`'in gerçek tüketicisi olduğu
       için burada yazıldı; `ApiResponse<T>`/`PagedResult<T>` hiçbir controller yokken spekülatif
       olarak yazılmıştı → YAGNI kuralına göre geri alındı, ilk gerçek controller'ın ihtiyaç duyduğu
       anda o task içinde yazılacak — bkz. `../TASK.md` "Spekülatif ortak tip yazılmaz" kuralı)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] Middleware: global exception, security headers, request/response log
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR, AutoMapper kayıtları
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-03 — Auth API (User) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, REFERENCE/SECURITY.md §2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
 **Frontend karşılığı:** B-02 (Admin — sade giriş+OTP), D-03 (Web — tam akış+Google), E-05 (Mobil — tam akış+Google+Apple)
-> 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e B-02/D-03/E-05'in dosyaları eklenir;
-> o üç feature sayfasındaki `api` adımına da bu sayfaya `backendRef` eklenir (iki yönlü).
 *Dikey dilim: `User` + `RefreshToken` entity → servisler → controller → yol haritası.*
 - [x] **Entity:** `User`, `RefreshToken` + `OtpPurpose` enum + EF config + migration
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `ITokenService` (JWT access 15dk + refresh; algorithm-confusion önlemi)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `IOtpService`/`OtpService` (OTP üretimi/doğrulanması/temizlenmesi — Register/Login/
       ResetPassword/AccountDeletion akışlarının paylaştığı ortak servis) ve
       `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple girişlerinin ortak son
       adımı: grace period kurtarma, giriş istatistikleri, token üretimi)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] 13 Auth Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`): `RegisterCommand`,
       `VerifyEmailCommand`, `ResendVerificationCommand`, `LoginCommand`, `VerifyLoginOtpCommand`,
       `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `RefreshCommand`, `LogoutCommand`,
@@ -58,13 +55,13 @@
       (dikey dilim). `RefreshCommand`/`LogoutCommand` eskiden tek bir `RefreshRequest` DTO'sunu
       paylaşırdı; MediatR'da bir `IRequest<T>` tek dönüş tipine bağlı olduğundan (Refresh
       `AuthTokenResponse`, Logout dönüşsüz) ayrı Command'lara bölündüler.
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `IEmailService` (sözleşme) + `DevEmailService`, `IAppleTokenValidator`, tüm DTO/exception
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `AuthController` (13 endpoint, `IMediator.Send(command)` ile) + FluentValidation (Command
       tiplerine retarget edilmiş validator'lar) + rate limiting (genel 100/dk, 10/dk anonim —
       "login 5/15dk"/"OTP 3 yanlış" BAŞARISIZ deneme sayaçları SecurityLog'a bağımlı, A-04 sonrası eklenecek)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] **Birim testleri:** 13 Command Handler'ın her biri için ayrı test dosyası
       (`WordLearner.Tests/Features/Auth/`, 38 test — register, e-posta doğrulama, login 2-adım,
       Google/Apple + account linking, refresh/replay tespiti, logout sahiplik, forgot/reset,
@@ -72,7 +69,7 @@
       grace period kurtarma dahil, `WordLearner.Tests/Services/`), `JwtTokenServiceTests` (6 test —
       claim'ler, Algorithm Confusion), `PasswordServiceTests` (5 test — hash/verify/salt).
       Toplam 72/72 yeşil.
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 > **Not:** Bu API'daki `SecurityLog` (LoginFailed/OtpFailed/RateLimitHit) entegrasyonu A-04'te
 > loglama altyapısı hazır olduktan **sonra** eklenir — A-03 bu adıma kadar log'suz tamamlanmış sayılır,
 > A-04 bitince ilgili Command Handler'lara (LoginCommandHandler, VerifyLoginOtpCommandHandler vb.)
@@ -85,14 +82,13 @@
 ### A-03.1 — QR Kod ile Giriş ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3, DATABASE_SCHEMA/Auth.md (`QrLoginSessions`)
 **Frontend karşılığı:** D-03 (Web — QR ekranı, `qrcode.react` ile görselleştirme), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
-> 🧩 Bu API'nin HTML sayfası yazılınca `frontendRefs`'e D-03/E-05'in dosyaları eklenir (iki yönlü).
 > **A-03 tamamlandıktan sonra** yapılır çünkü `User`/`ITokenService`/`ILoginCompletionService`
 > (özellikle token üretim mantığı) buna bağımlı — QR girişi **ayrı bir kimlik doğrulama sistemi
 > değil**, onaylandığında A-03'te yazılan `ITokenService`'i çağıran yeni bir "kimliği kanıtlama
 > yöntemi"dir (bkz. `SECURITY.md §1.3`).
 > Admin panelde (Faz B) **yok** — yalnızca Web (D) ve Mobil (E).
 - [x] **Entity:** `QrLoginSession` + `QrLoginStatus` enum + EF config + migration
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 > ⚠️ **Kural güncellemesi (bkz. `TASK.md` "Bir API'ın Yazım Sırası" notu):** Aşağıdaki
 > `IQrLoginService`/`QrLoginService` ifadesi eski desendir, **geçersiz**. A-03'ün retrofit'inden
 > sonraki her task gibi bu da MediatR Command+Handler (+ koşullu AutoMapper Profile) deseniyle
@@ -105,14 +101,14 @@
       (Confirmed→ILoginCompletionService ile token üret→Consumed'a geçir, tek seferlik döndür) +
       paylaşılan `QrLoginSessionExpiryExtensions` (lazy expire) + `IQrLoginSessionRepository`/
       `QrLoginSessionRepository` + `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] `QrLoginController`: `POST /auth/qr/generate` (Anonim), `GET /auth/qr/{token}/status` (Anonim,
       polling), `POST /auth/qr/{token}/scan` `/confirm` `/deny` ([Authorize]) + rate limiting (generate: IP başına 20/saat, partitioned)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] **Birim testleri:** 5 dosya, 18 test (`WordLearner.Tests/Features/QrLogin/`) — mutlu yol, süresi
       dolmuş token, yanlış kullanıcı confirm/deny denemesi 403, Consumed sonrası tekrar okuma 410,
       Expired'ın 410 DEĞİL 200 dönmesi, pairingCode/token üretimi. Toplam 90/90 yeşil (A-03 72 + A-03.1 18).
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 > **Not:** `SecurityLog` (QrLoginConfirmed/QrLoginDenied) entegrasyonu A-03'teki auth akışlarıyla aynı
 > sebeple A-04'ten sonra eklenir (bkz. A-03'ün notu).
 
@@ -127,7 +123,7 @@
 > fark edildi, kapsamı büyüteceği için o refactor'dan ayrı bir task olarak bırakıldı.
 - [x] Her `MessageResponse`'a bir kod ekle (ör. `"OTP_SENT"`, `"ACCOUNT_DELETED"`) — `ErrorMessages.cs`
       deseniyle aynı: sabit dosyada dil→kod→metin sözlüğü (en az tr+de, İngilizce YAGNI ile ertelenebilir)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] 13 Command Handler'ın `MessageResponse` üretim noktalarını kod+`RequestLanguageResolver`
       çözümüne geçir (`ValidationFilter`'ın zaten yaptığı dil çözme mantığıyla aynı desen)
 > **Not:** Kapsam, `MessageResponse` DÖNDÜREN 7 Command'a (`LoginCommand`, `ResendVerificationCommand`,
@@ -136,12 +132,12 @@
 > `VerifyLoginOtpCommand`, `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `RefreshCommand`,
 > `LogoutCommand`) `AuthTokenResponse`/`RegisterResponse` döndürüyor ya da (Logout) hiç gövde
 > döndürmüyor — dile göre değişen bir metin taşımadıkları için lokalize edilecek bir şeyleri yok.
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] **Birim testleri:** ilgili handler testlerine dil parametresi verildiğinde doğru dilde
       mesaj döndüğünü doğrulayan senaryolar eklenir — 7 handler test dosyasına birer
       `Xxx_GermanLanguage_ReturnsGermanMessage` testi eklendi (7 yeni test, `Code`+`Message`
       ikisi de doğrulanıyor). Toplam 97/97 yeşil (A-03 72 + A-03.1 18 + A-03.2 7).
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-03.3 — Tema Tercihi (ThemePreference) ✅
 **Referans:** `DATABASE_SCHEMA/Auth.md` (Users), `wiki/Database/Auth_Domain.md`
@@ -158,15 +154,15 @@
 - [x] **Entity + Config + Migration:** `Users.ThemePreference NVARCHAR(10) DEFAULT 'System'` +
       `CK_Users_ThemePreference` (`CurrentLevel` ile aynı iki-katmanlı savunma deseni) —
       `User.cs`, `UserConfiguration.cs`, `AddUserThemePreference` migration
-- [x] ➜ **API Yol Haritası'na işle** (`A-03.3_tema-tercihi.html`)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`A-03.3_tema-tercihi.html`)
 - [x] **DTO:** `RegisterResponse` ve `AuthUserDto`'ya `ThemePreference` alanı (AutoMapper otomatik
       map eder, `AuthProfile.cs` değişmedi)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 - [x] **Birim testleri:** `RegisterCommandHandlerTests`e 1 yeni test (`Register_NewEmail_
       ReturnsDefaultSystemThemePreference`) + `AuthUserDto`'nun 3. parametre alması nedeniyle 4
       mevcut test dosyasında (`LoginWithGoogle/AppleCommandHandlerTests`, `GetQrLoginStatusCommandHandlerTests`,
       `VerifyLoginOtpCommandHandlerTests`) çağrı noktaları senkronize edildi (davranış değişmedi)
-- [x] ➜ **API Yol Haritası'na işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 > **Not:** Gerçek toplama (kullanıcının temayı SEÇMESİ) `LevelSelectPage`/`LevelSelectScreen` ile
 > aynı onboarding anında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılacak — bugün
 > kodlanmadı (YAGNI), yalnızca not bırakıldı (bkz. `C_kullanici_backend.md` C-01).
@@ -174,102 +170,95 @@
 ### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
 **Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)
-> 🧩 `frontendRefs` ↔ B-08 `backendRef` (iki yönlü).
 > **Amaç:** Tüm loglar DB'de tutulur, **admin panelden görüntülenir** (A-07/B-08). Üç tablo:
 > kim ne yaptı (activity), uygulama logu (Serilog), güvenlik olayları.
 - [ ] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLog` (konsol + dosya + DB)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `IActivityLogger` + `ActivityLogger` (eski/yeni JSON ile audit), `ISecurityLogger` + `SecurityLogger`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Repository'ler (sayfalı, filtreli): `IActivityLogRepository`, `IApplicationLogRepository`, `ISecurityLogRepository`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Entegrasyon: auth akışlarına security log (LoginFailed, OtpFailed, RateLimitHit), `GET /health`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `ActivityLoggerTests`, `SecurityLoggerTests` (DB context mock/in-memory)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-05 — Sistem Kelimesi API (Words) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §5
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
-> 🧩 `frontendRefs` ↔ B-03 `backendRef` (iki yönlü).
 - [ ] **Entity:** `Language`, `WordConcept`, `Word`, `WordDetail`, `WordExample` + EF config + migration
       + `Language` seed (`de`, `tr`) — bkz. `DATABASE_SCHEMA/Icerik.md` (çoklu dile açık şema:
       kategori/seviye `WordConcept` üzerinde, gramer `WordDetail.GrammarData` JSON'da dile göre değişir)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — bir kelime tüm dilleriyle
       (`translations[]`) tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `WordServiceTests` (liste filtre, duplikat 409 + force, CRUD yetki)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-06 — Kategori API (Categories) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin — Kategori Yönetimi), D-06 (Web — Kategoriler Sayfası), E-08 (Mobil — Kategoriler Ekranı)
-> 🧩 `frontendRefs` ↔ B-04/D-06/E-08 `backendRef` (iki yönlü).
 - [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation` (dil başına ad), `WordCategory`
       ara tablo (`WordConceptId`↔`CategoryId`) + EF config + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `ICategoryService` + `CategoryService` (hiyerarşik liste, kategoriye ait kelimeler, CRUD Admin)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Silme koruması (alt kategori/aktif kelime varsa 409), `CategoriesController`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `CategoryServiceTests` (hiyerarşik liste, silme koruması 409)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §11
 **Frontend karşılığı:** B-05 (Kullanıcı Yönetimi), B-06 (Paylaşım/İçerik Moderasyonu), B-07 (İstatistik Paneli), B-08 (Log Görüntüleme Paneli)
-> 🧩 `frontendRefs` ↔ B-05/B-06/B-07/B-08 `backendRef` (iki yönlü — bu API'nin farklı endpoint'leri
-> farklı admin sayfalarına dağılır).
 - [ ] `IAdminService` + `AdminService`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Kullanıcı: liste/arama/detay, rol değiştir, hesap dondur/aktif (her işlem **ActivityLog**'a)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] İçerik moderasyonu (kart liste + silme), genel istatistik, toplu kelime import
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security` (filtre+sayfa)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `AdminController` (`[Authorize(Roles="Admin")]`)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `AdminServiceTests` (rol değiştir, dondur/aktif, import, log filtreleme)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-08 — Medya / Dosya Yükleme API ⬜
 **Referans:** REFERENCE/ENV.md §7
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi formundaki görsel yükleme)
-> 🧩 `frontendRefs` ↔ B-03 `backendRef` (iki yönlü).
 - [ ] `IFileStorageService` + `LocalFileStorageService`, `Word.ImageUrl` + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `MediaController` (`POST /media/images/upload`), `UseStaticFiles`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `FileStorageServiceTests` (boyut/uzantı doğrulama, benzersiz ad üretimi)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-09 — SMTP Ayarları API ⬜
 **Referans:** REFERENCE/SECURITY.md §3.2, REFERENCE/ENV.md §5
 **Frontend karşılığı:** B-09 (Admin — SMTP Ayarları Sayfası)
-> 🧩 `frontendRefs` ↔ B-09 `backendRef` (iki yönlü).
 > SMTP bilgileri DB'de AES-256 şifreli; admin panelden yönetilir, `appsettings.json`'da DEĞİL.
 - [ ] **Entity:** `SmtpSettings` (Host, Port, EnableSsl, Username, **PasswordEncrypted**, FromEmail, FromName, UpdatedBy) + migration
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `IEncryptionService` + `AesEncryptionService` (AES-256-CBC, rastgele IV, anahtar `AES_ENCRYPTION_KEY`)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `ISmtpSettingsRepository`, `SmtpSettingsController` (Admin): `GET` (şifre `***`), `PUT`, `POST .../test`
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `AesEncryptionServiceTests` (encrypt/decrypt round-trip, 32 byte anahtar kontrolü)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-10 — E-posta Servisi + Hesap Temizleme Görevi ⬜
 **Referans:** REFERENCE/SECURITY.md §7
 - [ ] `SmtpEmailService` (MailKit; SMTP'yi repo'dan alır, `Decrypt` ile çözer) + DI (dev→Dev, prod→Smtp)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] E-posta şablonları (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı, şifre değişti, hesap kurtarıldı)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `AccountCleanupBackgroundService : IHostedService` (PII anonimleştirme, günde 1, 03:00 UTC)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `AccountCleanupServiceTests` (30 gün grace sonrası anonimleştirme, blok hash'i)
-- [ ] ➜ **API Yol Haritası'na işle**
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**

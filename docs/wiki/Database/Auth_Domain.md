@@ -52,7 +52,7 @@ Expired'a çevrilmesi) `null` kalıyor. Detay → `IRepository.cs` NEDEN yorumu.
 Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`: register/verify-email/login
 2-adım OTP/google/apple/refresh/logout/forgot-reset-password/delete-account) → `AuthController`
 (13 endpoint, `IMediator.Send(command)` ile) — detay [[API_Sozlesmesi]] ve
-`docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `API_YOL_HARITASI/A-03_auth-api.html`.
+`docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `BACKEND_AKADEMI/A-03_auth-register/`.
 
 ## QrLoginSessions (A-03.1 ✅ tamamlandı)
 Steam benzeri "QR kod ile giriş": mobilde zaten giriş yapmış kullanıcı, web/masaüstünde gösterilen
@@ -71,7 +71,7 @@ ekranındakiyle gözle karşılaştırılır), `Status` (`Pending→Scanned→Co
 yalnızca `generate` adımında (web'in isteğinden) yazılır, `scan`'de değil — mobil ekranda "seni
 İSTEYEN taraf" gösterilip kullanıcı gözle doğrular (relay/phishing önlemi). 23 birim test (18
 orijinal + 2026-07-11 bugfix turunda 5 yeni). Detay →
-`DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `API_YOL_HARITASI/A-03.1_qr-login.html`.
+`DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `BACKEND_AKADEMI/A-03.1_qr-login/`.
 
 **Bugfix turu (2026-07-11, kod denetimi sonrası):** Dört gerçek sorun düzeltildi — (1)
 `GET /auth/qr/{token}/status` (web'in ~2sn'de bir sorguladığı polling endpoint'i) paylaşımlı

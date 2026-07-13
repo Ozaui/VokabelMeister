@@ -40,7 +40,7 @@ bu düğüm onların özetidir, güncel ilerleme için orijinal dosyalara bakıl
 1. Entity → 2. EF Konfigürasyon → 3. Migration → 4. Request DTO → 5. Validator →
 6. Exception → 7. Repository Arayüzü → 8. Repository → 9. Response DTO →
 10. Servis Arayüzü → 11. Servis → 12. Birim Test (Servis) → 13. Controller →
-14. DI kaydı → 15. API Yol Haritası'na işle
+14. DI kaydı → 15. BACKEND_AKADEMI'ye işle
 ```
 
 Test felsefesi: birim testler Faz F'ye bırakılmaz — servis katmanı bitince (adım 11) aynı task
@@ -51,9 +51,9 @@ içinde test yazılır (adım 12). Detay → [[Kodlama_Standartlari]] §7.
 kurulum komutları → [[Gelistirme_Kurulumu]].
 
 ## Rehber Sistemi
-Her API'ın yazım adımları `docs/API_YOL_HARITASI/` altındaki HTML sayfalarına işlenir — sistemin
-kendisi → [[API_Yol_Haritasi_Sistemi]]. A-02 sayfası 11 adım, A-03 sayfası 64 adım (entity → servisler
-→ validator → controller → birim testler), A-03.1 sayfası 26 adım (kendi entity/controller'ı olduğu
-için ayrı dosya), A-03.2 sayfası 17 adım (lokalizasyon altyapısı → 7 handler → controller → testler,
-kendi entity/controller'ı olmadığı için A-03'e değil ayrı bir küçük sayfaya işlendi) içerir — hepsi
-tamamlandı.
+Her API'ın yazım adımları kök `BACKEND_AKADEMI/` altındaki HTML slayt bölümlerine işlenir —
+sistemin kendisi → [[Backend_Akademi_Sistemi]]. A-02 9 bölüm, A-03 25 bölüm (entity → servisler
+→ validator → controller → birim testler), A-03.1 13 bölüm (kendi entity/controller'ı olduğu
+için ayrı klasör), A-03.2 8 bölüm (lokalizasyon altyapısı → 7 handler → controller → testler,
+kendi entity/controller'ı olmadığı için A-03'e değil ayrı bir küçük klasöre işlendi), A-03.3
+3 bölüm (tek alanlık retrofit) içerir — hepsi tamamlandı.

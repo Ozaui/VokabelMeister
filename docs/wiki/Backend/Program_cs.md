@@ -55,4 +55,4 @@ tüketip TÜM anonim trafiği kilitlemesini önlemek için, bkz. [[Auth_Domain]]
 - Serilog'un `Serilog.Sinks.MSSqlServer` (`ApplicationLog`) sink'i → **A-04** (tablo migration'ı henüz yok)
 - `UseStaticFiles()` (avatar/görsel) → **A-08**
 
-Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `docs/API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 11, ayrıca [[Teknik_Ozellikler]] §10.
+Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `BACKEND_AKADEMI/A-02_ortak-altyapi/05_program-cs-di.html`, ayrıca [[Teknik_Ozellikler]] §10.

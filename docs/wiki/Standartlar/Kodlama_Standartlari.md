@@ -5,7 +5,7 @@
 **Bağlantılar:** [[Gelistirme_Yol_Haritasi]] · [[WordLearner_Tests]] · [[Repository]] · [[Backend_Katmanli_Mimari]]
 
 ## Dil Kuralı
-Türkçe: tüm kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, API Yol Haritası.
+Türkçe: tüm kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, Backend Akademi.
 İngilizce (convention): method/class/property isimleri (C#), test metodu adları, DB kolon adları (SQL),
 JS değişkenleri, **log mesajları (`_logger.Log*`), exception `.Message`'ları, hata `Code` sabitleri**
 (A-03'te değişti — DB'ye/geliştiriciye giden her şey tek bir gerçek dile kilitlenir).
@@ -55,16 +55,18 @@ domain varken (yalnızca Auth) flat yapı sorun değildi, ama yeni domain'ler ek
   in-memory EF Core kullanılır.
 - Minimum kapsam her public servis metodu için: mutlu yol, bulunamadı ([[EntityNotFoundException]]),
   yetki/sahiplik ihlali, sınır/uç durum (duplikat 409 vb.).
-- Her test API Yol Haritası'nın ayrı "Test" alanına birebir kopyalanır + 3 satırlık
-  (Test Adı/Ne Test Edildi/Neden Önemli) açıklama eklenir.
+- Her API için en az bir TEMSİLİ test, `BACKEND_AKADEMI`'nin ilgili bölümüne `kod` slaytı
+  olarak birebir kopyalanır (Test Adı bağlamı + Ne Test Edildi + Neden Önemli açıklamasıyla);
+  tekrarlayan pattern'ler (ör. 13 handler testi) hepsi ayrı işlenmez, `sozluk` slaytında "aynı
+  pattern'i izler" notuyla listelenir (bkz. [[Backend_Akademi_Sistemi]], YAGNI).
 
 ## Genel En İyi Pratikler
 `async/await` + `CancellationToken` her I/O metodunda · null kontrolü/guard clauses · SOLID/DRY/KISS
 · parametreli sorgular (SQL injection yok, EF Core LINQ tercih).
 
-## API Yol Haritası — `aciklama` Standardı (zorunlu, 2026-07-07)
-`docs/API_YOL_HARITASI/*.html`'deki her adımın `aciklama` alanı bir junior'a öğretmek için var —
-sadece "ne yapıldığını" anlatmak yetmez, şunları da içermeli:
+## Backend Akademi — `aciklama`/`neden`/`olmasaydi` Standardı (zorunlu, 2026-07-07)
+`BACKEND_AKADEMI/`'deki her `kod`/`kavram` slaytının `aciklama`/`neden`/`olmasaydi` alanları bir
+junior'a öğretmek için var — sadece "ne yapıldığını" anlatmak yetmez, şunları da içermeli:
 1. **Kavram tanımı** — junior'ın henüz bilmeyebileceği terimler ("enum nedir", "entity nedir",
    "DI/Scoped-Singleton-Transient nedir", "DbContext/DbSet nedir", "migration nedir", "Fluent
    API / IEntityTypeConfiguration nedir", "bu tasarım deseni ne işe yarar" vb.) en az bir cümleyle

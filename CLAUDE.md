@@ -95,7 +95,7 @@ Kanonik desen MediatR Command+Handler; "Servis Arayüzü/Servis" deseni **terk e
 12. Birim Test        → Tests/Features/Xxx/XxxCommandHandlerTests (repo/dış servis mock; Handler bitince hemen)
 13. Controller        → API/Controllers/XxxController (ince: yalnızca _mediator.Send(command, ct))
 14. DI kaydı          → GENELLİKLE gerekmez (assembly-scan). İstisna: paylaşılan yardımcı servis.
-15. Yol Haritası       → API_YOL_HARITASI/ HTML sayfası (bkz. §6)
+15. Backend Akademi   → BACKEND_AKADEMI/<faz>/ HTML bölümü (bkz. §6)
 ```
 
 **Koşullu kurallar (YAGNI):**
@@ -133,23 +133,22 @@ Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 R
 
 ---
 
-## 6. Yol Haritası (roadmap) Kuralı — her parça yazılınca HEMEN
+## 6. Backend Akademi Kuralı — her parça yazılınca HEMEN
 
-Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı API/feature'ın HTML sayfasına ekle.
+Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı `BACKEND_AKADEMI/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı: `BACKEND_AKADEMI/STANDART.md` — burada tekrar edilmez.
 
-- **Her adımda `aciklama`** — o parçanın *neden* yazıldığını junior'a anlatır.
-- **Birebir kopya:** kod blokları gerçek dosyanın aynısı, kırpılmaz (`...` yok). Enum ayrı adım.
-- **Yeniden kullanılan kod tam hâliyle tekrar yazılır** — her sayfa baştan sona okunabilir olmalı. Gerçekten değişen satırlar `##NEW##`/`##OLD##` marker'ıyla işaretlenir (git diff gibi render edilir).
-- **Paketler:** bu API'nin ilk kez eklettiği her NuGet/npm paketi `paketler:[]` dizisine (daha önce eklenen tekrar yazılmaz).
-- **Test alanı:** ayrı bölüm; test sınıfı birebir kopya + her metoda 3 satır (Test Adı / Ne Test Edildi / Neden Önemli) — `CODING_STANDARDS.md §7.6`.
-- **Çapraz link (iki yönlü):** `tur:'api'` adımı `backendRef`, API sayfası `frontendRefs` alır. Karşı taraf yazılınca geri dönüp iki tarafa da eklenir.
-- Detaylı marker/JSON şeması → ilgili `_TASLAK.html` yorum bloğu.
+- **Slayt tabanlı, tek görev = tek klasör:** Yeni bir görev (`A-0X`) `_TASLAK/` klasöründen kopyalanır; her bölüm dosyası `01_...html`, `02_...html`… numaralanır ve `window.MODULE` objesiyle çalışır (`slaytlar[]` türleri: `kapak/kavram/kod/karsilastirma/sozluk/ozet`).
+- **Birebir kopya:** `kod` slaytları gerçek dosyanın aynısı, kırpılmaz, uydurulmaz.
+- **Zorunlu üçlü:** her `kod`/`kavram` slaytında ne (`aciklama`) → neden (`neden`) → böyle olmasaydı ne olurdu (`olmasaydi`) — "kural böyle" yetersiz, somut mühendislik gerekçesi şart.
+- **Temsili öğretim (YAGNI):** Tekrarlayan kod aileleri (ör. 13 handler testinden yalnızca biri) TEK bir temsili `kod` slaytıyla öğretilir + `sozluk` slaytında geri kalanlar "aynı pattern'i izler" notuyla listelenir. Her tekil dosya için ayrı slayt açılmaz.
+- **Zincir bütünlüğü:** Yeni bölüm eklenince `oncekiBolum`/`sonrakiBolum` hem kendi klasöründe hem (varsa) komşu görevin ilk/son dosyasında güncellenir — akademi baştan sona kesintisiz gezilebilir kalmalı. Kapanış (`ozet-sozluk`) her zaman klasörün SON numarası olmalı; araya yeni bölüm girince kapanış bir üst numaraya taşınır.
+- Klasörün `index.html`'ine yeni bölüm için bir liste satırı eklenir; kök `BACKEND_AKADEMI/index.html`'e yeni GÖREV (`A-0X`) tamamlanınca bir kart eklenir. Mevcut kartlara/satırlara dokunulmaz.
 
 ---
 
 ## 7. Bir API/Feature Tamamlandığında
 
-Tüm alt-adımlar `[x]`, roadmap eksiksiz, testler yeşilse:
+Tüm alt-adımlar `[x]`, `BACKEND_AKADEMI`'ye işlendi, testler yeşilse:
 
 1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`). API/feature başına, alt-parça başına değil.
 2. **Git push** — her zaman kullanıcı onayıyla (otomatik push yok). Onayı **sormak** akışın parçası.

@@ -77,7 +77,7 @@ npm i @react-native-google-signin/google-signin
 
 ## 4. BaseEntity (A-02 ✅)
 
-`Domain/Entities/BaseEntity.cs`: `Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId` (hepsi `int?` "kim yaptı" alanları). Birebir → `API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 1.
+`Domain/Entities/BaseEntity.cs`: `Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId` (hepsi `int?` "kim yaptı" alanları). Birebir → `BACKEND_AKADEMI/A-02_ortak-altyapi/03_domain-katmani.html`.
 
 ## 5. JWT Token Servisi
 ```csharp
@@ -160,7 +160,7 @@ public class PasswordService : IPasswordService
 
 ## 7. Generic Repository (A-02 ✅)
 
-`Application/Interfaces/Repositories/IRepository.cs` (`GetByIdAsync, GetAllAsync, AddAsync, UpdateAsync, SoftDeleteAsync, SaveChangesAsync` — `Add/Update/SoftDelete` opsiyonel `int? userId` alır, BaseEntity "kim yaptı" alanlarını set eder) + `Infrastructure/Repositories/Repository.cs` (EF Core). Birebir → `API_YOL_HARITASI/A-02_ortak-altyapi.html` adım 3.
+`Application/Interfaces/Repositories/IRepository.cs` (`GetByIdAsync, GetAllAsync, AddAsync, UpdateAsync, SoftDeleteAsync, SaveChangesAsync` — `Add/Update/SoftDelete` opsiyonel `int? userId` alır, BaseEntity "kim yaptı" alanlarını set eder) + `Infrastructure/Repositories/Repository.cs` (EF Core). Birebir → `BACKEND_AKADEMI/A-02_ortak-altyapi/07_generic-repository.html`.
 
 ## 8. SM-2 SRS Algoritması
 

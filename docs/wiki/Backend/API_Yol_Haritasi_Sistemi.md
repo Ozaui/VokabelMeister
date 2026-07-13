@@ -1,4 +1,9 @@
-# API Yol Haritası Sistemi (`docs/API_YOL_HARITASI/`)
+# API Yol Haritası Sistemi (`docs/API_YOL_HARITASI/`) — ⚠️ ARŞİV, YERİNE [[Backend_Akademi_Sistemi]] GEÇTİ
+
+> **2026-07-13:** Bu sistem `BACKEND_AKADEMI/` (bkz. [[Backend_Akademi_Sistemi]]) ile değiştirildi,
+> `docs/API_YOL_HARITASI/` klasörü silindi. Bu sayfa yalnızca tarihsel referans olarak kalır —
+> aşağıdaki dosya yolları/örnekler artık diskte yok, geçmiş INGEST kayıtlarının bağlamını
+> anlamak için tutuluyor. Yeni çalışma için → [[Backend_Akademi_Sistemi]].
 
 **Özet:** Her API'ın adım adım nasıl yazıldığını gösteren, junior geliştirici eğitimi amaçlı interaktif HTML rehber sistemi — her API'ın kendi HTML sayfası vardır ve `window.API` JS objesine yazılan adımlar `render.js` tarafından görselleştirilir. [[Kodlama_Standartlari]]'nın "her kod parçası yazılır yazılmaz hemen işlenir" kuralı burada somutlaşır; bir API bu rehbere işlenmeden tamamlanmış sayılmaz.
 **Kütüphaneler:** Saf HTML/CSS/JS (framework yok)

@@ -25,7 +25,7 @@ Proje referansları (`.csproj`):
 
 Bir API'ın tüm parçaları (Entity → EF Config → Migration → Command/Query → Validator → Repository →
 Handler → Birim Test → Controller → DI kaydı) **tek task içinde** tamamlanır, ardından
-`API_YOL_HARITASI/` rehberine işlenir. Katman katman ilerleme (önce tüm entity'ler, sonra tüm
+`BACKEND_AKADEMI/`'ye işlenir. Katman katman ilerleme (önce tüm entity'ler, sonra tüm
 DTO'lar) yasaktır. Handler'lar birbirini `_mediator.Send()` ile ASLA çağırmaz (döngüsel bağımlılık) —
 paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve gerekçe → `CLAUDE.md §3`,
 [[Gelistirme_Yol_Haritasi]].
@@ -45,6 +45,6 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - Application: 13 (Auth) + 5 (QrLogin) Command+Handler (`Features/Auth/`, `Features/QrLogin/`), `AuthProfile` (AutoMapper), paylaşılan servisler (`OtpService`, `LoginCompletionService`, `PasswordService`, `JwtTokenService`, `GoogleTokenValidator`, `AppleTokenValidator`), FluentValidation validator'ları (`Validators/Auth/`), **A-03.2:** [[ErrorMessages]]'ın başarı-mesajı kardeşi `SuccessMessages` (`Common/Localization/`) — 7 `MessageResponse` döndüren Handler'ın tamamı artık `SuccessMessages.Resolve(code, language)` kullanıyor, hardcode Türkçe metin kalmadı
 - API: `AuthController` (13 endpoint) + `QrLoginController` (5 endpoint), ikisi de yalnızca `IMediator.Send(command)` çağırır
 - Test: 117 birim test (79 Auth [A-03.2'de +7 dil senaryosu] + 23 QrLogin [2026-07-11 bugfix turunda +5 regresyon testi] + 15 yeni `Repositories/` testi [2026-07-12, User/RefreshToken/QrLoginSession repository'lerinin IgnoreQueryFilters kullanan sorguları]), hepsi yeşil
-- Detay → [[Auth_Domain]], `API_YOL_HARITASI/A-03_auth-api.html`, `A-03.1_qr-login.html`, `A-03.2_auth-success-message-localization.html`
+- Detay → [[Auth_Domain]], `BACKEND_AKADEMI/A-03_auth-register/`, `A-03.1_qr-login/`, `A-03.2_mesaj-lokalizasyonu/`
 
 Word/Category/... (A-05+) henüz yazılmadı.

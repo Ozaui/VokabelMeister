@@ -1,9 +1,8 @@
 # BACKEND_AKADEMI — Yeni Görev Ekleme Standardı
 
-> Bu dosya, `docs/API_YOL_HARITASI/_TASLAK.html`'ın bu akademideki karşılığıdır: yeni bir
-> API/görev eklerken **kod taramadan, sıfırdan tasarlamadan** doğrudan kopyalayıp
-> doldurabileceğin bir şablon + kısa bir kural seti. Yeni bir konuşmada/oturumda bu dosyayı
-> okumak, tüm `engine/` mimarisini yeniden keşfetmekten daha hızlı olmalı.
+> Bu dosya, yeni bir API/görev eklerken **kod taramadan, sıfırdan tasarlamadan** doğrudan
+> kopyalayıp doldurabileceğin bir şablon + kısa bir kural seti sağlar. Yeni bir konuşmada/
+> oturumda bu dosyayı okumak, tüm `engine/` mimarisini yeniden keşfetmekten daha hızlı olmalı.
 
 ## 1. Klasör kuralı
 
@@ -19,8 +18,8 @@ BACKEND_AKADEMI/
 ```
 
 - Klasör adı: `<TaskKodu>_<kebab-case-konu>` (ör. `A-04_kelime-crud`). Task kodu
-  `docs/TASK.md`/`docs/API_YOL_HARITASI/`'daki koduyla **birebir aynı** olmalı — okuyucu iki
-  sistem arasında geçiş yaptığında kafası karışmasın.
+  `docs/TASK.md`/`docs/TASK/<faz>.md`'deki koduyla **birebir aynı** olmalı — okuyucu iki
+  dosya arasında geçiş yaptığında kafası karışmasın.
 - Bölüm dosyaları klasör içinde `01_`, `02_`... öneki ile numaralanır (iki haneli, sıralama
   bozulmasın diye).
 - Yeni görev eklerken **mevcut hiçbir klasöre dokunulmaz** — yalnızca yeni klasör açılır +

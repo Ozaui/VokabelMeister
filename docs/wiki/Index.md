@@ -33,16 +33,16 @@
 - [[ApiErrorResponse]] — hata yanıtı zarfı (`ApiResponse<T>`/`PagedResult<T>` YAGNI kuralıyla ertelendi)
 - [[Middleware]] — `ExceptionHandlingMiddleware` / `SecurityHeadersMiddleware` / `RequestResponseLoggingMiddleware`
 - [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 10 birim test (hepsi yeşil, İngilizce isimlendirme)
-- [[API_Yol_Haritasi_Sistemi]] — `docs/API_YOL_HARITASI/` HTML rehber sistemi (junior eğitimi)
+- [[Backend_Akademi_Sistemi]] — kök `BACKEND_AKADEMI/` HTML slayt rehberi (junior eğitimi, 2026-07-13'te [[API_Yol_Haritasi_Sistemi]]'nin yerini aldı)
 
 ### Yazılmış Kod Düğümleri (A-03 — tamamlandı)
 - `User`/`RefreshToken` entity + `OtpPurpose` enum, `UserConfiguration`/`RefreshTokenConfiguration`
   (Fluent API), `AddUserAndRefreshToken` migration (VokabelMeisterDB'ye uygulandı) — detay bir kod
   sayfası yerine [[Auth_Domain]]'de (şema açıklaması zaten birebir bu koda karşılık geliyor) ve
-  `API_YOL_HARITASI/A-03_auth-api.html`'de (birebir kod + junior açıklaması).
+  `BACKEND_AKADEMI/A-03_auth-register/`'de (birebir kod + junior açıklaması).
 - `IPasswordService`/`PasswordService` ve `ITokenService`/`JwtTokenService` yazıldı — ayrı wiki
   sayfası yok (kod zaten [[Auth_Domain]]'in "Referans Kod" bölümünde özetlenmişti), tam hâli
-  `API_YOL_HARITASI/A-03_auth-api.html`'de.
+  `BACKEND_AKADEMI/A-03_auth-register/21_destek-servisleri.html` ve `11_jwt-refresh-token.html`'de.
 - [[AppException]] + [[ErrorMessages]] — Auth exception'ları (`DuplicateEmailException` vb.) için
   yeni taban sınıf + dil sözlüğü (şu an **tr+de** — DE↔TR gerçek hedef kitlesi, İngilizce YAGNI
   gerekçesiyle eklenmedi); [[EntityNotFoundException]] ve [[ApiErrorResponse]] güncellendi,
@@ -52,7 +52,7 @@
 - `IUserRepository`/`UserRepository`, `IRefreshTokenRepository`/`RefreshTokenRepository`,
   `IEmailService`/`DevEmailService`, `IGoogleTokenValidator`/`GoogleTokenValidator`,
   `IAppleTokenValidator`/`AppleTokenValidator` (JWKS tabanlı, elle RS256 doğrulama) — hepsi Auth
-  Command Handler'larının bağımlılıkları, ayrı wiki sayfası yok, tam hâli roadmap'te.
+  Command Handler'larının bağımlılıkları, ayrı wiki sayfası yok, tam hâli `BACKEND_AKADEMI/A-03_auth-register/`'de.
 - **`IOtpService`/`OtpService`** (OTP üretimi/doğrulanması/temizlenmesi) ve
   **`ILoginCompletionService`/`LoginCompletionService`** (OTP/Google/Apple girişlerinin ortak son
   adımı — grace period kurtarma, giriş istatistikleri, token üretimi) — birden fazla Command
