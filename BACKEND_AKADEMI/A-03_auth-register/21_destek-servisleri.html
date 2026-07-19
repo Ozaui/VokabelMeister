@@ -166,6 +166,144 @@ public class PasswordService : IPasswordService
       },
       {
         tur: 'kod',
+        baslik: 'IOtpService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IOtpService.cs',
+        nedenBuKlasor: 'IPasswordService/IEmailService İLE AYNI klasörde (`Interfaces/Services/`, flat) — bu üçü BİRLİKTE CLAUDE.md §3\'ün "paylaşılan mantık" istisnasının TAM kapsamını OLUŞTURUR: hiçbiri TEK bir feature\'a ÖZGÜ değil, sekiz farklı Handler ORTAK kullanır.',
+        kod: `public interface IOtpService
+{
+    const int OtpExpiryMinutes = 5;
+
+    const int DeleteAccountOtpExpiryMinutes = 15;
+
+    (string Code, string Hash) Generate();
+
+    void Validate(User? user, string otpCode, OtpPurpose expectedPurpose);
+
+    void Clear(User user);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IOtpService',
+            aciklama: 'Register, ResendVerification, Login, VerifyLoginOtp, ForgotPassword, ResetPassword, RequestAccountDeletion, ConfirmAccountDeletion — SEKİZ Handler\'ın HEPSİNİN constructor\'ında `IOtpService _otpService` olarak ENJEKTE edilen TEK sözleşme.',
+            neden: 'Bu mantık ESKİDEN AuthService\'in `private` metotlarıydı (bkz. dosya başı yorumu) — MediatR CQRS\'e geçişte 13 ayrı Handler\'a bölününce, Handler\'lar birbirini `_mediator.Send()` İLE ÇAĞIRAMADIĞI için (CLAUDE.md §3 — döngüsel bağımlılık yasağı) bu ORTAK mantık PAYLAŞILAN bir servise ÇIKARILDI.',
+            olmasaydi: 'Bu arayüz OLMASAYDI, SEKİZ Handler\'IN HER BİRİ "6 haneli kod üret, hash\'le, süre/amaç doğrula, temizle" mantığını KENDİ İÇİNDE TEKRARLARDI — bir gün OTP süresi 5\'ten 10 dakikaya ÇIKARILMAK istendiğinde, SEKİZ AYRI dosyada SEKİZ AYRI SABİT bulunup DEĞİŞTİRİLMESİ gerekirdi.'
+          },
+          {
+            satir: 'const int OtpExpiryMinutes = 5;',
+            aciklama: 'E-posta doğrulama, login 2FA VE şifre sıfırlama OTP\'lerinin ORTAK geçerlilik süresi — arayüzün KENDİSİNDE tanımlı bir sabit (implementasyonda DEĞİL).',
+            neden: 'Sabitin ARAYÜZDE durması, `IOtpService.OtpExpiryMinutes` ifadesinin Handler\'LARDAN DOĞRUDAN okunabilmesini sağlar (bkz. Bölüm 20\'deki `VerifyEmailCommand`\'ın `IOtpService.OtpExpiryMinutes` kullanımı) — Handler, SOMUT `OtpService` sınıfına HİÇ bağımlı OLMADAN bu süreyi BİLİR.',
+            olmasaydi: 'Bu sabit HER Handler\'da AYRI AYRI (`DateTime.UtcNow.AddMinutes(5)` gibi) YAZILSAYDI, REFERENCE/SECURITY.md\'deki 5 dakikalık POLİTİKA DEĞİŞTİĞİNDE TEK bir yer DEĞİL, YEDİ farklı dosya BULUNUP DÜZELTİLMESİ GEREKİRDİ.'
+          },
+          {
+            satir: 'const int DeleteAccountOtpExpiryMinutes = 15;',
+            aciklama: 'Hesap silme OTP\'sinin AYRI, DAHA UZUN (15dk) süresi — DİĞER dört akıştan (5dk) FARKLI bir SABİT.',
+            neden: 'Hesap silme GERİ ALINAMAZ bir işlem olduğu için (30 günlük grace period BAŞLAR) kullanıcıya OTP\'yi bulup GİRMESİ için DAHA GENİŞ bir pencere TANINIR — bu, "her OTP AYNI süre" varsayımının BİLİNÇLİ bir İSTİSNASIDIR.',
+            olmasaydi: 'TEK bir `OtpExpiryMinutes` sabiti TÜM akışlarda KULLANILSAYDI, hesap silme gibi YÜKSEK-RİSKLİ bir işlemde de 5 dakikalık DAR pencere GEÇERLİ olurdu — kullanıcı deneyimi AÇISINDAN gereksiz YÜKSEK bir "kod SÜRESİ DOLDU, TEKRAR İSTE" oranı ORTAYA ÇIKARDI.'
+          },
+          {
+            satir: '(string Code, string Hash) Generate();',
+            aciklama: 'Adlandırılmış bir TUPLE döner — `Code` (kullanıcıya e-posta İLE gönderilecek 6 haneli metin) ve `Hash` (veritabanına YAZILACAK, geri ÇEVRİLEMEZ değer) AYNI çağrıda ÜRETİLİR.',
+            neden: 'Kod ve hash\'in TEK bir metotta BİRLİKTE üretilmesi, çağıran Handler\'ın "önce kodu ÜRET, sonra AYRI bir metotla HASH\'LE" gibi İKİ adımlı, ARADA senkronizasyon HATASINA açık bir akış İZLEMESİNİ ENGELLER.',
+            olmasaydi: 'Kod ve hash AYRI metotlarla üretilseydi (`GenerateCode()` + `HashCode(code)`), bir Handler YANLIŞLIKLA farklı bir `code` DEĞİŞKENİNİ hash\'leyip veritabanına YAZABİLİR, kullanıcı e-postada GÖRDÜĞÜ kodla ASLA doğrulanamaz bir hesap ile KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'void Validate(User? user, string otpCode, OtpPurpose expectedPurpose);',
+            aciklama: '`user` parametresi `User?` (nullable) — bu METOT, kullanıcı BULUNAMASA bile ÇAĞRILABİLİR OLACAK şekilde TASARLANMIŞTIR.',
+            neden: 'E-posta numaralandırma önlemi (Bölüm 20\'de detaylı gördüğümüz desen) — Handler, "kullanıcı yok" durumunda AYRI bir kod YOLU İZLEMEK yerine, `user`\'ı OLDUĞU GİBİ (null OLABİLECEK şekilde) bu metoda GEÇİRİR; metodun KENDİSİ null\'ı "geçersiz OTP" ile AYNI ŞEKİLDE ele alır.',
+            olmasaydi: '`user` parametresi non-nullable (`User user`) OLSAYDI, Handler ÇAĞRIDAN ÖNCE KENDİSİ bir null KONTROLÜ YAPMAK ZORUNDA kalırdı — bu da "kullanıcı yoksa FARKLI bir hata mesajı DÖN" gibi bir DALLANMAYA, dolayısıyla numaralandırma RİSKİNE AÇIK bir koda YOL AÇARDI.'
+          },
+          {
+            satir: 'void Clear(User user);',
+            aciklama: 'Dönüş tipi `void` — bu metot bir DEĞER ÜRETMEZ, yalnızca `user` NESNESİNİN OTP alanlarını (hash/süre/amaç) BELLEKTE SIFIRLAR; veritabanına YAZMA işlemi Handler\'IN KENDİ `UpdateAsync` çağrısıyla AYRICA yapılır.',
+            neden: 'Bu AYRIM (Clear BELLEKTE değiştirir, Handler VERİTABANINA yazar) OtpService\'in Repository\'DEN TAMAMEN BAĞIMSIZ kalmasını sağlar — servis, HANGİ Repository\'nin KULLANILDIĞINI hiç BİLMEZ.',
+            olmasaydi: '`Clear` KENDİSİ veritabanına YAZSAYDI, OtpService\'in bir Repository\'YE (dolayısıyla DbContext\'e) BAĞIMLI olması GEREKİRDİ — "servis SAF iş mantığı taşır, veri erişimi Repository\'DE kalır" AYRIMI İHLAL EDİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpService.cs — Generate/Validate/Clear İmplementasyonu',
+        dosyaYolu: 'backend/WordLearner.Application/Services/OtpService.cs',
+        nedenBuKlasor: 'PasswordService İLE AYNI klasörde (`Application/Services/`, flat) — TEK bağımlılığı (`IPasswordService`) DIŞINDA hiçbir DIŞ kütüphaneye İHTİYAÇ DUYMAZ.',
+        kod: `public class OtpService : IOtpService
+{
+    private readonly IPasswordService _passwordService;
+
+    public OtpService(IPasswordService passwordService) => _passwordService = passwordService;
+
+    public (string Code, string Hash) Generate()
+    {
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        return (code, _passwordService.HashToken(code));
+    }
+
+    public void Validate(User? user, string otpCode, OtpPurpose expectedPurpose)
+    {
+        var isValid =
+            user is not null
+            && user.PendingOtpCodePurpose == expectedPurpose
+            && user.PendingOtpCodeExpiresAt is not null
+            && user.PendingOtpCodeExpiresAt >= DateTime.UtcNow
+            && user.PendingOtpCodeHash == _passwordService.HashToken(otpCode);
+
+        if (!isValid)
+            throw new InvalidOtpException();
+    }
+
+    public void Clear(User user)
+    {
+        user.PendingOtpCodeHash = null;
+        user.PendingOtpCodeExpiresAt = null;
+        user.PendingOtpCodePurpose = null;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'OtpService\'in TEK bağımlılığı — kendi hash\'leme mantığını YAZMAZ, Bölüm 27\'nin BAŞINDA gördüğümüz `HashToken` (SHA-256) metodunu YENİDEN KULLANIR.',
+            neden: 'OTP kodu da (refresh token GİBİ) sistem TARAFINDAN rastgele ÜRETİLEN, yüksek entropili bir DEĞERDİR — bu yüzden YAVAŞ BCrypt (`Hash`) DEĞİL, HIZLI `HashToken` (SHA-256) KULLANILIR; iki servis ARASINDA bu KOD PAYLAŞIMI, "iki farklı güvenlik İHTİYACI, iki farklı ALGORİTMA" kararının SOMUT UYGULAMASIDIR.',
+            olmasaydi: 'OtpService KENDİ SHA-256 çağrısını YAPSAYDI (`SHA256.HashData(...)` doğrudan burada da YAZILSAYDI), AYNI hash\'leme mantığı İKİ dosyada (PasswordService VE OtpService) TEKRARLANIRDI — biri GÜNCELLENİP diğeri UNUTULURSA, refresh token VE OTP kodu FARKLI şekilde hash\'lenen, TUTARSIZ bir sistem ORTAYA ÇIKARDI.'
+          },
+          {
+            satir: 'var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");',
+            aciklama: '.NET\'in kriptografik olarak GÜVENLİ rastgele sayı üretecinden 0-999999 ARASI bir SAYI alır, `"D6"` FORMATIYLA her zaman 6 haneye TAMAMLAR (ör. 42 → "000042").',
+            neden: '`System.Random` sınıfı DETERMİNİSTİK bir ALGORİTMAYA (seed\'e) DAYANIR ve TAHMİN edilebilir — bir saldırgan ÖNCEKİ birkaç OTP\'yi GÖZLEMLEYEREK bir SONRAKİNİ TAHMİN edebilir. `RandomNumberGenerator` İŞLETİM SİSTEMİNİN kriptografik rastgelelik KAYNAĞINI kullanır, bu TAHMİN saldırısını İMKANSIZ hale GETİRİR.',
+            olmasaydi: '`new Random().Next(0, 1_000_000)` KULLANILSAYDI, kod ÇALIŞMAYA BAŞLADIĞI andaki SEED\'E bağlı bir dizi ÜRETİLİRDİ — teorik olarak bir saldırgan bu diziyi YENİDEN ÜRETEBİLİR, gelecekteki OTP kodlarını ÖNCEDEN TAHMİN edebilirdi (REFERENCE/SECURITY.md\'nin AÇIKÇA YASAKLADIĞI bir zafiyet).'
+          },
+          {
+            satir: 'return (code, _passwordService.HashToken(code));',
+            aciklama: 'Adlandırılmış TUPLE\'ı OLUŞTURUR — `code` (e-postaya GİDECEK düz metin) VE onun hash\'i (veritabanına YAZILACAK değer) AYNI ANDA, AYNI kaynaktan ÜRETİLİR.',
+            neden: 'Handler, dönen `code`\'u `_emailService.SendXxxOtpAsync(email, code, ct)` İLE kullanıcıya GÖNDERİR, `Hash`\'i İSE `user.PendingOtpCodeHash`\'e YAZAR — DÜZ METİN kod hiçbir zaman VERİTABANINA YAZILMAZ (SECURITY.md\'nin "şifre/token asla LOGLANMAZ" kuralıyla AYNI disiplin).',
+            olmasaydi: 'Yalnızca hash DÖNSEYDİ (kod HİÇ dönmeseydi), Handler kullanıcıya HANGİ kodu GÖNDERECEĞİNİ HİÇ BİLEMEZDİ — OTP akışının TAMAMI ÇALIŞMAZDI.'
+          },
+          {
+            satir: 'user is not null',
+            aciklama: 'Doğrulamanın İLK KOŞULU — `user` `null` İSE (e-posta sistemde KAYITLI değilse), geri kalan DÖRT koşul HİÇ DEĞERLENDİRİLMEZ (C#\'ın `&&` KISA-DEVRE ÖZELLİĞİ), `isValid` DOĞRUDAN `false` OLUR.',
+            neden: 'Bu satır, Bölüm 20\'deki "e-posta NUMARALANDIRMA önlemi" prensibinin TAM OLARAK KOD KARŞILIĞIDIR — Handler AYRI bir `if (user == null) throw ...` YAZMAZ, `Validate` METODUNUN KENDİSİ null\'ı "geçersiz OTP" İLE AYNI ŞEKİLDE ele alır, İKİSİ ARASINDA istemciye YANSIYAN HİÇBİR FARK OLMAZ.',
+            olmasaydi: 'Bu koşul OLMASAYDI (Örneğin `user!.PendingOtpCodePurpose` DOĞRUDAN ERİŞİLSEYDİ), `user` `null` OLDUĞUNDA bu SATIR bir `NullReferenceException` FIRLATIRDI — beklenmeyen bir 500 HATASI, kontrollü bir 400 YANITI YERİNE.'
+          },
+          {
+            satir: '&& user.PendingOtpCodeHash == _passwordService.HashToken(otpCode);',
+            aciklama: 'Kullanıcının GİRDİĞİ `otpCode`\'u AYNI `HashToken` metoduyla TEKRAR hash\'ler ve veritabanındaki KAYITLI hash İLE KARŞILAŞTIRIR — düz metin kod HİÇBİR ZAMAN veritabanındaki DEĞERLE DOĞRUDAN KARŞILAŞTIRILMAZ.',
+            neden: 'SHA-256 DETERMİNİSTİK olduğu İÇİN (AYNI girdi HER ZAMAN AYNI çıktıyı ÜRETİR — Bölüm 27\'de gördüğümüz ÖZELLİK), "girilen kodu HASH\'LE, KAYITLI hash İLE KARŞILAŞTIR" YAKLAŞIMI GÜVENİLİR ÇALIŞIR; bu, `Verify` (BCrypt) İLE AYNI SONUCA farklı bir YOLDAN ULAŞIR.',
+            olmasaydi: 'Veritabanında DÜZ METİN OTP kodu SAKLANSAYDI (hash YERİNE), veritabanına ERİŞEBİLEN biri (ör. bir SQL injection AÇIĞI ÜZERİNDEN) TÜM bekleyen OTP kodlarını DOĞRUDAN OKUYABİLİRDİ — SECURITY.md\'nin "hassas değer asla HAM SAKLANMAZ" kuralı İHLAL EDİLİRDİ.'
+          },
+          {
+            satir: 'if (!isValid)',
+            aciklama: 'Beş koşuldan HERHANGİ BİRİ SAĞLANMAZSA (kullanıcı yok, amaç UYUŞMUYOR, süre DOLMUŞ, YA da kod YANLIŞ) `isValid` `false` OLUR VE bu DAL çalışır.',
+            neden: 'DÖRT farklı BAŞARISIZLIK senaryosunun (yok/yanlış amaç/süresi dolmuş/yanlış kod) HEPSİNİN AYNI exception\'A (`InvalidOtpException`) ÇIKMASI, istemciye HİÇBİRİNİN AYIRT EDİLEMEMESİNİ sağlar — bir saldırgan "kod YANLIŞ mıydı yoksa SÜRESİ mi DOLMUŞTU" bilgisini YANITTAN ÇIKARAMAZ.',
+            olmasaydi: 'Her koşul AYRI bir exception FIRLATSAYDI (`OtpNotFoundException`, `OtpExpiredException`, `WrongOtpException`), istemciye giden HATA KODU bu AYRIMI YANSITIRDI — bir saldırgan "SÜRESİ DOLMUŞ" İLE "YANLIŞ kod" ARASINDAKİ FARKI görerek, DOĞRU kodu BULMAK için SİSTEMATİK bir TAHMİN stratejisi GELİŞTİREBİLİRDİ.'
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = null;',
+            aciklama: '`Clear`\'ın İLK satırı — kullanılan/süresi DOLAN bir OTP\'nin hash\'ini SİLER.',
+            neden: 'Bu satır ÇALIŞMAZSA, AYNI OTP kodu (henüz süresi DOLMADIYSA) TEKRAR TEKRAR kullanılabilirdi — `Clear`, bir OTP\'nin "TEK kullanımlık" olma GARANTİSİNİ sağlayan KOD SATIRIDIR.',
+            olmasaydi: '`Clear` HİÇ ÇAĞRILMASAYDI (VEYA bu satır EKSİK OLSAYDI), BAŞARILI bir doğrulamadan SONRA bile AYNI OTP kodu, SÜRESİ dolana KADAR TEKRAR TEKRAR geçerli SAYILIRDI — bir saldırgan bu kodu YAKALARSA (ör. e-posta hesabı ELE GEÇİRİLMİŞSE) BİRDEN FAZLA kez KULLANABİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
         baslik: 'IEmailService.cs — Sözleşme',
         dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IEmailService.cs',
         kod: `// ─────────────────────────────────────────────────────────────────────────────
@@ -342,15 +480,18 @@ public class DevEmailService : IEmailService
           { terim: 'Work Factor (Cost Factor)', tanim: 'BCrypt\'in kaç kez tekrarlı hashleme yapacağını belirleyen sayı — yükseldikçe hem güvenlik hem de işlem süresi artar.' },
           { terim: 'Deterministik Hash', tanim: 'Aynı girdinin her zaman aynı çıktıyı ürettiği hash türü (SHA-256) — BCrypt\'in aksine, veritabanında doğrudan eşleştirme aramasına izin verir.' },
           { terim: 'ILogger<T>', tanim: '.NET\'in yerleşik loglama arayüzü — jenerik parametre (T), log kaydının hangi sınıftan geldiğini otomatik etiketler.' },
-          { terim: 'Flat Klasör', tanim: 'Feature\'a özel alt klasör açılmadan, birden fazla feature\'ın paylaştığı kodun düz bir klasörde (Application/Services/) tutulması.' }
+          { terim: 'Flat Klasör', tanim: 'Feature\'a özel alt klasör açılmadan, birden fazla feature\'ın paylaştığı kodun düz bir klasörde (Application/Services/) tutulması.' },
+          { terim: 'OtpPurpose', tanim: 'User tablosundaki TEK bir OTP alan setinin (PendingOtpCodeHash/ExpiresAt) hangi işlem için üretildiğini ayırt eden enum (EmailVerification/LoginOtp/PasswordReset/AccountDeletion) — backend/WordLearner.Domain/Enums/Auth/OtpPurpose.cs.' },
+          { terim: 'Adlandırılmış Tuple (Named Tuple)', tanim: '`(string Code, string Hash)` gibi, ayrı bir sınıf/record TANIMLAMADAN birden fazla değeri TEK bir dönüş tipinde TAŞIYAN C# özelliği — yalnızca bu metodun İÇİNDE anlamlı, başka hiçbir yerde YENİDEN kullanılmayan geçici bir grup için tercih edilir.' }
         ]
       },
       {
         tur: 'ozet',
         baslik: 'Bu Bölümde Öğrendiklerimiz',
         maddeler: [
-          'IPasswordService/IEmailService, Auth\'a özel değil PAYLAŞILAN yetenekler oldukları için Application/Services altında flat duruyor',
+          'IPasswordService/IOtpService/IEmailService, Auth\'a özel değil PAYLAŞILAN yetenekler oldukları için Application/Services altında flat duruyor',
           'Hash (BCrypt, yavaş, salt\'lı) şifreler için — HashToken (SHA-256, hızlı, deterministik) refresh token/OTP için: iki farklı entropi seviyesi, iki farklı algoritma',
+          'OtpService.Generate, RandomNumberGenerator (kriptografik güvenli) ile 6 haneli kod üretir + AYNI HashToken\'ı yeniden kullanarak hash\'ler — Validate, "kullanıcı yok" ile "kod yanlış"ı istemciye AYNI exception ile döner (numaralandırma önlemi)',
           'DevEmailService gerçek SMTP\'nin yerini tutan geçici bir implementasyon — "Dev" öneki bunu isim seviyesinde açıkça işaretler',
           'Sözleşmeye (arayüze) bağımlılık, testlerde gerçek BCrypt/SMTP çalıştırmadan mock ile hızlı test yazılmasını sağlar',
           'YAGNI: SmtpEmailService, gerçek bir SMTP sağlayıcısı kararı verilmeden önceden yazılmıyor'

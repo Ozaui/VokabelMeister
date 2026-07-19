@@ -310,6 +310,62 @@ public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleComm
         ]
       },
       {
+        tur: 'kod',
+        baslik: 'GoogleTokenValidator.cs — ID Token GERÇEKTEN Google\'dan mı Geldi?',
+        dosyaYolu: 'backend/WordLearner.Application/Services/GoogleTokenValidator.cs',
+        nedenBuKlasor: 'Application/Services/ altında (flat) — `IGoogleTokenValidator` sözleşmesi Handler\'ı Google.Apis.Auth kütüphanesinden İZOLE eder (testlerde `Mock<IGoogleTokenValidator>` ile GERÇEK bir ağ çağrısı OLMADAN test yazılabilir, Bölüm 27\'deki IPasswordService İLE AYNI desen).',
+        kod: `public class GoogleTokenValidator : IGoogleTokenValidator
+{
+    private readonly IConfiguration _configuration;
+
+    public GoogleTokenValidator(IConfiguration configuration) => _configuration = configuration;
+
+    public async Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken ct = default)
+    {
+        try
+        {
+            var settings = new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = new[] { _configuration["Google:ClientId"]! },
+            };
+            var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+
+            return new GoogleTokenPayload(payload.Subject, payload.Email, payload.GivenName, payload.FamilyName);
+        }
+        catch (InvalidJwtException)
+        {
+            return null;
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var settings = new GoogleJsonWebSignature.ValidationSettings',
+            aciklama: 'Google\'ın RESMİ `Google.Apis.Auth` kütüphanesinin doğrulama AYARLARI — imza kontrolü İÇİN gereken Google JWKS ANAHTARLARININ indirilmesi/önbelleklenmesi TAMAMEN bu kütüphanenin İÇİNDE, GÖRÜNMEZ şekilde YAPILIR.',
+            neden: 'JwtTokenService\'teki (Bölüm 18) `GetPrincipalFromExpiredToken`\'IN AKSİNE, burada Algorithm Confusion önlemini ELLE YAZMAK GEREKMEZ — `Google.Apis.Auth`, Google\'IN KENDİ token\'ları İÇİN bu KONTROLLERİ (imza, ALGORİTMA, süre) KENDİ İÇİNDE ZATEN YAPAR; biz yalnızca "bu token BİZİM UYGULAMAMIZ İÇİN mi ÜRETİLMİŞ" SORUSUNU (audience) EKLERİZ.',
+            olmasaydi: '`Audience` AYARI VERİLMESEYDİ, Google\'IN ÜRETTİĞİ AMA BAŞKA bir UYGULAMA İÇİN (farklı bir Client Id İLE) imzalanmış bir ID token da GEÇERLİ SAYILIRDI — bir SALDIRGAN, kendi UYGULAMASINA giriş yaparak ALDIĞI token\'ı BU backend\'e GÖNDEREBİLİR, sistem BUNU meşru SANARDI.'
+          },
+          {
+            satir: 'var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);',
+            aciklama: 'TEK bir kütüphane çağrısı: imza doğrulama, süre kontrolü VE audience kontrolü BİRLİKTE yapılır — BAŞARISIZ olursa (aşağıda YAKALANAN) bir exception FIRLATIR, BAŞARILI olursa Google\'IN token\'A gömdüğü tüm alanları (Subject/Email/GivenName/FamilyName) İÇEREN bir `payload` NESNESİ döner.',
+            neden: 'Bu `await`\'li çağrı, Google\'IN JWKS UÇ NOKTASINA (ilk çağrıda) bir AĞ İSTEĞİ ATABİLİR — bu yüzden metot `async`, ÇAĞIRAN Handler da (`LoginWithGoogleCommandHandler`) bu bekleme SÜRESİNCE THREAD\'İ BLOKE ETMEZ.',
+            olmasaydi: 'Bu doğrulama OLMADAN, `idToken`\'DAKİ claim\'lere (Subject/Email) DOĞRUDAN GÜVENİLSEYDİ (ör. token\'ı KENDİMİZ JSON olarak ÇÖZÜMLESEYDİK), İMZASI HİÇ KONTROL EDİLMEMİŞ, TAMAMEN UYDURULMUŞ bir "Google token\'ı" KABUL EDİLİRDİ — kimlik SAHTECİLİĞİNİN EN BASİT YOLU.'
+          },
+          {
+            satir: 'return new GoogleTokenPayload(payload.Subject, payload.Email, payload.GivenName, payload.FamilyName);',
+            aciklama: 'Google kütüphanesinin KENDİ `payload` tipi YERİNE, PROJEYE ÖZGÜ `GoogleTokenPayload` record\'UNA (yalnızca 4 alan) DÖNÜŞTÜRÜLÜR — `payload.Subject`, Google\'ın KULLANDIĞI kullanıcı ID\'sidir, `GoogleId` OLARAK YENİDEN ADLANDIRILIR.',
+            neden: 'Bu DÖNÜŞÜM, `LoginWithGoogleCommandHandler`\'IN Google\'A ÖZGÜ (`Payload` gibi genel İSİMLİ) bir kütüphane TİPİNE DEĞİL, PROJENİN KENDİ sözleşmesine (`GoogleTokenPayload`) BAĞIMLI olmasını sağlar — YARIN `Google.Apis.Auth` kütüphanesi DEĞİŞSE bile (BAŞKA bir kütüphaneyle DEĞİŞTİRİLSE), Handler\'IN kodu HİÇ DEĞİŞMEZ.',
+            olmasaydi: 'Handler doğrudan Google kütüphanesinin `Payload` tipini KULLANSAYDI, `IGoogleTokenValidator` ARAYÜZÜ de bu DIŞ kütüphaneye BAĞIMLI olurdu — arayüzün "Handler\'ı DIŞ kütüphaneden İZOLE ET" AMACI BOZULURDU.'
+          },
+          {
+            satir: 'catch (InvalidJwtException)',
+            aciklama: '`Google.Apis.Auth`\'un KENDİ fırlattığı, SPESİFİK exception TİPİ — imza geçersiz, süre DOLMUŞ VEYA audience UYUŞMUYORSA HEPSİ bu TEK tipte TOPLANIR.',
+            neden: 'Bölüm 18\'deki `GetPrincipalFromExpiredToken`\'IN genel `catch`\'İNDEN FARKLI olarak burada SPESİFİK bir exception tipi YAKALANIR — bu, "yalnızca BEKLENEN hata TÜRÜNÜ SESSİZCE yut, BEKLENMEYEN bir hatayı (ör. ağ HATASI, kütüphane İÇİ bir BUG) GİZLEME" prensibine dayanır.',
+            olmasaydi: 'Genel bir `catch` (`catch { return null; }`) KULLANILSAYDI, GERÇEK bir AĞ hatası (ör. Google\'IN JWKS UÇ NOKTASI GEÇİCİ olarak ERİŞİLEMEZ) İLE "token GERÇEKTEN geçersiz" durumu AYNI ŞEKİLDE `null` DÖNERDİ — geliştirici, İKİSİ arasındaki FARKI LOGLARDA bile AYIRT EDEMEZDİ.'
+          }
+        ]
+      },
+      {
         tur: 'postman',
         baslik: 'Postman\'dan Dene — POST /api/v1/auth/google',
         yontem: 'POST',
@@ -497,6 +553,108 @@ if (user is null)
         ]
       },
       {
+        tur: 'kod',
+        baslik: 'AppleTokenValidator.cs — Resmi Kütüphane YOK, JWKS ELLE Doğrulanır',
+        dosyaYolu: 'backend/WordLearner.Application/Services/AppleTokenValidator.cs',
+        nedenBuKlasor: 'GoogleTokenValidator İLE AYNI klasörde (`Application/Services/`, flat) — AYNI SÖZLEŞME DESENİNİ (IAppleTokenValidator) izler, ama Google\'IN AKSİNE Apple İÇİN resmi bir .NET kütüphanesi OLMADIĞI için doğrulama ELLE (JwtTokenService\'teki GİBİ) YAZILIR.',
+        kod: `public class AppleTokenValidator : IAppleTokenValidator
+{
+    private const string AppleIssuer = "https://appleid.apple.com";
+    private const string AppleJwksUrl = "https://appleid.apple.com/auth/keys";
+
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
+
+    public AppleTokenValidator(HttpClient httpClient, IConfiguration configuration)
+    {
+        _httpClient = httpClient;
+        _configuration = configuration;
+    }
+
+    public async Task<AppleTokenPayload?> ValidateAsync(
+        string identityToken,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            var jwks = await _httpClient.GetFromJsonAsync<JsonWebKeySet>(AppleJwksUrl, ct);
+            if (jwks is null)
+                return null;
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = AppleIssuer,
+                ValidateAudience = true,
+                ValidAudience = _configuration["Apple:BundleId"],
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKeys = jwks.Keys,
+            };
+
+            var principal = new JwtSecurityTokenHandler().ValidateToken(
+                identityToken,
+                validationParameters,
+                out var validatedToken
+            );
+
+            if (
+                validatedToken is not JwtSecurityToken jwtToken
+                || !jwtToken.Header.Alg.Equals(
+                    SecurityAlgorithms.RsaSha256,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                return null;
+
+            var appleId = principal.FindFirst("sub")?.Value;
+            if (string.IsNullOrEmpty(appleId))
+                return null;
+
+            var email = principal.FindFirst("email")?.Value;
+            return new AppleTokenPayload(appleId, email);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var jwks = await _httpClient.GetFromJsonAsync<JsonWebKeySet>(AppleJwksUrl, ct);',
+            aciklama: 'Google kütüphanesinin GÖRÜNMEZ şekilde YAPTIĞI işi burada ELLE YAPARIZ: Apple\'ın herkese AÇIK imzalama ANAHTARLARINI (JWKS — JSON Web Key Set) KENDİ HTTP isteğimizle ÇEKERİZ.',
+            neden: 'Apple\'ın anahtarları PERİYODİK olarak DEĞİŞEBİLİR (key rotation) — anahtarları SABİT KODLAMAK yerine HER doğrulamada (gerçek bir SİSTEMDE önbelleklenerek) TAZE ÇEKMEK, Apple bir anahtarı İPTAL EDİP YENİSİNİ yayınladığında sistemin BOZULMAMASINI sağlar.',
+            olmasaydi: 'Anahtarlar SABİT KODLANSAYDI (appsettings\'e YAPIŞTIRILSAYDI), Apple anahtarlarını DEĞİŞTİRDİĞİNDE (key rotation, GÜVENLİK pratiği GEREĞİ DÜZENLİ YAPILIR) TÜM Apple girişleri ANİDEN "imza GEÇERSİZ" hatasıyla BAŞARISIZ olmaya BAŞLARDI, kod DEĞİŞİKLİĞİ olmadan DÜZELMEZDİ.'
+          },
+          {
+            satir: '                ValidAudience = _configuration["Apple:BundleId"],',
+            aciklama: 'Google\'daki `Google:ClientId` İLE AYNI rolü OYNAR — token\'ın GERÇEKTEN BU uygulama İÇİN (Apple\'daki karşılığı "Bundle Id") üretildiğini DOĞRULAR.',
+            neden: 'Bu kontrol OLMADAN, Apple\'IN BAŞKA bir uygulama İÇİN İMZALADIĞI GEÇERLİ bir token da KABUL EDİLİRDİ — GoogleTokenValidator\'daki `Audience` AYARIYLA BİREBİR AYNI GÜVENLİK GEREKÇESİ.',
+            olmasaydi: 'Audience kontrolü OLMASAYDI, BAŞKA bir Apple UYGULAMASINA giriş YAPMIŞ bir kullanıcının token\'ı, BU backend\'E gönderildiğinde YİNE de "geçerli" SAYILIRDI.'
+          },
+          {
+            satir: '                || !jwtToken.Header.Alg.Equals(',
+            aciklama: 'Bölüm 18\'deki `JwtTokenService.GetPrincipalFromExpiredToken`\'daki İLE BİREBİR AYNI Algorithm Confusion KONTROLÜ — burada TEK fark, beklenen algoritmanın `HmacSha256` DEĞİL `RsaSha256` OLMASI (Apple\'IN kullandığı ASİMETRİK imza).',
+            neden: 'Kod yorumu bunu AÇIKÇA belirtir: "JwtTokenService.GetPrincipalFromExpiredToken\'daki Algorithm Confusion önlemiyle AYNI gerekçe" — Google\'IN AKSİNE burada JWT doğrulaması ELLE (`JwtSecurityTokenHandler`) yapıldığı İÇİN, AYNI "alg none/karışıklığı" RİSKİ BURADA da MEVCUTTUR VE AYNI YÖNTEMLE KAPATILIR.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, Bölüm 18\'de AÇIKLADIĞIMIZ AYNI Algorithm Confusion SALDIRISI (sahte, "alg" ALANI MANİPÜLE EDİLMİŞ bir token) burada da GEÇERLİ OLURDU — bu satırın EKSİKLİĞİ, TÜM JWKS doğrulamasını (imza kontrolü DAHİL) TEORİDE ATLATILABİLİR hale GETİRİRDİ.'
+          },
+          {
+            satir: 'var appleId = principal.FindFirst("sub")?.Value;',
+            aciklama: 'Doğrulanan token\'ın claim\'lerinden "sub" (subject — Apple\'IN kullanıcı ID\'si) ÇIKARILIR; hemen ALTINDA `IsNullOrEmpty` kontrolüyle bu ALANIN MUTLAKA DOLU olduğu TEYİT edilir.',
+            neden: '`appleId`, `LoginWithAppleCommandHandler`\'IN kullanıcıyı BULMAK/EŞLEŞTİRMEK için kullandığı BİRİCİK (unique) anahtardır — email\'in AKSİNE (Bölüm 22\'de gördüğümüz GİBİ null OLABİLİR), `sub` HER Apple token\'ında GARANTİ olarak BULUNMASI GEREKEN bir alandır; yine de savunmacı bir KONTROL eklenir.',
+            olmasaydi: 'Bu kontrol OLMASAYDI VE `sub` BEKLENMEDİK bir şekilde BOŞ gelseydi, Handler `null`/boş bir Id İLE kullanıcı ARAMAYA ÇALIŞIR, YA yanlış bir eşleşme YA da AÇIKLANAMAYAN bir hata ile KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'var email = principal.FindFirst("email")?.Value;',
+            aciklama: '`sub`\'IN AKSİNE, `?.Value` İLE null-GÜVENLİ okunur VE `IsNullOrEmpty` kontrolü YOKTUR — bu ALANIN BOŞ gelmesi BEKLENEN, NORMAL bir DURUMDUR (dosya başı yorumundaki "Apple e-postayı yalnızca İLK yetkilendirmede GÖNDERİR" notu).',
+            neden: 'Bu satırın `sub` satırıyla FARKLI davranması (birinde ZORUNLU kontrol, DİĞERİNDE YOK) BİLİNÇLİ bir tasarım kararıdır — İKİ alanın da AYNI şekilde ele ALINMASI, email HER zaman GELECEKMİŞ gibi YANLIŞ bir varsayıma DAYANIRDI.',
+            olmasaydi: '`email` de `sub` GİBİ ZORUNLU sayılsaydı (boşsa `null` DÖNÜLSEYDİ), Apple\'DAN ikinci VE sonraki girişlerde (email GELMEDİĞİ için) TÜM Apple girişleri BAŞARISIZ OLURDU — Apple\'IN normal, BELGELENMİŞ davranışı bir HATA gibi ELE ALINMIŞ OLURDU.'
+          }
+        ]
+      },
+      {
         tur: 'postman',
         baslik: 'Postman\'dan Dene — POST /api/v1/auth/apple',
         yontem: 'POST',
@@ -528,7 +686,8 @@ if (user is null)
           'Arama sırası: ÖNCE sağlayıcı Id\'si (GoogleId/AppleId), SONRA e-posta (account linking), SON ÇARE yeni kayıt',
           'Aynı e-postayla farklı sağlayıcılardan giriş, YENİ hesap AÇMAZ — VAR OLAN hesaba sağlayıcı Id\'si BAĞLANIR',
           'Apple, Google\'dan FARKLI olarak e-posta GARANTİSİ VERMEZ — bu fark KODA savunmacı `null` kontrolleriyle YANSIR',
-          'Sosyal girişte de IsActive kontrolü VE ILoginCompletionService.CompleteLoginAsync AYNEN ÇALIŞIR — giriş yönteminden BAĞIMSIZ TUTARLILIK'
+          'Sosyal girişte de IsActive kontrolü VE ILoginCompletionService.CompleteLoginAsync AYNEN ÇALIŞIR — giriş yönteminden BAĞIMSIZ TUTARLILIK',
+          'GoogleTokenValidator resmi kütüphaneye (Google.Apis.Auth) yaslanır; AppleTokenValidator resmi kütüphane OLMADIĞI için JWKS\'i elle çeker ve Algorithm Confusion önlemini (RsaSha256 kontrolü) JwtTokenService İLE AYNI desenle KENDİSİ uygular'
         ]
       }
     ]

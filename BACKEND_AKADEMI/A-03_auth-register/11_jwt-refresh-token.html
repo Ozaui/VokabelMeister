@@ -143,6 +143,113 @@
       },
       {
         tur: 'kod',
+        baslik: 'GenerateRefreshToken — JWT DEĞİL, Rastgele Bir Değer',
+        dosyaYolu: 'backend/WordLearner.Application/Services/JwtTokenService.cs',
+        nedenBuKlasor: 'GenerateAccessToken İLE AYNI sınıfta (`JwtTokenService`) — `ITokenService` arayüzü İKİ metodu BİRLİKTE tanımladığı için (Bölüm 18), TEK bir implementasyon SINIFI ikisini de TAŞIR.',
+        kod: `public RefreshTokenResult GenerateRefreshToken()
+{
+    var bytes = new byte[64];
+    RandomNumberGenerator.Fill(bytes);
+    var days = _configuration.GetValue("Jwt:RefreshTokenExpirationDays", 7);
+    return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));
+}`,
+        satirlar: [
+          {
+            satir: 'var bytes = new byte[64];',
+            aciklama: '64 byte\'lık BOŞ bir dizi AYIRIR — bir SONRAKİ satırda RASTGELE değerlerle DOLDURULACAK.',
+            neden: '64 byte (512 bit), brute-force İLE tahmin EDİLEMEYECEK kadar BÜYÜK bir arama UZAYI sağlar — access token\'ın 15 dakikalık KISA ömrünün AKSİNE, refresh token GÜNLERCE (7 gün) geçerli KALDIĞI için DAHA UZUN bir SÜRE saldırıya AÇIKTIR, bu yüzden DAHA BÜYÜK bir rastgelelik GEREKİR.',
+            olmasaydi: 'Daha KISA bir dizi (ör. 16 byte) KULLANILSAYDI bile YİNE de güvenli SAYILIRDI (128 bit ZATEN pratikte KIRILAMAZ) — ama 64 byte, REFERENCE/SECURITY.md\'de PİNLENEN, "bol miktarda PAY BIRAK" felsefesini YANSITAN bilinçli bir SEÇİMDİR.'
+          },
+          {
+            satir: 'RandomNumberGenerator.Fill(bytes);',
+            aciklama: 'Bölüm 27\'deki `OtpService.Generate`\'de gördüğümüz AYNI kriptografik rastgelelik KAYNAĞI — bu kez tek bir SAYI DEĞİL, TÜM byte dizisini RASTGELE değerlerle DOLDURUR.',
+            neden: 'Refresh token, JWT\'nin AKSİNE HİÇBİR kimlik bilgisi TAŞIMAZ (imzalı DEĞİLDİR, İÇİNDE claim YOKTUR) — GÜVENLİĞİ TAMAMEN bu rastgeleliğe VE veritabanındaki (Bölüm 28\'de göreceğimiz) hash EŞLEŞTİRMESİNE DAYANIR; `System.Random` KULLANILSAYDI bu GÜVENCE TAMAMEN ORTADAN KALKARDI.',
+            olmasaydi: 'Bu satır olmasaydı, `bytes` dizisi TAMAMEN SIFIRLARDAN OLUŞURDU (C#\'ın VARSAYILAN byte DEĞERİ) — HER kullanıcı İÇİN, HER SEFERİNDE AYNI "rastgele" değer ÜRETİLİRDİ, tüm refresh token\'lar BİRBİRİYLE ÇAKIŞIRDI.'
+          },
+          {
+            satir: 'return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));',
+            aciklama: 'Ham byte dizisini YAZDIRILABİLİR bir Base64 STRİNG\'E çevirir (Bölüm 27\'deki `HashToken`\'ın AYNI dönüşümü) VE bitiş TARİHİYLE BİRLİKTE `RefreshTokenResult` adlandırılmış TUPLE-BENZERİ RECORD\'UNA sarar.',
+            neden: 'Çağıran Handler (RegisterCommandHandler, RefreshCommandHandler vb.), dönen `Token`\'ı DÜZ METİN olarak istemciye GÖNDERİR, `ExpiresAt`\'ı İSE veritabanına YAZILACAK `RefreshToken` entity\'sinin `ExpiresAt` alanına KOPYALAR — TEK bir çağrı, İKİ ilişkili değeri BİRLİKTE, tutarlı bir ŞEKİLDE ÜRETİR.',
+            olmasaydi: 'Token VE bitiş tarihi AYRI iki metotla ÜRETİLSEYDİ (`GenerateToken()` + `GetExpiryDate()`), aralarında GEÇEN milisaniyelik bir GECİKME (veya farklı bir `days` KONFİGÜRASYONU okunması) İKİ değerin BİRBİRİYLE TUTARSIZ olmasına yol AÇABİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetPrincipalFromExpiredToken — Algorithm Confusion Önlemi',
+        dosyaYolu: 'backend/WordLearner.Application/Services/JwtTokenService.cs',
+        nedenBuKlasor: 'TASK.md\'nin A-03 için AÇIKÇA adını verdiği bir güvenlik ÖNLEMİ ("algorithm-confusion önlemi") — GenerateAccessToken İLE AYNI dosyada, ÇÜNKÜ imzalayan VE doğrulayan mantığın AYNI SecretKey\'i PAYLAŞMASI GEREKİR.',
+        kod: `public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+{
+    var key = GetSigningKey();
+    var validationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = key,
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = false,
+    };
+
+    try
+    {
+        var principal = new JwtSecurityTokenHandler().ValidateToken(
+            token,
+            validationParameters,
+            out var validatedToken
+        );
+
+        if (
+            validatedToken is not JwtSecurityToken jwtToken
+            || !jwtToken.Header.Alg.Equals(
+                SecurityAlgorithms.HmacSha256,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+            return null;
+
+        return principal;
+    }
+    catch
+    {
+        return null;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'ValidateLifetime = false,',
+            aciklama: 'Normalde bir JWT\'nin SÜRESİ dolmuşsa `ValidateToken` bir exception FIRLATIR — bu metot BİLEREK süre kontrolünü KAPATIR, çünkü ÇAĞRILDIĞI an ZATEN "süresi dolmuş bir access token" BEKLENİR.',
+            neden: 'Bu metodun AMACI, "süresi dolmuş ama İMZASI hâlâ GEÇERLİ (yani GERÇEKTEN bu sunucu TARAFINDAN üretilmiş) bir token mı" SORUSUNU cevaplamaktır — süre kontrolü AÇIK olsaydı, metodun KENDİSİ HİÇBİR ZAMAN başarılı bir SONUÇ döndüremezdi.',
+            olmasaydi: '`ValidateLifetime` VARSAYILAN (true) BIRAKILSAYDI, `ValidateToken` HER ZAMAN bir `SecurityTokenExpiredException` FIRLATIRDI VE metot HER ÇAĞRIDA `null` DÖNERDİ — işlevsel olarak TAMAMEN BOZULURDU.'
+          },
+          {
+            satir: 'var principal = new JwtSecurityTokenHandler().ValidateToken(',
+            aciklama: 'İmza DOĞRULAMASINI (`ValidateIssuerSigningKey` + AYNI `SecretKey`) ÇALIŞTIRIR — token SAHTE bir imzayla ÜRETİLMİŞSE, bu satır bir exception FIRLATIR VE `catch` bloğu `null` DÖNER.',
+            neden: 'Bu, "token GERÇEKTEN bu sunucudan mı GELDİ" SORUSUNUN asıl CEVABIDIR — imza GEÇERSİZSE, TOKEN\'IN içeriği (claim\'ler) HİÇ GÜVENİLMEZ, doğrulama BURADA DURUR.',
+            olmasaydi: 'İmza doğrulaması OLMASAYDI, HERHANGİ biri KENDİ ÜRETTİĞİ, SAHTE bir JWT\'yi bu metoda VEREBİLİR, İÇİNDEKİ `NameIdentifier` claim\'İNİ İSTEDİĞİ bir KULLANICI ID\'SİNE AYARLAYIP başka birinin KİMLİĞİNE bürünebilirdi.'
+          },
+          {
+            satir: '            validatedToken is not JwtSecurityToken jwtToken',
+            aciklama: 'Doğrulanan token nesnesinin GERÇEKTEN beklenen `JwtSecurityToken` TİPİNDE OLUP OLMADIĞINI kontrol eder — DEĞİLSE (`is not`), bu DAL çalışır VE `null` DÖNER.',
+            neden: 'Bu, Algorithm Confusion saldırısının İLK yarısı: `ValidateToken`, TEORİDE farklı bir token TİPİYLE de (ör. asimetrik bir algoritma KULLANAN bir SecurityToken) ÇAĞRILABİLİR — beklenmeyen bir TİP, GÜVENİLMEMESİ gereken bir SONUÇ anlamına gelir.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, bir SONRAKİ satırdaki `jwtToken.Header.Alg` ERİŞİMİ (tip UYUŞMUYORSA) bir `NullReferenceException`/`InvalidCastException` İLE ÇÖKERDİ — kontrollü bir `null` DÖNÜŞÜ YERİNE, beklenmeyen bir hata.'
+          },
+          {
+            satir: '            || !jwtToken.Header.Alg.Equals(',
+            aciklama: 'Doğrulanan token\'ın HEADER\'INDA GERÇEKTEN "HS256" YAZDIĞINI, KARAKTER KARAKTER (case-insensitive) TEYİT eder — bu, Algorithm Confusion önleminin İKİNCİ VE en KRİTİK yarısıdır.',
+            neden: 'JWT KÜTÜPHANELERİNİN BİLİNEN bir zafiyeti: bir saldırgan, SUNUCUNUN GENELDE simetrik (HMAC) anahtarla ÇALIŞTIĞINI BİLEREK, "alg: none" YA DA farklı bir ALGORİTMA belirten bir token ÜRETİRSE, BAZI kütüphaneler bu token\'ı İMZAYI HİÇ KONTROL ETMEDEN "geçerli" SAYABİLİR — bu satır, doğrulamanın SONUCUNA GÜVENMEDEN ÖNCE, KULLANILAN algoritmanın GERÇEKTEN beklenen (HMAC-SHA256) OLDUĞUNU AYRICA, ELLE teyit eder.',
+            olmasaydi: 'Bu satır OLMASAYDI (yalnızca `ValidateToken`\'IN BAŞARILI DÖNMESİNE GÜVENİLSEYDİ), bir saldırgan "alg: none" (imzasız) bir token ÜRETİP `NameIdentifier` claim\'İNİ İSTEDİĞİ bir kullanıcıya AYARLAYABİLİR, KÜTÜPHANE bunu SESSİZCE "GEÇERLİ" SAYARSA metot GERÇEK bir `ClaimsPrincipal` DÖNDÜRÜRDÜ — TAM bir kimlik SAHTECİLİĞİ (impersonation) açığı.'
+          },
+          {
+            satir: 'catch',
+            aciklama: 'Parametre ALMAYAN genel bir `catch` — imza HATASI, süresi DOLMUŞ (teorik OLARAK, `ValidateLifetime=false` OLSA bile), BOZUK bir token FORMATI GİBİ HERHANGİ bir hatayı YAKALAR.',
+            neden: 'Bu metodun ÇAĞIRANI (RefreshCommandHandler İÇİN DEĞİL, GELECEKTEKİ potansiyel kullanım ALANLARI İÇİN tasarlanmış BİR arayüz metodu) yalnızca "GEÇERLİ mi DEĞİL mi" bilmek İSTER — HANGİ SPESİFİK exception fırlatıldığı ÖNEMLİ DEĞİLDİR, TÜMÜ AYNI "geçersiz" SONUCUNA indirgenir.',
+            olmasaydi: 'Bu `try/catch` OLMASAYDI, BOZUK/sahte bir token bu metoda VERİLDİĞİNDE `JwtSecurityTokenHandler.ValidateToken`\'IN fırlattığı EXCEPTION, çağıran kodun HİÇ BEKLEMEDİĞİ bir NOKTADA (yakalanmamış exception → 500 hatası) PATLARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
         baslik: 'RefreshToken.cs — Token Family Alanı',
         dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/RefreshToken.cs',
         nedenBuKlasor: 'Entities/Auth/ altında, User\'ın (Bölüm 9) hemen yanında — aralarında 1:N bir ilişki var (bir kullanıcının BİRDEN FAZLA refresh token\'ı olabilir, farklı cihazlardan girişler için).',
