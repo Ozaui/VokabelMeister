@@ -143,6 +143,66 @@
       </div>`;
   }
 
+  // AMAÇ: Bir endpoint'e Postman'dan (veya curl'den) gerçekte nasıl istek atılacağını gösterir
+  //       — yöntem, URL, header'lar, gövde ve örnek yanıt tek slaytta.
+  // NEDEN: `kod` slaytı Handler/Controller'ın NASIL yazıldığını anlatır ama okuyucu (junior)
+  //        "bunu kendi makinemde nasıl DENERİM" sorusuna kod okuyarak cevap bulamaz — bu slayt
+  //        Swagger'a hiç girmeden, doğrudan Postman'a kopyala-yapıştır yapılabilecek somut bir
+  //        istek göstererek o boşluğu kapatır (bkz. CLAUDE.md §3 adım 13 notu).
+  function renderPostman(s) {
+    const yontemSinif = `postman-method-${String(s.yontem || 'GET').toLowerCase()}`;
+    const header = (h) => `
+      <tr><td class="postman-th-key">${esc(h.anahtar)}</td><td>${esc(h.deger)}</td></tr>`;
+    return `
+      <div class="slide slide-postman">
+        <h2 class="slide-baslik">${esc(s.baslik)}</h2>
+        <div class="postman-istek">
+          <span class="postman-method ${yontemSinif}">${esc(s.yontem)}</span>
+          <code class="postman-url">${esc(s.url)}</code>
+        </div>
+        ${s.aciklama ? `<div class="postman-aciklama">${esc(s.aciklama)}</div>` : ''}
+        <div class="postman-grid">
+          ${
+            s.kimlikDogrulama
+              ? `<div class="postman-card">
+                  <div class="postman-card-baslik">Authorization</div>
+                  <div class="postman-card-govde"><code>${esc(s.kimlikDogrulama)}</code></div>
+                </div>`
+              : ''
+          }
+          ${
+            s.headers && s.headers.length
+              ? `<div class="postman-card">
+                  <div class="postman-card-baslik">Headers</div>
+                  <table class="postman-headers">${s.headers.map(header).join('')}</table>
+                </div>`
+              : ''
+          }
+          ${
+            s.govde
+              ? `<div class="postman-card postman-card-wide">
+                  <div class="postman-card-baslik">Body <span class="postman-card-etiket">raw / JSON</span></div>
+                  <pre class="postman-pre">${esc(s.govde)}</pre>
+                </div>`
+              : ''
+          }
+          ${
+            s.yanit
+              ? `<div class="postman-card postman-card-wide">
+                  <div class="postman-card-baslik">Yanıt <span class="postman-card-etiket postman-durum">${esc(String(s.yanit.durum))}</span></div>
+                  ${s.yanit.govde ? `<pre class="postman-pre">${esc(s.yanit.govde)}</pre>` : ''}
+                </div>`
+              : ''
+          }
+        </div>
+        ${
+          s.notlar && s.notlar.length
+            ? `<ul class="postman-notlar">${s.notlar.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`
+            : ''
+        }
+      </div>`;
+  }
+
   const RENDERERS = {
     kapak: renderKapak,
     kavram: renderKavram,
@@ -150,6 +210,7 @@
     karsilastirma: renderKarsilastirma,
     sozluk: renderSozluk,
     ozet: renderOzet,
+    postman: renderPostman,
   };
 
   // AMAÇ: Geçerli slaytı sahneye basar, üst çubuğu (sayaç/progress) ve nav butonlarını günceller.

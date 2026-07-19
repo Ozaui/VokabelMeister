@@ -336,6 +336,94 @@ public class QrLoginController : ControllerBase
         ]
       },
       {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/auth/qr/generate',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/generate',
+        aciklama: 'Web\'in göstereceği yeni bir QR oturumu başlatır — gövde YOK, kimlik doğrulama GEREKMEZ (henüz kimse giriş yapmadı).',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "qrToken": "url-safe-rastgele-token...",
+  "pairingCode": "123456",
+  "expiresIn": 120
+}`
+        },
+        notlar: [
+          'qrToken değeri, aşağıdaki 4 endpoint\'in ({token} route parametresi) hepsinde kullanılır — bir sonraki isteklerden önce buradan kopyala.',
+          'pairingCode, mobil ekranında (scan sonrası) web\'de gösterilenle karşılaştırılan 6 haneli koddur — Postman\'dan yalnızca akışı takip etmek için kullanılır, gerçek mobil ekranı YOKTUR.',
+          '120 saniye içinde scan/confirm/deny ile ilerlemezsen oturum süresi dolar (410 Gone).'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/auth/qr/{token}/status',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/auth/qr/{{qrToken}}/status',
+        aciklama: 'Web\'in ~2sn\'de bir sorguladığı polling endpoint\'i — QR oturumunun güncel durumunu döner.',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "status": "Pending",
+  "accessToken": null,
+  "refreshToken": null,
+  "expiresIn": null,
+  "user": null
+}`
+        },
+        notlar: [
+          '{token} yerine generate yanıtından aldığın qrToken\'ı URL\'e yapıştır (path parametresi, body DEĞİL).',
+          'status="Confirmed" olduğunda accessToken/refreshToken/user alanları DOLU gelir — bu tek seferliktir, bir sonraki status isteğinde oturum "Consumed"a geçmiş olur.',
+          'Bu endpoint özel bir rate limit kullanır ("qrStatus", IP başına) — paylaşımlı "anonymous" limitini (10/dk) DEĞİL, çünkü polling sıklığı onu saniyeler içinde tüketirdi.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/auth/qr/{token}/scan',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/{{qrToken}}/scan',
+        aciklama: 'Mobil, zaten giriş yapmış olduğu JWT\'siyle QR\'ı taradığında çağırır — gövde YOK, token route\'tan, kullanıcı kimliği Authorization header\'daki JWT\'den.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "requesterDeviceInfo": "Mozilla/5.0 ...",
+  "requesterIp": "127.0.0.1",
+  "pairingCode": "123456"
+}`
+        },
+        notlar: [
+          'Buradaki {{accessToken}}, bu QR akışıyla İLGİSİZ ayrı bir hesabın (mobil cihazda zaten login olmuş kullanıcının) token\'ıdır — login/verify-otp\'den önceden almış olman gerekir.',
+          'Yanıttaki requesterDeviceInfo/requesterIp, QR\'ı OLUŞTURAN (web) tarafın bilgisidir — mobil ekranda "bu cihaz mı?" diye karşılaştırma yapmak için kullanılır.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/auth/qr/{token}/confirm',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/{{qrToken}}/confirm',
+        aciklama: 'Mobil kullanıcı, gördüğü cihaz/pairingCode\'u doğrulayıp girişi onaylar — gövde YOK.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: { durum: 204, govde: null },
+        notlar: [
+          'Bu isteği atmadan önce AYNI token için scan isteğini atmış olmak gerekir (oturum "Scanned" durumunda olmalı) — aksi halde 403/404/410 döner.',
+          'Confirm\'den sonra web tarafı bir sonraki GET .../status isteğinde accessToken/refreshToken alır — Postman\'dan tam akışı test etmek istersen confirm\'den hemen sonra status\'u tekrar çağır.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/auth/qr/{token}/deny',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/{{qrToken}}/deny',
+        aciklama: 'Mobil kullanıcı girişi reddeder (cihaz/kod eşleşmiyor veya isteği tanımıyor) — gövde YOK.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: { durum: 204, govde: null },
+        notlar: [
+          'confirm İLE AYNI ön koşulları taşır (önce scan gerekir) — tek fark hedef durumun "Denied" olması.',
+          'deny\'den sonra status isteği status="Denied" döner, token alanları HİÇBİR ZAMAN dolmaz.'
+        ]
+      },
+      {
         tur: 'kod',
         baslik: 'Program.cs — Partitioned (IP-Başına) Rate Limiting',
         dosyaYolu: 'backend/WordLearner.API/Program.cs',

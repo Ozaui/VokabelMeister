@@ -63,6 +63,17 @@ Slayt türleri (`tur` alanı motorun hangi şablonu çizeceğini belirler):
 | `karsilastirma` | "Doğru yapılırsa / yanlış yapılırsa" iki sütun | `baslik`, `iyi`, `kotu` |
 | `sozluk` | Terim tanımları grid'i | `baslik`, `terimler[]` |
 | `ozet` | Bölüm kapanışı, madde listesi | `baslik`, `maddeler[]` |
+| `postman` | Bir endpoint'e Postman'dan (curl'e de uyar) gerçekte nasıl istek atılacağı | `baslik`, `yontem`, `url`, `yanit` (+ opsiyonel `aciklama`, `kimlikDogrulama`, `headers[]`, `govde`, `notlar[]`) |
+
+`postman` türü **her endpoint'i controller'a bağlayan `kod` slaytından hemen sonra** eklenir —
+CLAUDE.md §3 adım 13 notuna bak (Backend Akademi'ye işlerken zorunlu adım). Alanlar:
+- `yontem`: `GET`/`POST`/`PUT`/`DELETE` (büyük harf).
+- `url`: kopyala-yapıştır yapılabilir TAM adres (`http://localhost:5001/api/v1/...`) — göreli yol değil.
+- `kimlikDogrulama`: `[Authorize]` varsa `'Bearer {{accessToken}}'` gibi Authorization header değeri; yoksa alan hiç yazılmaz.
+- `headers[]`: `Content-Type` dışında özel bir header gerekiyorsa (`{ anahtar, deger }`); `Content-Type: application/json` gövdesi olan her istekte örtük kabul edilir, ayrıca yazılmaz.
+- `govde`: request body'nin gerçek DTO/Command alan adlarıyla birebir örnek JSON'u (uydurma alan adı yazılmaz); body yoksa alan hiç yazılmaz.
+- `yanit`: `{ durum, govde }` — gerçek response DTO şekliyle birebir örnek başarı yanıtı.
+- `notlar[]`: ön koşul/bağımlılık (ör. "bu isteği atmadan önce X adımını tamamla", "OTP kodu için backend konsolundaki `[DEV EMAIL]` logunu oku") — sık yapılan bir Postman hatası varsa da buraya yazılır.
 
 `kod` türünde `satirlar[]` her öğesi `{ satir, aciklama, neden, olmasaydi }` — `satir` alanı,
 `kod` metnindeki satırla **karakter karakter (trim edilmiş) eşleşmeli**, yoksa motor o satırı
