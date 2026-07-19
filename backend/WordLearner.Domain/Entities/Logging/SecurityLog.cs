@@ -36,7 +36,12 @@ public class SecurityLog
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
 
-    // AMAÇ: Olaya özel serbest metin ayrıntı (ör. "5 dakikada 6. başarısız deneme").
+    // AMAÇ: Olaya özel ek ayrıntı — serbest metin DEĞİL, sabit bir Code (ör. "LoginOtp",
+    //       "TOKEN_REPLAY_FAMILY_REVOKED"). NEDEN: CLAUDE.md §1 "İkinci istisna" —
+    //       admin panel de bir istemci olduğu için bu alan da tr/de'ye admin GET
+    //       /admin/logs/* ile OKURKEN, kendi Accept-Language'ıyla çözülür (yazılma
+    //       anında değil); ErrorMessages/SuccessMessages ile birebir aynı Code-sonra-çöz
+    //       deseni, yalnızca çözme anı farklı.
     public string? Detail { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
