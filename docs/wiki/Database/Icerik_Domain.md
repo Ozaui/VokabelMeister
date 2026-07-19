@@ -8,11 +8,17 @@
 Bir kelime, dilden bağımsız bir `WordConcepts` kaydına (kavram: `PartOfSpeech`/`DifficultyLevel`/
 `ImageUrl`) ve o kavrama bağlı, her biri bir `Languages` satırına işaret eden N adet `Words` satırına
 ayrılır — `WordConcepts (Id) ─┬─ Words(LanguageId=de) ─┬─ Words(LanguageId=tr) ─┬─ [ileride Words(LanguageId=en)]`.
-Bir kelime oluşturulurken/düzenlenirken Almanca ve Türkçe karşılığı — kendi gramer/örnek cümleleriyle
-birlikte — **aynı işlemde** girilir/güncellenir (sıralı değil). Kategori aynı mantıkla `Categories`
-(çekirdek) + `CategoryTranslations` (dil başına ad) olarak ayrılır. Eşleştirme yönsüzdür: DE-TR, DE-EN,
-TR-EN hepsi aynı `WordConceptId`/`CategoryId` üzerinden otomatik geçerlidir — ayrı bir çeviri
-eşleştirme (M:N) tablosu **yok**, hub-and-spoke (1:N) yeterli.
+Bir kelime **iki yoldan** girilebilir: (a) Almanca+Türkçe karşılığı — kendi gramer/örnek
+cümleleriyle birlikte — **aynı işlemde** girilir/güncellenir, ya da (b) her dil **ayrı** toplu
+import'la kendi başına girilir (795 Almanca / N Türkçe satır gibi büyük hacimli içerik girişinde
+gerçekçi olan yol) — bu durumda `WordConcept` geçici olarak **"eşleşmemiş"** kalır (tek dilde
+`Words` satırı), Admin panelden ayrı bir **Eşleştirme** ekranıyla (bkz. Yirmi dokuzuncu INGEST)
+sonradan birleştirilir; eşleşene kadar öğrenme oturumuna girmez. Kategori aynı mantıkla `Categories`
+(çekirdek) + `CategoryTranslations` (dil başına ad) olarak ayrılır. Kavram bazında eşleşme yönsüzdür:
+DE-TR, DE-EN, TR-EN hepsi aynı `WordConceptId`/`CategoryId` üzerinden otomatik geçerlidir — ayrı bir
+çeviri eşleştirme (M:N) tablosu **yok**, hub-and-spoke (1:N) yeterli. **Öğrenme yönü** (`de→tr` mi
+`tr→de` mi) kullanıcı profilinde sabit değil, her `LearningSession`'ın `TargetLanguageId`'si — aynı
+hesap iki yönü de bağımsız ilerletebilir (bkz. [[SRS_Domain]]).
 
 ## Languages
 `Code` (ISO 639-1: `de`/`tr`/`en`…), `Name`, `NativeName`, `IsActive`, `DisplayOrder`. Seed: yalnızca
@@ -51,9 +57,21 @@ aktif içerik — yön fark etmeksizin, bir Almanın Türkçe öğrenmesi dâhil
 Kategori **kavram üzerinden** bir kez etiketlenir (`WordConceptId`↔`CategoryId`), tüm diller otomatik
 kapsanır — Türkçe/İngilizce eklenince tekrar etiketlemeye gerek yok.
 
+## Tür Bazlı GrammarData Doldurma Kuralı ve Eşleştirme
+`WordGrammarValidator`, `Words.LanguageId`'ye göre dile dispatch eder, sonra dilin kendi
+`PartOfSpeech` matrisini uygular — `de` → [[Alman_Dili_Ozellikleri]] §10, `tr` →
+[[Turkce_Dili_Ozellikleri]] §9 (795 kelime/eşdeğer gerçek içerikten ölçülmüş desenler; iki dilin
+matrisi birbirinden bağımsız, kopyalanamaz — ör. "bileşik kelime notu" `de`'de yalnızca Noun'da,
+`tr`'de Noun+Verb'de). Eşleştirme uç noktaları: `GET /word-concepts/unmatched?languageId=`
+(+ `suggestedMatchConceptId` — `Definition`↔`Text` örtüşmesiyle önerilen aday, elle taramayı azaltır),
+`POST /word-concepts/{primaryId}/pair` — **bloklayıcı hata yok**: `PartOfSpeech`/kategori/seviye
+çakışsa bile `primaryId`'ninki sessizce kazanır (diller arası tür kayması dilin doğası, veri hatası
+değil — bkz. Otuzuncu INGEST).
+
 ## Planlanan Kod
 - A-05: `Language`/`WordConcept`/`Word`/`WordDetail`/`WordExample` entity + `Language` seed (de/tr) →
-  `IWordService`/`WordService` (liste filtre+sayfa, detay, CRUD Admin — bir kelime tüm dilleriyle
-  `translations[]` şeklinde tek işlemde, duplikat 409 + `?force=true`) → `WordController`.
+  `WordGrammarValidator` (dil+tür bazlı koşullu kural) → `IWordService`/`WordService` (liste
+  filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya 2 dil, duplikat 409 + `?force=true`) →
+  eşleştirme (`GetUnmatchedWordConceptsQuery`/`PairWordConceptsCommand`) → `WordController`.
 - A-06: `Category`/`CategoryTranslation`/`WordCategory` entity → `ICategoryService`/`CategoryService`
   (hiyerarşik liste, silme koruması — alt kategori/aktif kelime varsa 409) → `CategoriesController`.

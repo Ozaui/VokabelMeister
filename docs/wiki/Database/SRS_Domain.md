@@ -10,6 +10,13 @@ Aynı alan seti: `CurrentLevel` (0=hiç görülmedi..5=otomatik hatırlama), `Ma
 `SuccessRate`, `LastReviewedAt`, `NextReviewAt`, `IntervalDays`, `RepetitionNumber`.
 Benzersizlik: `UNIQUE(UserId, WordId)` / `UNIQUE(UserId, UserCardId)`.
 
+**Yön/hedef dil (Yirmi dokuzuncu INGEST):** `WordId` zaten **dile özel** bir satır (bir `WordConcept`'in
+`de` karşılığı ve `tr` karşılığı ayrı `Words.Id`'lerdir) — bu yüzden aynı kullanıcı aynı kavramı hem
+`de→tr` hem `tr→de` yönünde öğrenirse, iki ayrı `UserProgress` satırına düşer (Almanca `WordId`'sinde
+biri, Türkçe `WordId`'sinde diğeri) ve **birbirinden bağımsız ilerler** — kullanıcı profilinde sabit
+bir "hedef dil" alanı olmadığı için bu şema **hiç değişmeden** iki yönü de destekliyor. Hangi yönün
+aktif olduğu `LearningSessions.TargetLanguageId`'de tutulur (bkz. [[Icerik_Domain]] "Eşleştirme").
+
 ### Mastery Formülü (yüzdelik, 0-100)
 `Mastery` alanı şemada vardı ama formülü tanımsızdı. Karar: `CurrentLevel` baskın sinyal
 (SM-2'nin doğrudan çıktısı), `SuccessRate` ince ayar:

@@ -67,8 +67,12 @@
 > `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
 > gerçek formatı (MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse) backend'de
 > rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.
+> **Not (yön/hedef dil):** kullanıcı profilinde sabit bir "öğrendiğim dil" yok — aynı hesapla hem
+> Almanca hem Türkçe öğrenilebilir (bkz. `C_kullanici_backend.md` C-05, `DATABASE_SCHEMA/Icerik.md`
+> "Eşleştirme"). `targetLanguageId` her oturum başlatmada seçilir (`HomePage`'de bir dil anahtarı/
+> sekmesi — `de`/`tr`), `POST /learning-sessions` gövdesine eklenir.
 - [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
-  `MasteryBand` (`Weak|Medium|Good`) (`learning.types.ts`)
+  `MasteryBand` (`Weak|Medium|Good`), `TargetLanguage` (`de|tr`) (`learning.types.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
   `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
@@ -78,7 +82,8 @@
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Component:** `HomePage` (streak, günlük hedef ilerleme çubuğu, pasif due rozeti, hedef
   tamamlanınca opsiyonel "tekrar edelim mi" teklifi, "Bugün Öğrendiklerim"/"Bugün Test Ettiklerim"
-  listeleri — seviyesiz vs. `masteryBefore→masteryAfter` yüzdelik), `FlashcardScreen` (4'lü öz
+  listeleri — seviyesiz vs. `masteryBefore→masteryAfter` yüzdelik, **dil anahtarı** [Almanca öğren/
+  Türkçe öğren, `targetLanguageId` seçimi — her ikisinin streak/ilerlemesi bağımsız]), `FlashcardScreen` (4'lü öz
   değerlendirme + ipucu butonu + zaman/ipucu bazlı seçenek kilitleme + D-04 `SystemWordCard`),
   `MultipleChoiceScreen`, `TranslationQuizScreen`, `ArticleQuizScreen`, `PluralQuizScreen`,
   `TrueFalseScreen`, `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et),

@@ -63,6 +63,6 @@ INSERT INTO CategoryTranslations (CategoryId, LanguageId, Name) VALUES
 1. `UserProgress` (sistem) ve `UserCardProgress` (kişisel) **ayrı** tablolar.
 2. `LearningHistory.WordId` ve `UserCardId` ikisi birden NULL olamaz (uygulama kontrolü).
 3. `UserCard` yalnızca sahibince görülür → her sorguda `UserId` filtresi.
-4. **Sistem kelimesi eşleşmesi:** `UserCard.FrontText`, `Words.Text` ile (aynı LanguageId) eşleşir ve kullanıcının o `WordConcept` için `UserProgress` kaydı varsa, Mixed sınavda o UserCard **atlanır** (UserProgress önceliklidir). Karşılaştırılacak LanguageId (kullanıcının hedef dili) C-fazında netleşir.
+4. **Sistem kelimesi eşleşmesi:** `UserCard.FrontText`, `Words.Text` ile (aynı LanguageId) eşleşir ve kullanıcının o `WordConcept` için `UserProgress` kaydı varsa, Mixed sınavda o UserCard **atlanır** (UserProgress önceliklidir). Karşılaştırılacak LanguageId artık `LearningSessions.TargetLanguageId`'den gelir (kullanıcı profilinde sabit bir "hedef dil" yok — bkz. `Icerik.md` "Eşleştirme" bölümü + `SRS.md`).
 5. `ClassWords` yalnızca üyelere: `WHERE ClassId IN (kullanıcının üye sınıfları)`.
 6. Log tabloları insert-only.

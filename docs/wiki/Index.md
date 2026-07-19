@@ -857,3 +857,71 @@ edildi (yeni dosyalar için yeni adımlar dahil). **Etkilenen kod dosyaları:**
 `docs/wiki/Architecture/Backend_Katmanli_Mimari.md`, bu dosya (`Index.md`). **Not:** Bu INGEST
 Yirmi altıncı/Yirmi yedinci INGEST'lerle (tasarım sistemi + tema tercihi) EŞ ZAMANLI, bağımsız bir
 oturumda yazıldı — numaralandırma çakışmasını önlemek için Yirmi sekizinci olarak numaralandırıldı.*
+
+*Yirmi dokuzuncu INGEST (2026-07-14) — **Tür bazlı `GrammarData` doldurma kuralı (Almanca+Türkçe) +
+`de`/`tr` eşleştirme mekanizması + iki yönlü öğrenme.** Kullanıcı 795 kelimelik gerçek Almanca
+içerikten ölçtüğü doldurma desenini paylaştı (Noun: gender+plural+4 hâl her zaman dolu, bileşik not
+yalnızca bileşik isimde, fiil alanları hep "–"; Verb: 18 çekim+auxiliary+pastParticiple her zaman
+dolu, ön ek yalnızca ayrılabilirse, isim alanları hep "–"; diğer türler: yalnızca kelime/tür/anlam/
+örnek), ardından Türkçe için eşdeğerini verdi (Noun: plural+6 hâl her zaman dolu; Verb: verbRoot+
+negativeForm+30 çekim [5 zaman×6 kişi, **Miş'li Geçmiş dahil** — önceki `GrammarData.conjugationData`
+örneği yalnızca 4 zaman gösteriyordu, eksik olan `pastNarrative` eklendi] her zaman dolu; **fark:
+bileşik kelime notu `tr`'de hem Noun hem Verb'de olabilir, `de`'de yalnızca Noun'da** — iki dilin
+matrisi kasıtlı olarak ayrı tutuldu, ortaklaştırılmadı). **Kritik açık soru çözüldü:**
+`DATABASE_SCHEMA.md`'de yıllardır duran "karşılaştırılacak LanguageId (hedef dil) C-fazında
+netleşir" notu iki `AskUserQuestion` ile netleşti: **(1) Eşleştirme akışı** — `de` ve `tr` içeriği
+**ayrı ayrı** toplu import'la girilir (795 satırlık ölçüm zaten bunun kanıtı — tek dilli hacimli
+içerik), her tek-dilli satır kendi "eşleşmemiş" `WordConcept`'ini oluşturur, Admin panelden ayrı bir
+**Eşleştirme ekranı** (`WordPairingPage`, B-03) iki tek-dilli kavramı birleştirir
+(`POST /word-concepts/{primaryId}/pair`, `PartOfSpeech` uyuşmazlığında 409+`force`, kazanan
+`primaryId`'nin metadatası). Eşleşmemiş kavram öğrenme oturumuna hiç girmez. **(2) Öğrenme yönü** —
+kullanıcı profilinde **sabit bir "hedef dil" alanı yok**; aynı hesap `de→tr` ve `tr→de`'yi **aynı
+anda, bağımsız** ilerletebilir. Bunu mümkün kılan zaten var olan bir gerçek: `UserProgress`/
+`UserCardProgress` `WordId` (dile özel satır) üzerinden anahtarlı, `WordConceptId` üzerinden değil —
+yani **hiçbir şema değişikliği gerektirmeden** iki yön birbirinden bağımsız ilerliyor. Yön bilgisi
+tek bir yerde tutuluyor: yeni `LearningSessions.TargetLanguageId` (FK `Languages`), her oturum
+başlatmada seçiliyor (`POST /learning-sessions` gövdesine `targetLanguageId` eklendi). **Kod
+yazılmadı** (A-05/B-03/C-05 hâlâ ⬜, saf tasarım/dokümantasyon kararı) — yalnızca gelecekteki
+implementasyonun tek doğruluk kaynağı olacak kurallar yazıldı. **Etkilenen dosyalar:**
+`docs/REFERENCE/{GERMAN_LANGUAGE_FEATURES,TURKISH_LANGUAGE_FEATURES,API_ENDPOINTS}.md`,
+`docs/DATABASE_SCHEMA.md`, `docs/DATABASE_SCHEMA/{Icerik,SRS}.md`,
+`docs/TASK/{A_admin_panel_backend,B_admin_panel,C_kullanici_backend,D_web_app,E_mobil}.md`,
+`docs/wiki/Database/{Icerik_Domain,SRS_Domain}.md`, bu dosya (`Index.md`), kök dizine yeni
+`ALMANCA_TURKCE_ESLESME.md` (kullanıcı için özet/referans, koddan bağımsız).*
+
+*Otuzuncu INGEST (2026-07-14, aynı gün) — **Yirmi dokuzuncu INGEST'in 3 gerçek tasarım hatası
+kullanıcının gerçek 795 satırlık veriyle yaptığı incelemeyle düzeltildi.** **(1) `Words.Definition`
+("Anlamı") semantiği yanlıştı** — "kelimenin kendi dilinde tanımı" varsayılmıştı, gerçek veri
+`Definition`'ın zaten **karşı dilde kısa gloss** olduğunu gösterdi (`aber`→"ama, fakat, ancak").
+Düzeltme: alan artık dili sabit olmayan serbest bir "anlam notu", birincil işlevi eşleştirme önerisi
+üretmek (`suggestedMatchConceptId` — `Definition`↔`Text` string örtüşmesi, admin arama yapmadan
+onaylar). **(2) Örnek cümlelerin "karşılıklı çeviri" olduğu varsayımı temelsizdi** — ayrı import
+edilen iki dilin örnek cümleleri birbirinin çevirisi olmak zorunda değil. Düzeltme: yeni
+`WordExamples.PairedExampleId` (nullable self-FK) — yalnızca birlikte girilen veya elle bağlanan
+örnekler "çeviri" sayılır, bağlı olmayanlar bağımsız gösterilir. **(3) `PartOfSpeech` uyuşmazlığında
+409+`force` YANLIŞTI** — diller arası tür kayması (ayrılabilir fiil ↔ deyim/isim tamlaması) dilin
+doğası, veri hatası değil; kaldırıldı, artık bloklayıcı hiçbir hata yok, `primaryId`'ninki sessizce
+kazanır. **Küçük düzeltmeler:** "Seviye" (`DifficultyLevel`) tanımsız kalmıştı, `WordConcepts`
+üzerindeki mevcut concept-seviyesi alana çapraz referans netleştirildi; Türkçe `verbRoot`/
+`negativeForm` alanlarının henüz gerçek veriyle doğrulanmadığı ayrıca not edildi. **Kod yazılmadı**
+(yine saf tasarım düzeltmesi, A-05/B-03 hâlâ ⬜). **Etkilenen dosyalar:**
+`docs/DATABASE_SCHEMA/Icerik.md` (`Words.Definition` yorumu, `WordExamples.PairedExampleId` yeni
+kolon, "Eşleştirme" bölümü yeniden yazıldı), `docs/REFERENCE/{GERMAN_LANGUAGE_FEATURES,
+TURKISH_LANGUAGE_FEATURES,API_ENDPOINTS}.md`, `docs/TASK/{A_admin_panel_backend,B_admin_panel}.md`,
+`docs/wiki/Database/Icerik_Domain.md`, bu dosya, kök dizindeki `ALMANCA_TURKCE_ESLESME.md` (v2
+olarak yeniden yazıldı).*
+
+*Otuz birinci INGEST (2026-07-14, aynı gün) — **Otuzuncu INGEST'in ikinci inceleme turunda 2 ek
+nokta netleştirildi.** **(1) Çoklu eşanlamlı kaybı:** `Definition`="ama, fakat, ancak" gibi
+virgülle ayrılmış çok-adaylı durumlarda `UQ_Words_Concept_Language` kısıtı (kavram başına dilde
+tek `Words` satırı) yüzünden eşleştirme yalnızca birini resmi çift yapar, kalanı sonsuza dek
+eşleşmemiş kalabilir ve öğrenme deneyiminden düşer — bu artık `Icerik.md`'de **bilinçli kabul
+edilen bir tradeoff** olarak açıkça yazılı (şema büyütülmedi, YAGNI), ve öneri algoritması artık
+`Definition`'ı virgülle **token'lara bölüp** her adayı ayrı ayrı deniyor (yoksa bütün string hiçbir
+tekil kelimeye eşleşmezdi). **(2) "Birincil taraf" seçimi tanımsızdı** — artık açık: varsayılan
+admin'in "Eşleştir" işlemini başlattığı taraf (`primaryId`), `WordPairingPage`'de onaydan önce
+görünür bir "birincil tarafı değiştir" kontrolüyle karşı tarafa da çevrilebilir. **Kod yazılmadı**
+(saf tasarım düzeltmesi, A-05/B-03 hâlâ ⬜). **Etkilenen dosyalar:** `docs/DATABASE_SCHEMA/
+Icerik.md` ("Eşleştirme" bölümüne 2 yeni madde), `docs/REFERENCE/API_ENDPOINTS.md` §5,
+`docs/TASK/{A_admin_panel_backend,B_admin_panel}.md`, bu dosya, kök dizindeki
+`ALMANCA_TURKCE_ESLESME.md` (v3).*

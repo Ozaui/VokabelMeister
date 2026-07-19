@@ -44,7 +44,11 @@ CREATE TABLE Words (
     WordConceptId INT NOT NULL,
     LanguageId INT NOT NULL,
     Text NVARCHAR(255) NOT NULL,          -- 'Tisch' (de) / 'masa' (tr)
-    Definition NVARCHAR(MAX) NULL,
+    Definition NVARCHAR(MAX) NULL,        -- serbest "anlam notu" — dili SABİT DEĞİL (pratikte çoğunlukla
+                                           -- karşı dilde kısa gloss, ör. 'aber'→"ama, fakat, ancak").
+                                           -- Kartta "resmi çeviri" DEĞİLDİR (o eşleşen Words.Text'ten gelir) —
+                                           -- birincil işlevi ayrı-girilen içerikte eşleştirme ipucu olmak
+                                           -- (bkz. "Eşleştirme" bölümü, suggestedMatchConceptId).
     IsActive BIT NOT NULL DEFAULT 1,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (WordConceptId) REFERENCES WordConcepts(Id) ON DELETE CASCADE,
@@ -78,14 +82,26 @@ CREATE TABLE WordExamples (
     SentenceText NVARCHAR(MAX) NOT NULL,   -- bu Word'ün dilinde tek örnek cümle
     Level NVARCHAR(2) NOT NULL DEFAULT 'A1',
     ExampleType NVARCHAR(20) NOT NULL DEFAULT 'Normal',  -- Normal|Idiom|Formal|Colloquial
+    PairedExampleId INT NULL,              -- karşı dildeki WordExamples satırı — YALNIZCA gerçekten
+                                            -- birlikte girildiyse (translations[] tek işlem) veya admin
+                                            -- eşleştirme sırasında elle bağladıysa dolar. NULL ise bu
+                                            -- örnek BAĞIMSIZDIR — "çeviri" değil, o kelimeyi kullanan
+                                            -- ayrı bir cümle; UI bunu "Örnek Cümle Anlamı" gibi SUNMAZ.
     DisplayOrder INT NOT NULL DEFAULT 0, IsActive BIT NOT NULL DEFAULT 1,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (WordId) REFERENCES Words(Id) ON DELETE CASCADE,
+    FOREIGN KEY (PairedExampleId) REFERENCES WordExamples(Id),
     CONSTRAINT CK_WordExamples_Level CHECK (Level IN ('A1','A2','B1','B2','C1','C2')),
     CONSTRAINT CK_WordExamples_ExampleType CHECK (ExampleType IN ('Normal','Idiom','Formal','Colloquial')),
     INDEX IX_WordExamples_WordId_Level (WordId, Level)
 );
 ```
+> **`PairedExampleId` neden gerekli:** İki dil ayrı import edildiğinde, aynı kavramın Almanca ve
+> Türkçe örnek cümleleri **birbirinin çevirisi olacağı garanti edilemez** — ikisi de o kelimeyi
+> kullanan bağımsız cümlelerdir. Yalnızca (a) `translations[]` ile tek işlemde birlikte girilen veya
+> (b) eşleştirme ekranında admin'in elle "bu ikisi çeviri" diye işaretlediği örnekler bu alanla
+> bağlanır ve kartta "Örnek Cümle Anlamı" olarak gösterilir. Bağlanmamış örnekler her dilde
+> **ayrı ayrı** gösterilir, çeviri iddia edilmez.
 
 ### Categories (hiyerarşik, dilden bağımsız çekirdek)
 ```sql
@@ -125,3 +141,66 @@ CREATE TABLE WordCategories (
     CONSTRAINT UQ_WordCategories UNIQUE (WordConceptId, CategoryId)
 );
 ```
+
+## Eşleştirme (Pairing) — `de` ve `tr` İçeriğinin Ayrı Girilip Sonra Birleştirilmesi
+
+> `DATABASE_SCHEMA.md`'deki eski not ("Karşılaştırılacak LanguageId... C-fazında netleşir") burada
+> çözüldü. Karar: **`de` ve `tr` içeriği ayrı ayrı, kendi toplu import akışlarıyla girilir**
+> (`GERMAN_LANGUAGE_FEATURES.md §10` / `TURKISH_LANGUAGE_FEATURES.md §9` kendi dilinin matrisine göre
+> doğrulanır) — tek işlemde `translations[]` ile birlikte girme **artık zorunlu değil**, ek bir yol.
+
+**Eşleşmemiş (unmatched) kavram:** Bir `WordConcept`, altında yalnızca **tek dilde** `Words` satırı
+varken "eşleşmemiş" sayılır — ayrı bir `IsMatched` kolonu **açılmaz** (YAGNI); durum
+`COUNT(DISTINCT Words.LanguageId) = 1` ile türetilir. Tek dilli import (`de`-only veya `tr`-only)
+her satır için kendi `WordConcept`'ini oluşturur (`PartOfSpeech`/`DifficultyLevel`/kategoriler o an
+girilir) + o dilin `Words`/`WordDetail`/`WordExample`'ı. **Eşleşene kadar bu kelime hiçbir öğrenme
+oturumuna girmez** — `LearningSessions` sorgusu yalnızca 2 dilli (eşleşmiş) `WordConcept`'leri kaynak alır.
+
+**Eşleştirme işlemi (Admin panel, B-03'ün bir parçası — bkz. A-05):**
+- `GET /word-concepts/unmatched?languageId={id}` — o dilde eşleşmemiş kavramların listesi (arama+sayfa),
+  her satırda **`suggestedMatchConceptId`** (varsa) — karşı dilin eşleşmemiş havuzunda bu kavramın
+  `Definition`'ı (serbest anlam notu, bkz. `Words.Definition` yorumu) ile karşı adayın `Text`'i
+  (veya tersi) örtüşen en iyi aday. **`Definition` virgülle (`,`) ayrılmış birden fazla karşılık
+  içerebilir** (ör. "ama, fakat, ancak") — algoritma bunu TEK bir string olarak değil, virgülle
+  **token'lara bölüp her birini ayrı ayrı** karşı `Text` havuzuna karşı dener (yoksa bütün string
+  hiçbir tekil kelimeye tam eşleşmez, öneri hiç bulunmaz). **Amaç:** 795+ satırı admin'in elle tek
+  tek taraması yerine, halihazırda satırlarda duran karşı-dil glossu bir öneri olarak kullanmak —
+  admin yalnızca **onaylar**, sıfırdan aramaz. Öneri yoksa liste manuel taranır.
+- `POST /word-concepts/{primaryId}/pair` `{ "otherConceptId": X }` — `otherConceptId`'nin tek
+  `Words` satırını `primaryId`'ye taşır (`WordConceptId` güncellenir), `otherConceptId`'yi (artık
+  boş kalan kavram) siler. Sonuç: tek `WordConcept`, 2 dilde `Words`. **Bloklayıcı hata yok** —
+  eşleştirme her zaman başarılı olur.
+- **"Birincil taraf" (`primaryId`) nasıl seçilir:** varsayılan olarak admin'in **"Eşleştir"
+  işlemini başlattığı** taraf — `WordPairingPage`'de hangi satırın üzerinde "Eşleştir" butonuna
+  basılırsa `primaryId` odur (URL zaten bunu ifade eder). Onaylamadan önce arayüzde açık bir
+  **"birincil tarafı değiştir"** kontrolü bulunur, admin isterse karşı tarafı birincil seçebilir —
+  davranış rastgele/click-order'a bağlı kalmaz, her zaman görünür ve değiştirilebilir bir seçimdir.
+- **`PartOfSpeech` uyuşmazlığı ARTIK 409 DEĞİL.** İki dil arasında çeviri edilen bir kavramın gramer
+  türü doğal olarak kayabilir (ör. Almanca ayrılabilir bir fiil Türkçede bir deyim/isim tamlaması
+  olabilir) — bu bir veri hatası değil, dillerin doğası. `primaryId`'nin `PartOfSpeech`'i sessizce
+  kazanır, arayüzde yalnızca bilgilendirme amaçlı gösterilir ("Not: türler farklı — bu normal
+  olabilir"), onay istenmez.
+- **`WordCategories` (Kategori/tema) çakışması** da bloklamaz ama **bilgilendirme değeri daha
+  yüksektir** (ör. "aile" temalı bir kelime yanlışlıkla "iş" kategorisiyle eşleşiyorsa bu gerçekten
+  fark edilmeye değer) — `primaryId`'ninki sessizce korunur, admin ekranında iki tarafın kategorileri
+  yan yana gösterilir ki admin isterse eşleştirmeden önce vazgeçebilir.
+- **`DifficultyLevel` (Seviye, A1-C2)** — `WordConcepts.DifficultyLevel`, tür-matrisinden bağımsız
+  concept-seviyesi bir alan (§2/§3 matrislerinde yer almaz, çünkü türe göre değişmez). Çakışmada
+  `primaryId`'ninki korunur, kritik sayılmaz.
+- **Bilinçli sınırlama — çoklu eşanlamlı kaybı:** `UQ_Words_Concept_Language` bir `WordConcept`'in
+  bir dilde yalnızca **tek** `Words` satırına sahip olmasını zorunlu kılar. `Definition`="ama,
+  fakat, ancak" gibi çok-adaylı durumlarda eşleştirme yalnızca **birini** (öneri onaylanan) resmi
+  çift yapar — diğerleri ayrı, sonsuza dek eşleşmemiş Türkçe kavramlar olarak kalabilir ve o
+  Almanca kelimeyle birlikte kullanıcıya hiç gösterilmez. Bu **kabul edilen bir sadeleştirme**
+  (çoğu flashcard uygulaması zaten tek bir birincil çeviri gösterir) — şema büyütülmez, çoklu
+  eşanlamlı birinci sınıf desteklenmez (YAGNI). İstenirse admin, eşleşmeyen ek eşanlamlıları
+  mevcut `WordDetails.Notes` alanına serbest metin olarak ekleyebilir (yeni kolon açılmaz).
+
+**Yön farkındalığı (hangi dilden hangi dile):** Bir `WordConcept` eşleşince kullanıcı onu **iki
+yönde de** öğrenebilir — `de→tr` (Almanca gramer test edilir, Türkçe yalnızca anlam) veya `tr→de`
+(tersi). Hangi yönün aktif olduğu **kullanıcı profilinde sabit bir alan değil**, her öğrenme
+oturumunun (`LearningSessions.TargetLanguageId`) parametresi — bkz. `SRS.md` ve `API_ENDPOINTS.md §9`.
+`UserProgress`/`UserCardProgress` zaten `WordId` (dile özel satır) üzerinden anahtarlandığı için bu
+**şema değişikliği gerektirmez**: aynı kullanıcı aynı kavram için hem Almanca `Words.Id`'sinde hem
+Türkçe `Words.Id`'sinde **ayrı ayrı** `UserProgress` satırına sahip olabilir — iki yön birbirinden
+bağımsız ilerler.

@@ -192,12 +192,38 @@
       + `Language` seed (`de`, `tr`) — bkz. `DATABASE_SCHEMA/Icerik.md` (çoklu dile açık şema:
       kategori/seviye `WordConcept` üzerinde, gramer `WordDetail.GrammarData` JSON'da dile göre değişir)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — bir kelime tüm dilleriyle
-      (`translations[]`) tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`)
+- [ ] `WordGrammarValidator` (FluentValidation) — önce `LanguageId`'ye göre dile dispatch, sonra o dilin
+      `PartOfSpeech` matrisini uygular. **`de` dalı** (`GERMAN_LANGUAGE_FEATURES.md §10`): Noun:
+      gender+plural+4 hâl zorunlu, fiil alanları yasak; Verb: 18 çekim+auxiliary+pastParticiple
+      zorunlu, `separablePrefix` yalnızca `isSeparableVerb=true` iken; Diğer: GrammarData tamamen NULL.
+      **`tr` dalı** (`TURKISH_LANGUAGE_FEATURES.md §9`): Noun: plural+6 hâl zorunlu, fiil alanları
+      yasak; Verb: verbRoot+negativeForm+30 çekim zorunlu; Diğer: GrammarData tamamen NULL. **İki
+      dilde de** bileşik kelime notu (`WordDetails.Notes`) koşullu — `de`'de yalnızca Noun'da,
+      `tr`'de hem Noun hem Verb'de olabilir (dile göre farklı, ortaklaştırılmaz). A-07 toplu import
+      da bu validator'ı kullanır.
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD)
+- [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya
+      2 dil tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`; 1 dilse kavram
+      "eşleşmemiş" kalır — bkz. `Icerik.md` "Eşleştirme")
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `WordServiceTests` (liste filtre, duplikat 409 + force, CRUD yetki)
+- [ ] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı, tek dilli kavram listesi +
+      `suggestedMatchConceptId` — karşı dilin `Definition`↔`Text` örtüşmesiyle önerilen aday;
+      `Definition` virgülle ayrılmış çoklu karşılık içerebildiği için [ör. "ama, fakat, ancak"]
+      **token'lara bölünüp her biri ayrı denenir**, tek string olarak denenmez — yoksa hiç
+      eşleşme bulunmaz. Çoklu eşanlamlıdan yalnızca biri eşleştirilir, kalanı eşleşmemiş kalabilir
+      — bilinçli kabul edilen sınırlama, bkz. `Icerik.md` "Eşleştirme") + `PairWordConceptsCommand`
+      (`primaryId`+`otherConceptId` → 2. dilin `Words`'ünü taşı, boş kalan kavramı sil;
+      `primaryId` = admin'in işlemi başlattığı taraf; **bloklayıcı hata yok** —
+      `PartOfSpeech`/`Category`/`DifficultyLevel` çakışsa bile `primaryId`'ninki sessizce kazanır,
+      çünkü diller arası tür kayması dilin doğası, veri hatası değil) —
+      `Icerik.md` "Eşleştirme" bölümü tek doğruluk kaynağı
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD+eşleştirme)
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **Birim testleri:** `WordServiceTests` (liste filtre, duplikat 409 + force, CRUD yetki,
+      eşleştirme mutlu yol + `PartOfSpeech`/`Category` çakışmasında sessizce `primaryId`'nin kazanması
+      [hata fırlatılmaması], `suggestedMatchConceptId` üretimi, `WordGrammarValidator` her
+      dil×tür kombinasyonu için)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-06 — Kategori API (Categories) ⬜
@@ -221,6 +247,7 @@
 - [ ] Kullanıcı: liste/arama/detay, rol değiştir, hesap dondur/aktif (her işlem **ActivityLog**'a)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] İçerik moderasyonu (kart liste + silme), genel istatistik, toplu kelime import
+      (satır bazında A-05 `WordGrammarValidator` — dil+tür'e göre koşullu kural, `GERMAN_LANGUAGE_FEATURES.md §10`)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security` (filtre+sayfa)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**

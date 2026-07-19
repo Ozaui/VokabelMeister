@@ -32,15 +32,28 @@
 **Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5
 - [ ] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **RTK Query:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`
+- [ ] **RTK Query:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
+      `getUnmatchedWordConcepts` (`languageId` bazlı, `suggestedMatchConceptId` dahil), `pairWordConcepts`
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (RHF — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak)
+- [ ] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (RHF — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
+      önce dil (`de`/`tr`) sonra `Tür` seçilir, gramer bölümü ikisine göre koşullu render edilir —
+      `de` + Noun/Verb/Diğer → `GERMAN_LANGUAGE_FEATURES.md §10`; `tr` + Noun/Verb/Diğer →
+      `TURKISH_LANGUAGE_FEATURES.md §9`; backend `WordGrammarValidator`'ın TS karşılığı, aynı mantık
+      iki ayrı katmanda tekrar yazılır — kod paylaşımı yok), `WordPairingPage` (iki sütun — solda `de`
+      eşleşmemiş liste, sağda `tr` eşleşmemiş liste, her satırda varsa **önerilen eşleşme**
+      [`suggestedMatchConceptId`] öne çıkarılmış — admin onaylar veya manuel seçip "Eşleştir" der;
+      onay öncesi açık bir **"birincil tarafı değiştir"** kontrolü [varsayılan: işlemi başlattığın
+      taraf `primaryId` olur, istersen karşı tarafa çevirebilirsin — Tür/Seviye/Kategori bilgisi
+      birincil olandan alınır]; `PartOfSpeech`/kategori farkı yalnızca **bilgilendirme** amaçlı
+      gösterilir, onay/force gerektirmez — diller arası tür kayması normal, bkz. `Icerik.md`
+      "Eşleştirme")
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Route:** `/words` (`App.tsx`), sidebar linki
+- [ ] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
 - [ ] ➜ **Frontend Yol Haritası'na işle**
-- [ ] **Birim testleri:** `WordFormModal.test.tsx` (validasyon, submit), `WordListPage.test.tsx` (filtre)
+- [ ] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
+      `WordListPage.test.tsx` (filtre), `WordPairingPage.test.tsx` (eşleştirme mutlu yol + önerilen eşleşme render)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 
 ### B-04 — Kategori Yönetimi ⬜

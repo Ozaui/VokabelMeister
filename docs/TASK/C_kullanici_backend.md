@@ -78,14 +78,18 @@
 ### C-05 — Öğrenme / Sınav API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §9
 **Frontend karşılığı:** D-05 (Web — Öğrenme/Sınav Sayfası), E-07 (Mobil — Öğrenme/Sınav Ekranı)
-- [ ] **Entity:** `LearningSession` (+ `TrueFalse` dahil 6 `SessionType`) + migration
+- [ ] **Entity:** `LearningSession` (+ `TargetLanguageId` FK `Languages`, + `TrueFalse` dahil 6 `SessionType`) + migration
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `ILearningSessionService` + `LearningSessionService` (başlat — `mode: New|Due|Band|Mixed`,
-  kelime seçim önceliği, Mixed dedup —, her review sorusu için rastgele format seçimi
-  [`sessionType` istemciden gelmez], ipucu → quality tavanı düşürme, cevap işleme
+- [ ] `ILearningSessionService` + `LearningSessionService` (başlat — `mode: New|Due|Band|Mixed` +
+  **zorunlu `targetLanguageId`** [hangi yönde: `de→tr` mi `tr→de` mi — kullanıcı profilinde sabit
+  bir hedef dil yok, her oturum kendi yönünü seçer, bkz. `DATABASE_SCHEMA/Icerik.md` "Eşleştirme"],
+  kelime havuzu yalnızca **eşleşmiş** (2 dilli) `WordConcept`'lerden + `targetLanguageId`'nin
+  `Words`'ünden seçilir, kelime seçim önceliği, Mixed dedup, her review sorusu için rastgele format
+  seçimi [`sessionType` istemciden gelmez], ipucu → quality tavanı düşürme, cevap işleme
   [Flashcard=selfRating, objektif tipler=otomatik quality, TrueFalse max tavan 4], "günde tek
   resmi review" kuralı [`IsExtraPractice`], tamamla, bırak, `repeat` [aynı kelimelerle SM-2
-  güncellemeden tekrar])
+  güncellemeden tekrar]) — **`UserProgress`/`UserCardProgress` zaten `WordId` (dile özel) ile
+  anahtarlandığı için aynı kullanıcı iki yönü bağımsız ilerletir, şema değişikliği gerekmez**
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `LearningSessionController` (+ `GET /learning-history/today/learned`, `GET /learning-history/today/tested`)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**

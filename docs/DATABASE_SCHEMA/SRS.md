@@ -1,7 +1,7 @@
 # SRS Domain — İlerleme, Öğrenme Geçmişi, Başarımlar
 
-> Genel kurallar → `../CLAUDE.md §1`. FK: `Users`→`Auth.md`, `Words`→`Icerik.md`, `UserCards`→`Kisisel_Icerik.md`.
-> SM-2 algoritması → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §8`.
+> Genel kurallar → `../CLAUDE.md §1`. FK: `Users`→`Auth.md`, `Words`/`Languages`→`Icerik.md`, `UserCards`→`Kisisel_Icerik.md`.
+> SM-2 algoritması → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §8`. Yön/hedef dil (`TargetLanguageId`) → `Icerik.md` "Eşleştirme" bölümü.
 
 ### UserProgress / UserCardProgress
 ```sql
@@ -46,6 +46,9 @@ CREATE TABLE UserCardProgress (
 ```sql
 CREATE TABLE LearningSessions (
     Id INT PRIMARY KEY IDENTITY, UserId INT NOT NULL,
+    TargetLanguageId INT NOT NULL,        -- hangi yönde öğreniliyor (de→tr mi tr→de mi) — bkz. Icerik.md "Eşleştirme"
+                                           -- bu dilin Words/WordDetail'i "ön yüz" (gramer test edilir),
+                                           -- diğer dilin Words.Text/Definition yalnızca çeviri olarak gösterilir
     SessionType NVARCHAR(50) NOT NULL,   -- Flashcard|MultipleChoice|ArticleQuiz|PluralQuiz|TranslationQuiz|TrueFalse
                                           -- Yeni kelime = Flashcard sabit; review = Mixed sabit
                                           -- (her sorunun gerçek formatı backend'de rastgele, bkz. LearningHistory.SessionType)
@@ -58,6 +61,7 @@ CREATE TABLE LearningSessions (
     SuccessRate DECIMAL(5,2) NULL, XPEarned INT NOT NULL DEFAULT 0,
     Status NVARCHAR(20) NOT NULL DEFAULT 'Active',  -- Active|Completed|Abandoned
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE,
+    FOREIGN KEY (TargetLanguageId) REFERENCES Languages(Id),
     CONSTRAINT CK_LearningSessions_Status CHECK (Status IN ('Active','Completed','Abandoned')),
     INDEX IX_LearningSessions_UserId (UserId)
 );

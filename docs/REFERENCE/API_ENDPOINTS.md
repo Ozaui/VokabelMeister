@@ -77,18 +77,24 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 
 ## 5. Sistem Kelimeleri
 
-> Bir `WordConcept` her zaman **tüm dilleriyle birlikte** oluşturulur/düzenlenir — `POST/PUT` gövdesinde `translations[]` (şu an de+tr). Bkz. `DATABASE_SCHEMA/Icerik.md`.
+> `WordConcept` **iki yoldan** oluşabilir: (a) `translations[]` ile tek istekte tüm dillerle birlikte
+> (admin ikisini de biliyorsa), (b) tek dilde (bkz. "Eşleştirme" altı) — `de` ve `tr` içeriği ayrı
+> toplu import'larla girilip **sonradan Admin panelden eşleştirilir**. Detay/kural →
+> `DATABASE_SCHEMA/Icerik.md` "Eşleştirme" bölümü. `GrammarData` alan doğrulaması dil+tür'e göre —
+> `GERMAN_LANGUAGE_FEATURES.md §10` / `TURKISH_LANGUAGE_FEATURES.md §9`.
 
 | Metot | Yol | Auth | Açıklama |
 |-------|-----|------|----------|
 | GET | `/words` | [Authorize] | Liste (level, categoryId, partOfSpeech, search, page, pageSize) |
 | GET | `/words/{id}` | [Authorize] | Detay (tüm diller `translations` + WordDetail/örnekler) |
-| POST | `/words` | Admin | `WordConcept` + `translations[]` tek istekte (aynı dilde Text varsa 409, `?force=true`) |
+| POST | `/words` | Admin | `WordConcept` + `translations[]` (1 veya 2 dil) tek istekte (aynı dilde Text varsa 409, `?force=true`) |
 | PUT | `/words/{id}` | Admin | `translations[]` güncelle / yeni dil ekle |
 | DELETE | `/words/{id}` | Admin | Soft delete (kavram + tüm diller) |
+| GET | `/word-concepts/unmatched` | Admin | `languageId` bazlı eşleşmemiş (tek dilli) kavram listesi (arama+sayfa) |
+| POST | `/word-concepts/{primaryId}/pair` | Admin | `{ "otherConceptId": X }` → 2. dilin `Words`'ünü `primaryId`'ye taşır, `otherConceptId`'yi siler |
 
 ```json
-// POST /words
+// POST /words (translations[] 1 dil de olabilir — o zaman kavram "eşleşmemiş" kalır)
 { "partOfSpeech": "Noun", "difficultyLevel": "A1", "imageUrl": "...", "categoryIds": [1],
   "translations": [
     { "languageCode": "de", "text": "Mann",
@@ -98,6 +104,16 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
   ] }
 // GET /words → data[].{ wordConceptId, partOfSpeech, difficultyLevel, translations[], categories[], userProgress }
 //   + pagination { currentPage, totalPages, totalItems }
+
+// GET /word-concepts/unmatched?languageId=1 → data[].{ wordConceptId, languageCode:"de", text:"Anrufbeantworter",
+//   partOfSpeech, difficultyLevel, suggestedMatchConceptId: 87 }
+//   → öneri, Definition'ı (ör. "ama, fakat, ancak") virgülle TOKEN'LARA bölüp her birini karşı
+//     dilin Text havuzuna karşı ayrı ayrı dener (bütün string olarak denenirse hiç eşleşmez)
+// POST /word-concepts/12/pair { "otherConceptId": 87 } → 200 { "wordConceptId": 12, "translations": [...2 dil] }
+// → primaryId = 12 (admin hangi kavram üzerinden "Eşleştir" dediyse o); onaydan önce UI'da
+//   "birincil tarafı değiştir" ile 87 de birincil seçilebilir
+// → Bloklayıcı hata YOK: PartOfSpeech/Category/DifficultyLevel çakışırsa 12'ninki sessizce kazanır
+//   (dile göre tür kayması dilin doğası — hata değil, bkz. Icerik.md "Eşleştirme")
 ```
 
 ## 6. Kategoriler
@@ -134,6 +150,10 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 ## 9. Öğrenme / Sınav
 
 > İstemci `sessionType` göndermez. Yeni kelime = Flashcard; review'da her soru backend'de rastgele format (bkz. `TECHNICAL_SPECIFICATIONS.md §8`).
+> **`targetLanguageId` zorunlu** — hangi yönde öğrenilecek (`de→tr` mi `tr→de` mi). Kullanıcı
+> profilinde sabit bir "hedef dil" **yok**, aynı kullanıcı istediği oturumda istediği yönü seçer
+> (bkz. `DATABASE_SCHEMA/Icerik.md` "Eşleştirme" + `SRS.md` `LearningSessions.TargetLanguageId`).
+> Yalnızca **eşleşmiş** (2 dilli) `WordConcept`'ler oturuma girer.
 
 | Metot | Yol | Açıklama |
 |-------|-----|----------|
@@ -145,10 +165,10 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | GET | `/learning-sessions/history` | Geçmiş (sayfalı) |
 
 ```json
-// POST /learning-sessions — mode: New|Due|Band|Mixed
-{ "mode": "New", "sourceType": "Mixed" }   // günlük yeni kelime, sayı dailyWordGoal'e sabit, Flashcard
-{ "mode": "Due", "sourceType": "Mixed", "wordCount": 20 }   // NextReviewAt<=now; her soru rastgele format
-{ "mode": "Band", "band": "Weak", "sourceType": "Mixed", "levelFilter": "A1",
+// POST /learning-sessions — mode: New|Due|Band|Mixed, targetLanguageId zorunlu (1=de, 2=tr)
+{ "mode": "New", "sourceType": "Mixed", "targetLanguageId": 1 }   // Almanca öğreniliyor: günlük yeni kelime, sayı dailyWordGoal'e sabit, Flashcard
+{ "mode": "Due", "sourceType": "Mixed", "targetLanguageId": 2, "wordCount": 20 }   // Türkçe öğreniliyor; NextReviewAt<=now; her soru rastgele format
+{ "mode": "Band", "band": "Weak", "sourceType": "Mixed", "targetLanguageId": 1, "levelFilter": "A1",
   "categoryIds": [1,3], "userCategoryIds": [1], "wordCount": 10 }
 //   → bant pratik (Weak|Medium|Good), günlük hedefe saymaz, resmi review (SM-2 günceller)
 //   Mixed: UserProgress+UserCardProgress; FrontText==Words.Text eşleşmesinde UserCard atlanır

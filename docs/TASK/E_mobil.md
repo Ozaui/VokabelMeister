@@ -74,8 +74,12 @@
 > **Not (2026-07-07 SRS tasarım kararları, bkz. `wiki/Index.md` On ikinci INGEST):** İstemci artık
 > `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
 > gerçek formatı backend'de rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.
+> **Not (yön/hedef dil):** kullanıcı profilinde sabit bir "öğrendiğim dil" yok — aynı hesapla hem
+> Almanca hem Türkçe öğrenilebilir (bkz. `C_kullanici_backend.md` C-05, `DATABASE_SCHEMA/Icerik.md`
+> "Eşleştirme"). `targetLanguageId` her oturum başlatmada seçilir (`HomeScreen`'de dil anahtarı),
+> `POST /learning-sessions` gövdesine eklenir.
 - [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
-  `MasteryBand` (`Weak|Medium|Good`) (`types/learning.ts`)
+  `MasteryBand` (`Weak|Medium|Good`), `TargetLanguage` (`de|tr`) (`types/learning.ts`)
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
   `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
@@ -85,7 +89,8 @@
 - [ ] ➜ **Frontend Yol Haritası'na işle**
 - [ ] **Component (Ekran):** `HomeScreen` (streak, günlük hedef ilerleme çubuğu, pasif due rozeti,
   hedef tamamlanınca opsiyonel "tekrar edelim mi" teklifi, "Bugün Öğrendiklerim"/"Bugün Test
-  Ettiklerim" listeleri), `FlashcardScreen` (+ E-06 `SystemWordCard`, ipucu butonu + zaman/ipucu
+  Ettiklerim" listeleri, **dil anahtarı** [Almanca öğren/Türkçe öğren, `targetLanguageId` seçimi —
+  her ikisinin streak/ilerlemesi bağımsız]), `FlashcardScreen` (+ E-06 `SystemWordCard`, ipucu butonu + zaman/ipucu
   bazlı seçenek kilitleme), `MultipleChoiceScreen`, `TranslationQuizScreen`, `TrueFalseScreen`,
   `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et),
   `SessionSummaryScreen` (+ "Aynı Kelimelerle Tekrar Et")
