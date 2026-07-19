@@ -11,6 +11,7 @@
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Logging;
 
 namespace WordLearner.Infrastructure.Data;
 
@@ -30,6 +31,15 @@ public class WordLearnerDbContext : DbContext
 
     // AMAÇ: QR kod ile giriş oturumları (A-03.1 — QR Kod ile Giriş).
     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+
+    // AMAÇ: Audit log — kim ne yaptı (A-04 — Loglama Sistemi).
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+
+    // AMAÇ: Teknik log — Serilog MSSqlServer sink'i yazar, EF Core yalnızca okur (A-04).
+    public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+
+    // AMAÇ: Güvenlik olayı log — başarısız login/OTP, rate-limit, replay vb. (A-04).
+    public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

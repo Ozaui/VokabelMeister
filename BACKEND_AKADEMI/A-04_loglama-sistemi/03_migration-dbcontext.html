@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Migration + DbSet'ler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'migration-dbcontext',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '02_entity-config-migration.html',
+    sonrakiBolum: '04_serilog-mssql-sink.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden Üç Tablo TEK Bir Migration\'da?',
+        aciklama: '`dotnet ef migrations add AddLoggingTables` tek seferde ActivityLogs+ApplicationLogs+SecurityLogs tablolarının ÜÇÜNÜ birden oluşturdu — A-03\'teki User+RefreshToken (AddUserAndRefreshToken) ile AYNI karar.',
+        neden: 'Bu üç tablo birbirinden BAĞIMSIZ olsa da, "A-04 — Loglama Sistemi" TEK bir mantıksal task/deploy birimi — üçünü ayrı migration\'lara bölmek, hiçbir gerçek fayda sağlamadan (hiçbiri diğerinden ÖNCE deploy edilmek zorunda değil) migration geçmişini GEREKSİZ yere parçalardı.',
+        olmasaydi: 'Üç ayrı migration olsaydı, `dotnet ef database update` üç kez ÇALIŞTIRILMASI gerekmezdi (EF zaten hepsini sırayla uygular) ama migration DOSYALARININ sayısı üçe katlanırdı — okunabilirlik AÇISINDAN hiçbir kazanç, yalnızca gürültü.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AddLoggingTables — SecurityLogs Bölümü (Check Constraint Migration\'da da Görünür)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260719185223_AddLoggingTables.cs',
+        nedenBuKlasor: 'Data/Migrations/ — EF Core\'un `dotnet ef migrations add` komutuyla OTOMATİK ürettiği, elle DÜZENLENMEYEN dosya.',
+        kod: `migrationBuilder.CreateTable(
+    name: "SecurityLogs",
+    columns: table => new
+    {
+        Id = table.Column<long>(type: "bigint", nullable: false)
+            .Annotation("SqlServer:Identity", "1, 1"),
+        EventType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+        UserId = table.Column<int>(type: "int", nullable: true),
+        EmailHash = table.Column<string>(type: "nvarchar(44)", maxLength: 44, nullable: true),
+        IpAddress = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
+        UserAgent = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+        Detail = table.Column<string>(type: "nvarchar(max)", nullable: true),
+        CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+    },
+    constraints: table =>
+    {
+        table.PrimaryKey("PK_SecurityLogs", x => x.Id);
+        table.CheckConstraint("CK_SecurityLog_EventType", "EventType IN ('LoginFailed',...)");
+        table.ForeignKey(
+            name: "FK_SecurityLogs_Users_UserId",
+            column: x => x.UserId,
+            principalTable: "Users",
+            principalColumn: "Id",
+            onDelete: ReferentialAction.SetNull);
+    });`,
+        satirlar: [
+          {
+            satir: '.Annotation("SqlServer:Identity", "1, 1"),',
+            aciklama: 'SQL Server\'a "bu kolon IDENTITY(1,1)" (1\'den başla, her satırda 1 artır) der — Fluent API\'deki `UseIdentityColumn()` çağrısının (Bölüm 2) migration\'a YANSIMASI.',
+            neden: 'Bu satır EF Core tarafından OTOMATİK üretildi — `SecurityLogConfiguration.cs`\'teki `builder.Property(s => s.Id).UseIdentityColumn()` çağrısının SONUCU, elle YAZILMADI.',
+            olmasaydi: 'Bu annotation olmasaydı, Id kolonu OTOMATİK ARTAN olmazdı — her INSERT\'te Id\'nin ELLE verilmesi gerekirdi, bu da eşzamanlı isteklerde ÇAKIŞMA (aynı Id\'yi iki satır kullanmaya çalışma) riskine yol açardı.'
+          },
+          {
+            satir: 'table.CheckConstraint("CK_SecurityLog_EventType", "EventType IN (\'LoginFailed\',...)");',
+            aciklama: 'Bölüm 2\'deki Fluent API `HasCheckConstraint` çağrısının, GERÇEK SQL\'e dönüşmüş hâli — migration çalıştığında bu CHECK, SecurityLogs tablosunun kendisine EKLENİR.',
+            neden: 'Migration dosyası, Fluent API\'nin "niyetinin" DB\'de nasıl bir SQL\'e karşılık geldiğini GÖSTERİR — bu satırı OKUMAK, "acaba constraint gerçekten oluştu mu" sorusunu migration dosyasına BAKARAK cevaplamayı sağlar.',
+            olmasaydi: 'Bu satır migration\'a YANSIMASAYDI (ör. Fluent API çağrısı YANLIŞ yazılsaydı), CHECK constraint DB\'de HİÇ oluşmazdı — Bölüm 2\'deki "DB seviyesinde ikinci savunma hattı" iddiası BOŞ bir iddia olurdu, sessizce çalışmayan bir güvenlik önlemi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordLearnerDbContext.cs — Üç Yeni DbSet',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: null,
+        kod: `// AMAÇ: Audit log — kim ne yaptı (A-04 — Loglama Sistemi).
+public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+
+// AMAÇ: Teknik log — Serilog MSSqlServer sink'i yazar, EF Core yalnızca okur (A-04).
+public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+
+// AMAÇ: Güvenlik olayı log — başarısız login/OTP, rate-limit, replay vb. (A-04).
+public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();`,
+        satirlar: [
+          {
+            satir: 'public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();',
+            aciklama: 'Bu DbSet, Serilog\'un sink\'i tarafından hiç KULLANILMAZ (sink kendi ham SQL\'iyle INSERT atar) — yalnızca A-07\'nin `GET /admin/logs/application` SORGUSU için var.',
+            neden: 'ApplicationLogRepository (Bölüm 6) bu DbSet üzerinden yalnızca OKUMA yapar — EF Core\'un `ApplyConfigurationsFromAssembly`\'si (aynı dosyanın OnModelCreating\'i) `ApplicationLogConfiguration`\'ı otomatik BULUP uygular, bu satır olmadan o config hiçbir DbSet\'e BAĞLANAMAZDI.',
+            olmasaydi: 'Bu satır olmasaydı, `ApplicationLogRepository`\'nin `_db.ApplicationLogs` çağrısı DERLENEMEZDİ — EF Core, entity tipini bir DbSet\'e bağlı olmadan Model\'e dahil ETMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Soft-Delete Filtresi Neden Bu Üçüne Uygulanmadı?',
+        terimler: [
+          { terim: 'OnModelCreating döngüsü', tanim: '`foreach (var entityType in modelBuilder.Model.GetEntityTypes()) { if (typeof(BaseEntity).IsAssignableFrom(...)) ... }` — yalnızca BaseEntity\'den TÜREYEN entity\'lere global soft-delete query filter uygular. ActivityLog/ApplicationLog/SecurityLog BaseEntity\'den türemediği için (Bölüm 2) bu döngü onları HİÇ GÖRMEZ — otomatik olarak filtresiz kalırlar, ekstra bir kod DEĞİŞİKLİĞİ gerekmedi.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

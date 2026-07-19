@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Serilog MSSqlServer Sink</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'serilog-mssql-sink',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '03_migration-dbcontext.html',
+    sonrakiBolum: '05_request-response-enrichment.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'AutoCreateSqlTable=false\'un Bedeli: ColumnOptions Şemayla Birebir Eşleşmeli',
+        aciklama: 'Serilog.Sinks.MSSqlServer normalde (AutoCreateSqlTable=true) KENDİ varsayılan tablosunu oluşturur (Message+MessageTemplate+Level+TimeStamp+Exception+XML Properties+LogEvent). Bu projede tablo zaten EF Core migration\'ıyla (Bölüm 3) VAR ve FARKLI bir şemaya sahip — bu yüzden `ApplicationLogColumnOptions.Build()` adlı ayrı bir metotta, sink\'in yazacağı kolonlar migration\'ın ürettiği ŞEMAYLA birebir eşlenir.',
+        neden: 'Bu eşleme YANLIŞ olursa (ör. sink olmayan bir "MessageTemplate" kolonuna yazmaya çalışırsa), her log satırı ya HİÇ yazılmaz ya da sessizce bir SQL hatasıyla KAYBOLUR — bu riskin test edilebilir/izole bir yerde (ayrı bir static metot) tutulması, Program.cs\'in İÇİNE gömülü karmaşık bir lambda\'dan DAHA güvenli.',
+        olmasaydi: 'Bu ayrı metot olmasaydı (ColumnOptions Program.cs\'in içine inline yazılsaydı), şema uyuşmazlığı hatalarını AYIKLAMAK çok daha zor olurdu — Program.cs zaten Serilog/JWT/CORS/RateLimiting gibi ONLARCA farklı yapılandırmayı barındırıyor, bir de bu kadar İNCE bir eşleme mantığı oraya gömülseydi okunabilirlik CİDDİ zarar görürdü.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplicationLogColumnOptions.cs — Sink\'in Varsayılanını Ezmek',
+        dosyaYolu: 'backend/WordLearner.API/Logging/ApplicationLogColumnOptions.cs',
+        nedenBuKlasor: 'API/Logging/ altında yeni bir klasör — bu mantık yalnızca Program.cs\'in composition root\'unda KULLANILIYOR, Application/Infrastructure katmanlarının bilmesi gereken bir iş kuralı DEĞİL (CLAUDE.md §5 bağımlılık yönü: API en dışta, kendi altyapı detaylarını kendi içinde tutabilir).',
+        kod: `public static ColumnOptions Build()
+{
+    var columnOptions = new ColumnOptions();
+
+    columnOptions.Id.DataType = SqlDbType.BigInt;
+
+    columnOptions.Store.Remove(StandardColumn.MessageTemplate);
+    columnOptions.Store.Remove(StandardColumn.Properties);
+    columnOptions.Store.Add(StandardColumn.LogEvent);
+    columnOptions.LogEvent.ColumnName = "Properties";
+    columnOptions.LogEvent.ExcludeAdditionalProperties = true;
+
+    columnOptions.AdditionalColumns =
+    [
+        new SqlColumn { ColumnName = "SourceContext", PropertyName = "SourceContext", DataType = SqlDbType.NVarChar, DataLength = 255 },
+        new SqlColumn { ColumnName = "RequestPath", PropertyName = "RequestPath", DataType = SqlDbType.NVarChar, DataLength = 500 },
+        new SqlColumn { ColumnName = "UserId", PropertyName = "UserId", DataType = SqlDbType.Int },
+    ];
+
+    return columnOptions;
+}`,
+        satirlar: [
+          {
+            satir: 'columnOptions.Id.DataType = SqlDbType.BigInt;',
+            aciklama: 'Sink\'in varsayılanı INT\'tir — ApplicationLogConfiguration.cs\'teki (Bölüm 2\'nin ApplicationLog karşılığı) BIGINT Id ile eşleşmesi için elle BigInt\'e çevrilir.',
+            neden: 'Bu satır olmadan, sink Id\'yi INT olarak yazmaya ÇALIŞIR ama migration\'ın oluşturduğu kolon BIGINT\'tir — SQL Server bu tip uyuşmazlığını KABUL ETMEZ, her INSERT başarısız OLURDU.',
+            olmasaydi: 'Bu satır atlansaydı, uygulama AYAĞA kalkar (hata fırlamaz) ama İLK log satırı yazılmaya çalışıldığı an sink İÇİNDE sessiz bir hata oluşur — konsola/dosyaya log YAZILMAYA devam eder ama DB\'ye HİÇBİR satır DÜŞMEZ, bu da fark edilmesi ÇOK zor bir "sessiz arıza" olurdu.'
+          },
+          {
+            satir: 'columnOptions.Store.Remove(StandardColumn.MessageTemplate);',
+            aciklama: 'Sink\'in varsayılan kolon setinden MessageTemplate ÇIKARILIR — bu şemada (Bölüm 2) böyle bir kolon YOK, `Message` zaten şablonla DOLDURULMUŞ nihai metni tutuyor.',
+            neden: 'ApplicationLogConfiguration.cs\'te yalnızca `Message` NVARCHAR(MAX) var, ayrı bir `MessageTemplate` kolonu YOK — sink bu kolona yazmaya ÇALIŞSAYDI (Remove çağrılmasaydı), DB "böyle bir kolon yok" hatası VERİRDİ.',
+            olmasaydi: 'Bu satır olmasaydı, uygulama AÇILIR AÇILMAZ ilk log satırında sink bir SqlException fırlatırdı ("Invalid column name \'MessageTemplate\'") — bu hata Serilog\'un kendi İÇ hata yönetimine düşer, çoğu zaman SESSİZCE yutulur (self-log açık değilse hiç GÖRÜNMEZ).'
+          },
+          {
+            satir: 'columnOptions.Store.Add(StandardColumn.LogEvent);',
+            aciklama: 'Varsayılan XML "Properties" kolonu ÇIKARILDIKTAN sonra, YERİNE tüm log event\'i JSON olarak serileştiren "LogEvent" standart kolonu EKLENİR.',
+            neden: 'DATABASE_SCHEMA/Loglama.md\'nin istediği "Properties NVARCHAR(MAX) — Serilog yapılandırılmış özellikler (JSON)" formatı, sink\'in VARSAYILAN XML formatıyla EŞLEŞMEZ — LogEvent kolonu JSON üretir, XML değil.',
+            olmasaydi: 'Varsayılan Properties (XML) kolonu KULLANILSAYDI, DB\'deki veri şemada belgelenen "JSON" formatıyla UYUŞMAZDI — A-07\'de log görüntüleme ekranı bu alanı JSON.parse ETMEYE çalıştığında HATA alırdı.'
+          },
+          {
+            satir: 'columnOptions.LogEvent.ColumnName = "Properties";',
+            aciklama: 'Sink\'in "LogEvent" adını verdiği standart kolon, GERÇEK migration\'daki kolon adı olan "Properties" ile YENİDEN adlandırılır.',
+            neden: 'Kolon isimleri EŞLEŞMEZSE (sink "LogEvent" adında bir kolona yazmaya çalışır ama tabloda öyle bir kolon yoktur, yalnızca "Properties" vardır), aynı "invalid column name" hatası TEKRARLANIR.',
+            olmasaydi: 'Bu satır atlansaydı, LogEvent JSON\'u YİNE üretilirdi ama "LogEvent" adlı OLMAYAN bir kolona yazılmaya çalışılırdı — DB hatası, ApplicationLog\'un tamamen İŞLEVSİZ kalmasına yol açardı.'
+          },
+          {
+            satir: 'columnOptions.LogEvent.ExcludeAdditionalProperties = true;',
+            aciklama: 'SourceContext/RequestPath/UserId zaten KENDİ ayrı kolonlarında (AdditionalColumns) saklanıyor — bu satır, aynı bilginin Properties JSON\'unun İÇİNDE TEKRAR etmesini ENGELLER.',
+            neden: 'Veri tekrarı (duplication) hem depolama İSRAFI hem de "hangisi doğru kaynak" karışıklığı yaratır — bir admin RequestPath\'e bakarken, o bilginin AYRI bir kolonda mı yoksa Properties JSON\'unun İÇİNDE mi olduğunu bilmesi GEREKMEMELİ, tek bir yerde olmalı.',
+            olmasaydi: 'Bu ayar false kalsaydı, her log satırındaki Properties JSON\'u SourceContext/RequestPath/UserId\'yi TEKRAR içerirdi — işlevsel bir hata DEĞİL ama gereksiz büyüyen bir JSON blob\'u, "bu bilgi nereden okunmalı" konusunda KAFA KARIŞIKLIĞI.'
+          },
+          {
+            satir: 'new SqlColumn { ColumnName = "RequestPath", PropertyName = "RequestPath", DataType = SqlDbType.NVarChar, DataLength = 500 },',
+            aciklama: 'Serilog\'un STANDART özellikleri arasında "RequestPath" diye bir şey YOKTUR — bu, Bölüm 5\'te göreceğimiz RequestResponseLoggingMiddleware\'in `LogContext.PushProperty("RequestPath", ...)` ile EL İLE eklediği özel bir özelliktir; `PropertyName` bu köprüyü kurar.',
+            neden: '`PropertyName`, "hangi Serilog log-event property\'sinin bu SQL kolonuna YAZILACAĞINI" belirtir — isim EŞLEŞMEZSE (ör. middleware "Path" adıyla pushlasaydı ama burada "RequestPath" yazılsaydı), kolon HER ZAMAN NULL kalırdı.',
+            olmasaydi: 'Bu AdditionalColumn tanımlanmasaydı, middleware yine RequestPath\'i pushlardı ama sink bu özelliği HİÇBİR sabit kolona YAZMAZDI — bilgi yalnızca (ExcludeAdditionalProperties false olsaydı) Properties JSON\'unda KALIRDI, admin panelin "yol"a göre filtrelemesi (varsa) doğrudan bir kolon SORGUSU yapamazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — Sink\'i Serilog Pipeline\'ına Bağlamak',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Host.UseSerilog((context, configuration) => configuration
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day)
+    .WriteTo.MSSqlServer(
+        connectionString: context.Configuration.GetConnectionString("DefaultConnection"),
+        sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },
+        columnOptions: ApplicationLogColumnOptions.Build()));`,
+        satirlar: [
+          {
+            satir: '.Enrich.FromLogContext()',
+            aciklama: 'A-02\'de zaten VARDI — ama şimdi KRİTİK bir rolü var: Bölüm 5\'teki `LogContext.PushProperty` çağrılarının (RequestPath/UserId) log event\'lere İŞLENMESİ, ANCAK bu satır sayesinde olur.',
+            neden: 'Bu enricher OLMADAN, `LogContext.PushProperty` ile pushlanan özellikler HİÇBİR log satırına EKLENMEZ — kod çalışır ama sessizce ETKİSİZ kalır.',
+            olmasaydi: 'Bu satır A-02\'de zaten vardı, ama A-04\'ün RequestPath/UserId zenginleştirmesi bu satıra YENİ bir BAĞIMLILIK ekledi — olmasaydı, ApplicationLogColumnOptions\'taki RequestPath/UserId AdditionalColumn\'ları HER ZAMAN NULL kalırdı.'
+          },
+          {
+            satir: 'sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },',
+            aciklama: '`AutoCreateSqlTable = false` — bu görevin EN kritik tek satırı: sink\'e "tabloyu SEN oluşturma, zaten VAR" der.',
+            neden: 'true olsaydı, sink KENDİ varsayılan şemasıyla (MessageTemplate dahil, farklı Properties formatı) bir tablo oluşturmaya ÇALIŞIRDI — ama tablo ZATEN migration\'la (farklı şemayla) VARDI, bu da ya bir ÇAKIŞMA hatası ya da (auto-create "tablo varsa dokunma" davranışına bağlı olarak) SESSİZCE yanlış varsayımlarla ÇALIŞMA riski doğururdu.',
+            olmasaydi: 'true bırakılsaydı, EF Core migration\'ının ürettiği ÖZENLE tasarlanmış şema (BIGINT Id, ek RequestPath/UserId kolonları) YOK SAYILIRDI — sink kendi jenerik şemasını dayatırdı, A-07\'nin log görüntüleme sorgusu BEKLENEN kolonları BULAMAZDI.'
+          }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

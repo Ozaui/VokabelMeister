@@ -15,6 +15,7 @@ using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -25,6 +26,7 @@ public class ResetPasswordCommandHandlerTests
     private readonly Mock<IPasswordService> _passwordService = new();
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<IEmailService> _emailService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     private ResetPasswordCommandHandler CreateHandler() =>
         new(
@@ -32,7 +34,8 @@ public class ResetPasswordCommandHandlerTests
             _refreshTokenRepo.Object,
             _passwordService.Object,
             _otpService.Object,
-            _emailService.Object
+            _emailService.Object,
+            _securityLogger.Object
         );
 
     /// <summary>
@@ -60,6 +63,35 @@ public class ResetPasswordCommandHandlerTests
     }
 
     /// <summary>
+    /// ResetPassword_ValidOtp_LogsPasswordResetSecurityEvent
+    ///
+    /// AMAÇ: Başarılı şifre sıfırlamada ISecurityLogger.LogAsync'in PasswordReset (BAŞARI)
+    ///       olayıyla ÇAĞRILDIĞINI doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task ResetPassword_ValidOtp_LogsPasswordResetSecurityEvent()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "test@example.com" };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Validate(user, "123456", OtpPurpose.PasswordReset));
+        _passwordService.Setup(p => p.Hash("YeniSifre123!@#")).Returns("yeni-hash");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(
+            new ResetPasswordCommand(user.Email, "123456", "YeniSifre123!@#") { ClientIp = "1.2.3.4" },
+            default
+        );
+
+        // ASSERT
+        _securityLogger.Verify(
+            s => s.LogAsync(LogEventType.PasswordReset, user.Id, null, "1.2.3.4", null, null, default),
+            Times.Once
+        );
+    }
+
+    /// <summary>
     /// ResetPassword_WrongOtp_ThrowsInvalidOtpException
     ///
     /// AMAÇ: Yanlış OTP ile şifre sıfırlama denendiğinde InvalidOtpException fırlatıldığını doğrulamak.
@@ -78,6 +110,44 @@ public class ResetPasswordCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// ResetPassword_WrongOtp_LogsOtpFailedSecurityEvent
+    ///
+    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
+    ///       doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task ResetPassword_WrongOtp_LogsOtpFailedSecurityEvent()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "test@example.com" };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Validate(user, "999999", OtpPurpose.PasswordReset)).Throws<InvalidOtpException>();
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () =>
+            handler.Handle(
+                new ResetPasswordCommand(user.Email, "999999", "YeniSifre123!@#") { ClientIp = "1.2.3.4" },
+                default
+            );
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+        _securityLogger.Verify(
+            s => s.LogAsync(
+                LogEventType.OtpFailed,
+                user.Id,
+                user.Email,
+                "1.2.3.4",
+                null,
+                "PasswordReset",
+                default
+            ),
+            Times.Once
+        );
     }
 
     /// <summary>

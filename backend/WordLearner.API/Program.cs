@@ -12,10 +12,11 @@
 // NOT (A-02 — Ortak Altyapı, tamamlandı): DbContext, JWT auth, CORS, Serilog
 //   (konsol+dosya), FluentValidation, MediatR, AutoMapper kayıtları ve güvenlik
 //   başlıkları/global exception/istek-yanıt log middleware'leri burada kuruldu.
-//   Serilog'un MSSqlServer (ApplicationLog) sink'i A-04'te eklenecek — o tablo
-//   henüz bir migration ile oluşturulmadı (bkz. TASK/A_admin_panel_backend.md A-04).
+// NOT (A-04 — Loglama Sistemi): Serilog'un MSSqlServer (ApplicationLog) sink'i eklendi
+//   (ActivityLog/SecurityLog Serilog ile DEĞİL, IActivityLogger/ISecurityLogger ile yazılır).
 // ─────────────────────────────────────────────────────────────────────────────
 
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -23,27 +24,38 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using Serilog.Sinks.MSSqlServer;
 using WordLearner.API.Filters;
+using WordLearner.API.Logging;
 using WordLearner.API.Middleware;
 using WordLearner.Application.Extensions;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Logging;
 using WordLearner.Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ADIM 1: Serilog — konsol + dosya sink. DB (ApplicationLog) sink'i A-04'te eklenir.
+// ADIM 1: Serilog — konsol + dosya + DB (ApplicationLog) sink.
 // NEDEN: _logger.LogInformation/.LogError çağrıları artık ASP.NET Core'un varsayılan
-//        konsol logger'ı yerine Serilog üzerinden akar; ileride tek satırla DB sink eklenebilir.
+//        konsol logger'ı yerine Serilog üzerinden akar.
 // NEDEN Override: appsettings.json'daki Logging:LogLevel:Microsoft.AspNetCore=Warning
 //        ayarı yalnızca ASP.NET Core'un kendi builtin logger'ı içindir; Serilog kod
 //        üzerinden yapılandırıldığı için aynı susturma burada elle tekrarlanır —
 //        aksi halde framework'ün "Request starting/finished" logları RequestResponseLoggingMiddleware
 //        ile çakışıp konsolu ikiye katlar.
+// NEDEN AutoCreateSqlTable=false: Tablo zaten AddLoggingTables migration'ıyla
+//        (ApplicationLogConfiguration'daki gerçek şemayla) oluşturuldu; sink'in kendi
+//        varsayılan şemasıyla tekrar oluşturmaya çalışması migration'la çakışır.
 builder.Host.UseSerilog((context, configuration) => configuration
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console()
-    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day)
+    .WriteTo.MSSqlServer(
+        connectionString: context.Configuration.GetConnectionString("DefaultConnection"),
+        sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },
+        columnOptions: ApplicationLogColumnOptions.Build()));
 
 // ADIM 2: Controller'ları ekle — API uç noktaları controller sınıflarında tanımlanır.
 // NEDEN ValidationFilter: FluentValidation.AspNetCore paketi kullanılmıyor
@@ -109,11 +121,33 @@ builder.Services.AddCors(options => options.AddPolicy("Default", policy =>
 // istekler), 10/dk (anonim istekler). Controller/action'lar [EnableRateLimiting("...")]
 // ile bu isimli policy'lerden birini seçer (A-03 — AuthController).
 // NEDEN sabit pencere (FixedWindow): basit ve öngörülebilir; "login 5/15dk" ve
-//       "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları bundan ayrıdır — SecurityLog'a
-//       bağımlı oldukları için A-04'ten sonraya bırakıldı (bkz. TASK/A_admin_panel_backend.md).
+//       "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları AYRI bir mekanizma (OtpService/
+//       LoginCommandHandler'ın kendi SecurityLog tabanlı sayaçları — henüz yazılmadı,
+//       bu bilinçli bir sonraki adım) — burada eklenen yalnızca genel RateLimitHit
+//       (429 döndüren HERHANGİ bir policy) A-04'te SecurityLog'a bağlandı.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // NEDEN OnRejected (A-04): Herhangi bir policy (anonymous/authenticated/qrGenerate/
+    //       qrStatus) 429 döndürdüğünde SecurityLog'a RateLimitHit yazılır — DI konteynerine
+    //       burada (middleware pipeline dışı bir yapılandırma callback'i) doğrudan erişim
+    //       olmadığı için RequestServices üzerinden scope içi ISecurityLogger çözülür.
+    options.OnRejected = async (context, ct) =>
+    {
+        var securityLogger = context
+            .HttpContext.RequestServices.GetRequiredService<ISecurityLogger>();
+        var userIdClaim = context.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        int? userId = int.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+        await securityLogger.LogAsync(
+            LogEventType.RateLimitHit,
+            userId,
+            ipAddress: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+            detail: context.HttpContext.Request.Path.ToString(),
+            ct: ct
+        );
+    };
 
     options.AddFixedWindowLimiter("anonymous", limiterOptions =>
     {

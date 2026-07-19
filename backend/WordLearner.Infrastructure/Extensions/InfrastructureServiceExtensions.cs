@@ -41,6 +41,11 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
 
+        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı; A-04 — Loglama Sistemi.
+        services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+        services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+        services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+
         // NOT: Sonraki feature repository'ler (IWordRepository vb.) kendi task'larında
         //      (A-05 ...) bu metoda eklenecek.
 

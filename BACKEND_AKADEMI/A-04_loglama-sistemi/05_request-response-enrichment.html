@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RequestPath/UserId Zenginleştirmesi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'request-response-enrichment',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '04_serilog-mssql-sink.html',
+    sonrakiBolum: '06_repository-katmani.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'RequestResponseLoggingMiddleware.cs — LogContext.PushProperty ile Scope Zenginleştirme',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/RequestResponseLoggingMiddleware.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task InvokeAsync(HttpContext context)
+{
+    using var _ = LogContext.PushProperty("RequestPath", context.Request.Path.ToString());
+
+    var stopwatch = Stopwatch.StartNew();
+    _logger.LogInformation("Request started: {Method} {Path}",
+        context.Request.Method, context.Request.Path);
+
+    try
+    {
+        await _next(context);
+    }
+    finally
+    {
+        stopwatch.Stop();
+
+        var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        int? userId = int.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+        using (LogContext.PushProperty("UserId", userId))
+        {
+            _logger.LogInformation("Request finished: {Method} {Path} → {StatusCode} ({ElapsedMs}ms)",
+                context.Request.Method, context.Request.Path,
+                context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using var _ = LogContext.PushProperty("RequestPath", context.Request.Path.ToString());',
+            aciklama: 'Metodun EN BAŞINDA, TÜM `InvokeAsync` gövdesini kapsayan bir scope açılır — bu scope içinde ÜRETİLEN her log satırı (bu middleware\'in kendi loglarının YANI SIRA, Handler\'ların İÇİNDEKİ herhangi bir `_logger.LogXxx` çağrısı DAHİL) "RequestPath" özelliğini TAŞIR.',
+            neden: 'RequestPath, isteğin EN BAŞINDA bellidir (route henüz çözülmemiş olsa bile ham path BİLİNİR) — bu yüzden UserId\'nin AKSİNE, tüm scope için TEK seferde en üstte pushlanabilir.',
+            olmasaydi: 'Bu satır olmasaydı, ApplicationLogColumnOptions\'taki (Bölüm 4) "RequestPath" AdditionalColumn\'u HER ZAMAN NULL kalırdı — A-07\'nin log görüntüleme ekranında "hangi endpoint\'te hata oldu" sorusu CEVAPSIZ kalırdı.'
+          },
+          {
+            satir: 'var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;',
+            aciklama: 'JwtTokenService.cs\'in (A-03) ÜRETTİĞİ `ClaimTypes.NameIdentifier` claim\'i okunur — AYNI claim tipi, Login akışında token ÜRETİLİRKEN de kullanılıyordu.',
+            neden: 'Bu okuma `finally` bloğunun İÇİNDE (yani `_next(context)` TAMAMLANDIKTAN SONRA) yapılır — Program.cs\'in pipeline sırasında Authentication middleware bu middleware\'den SONRA çalıştığı için, `context.User` yalnızca `_next` çağrısı BİTTİKTEN sonra DOLU olur.',
+            olmasaydi: 'Bu okuma metodun EN BAŞINDA (RequestPath ile AYNI yerde) yapılsaydı, `context.User` HENÜZ kimlik doğrulanmamış (anonim) bir kullanıcıyı gösterirdi — kimliği doğrulanmış bir isteğin bile UserId\'si HER ZAMAN NULL olarak loglanırdı.'
+          },
+          {
+            satir: 'int? userId = int.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;',
+            aciklama: 'Claim string olarak GELİR ("42") — burada gerçek bir `int?` değere PARSE edilir, string OLARAK pushlanmaz.',
+            neden: 'Sink\'in "UserId" AdditionalColumn\'u `SqlDbType.Int` (Bölüm 4) olarak tanımlı — pushlanan değer zaten int OLURSA, sink\'in string→int dönüşümüne GÜVENMESİ gerekmez, dönüşüm burada elle ve KESİN olarak yapılır.',
+            olmasaydi: 'Ham string pushlansaydı ("42" olarak), sink KENDİ İÇİNDE bunu int\'e çevirmeye çalışırdı — bu dönüşüm mantığı sink\'in İÇ implementasyonuna bağımlı, hangi durumlarda BAŞARISIZ olacağı garanti EDİLEMEZ bir davranış olurdu.'
+          },
+          {
+            satir: 'using (LogContext.PushProperty("UserId", userId))',
+            aciklama: 'UserId, RequestPath\'in AKSİNE yalnızca "Request finished" log satırını SARAN dar bir scope\'ta pushlanır — TÜM metot boyunca DEĞİL.',
+            neden: 'UserId ancak `_next(context)` (yani Authentication middleware) ÇALIŞTIKTAN sonra BİLİNİR — "Request started" satırı zaten anonim durumda üretildiği için, o satıra UserId eklemenin bir ANLAMI yok.',
+            olmasaydi: 'UserId de metodun en başında (RequestPath ile BİRLİKTE) pushlanmaya çalışılsaydı, DEĞERİ hep NULL/anonim olurdu (Authentication henüz ÇALIŞMADI) — "Request finished" satırında GERÇEK kullanıcıyı yakalama fırsatı KAÇIRILIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Neden Scope Genişliği RequestPath ile UserId Arasında FARKLI?',
+        iyi: 'RequestPath → TÜM `InvokeAsync` boyunca açık (dış `using`). UserId → yalnızca "Request finished" satırını saran dar bir `using` bloğu İÇİNDE. Bu, her bir özelliğin NE ZAMAN bilindiğine göre BİLİNÇLİ bir seçim.',
+        kotu: 'İkisi de EN BAŞTA, aynı geniş scope\'ta pushlansaydı: RequestPath doğru çalışırdı (zaten baştan bilinir) ama UserId HER ZAMAN NULL/anonim değeriyle SABİTLENİRDİ — çünkü push anında Authentication HENÜZ çalışmamıştır, sonradan context.User değişse bile daha ÖNCE pushlanmış olan (kopyalanmış) değer GÜNCELLENMEZ.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

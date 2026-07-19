@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auth Akışlarına SecurityLog Entegrasyonu</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'auth-entegrasyonu',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '07_logger-servisleri.html',
+    sonrakiBolum: '09_rate-limit-health.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'A-03/A-03.1\'de Bırakılan 8 Not, Bu Bölümde Kapandı',
+        aciklama: 'A-03\'teki LoginCommandHandler/VerifyLoginOtpCommandHandler/ResetPasswordCommandHandler/ConfirmAccountDeletionCommandHandler ve A-03.1\'deki QR akışları, "SecurityLog entegrasyonu A-04\'ten sonra eklenecek" yorumuyla EKSİK bırakılmıştı (bkz. A-03\'ün sonundaki not). Bu bölümde 8 Handler\'a (LoginCommand, VerifyLoginOtpCommand, VerifyEmailCommand, ResetPasswordCommand, ConfirmAccountDeletionCommand, RefreshCommand, ConfirmQrLoginCommand, DenyQrLoginCommand) `ISecurityLogger` enjekte edildi.',
+        neden: 'HEPSİ AYNI deseni izler: bir Handler ya BAŞARISIZLIĞI (LoginFailed/OtpFailed/TokenReplay) ya da hassas bir BAŞARIYI (PasswordReset/AccountDeletion/QrLoginConfirmed/QrLoginDenied) SecurityLog\'a yazar — bu yüzden burada TEK bir temsili örnek (LoginCommandHandler) detaylı işlenip, geri kalan 7\'si sözlük slaytında "aynı pattern\'i izler" notuyla listelenir (CLAUDE.md §6 "Temsili öğretim" kuralı).',
+        olmasaydi: 'Bu entegrasyon yapılmasaydı, REFERENCE/SECURITY.md §6\'daki "SecurityLog: LoginFailed, OtpFailed, RateLimitHit, ..." tablosu YALNIZCA bir TASARIM belgesi olarak KALIRDI — hiçbir gerçek başarısız login denemesi, hiçbir replay saldırısı asla İZLENEMEZDİ, admin panelin (A-07) güvenlik log ekranı SONSUZA kadar BOŞ görünürdü.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCommand.cs — LoginFailed: Temsili Örnek',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
+{
+    public string? Language { get; init; }
+    public string? ClientIp { get; init; }
+}
+
+public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
+{
+    private readonly ISecurityLogger _securityLogger;
+    // ...diğer bağımlılıklar (IUserRepository, IPasswordService, IOtpService, IEmailService)
+
+    public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+        var hashToVerify = user?.PasswordHash ?? FakePasswordHashForTiming;
+        var passwordValid = _passwordService.Verify(request.Password, hashToVerify);
+
+        if (user is null || user.PasswordHash is null || !passwordValid)
+        {
+            await _securityLogger.LogAsync(
+                LogEventType.LoginFailed, user?.Id, request.Email, request.ClientIp, ct: ct);
+            throw new InvalidCredentialsException();
+        }
+
+        // ...OTP üretimi ve gönderimi devam eder
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public string? ClientIp { get; init; }',
+            aciklama: 'A-04\'te LoginCommand\'a YENİ eklenen alan — daha önce yalnızca `Language` vardı. `AuthController.Login` artık `command with { Language = Language, ClientIp = ClientIp }` ile İKİSİNİ birden geçirir.',
+            neden: 'LoginFailed olayının IP\'siz LOGLANMASI, "bu IP\'den kaç başarısız deneme oldu" gibi en TEMEL güvenlik sorusunu bile CEVAPSIZ bırakırdı — VerifyLoginOtpCommand\'da (A-03) zaten VAR olan ClientIp deseni burada da TEKRARLANDI.',
+            olmasaydi: 'ClientIp eklenmeseydi, SecurityLog.IpAddress kolonu LoginFailed olaylarında HER ZAMAN null kalırdı — REFERENCE/SECURITY.md §4\'teki "Login 5/15dk" rate-limit\'inin İLERİDE (A-XX) IP-bazlı yapılmak istenmesi durumunda bu VERİ hiç TOPLANMAMIŞ olurdu.'
+          },
+          {
+            satir: 'if (user is null || user.PasswordHash is null || !passwordValid)',
+            aciklama: 'Timing-attack önleminin (A-03) KORUNDUĞU nokta — `_passwordService.Verify` ÜÇ durumda da (kullanıcı yok, şifre yok, şifre yanlış) ÇAĞRILMIŞ olur, yalnızca SONUÇ bu satırda değerlendirilir.',
+            neden: 'SecurityLog entegrasyonu, timing-attack önlemini BOZMAMALI — LogAsync çağrısı bu `if` bloğunun İÇİNDE, yani "karar verildikten SONRA" yapılır, karardan ÖNCE değil.',
+            olmasaydi: 'LogAsync çağrısı `Verify`\'dan ÖNCE yapılsaydı (ör. "önce logla, sonra doğrula"), bu DEĞİŞMEZDİ — ama LogAsync\'in KENDİSİ ek bir DB yazma süresi eklediği için, ileride bu sürenin "kullanıcı var/yok" durumları ARASINDA FARKLI olup olmadığı AYRICA ölçülmesi gereken bir detaydır (bu görevde ölçülmedi, YAGNI — gerçek bir performans sorunu GÖZLEMLENMEDEN optimize edilmez).'
+          },
+          {
+            satir: 'await _securityLogger.LogAsync(',
+            aciklama: '`user?.Id` — kullanıcı BULUNAMADIYSA (null), UserId de null KALIR; ama `request.Email` HER ZAMAN geçirilir (hash\'lenerek EmailHash\'e yazılacak, SecurityLogger.cs Bölüm 7).',
+            neden: 'Kullanıcı bulunamasa bile hangi e-postanın DENENDİĞİ (hash\'lenmiş hâliyle) loglanmalı — "bu e-posta adresine yönelik art arda deneme" (kullanıcı olsun ya da olmasın) bir BRUTE-FORCE/enumeration saldırısının İZİDİR.',
+            olmasaydi: 'Yalnızca `user?.Id` loglanıp email ATLANSAYDI, VAR OLMAYAN bir e-postaya yönelik saldırı DENEMELERİ (ör. "hangi e-postalar sistemde kayıtlı" taraması) HİÇ İZLENEMEZDİ — UserId zaten null olduğu için hiçbir İLİŞKİLENDİRME yapılamazdı.'
+          },
+          {
+            satir: 'throw new InvalidCredentialsException();',
+            aciklama: 'Loglama, exception FIRLATILMADAN ÖNCE `await` ile TAMAMLANIR — yani SecurityLog kaydı DB\'ye YAZILDIKTAN sonra hata istemciye DÖNER.',
+            neden: '`await` kullanılmadan (fire-and-forget) loglanıp hemen exception fırlatılsaydı, ASP.NET Core isteği SONLANDIRDIĞINDA arka planda YARIM kalan bir Task riski doğardı — `await` bu riski ORTADAN KALDIRIR, log kaydının GERÇEKTEN yazıldığından EMİN olunur.',
+            olmasaydi: '`await` olmadan çağrılsaydı (`_securityLogger.LogAsync(...); throw ...;` — await YOK), bazı isteklerde (özellikle sunucu KAPANIRKEN/yeniden başlarken) log kaydı HİÇ YAZILMADAN kaybolabilirdi — sessiz veri KAYBI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Aynı Deseni İzleyen Diğer 7 Handler',
+        terimler: [
+          { terim: 'VerifyLoginOtpCommand.cs (OtpFailed)', tanim: '`_otpService.Validate(...)` çağrısı try/catch\'e alınır — `InvalidOtpException` yakalanınca `LogAsync(OtpFailed, user?.Id, email, clientIp, detail: "LoginOtp", ct)` çağrılır, sonra `throw;` ile exception YENİDEN fırlatılır.' },
+          { terim: 'VerifyEmailCommand.cs (OtpFailed)', tanim: 'AYNI try/catch deseni, `detail: "EmailVerification"` — Command\'a A-04\'te YENİ `ClientIp` alanı eklendi (öncesinde yalnızca Language vardı).' },
+          { terim: 'ResetPasswordCommand.cs (OtpFailed + PasswordReset)', tanim: 'İKİ ayrı log noktası: OTP yanlışsa `OtpFailed` (detail: "PasswordReset"); şifre BAŞARIYLA değiştirilip tüm cihazlardan çıkış yapıldıktan SONRA, `LogEventType.PasswordReset` (BAŞARI olayı) AYRICA loglanır.' },
+          { terim: 'ConfirmAccountDeletionCommand.cs (OtpFailed + LoginFailed + AccountDeletion)', tanim: 'ÜÇ log noktası: OTP yanlışsa OtpFailed (detail: "AccountDeletion"); şifre yanlışsa LoginFailed (detail: "ACCOUNT_DELETION_PASSWORD_MISMATCH" — bir Code, Bölüm 10); hesap BAŞARIYLA silinince AccountDeletion (BAŞARI olayı).' },
+          { terim: 'RefreshCommand.cs (TokenReplay)', tanim: '`existingToken.IsUsed` true iken (replay tespiti) — family ZATEN iptal edildikten HEMEN sonra `LogAsync(TokenReplay, existingToken.UserId, ipAddress: clientIp, detail: "TOKEN_REPLAY_FAMILY_REVOKED", ct)`.' },
+          { terim: 'ConfirmQrLoginCommand.cs (QrLoginConfirmed)', tanim: 'Session Confirmed\'e geçtikten SONRA — `LogAsync(QrLoginConfirmed, request.UserId, ipAddress: session.RequesterIp, ct)`. NEDEN session.RequesterIp: onaylayan zaten aynı kullanıcı (sahiplik kontrolü daha önce yapıldı), request.ClientIp DEĞİL taramayı yapan cihazın IP\'si kaydedilir.' },
+          { terim: 'DenyQrLoginCommand.cs (QrLoginDenied)', tanim: 'ConfirmQrLoginCommand ile BİREBİR aynı desen, yalnızca `LogEventType.QrLoginDenied`.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AuthController.cs — ClientIp\'in Command\'a Nasıl Ulaştığı',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<ActionResult<MessageResponse>> Login(
+    LoginCommand command,
+    CancellationToken ct
+) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));`,
+        satirlar: [
+          {
+            satir: ') => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));',
+            aciklama: 'A-03\'te zaten VAR olan `Language = Language` deseninin YANINA, A-04\'te `ClientIp = ClientIp` EKLENDİ — `ClientIp`, controller\'ın en üstünde tanımlı `private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();` computed property\'sinden gelir (A-03\'ten beri VAR, VerifyLoginOtp/Refresh/Google/Apple ZATEN kullanıyordu).',
+            neden: '`with` ifadesi, bir `record`\'un BİRKAÇ alanını DEĞİŞTİRİP yeni bir kopya üretir — model binding JSON gövdesinden Email/Password\'ü DOLDURDUKTAN sonra, controller HttpContext\'ten okuduğu bu iki alanı SONRADAN ekler.',
+            olmasaydi: 'Yalnızca `Language = Language` yazılsaydı (ClientIp EKLENMESEYDİ), `request.ClientIp` LoginCommandHandler\'da HER ZAMAN null OLURDU — Bölüm 8\'deki LoginFailed log kaydı IP\'siz KALIRDI.'
+          }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

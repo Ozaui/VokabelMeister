@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IActivityLogger / ISecurityLogger</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'logger-servisleri',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '06_repository-katmani.html',
+    sonrakiBolum: '08_auth-entegrasyonu.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'SecurityLogger.cs — E-postayı Handler\'lardan ÖNCE Hash\'lemek',
+        dosyaYolu: 'backend/WordLearner.Application/Services/SecurityLogger.cs',
+        nedenBuKlasor: 'Application/Services/ — OtpService/LoginCompletionService ile AYNI flat klasör (CLAUDE.md §5: "Application/Services flat, feature alt klasörü açılmaz").',
+        kod: `public class SecurityLogger : ISecurityLogger
+{
+    private readonly ISecurityLogRepository _repository;
+    private readonly IPasswordService _passwordService;
+
+    public SecurityLogger(ISecurityLogRepository repository, IPasswordService passwordService)
+    {
+        _repository = repository;
+        _passwordService = passwordService;
+    }
+
+    public Task LogAsync(
+        LogEventType eventType, int? userId = null, string? email = null,
+        string? ipAddress = null, string? userAgent = null, string? detail = null,
+        CancellationToken ct = default)
+    {
+        var log = new SecurityLog
+        {
+            EventType = eventType,
+            UserId = userId,
+            EmailHash = email is null ? null : _passwordService.HashToken(email),
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            Detail = detail,
+        };
+
+        return _repository.AddAsync(log, ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Şifre hash\'lemekle HİÇBİR ilgisi olmayan bir servis, e-posta hash\'lemek için ENJEKTE edilir — `HashToken` metodu zaten REfreshToken/OTP hash\'lerinde KULLANILAN AYNI SHA-256→Base64 fonksiyonu.',
+            neden: 'Yeni bir "EmailHasher" servisi YAZMAK yerine MEVCUT `IPasswordService.HashToken`\'ı yeniden KULLANMAK, DRY ilkesini korur — proje genelinde "bir şey nasıl hash\'lenir" sorusunun TEK bir cevabı olur.',
+            olmasaydi: 'Ayrı bir hash fonksiyonu yazılsaydı (ör. doğrudan `SHA256.HashData` çağrısı), iki FARKLI hash algoritması/kodlama YOLU projede YAŞARDI — biri güncellenirse (ör. Base64\'ten hex\'e geçilirse) diğerinin GÜNCELLENMESİ UNUTULABİLİRDİ.'
+          },
+          {
+            satir: 'EmailHash = email is null ? null : _passwordService.HashToken(email),',
+            aciklama: 'email parametresi verilmemişse (ör. TokenReplay olayında yalnızca UserId biliniyor, e-posta YOK) EmailHash null KALIR — hash\'leme yalnızca email GERÇEKTEN verildiğinde ÇALIŞIR.',
+            neden: 'Her çağrıda `HashToken(email ?? "")` gibi BOŞ string hash\'lemek yerine, `email is null` kontrolüyle GEREKSİZ bir hash işlemi ATLANIR — ayrıca boş string\'in hash\'i ANLAMSIZ, potansiyel olarak YANILTICI bir değer OLURDU.',
+            olmasaydi: 'Koşulsuz `HashToken(email!)` çağrılsaydı (email null olsa bile), NullReferenceException FIRLARDI (HashToken içindeki `Encoding.UTF8.GetBytes(null)`) — TokenReplay gibi email\'siz senaryolarda LOGLAMANIN KENDİSİ ÇÖKERDİ.'
+          },
+          {
+            satir: 'return _repository.AddAsync(log, ct);',
+            aciklama: '`await` KULLANILMAZ — Task doğrudan DÖNDÜRÜLÜR (bu metot `async` DEĞİL, dönüş tipi zaten `Task`).',
+            neden: 'Bu metotta `await`\'e gerek yok çünkü herhangi bir ARDINDAN işlem (ör. try/finally, sonuç dönüştürme) YOK — doğrudan repository çağrısının Task\'ını döndürmek bir "async state machine" oluşturma MALİYETİNDEN kaçınır (küçük ama gerçek bir performans/basitlik kazancı).',
+            olmasaydi: '`async`/`await` ile yazılsaydı (`public async Task LogAsync(...) { ...; await _repository.AddAsync(log, ct); }`), işlevsel olarak AYNI sonucu verirdi — yalnızca derleyicinin ürettiği gereksiz bir state machine KATMANI eklenmiş olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'ActivityLogger.cs ve DI Kayıtları',
+        terimler: [
+          { terim: 'ActivityLogger.cs', tanim: 'SecurityLogger ile AYNI şekil (IActivityLogRepository\'ye delege eder) — tek FARK: e-posta hash\'lemek yerine `oldValue`/`newValue` nesnelerini `System.Text.Json.JsonSerializer.Serialize(...)` ile JSON\'a çevirir (`oldValue is null ? null : JsonSerializer.Serialize(oldValue)`).' },
+          { terim: 'InfrastructureServiceExtensions.cs (DI)', tanim: '`services.AddScoped<IActivityLogRepository, ActivityLogRepository>(); services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>(); services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();` — Scoped, çünkü DbContext ile AYNI yaşam süresinde olmalı (A-02\'deki genel kural).' },
+          { terim: 'ApplicationServiceExtensions.cs (DI)', tanim: '`services.AddScoped<IActivityLogger, ActivityLogger>(); services.AddScoped<ISecurityLogger, SecurityLogger>();` — OtpService/LoginCompletionService kayıtlarının HEMEN altına eklendi, aynı "Scoped, DbContext bağımlı repository\'lerle tutarlı" gerekçesiyle.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

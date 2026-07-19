@@ -16,6 +16,7 @@
 - **Türkçe:** kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, roadmap.
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
 - **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
+- **İkinci istisna — `ActivityLog`/`SecurityLog`'un admin'e görünen alanları:** `Action`/`EventType` sabit/dilden bağımsız kod kalır (`_logger.Log*` ile aynı kural) ama `Detail`/`OldValue`/`NewValue` **admin panelin kendisi bir istemci olduğu için** (admin de dil tercihine sahip) serbest metin yerine bir **Code** olarak yazılır — log satırı yazılırken (ör. anonim bir isteğin `Accept-Language`'ıyla) hangi admin'in ne zaman hangi dille okuyacağı bilinmediğinden, tr/de çözümü ancak admin `GET /admin/logs/*` (A-07) ile okurken KENDİ `Accept-Language`'ıyla yapılabilir — `ErrorMessages` ile birebir aynı Code-sonra-çöz deseni, yalnızca çözme anı farklı (istek anı değil, okuma anı).
 
 **Yorum blokları (zorunlu)**
 - Her dosya başı: `AMAÇ / NEDEN / BAĞIMLILIKLAR`.
@@ -38,6 +39,13 @@
 - Parametreli sorgu / EF Core LINQ. String birleştirmeyle SQL **yasak**.
 - `async/await` + `CancellationToken` her I/O metodunda.
 - Log tabloları değişmez (insert-only): soft delete yok, güncellenmez.
+- **İçerik değiştiren her CRUD** (`Word`/`Category`/`UserCard`/`Class`/`SharedContent` vb. create/
+  update/delete, admin toplu import, medya yükleme, hesap anonimleştirme) A-04'te yazılan
+  `IActivityLogger`'a yazar (`Action=CREATE_X`/`UPDATE_X`/`DELETE_X`, `EntityType`+`EntityId`,
+  `OldValue`/`NewValue` JSON diff — şifre/hash gibi hassas alanlar diff'ten hariç tutulur). Admin'e
+  özel hassas işlemler (rol/hesap durumu değişimi, SMTP ayarları) **ayrıca** `ISecurityLogger`'a
+  (`LogEventType.AdminAction`) da yazar. Yeni bir task'a başlarken bu kural unutulursa `TASK/
+  A_admin_panel_backend.md` A-04 sonrası eklenen per-task notlarına bakılır.
 
 **Kimlik & güvenlik**
 - ASP.NET Identity **KULLANILMAZ** — JWT + şifre hashleme manuel.
@@ -95,7 +103,8 @@ Kanonik desen MediatR Command+Handler; "Servis Arayüzü/Servis" deseni **terk e
 12. Birim Test        → Tests/Features/Xxx/XxxCommandHandlerTests (repo/dış servis mock; Handler bitince hemen)
 13. Controller        → API/Controllers/XxxController (ince: yalnızca _mediator.Send(command, ct))
 14. DI kaydı          → GENELLİKLE gerekmez (assembly-scan). İstisna: paylaşılan yardımcı servis.
-15. Backend Akademi   → BACKEND_AKADEMI/<faz>/ HTML bölümü (bkz. §6)
+15. Backend Akademi   → BACKEND_AKADEMI/<faz>/ HTML bölümü, controller `kod` slaytının HEMEN
+                        ARDINDAN o endpoint'in `postman` slaytı dahil (bkz. §6)
 ```
 
 **Koşullu kurallar (YAGNI):**
@@ -137,9 +146,10 @@ Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 R
 
 Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı `BACKEND_AKADEMI/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı: `BACKEND_AKADEMI/STANDART.md` — burada tekrar edilmez.
 
-- **Slayt tabanlı, tek görev = tek klasör:** Yeni bir görev (`A-0X`) `_TASLAK/` klasöründen kopyalanır; her bölüm dosyası `01_...html`, `02_...html`… numaralanır ve `window.MODULE` objesiyle çalışır (`slaytlar[]` türleri: `kapak/kavram/kod/karsilastirma/sozluk/ozet`).
+- **Slayt tabanlı, tek görev = tek klasör:** Yeni bir görev (`A-0X`) `_TASLAK/` klasöründen kopyalanır; her bölüm dosyası `01_...html`, `02_...html`… numaralanır ve `window.MODULE` objesiyle çalışır (`slaytlar[]` türleri: `kapak/kavram/kod/karsilastirma/sozluk/ozet/postman`).
 - **Birebir kopya:** `kod` slaytları gerçek dosyanın aynısı, kırpılmaz, uydurulmaz.
 - **Zorunlu üçlü:** her `kod`/`kavram` slaytında ne (`aciklama`) → neden (`neden`) → böyle olmasaydı ne olurdu (`olmasaydi`) — "kural böyle" yetersiz, somut mühendislik gerekçesi şart.
+- **Postman slaytı zorunlu:** Bir endpoint controller'a bağlandığında (§3 adım 13), o endpoint'i akademiye işlerken (§3 adım 15) controller'ın `kod` slaytından HEMEN SONRA bir `postman` slaytı eklenir — yöntem, tam URL, gerekiyorsa `Authorization` header'ı, gerçek Command alan adlarıyla örnek `govde`, gerçek DTO şekliyle örnek `yanit`. Alan şeması ve örnek: `BACKEND_AKADEMI/STANDART.md` §3. İstisna yok — 204/boş gövdeli endpoint'lerde bile en azından yöntem+URL+ön koşul notu yazılır.
 - **Temsili öğretim (YAGNI):** Tekrarlayan kod aileleri (ör. 13 handler testinden yalnızca biri) TEK bir temsili `kod` slaytıyla öğretilir + `sozluk` slaytında geri kalanlar "aynı pattern'i izler" notuyla listelenir. Her tekil dosya için ayrı slayt açılmaz.
 - **Zincir bütünlüğü:** Yeni bölüm eklenince `oncekiBolum`/`sonrakiBolum` hem kendi klasöründe hem (varsa) komşu görevin ilk/son dosyasında güncellenir — akademi baştan sona kesintisiz gezilebilir kalmalı. Kapanış (`ozet-sozluk`) her zaman klasörün SON numarası olmalı; araya yeni bölüm girince kapanış bir üst numaraya taşınır.
 - Klasörün `index.html`'ine yeni bölüm için bir liste satırı eklenir; kök `BACKEND_AKADEMI/index.html`'e yeni GÖREV (`A-0X`) tamamlanınca bir kart eklenir. Mevcut kartlara/satırlara dokunulmaz.

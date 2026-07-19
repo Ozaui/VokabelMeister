@@ -15,6 +15,7 @@ using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.QrLogin;
 
@@ -22,8 +23,10 @@ public class DenyQrLoginCommandHandlerTests
 {
     private readonly Mock<IQrLoginSessionRepository> _qrRepo = new();
     private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
-    private DenyQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
+    private DenyQrLoginCommandHandler CreateHandler() =>
+        new(_qrRepo.Object, _passwordService.Object, _securityLogger.Object);
 
     /// <summary>
     /// Deny_ScannedSessionOwnedByUser_TransitionsToDenied
@@ -38,6 +41,7 @@ public class DenyQrLoginCommandHandlerTests
         {
             Status = QrLoginStatus.Scanned,
             UserId = 5,
+            RequesterIp = "1.2.3.4",
             ExpiresAt = DateTime.UtcNow.AddMinutes(1),
         };
         _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
@@ -51,6 +55,37 @@ public class DenyQrLoginCommandHandlerTests
         session.Status.Should().Be(QrLoginStatus.Denied);
         // NEDEN: audit alanı (UpdatedByUserId) reddeden kullanıcının Id'siyle doldurulmalı.
         _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
+    }
+
+    /// <summary>
+    /// Deny_ScannedSessionOwnedByUser_LogsQrLoginDeniedSecurityEvent
+    ///
+    /// AMAÇ: Başarılı reddetmede ISecurityLogger.LogAsync'in QrLoginDenied olayıyla,
+    ///       session.RequesterIp ile ÇAĞRILDIĞINI doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task Deny_ScannedSessionOwnedByUser_LogsQrLoginDeniedSecurityEvent()
+    {
+        // ARRANGE
+        var session = new QrLoginSession
+        {
+            Status = QrLoginStatus.Scanned,
+            UserId = 5,
+            RequesterIp = "1.2.3.4",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(1),
+        };
+        _passwordService.Setup(p => p.HashToken("token")).Returns("hash");
+        _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new DenyQrLoginCommand("token") { UserId = 5 }, default);
+
+        // ASSERT
+        _securityLogger.Verify(
+            s => s.LogAsync(LogEventType.QrLoginDenied, 5, null, "1.2.3.4", null, null, default),
+            Times.Once
+        );
     }
 
     /// <summary>

@@ -167,23 +167,39 @@
 > aynı onboarding anında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılacak — bugün
 > kodlanmadı (YAGNI), yalnızca not bırakıldı (bkz. `C_kullanici_backend.md` C-01).
 
-### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ⬜
+### A-04 — Loglama Sistemi (Audit + Application + Security → DB) ✅
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
 **Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)
 > **Amaç:** Tüm loglar DB'de tutulur, **admin panelden görüntülenir** (A-07/B-08). Üç tablo:
 > kim ne yaptı (activity), uygulama logu (Serilog), güvenlik olayları.
-- [ ] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config + migration
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLog` (konsol + dosya + DB)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `IActivityLogger` + `ActivityLogger` (eski/yeni JSON ile audit), `ISecurityLogger` + `SecurityLogger`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] Repository'ler (sayfalı, filtreli): `IActivityLogRepository`, `IApplicationLogRepository`, `ISecurityLogRepository`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] Entegrasyon: auth akışlarına security log (LoginFailed, OtpFailed, RateLimitHit), `GET /health`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `ActivityLoggerTests`, `SecurityLoggerTests` (DB context mock/in-memory)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config + migration
+      (`AddLoggingTables`) — hiçbiri `BaseEntity`den türemiyor (insert-only, soft delete yok)
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLogs` (konsol + dosya + DB) — `AutoCreateSqlTable=false`,
+      `ApplicationLogColumnOptions.cs` sink şemasını migration'ın gerçek şemasıyla eşler;
+      `RequestResponseLoggingMiddleware` `LogContext.PushProperty` ile RequestPath/UserId ekler
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] `IActivityLogger` + `ActivityLogger` (OldValue/NewValue JSON ile audit), `ISecurityLogger` + `SecurityLogger`
+      (e-posta `IPasswordService.HashToken` ile hash'lenerek EmailHash'e yazılır — PII kuralı)
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] Repository'ler (sayfalı, filtreli): `IActivityLogRepository`, `IApplicationLogRepository`, `ISecurityLogRepository`
+      — `PagedResult<T>` (A-02'de YAGNI ile silinmişti) bu görevde gerçek ilk tüketicisiyle yeniden yazıldı
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] Entegrasyon: auth akışlarına security log — **LoginFailed** (Login, ConfirmAccountDeletion),
+      **OtpFailed** (VerifyLoginOtp/VerifyEmail/ResetPassword/ConfirmAccountDeletion — 4 akış),
+      **TokenReplay** (Refresh), **RateLimitHit** (`RateLimiterOptions.OnRejected`, tüm policy'ler),
+      **QrLoginConfirmed/QrLoginDenied** (A-03.1'den beri bekleyen not kapatıldı), artı 2 BAŞARI olayı
+      (**PasswordReset**, **AccountDeletion**) — toplam 8 Handler değişti. `GET /health` (MediatR dışı,
+      doğrudan `DbContext.CanConnectAsync`, bilinçli CQRS sapması — YAGNI).
+      **Mimari karar:** `SecurityLog.Detail`/`ActivityLog.OldValue`/`NewValue` serbest metin değil bir
+      **Code** (admin panel de bir istemci, tr/de çözümü A-07'de admin okurken yapılacak — bkz.
+      `CLAUDE.md` "İkinci istisna").
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] **Birim testleri:** `ActivityLoggerTests` (3), `SecurityLoggerTests` (3, e-posta hash'lemesi dahil),
+      `ActivityLogRepositoryTests`/`SecurityLogRepositoryTests`/`ApplicationLogRepositoryTests`
+      (in-memory EF Core, filtre+sayfalama), 8 Handler test dosyasına eklenen 11 yeni senaryo.
+      Toplam 144/144 yeşil.
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-05 — Sistem Kelimesi API (Words) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §5
@@ -220,10 +236,15 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD+eşleştirme)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **`IActivityLogger` entegrasyonu** (A-04'te yazıldı — bkz. `Loglama_Domain.md`, `Action` kolonunun
+      örnek değeri zaten `CREATE_WORD` idi): `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/
+      `PAIR_WORD_CONCEPTS` (`EntityType=WordConcept`, `OldValue`/`NewValue` JSON diff — eşleştirmede
+      birleşen iki kavramın id'leri `Detail`e yazılır)
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `WordServiceTests` (liste filtre, duplikat 409 + force, CRUD yetki,
       eşleştirme mutlu yol + `PartOfSpeech`/`Category` çakışmasında sessizce `primaryId`'nin kazanması
       [hata fırlatılmaması], `suggestedMatchConceptId` üretimi, `WordGrammarValidator` her
-      dil×tür kombinasyonu için)
+      dil×tür kombinasyonu için, `IActivityLogger` çağrısı doğru `Action`/`EntityType` ile)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-06 — Kategori API (Categories) ⬜
@@ -236,7 +257,11 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Silme koruması (alt kategori/aktif kelime varsa 409), `CategoriesController`
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `CategoryServiceTests` (hiyerarşik liste, silme koruması 409)
+- [ ] **`IActivityLogger` entegrasyonu** (A-04): `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
+      (`EntityType=Category`, `OldValue`/`NewValue` JSON diff)
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **Birim testleri:** `CategoryServiceTests` (hiyerarşik liste, silme koruması 409,
+      `IActivityLogger` çağrısı doğru `Action` ile)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme) ⬜
@@ -246,10 +271,16 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] Kullanıcı: liste/arama/detay, rol değiştir, hesap dondur/aktif (her işlem **ActivityLog**'a)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] İçerik moderasyonu (kart liste + silme), genel istatistik, toplu kelime import
-      (satır bazında A-05 `WordGrammarValidator` — dil+tür'e göre koşullu kural, `GERMAN_LANGUAGE_FEATURES.md §10`)
+- [ ] İçerik moderasyonu (kart liste + silme — silme **`DELETE_USER_CARD`** ile `IActivityLogger`'a,
+      `Loglama_Domain.md`'deki `Action` örneğiyle birebir), genel istatistik, toplu kelime import
+      (satır bazında A-05 `WordGrammarValidator` — dil+tür'e göre koşullu kural, `GERMAN_LANGUAGE_FEATURES.md §10`;
+      import da tek bir **`BULK_IMPORT_WORDS`** ActivityLog kaydı alır — satır sayısı `NewValue`'da)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security` (filtre+sayfa)
+- [ ] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security` (filtre+sayfa) —
+      `SecurityLog.Detail`/`ActivityLog.OldValue`/`NewValue` içindeki Code'lar (A-04'te yazıldı, ör.
+      `TOKEN_REPLAY_FAMILY_REVOKED`) `Accept-Language`'a göre yeni bir tr/de sözlükten çözülüp
+      döndürülür — `ErrorMessages`/`SuccessMessages` ile birebir aynı desen, tek fark log satırı
+      yazılırken değil admin OKURKEN çözülmesi (bkz. `CLAUDE.md` "İkinci istisna")
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `AdminController` (`[Authorize(Roles="Admin")]`)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
@@ -262,6 +293,9 @@
 - [ ] `IFileStorageService` + `LocalFileStorageService`, `Word.ImageUrl` + migration
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `MediaController` (`POST /media/images/upload`), `UseStaticFiles`
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **`IActivityLogger` entegrasyonu** (A-04): `UPLOAD_MEDIA` (`EntityType=Word` — hangi kelimenin
+      görseli olacaksa, henüz bağlanmadıysa `EntityId=NULL`)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `FileStorageServiceTests` (boyut/uzantı doğrulama, benzersiz ad üretimi)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
@@ -276,6 +310,11 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `ISmtpSettingsRepository`, `SmtpSettingsController` (Admin): `GET` (şifre `***`), `PUT`, `POST .../test`
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **Loglama entegrasyonu** (A-04): `PUT` **hem** `IActivityLogger` (`UPDATE_SMTP_SETTINGS`,
+      `NewValue`'da şifre **asla** düz metin yazılmaz — `PasswordEncrypted` alanı JSON diff'ten
+      hariç tutulur) **hem** `ISecurityLogger` (`LogEventType.AdminAction` — kimlik bilgisi
+      değişikliği hassas, iki log'a da düşer) çağırır
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `AesEncryptionServiceTests` (encrypt/decrypt round-trip, 32 byte anahtar kontrolü)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
@@ -285,7 +324,9 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] E-posta şablonları (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı, şifre değişti, hesap kurtarıldı)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `AccountCleanupBackgroundService : IHostedService` (PII anonimleştirme, günde 1, 03:00 UTC)
+- [ ] `AccountCleanupBackgroundService : IHostedService` (PII anonimleştirme, günde 1, 03:00 UTC —
+      her anonimleştirilen hesap için `IActivityLogger`'a **`ANONYMIZE_ACCOUNT`** [`UserId` dolu,
+      `ActorRole=NULL` çünkü sistem/background job yaptı, kişi değil] — A-04)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `AccountCleanupServiceTests` (30 gün grace sonrası anonimleştirme, blok hash'i)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**

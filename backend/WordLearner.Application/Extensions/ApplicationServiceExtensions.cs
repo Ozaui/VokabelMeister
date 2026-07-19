@@ -61,6 +61,10 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IOtpService, OtpService>();
         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
 
+        // NEDEN Scoped: DbContext bağımlı repository'lerle aynı yaşam süresi; A-04 — Loglama Sistemi.
+        services.AddScoped<IActivityLogger, ActivityLogger>();
+        services.AddScoped<ISecurityLogger, SecurityLogger>();
+
         return services;
     }
 }

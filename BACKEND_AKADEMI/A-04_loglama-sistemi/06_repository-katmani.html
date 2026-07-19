@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Repository Katmanı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-katmani',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '05_request-response-enrichment.html',
+    sonrakiBolum: '07_logger-servisleri.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'PagedResult<T>.cs — YAGNI\'yle Geri Alınan Tipin GERÇEK İlk Tüketicisi',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Models/PagedResult.cs',
+        nedenBuKlasor: 'Common/Models/ — ApiErrorResponse.cs ile AYNI klasör, "birden fazla feature\'ın paylaştığı ortak zarf" kategorisi.',
+        kod: `public record PagedResult<T>(IReadOnlyList<T> Items, int TotalCount, int Page, int PageSize);`,
+        satirlar: [
+          {
+            satir: 'public record PagedResult<T>(IReadOnlyList<T> Items, int TotalCount, int Page, int PageSize);',
+            aciklama: 'A-02\'de `ApiResponse<T>` ile BİRLİKTE yazılmış, sonra YAGNI kuralıyla SİLİNMİŞTİ (hiçbir controller/endpoint yokken SPEKÜLATİF yazılmıştı) — şimdi A-04\'ün üç log repository\'sinin GetPagedAsync metotları GERÇEK, somut bir tüketici olduğu için YENİDEN yazıldı.',
+            neden: 'CLAUDE.md §3: "Bir DTO/response zarfı/yardımcı, onu FİİLEN kullanan İLK somut kod yazılırken, o kodun PARÇASI olarak yazılır" — burada o "ilk somut kod" tam olarak ActivityLogRepository.GetPagedAsync\'in kendisidir, bu satır o metotla AYNI COMMIT\'te/task\'ta yazıldı.',
+            olmasaydi: 'Bu tip olmadan, üç repository\'nin HER BİRİ kendi (Items, TotalCount) tuple\'ını ya da kendi özel PagedActivityLogResult/PagedSecurityLogResult tiplerini YAZARDI — üç neredeyse AYNI şekilli tip, gereksiz KOD TEKRARI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLogRepository.cs — Neden Repository<T>\'yi Miras ALMIYOR',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/ActivityLogRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public class ActivityLogRepository : IActivityLogRepository
+{
+    private readonly WordLearnerDbContext _db;
+
+    public ActivityLogRepository(WordLearnerDbContext db) => _db = db;
+
+    public async Task AddAsync(ActivityLog log, CancellationToken ct = default)
+    {
+        await _db.ActivityLogs.AddAsync(log, ct);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<PagedResult<ActivityLog>> GetPagedAsync(
+        int? userId, string? action, string? entityType,
+        DateTime? from, DateTime? to, int page, int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = _db.ActivityLogs.AsQueryable();
+
+        if (userId is not null) query = query.Where(a => a.UserId == userId);
+        if (!string.IsNullOrWhiteSpace(action)) query = query.Where(a => a.Action == action);
+        if (!string.IsNullOrWhiteSpace(entityType)) query = query.Where(a => a.EntityType == entityType);
+        if (from is not null) query = query.Where(a => a.CreatedAt >= from);
+        if (to is not null) query = query.Where(a => a.CreatedAt <= to);
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(a => a.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new PagedResult<ActivityLog>(items, totalCount, page, pageSize);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public class ActivityLogRepository : IActivityLogRepository',
+            aciklama: 'QrLoginSessionRepository\'nin (A-03.1) AKSİNE, `Repository<T>`\'yi MİRAS ALMAZ — yalnızca `IActivityLogRepository`\'yi implemente eder.',
+            neden: '`Repository<T>` generic\'i `where T : BaseEntity` KISITINA sahip (Repository.cs, A-02) — ActivityLog BaseEntity\'den TÜREMEDİĞİ için (Bölüm 2) bu generic sınıf HİÇ kullanılamaz, sıfırdan minimal bir sözleşme YAZILDI.',
+            olmasaydi: 'Repository<T>\'yi miras almaya ZORLANSAydı, ActivityLog\'un BaseEntity\'den türemesi GEREKİRDİ — bu da ona gereksiz UpdatedAt/IsDeleted/audit alanları EKLERDİ (Bölüm 1\'deki "neden BaseEntity yok" kararını TERSİNE çevirirdi).'
+          },
+          {
+            satir: 'public async Task AddAsync(ActivityLog log, CancellationToken ct = default)',
+            aciklama: 'Repository<T>.AddAsync\'in (A-02) AKSİNE, `userId` PARAMETRESİ YOK — çünkü ActivityLog\'un KENDİSİ zaten `UserId` alanını (kim tarafından yapıldığını) TAŞIYOR, ayrıca bir "kim ekledi" audit\'ine gerek YOK (bu log KENDİSİ audit\'in ta kendisi).',
+            neden: 'BaseEntity.CreatedByUserId, "bu KAYDI kim oluşturdu" sorusuna cevap verir — ama bir ActivityLog satırının "kim tarafından oluşturulduğu" zaten `Action`/`UserId` alanlarıyla İFADE ediliyor, ikinci bir audit katmanı GEREKSİZ olurdu.',
+            olmasaydi: 'userId parametresi eklenseydi, ActivityLogger.cs (Bölüm 7) bu parametreyi HER ÇAĞRIDA ayrıca geçirmek ZORUNDA kalırdı — ama zaten `ActivityLog.UserId` alanı AYNI bilgiyi TAŞIYOR, bu ikinci parametre yalnızca KAFA KARIŞTIRICI bir tekrar OLURDU.'
+          },
+          {
+            satir: 'var totalCount = await query.CountAsync(ct);',
+            aciklama: 'Sayfalama (Skip/Take) UYGULANMADAN ÖNCE, TÜM (filtrelenmiş) sonuç kümesinin sayısı ALINIR.',
+            neden: 'Admin panelin "toplam 247 kayıt, sayfa 3/25" gibi bir SAYFALAMA arayüzü göstermesi için, yalnızca O SAYFADAKİ 20 kaydın sayısını DEĞİL, TÜM filtrelenmiş kümenin büyüklüğünü BİLMESİ gerekir.',
+            olmasaydi: 'TotalCount hesaplanmasaydı (ya da `items.Count` kullanılsaydı), admin panel her zaman "20 kayıt" (sayfa boyutu) GÖRÜRDÜ — kaç sayfa OLDUĞUNU, "son sayfaya" ATLAMANIN mümkün olup olmadığını HİÇBİR ZAMAN BİLEMEZDİ.'
+          },
+          {
+            satir: '.Skip((page - 1) * pageSize)',
+            aciklama: '1-tabanlı sayfa numarasını (page=1 → ilk sayfa) 0-tabanlı Skip\'e ÇEVİRİR — page=1 için Skip(0), page=2 için Skip(pageSize).',
+            neden: 'API tüketicileri (admin panel frontend\'i) için "sayfa 1" en SEZGİSEL başlangıç noktasıdır — ham `Skip`/`Take` 0-tabanlı çalıştığı için bu dönüşüm burada, TEK bir yerde YAPILIR.',
+            olmasaydi: '`page - 1` çıkarılmasaydı (doğrudan `Skip(page * pageSize)` yazılsaydı), page=1 aslında İKİNCİ sayfayı gösterirdi — page=0 "ilk sayfa" olurdu, bu da API sözleşmesini (1-tabanlı sayfa) tüketicilere KARŞI TUTARSIZ hale getirirdi.'
+          },
+          {
+            satir: '.OrderByDescending(a => a.CreatedAt)',
+            aciklama: 'Filtre verilmese bile HER ZAMAN uygulanan sıralama — en yeni kayıt EN ÜSTTE.',
+            neden: 'Admin bir log panelini açtığında varsayılan olarak "son OLAYLARI" görmek İSTER — kronolojik sırayla (en eskiden en yeniye) gösterilseydi, binlerce eski kayıt ARASINDA en güncel olanı BULMAK için son sayfaya GİTMESİ gerekirdi.',
+            olmasaydi: 'Sıralama olmasaydı, EF Core/SQL Server\'ın "doğal" (garanti EDİLMEYEN, genelde ekleme sırasına yakın ama KESİN değil) sırasına GÜVENİLİRDİ — sayfa 1\'in HER ZAMAN "en yeni" kayıtları göstereceği GARANTİ EDİLEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'SecurityLogRepository ve ApplicationLogRepository — Aynı Şekil, İki Fark',
+        terimler: [
+          { terim: 'SecurityLogRepository.cs', tanim: 'ActivityLogRepository ile BİREBİR aynı şekil (AddAsync + GetPagedAsync) — tek fark filtre parametreleri: `LogEventType? eventType` (enum, string DEĞİL — Bölüm 2\'deki HasConversion<string>\'e rağmen C# tarafında hâlâ enum) ve `ipAddress`.' },
+          { terim: 'ApplicationLogRepository.cs', tanim: 'AddAsync HİÇ YOK — bu tabloya Serilog sink\'i yazar (Bölüm 4), Application katmanı yalnızca OKUR. GetPagedAsync\'in FARKI: `search` parametresi `query.Where(a => a.Message.Contains(search))` ile serbest metin ARAMASI yapar (diğer ikisinde böyle bir alan yok).' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

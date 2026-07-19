@@ -24,6 +24,7 @@ using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
@@ -41,6 +42,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
     private readonly ITokenService _tokenService;
     private readonly ILoginCompletionService _loginCompletionService;
     private readonly IMapper _mapper;
+    private readonly ISecurityLogger _securityLogger;
 
     public RefreshCommandHandler(
         IUserRepository userRepository,
@@ -48,7 +50,8 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
         IPasswordService passwordService,
         ITokenService tokenService,
         ILoginCompletionService loginCompletionService,
-        IMapper mapper
+        IMapper mapper,
+        ISecurityLogger securityLogger
     )
     {
         _userRepository = userRepository;
@@ -57,6 +60,7 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
         _tokenService = tokenService;
         _loginCompletionService = loginCompletionService;
         _mapper = mapper;
+        _securityLogger = securityLogger;
     }
 
     public async Task<AuthTokenResponse> Handle(RefreshCommand request, CancellationToken ct)
@@ -73,9 +77,22 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, AuthTokenRe
 
         if (existingToken.IsUsed)
         {
-            // NEDEN: SecurityLog:TokenReplay entegrasyonu A-04'ten sonra eklenecek
-            //        (bkz. TASK/A_admin_panel_backend.md A-03 notu).
             await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, ct);
+            // NEDEN Detail bir KOD (serbest metin DEĞİL): Admin panel de bir istemci ve kendi
+            //       dil tercihine göre görüntülenmeli (CLAUDE.md'nin "istemciye giden mesaj"
+            //       ayrımı burada da geçerli) — ama bu log SATIRI yazılırken (şu an, anonim bir
+            //       isteğin Accept-Language'ıyla) hangi admin'in ne zaman hangi dille okuyacağı
+            //       bilinmez. Bu yüzden ErrorMessages/SuccessMessages ile AYNI desen: burada
+            //       sabit bir Code saklanır, tr/de çözümü admin'in KENDİ Accept-Language'ıyla
+            //       `GET /admin/logs/security` (A-07) okurken yapılır — bkz. TASK/
+            //       A_admin_panel_backend.md A-07 notu.
+            await _securityLogger.LogAsync(
+                LogEventType.TokenReplay,
+                existingToken.UserId,
+                ipAddress: request.ClientIp,
+                detail: "TOKEN_REPLAY_FAMILY_REVOKED",
+                ct: ct
+            );
             throw new InvalidRefreshTokenException();
         }
 

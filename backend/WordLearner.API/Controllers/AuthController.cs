@@ -68,7 +68,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<MessageResponse>> VerifyEmail(
         VerifyEmailCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     // AMAÇ: E-posta doğrulama kodunu tekrar gönderir.
     [HttpPost("resend-verification")]
@@ -90,7 +90,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<MessageResponse>> Login(
         LoginCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     // AMAÇ: Login adım 2 — OTP'yi doğrular, başarılıysa access+refresh token üretir.
     [HttpPost("login/verify-otp")]
@@ -169,7 +169,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<MessageResponse>> ResetPassword(
         ResetPasswordCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { Language = Language }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     // AMAÇ: Hesap silme OTP'si gönderir (15dk geçerli).
     [HttpPost("delete-account/request")]
@@ -197,5 +197,16 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(
         ConfirmAccountDeletionCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { UserId = CurrentUserId, Language = Language }, ct));
+    ) =>
+        Ok(
+            await _mediator.Send(
+                command with
+                {
+                    UserId = CurrentUserId,
+                    Language = Language,
+                    ClientIp = ClientIp,
+                },
+                ct
+            )
+        );
 }

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entity + EF Config</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-config-migration',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '01_neden-uc-log-tablosu.html',
+    sonrakiBolum: '03_migration-dbcontext.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'SecurityLog.cs — Neden BaseEntity Yok, Neden EmailHash 44 Karakter',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Logging/SecurityLog.cs',
+        nedenBuKlasor: 'Entities/Logging/ altında — Auth/ (User, RefreshToken, QrLoginSession) ile AYNI seviyede yeni bir domain klasörü, çünkü loglama Auth\'un bir parçası DEĞİL, ayrı bir cross-cutting concern.',
+        kod: `public class SecurityLog
+{
+    public long Id { get; set; }
+
+    public LogEventType EventType { get; set; }
+
+    public int? UserId { get; set; }
+
+    public string? EmailHash { get; set; }
+
+    public string? IpAddress { get; set; }
+    public string? UserAgent { get; set; }
+
+    public string? Detail { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public User? User { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public long Id { get; set; }',
+            aciklama: 'BIGINT — BaseEntity\'nin `int Id`\'sinden FARKLI. Yüksek hacimli insert-only tablolarda (her başarısız login, her istek loglanabilir) satır sayısı int\'in ~2.1 milyar sınırını AŞABİLİR.',
+            neden: 'SecurityLog gibi sürekli büyüyen, hiç silinmeyen bir tabloda BIGINT tercih etmek ileride bir migration GEREKTİRMEZ — baştan doğru tip seçmek, "int taştı" krizini ÖNLER.',
+            olmasaydi: 'int Id kullanılsaydı, çok yoğun trafikte (yıllar içinde milyarlarca satır) bir gün Id ÜRETİLEMEZ hâle gelirdi — o noktada tüm tabloyu BIGINT\'e taşımak, canlı sistemde ÇOK maliyetli bir migration olurdu.'
+          },
+          {
+            satir: 'public LogEventType EventType { get; set; }',
+            aciklama: 'Domain/Enums/Logging/LogEventType.cs\'teki 10 değerli enum — serbest metin DEĞİL, derleme zamanında yazım hatası YAKALANIR.',
+            neden: 'ActivityLog.Action\'ın AKSİNE (serbest NVARCHAR, çünkü her yeni feature kendi Action string\'ini ekler) SecurityLog\'un olay kümesi SABİTTİR ve güvenlik-kritiktir — bir yerde "LoginFaild" yazım hatası yapılırsa, o SecurityLog kaydı hiçbir filtreyle BULUNAMAZDI.',
+            olmasaydi: 'Serbest string olsaydı, 8 farklı Handler\'da (Login/VerifyEmail/ResetPassword/ConfirmAccountDeletion/VerifyLoginOtp/Refresh/ConfirmQrLogin/DenyQrLogin) aynı olayı FARKLI yazımlarla ("LoginFailed" vs "login_failed") loglama riski doğardı — admin panelin filtre dropdown\'ı bu tutarsızlığı YANSITIRDI.'
+          },
+          {
+            satir: 'public string? EmailHash { get; set; }',
+            aciklama: 'Ham e-posta DEĞİL — `IPasswordService.HashToken(email)` (SHA-256→Base64, sabit 44 karakter) ile üretilen hash. RefreshTokens.TokenHash/Users.OriginalEmailHash/QrLoginSessions.QrTokenHash ile AYNI fonksiyon, AYNI uzunluk.',
+            neden: 'REFERENCE/SECURITY.md §6 "PII" kuralı: ham e-posta ASLA loglanmaz — ama yine de "bu e-postayla kaç başarısız deneme oldu" sorusunu cevaplayabilmek için bir İLİŞKİLENDİRME anahtarı gerekir; hash bunu PII sızdırmadan sağlar.',
+            olmasaydi: 'Ham e-posta saklansaydı, SecurityLog tablosu bir GDPR/KVKK ihlali riski taşırdı — DB sızıntısında binlerce kullanıcının e-postası (parola denemeleriyle BİRLİKTE) açığa çıkardı.'
+          },
+          {
+            satir: 'public User? User { get; set; }',
+            aciklama: 'Navigation property — QrLoginSession.User ile AYNI desen: tek yönlü, User tarafında karşılık gelen bir koleksiyon YOK.',
+            neden: 'Hiçbir akış "kullanıcının güvenlik log kayıtları" listesini User üzerinden İSTEMİYOR (YAGNI) — log görüntüleme (A-07) zaten SecurityLog tablosundan UserId\'ye göre sorgulayacak, ters yönde bir koleksiyon GEREKMEZ.',
+            olmasaydi: 'Ters koleksiyon eklenseydi, her User sorgusunda (ör. Login akışında `GetByEmailAsync`) EF Core bu koleksiyonu potansiyel olarak Include etme YÜKÜ taşırdı — kullanılmayan bir ilişki için gereksiz KARMAŞIKLIK.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityLogConfiguration.cs — Fluent API ile Şema + Check Constraint',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Logging/SecurityLogConfiguration.cs',
+        nedenBuKlasor: 'Data/Configurations/Logging/ — Auth/ ile AYNI seviyede, entity klasör yapısını BİREBİR yansıtır.',
+        kod: `public class SecurityLogConfiguration : IEntityTypeConfiguration<SecurityLog>
+{
+    public void Configure(EntityTypeBuilder<SecurityLog> builder)
+    {
+        builder.HasKey(s => s.Id);
+        builder.Property(s => s.Id).UseIdentityColumn();
+
+        builder.Property(s => s.EventType).HasConversion<string>().HasMaxLength(50).IsRequired();
+        builder.Property(s => s.EmailHash).HasMaxLength(44);
+        builder.Property(s => s.IpAddress).HasMaxLength(45);
+        builder.Property(s => s.UserAgent).HasMaxLength(500);
+
+        builder.HasIndex(s => s.EventType);
+        builder.HasIndex(s => s.IpAddress);
+        builder.HasIndex(s => s.CreatedAt).IsDescending();
+
+        builder.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.SetNull);
+
+        builder.ToTable(t => t.HasCheckConstraint(
+            "CK_SecurityLog_EventType",
+            "EventType IN ('LoginFailed','OtpFailed','RateLimitHit','UnauthorizedAccess'," +
+            "'TokenReplay','PasswordReset','AccountDeletion','AdminAction'," +
+            "'QrLoginConfirmed','QrLoginDenied')"));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'builder.Property(s => s.EventType).HasConversion<string>().HasMaxLength(50).IsRequired();',
+            aciklama: 'Enum, DB\'de SAYISAL index (0,1,2...) olarak DEĞİL, okunabilir string ("LoginFailed") olarak tutulur — QrLoginSession.Status ile AYNI desen.',
+            neden: 'Sayısal saklansaydı, bir gün enum\'a ARAYA yeni bir değer eklenirse (ör. iki değer arasına) TÜM mevcut kayıtların anlamı KAYARDI — string saklamak bu riski TAMAMEN ortadan kaldırır, ayrıca DB\'de elle sorgu yazan bir admin/DBA değeri DOĞRUDAN okuyabilir.',
+            olmasaydi: 'Sayısal saklansaydı ve enum sıralaması değişseydi, ör. eski "3" (TokenReplay) yeni kodda "3" (RateLimitHit) anlamına GELEBİLİRDİ — sessiz, fark edilmesi ÇOK zor bir veri bozulması.'
+          },
+          {
+            satir: 'builder.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.SetNull);',
+            aciklama: 'Kullanıcı silinse (soft delete DEĞİL, gerçekten Users tablosundan kalksa) bile, SecurityLog kaydı SİLİNMEZ — yalnızca UserId NULL olur.',
+            neden: 'Bir güvenlik olayı kaydı, o kaydı üreten kullanıcının VARLIĞINA bağımlı OLMAMALI — audit trail\'in KENDİSİ, ilişkili entity yok olsa bile KORUNMALI (ör. "bu IP\'den kaç deneme oldu" sorusu kullanıcı silinse bile CEVAPLANABİLMELİ).',
+            olmasaydi: 'CASCADE (varsayılan) kullanılsaydı, bir kullanıcı silindiğinde TÜM güvenlik geçmişi de SİLİNİRDİ — tam da audit\'in ÖNLEMEYE çalıştığı veri kaybı senaryosu.'
+          },
+          {
+            satir: 'builder.ToTable(t => t.HasCheckConstraint(',
+            aciklama: 'DB seviyesinde İKİNCİ savunma hattı — C# enum\'u YANLIŞLIKLA (ör. elle bir SQL INSERT ile) bypass edilse bile, geçersiz bir EventType değeri DB tarafından REDDEDİLİR.',
+            neden: 'QrLoginSessionConfiguration\'daki CK_QrLoginSessions_Status ile AYNI "iki katmanlı savunma" deseni (CLAUDE.md\'nin ThemePreference\'ta da kullandığı desen) — uygulama katmanı (enum) ve veri katmanı (CHECK) BİRBİRİNDEN bağımsız olarak doğru değeri garanti eder.',
+            olmasaydi: 'Bu constraint olmasaydı, bir migration hatası ya da elle veri düzeltme İŞLEMİ tabloya geçersiz bir string ("LoginFaild" gibi) yazabilirdi — bu satır SESSİZCE hiçbir filtreye YAKALANMAZDI, admin panelde "kayıp" bir olay gibi görünürdü.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'ActivityLog ve ApplicationLog — Aynı Deseni İzleyen İki Entity',
+        terimler: [
+          { terim: 'ActivityLog.cs + ActivityLogConfiguration.cs', tanim: 'SecurityLog ile AYNI yapı (Id BIGINT, BaseEntity yok, tek yönlü User navigation) — farkı: EventType yerine serbest `Action` (NVARCHAR(100), CLAUDE.md gereği her feature kendi kodunu ekler), artı `EntityType`/`EntityId`/`OldValue`/`NewValue` (audit diff) alanları. EventType\'ın AKSİNE Action için CHECK CONSTRAINT yazılmadı — sabit bir küme değil.' },
+          { terim: 'ApplicationLog.cs + ApplicationLogConfiguration.cs', tanim: 'Id BIGINT + BaseEntity yok ORTAK ama tek FARK: FK/navigation YOK (Serilog sink\'i User tablosuna join/kontrol yapmaz, ham UserId int\'i yazar) — Level/Message/Exception/SourceContext/RequestPath/UserId/Properties/TimeStamp kolonları Serilog\'un ColumnOptions\'ıyla (Bölüm 4) BİREBİR eşleşecek şekilde tasarlandı.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

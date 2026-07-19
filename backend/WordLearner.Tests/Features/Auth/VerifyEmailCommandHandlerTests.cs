@@ -15,6 +15,7 @@ using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -22,8 +23,10 @@ public class VerifyEmailCommandHandlerTests
 {
     private readonly Mock<IUserRepository> _userRepo = new();
     private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
-    private VerifyEmailCommandHandler CreateHandler() => new(_userRepo.Object, _otpService.Object);
+    private VerifyEmailCommandHandler CreateHandler() =>
+        new(_userRepo.Object, _otpService.Object, _securityLogger.Object);
 
     /// <summary>
     /// VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp
@@ -81,6 +84,46 @@ public class VerifyEmailCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// VerifyEmail_WrongOtpCode_LogsOtpFailedSecurityEvent
+    ///
+    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
+    ///       doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task VerifyEmail_WrongOtpCode_LogsOtpFailedSecurityEvent()
+    {
+        // ARRANGE
+        var user = new User { Email = "test@example.com" };
+        _userRepo.Setup(r => r.GetByEmailAsync("test@example.com", default)).ReturnsAsync(user);
+        _otpService
+            .Setup(o => o.Validate(user, "999999", OtpPurpose.EmailVerification))
+            .Throws<InvalidOtpException>();
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () =>
+            handler.Handle(
+                new VerifyEmailCommand("test@example.com", "999999") { ClientIp = "1.2.3.4" },
+                default
+            );
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+        _securityLogger.Verify(
+            s => s.LogAsync(
+                LogEventType.OtpFailed,
+                user.Id,
+                "test@example.com",
+                "1.2.3.4",
+                null,
+                "EmailVerification",
+                default
+            ),
+            Times.Once
+        );
     }
 
     /// <summary>

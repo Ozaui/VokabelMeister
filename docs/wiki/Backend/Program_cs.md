@@ -44,15 +44,21 @@ başlıkları/exception middleware'lerinden SONRA çağrılıyordu — düz HTTP
 yapılmadan (loglanmadan, başlık eklenmeden) doğrudan HTTPS'e yönlendirilmeli (ASP.NET Core konvansiyonu);
 artık pipeline'ın en başında. Pratikte nadiren tetiklenir (prod'da genelde ters proxy TLS'i sonlandırır).
 
-## Rate Limiting (A-03/A-03.1'de eklendi — bu nod A-02 sonrası güncellenmedi, burada özetleniyor)
+## Rate Limiting (A-03/A-03.1'de eklendi, A-04'te OnRejected eklendi)
 `builder.Services.AddRateLimiter(...)` üç policy tanımlar: `"anonymous"` (10/dk, paylaşımlı),
 `"authenticated"` (100/dk, paylaşımlı), `"qrGenerate"` (20/saat/IP, partitioned) + A-03.1 bugfix
 turunda eklenen `"qrStatus"` (40/dk/IP, partitioned — paylaşımlı `"anonymous"` bütçesini QR polling'in
 tüketip TÜM anonim trafiği kilitlemesini önlemek için, bkz. [[Auth_Domain]] "bugfix turu" notu).
+A-04'te `options.OnRejected` eklendi — herhangi bir policy 429 döndürdüğünde `RequestServices`
+üzerinden scope içi `ISecurityLogger` çözülüp `RateLimitHit` loglanır (bkz. [[Loglama_Domain]]).
 `app.UseRateLimiter()` `UseAuthorization()`'dan SONRA, `MapControllers()`'dan hemen ÖNCE çağrılır.
 
+## Serilog (A-02: konsol+dosya, A-04: MSSqlServer sink eklendi)
+`builder.Host.UseSerilog(...)` artık `WriteTo.MSSqlServer(...)` da içerir — `ApplicationLogColumnOptions.
+Build()` (`WordLearner.API/Logging/`) sink'in kolon şemasını `ApplicationLogs` migration'ıyla
+(A-04) eşler, `AutoCreateSqlTable=false` (bkz. [[Loglama_Domain]]).
+
 ## Henüz Eksik (sonraki fazlarda gelecek)
-- Serilog'un `Serilog.Sinks.MSSqlServer` (`ApplicationLog`) sink'i → **A-04** (tablo migration'ı henüz yok)
 - `UseStaticFiles()` (avatar/görsel) → **A-08**
 
 Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `BACKEND_AKADEMI/A-02_ortak-altyapi/05_program-cs-di.html`, ayrıca [[Teknik_Ozellikler]] §10.

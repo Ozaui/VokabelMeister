@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RateLimitHit + GET /health</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'rate-limit-health',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '08_auth-entegrasyonu.html',
+    sonrakiBolum: '10_code-vs-serbest-metin-karari.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — RateLimiterOptions.OnRejected ile Middleware DIŞINDAN Loglama',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: null,
+        kod: `builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, ct) =>
+    {
+        var securityLogger = context
+            .HttpContext.RequestServices.GetRequiredService<ISecurityLogger>();
+        var userIdClaim = context.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        int? userId = int.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+        await securityLogger.LogAsync(
+            LogEventType.RateLimitHit,
+            userId,
+            ipAddress: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+            detail: context.HttpContext.Request.Path.ToString(),
+            ct: ct
+        );
+    };
+
+    // ...AddFixedWindowLimiter("anonymous"/"authenticated"/"qrGenerate"/"qrStatus") A-03/A-03.1'de yazıldı
+});`,
+        satirlar: [
+          {
+            satir: 'options.OnRejected = async (context, ct) =>',
+            aciklama: 'ASP.NET Core\'un rate limiting middleware\'inin sağladığı bir HOOK — HERHANGİ bir policy (anonymous/authenticated/qrGenerate/qrStatus) 429 döndürdüğünde çalışır, hangi policy olduğu FARK ETMEKSİZİN.',
+            neden: 'Bu callback, DI konteynerinin NORMAL bir middleware/controller olmadığı bir YERDE (servis KAYIT anındaki bir lambda) çalışır — bu yüzden `ISecurityLogger`\'ı constructor injection İLE alamaz, DI\'a BAŞKA bir yoldan erişmesi GEREKİR (bir sonraki satır).',
+            olmasaydi: 'Bu hook kullanılmasaydı, her rate-limit policy\'sinin (4 tane) İÇİNE ayrı ayrı loglama kodu YAZILMASI gerekirdi — ASP.NET Core\'un rate limiter\'ı zaten TEK bir merkezi noktadan "reddedildi" olayını YAKALAMA imkanı sağladığı için, bu merkezi noktayı KULLANMAMAK gereksiz TEKRAR yaratırdı.'
+          },
+          {
+            satir: '.HttpContext.RequestServices.GetRequiredService<ISecurityLogger>();',
+            aciklama: '`RequestServices` — o anki HTTP isteğinin DI SCOPE\'undan bir servis çözer, tıpkı constructor injection\'ın YAPTIĞI gibi ama ELLE.',
+            neden: '`ISecurityLogger` Scoped kayıtlı (Bölüm 7) — bu, her İSTEK için AYRI bir instance ve dolayısıyla AYRI bir DbContext (transaction/connection) demektir; `RequestServices` bu SCOPE\'A doğru şekilde ERİŞİR, ör. bir Singleton alanından `IServiceProvider.CreateScope()` ile YENİ bir scope AÇMAK gerekmezdi.',
+            olmasaydi: 'Bunun yerine ör. `app.Services.GetRequiredService<ISecurityLogger>()` (kök konteyner) kullanılsaydı, Scoped bir servisi kök konteynerden ÇÖZMEYE çalışmak ÇALIŞMA ZAMANI HATASI fırlatırdı ("Cannot resolve scoped service from root provider").'
+          },
+          {
+            satir: 'detail: context.HttpContext.Request.Path.ToString(),',
+            aciklama: 'Detail alanına HANGİ endpoint\'in rate-limit\'e TAKILDIĞI (ör. "/api/v1/auth/login") yazılır.',
+            neden: 'Bu, Bölüm 10\'da göreceğimiz "Detail bir Code olmalı" kuralının bir İSTİSNASI GİBİ görünebilir ama DEĞİL — burada Detail bir DİL-BAĞIMLI cümle DEĞİL, ham bir URL path\'idir; hiçbir dile ÇEVRİLMESİ gerekmez, admin hangi dili konuşursa konuşsun AYNI görünür.',
+            olmasaydi: 'Bu bilgi loglanmasaydı, admin panel "429 aldık" bilgisini görürdü ama HANGİ endpoint\'in saldırı/aşırı kullanım altında OLDUĞUNU (login mi, QR generate mi) AYIRT EDEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'HealthController.cs — MediatR DEĞİL, Doğrudan DbContext',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/HealthController.cs',
+        nedenBuKlasor: 'API/Controllers/ — diğer controller\'larla AYNI klasör, ama bu görevde MediatR Command+Handler DESENİ KIRILIR (bir sonraki satırda neden).',
+        kod: `[ApiController]
+[Route("api/v1/health")]
+public class HealthController : ControllerBase
+{
+    private readonly WordLearnerDbContext _db;
+
+    public HealthController(WordLearnerDbContext db) => _db = db;
+
+    [HttpGet]
+    public async Task<ActionResult<HealthResponse>> Get(CancellationToken ct)
+    {
+        var databaseConnected = await _db.Database.CanConnectAsync(ct);
+        var response = new HealthResponse(
+            databaseConnected ? "Healthy" : "Unhealthy",
+            databaseConnected,
+            DateTime.UtcNow
+        );
+
+        return databaseConnected ? Ok(response) : StatusCode(StatusCodes.Status503ServiceUnavailable, response);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private readonly WordLearnerDbContext _db;',
+            aciklama: 'DİĞER TÜM controller\'ların AKSİNE (`IMediator _mediator`), doğrudan `WordLearnerDbContext` ENJEKTE edilir.',
+            neden: 'Bu bilinçli bir CQRS SAPMASI: health check bir "feature" DEĞİL, saf bir altyapı kontrolüdür — hiçbir İŞ KURALI/doğrulama/yetkilendirme İÇERMEZ, MediatR\'ın Command+Handler+Validator KATMANLARI burada yalnızca GEREKSİZ dolaylama EKLERDİ (YAGNI).',
+            olmasaydi: 'Bir `HealthCheckCommand`/`HealthCheckCommandHandler` YAZILSAYDI, tek satırlık bir `Database.CanConnectAsync()` çağrısı için TÜM CQRS dosya iskeleti (Command, Handler, belki Validator) OLUŞTURULURDU — bu, projenin KENDİ "spekülatif soyutlama yazma" YASAĞIYLA (CLAUDE.md §3) ÇELİŞirdi.'
+          },
+          {
+            satir: 'var databaseConnected = await _db.Database.CanConnectAsync(ct);',
+            aciklama: 'EF Core\'un `Database.CanConnectAsync` — GERÇEK bir sorgu ÇALIŞTIRMADAN (ör. `SELECT 1` bile atmadan) yalnızca BAĞLANTININ kurulabilir olup OLMADIĞINI test eder.',
+            neden: 'Bu endpoint, uptime monitoring/load balancer tarafından SIK aralıklarla (ör. her 10 saniyede) ÇAĞRILACAK — ağır bir sorgu yerine EN HAFİF mümkün kontrolü seçmek, health check\'in KENDİSİNİN sisteme YÜK bindirmesini ÖNLER.',
+            olmasaydi: 'Gerçek bir tablo sorgusu (ör. `_db.Users.AnyAsync()`) kullanılsaydı, her health check çağrısı GEREKSİZ bir SELECT sorgusu ÇALIŞTIRIRDI — sık çağrılan bir endpoint\'te bu, zamanla ÖLÇÜLEBİLİR bir yük OLURDU.'
+          },
+          {
+            satir: 'return databaseConnected ? Ok(response) : StatusCode(StatusCodes.Status503ServiceUnavailable, response);',
+            aciklama: 'DB bağlantısı YOKSA, HTTP 200 DEĞİL 503 (Service Unavailable) döner — yanıt GÖVDESİ aynı şekilde `HealthResponse` olsa da, DURUM KODU farklıdır.',
+            neden: 'Load balancer\'lar/uptime monitoring araçları GENELLİKLE yalnızca HTTP durum koduna BAKAR (gövdeyi PARSE ETMEZ) — 503 dönmek, bu araçların "bu instance\'ı TRAFİKTEN çıkar" kararını OTOMATİK vermesini SAĞLAR.',
+            olmasaydi: 'Her zaman 200 dönülseydi (yalnızca gövdedeki `status: "Unhealthy"` ile), çoğu load balancer/monitoring aracı bunu "SAĞLIKLI" sayardı (200 = OK varsayımı) — GERÇEKTEN DB\'ye erişemeyen bir instance TRAFİK almaya devam ederdi.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/health',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/health',
+        aciklama: 'Anonim erişilebilir — DB bağlantısını CanConnectAsync ile kontrol eder.',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "status": "Healthy",
+  "databaseConnected": true,
+  "timestampUtc": "2026-07-19T19:53:05.659005Z"
+}`
+        },
+        notlar: [
+          'DB bağlantısı YOKSA aynı gövde şekliyle 503 Service Unavailable döner (status: "Unhealthy", databaseConnected: false).',
+          '[Authorize] YOK — Anonim, load balancer/uptime monitoring bu endpoint\'i JWT olmadan çağırabilmeli.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

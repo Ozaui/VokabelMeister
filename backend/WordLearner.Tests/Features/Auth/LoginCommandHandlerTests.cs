@@ -14,6 +14,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -23,9 +24,16 @@ public class LoginCommandHandlerTests
     private readonly Mock<IPasswordService> _passwordService = new();
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<IEmailService> _emailService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     private LoginCommandHandler CreateHandler() =>
-        new(_userRepo.Object, _passwordService.Object, _otpService.Object, _emailService.Object);
+        new(
+            _userRepo.Object,
+            _passwordService.Object,
+            _otpService.Object,
+            _emailService.Object,
+            _securityLogger.Object
+        );
 
     private static User CreateActiveUser(string email = "test@example.com", string? passwordHash = "hash") =>
         new()
@@ -78,6 +86,40 @@ public class LoginCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidCredentialsException>();
+    }
+
+    /// <summary>
+    /// Login_WrongPassword_LogsLoginFailedSecurityEvent
+    ///
+    /// AMAÇ: Yanlış şifrede ISecurityLogger.LogAsync'in LoginFailed olayıyla, bulunan
+    ///       kullanıcının Id'siyle ve e-postayla ÇAĞRILDIĞINI doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task Login_WrongPassword_LogsLoginFailedSecurityEvent()
+    {
+        // ARRANGE
+        var user = CreateActiveUser();
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("YanlisSifre", "hash")).Returns(false);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginCommand(user.Email, "YanlisSifre") { ClientIp = "1.2.3.4" }, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+        _securityLogger.Verify(
+            s => s.LogAsync(
+                LogEventType.LoginFailed,
+                user.Id,
+                user.Email,
+                "1.2.3.4",
+                null,
+                null,
+                default
+            ),
+            Times.Once
+        );
     }
 
     /// <summary>

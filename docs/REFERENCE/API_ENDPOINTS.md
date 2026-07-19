@@ -16,6 +16,12 @@ JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (
 **HTTP:** 200/201/204 · 400 Geçersiz · 401 Kimlik yok · 403 Yetkisiz · 404 Bulunamadı · 409 Çakışma · 429 Çok istek · 500.
 **Auth seviyeleri:** `Anonim` · `[Authorize]` · `[Authorize(Admin)]`.
 
+## 2. Sistem
+
+| Metot | Yol | Açıklama |
+|-------|-----|----------|
+| GET | `/health` | Anonim — DB bağlantısı `CanConnectAsync` ile kontrol edilir; `{ status, databaseConnected, timestampUtc }`. Sağlıksızsa 503. Load balancer/uptime monitoring için (A-04). |
+
 ## 3. Auth
 
 | Metot | Yol | Auth | Açıklama |

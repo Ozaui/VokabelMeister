@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**). Sırada **A-04 (Loglama Sistemi)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. Sırada **A-05 (Sistem Kelimesi API)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -91,6 +91,55 @@
   güncellendi. 7 test dosyasına birer `Xxx_GermanLanguage_ReturnsGermanMessage` testi eklendi (7 yeni
   test). Detay → Yirmi ikinci INGEST.
 
+### Yazılmış Kod Düğümleri (A-04 — Loglama Sistemi, tamamlandı)
+- [[Loglama_Domain]] — `ActivityLog`/`ApplicationLog`/`SecurityLog` entity+config+migration (hiçbiri
+  `BaseEntity`den türemiyor, insert-only), `LogEventType` enum (10 değer, `HasConversion<string>` +
+  DB check constraint ile iki katmanlı korunur).
+- Serilog MSSqlServer sink — `ApplicationLogColumnOptions.cs` (`WordLearner.API/Logging/`) sink'in
+  varsayılan kolon setini (`MessageTemplate`/XML `Properties`) kaldırıp migration'ın gerçek
+  şemasıyla (BIGINT Id, `LogEvent`→"Properties" JSON, `AdditionalColumns`: SourceContext/
+  RequestPath/UserId) eşler; `RequestResponseLoggingMiddleware` `Serilog.Context.LogContext.
+  PushProperty` ile RequestPath/UserId zenginleştirmesi ekler (UserId, Authentication middleware'den
+  SONRA okunur — pipeline sırası gereği dar bir scope'ta).
+- `IActivityLogger`/`ActivityLogger`, `ISecurityLogger`/`SecurityLogger` (Application/Services/,
+  flat) — `SecurityLogger` e-postayı `IPasswordService.HashToken` ile hash'leyerek `EmailHash`'e
+  yazar (ham e-posta asla loglanmaz, PII kuralı).
+- `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` + implementasyonları
+  — [[PagedResult]] (A-02'de YAGNI kuralıyla silinmişti, bu üç repository'nin `GetPagedAsync`'i
+  GERÇEK ilk tüketicisi olduğu için yeniden yazıldı).
+- **8 Handler'a SecurityLog entegrasyonu** (A-03/A-03.1'den beri "A-04'ten sonra eklenecek" diye
+  bekleyen borç kapandı): `LoginCommand`/`ConfirmAccountDeletionCommand` (LoginFailed),
+  `VerifyLoginOtpCommand`/`VerifyEmailCommand`/`ResetPasswordCommand`/`ConfirmAccountDeletionCommand`
+  (OtpFailed, 4 akış), `RefreshCommand` (TokenReplay), `ConfirmQrLoginCommand`/`DenyQrLoginCommand`
+  (QrLoginConfirmed/Denied), artı iki BAŞARI olayı (`ResetPasswordCommand`→PasswordReset,
+  `ConfirmAccountDeletionCommand`→AccountDeletion). `LoginCommand`/`VerifyEmailCommand`/
+  `ResetPasswordCommand`/`ConfirmAccountDeletionCommand`'a bu görevde yeni `ClientIp` alanı eklendi
+  (`VerifyLoginOtpCommand`/`RefreshCommand`'da zaten VARDI).
+- `RateLimiterOptions.OnRejected` (Program.cs) — herhangi bir rate-limit policy'si (anonymous/
+  authenticated/qrGenerate/qrStatus) 429 döndürdüğünde `RequestServices` üzerinden scope içi
+  `ISecurityLogger` çözülüp `RateLimitHit` loglanır.
+- `HealthController` (`GET /health`, `HealthResponse` DTO) — MediatR Command+Handler DIŞINDA,
+  doğrudan `WordLearnerDbContext.Database.CanConnectAsync` (bilinçli CQRS sapması, YAGNI: saf
+  altyapı kontrolü bir "feature" değil).
+- **Mimari karar (kullanıcı düzeltmesi):** `SecurityLog.Detail`/`ActivityLog.OldValue`/`NewValue`
+  serbest metin DEĞİL bir **Code** — admin panel de bir istemci, tr/de çözümü log YAZILIRKEN değil
+  admin `GET /admin/logs/*` (A-07) ile OKURKEN yapılacak (`ErrorMessages`/`SuccessMessages` ile aynı
+  desen, çözme ANI farklı). `CLAUDE.md`'ye "İkinci istisna" olarak eklendi; A-07'nin "Log
+  görüntüleme" maddesine bu gereksinim not edildi.
+- **Genel CLAUDE.md kuralı:** kullanıcının "ileride yazacağımız alanlar da loglama sistemine dahil
+  edilmeli mi" sorusu üzerine "içerik değiştiren her CRUD `IActivityLogger`'a yazar" kuralı
+  "Veri katmanı" bölümüne eklendi; A-05/A-06/A-07/A-08/A-09/A-10 (`TASK/A_admin_panel_backend.md`)
+  ve C-02/C-04 (`TASK/C_kullanici_backend.md`) task'larına somut `Action` string önerileriyle işlendi.
+- **Birim testleri:** `ActivityLoggerTests` (3), `SecurityLoggerTests` (3), `ActivityLogRepositoryTests`
+  (4), `SecurityLogRepositoryTests` (3), `ApplicationLogRepositoryTests` (2), 8 Handler test
+  dosyasına eklenen 11 yeni senaryo. **Toplam 144/144 birim testi yeşil.**
+- Gerçek bir sunucu çalıştırılıp doğrulandı: `GET /health` → 200 `{status, databaseConnected,
+  timestampUtc}`; başarısız bir login denemesi → `SecurityLogs` tablosunda doğru `EventType`/
+  `EmailHash`/`IpAddress` ile satır; Serilog sink → `ApplicationLogs` tablosuna doğru `Message`/
+  `SourceContext`/`RequestPath`/`UserId` ile satır düştüğü SQL sorgusuyla teyit edildi.
+- `BACKEND_AKADEMI/A-04_loglama-sistemi/` (12 bölüm) — zincir A-03.3'ün son bölümüne bağlandı, kök
+  `index.html`'e kart eklendi.
+
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
 - [[Veritabani_Semasi]] — ERD özeti, genel kurallar
@@ -120,7 +169,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, sıradaki A-04) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, sıradaki A-05) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -925,3 +974,55 @@ görünür bir "birincil tarafı değiştir" kontrolüyle karşı tarafa da çev
 Icerik.md` ("Eşleştirme" bölümüne 2 yeni madde), `docs/REFERENCE/API_ENDPOINTS.md` §5,
 `docs/TASK/{A_admin_panel_backend,B_admin_panel}.md`, bu dosya, kök dizindeki
 `ALMANCA_TURKCE_ESLESME.md` (v3).*
+
+*Otuz ikinci INGEST (2026-07-19) — **A-04 (Loglama Sistemi) tamamlandı** (yukarıdaki
+Yirmi dokuzuncu-Otuz birinci INGEST'lerdeki DE-TR eşleştirme tasarımından TAMAMEN AYRI, sonraki bir
+oturumda yazılan gerçek kod): `ActivityLog`/`ApplicationLog`/`SecurityLog` entity+config+migration
+(`AddLoggingTables`, hiçbiri `BaseEntity`den türemiyor) → Serilog MSSqlServer sink gerçek şemayla
+eşlendi (`ApplicationLogColumnOptions.cs`, `AutoCreateSqlTable=false`) →
+`RequestResponseLoggingMiddleware`'e `LogContext.PushProperty` ile RequestPath/UserId zenginleştirmesi
+→ `IActivityLogger`/`ISecurityLogger` (e-posta `IPasswordService.HashToken` ile hash'lenir) → 3
+sayfalı+filtreli repository (`PagedResult<T>` A-02'de YAGNI ile silinmişti, burada gerçek ilk
+tüketicisiyle yeniden yazıldı) → **8 Handler'a SecurityLog entegrasyonu** (A-03/A-03.1'den beri
+bekleyen borç: `LoginCommand`/`ConfirmAccountDeletionCommand`→LoginFailed,
+`VerifyLoginOtpCommand`/`VerifyEmailCommand`/`ResetPasswordCommand`/`ConfirmAccountDeletionCommand`→
+OtpFailed, `RefreshCommand`→TokenReplay, `ConfirmQrLoginCommand`/`DenyQrLoginCommand`→
+QrLoginConfirmed/Denied, artı `ResetPasswordCommand`→PasswordReset ve
+`ConfirmAccountDeletionCommand`→AccountDeletion BAŞARI olayları) → `RateLimiterOptions.OnRejected`
+ile RateLimitHit → `GET /health` (MediatR dışı, bilinçli CQRS sapması).
+
+**Mimari karar (kullanıcı düzeltmesi, bu oturumun en önemli kararı):** İlk yazımda
+`SecurityLog.Detail`'e serbest Türkçe cümleler yazılmıştı (CLAUDE.md'nin "DB/log/geliştirici
+İngilizce görür" kuralına göre önce İngilizce'ye çevrilmişti). Kullanıcı ikisini de düzeltti: **admin
+panel de bir istemci** — Detail, `_logger.Log*` gibi yalnızca geliştiricinin gördüğü bir alan
+DEĞİL, admin'in `GET /admin/logs/security` (A-07) panelinden DOĞRUDAN okuduğu bir metin, admin'in
+de dil tercihi var. Ama log satırı YAZILIRKEN hangi admin'in NE ZAMAN hangi dille okuyacağı
+BİLİNMEZ — çözüm: `ErrorMessages`/`SuccessMessages` (A-03.2) ile AYNI Code-sonra-çöz deseni,
+yalnızca çözme ANI farklı (istek anı değil, admin OKURKEN). Detail'e artık sabit bir Code yazılıyor
+(`TOKEN_REPLAY_FAMILY_REVOKED`, `ACCOUNT_DELETION_PASSWORD_MISMATCH`), tr/de çözümü A-07'de
+yazılacak yeni bir sözlükle olacak (henüz yazılmadı, A-07'nin "Log görüntüleme" maddesine not
+edildi). Bu kural `CLAUDE.md`'nin dil bölümüne kalıcı "İkinci istisna" olarak eklendi.
+
+**İkinci kullanıcı düzeltmesi:** "ileride yazacağımız alanlar da loglama sistemine dahil edilmeli
+mi" sorusu üzerine CLAUDE.md'ye genel bir kural eklendi ("içerik değiştiren her CRUD
+`IActivityLogger`'a yazar, admin'e özel hassas işlemler ayrıca `ISecurityLogger`'a da") ve
+A-05/A-06/A-07/A-08/A-09/A-10 (`TASK/A_admin_panel_backend.md`) + C-02/C-04
+(`TASK/C_kullanici_backend.md`) task'larına somut `Action` string önerileriyle (ör. `CREATE_WORD`,
+`DELETE_USER_CARD`, `ANONYMIZE_ACCOUNT`) işlendi — bu görevlerin hiçbiri henüz kodlanmadı, yalnızca
+task checklist'leri güncellendi.
+
+**Ayrıca düzeltilen bir bayat doküman hatası:** `DATABASE_SCHEMA/Loglama.md`'deki `EmailHash
+VARCHAR(88)` — projenin geri kalanında (`PendingOtpCodeHash`/`OriginalEmailHash`/`TokenHash`/
+`QrTokenHash`) 2026-07-11'de 88→44 düzeltilmişti (SHA-256→Base64 sabit 44 karakter), ama
+SecurityLog o düzeltme sırasında henüz kodlanmadığı için Loglama.md'de eski değer kalmıştı; ayrıca
+tablo adları (dokümanda tekil: `ActivityLog`) gerçek EF Core konvansiyonuna (çoğul: `ActivityLogs`)
+göre düzeltildi.
+
+**Toplam 144/144 birim testi yeşil** (117'den +27: 26 A-04'e özgü + numaralandırma farkı). Gerçek
+bir sunucu çalıştırılıp doğrulandı (`GET /health` → 200, başarısız login → `SecurityLogs`'a doğru
+satır, Serilog → `ApplicationLogs`'a doğru satır — SQL sorgusuyla teyit edildi). `BACKEND_AKADEMI/
+A-04_loglama-sistemi/` (12 bölüm) yazıldı, zincir A-03.3'e bağlandı. **Etkilenen dosyalar:**
+`docs/DATABASE_SCHEMA/Loglama.md`, `docs/REFERENCE/API_ENDPOINTS.md` (§2 Sistem/health eklendi),
+`docs/TASK.md`, `docs/TASK/{A_admin_panel_backend,C_kullanici_backend}.md`, `docs/wiki/Database/
+Loglama_Domain.md` (yeniden yazıldı), bu dosya, kök `CLAUDE.md` (2 yeni kural). **Sıradaki task:
+A-05 (Sistem Kelimesi API — Words).***

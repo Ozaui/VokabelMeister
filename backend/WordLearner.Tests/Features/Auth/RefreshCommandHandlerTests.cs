@@ -13,6 +13,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
 using WordLearner.Tests.Common;
 
 namespace WordLearner.Tests.Features.Auth;
@@ -24,6 +25,7 @@ public class RefreshCommandHandlerTests
     private readonly Mock<IPasswordService> _passwordService = new();
     private readonly Mock<ITokenService> _tokenService = new();
     private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     private RefreshCommandHandler CreateHandler() =>
         new(
@@ -32,7 +34,8 @@ public class RefreshCommandHandlerTests
             _passwordService.Object,
             _tokenService.Object,
             _loginCompletionService.Object,
-            AuthTestMapper.Create()
+            AuthTestMapper.Create(),
+            _securityLogger.Object
         );
 
     private void SetupTokenService()
@@ -156,6 +159,47 @@ public class RefreshCommandHandlerTests
         // ASSERT
         await act.Should().ThrowAsync<InvalidRefreshTokenException>();
         _refreshTokenRepo.Verify(r => r.RevokeFamilyAsync("family-replay", default), Times.Once);
+    }
+
+    /// <summary>
+    /// Refresh_TokenAlreadyUsed_LogsTokenReplaySecurityEvent
+    ///
+    /// AMAÇ: Replay tespit edildiğinde ISecurityLogger.LogAsync'in TokenReplay
+    ///       olayıyla ÇAĞRILDIĞINI doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task Refresh_TokenAlreadyUsed_LogsTokenReplaySecurityEvent()
+    {
+        // ARRANGE
+        var kullanilmisToken = new RefreshToken
+        {
+            UserId = 42,
+            TokenFamily = "family-replay",
+            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            IsUsed = true,
+        };
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("hash");
+        _refreshTokenRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(kullanilmisToken);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () =>
+            handler.Handle(new RefreshCommand("kullanilmis-token") { ClientIp = "1.2.3.4" }, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+        _securityLogger.Verify(
+            s => s.LogAsync(
+                LogEventType.TokenReplay,
+                42,
+                null,
+                "1.2.3.4",
+                null,
+                "TOKEN_REPLAY_FAMILY_REVOKED",
+                default
+            ),
+            Times.Once
+        );
     }
 
     /// <summary>

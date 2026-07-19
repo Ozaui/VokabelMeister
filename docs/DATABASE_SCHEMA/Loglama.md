@@ -2,10 +2,12 @@
 
 > Üç tablo, üç amaç. Soft delete **yok**, loglar değişmez (insert-only). Tümü `GET /admin/logs/*` ile
 > filtreli+sayfalı (yalnızca Admin). FK: `Users`→`Auth.md`. Mimari → `REFERENCE/ARCHITECTURE.md §6`, `REFERENCE/SECURITY.md §6`.
+> **Tablo adları çoğul** (`ActivityLogs`/`ApplicationLogs`/`SecurityLogs`) — EF Core'un `DbSet<T>`
+> adlandırma konvansiyonu, `Users`/`RefreshTokens`/`QrLoginSessions` ile aynı desen (A-04'te kodlandı).
 
-### ActivityLog (audit — kim ne yaptı; `IActivityLogger` yazar)
+### ActivityLogs (audit — kim ne yaptı; `IActivityLogger` yazar)
 ```sql
-CREATE TABLE ActivityLog (
+CREATE TABLE ActivityLogs (
     Id BIGINT PRIMARY KEY IDENTITY,
     UserId INT NULL,                       -- eylemi yapan (anonim ise NULL)
     ActorRole NVARCHAR(20) NULL,           -- User|Admin (kayıt anındaki rol)
@@ -16,14 +18,14 @@ CREATE TABLE ActivityLog (
     IpAddress VARCHAR(45) NULL, UserAgent NVARCHAR(500) NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL,
-    INDEX IX_ActivityLog_UserId (UserId), INDEX IX_ActivityLog_Action (Action),
-    INDEX IX_ActivityLog_EntityType (EntityType), INDEX IX_ActivityLog_CreatedAt (CreatedAt DESC)
+    INDEX IX_ActivityLogs_UserId (UserId), INDEX IX_ActivityLogs_Action (Action),
+    INDEX IX_ActivityLogs_EntityType (EntityType), INDEX IX_ActivityLogs_CreatedAt (CreatedAt DESC)
 );
 ```
 
-### ApplicationLog (teknik log — Serilog MSSqlServer sink; kurulum → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §9`)
+### ApplicationLogs (teknik log — Serilog MSSqlServer sink; kurulum → `REFERENCE/TECHNICAL_SPECIFICATIONS.md §9`)
 ```sql
-CREATE TABLE ApplicationLog (
+CREATE TABLE ApplicationLogs (
     Id BIGINT PRIMARY KEY IDENTITY,
     Level NVARCHAR(20) NOT NULL,           -- Verbose|Debug|Information|Warning|Error|Fatal
     Message NVARCHAR(MAX) NOT NULL,
@@ -33,24 +35,24 @@ CREATE TABLE ApplicationLog (
     UserId INT NULL,
     Properties NVARCHAR(MAX) NULL,         -- Serilog yapılandırılmış özellikler (JSON)
     TimeStamp DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-    INDEX IX_ApplicationLog_Level (Level), INDEX IX_ApplicationLog_TimeStamp (TimeStamp DESC)
+    INDEX IX_ApplicationLogs_Level (Level), INDEX IX_ApplicationLogs_TimeStamp (TimeStamp DESC)
 );
 ```
-> Serilog sink kolonları (`Level`, `Message`, `Exception`, `TimeStamp`, `Properties`) `ColumnOptions` ile eşlenir; `SourceContext`/`RequestPath`/`UserId` ek kolon.
+> Serilog sink kolonları (`Level`, `Message`, `Exception`, `TimeStamp`, `Properties`) `ColumnOptions` ile eşlenir; `SourceContext`/`RequestPath`/`UserId` ek kolon. FK **yok** — sink User tablosuna join/kontrol yapmaz, ham `UserId` int'i yazar.
 
-### SecurityLog (güvenlik olayları — `ISecurityLogger` yazar)
+### SecurityLogs (güvenlik olayları — `ISecurityLogger` yazar)
 ```sql
-CREATE TABLE SecurityLog (
+CREATE TABLE SecurityLogs (
     Id BIGINT PRIMARY KEY IDENTITY,
     EventType NVARCHAR(50) NOT NULL,       -- LoginFailed|OtpFailed|RateLimitHit|UnauthorizedAccess|TokenReplay|AdminAction
     UserId INT NULL,
-    EmailHash VARCHAR(88) NULL,            -- SHA-256(email) — PII saklamadan ilişkilendirme
+    EmailHash VARCHAR(44) NULL,            -- SHA-256(email)→Base64, sabit 44 karakter — PII saklamadan ilişkilendirme
     IpAddress VARCHAR(45) NULL, UserAgent NVARCHAR(500) NULL,
     Detail NVARCHAR(MAX) NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE SET NULL,
-    INDEX IX_SecurityLog_EventType (EventType), INDEX IX_SecurityLog_IpAddress (IpAddress),
-    INDEX IX_SecurityLog_CreatedAt (CreatedAt DESC)
+    INDEX IX_SecurityLogs_EventType (EventType), INDEX IX_SecurityLogs_IpAddress (IpAddress),
+    INDEX IX_SecurityLogs_CreatedAt (CreatedAt DESC)
 );
 ```
-> `LogEventType` enum (Domain/Enums): `LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess, TokenReplay, PasswordReset, AccountDeletion, AdminAction, QrLoginConfirmed, QrLoginDenied`.
+> `LogEventType` enum (Domain/Enums/Logging): `LoginFailed, OtpFailed, RateLimitHit, UnauthorizedAccess, TokenReplay, PasswordReset, AccountDeletion, AdminAction, QrLoginConfirmed, QrLoginDenied`. DB'de `CK_SecurityLog_EventType` check constraint ile aynı küme zorunlu kılınır (okunabilir string, `HasConversion<string>`).

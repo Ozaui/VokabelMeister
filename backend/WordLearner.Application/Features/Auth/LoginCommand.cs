@@ -17,14 +17,17 @@ using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-// NEDEN Language init-property: bkz. LogoutCommand'daki UserId — Accept-Language
-//       header'ından gelir, gövdede yer almaz (Controller `with` ile set eder).
+// NEDEN Language/ClientIp init-property: bkz. LogoutCommand'daki UserId — Accept-Language
+//       header'ından ve bağlantıdan gelir, gövdede yer almaz (Controller `with` ile set eder).
+//       ClientIp A-04'te eklendi — LoginFailed SecurityLog kaydı için gerekli.
 public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
 {
     public string? Language { get; init; }
+    public string? ClientIp { get; init; }
 }
 
 public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
@@ -47,18 +50,21 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
     private readonly IPasswordService _passwordService;
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
+    private readonly ISecurityLogger _securityLogger;
 
     public LoginCommandHandler(
         IUserRepository userRepository,
         IPasswordService passwordService,
         IOtpService otpService,
-        IEmailService emailService
+        IEmailService emailService,
+        ISecurityLogger securityLogger
     )
     {
         _userRepository = userRepository;
         _passwordService = passwordService;
         _otpService = otpService;
         _emailService = emailService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)
@@ -68,7 +74,16 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse
         var passwordValid = _passwordService.Verify(request.Password, hashToVerify);
 
         if (user is null || user.PasswordHash is null || !passwordValid)
+        {
+            await _securityLogger.LogAsync(
+                LogEventType.LoginFailed,
+                user?.Id,
+                request.Email,
+                request.ClientIp,
+                ct: ct
+            );
             throw new InvalidCredentialsException();
+        }
 
         if (!user.IsActive)
             throw new AccountNotActiveException();

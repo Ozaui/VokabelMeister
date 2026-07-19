@@ -25,6 +25,9 @@
 > olmalı (`UserCardUserCategories` ara tablosu buna FK verir) → dikey dilim bütünlüğü için öne çekildi.
 - [ ] **Entity:** `UserCategory` + migration, `IUserCategoryService` + `UserCategoryController` (yalnızca sahibi)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **`IActivityLogger` entegrasyonu** (A-04, bkz. `CLAUDE.md` "Veri katmanı"): `CREATE_USER_CATEGORY`/
+      `UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY` (`EntityType=UserCategory`)
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] **Birim testleri:** `UserCategoryServiceTests` (sahiplik filtresi, CRUD)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
@@ -72,7 +75,11 @@
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 - [ ] `POST /user-cards/learn-system-word` → UserCard değil **UserProgress** açar, `UserCardController`
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `UserCardServiceTests` (sahiplik filtresi, duplikat 409, learn-system-word akışı)
+- [ ] **`IActivityLogger` entegrasyonu** (A-04): `CREATE_USER_CARD`/`UPDATE_USER_CARD`/
+      **`DELETE_USER_CARD`** (`Loglama_Domain.md`'deki `Action` örneğiyle birebir — `EntityType=UserCard`)
+- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [ ] **Birim testleri:** `UserCardServiceTests` (sahiplik filtresi, duplikat 409, learn-system-word akışı,
+      `IActivityLogger` çağrısı)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### C-05 — Öğrenme / Sınav API ⬜

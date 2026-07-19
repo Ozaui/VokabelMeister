@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Testler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'testler',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '10_code-vs-serbest-metin-karari.html',
+    sonrakiBolum: '12_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'SecurityLoggerTests.cs — E-postanın GERÇEKTEN Hash\'lendiğini Kanıtlamak',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/SecurityLoggerTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — OtpServiceTests/PasswordServiceTests ile AYNI klasör.',
+        kod: `[Fact]
+public async Task LogAsync_EmailGiven_HashesEmailBeforeStoring()
+{
+    // ARRANGE
+    _passwordService.Setup(p => p.HashToken("test@example.com")).Returns("hashed-email");
+    var logger = CreateLogger();
+
+    // ACT
+    await logger.LogAsync(LogEventType.LoginFailed, email: "test@example.com", ct: default);
+
+    // ASSERT
+    _repository.Verify(
+        r => r.AddAsync(
+            It.Is<SecurityLog>(s =>
+                s.EmailHash == "hashed-email" && s.EventType == LogEventType.LoginFailed
+            ),
+            default
+        ),
+        Times.Once
+    );
+    _passwordService.Verify(p => p.HashToken("test@example.com"), Times.Once);
+}`,
+        satirlar: [
+          {
+            satir: '_passwordService.Setup(p => p.HashToken("test@example.com")).Returns("hashed-email");',
+            aciklama: '`IPasswordService` MOCK\'LANIR — gerçek SHA-256 hesaplaması TEST EDİLMEZ (bu zaten PasswordServiceTests\'in İŞİ), yalnızca SecurityLogger\'ın bu servisi DOĞRU şekilde ÇAĞIRDIĞI doğrulanır.',
+            neden: 'Birim testin SORUMLULUĞU, SecurityLogger sınıfının KENDİ mantığıdır (email geldiğinde HashToken\'ı çağırıp SONUCU EmailHash\'e yazması) — hash algoritmasının KENDİSİ ayrı bir sınıfın (PasswordService) ayrı bir testinin KONUSU.',
+            olmasaydi: 'Gerçek `PasswordService` enjekte edilseydi, bu test aslında İKİ sınıfı BİRDEN test ederdi — PasswordService\'te bir hata olsa, bu hata SecurityLoggerTests\'te de BAŞARISIZ bir test olarak GÖRÜNÜRDÜ, hangi sınıfın BOZUK olduğu belirsizleşirdi.'
+          },
+          {
+            satir: 'It.Is<SecurityLog>(s =>',
+            aciklama: '`It.Is<SecurityLog>(...)` — repository\'e GEÇİRİLEN nesnenin İÇİNDEKİ alanları (EmailHash, EventType) DOĞRULAR, yalnızca "AddAsync ÇAĞRILDI mı" (Times.Once) DEĞİL.',
+            neden: 'Yalnızca "çağrıldı mı" kontrolü, YANLIŞ bir SecurityLog nesnesiyle (ör. EmailHash boş, EventType yanlış) ÇAĞRILSA bile testi GEÇİRİRDİ — `It.Is` ile İÇERİK doğrulaması, testin GERÇEKTEN "doğru veri mi yazıldı" sorusunu CEVAPLAMASINI sağlar.',
+            olmasaydi: '`It.IsAny<SecurityLog>()` kullanılsaydı, SecurityLogger\'daki bir hata (ör. `EmailHash = email` — hash\'lemeyi UNUTMAK) bu test TARAFINDAN hiç YAKALANMAZDI — test YEŞİL görünür ama PII kuralı SESSİZCE İHLAL EDİLİYOR olurdu.'
+          },
+          {
+            satir: '_passwordService.Verify(p => p.HashToken("test@example.com"), Times.Once);',
+            aciklama: 'HashToken\'ın TAM OLARAK BİR kez, DOĞRU e-postayla ÇAĞRILDIĞI ayrıca doğrulanır — yukarıdaki `EmailHash == "hashed-email"` kontrolü zaten DOLAYLI olarak bunu ima etse de, bu satır AÇIKÇA belirtir.',
+            neden: 'Bu ikinci doğrulama, "acaba HashToken hiç ÇAĞRILMADAN da EmailHash bir şekilde \'hashed-email\' OLABİLİR miydi" (ör. sabit bir string DÖNDÜREN bozuk bir implementasyon) senaryosunu EKARTE eder.',
+            olmasaydi: 'Bu satır olmasaydı, test yine de GEÇERDİ (ilk assertion yeterliydi) — ama SecurityLogger\'ın GERÇEKTEN doğru METODU çağırdığından (yanlışlıkla başka bir hash fonksiyonu değil) EMİN olma güveni bir DERECE azalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Görevde Eklenen Diğer Testler',
+        terimler: [
+          { terim: 'ActivityLoggerTests.cs (3 test)', tanim: 'SecurityLoggerTests ile AYNI desen — oldValue/newValue\'nun JSON\'a serileştirildiğini (`a.OldValue == """{"Level":"A1"}"""`), minimal alanlarla çağrıldığında OldValue/NewValue\'nun null KALDIĞINI doğrular.' },
+          { terim: 'ActivityLogRepositoryTests.cs (4 test)', tanim: 'In-memory EF Core ile GERÇEK sorgu — userId filtresi, sayfalama (TotalCount TÜM filtrelenmiş kayıt sayısını yansıtır, sayfa boyutunu DEĞİL), CreatedAt DESC sıralaması.' },
+          { terim: 'SecurityLogRepositoryTests.cs (3 test) + ApplicationLogRepositoryTests.cs (2 test)', tanim: 'AYNI in-memory desen — eventType/ipAddress filtreleri (Security), level/search filtreleri (Application, `Message.Contains(search)`).' },
+          { terim: '11 yeni handler testi (Bölüm 8\'in kapsadığı 8 Handler)', tanim: 'Her Handler\'a en AZ bir "LogAsync doğru parametrelerle ÇAĞRILDI mı" testi eklendi (ör. `Login_WrongPassword_LogsLoginFailedSecurityEvent`) — bazı Handler\'larda (ResetPassword, ConfirmAccountDeletion) birden fazla log noktası olduğu için BİRDEN FAZLA test.' },
+          { terim: 'Mevcut 8 test dosyasının constructor güncellemesi', tanim: 'LoginCommandHandler/VerifyLoginOtpCommandHandler/VerifyEmailCommandHandler/ResetPasswordCommandHandler/ConfirmAccountDeletionCommandHandler/RefreshCommandHandler/ConfirmQrLoginCommandHandler/DenyQrLoginCommandHandler test dosyalarının HEPSİNE `Mock<ISecurityLogger>` eklendi — yeni constructor parametresi OLMADAN derleme BAŞARISIZ olurdu (CS7036).' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

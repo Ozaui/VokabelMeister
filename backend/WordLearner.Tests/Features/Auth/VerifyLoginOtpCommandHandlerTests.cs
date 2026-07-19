@@ -19,6 +19,7 @@ using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -27,9 +28,10 @@ public class VerifyLoginOtpCommandHandlerTests
     private readonly Mock<IUserRepository> _userRepo = new();
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     private VerifyLoginOtpCommandHandler CreateHandler() =>
-        new(_userRepo.Object, _otpService.Object, _loginCompletionService.Object);
+        new(_userRepo.Object, _otpService.Object, _loginCompletionService.Object, _securityLogger.Object);
 
     /// <summary>
     /// VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService
@@ -86,5 +88,43 @@ public class VerifyLoginOtpCommandHandlerTests
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    /// <summary>
+    /// VerifyLoginOtp_WrongOtp_LogsOtpFailedSecurityEvent
+    ///
+    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
+    ///       doğrulamak (A-04).
+    /// </summary>
+    [Fact]
+    public async Task VerifyLoginOtp_WrongOtp_LogsOtpFailedSecurityEvent()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "test@example.com" };
+        _userRepo.Setup(r => r.GetByEmailAsync(user.Email, default)).ReturnsAsync(user);
+        _otpService.Setup(o => o.Validate(user, "999999", OtpPurpose.LoginOtp)).Throws<InvalidOtpException>();
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () =>
+            handler.Handle(
+                new VerifyLoginOtpCommand(user.Email, "999999") { ClientIp = "1.2.3.4" },
+                default
+            );
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+        _securityLogger.Verify(
+            s => s.LogAsync(
+                LogEventType.OtpFailed,
+                user.Id,
+                user.Email,
+                "1.2.3.4",
+                null,
+                "LoginOtp",
+                default
+            ),
+            Times.Once
+        );
     }
 }
