@@ -160,7 +160,7 @@ Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` mad
 
 Tüm alt-adımlar `[x]`, `BACKEND_AKADEMI`'ye işlendi, testler yeşilse:
 
-1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`). API/feature başına, alt-parça başına değil.
+1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`). API/feature başına, alt-parça başına değil. **Commit mesajına asla `Co-Authored-By: Claude` (veya başka bir AI/asistan) satırı eklenmez** — yazarlık tek kullanıcıya (`Ozaui`) aittir, GitHub'da ek bir "contributor" görünmemeli.
 2. **Git push** — her zaman kullanıcı onayıyla (otomatik push yok). Onayı **sormak** akışın parçası.
 3. **`TASK.md` güncelle** — faz durumu (⬜→🔄→✅) + "Sıradaki task".
 4. **`wiki/Index.md`'ye INGEST** (varsa).
