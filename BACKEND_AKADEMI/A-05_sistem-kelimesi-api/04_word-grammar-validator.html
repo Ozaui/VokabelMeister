@@ -121,6 +121,18 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
 }`,
         satirlar: [
           {
+            satir: 'public WordGrammarValidator()',
+            aciklama: 'Parametresiz constructor — FluentValidation\'ın DI kaydı (`AddValidatorsFromAssembly`) bu sınıfı `IValidator<WordGrammarInput>` olarak çözerken TAM OLARAK bu constructor\'ı çağırır.',
+            neden: 'Diğer validator\'larda (RegisterCommandValidator vb.) da constructor\'ın kendisi bağımlılık ALMAZ (yalnızca `RuleFor` çağrıları kurulumda çalışır) — bu proje genelinde FluentValidation validator\'larının HİÇBİRİ constructor injection kullanmıyor, kural tanımları saf/durumsuz.',
+            olmasaydi: 'Constructor bir bağımlılık alsaydı (ör. bir repository), bu validator artık "saf" olmaktan çıkardı — testlerde `new WordGrammarValidator()` ile DOĞRUDAN kurulamaz, bir mock/DI container GEREKİRDİ.'
+          },
+          {
+            satir: '(input, context) =>',
+            aciklama: '`.Custom()`\'a verilen lambda\'nın parametreleri — `input` doğrulanan `WordGrammarInput` nesnesinin KENDİSİ, `context` FluentValidation\'ın hata TOPLAMA nesnesi (`ValidationContext`).',
+            neden: 'FluentValidation `.Custom()` imzası GEREĞİ bu iki parametreyi SAĞLAR — `input` sayesinde LanguageCode/PartOfSpeech/GrammarDataJson\'a erişilir, `context` sayesinde bulunan hatalar (`AddFailure`) FluentValidation\'ın genel sonuç NESNESİNE eklenir.',
+            olmasaydi: 'Yalnızca `input` alınıp `context` alınmasaydı, `EnumerateFailures`\'ın ürettiği hatalar hiçbir yere (FluentValidation\'ın `ValidationResult`\'ına) EKLENEMEZDİ — validator her zaman "geçerli" DÖNERDİ, hatalar sessizce KAYBOLURDU.'
+          },
+          {
             satir: 'RuleFor(x => x)',
             aciklama: 'Normal FluentValidation kuralları TEK bir property\'yi hedefler (ör. `RuleFor(x => x.Email)`) — burada `x => x` ile TÜM `WordGrammarInput` nesnesinin kendisi hedefleniyor.',
             neden: 'Doğrulama mantığı tek bir alana değil, LanguageCode+PartOfSpeech+GrammarDataJson ÜÇÜNÜN BİRLİKTE değerlendirilmesine dayanıyor (ör. "bu dilde bu tür için bu JSON alanı var mı") — declarative `RuleFor(x => x.GrammarDataJson).Must(...)` gibi tek-alan kuralları bu ÇAPRAZ mantığı ifade EDEMEZDİ.',
@@ -292,6 +304,24 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             aciklama: 'Seçilen dil dalının ürettiği tüm hataları (ValidateGerman/ValidateTurkish\'ten dönen `IEnumerable<ValidationFailure>`) tek tek üste (constructor\'daki foreach\'e) İLETİR.',
             neden: '`ValidateGerman`/`ValidateTurkish` de kendileri birer `yield return` üreteci — bu foreach, iki seviyeli üretecin (`EnumerateFailures` → `ValidateGerman`) sonuçlarını TEK bir akışta BİRLEŞTİRİR.',
             olmasaydi: 'Doğrudan `return failures;` yazılabilseydi bu foreach GEREKMEZDİ ama `EnumerateFailures`\'ın kendisi `yield return` KULLANDIĞI için (metodun geneli bir iterator), metodun ortasında `return` bir DEĞER dönemez — yalnızca `yield return`/`yield break` kullanılabilir.'
+          },
+          {
+            satir: 'yield return failure;',
+            aciklama: '`ValidateGerman`/`ValidateTurkish`\'ten gelen her hatayı, TEK BİR akışa (bu metodun kendi `IEnumerable`\'ına) katarak yukarı — constructor\'daki `foreach`e AKTARIR.',
+            neden: 'İki seviyeli bir iterator zinciri (`EnumerateFailures` → `ValidateGerman`/`ValidateTurkish`) burada BİRLEŞİR — dıştaki çağıran (constructor) hangi dil dalının çalıştığını hiç BİLMEDEN, tek düz bir hata listesi ALIR.',
+            olmasaydi: 'Bu satır olmadan `failures` koleksiyonu asla `EnumerateFailures`\'ın kendi çıktısına DÖNÜŞTÜRÜLEMEZDİ — `foreach` yalnızca döngüyü çalıştırır, `yield return` olmadan hiçbir değer dışarı YAYILMAZ.'
+          },
+          {
+            satir: 'private static IEnumerable<ValidationFailure> EnumerateFailures(WordGrammarInput input)',
+            aciklama: 'Metodun dönüş tipi `IEnumerable<ValidationFailure>` OLMASI, içeride `yield return`/`yield break` kullanılabilmesinin ÖN ŞARTI — C# yalnızca bu tip ailelerinde (IEnumerable/IEnumerator/IAsyncEnumerable) iterator bloklarına İZİN VERİR.',
+            neden: '`static` olması — bu metot hiçbir instance state\'e (validator\'ın kendi alanlarına) ihtiyaç DUYMUYOR, yalnızca parametre olarak aldığı `input`\'u işliyor; `private` olması ise bu metodun yalnızca `WordGrammarValidator` sınıfının İÇ DETAYI olduğunu, dışarıdan çağrılmaması GEREKTİĞİNİ ifade ediyor.',
+            olmasaydi: 'Dönüş tipi `List<ValidationFailure>` gibi somut bir koleksiyon olsaydı, metodun içinde `yield return` KULLANILAMAZDI — tüm hataları elle bir listeye `Add` edip en sonda `return` etmek GEREKİRDİ, kod daha UZUN ve daha az akışkan olurdu.'
+          },
+          {
+            satir: 'yield break;',
+            aciklama: 'Bu metotta 3 farklı yerde kullanılan "buradan sonrasını atla, üret meyi bitir" ifadesi — sırasıyla geçersiz JSON, diğer türler ve eksik veri durumlarının HER BİRİNDEN sonra metodun geri kalanının ÇALIŞMAMASINI sağlar.',
+            neden: 'Bu üç erken-çıkış noktasının ORTAK amacı: bir üst seviye kontrol (parse hatası/tür uygunsuzluğu/veri yokluğu) BAŞARISIZ olduğunda, o girdiye ARTIK dil/tür bazlı alan kontrolü UYGULAMANIN hiçbir anlamı kalmaması.',
+            olmasaydi: 'Herhangi biri unutulsaydı, ör. geçersiz JSON\'dan sonra kod DEVAM EDER, `root` hâlâ `null` olduğu için "GRAMMAR_DATA_REQUIRED" gibi İKİNCİL, yanıltıcı bir hata da EKLENİRDİ — admin\'e aynı anda hem "JSON bozuk" hem "veri eksik" gibi ÇELİŞKİLİ iki mesaj birden GÖSTERİLİRDİ.'
           }
         ]
       },
@@ -390,6 +420,12 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             olmasaydi: 'Bu kontrol olmasaydı, `isSeparableVerb` eksik bir Verb kaydı sessizce KABUL EDİLİRDİ — aşağıdaki separablePrefix çapraz kontrolü de `isSeparable=false` olduğu için hiç ÇALIŞMAZDI, ayrılabilir fiil bilgisi tamamen KAYBOLURDU.'
           },
           {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_ISSEPARABLE_REQUIRED");',
+            aciklama: '`GRAMMAR_DE_VERB_ISSEPARABLE_REQUIRED` — tr: "Almanca fiiller için ayrılabilir fiil bilgisi (isSeparableVerb) zorunludur."',
+            neden: 'Bu bilgi olmadan `separablePrefix` çapraz kontrolünün İKİ dalı da (Requerid/Forbidden) hiç TETİKLENEMEZ — bu yüzden bu alanın kendisi, aşağıdaki iki kuralın ÖN KOŞULU.',
+            olmasaydi: 'Bu hata kodu hiç üretilmeseydi, `isSeparableVerb` eksik bir kayıt yalnızca "sessizce" separablePrefix kontrolünü ATLARDI (isSeparable=false olduğu için) — admin bu alanın EKSİK olduğunu hiçbir zaman ÖĞRENEMEZDİ.'
+          },
+          {
             satir: 'if (!HasNonEmptyString(data, "auxiliaryVerb"))',
             aciklama: 'Yardımcı fiil (ör. "sein"/"haben") zorunlu — hangi DEĞERİ aldığı (yalnızca bu ikisi mi) burada KISITLANMADI, yalnızca dolu olması isteniyor.',
             neden: 'GERMAN_LANGUAGE_FEATURES.md §6 örneğinde yalnızca "sein" gösteriliyor, "haben" literal olarak DOKÜMANDA yazılı değil (kapalı bir enum tanımlanmamış) — validator bu belirsizlikte KATI bir enum kısıtı DAYATMIYOR, yalnızca varlık şartı arıyor (bkz. dosya başı NEDEN yorumu, plan kararı #3).',
@@ -430,6 +466,72 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             aciklama: 'Verb\'de isim-özel alanlardan (gender/plural/cases) HERHANGİ biri varsa hata — DE Noun\'daki VerbOnlyFields kontrolünün SİMETRİĞİ.',
             neden: 'GERMAN_LANGUAGE_FEATURES.md §10: "Yasak: gender, plural, cases.* — Verb\'de anlamsız, GrammarData\'da BULUNMAMALI" — Noun/Verb arası çapraz kirlenmeyi HER İKİ YÖNDE de engeller.',
             olmasaydi: 'Yalnızca Noun→Verb yönü kontrol edilseydi (VerbOnlyFields), bir Verb kaydında yanlışlıkla kalmış eski `gender`/`plural` alanları FARK EDİLMEDEN DB\'ye yazılabilirdi.'
+          },
+          {
+            satir: 'private static IEnumerable<ValidationFailure> ValidateGerman(JsonElement data, string partOfSpeech)',
+            aciklama: '`data` parametresi zaten PARSE EDİLMİŞ bir `JsonElement` — bu metot JSON metnini değil, `EnumerateFailures`\'ın ürettiği hazır ağacı ALIYOR. `partOfSpeech` ayrıca parametre çünkü GrammarData JSON\'unun İÇİNDE değil, `WordConcept.PartOfSpeech`\'ten (yani GrammarData\'nın DIŞINDAN) geliyor.',
+            neden: 'Bu ayrım (JSON içeriği vs. çağıranın bildiği tür bilgisi) `WordGrammarInput`\'un kendi tasarımını YANSITIYOR — `PartOfSpeech` ayrı bir alan olarak taşınıyor çünkü GrammarData\'nın kendisi bu bilgiyi TEKRAR ETMİYOR (DB\'de zaten `WordConcepts.PartOfSpeech` diye ayrı bir kolon var).',
+            olmasaydi: '`partOfSpeech` GrammarData JSON\'unun İÇİNE gömülü bir alan olsaydı (ör. `{"partOfSpeech":"Noun", ...}`), aynı bilgi İKİ YERDE (hem DB kolonunda hem JSON\'da) tutulur, bir gün biri güncellenip diğeri unutulursa TUTARSIZLIK doğardı.'
+          },
+          {
+            satir: 'if (!HasNonEmptyString(data, "plural"))',
+            aciklama: 'Almanca çoğul biçim de (Türkçe gibi) zorunlu — ama bu satır İKİ farklı slaytta (DE Noun burada, TR Noun bir sonraki slaytta) AYRI AYRI görünüyor çünkü her dilin kendi `ValidateGerman`/`ValidateTurkish` metodunda TEKRARLANIYOR (farklı hata kodlarıyla: DE_NOUN_PLURAL_REQUIRED vs TR_NOUN_PLURAL_REQUIRED).',
+            neden: 'İki dilde de "plural" JSON anahtar adı AYNI ama hangi dilin hangi hata kodunu üreteceği KENDİ metodunun bağlamına göre BELİRLENİYOR — ortak bir "plural kontrolü" fonksiyonu çıkarılmadı çünkü hata kodu (mesajın kendisi) dile göre DEĞİŞMESİ gerekiyor.',
+            olmasaydi: 'Tek bir ortak `ValidatePlural(data, errorCode)` yardımcı fonksiyonu yazılabilirdi (küçük bir DRY iyileştirmesi) ama mevcut haliyle her dilin metodu KENDİ İÇİNDE eksiksiz OKUNABİLİR — bu tercih, mikro-optimizasyon yerine OKUNABİLİRLİĞİ önceledi.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_NOUN_PLURAL_REQUIRED");',
+            aciklama: '`ErrorMessages.cs`\'e eklenen `GRAMMAR_DE_NOUN_PLURAL_REQUIRED` koduna karşılık gelir — tr: "Almanca isimler için çoğul (plural) biçimi zorunludur.", de: "Für deutsche Substantive ist die Pluralform erforderlich."',
+            neden: 'Her hata kodunun HEM Türkçe HEM Almanca çevirisi olması — admin panel kendisi de bir istemci (CLAUDE.md "İkinci istisna" — burada aslında BİRİNCİL kural: `ErrorMessages` zaten `Accept-Language`\'a göre çözülüyor), admin hangi dilde çalışıyorsa hatayı O DİLDE görür.',
+            olmasaydi: 'Yalnızca İngilizce/Türkçe bir mesaj olsaydı, Almanca kullanan bir admin (varsa) hatayı ANLAMAYABİLİRDİ — DE↔TR hedef kitlesine hizmet eden bir uygulamada bu, projenin TEMEL lokalizasyon kuralının ihlali olurdu.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_NOUN_CASES_INCOMPLETE");',
+            aciklama: '4 hâlden (nominative/accusative/dative/genitive) EN AZ BİRİ eksik olduğunda dönen TEK kod — hangi hâlin eksik olduğunu AYRI AYRI söylemez (bkz. `HasAllCaseFields`\'in tasarım kararı, son slayt).',
+            neden: '4 hâl için 4 ayrı kod (ör. `GRAMMAR_DE_NOUN_NOMINATIVE_REQUIRED`) açılabilirdi ama bu, ErrorMessages.cs\'i 4 KAT şişirir, admin için pratik fark yaratmazdı (form zaten TÜM hâlleri TEK ekranda gösterir, admin hangisinin boş olduğunu ZATEN GÖRÜR).',
+            olmasaydi: '4 ayrı kod olsaydı, `ErrorMessages.cs` DE Noun için 4, DE Verb için (18 hücre bazlı ayrıştırılsaydı) ÇOK DAHA FAZLA kod içerirdi — pratik faydası olmayan bir GRANÜLERLİK artışı.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'Bir Noun kaydında fiil alanlarından (isSeparableVerb vb.) HERHANGİ biri bulunursa dönen kod — tr: "İsimlerde fiil alanları ... bulunamaz."',
+            neden: 'Bu kod DE Verb\'ün SİMETRİĞİ olan `GRAMMAR_DE_VERB_NOUN_FIELDS_FORBIDDEN` ile birlikte, Noun↔Verb çapraz kirlenmesinin HER İKİ YÖNÜNÜ de ayrı ayrı İSİMLENDİRİLMİŞ kodlarla raporlar — admin hangi YÖNDE bir hata olduğunu kod adından bile ANLAR.',
+            olmasaydi: 'Tek bir genel `GRAMMAR_FIELDS_MISMATCH` kodu kullanılsaydı, admin "hangi YÖNDE" bir tutarsızlık olduğunu (fazladan fiil alanı mı, fazladan isim alanı mı) mesajdan ÇIKARAMAZDI.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_AUXILIARY_REQUIRED");',
+            aciklama: '`GRAMMAR_DE_VERB_AUXILIARY_REQUIRED` — tr: "Almanca fiiller için yardımcı fiil (auxiliaryVerb) zorunludur.", de: "Für deutsche Verben ist das Hilfsverb (auxiliaryVerb) erforderlich."',
+            neden: 'Yardımcı fiil (sein/haben), `perfect` zamanının HER hücresinde (ör. "bin gegangen") zaten dolaylı olarak GEÇİYOR — ama ayrı bir alan olarak da SAKLANIYOR ki B-03\'teki kelime kartı "bu fiil hangi yardımcıyla çekilir" bilgisini STRING PARSE etmeden doğrudan GÖSTEREBİLSİN.',
+            olmasaydi: 'Bu alan ayrı tutulmasaydı, "sein mi haben mi" sorusuna cevap vermek için `conjugation.perfect.ich` gibi bir hücreyi STRING olarak ayrıştırıp ilk kelimeyi ÇIKARMAK gerekirdi — kırılgan, dile göre değişen bir mantık.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_PASTPARTICIPLE_REQUIRED");',
+            aciklama: '`GRAMMAR_DE_VERB_PASTPARTICIPLE_REQUIRED` — tr: "Almanca fiiller için Partizip II (pastParticiple) zorunludur."',
+            neden: 'Partizip II (3. temel hâl), Almanca fiil öğretiminin standart bir parçası (Infinitiv-Präteritum-Partizip II üçlüsü) — B-03\'teki kelime kartı formunda bu üçlü doğrudan GÖSTERİLECEK.',
+            olmasaydi: 'Bu alan eksik bırakılabilseydi, bir kelime kartı "3. hâl" satırını BOŞ gösterirdi — Almanca öğrenen bir kullanıcı için gramer açısından EKSİK bir kart olurdu.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: '18 hücreden (3 zaman × 6 kişi) EN AZ biri eksikse dönen TEK kod — `HasAllConjugationCells`\'in "hepsi ya da hiçbiri" tasarımının doğal SONUCU.',
+            neden: 'Bir çekim tablosunun YARIM olması (ör. yalnızca "present" zamanı dolu, "preterite"/"perfect" boş) SRS öğrenme akışında (`TECHNICAL_SPECIFICATIONS.md §8`, rastgele soru formatı seçimi) o kelimenin BAZI soru tiplerinde KULLANILAMAMASINA yol açardı.',
+            olmasaydi: 'Bu kontrol olmasaydı, yarım çekim tablolarına sahip kelimeler DB\'ye girilebilir, ancak öğrenme oturumunda o kelime için "preterite" sorulduğunda BOŞ bir cevap GÖSTERİLİRDİ — kullanıcı deneyimini SESSİZCE bozardı.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_SEPARABLE_PREFIX_REQUIRED");',
+            aciklama: '`isSeparableVerb=true` iken `separablePrefix` boşsa dönen kod — tr: "isSeparableVerb=true iken ayrılabilir fiil öneki (separablePrefix) zorunludur."',
+            neden: 'Bir fiil "ayrılabilir" olarak İŞARETLENMİŞSE (ör. "anrufen") ama HANGİ önekle ayrıldığı (an-) belirtilmemişse, bu bilgi YARIM kalır — B-03\'teki form "ayrılabilir mi?" sorusuna evet dedikten sonra öneki SORMAK ZORUNDA.',
+            olmasaydi: 'Bu çapraz kontrol olmasaydı, "isSeparableVerb: true" ama "separablePrefix" alanı hiç olmayan bir kayıt geçerli SAYILIRDI — kelime kartı "ayrılabilir" der ama HANGİ önekle ayrıldığını hiç GÖSTEREMEZDİ.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_SEPARABLE_PREFIX_FORBIDDEN");',
+            aciklama: '`isSeparableVerb=false` iken `separablePrefix` DOLUYSA dönen kod — bir önceki kuralın TAM TERSİ.',
+            neden: 'Tutarsız bir veri girişini (ör. "gehen" için yanlışlıkla bir `separablePrefix` DEĞERİ girilmesi) YAKALAR — "gehen" ayrılabilir bir fiil DEĞİL, ona bir önek atanması anlamsız/hatalı bir veri girişine İŞARET eder.',
+            olmasaydi: 'Bu ikinci yön kontrol edilmeseydi, ayrılmaz bir fiile YANLIŞLIKLA bir önek eklenmiş bir kayıt sessizce KABUL EDİLİRDİ, kelime kartı o fiili YANLIŞ biçimde "ayrılabilir gibi" gösterebilirdi.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_DE_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: 'Bir Verb kaydında isim alanlarından (gender/plural/cases) HERHANGİ biri bulunursa dönen kod — `GRAMMAR_DE_NOUN_VERB_FIELDS_FORBIDDEN`\'ın SİMETRİĞİ.',
+            neden: 'Noun→Verb ve Verb→Noun yönlerinin HER İKİSİ de ayrı kodlarla İZLENDİĞİ için, ileride bu hataların sıklığı (ör. loglardan) incelenirse HANGİ yönde daha çok veri girişi hatası yapıldığı bile GÖRÜLEBİLİR.',
+            olmasaydi: 'Bu son kontrol atlanmış olsaydı, DE Verb kısmının "yasak alan" savunması EKSİK kalırdı — yalnızca Noun tarafı korunmuş, Verb tarafı korunmamış OLURDU (simetrik bir güvenlik açığı).'
           }
         ]
       },
@@ -502,6 +604,66 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             aciklama: 'Türkçe Verb\'de de (DE Verb gibi) `NounOnlyFields` (gender/plural/cases) sabiti AYNEN kullanılıyor — bu paylaşım BİLİNÇLİ (dosya başındaki alan sabitleri slaytında açıklandı): Türkçe isimlerin `plural`/`cases` anahtar adları da bu isimlerle aynı.',
             neden: '`gender` Türkçe isimlerde zaten hiç KULLANILMASA da, bu sabiti Verb\'de "yasak" olarak taramak ZARARSIZ (Türkçe Verb JSON\'unda zaten `gender` diye bir alan hiç OLMAYACAK) — ayrı bir "TrNounOnlyFields" listesi açmak YAGNI\'ye aykırı olurdu.',
             olmasaydi: 'Ayrı bir Türkçe-özel liste açılsaydı (`gender` çıkarılmış hâliyle, yalnızca `plural`+`cases`), sonuç PRATİKTE aynı olurdu ama kod tabanında GEREKSİZ bir ikinci sabit daha bulunurdu.'
+          },
+          {
+            satir: 'private static IEnumerable<ValidationFailure> ValidateTurkish(JsonElement data, string partOfSpeech)',
+            aciklama: '`ValidateGerman` ile İMZASI birebir aynı (aynı iki parametre) — iki metot arasında ÇAĞIRAN tarafın (EnumerateFailures) bakış açısından hiçbir FARK yok, yalnızca içerikleri farklı dillerin gramerini UYGULUYOR.',
+            neden: 'Aynı imza, `EnumerateFailures`\'taki `?:` zincirinin HER İKİ dalının da AYNI TİPTE (`IEnumerable<ValidationFailure>`) değer döndürmesini sağlıyor — biri `int`, diğeri `string` döndürseydi o ternary İFADESİ hiç DERLENMEZDİ.',
+            olmasaydi: 'İmzalar farklı olsaydı (ör. TR metodun ek bir parametresi olsaydı), `EnumerateFailures`\'taki dispatch mantığı bu iki dalı SİMETRİK bir `?:` ile birleştiremez, ayrı `if/else` bloklarına AYRILMASI gerekirdi.'
+          },
+          {
+            satir: 'if (partOfSpeech == "Noun")',
+            aciklama: '`ValidateGerman`\'daki İLK satırla BİREBİR aynı kontrol — Noun/Verb dallanması iki dilde de AYNI YAPIDA, yalnızca dal içindeki alan kontrolleri farklı.',
+            neden: 'Bu yapısal simetri (Noun ise özel dal, değilse Verb varsayılan) BİLİNÇLİ bir tercih — iki metodun "şeklini" aynı tutmak, ileride bir üçüncü dil (`en`) eklendiğinde nereye NE yazılacağını TAHMİN edilebilir kılıyor.',
+            olmasaydi: 'DE ve TR metotları farklı yapılarda (ör. biri switch-case, diğeri if-else) yazılsaydı, iki dili YAN YANA karşılaştırıp "hangi kural nerede" bulmak ZORLAŞIRDI.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_NOUN_PLURAL_REQUIRED");',
+            aciklama: '`GRAMMAR_TR_NOUN_PLURAL_REQUIRED` — tr: "Türkçe isimler için çoğul biçimi zorunludur.", de: "Für türkische Substantive ist die Pluralform erforderlich."',
+            neden: 'DE\'nin `GRAMMAR_DE_NOUN_PLURAL_REQUIRED` koduyla AYNI anlama gelse de AYRI bir kod olarak tutuluyor — çünkü `ErrorMessages.Resolve` yalnızca KOD üzerinden çalışıyor, hangi dilin kelimesinin eksik olduğunu (DE mi TR mi) admin\'e söylemek için kodun kendisinde bu AYRIM gerekiyor.',
+            olmasaydi: 'Tek bir ortak `GRAMMAR_NOUN_PLURAL_REQUIRED` kodu kullanılsaydı, admin hangi DİLDEKİ kelimenin çoğul biçiminin eksik olduğunu mesajdan ANLAYAMAZDI (mesaj "çoğul zorunlu" derdi ama DE mi TR mi belli olmazdı) — iki dilli bir formda bu KARIŞIKLIK yaratırdı.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_NOUN_CASES_INCOMPLETE");',
+            aciklama: '6 hâlden (TrCaseFields) EN AZ biri eksik olduğunda dönen kod — DE\'nin 4 hâlinden FAZLA olmasına rağmen AYNI "hepsi ya da hiçbiri, tek kod" tasarımını izliyor.',
+            neden: 'Türkçenin 6 hâli DE\'nin 4 hâlinden FAZLA olsa da, admin\'in deneyimi AÇISINDAN (form zaten tüm hâlleri gösterir) granülerlik ihtiyacı DEĞİŞMİYOR — DE Noun ile SİMETRİK bir tasarım kararı.',
+            olmasaydi: '6 hâl için 6 ayrı kod açılsaydı, DE\'nin 4 koduyla BİRLİKTE ErrorMessages.cs\'te yalnızca "hâl eksik" bildirimi için 10 farklı kod BİRİKİRDİ — pratik faydası sınırlı bir GRANÜLERLİK.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'Türkçe bir Noun kaydında `verbRoot`/`negativeForm`/`conjugation`\'dan HERHANGİ biri bulunursa dönen kod.',
+            neden: 'DE Noun\'un `GRAMMAR_DE_NOUN_VERB_FIELDS_FORBIDDEN`\'ının Türkçe KARŞILIĞI — ama kontrol edilen alan LİSTESİ farklı (inline `["verbRoot", "negativeForm", "conjugation"]`, DE\'nin 5 elemanlı `VerbOnlyFields`\'ından FARKLI çünkü Türkçede ayrılabilir fiil/yardımcı fiil kavramı YOK).',
+            olmasaydi: 'DE\'nin `VerbOnlyFields` listesi burada kullanılsaydı, "isSeparableVerb"/"auxiliaryVerb" gibi Türkçede zaten hiç VAR OLMAYACAK alanları arardı — YANLIŞ olmazdı (hep "yok" dönerdi) ama Türkçenin gerçek gramer kavramlarını YANSITMAYAN bir kontrol olurdu.'
+          },
+          {
+            satir: 'yield break;',
+            aciklama: 'Türkçe Noun dalının SONU — `ValidateGerman`\'daki `yield break` ile AYNI amaç: buradan sonra Verb\'e özgü kod satırlarına HİÇ geçilmez.',
+            neden: 'Noun/Verb ayrımının İKİ dilde de AYNI mekanizmayla (erken `yield break`) sağlanması, kodun HER İKİ metotta da AYNI okunma alışkanlığıyla takip EDİLEBİLMESİNİ sağlıyor.',
+            olmasaydi: 'Bu satır unutulsaydı, bir Türkçe Noun girdisi hem Noun hem (aşağıdaki) Verb kontrollerinden GEÇERDİ — meşru bir Türkçe isim kaydı "verbRoot eksik" gibi ALAKASIZ bir hata ALIRDI.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_VERB_VERBROOT_REQUIRED");',
+            aciklama: '`GRAMMAR_TR_VERB_VERBROOT_REQUIRED` — tr: "Türkçe fiiller için fiil kökü (verbRoot) zorunludur."',
+            neden: 'Bu kodun DE tarafında doğrudan bir KARŞILIĞI yok (Almancada "fiil kökü" ayrı bir kavram olarak SAKLANMIYOR, mastar hâlinin kendisi zaten temel alınıyor) — bu, iki dilin gramerinin YAPISAL olarak farklı olmasının validator kodundaki SOMUT yansıması.',
+            olmasaydi: 'Bu alan hiç istenmeseydi, Türkçe çekim sisteminin (kök+ek mantığı) TEMEL yapı taşı hiç KAYDA GEÇMEZDİ — ileride otomatik çekim üretimi gibi bir özellik bu köke İHTİYAÇ duyarsa hiçbir veri BULUNAMAZDI.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_VERB_NEGATIVEFORM_REQUIRED");',
+            aciklama: '`GRAMMAR_TR_VERB_NEGATIVEFORM_REQUIRED` — tr: "Türkçe fiiller için olumsuz biçim (negativeForm) zorunludur."',
+            neden: 'Yine DE tarafında doğrudan KARŞILIĞI olmayan bir alan — Almanca olumsuzluk ayrı bir sözcükle (`nicht`) yapılırken, Türkçede fiilin KENDİSİNE eklenen bir ek gerektirir, bu yüzden ayrı bir GrammarData alanı olarak MODELLENDİ.',
+            olmasaydi: 'Bu kural olmasaydı, Türkçe öğrenen bir kullanıcı hiçbir fiilin olumsuz biçimini KART üzerinde GÖREMEZDİ — Türkçenin en temel gramer yapılarından biri EKSİK kalırdı.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: '30 hücreden (5 zaman × 6 kişi) EN AZ biri eksikse dönen kod — DE\'nin 18 hücrelik kontrolünün Türkçe KARŞILIĞI, AYNI `HasAllConjugationCells` yardımcı metoduyla ÜRETİLİYOR.',
+            neden: 'DE ile aynı gerekçe: yarım bir çekim tablosu, SRS öğrenme akışında bazı soru formatlarının o kelime için ÜRETİLEMEMESİNE yol açar.',
+            olmasaydi: 'Kontrol edilmeseydi, Türkçe fiillerin bazı zamanları hiç DOLDURULMADAN sisteme girilebilir, o zamanı soran bir soru tipi çalışma zamanında BOŞ bir cevapla KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'yield return Failure("GRAMMAR_TR_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: 'Türkçe bir Verb kaydında isim alanlarından (plural/cases — gender zaten Türkçede hiç yok) HERHANGİ biri bulunursa dönen kod.',
+            neden: '`GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN`\'ın SİMETRİĞİ — Noun↔Verb çapraz kirlenmesi Türkçe tarafında da HER İKİ YÖNDE izleniyor, DE ile TUTARLI bir tasarım.',
+            olmasaydi: 'Bu son kontrol atlanmış olsaydı, Türkçe Verb tarafının "yasak alan" savunması EKSİK kalır, DE ile ASİMETRİK bir güvenlik açığı doğardı.'
           }
         ]
       },
@@ -716,6 +878,66 @@ private static ValidationFailure Failure(string code) =>
             aciklama: 'FluentValidation\'ın `ValidationFailure.ErrorCode` property\'si — bu satır sayesinde `ValidationFilter` (bir sonraki, henüz yazılmamış Controller/Command entegrasyonunda) `e.ErrorCode` üzerinden `ErrorMessages.Resolve(code, language)` ÇAĞRISINI yapabilecek.',
             neden: 'PasswordRuleExtensions\'taki `.WithErrorCode("PASSWORD_TOO_SHORT")` ile TAM OLARAK aynı mekanizma — WordGrammarValidator, projenin GENEL lokalizasyon desenine (Code-sonra-çöz) UYUYOR, kendine özgü YENİ bir hata taşıma yöntemi İCAT ETMİYOR.',
             olmasaydi: 'ErrorCode set edilmeseydi (yalnızca ErrorMessage kullanılsaydı), ValidationFilter bu hataları dile göre ÇEVİREMEZDİ — admin panelinin `de` dilinde açılmış bir oturumunda bile hata mesajları HEP İngilizce (`"Grammar data validation failed: ..."`) GÖRÜNÜRDÜ, CLAUDE.md\'nin "istemciye giden mesaj dile göre" KURALI ihlal edilirdi.'
+          },
+          {
+            satir: 'private static bool TryParseJson(string json, out JsonElement element)',
+            aciklama: '.NET\'in "Try-pattern" imza kuralı — `bool` dönüş (başarılı mı) + `out` parametre (başarılıysa SONUÇ) birlikte kullanılır, `int.TryParse` ile AYNI aile.',
+            neden: 'Bu desen, JSON parse hatasını bir EXCEPTION olarak çağıran tarafa SIZDIRMAK yerine normal bir `if` kontrolüyle ele alınabilir hâle GETİRİYOR — `EnumerateFailures`\'ta `if (!TryParseJson(...))` şeklinde try/catch YAZMADAN kullanılabiliyor.',
+            olmasaydi: '`JsonDocument.Parse` doğrudan çağrılsaydı (Try-pattern olmadan), her çağrı noktasında ayrı bir try/catch BLOĞU gerekirdi — `EnumerateFailures` gibi bir `yield return` içeren iterator metodunda ise (CS1631 hatırlanırsa) bu try/catch zaten MÜMKÜN bile değildi.'
+          },
+          {
+            satir: 'try',
+            aciklama: 'Yalnızca `JsonDocument.Parse` çağrısını (bozuk JSON\'da exception fırlatabilecek TEK satırı) sarmalıyor — `element = default`/`return false` gibi zararsız satırlar try BLOĞUNUN DIŞINDA (catch içinde).',
+            neden: 'try bloğunu MÜMKÜN OLDUĞUNCA dar tutmak — yalnızca GERÇEKTEN exception fırlatabilecek çağrı (`JsonDocument.Parse`) korunuyor, başka bir satırda (ör. ileride eklenecek bir log çağrısı) oluşabilecek FARKLI bir hatanın yanlışlıkla bu catch\'e DÜŞMESİ engelleniyor.',
+            olmasaydi: 'Tüm metot gövdesi tek bir try/catch\'e alınsaydı, `JsonException` DIŞINDA bir hata (ör. programlama hatası) da sessizce "geçersiz JSON" olarak YORUMLANABİLİRDİ.'
+          },
+          {
+            satir: 'return true;',
+            aciklama: 'Bu tam metin `TryParseJson`\'da (parse başarılı) VE `TryGetBoolean`\'da (tüm ön koşullar sağlandı) olmak üzere İKİ yerde geçiyor — ikisinde de anlamı AYNI: "bu Try-pattern metodu başarıyla bir değer ÜRETTİ, out parametresi GÜVENİLİR".',
+            neden: 'Try-pattern metotlarının hepsinde `true` dönüşü AYNI sözleşmeyi TAŞIR: "out parametresini KULLANABİLİRSİN" — bu tutarlılık, çağıran kodun (`EnumerateFailures`, `ValidateGerman`) her Try-metodunu AYNI ŞEKİLDE (if kontrolü + out değişkeni güvenle kullanma) TÜKETEBİLMESİNİ sağlıyor.',
+            olmasaydi: 'Bazı Try-metotları `true`/`false` yerine nullable dönüş (`JsonElement?`) kullansaydı, çağıran kodun HER metot için farklı bir tüketim ŞEKLİ (bazen if-out, bazen null-check) öğrenmesi gerekirdi — tutarsız bir API YÜZEYİ.'
+          },
+          {
+            satir: 'return false;',
+            aciklama: 'Bu tam metin metotta 4 farklı yerde (TryParseJson\'ın catch\'i, TryGetBoolean\'ın ön-koşul başarısızlığı, HasAllCaseFields\'ın "cases yok", HasAllConjugationCells\'ın "conjugation yok/obje değil" durumlarının HER İKİSİ) geçiyor — hepsinde anlamı AYNI: "bu Try-pattern/kontrol metodu başarısız, çağıran tarafın ARADIĞI şey YOK ya da geçersiz".',
+            neden: 'Her yardımcı metodun kendi başarısızlık durumunu AYNI sade `false` ile ifade etmesi, `EnumerateFailures`/`ValidateGerman`/`ValidateTurkish`\'in bu metotları `if (!HasXxx(...))` şeklinde TEK TİP bir olumsuzlama KALIBIYLA kullanabilmesini sağlıyor.',
+            olmasaydi: 'Bazı metotlar `false` yerine exception fırlatsaydı (ör. "cases alanı yok" durumunda), çağıran taraf her metot için FARKLI bir hata ELE ALMA stratejisi (bazen if, bazen try/catch) yazmak zorunda kalırdı.'
+          },
+          {
+            satir: 'private static bool HasNonEmptyString(JsonElement obj, string property) =>',
+            aciklama: 'Expression-bodied member (`=>` ile tek ifadelik gövde) — dört koşulun `&&` ile ZİNCİRLENDİĞİ, gövdesiz bir metot imzası. Bu validator\'daki EN ÇOK tekrar kullanılan yardımcı (gender/plural/auxiliaryVerb/pastParticiple/verbRoot/negativeForm ve tüm hâl/çekim hücreleri için TEK metottan geçiyor).',
+            neden: '`=>` (expression body) tercih edildi çünkü metodun gövdesi TEK bir boolean ifadeden ibaret — klasik `{ return ...; }` gövdesi burada gereksiz bir GÖRSEL gürültü olurdu.',
+            olmasaydi: 'Klasik gövde (`{ return obj.ValueKind == ... && ...; }`) yazılsaydı davranış AYNI olurdu — bu yalnızca bir stil tercihi, projedeki diğer tek-ifadelik metotlarla (ör. `IRepository`\'nin bazı üyeleri) TUTARLI.'
+          },
+          {
+            satir: 'private static bool TryGetBoolean(JsonElement obj, string property, out bool value)',
+            aciklama: 'Bu metodun `HasNonEmptyString`\'ten FARKI: yalnızca "var mı" değil, GERÇEK boolean DEĞERİNİ de (`out bool value`) çağırana iletmesi gerekiyor — bu yüzden expression-body DEĞİL, klasik gövdeli bir metot.',
+            neden: '`isSeparableVerb` çapraz kontrolü (bir önceki slayt) hem "alan var mı" hem "değeri true mu false mu" bilgisine İHTİYAÇ duyuyor — `HasNonEmptyString`in bool dönüşü bu ikinci bilgiyi TAŞIYAMAZDI (yalnızca string alanlar için var/yok sorusuna cevap veriyor).',
+            olmasaydi: 'Ayrı bir `TryGetBoolean` yazılmasaydı, `isSeparableVerb`\'in gerçek değerine ulaşmak için `data.GetProperty("isSeparableVerb").GetBoolean()` gibi GÜVENSİZ (ön kontrolsüz) bir çağrı her kullanım noktasında TEKRARLANIRDI.'
+          },
+          {
+            satir: 'if (',
+            aciklama: 'Çok satırlı bir `if` koşulunun AÇILIŞI — üç ayrı şartın (`obj.ValueKind != Object`, property yok, boolean değil) `||` ile BİRLEŞTİRİLDİĞİ blok burada başlıyor.',
+            neden: 'Üç koşulun HER BİRİ ayrı bir satırda olması, kodun (tek uzun bir satır yerine) OKUNABİLİR kalmasını sağlıyor — bu, projedeki diğer çok-koşullu `if`lerle (ör. `HasAllConjugationCells`) TUTARLI bir biçimlendirme.',
+            olmasaydi: 'Üç koşul tek satırda birleştirilseydi (`if (obj.ValueKind != ... || !obj.TryGetProperty(...) || ...)`), satır ÇOK uzardı ve hangi koşulun ne işe yaradığını AYIRT etmek zorlaşırdı.'
+          },
+          {
+            satir: '|| !obj.TryGetProperty(property, out var element)',
+            aciklama: 'İkinci şart: property MEVCUT DEĞİLSE de bu metot başarısız SAYILIR — `element` bu satırda BULUNSA bile, üçüncü şart (boolean tipinde mi) HENÜZ kontrol EDİLMEMİŞ olur.',
+            neden: '`||` (OR) kısa devre YAPTIĞI için, `obj` zaten obje DEĞİLSE bu satır hiç ÇALIŞTIRILMAZ (birinci şart yeterli olur) — yalnızca `obj` bir objeyse bu ikinci şarta BAKILIR.',
+            olmasaydi: 'Bu şart olmadan yalnızca "obje mi" kontrolü yapılsaydı, property HİÇ OLMAYAN bir obje de (ör. `{}`) "boolean bulundu" gibi YANLIŞ bir sonuca göre İŞLENMEYE çalışılırdı.'
+          },
+          {
+            satir: 'private static bool HasAllCaseFields(JsonElement data, IReadOnlyList<string> caseFields)',
+            aciklama: '`caseFields` parametresi `IReadOnlyList<string>` — çağıran taraf (`ValidateGerman`/`ValidateTurkish`) kendi sabit dizisini (`DeCaseFields`/`TrCaseFields`) BURAYA geçiriyor, metot HANGİ dilin hâllerini kontrol ettiğini BİLMİYOR/UMURSAMIYOR.',
+            neden: '`IReadOnlyList<string>` (somut `string[]` yerine soyut arayüz) parametre TİPİ olarak seçildi — metot yalnızca "sırayla gezilebilen bir liste" bekliyor, çağıranın gerçek koleksiyon TÜRÜNE (dizi/List vb.) bağımlı DEĞİL.',
+            olmasaydi: 'Parametre somut `string[]` olarak tanımlansaydı, ileride bir çağıran `List<string>` kullanmak İSTERSE (ör. dinamik olarak üretilen bir hâl listesi) `.ToArray()` gibi bir dönüşüme ZORLANIRDI.'
+          },
+          {
+            satir: 'private static bool HasAllConjugationCells(',
+            aciklama: 'Bu metodun imzası 3 satıra (data/tenses/persons) BÖLÜNDÜ çünkü tek satırda yazılsaydı satır projedeki biçimlendirme LİMİTİNİ (CSharpier/format kuralı) AŞARDI — `HasAllCaseFields` (2 parametre) tek satırda kalabilirken bu (3 parametre) kalamadı.',
+            neden: 'Bu yalnızca bir KOD BİÇİMLENDİRME detayı (otomatik formatlayıcının satır uzunluğu kuralı) — metodun DAVRANIŞINI hiç ETKİLEMİYOR, yalnızca imzanın GÖRSEL olarak nasıl bölündüğünü gösteriyor.',
+            olmasaydi: 'Tek satırda zorlanmaya çalışılsaydı, ya satır ÇOK uzun olurdu (okunabilirlik kaybı) ya da formatlayıcı ARAÇ (varsa) bu satırı OTOMATİK olarak yine 3\'e bölerdi.'
           }
         ]
       },
