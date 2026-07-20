@@ -201,17 +201,25 @@
       Toplam 144/144 yeşil.
 - [x] ➜ **BACKEND_AKADEMI'ye işle**
 
-### A-05 — Sistem Kelimesi API (Words) ⬜
+### A-05 — Sistem Kelimesi API (Words) 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §5
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
-- [ ] **Entity:** `Language`, `WordConcept`, `Word`, `WordDetail`, `WordExample` + EF config + migration
+- [x] **Entity:** `Language`, `WordConcept`, `Word`, `WordDetail`, `WordExample` + EF config + migration
       + `Language` seed (`de`, `tr`) — bkz. `DATABASE_SCHEMA/Icerik.md` (çoklu dile açık şema:
-      kategori/seviye `WordConcept` üzerinde, gramer `WordDetail.GrammarData` JSON'da dile göre değişir)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+      kategori/seviye `WordConcept` üzerinde, gramer `WordDetail.GrammarData` JSON'da dile göre değişir).
+      **Karar:** `Language` `BaseEntity`'den TÜREMEZ (statik seed/referans tablosu, audit gerekmez);
+      `WordConcept`/`Word`/`WordDetail`/`WordExample` hepsi `BaseEntity`'den türer (tutarlılık —
+      `Icerik.md`'nin SQL taslağı `WordDetails`/`WordExamples` için `IsDeleted` göstermese de
+      CLAUDE.md'nin genel kuralı önceliklidir). Migration: `AddWordsSchema`, gerçek DB'ye uygulandı,
+      `Languages` seed (`de`,`tr`) doğrulandı, mevcut 144 test hâlâ yeşil.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` — 3 bölüm: neden
+      WordConcept, Entity+EF Config, Migration+Seed+DbSet'ler; görev tamamlanmadığı için kök
+      `index.html`'e kart henüz eklenmedi, yalnızca A-04'ün son bölümüyle zincir bağlandı)
 - [ ] `WordGrammarValidator` (FluentValidation) — önce `LanguageId`'ye göre dile dispatch, sonra o dilin
       `PartOfSpeech` matrisini uygular. **`de` dalı** (`GERMAN_LANGUAGE_FEATURES.md §10`): Noun:
       gender+plural+4 hâl zorunlu, fiil alanları yasak; Verb: 18 çekim+auxiliary+pastParticiple
-      zorunlu, `separablePrefix` yalnızca `isSeparableVerb=true` iken; Diğer: GrammarData tamamen NULL.
+      zorunlu, `separablePrefix` yalnızca `isSeparableVerb=true` iken; Diğ
+      er: GrammarData tamamen NULL.
       **`tr` dalı** (`TURKISH_LANGUAGE_FEATURES.md §9`): Noun: plural+6 hâl zorunlu, fiil alanları
       yasak; Verb: verbRoot+negativeForm+30 çekim zorunlu; Diğer: GrammarData tamamen NULL. **İki
       dilde de** bileşik kelime notu (`WordDetails.Notes`) koşullu — `de`'de yalnızca Noun'da,

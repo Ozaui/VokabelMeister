@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entity + EF Config</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-config',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '01_coklu-dil-wordconcept.html',
+    sonrakiBolum: '03_migration-dbcontext.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'Language.cs — Neden BaseEntity Yok',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Words/Language.cs',
+        nedenBuKlasor: 'Entities/Words/ — Auth/ ve Logging/ ile AYNI seviyede yeni bir domain klasörü; namespace WordLearner.Domain.Entities.Words klasör yapısıyla birebir eşleşir (CLAUDE.md §5).',
+        kod: `public class Language
+{
+    public int Id { get; set; }
+
+    public string Code { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string NativeName { get; set; } = string.Empty;
+
+    public bool IsActive { get; set; } = true;
+
+    public int DisplayOrder { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public class Language',
+            aciklama: '`BaseEntity`den TÜREMEZ — Id/Code/Name/NativeName/IsActive/DisplayOrder dışında hiçbir alan taşımaz.',
+            neden: 'Language, admin panelin CRUD ettiği bir "içerik" DEĞİL — yalnızca de/tr seed edilen, neredeyse hiç değişmeyen bir referans tablosu. CreatedByUserId/UpdatedAt/IsDeleted gibi audit alanları burada hiçbir soruyu CEVAPLAMAZ (kimse "bu dili kim ekledi" diye sormayacak, bir dil "soft delete" edilmez).',
+            olmasaydi: 'BaseEntity\'den türeseydi, WordLearnerDbContext\'teki global soft-delete filtresi Language\'a da UYGULANIRDI — yanlışlıkla IsDeleted=true yapılan bir dil TÜM Words sorgularından sessizce KAYBOLURDU, oysa Language sabit bir referans olduğu için bu davranış hiç beklenmez, kafa karıştırıcı bir kenar durum yaratırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConcept.cs — Dilden Bağımsız Kavram',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Words/WordConcept.cs',
+        nedenBuKlasor: null,
+        kod: `public class WordConcept : BaseEntity
+{
+    public string PartOfSpeech { get; set; } = string.Empty;
+
+    public string DifficultyLevel { get; set; } = string.Empty;
+
+    public string? ImageUrl { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public ICollection<Word> Words { get; set; } = new List<Word>();
+}`,
+        satirlar: [
+          {
+            satir: 'public string PartOfSpeech { get; set; } = string.Empty;',
+            aciklama: 'Kelime türü (Noun/Verb/Adjective/...) — C# tarafında enum DEĞİL, düz string.',
+            neden: 'User.Role/CurrentLevel ile AYNI desen: bu alan, ileride yazılacak WordGrammarValidator\'ın dile göre dallanan matrisinde (GERMAN/TURKISH_LANGUAGE_FEATURES.md) doğrudan karşılaştırılacak — asıl geçersiz-değer savunması C# enum\'unda DEĞİL, DB CHECK constraint\'inde (bir sonraki slayt).',
+            olmasaydi: 'Enum olsaydı, A-07\'nin toplu import akışında dışarıdan (JSON/Excel) gelen ham "Noun"/"Verb" string\'ini enum\'a PARSE ETMEK için ekstra bir dönüşüm katmanı gerekirdi — string tutmak bu adımı ATLAR, doğrulama tek yerde (validator + CHECK) kalır.'
+          },
+          {
+            satir: 'public ICollection<Word> Words { get; set; } = new List<Word>();',
+            aciklama: 'Bir kavramın 0, 1 veya 2 (de+tr) Word\'ü olabilir — koleksiyonun SAYISI, kavramın "eşleşmiş" olup olmadığını belirler.',
+            neden: 'Ayrı bir IsMatched/IsPaired kolonu AÇILMADI (YAGNI) — bu bilgi zaten Words koleksiyonunun COUNT(DISTINCT LanguageId)\'inden TÜRETİLEBİLİYOR, aynı gerçeği iki yerde (kolon + ilişki) tutmak senkronizasyon riski YARATIRDI.',
+            olmasaydi: 'Ayrı bir IsMatched kolonu olsaydı, her PairWordConceptsCommand (ileriki bölüm) bu kolonu da elle GÜNCELLEMEK zorunda kalırdı — bir gün bu güncelleme unutulsa, IsMatched=false ama gerçekte 2 dilde Word\'ü olan "hayalet" bir tutarsızlık DOĞARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptConfiguration.cs — CHECK Constraint\'ler',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Words/WordConceptConfiguration.cs',
+        nedenBuKlasor: 'Data/Configurations/Words/ — Auth/ ve Logging/ ile AYNI seviyede, entity klasör yapısını birebir yansıtır.',
+        kod: `public class WordConceptConfiguration : IEntityTypeConfiguration<WordConcept>
+{
+    public void Configure(EntityTypeBuilder<WordConcept> builder)
+    {
+        builder.Property(w => w.PartOfSpeech).HasMaxLength(20).IsRequired();
+        builder.Property(w => w.DifficultyLevel).HasMaxLength(2).IsRequired();
+        builder.Property(w => w.ImageUrl).HasMaxLength(500);
+
+        builder.HasIndex(w => w.DifficultyLevel);
+
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint(
+                "CK_WordConcepts_Level",
+                "DifficultyLevel IN ('A1','A2','B1','B2','C1','C2')"
+            );
+            t.HasCheckConstraint(
+                "CK_WordConcepts_PartOfSpeech",
+                "PartOfSpeech IN ('Noun','Verb','Adjective','Adverb','Conjunction','Preposition','Pronoun','Other')"
+            );
+        });
+    }
+}`,
+        satirlar: [
+          {
+            satir: 't.HasCheckConstraint(\n                "CK_WordConcepts_PartOfSpeech",',
+            aciklama: 'PartOfSpeech\'in C# tarafında enum OLMAMASININ bedeli/telafisi — geçersiz bir değer (ör. "noun" küçük harf, ya da yazım hatası "Nuon") buraya asla YAZILAMAZ, DB reddeder.',
+            neden: 'UserConfiguration.cs\'teki CK_Users_Role/CK_Users_ThemePreference ile BİREBİR aynı "iki katmanlı savunma" deseni — uygulama katmanı (WordGrammarValidator, ileriki bölüm) ve veri katmanı (bu CHECK) birbirinden BAĞIMSIZ olarak doğru değeri garanti eder.',
+            olmasaydi: 'Bu constraint olmasaydı, A-07\'nin toplu import akışında bir satırda yazım hatası olan bir PartOfSpeech değeri sessizce DB\'ye yazılabilirdi — WordGrammarValidator\'ı BYPASS eden herhangi bir yol (ör. elle bir SQL script) DB\'de kirli veri BIRAKIRDI, hiçbir uygulama kodu bunu YAKALAYAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Word, WordDetail, WordExample — Aynı Deseni İzleyen Üç Entity',
+        terimler: [
+          { terim: 'Word.cs + WordConfiguration.cs', tanim: 'WordConcept ile AYNI yapı (BaseEntity + CHECK yerine burada UNIQUE index): `UQ` niteliğinde `(WordConceptId, LanguageId)` unique index — bir kavramın aynı dilde İKİ satırı olamaz (eşleşmemiş kavram tanımının DAYANDIĞI kısıt budur). Language\'a FK Restrict (Language silinmez varsayımı), WordConcept\'e FK Cascade (kavram silinince dilleri de gider).' },
+          { terim: 'WordDetail.cs + WordDetailConfiguration.cs', tanim: 'BaseEntity + Word\'e 1:1 — `WordId` üzerinde UNIQUE index bu 1:1\'i DB seviyesinde garanti eder. GrammarData/Notes/CommonMistakes hepsi nvarchar(max) (HasMaxLength YOK) çünkü serbest/JSON içerik.' },
+          { terim: 'WordExample.cs + WordExampleConfiguration.cs', tanim: 'BaseEntity + Word\'e N:1, artı kendine (self) opsiyonel bir FK: PairedExampleId. Self-referencing FK\'de SQL Server döngü riskini önlemek için Restrict kullanıldı (WordConcept/Word\'deki Cascade\'in AKSİNE) — bir örnek silinirken bağlı çeviri örneğini otomatik SİLMEZ, önce bağ elle kaldırılmalı.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

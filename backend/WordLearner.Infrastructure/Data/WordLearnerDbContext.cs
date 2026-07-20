@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Infrastructure.Data;
 
@@ -40,6 +41,21 @@ public class WordLearnerDbContext : DbContext
 
     // AMAÇ: Güvenlik olayı log — başarısız login/OTP, rate-limit, replay vb. (A-04).
     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+
+    // AMAÇ: Desteklenen diller — şu an de/tr (A-05 — Sistem Kelimesi API).
+    public DbSet<Language> Languages => Set<Language>();
+
+    // AMAÇ: Dilden bağımsız kelime kavramı (A-05).
+    public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+
+    // AMAÇ: Bir kavramın tek dildeki karşılığı (A-05).
+    public DbSet<Word> Words => Set<Word>();
+
+    // AMAÇ: Dile özel gramer/telaffuz bilgisi, 1:1 Word (A-05).
+    public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+
+    // AMAÇ: Seviyeli örnek cümleler, 1:N Word (A-05).
+    public DbSet<WordExample> WordExamples => Set<WordExample>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

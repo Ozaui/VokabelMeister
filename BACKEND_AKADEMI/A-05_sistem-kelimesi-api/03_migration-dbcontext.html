@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Migration + Seed + DbSet'ler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'migration-dbcontext',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '02_entity-config.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden 5 Tablo TEK Bir Migration\'da?',
+        aciklama: '`dotnet ef migrations add AddWordsSchema` tek seferde Languages+WordConcepts+Words+WordDetails+WordExamples tablolarının BEŞİNİ birden oluşturdu — A-03\'ün AddUserAndRefreshToken\'ı ve A-04\'ün AddLoggingTables\'ıyla AYNI karar.',
+        neden: 'Bu 5 tablo birbirinden BAĞIMSIZ deploy edilemez — Word, WordConcept ve Language\'a FOREIGN KEY ile bağlı; WordDetail/WordExample de Word\'e bağlı. Hepsi "A-05 — Sistem Kelimesi API" TEK bir mantıksal şemanın parçası, ayrı migration\'lara bölünmesi FK sıralaması yüzünden zaten mümkün DEĞİL (Word, WordConcepts ve Languages olmadan var OLAMAZ).',
+        olmasaydi: 'Ayrı migration\'lara bölünmeye ÇALIŞILSAYDI, ilk migration (ör. yalnızca Languages) tek başına ANLAMSIZ kalırdı — Word\'ü olmayan bir Language tablosu hiçbir işe yaramaz, migration geçmişi yalnızca GEREKSİZ ara adımlarla şişerdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AddWordsSchema — Languages Tablosu + Seed',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260720100229_AddWordsSchema.cs',
+        nedenBuKlasor: 'Data/Migrations/ — EF Core\'un `dotnet ef migrations add` komutuyla OTOMATİK ürettiği, elle DÜZENLENMEYEN dosya.',
+        kod: `migrationBuilder.CreateTable(
+    name: "Languages",
+    columns: table => new
+    {
+        Id = table.Column<int>(type: "int", nullable: false)
+            .Annotation("SqlServer:Identity", "1, 1"),
+        Code = table.Column<string>(type: "nvarchar(5)", maxLength: 5, nullable: false),
+        Name = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+        NativeName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+        IsActive = table.Column<bool>(type: "bit", nullable: false),
+        DisplayOrder = table.Column<int>(type: "int", nullable: false)
+    },
+    constraints: table =>
+    {
+        table.PrimaryKey("PK_Languages", x => x.Id);
+    });
+
+migrationBuilder.InsertData(
+    table: "Languages",
+    columns: new[] { "Id", "Code", "DisplayOrder", "IsActive", "Name", "NativeName" },
+    values: new object[,]
+    {
+        { 1, "de", 1, true, "German", "Deutsch" },
+        { 2, "tr", 2, true, "Turkish", "Türkçe" }
+    });`,
+        satirlar: [
+          {
+            satir: 'columns: table => new\n    {\n        Id = table.Column<int>(type: "int", nullable: false)',
+            aciklama: 'Languages tablosunda CreatedAt/IsDeleted/CreatedByUserId gibi hiçbir BaseEntity kolonu YOK — bir önceki bölümdeki "Language BaseEntity\'den türemez" kararının migration\'a YANSIMASI.',
+            neden: 'Entity\'de olmayan bir alan migration\'da da OLUŞMAZ — `ApplyConfigurationsFromAssembly` yalnızca entity\'de gerçekten VAR olan property\'leri kolona çevirir, bu satırlar Language.cs\'in kendisinden BİREBİR türetildi.',
+            olmasaydi: 'Language BaseEntity\'den türeseydi, bu CreateTable çağrısı 7 EK kolon (UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId, + CreatedAt) İÇERİRDİ — hepsi hep aynı varsayılan değerde kalacak, hiçbir sorguda KULLANILMAYACAKTI.'
+          },
+          {
+            satir: 'migrationBuilder.InsertData(\n    table: "Languages",',
+            aciklama: 'LanguageConfiguration.cs\'teki `HasData(...)` çağrısının (Bölüm 2) migration\'a dönüşmüş hâli — `dotnet ef database update` çalıştığında bu INSERT gerçekten ÇALIŞTIRILDI, `de`/`tr` satırları DB\'de doğrulandı.',
+            neden: 'Seed veriyi migration içine gömmek (ayrı bir "seed script" yerine) — Icerik.md\'nin "Language BaseEntity\'den türemez, sabit/seed" kararıyla TUTARLI: yeni bir dil eklemek de aynı şekilde tek satırlık bir sonraki migration\'la (ya da doğrudan INSERT ile) olur, hiçbir uygulama kodu DEĞİŞMEZ.',
+            olmasaydi: 'HasData/InsertData kullanılmasaydı, `de`/`tr` satırlarını elle bir SQL script\'le ya da uygulama başlangıcında (Program.cs\'te) EKLEMEK gerekirdi — bu, migration\'ın "veritabanı şu ana kadar tam olarak şu adımlardan geçti" garantisinin DIŞINA çıkardı, ortamlar arası (dev/test/prod) tutarsızlık riski YARATIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordLearnerDbContext.cs — Beş Yeni DbSet',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: null,
+        kod: `// AMAÇ: Desteklenen diller — şu an de/tr (A-05 — Sistem Kelimesi API).
+public DbSet<Language> Languages => Set<Language>();
+
+// AMAÇ: Dilden bağımsız kelime kavramı (A-05).
+public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+
+// AMAÇ: Bir kavramın tek dildeki karşılığı (A-05).
+public DbSet<Word> Words => Set<Word>();
+
+// AMAÇ: Dile özel gramer/telaffuz bilgisi, 1:1 Word (A-05).
+public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+
+// AMAÇ: Seviyeli örnek cümleler, 1:N Word (A-05).
+public DbSet<WordExample> WordExamples => Set<WordExample>();`,
+        satirlar: [
+          {
+            satir: 'public DbSet<Language> Languages => Set<Language>();',
+            aciklama: 'Language BaseEntity\'den türemese de DbSet tanımı diğerleriyle BİREBİR aynı satır şeklinde — DbSet tanımının kendisi BaseEntity\'ye bağımlı DEĞİL, yalnızca soft-delete filtresi (OnModelCreating\'teki döngü) BaseEntity kontrolü yapıyor.',
+            neden: 'Bu satır olmadan `LanguageConfiguration`\'ın `HasData` çağrısı hiçbir DbSet\'e BAĞLI olmazdı — EF Core, bir entity tipini Model\'e dahil etmek için en az bir DbSet\'e (ya da ilişkili bir entity üzerinden erişilebilir olmasına) ihtiyaç duyar.',
+            olmasaydi: 'Bu satır eksik olsaydı `dotnet ef migrations add` komutu Language\'ı hiç GÖRMEZDİ — Languages tablosu migration\'a hiç YANSIMAZDI, seed veri de hiç eklenmezdi.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'HasData', tanim: 'EF Core Fluent API — bir entity için migration zamanında sabit satırlar (seed) üretir; `dotnet ef database update` çalıştığında bu satırlar INSERT olarak çalıştırılır.' },
+          { terim: 'IX_Languages_Code (unique)', tanim: 'Code kolonu üzerinde benzersizlik garantisi — aynı ISO kodun (ör. iki kez "de") eklenmesini DB seviyesinde engeller.' },
+          { terim: 'FK Restrict vs Cascade', tanim: 'Word→Language FK\'si Restrict (Language silinmez varsayımı), Word→WordConcept FK\'si Cascade (kavram silinince dilleri de gider) — aynı migration içinde İKİ farklı silme davranışı, her ilişkinin kendi anlamına göre seçildi.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
