@@ -137,6 +137,121 @@ public static class ErrorMessages
             ["de"] = "Token ist erforderlich.",
         },
 
+        // NEDEN bu blok: WordGrammarValidator (Application/Validators/Words/) — WordDetail.
+        //       GrammarData JSON'unu dile (de/tr) ve PartOfSpeech'e göre doğrular; her kural
+        //       GERMAN_LANGUAGE_FEATURES.md §10 / TURKISH_LANGUAGE_FEATURES.md §9'daki
+        //       Zorunlu/Koşullu/Yasak matrisinin bir satırına karşılık gelir.
+        ["GRAMMAR_DATA_INVALID_JSON"] = new()
+        {
+            ["tr"] = "Gramer verisi geçerli bir JSON olmalı.",
+            ["de"] = "Die Grammatikdaten müssen gültiges JSON sein.",
+        },
+        ["GRAMMAR_DATA_MUST_BE_NULL_FOR_OTHER"] = new()
+        {
+            ["tr"] = "Bu kelime türü için gramer verisi girilemez, boş bırakılmalı.",
+            ["de"] = "Für diese Wortart dürfen keine Grammatikdaten eingegeben werden, das Feld muss leer bleiben.",
+        },
+        ["GRAMMAR_DATA_REQUIRED"] = new()
+        {
+            ["tr"] = "Bu kelime türü için gramer verisi zorunludur.",
+            ["de"] = "Für diese Wortart sind Grammatikdaten erforderlich.",
+        },
+        ["GRAMMAR_LANGUAGE_UNSUPPORTED"] = new()
+        {
+            ["tr"] = "Bu dil için gramer doğrulaması henüz desteklenmiyor.",
+            ["de"] = "Die Grammatikprüfung wird für diese Sprache noch nicht unterstützt.",
+        },
+        ["GRAMMAR_DE_NOUN_GENDER_REQUIRED"] = new()
+        {
+            ["tr"] = "Almanca isimler için cinsiyet (gender) zorunludur.",
+            ["de"] = "Für deutsche Substantive ist das Geschlecht (gender) erforderlich.",
+        },
+        ["GRAMMAR_DE_NOUN_PLURAL_REQUIRED"] = new()
+        {
+            ["tr"] = "Almanca isimler için çoğul (plural) biçimi zorunludur.",
+            ["de"] = "Für deutsche Substantive ist die Pluralform erforderlich.",
+        },
+        ["GRAMMAR_DE_NOUN_CASES_INCOMPLETE"] = new()
+        {
+            ["tr"] = "Almanca isimler için 4 hâlin (Nominativ/Akkusativ/Dativ/Genitiv) tamamı doldurulmalı.",
+            ["de"] = "Für deutsche Substantive müssen alle 4 Fälle (Nominativ/Akkusativ/Dativ/Genitiv) ausgefüllt sein.",
+        },
+        ["GRAMMAR_DE_NOUN_VERB_FIELDS_FORBIDDEN"] = new()
+        {
+            ["tr"] = "İsimlerde fiil alanları (ayrılabilir fiil, yardımcı fiil, çekim vb.) bulunamaz.",
+            ["de"] = "Substantive dürfen keine Verbfelder (trennbares Verb, Hilfsverb, Konjugation usw.) enthalten.",
+        },
+        ["GRAMMAR_DE_VERB_ISSEPARABLE_REQUIRED"] = new()
+        {
+            ["tr"] = "Almanca fiiller için ayrılabilir fiil bilgisi (isSeparableVerb) zorunludur.",
+            ["de"] = "Für deutsche Verben ist die Angabe zur Trennbarkeit (isSeparableVerb) erforderlich.",
+        },
+        ["GRAMMAR_DE_VERB_AUXILIARY_REQUIRED"] = new()
+        {
+            ["tr"] = "Almanca fiiller için yardımcı fiil (auxiliaryVerb) zorunludur.",
+            ["de"] = "Für deutsche Verben ist das Hilfsverb (auxiliaryVerb) erforderlich.",
+        },
+        ["GRAMMAR_DE_VERB_PASTPARTICIPLE_REQUIRED"] = new()
+        {
+            ["tr"] = "Almanca fiiller için Partizip II (pastParticiple) zorunludur.",
+            ["de"] = "Für deutsche Verben ist das Partizip II (pastParticiple) erforderlich.",
+        },
+        ["GRAMMAR_DE_VERB_CONJUGATION_INCOMPLETE"] = new()
+        {
+            ["tr"] = "Almanca fiiller için 3 zamanın (present/preterite/perfect) 6 kişilik çekiminin tamamı doldurulmalı.",
+            ["de"] = "Für deutsche Verben müssen alle 6 Personenformen der 3 Zeiten (present/preterite/perfect) ausgefüllt sein.",
+        },
+        ["GRAMMAR_DE_VERB_SEPARABLE_PREFIX_REQUIRED"] = new()
+        {
+            ["tr"] = "isSeparableVerb=true iken ayrılabilir fiil öneki (separablePrefix) zorunludur.",
+            ["de"] = "Wenn isSeparableVerb=true ist, ist das trennbare Präfix (separablePrefix) erforderlich.",
+        },
+        ["GRAMMAR_DE_VERB_SEPARABLE_PREFIX_FORBIDDEN"] = new()
+        {
+            ["tr"] = "isSeparableVerb=false iken ayrılabilir fiil öneki (separablePrefix) boş kalmalı.",
+            ["de"] = "Wenn isSeparableVerb=false ist, muss das trennbare Präfix (separablePrefix) leer bleiben.",
+        },
+        ["GRAMMAR_DE_VERB_NOUN_FIELDS_FORBIDDEN"] = new()
+        {
+            ["tr"] = "Fiillerde isim alanları (cinsiyet, çoğul, hâl) bulunamaz.",
+            ["de"] = "Verben dürfen keine Substantivfelder (Geschlecht, Plural, Fälle) enthalten.",
+        },
+        ["GRAMMAR_TR_NOUN_PLURAL_REQUIRED"] = new()
+        {
+            ["tr"] = "Türkçe isimler için çoğul biçimi zorunludur.",
+            ["de"] = "Für türkische Substantive ist die Pluralform erforderlich.",
+        },
+        ["GRAMMAR_TR_NOUN_CASES_INCOMPLETE"] = new()
+        {
+            ["tr"] = "Türkçe isimler için 6 hâlin tamamı doldurulmalı.",
+            ["de"] = "Für türkische Substantive müssen alle 6 Fälle ausgefüllt sein.",
+        },
+        ["GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN"] = new()
+        {
+            ["tr"] = "İsimlerde fiil alanları (fiil kökü, olumsuz biçim, çekim) bulunamaz.",
+            ["de"] = "Substantive dürfen keine Verbfelder (Verbstamm, Verneinung, Konjugation) enthalten.",
+        },
+        ["GRAMMAR_TR_VERB_VERBROOT_REQUIRED"] = new()
+        {
+            ["tr"] = "Türkçe fiiller için fiil kökü (verbRoot) zorunludur.",
+            ["de"] = "Für türkische Verben ist der Verbstamm (verbRoot) erforderlich.",
+        },
+        ["GRAMMAR_TR_VERB_NEGATIVEFORM_REQUIRED"] = new()
+        {
+            ["tr"] = "Türkçe fiiller için olumsuz biçim (negativeForm) zorunludur.",
+            ["de"] = "Für türkische Verben ist die Verneinungsform (negativeForm) erforderlich.",
+        },
+        ["GRAMMAR_TR_VERB_CONJUGATION_INCOMPLETE"] = new()
+        {
+            ["tr"] = "Türkçe fiiller için 5 zamanın 6 kişilik çekiminin tamamı doldurulmalı.",
+            ["de"] = "Für türkische Verben müssen alle 6 Personenformen der 5 Zeiten ausgefüllt sein.",
+        },
+        ["GRAMMAR_TR_VERB_NOUN_FIELDS_FORBIDDEN"] = new()
+        {
+            ["tr"] = "Fiillerde isim alanları (çoğul, hâl) bulunamaz.",
+            ["de"] = "Verben dürfen keine Substantivfelder (Plural, Fälle) enthalten.",
+        },
+
         // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
         //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
         //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.

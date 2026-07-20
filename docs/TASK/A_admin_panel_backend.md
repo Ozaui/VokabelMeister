@@ -215,17 +215,26 @@
 - [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` — 3 bölüm: neden
       WordConcept, Entity+EF Config, Migration+Seed+DbSet'ler; görev tamamlanmadığı için kök
       `index.html`'e kart henüz eklenmedi, yalnızca A-04'ün son bölümüyle zincir bağlandı)
-- [ ] `WordGrammarValidator` (FluentValidation) — önce `LanguageId`'ye göre dile dispatch, sonra o dilin
+- [x] `WordGrammarValidator` (FluentValidation) — önce `LanguageId`'ye göre dile dispatch, sonra o dilin
       `PartOfSpeech` matrisini uygular. **`de` dalı** (`GERMAN_LANGUAGE_FEATURES.md §10`): Noun:
       gender+plural+4 hâl zorunlu, fiil alanları yasak; Verb: 18 çekim+auxiliary+pastParticiple
-      zorunlu, `separablePrefix` yalnızca `isSeparableVerb=true` iken; Diğ
-      er: GrammarData tamamen NULL.
+      zorunlu, `separablePrefix` yalnızca `isSeparableVerb=true` iken; Diğer: GrammarData tamamen NULL.
       **`tr` dalı** (`TURKISH_LANGUAGE_FEATURES.md §9`): Noun: plural+6 hâl zorunlu, fiil alanları
       yasak; Verb: verbRoot+negativeForm+30 çekim zorunlu; Diğer: GrammarData tamamen NULL. **İki
       dilde de** bileşik kelime notu (`WordDetails.Notes`) koşullu — `de`'de yalnızca Noun'da,
       `tr`'de hem Noun hem Verb'de olabilir (dile göre farklı, ortaklaştırılmaz). A-07 toplu import
-      da bu validator'ı kullanır.
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+      da bu validator'ı kullanır. **Uygulama:** `Application/Validators/Words/WordGrammarValidator.cs`
+      — `AbstractValidator<WordGrammarInput>` (Command'a bağlı değil, bağımsız/tekrar kullanılabilir
+      bir tip), `WordGrammarInput(LanguageCode, PartOfSpeech, GrammarDataJson)` + System.Text.Json ile
+      alan bazlı kontrol; yalnızca dokümanların Zorunlu/Koşullu/Yasak listelerindeki alanlar
+      doğrulanır (TR'nin §9 matrisinde geçmeyen possessive/vowelHarmony/pluralForm/consonantMutation
+      zorunlu tutulmaz). 22 yeni `ErrorMessages.cs` kodu (tr/de). **Birim testleri:**
+      `WordGrammarValidatorTests` (23 test — her dil×tür kombinasyonu, DE `isSeparableVerb`
+      çapraz kontrolü, geçersiz JSON, desteklenmeyen dil). Toplam 167/167 yeşil (144 + 23).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-05_sistem-kelimesi-api/04_word-grammar-
+      validator.html` — 6 slayt, her satır tek tek açıklandı: alan sabitleri, constructor/Custom
+      rule, EnumerateFailures dağıtımı, ValidateGerman/ValidateTurkish, JsonElement yardımcı
+      metotları)
 - [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya
       2 dil tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`; 1 dilse kavram
       "eşleşmemiş" kalır — bkz. `Icerik.md` "Eşleştirme")
