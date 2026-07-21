@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Controller + Validator Entegrasyonu + Handler Testleri</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-validator-testler',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '06_command-handlerlari.html',
+    sonrakiBolum: '08_esleztirme-repository-query-command.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommandValidator.cs — WordGrammarValidator Entegrasyonu',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/CreateWordCommandValidator.cs',
+        nedenBuKlasor: 'Validators/Words/ — WordGrammarValidator (Bölüm 4) ile AYNI klasör.',
+        kod: `public class CreateWordCommandValidator : AbstractValidator<CreateWordCommand>
+{
+    public CreateWordCommandValidator(IValidator<WordGrammarInput> grammarValidator)
+    {
+        RuleFor(x => x.PartOfSpeech).NotEmpty().WithErrorCode("PART_OF_SPEECH_REQUIRED");
+        RuleFor(x => x.DifficultyLevel).NotEmpty().WithErrorCode("DIFFICULTY_LEVEL_REQUIRED");
+        RuleFor(x => x.Translations).NotEmpty().WithErrorCode("TRANSLATIONS_REQUIRED");
+
+        RuleFor(x => x)
+            .Custom((command, context) =>
+                WordTranslationRules.ValidateTranslations(
+                    command.Translations, command.PartOfSpeech, grammarValidator, context));
+    }
+}
+
+internal static class WordTranslationRules
+{
+    public static void ValidateTranslations<T>(
+        IReadOnlyList<WordTranslationInput> translations,
+        string partOfSpeech,
+        IValidator<WordGrammarInput> grammarValidator,
+        ValidationContext<T> context)
+    {
+        foreach (var translation in translations)
+        {
+            if (string.IsNullOrWhiteSpace(translation.Text))
+            {
+                context.AddFailure(Failure("WORD_TEXT_REQUIRED"));
+                continue;
+            }
+
+            var grammarDataJson = translation.WordDetail?.GrammarData?.GetRawText();
+            var grammarResult = grammarValidator.Validate(
+                new WordGrammarInput(translation.LanguageCode, partOfSpeech, grammarDataJson));
+
+            foreach (var failure in grammarResult.Errors)
+                context.AddFailure(failure);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public CreateWordCommandValidator(IValidator<WordGrammarInput> grammarValidator)',
+            aciklama: 'WordGrammarValidator (Bölüm 4) DI\'a `IValidator<WordGrammarInput>` olarak KAYITLI — bu validator onu constructor injection ile ALIR, kendi gramer kuralı YAZMAZ.',
+            neden: 'Bir dilin/türün hangi GrammarData alanlarını ZORUNLU/YASAK/KOŞULLU tuttuğu kuralı TEK yerde (WordGrammarValidator) yaşamalı — CreateWordCommandValidator ve UpdateWordCommandValidator İKİSİ de bu TEK kaynağı çağırır, kural iki kez YAZILMAZ.',
+            olmasaydi: 'Gramer kuralları burada TEKRAR yazılsaydı, Bölüm 4\'teki 23 birim testin doğruladığı DE/TR Noun/Verb matrisi burada BAĞIMSIZ bir kopya olarak yaşardı — biri güncellenirken diğeri UNUTULABİLİRDİ.'
+          },
+          {
+            satir: 'internal static class WordTranslationRules',
+            aciklama: 'CreateWordCommandValidator ve UpdateWordCommandValidator\'ın PAYLAŞTIĞI translation döngüsü — `internal` çünkü yalnızca bu iki validator TÜKETİYOR, Application katmanı dışına sızdırılmasına gerek YOK.',
+            neden: 'İki Command\'ın (Create/Update) translations[] doğrulama mantığı BİREBİR aynı — WordEntityBuilder/WordConceptDtoBuilder\'daki (Bölüm 6) "paylaşılan statik yardımcı" kararıyla AYNI gerekçe, burada validator seviyesinde tekrarlanıyor.',
+            olmasaydi: 'Bu yardımcı olmasaydı, UpdateWordCommandValidator kendi translations[] döngüsünü AYRI yazardı — WORD_TEXT_REQUIRED gibi bir kontrol birinde güncellenip diğerinde UNUTULABİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordsController.cs — İnce Controller + İLK Admin-Rollü Endpoint',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/WordsController.cs',
+        nedenBuKlasor: 'API/Controllers/ — AuthController/QrLoginController ile AYNI seviyede, flat.',
+        kod: `[ApiController]
+[Route("api/v1/words")]
+public class WordsController : ControllerBase
+{
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+
+    [HttpGet]
+    [Authorize]
+    public async Task<ActionResult<PagedResult<WordConceptListItemDto>>> GetWords(
+        [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize);
+        return Ok(await _mediator.Send(query, ct));
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<WordConceptDetailDto>> CreateWord(
+        [FromQuery] bool force, CreateWordCommand command, CancellationToken ct)
+    {
+        var response = await _mediator.Send(
+            command with { Force = force, UserId = CurrentUserId, ActorRole = CurrentRole }, ct);
+        return StatusCode(StatusCodes.Status201Created, response);
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[Authorize(Roles = "Admin")]',
+            aciklama: 'Projedeki İLK `[Authorize(Roles="Admin")]` kullanımı — Auth/QrLogin\'de rol bazlı bir kısıtlama YOKTU (o iki controller\'da yalnızca [Authorize] veya Anonim vardı).',
+            neden: 'CLAUDE.md "Roller ve sahiplik": sistem içeriği (Word/Category) CRUD → Admin, okuma → herkes ([Authorize]). Word, bir kullanıcının KENDİ verisi değil sistemin PAYLAŞILAN içeriği — bu yüzden UserCard\'daki gibi "sahiplik" kontrolü DEĞİL, düz rol kontrolü YETERLİ.',
+            olmasaydi: 'Yalnızca [Authorize] kullanılsaydı, herhangi bir giriş yapmış User (Admin OLMAYAN) POST/PUT/DELETE /words çağırıp SİSTEM içeriğini değiştirebilirdi — CLAUDE.md\'nin "hiçbir public endpoint rol yükseltemez" kadar temel bir kural İHLAL edilmiş olurdu.'
+          },
+          {
+            satir: 'private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+            aciklama: 'JWT\'deki NameIdentifier claim\'inden mevcut kullanıcının Id\'sini okur — AuthController\'daki AYNI desen.',
+            neden: 'IActivityLogger.LogAsync\'in "kim yaptı" (userId/actorRole) parametrelerini doldurmak için — CREATE_WORD/UPDATE_WORD/DELETE_WORD kayıtlarının hangi admin tarafından yapıldığını İZLEMEK.',
+            olmasaydi: 'CurrentUserId olmadan Command\'a UserId hiç GEÇİRİLEMEZDİ — ActivityLog\'daki UserId kolonu her zaman NULL kalırdı, "hangi admin bu kelimeyi sildi" sorusuna log üzerinden CEVAP VERİLEMEZDİ.'
+          },
+          {
+            satir: 'command with { Force = force, UserId = CurrentUserId, ActorRole = CurrentRole }, ct);',
+            aciklama: 'Model binding\'in doldurduğu Command (yalnızca body alanları) ile query string (`force`) ve JWT claim\'lerinin (UserId/ActorRole) `with` ifadesiyle TEK bir Command\'a BİRLEŞTİRİLMESİ.',
+            neden: 'CreateWordCommand.cs\'teki (Bölüm 6) "Force neden init-property" gerekçesiyle DOĞRUDAN bağlı — Command\'ın record olması, bu üç farklı KAYNAKTAN (body/query/JWT) gelen veriyi immutable bir şekilde TEK nesneye toplamayı KOLAYLAŞTIRIYOR.',
+            olmasaydi: 'Command mutable bir class olsaydı, controller property\'leri elle `command.Force = force;` gibi SATIR SATIR atardı — record\'un `with` sözdiziminin sağladığı "tek ifadede immutable kopya" okunabilirliği KAYBOLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Handler Testleri — Neden Repository/ActivityLogger Mock\'lanır',
+        aciklama: '5 Handler için 5 test dosyası (`WordLearner.Tests/Features/Words/`) — her biri IWordConceptRepository/ILanguageRepository/IActivityLogger\'ı Moq ile mock\'lar, gerçek bir DB\'ye HİÇ dokunmaz. CreateWordCommandHandlerTests temsili örnek: tek/iki dil oluşturma, duplikat 409 + force bypass, bilinmeyen dil 404, CREATE_WORD audit çağrısı — 5 test.',
+        neden: 'CLAUDE.md §7 kuralı: "Her public servis/Handler metodunun birim testi AYNI task içinde yazılır" — Handler\'ın DB\'ye bağımlı olmadan, yalnızca kendi iş mantığını (Force/duplikat/eşleştirme kararları) DOĞRU verdiğini garanti eden testler bunlar; gerçek DB entegrasyonu Faz F\'nin kapsamı.',
+        olmasaydi: 'Testler gerçek bir DbContext (in-memory bile olsa) kullansaydı, her test dosyası SqlServer/InMemory provider kurulumuna BAĞIMLI olurdu ve testler YAVAŞLARDI — Moq ile mock\'lamak, RepositoryTests\'in (A-02) zaten DOĞRULADIĞI EF Core davranışını burada TEKRAR test etmekten KAÇINIR.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommandHandlerTests.cs — Temsili Test Dosyası',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Words/CreateWordCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Words/ — Tests/Features/Auth/, Tests/Features/QrLogin/ ile AYNI yapı.',
+        kod: `public class CreateWordCommandHandlerTests
+{
+    private readonly Mock<IWordConceptRepository> _wordConceptRepo = new();
+    private readonly Mock<ILanguageRepository> _languageRepo = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    [Fact]
+    public async Task Create_DuplicateTextWithoutForce_ThrowsDuplicateWordException()
+    {
+        // ARRANGE
+        _languageRepo.Setup(r => r.GetByCodeAsync("de", It.IsAny<CancellationToken>())).ReturnsAsync(German);
+        _wordConceptRepo
+            .Setup(r => r.ExistsWordTextAsync(German.Id, "Tisch", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var handler = CreateHandler();
+        var command = new CreateWordCommand("Noun", "A1", null,
+            new[] { new WordTranslationInput("de", "Tisch", null, null, null) });
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<DuplicateWordException>();
+        _wordConceptRepo.Verify(
+            r => r.AddAsync(It.IsAny<WordConcept>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+}`,
+        satirlar: [
+          {
+            satir: '_wordConceptRepo.Verify(\n            r => r.AddAsync(It.IsAny<WordConcept>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),\n            Times.Never);',
+            aciklama: 'Yalnızca "exception fırlatıldı mı" DEĞİL, "yan etki hiç GERÇEKLEŞMEDİ mi" de doğrulanıyor — duplikat tespit edilince AddAsync\'in HİÇ ÇAĞRILMADIĞI ayrıca Verify edilir.',
+            neden: 'Bir Handler\'ın exception fırlatması TEK BAŞINA yeterli değil — eğer AddAsync yine de çağrılıp SONRA exception atılsaydı (yanlış sıralama), DB\'ye YARIM/hatalı bir kayıt YAZILABİLİRDİ; Times.Never bu sıralama hatasını da YAKALAR.',
+            olmasaydi: 'Yalnızca `ThrowAsync<DuplicateWordException>()` kontrol edilseydi, `AddAsync` çağrıldıktan SONRA exception fırlatan hatalı bir Handler de bu testi GEÇERDİ — gerçek bir DB\'de kirli veri OLUŞURDU, test bunu hiç YAKALAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer 4 Test Dosyası — Aynı Pattern İzler',
+        terimler: [
+          { terim: 'UpdateWordCommandHandlerTests (5 test)', tanim: 'Mevcut çeviri güncelleme, eşleştirme ile ikinci dil ekleme (2→2 Word), yeni dilde duplikat 409, kavram bulunamadı 404, UPDATE_WORD audit (Old+NewValue ikisi de dolu).' },
+          { terim: 'DeleteWordCommandHandlerTests (3 test)', tanim: 'SoftDeleteWithWordsAsync\'in doğru Id+UserId ile ÇAĞRILDIĞI, kavram bulunamadı 404 (SoftDelete HİÇ çağrılmaz), DELETE_WORD audit (yalnızca OldValue dolu).' },
+          { terim: 'GetWordByIdQueryHandlerTests (2 test)', tanim: 'Var olan kavram → tam detay DTO, bulunamayan Id → EntityNotFoundException. ActivityLogger hiç mock\'lanmaz (Query, audit yazmaz).' },
+          { terim: 'GetWordsQueryHandlerTests (1 test)', tanim: 'Query\'deki filtre/sayfa parametrelerinin repository.GetPagedAsync\'e AYNEN iletildiği + dönen sayfanın liste DTO\'suna (WordDetail/örnek taşımadan) çevrildiği.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm Özeti — CRUD Tamamlandı',
+        maddeler: [
+          'Repository katmanı: IWordConceptRepository/WordConceptRepository (aggregate root, 4 özel sorgu) + ILanguageRepository/LanguageRepository (BaseEntity\'siz istisna) + DuplicateWordException (409).',
+          '5 MediatR Command/Query: CreateWordCommand, UpdateWordCommand (eşleştirme), DeleteWordCommand (cascade soft delete), GetWordByIdQuery, GetWordsQuery — paylaşılan WordEntityBuilder + WordConceptDtoBuilder.',
+          'CreateWordCommandValidator/UpdateWordCommandValidator — WordGrammarValidator\'ı (Bölüm 4) her translations[] öğesi için çağırır, kural TEK yerde kalır.',
+          'WordsController — projedeki İLK [Authorize(Roles="Admin")] kullanımı; liste/detay herkese açık, CRUD yalnızca Admin.',
+          'CREATE_WORD/UPDATE_WORD/DELETE_WORD üç Handler\'da IActivityLogger\'a yazılıyor (A-04 entegrasyonu).',
+          '17 yeni birim testi (5 dosya) — toplam 184/184 yeşil (167 + 17).',
+          'SIRADAKİ (Bölüm 8-9\'da işlendi): GetUnmatchedWordConceptsQuery + PairWordConceptsCommand ("Eşleştirme" akışı) ve PAIR_WORD_CONCEPTS ActivityLog kaydı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

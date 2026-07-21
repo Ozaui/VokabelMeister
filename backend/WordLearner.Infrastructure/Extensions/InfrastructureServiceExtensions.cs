@@ -46,8 +46,9 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
 
-        // NOT: Sonraki feature repository'ler (IWordRepository vb.) kendi task'larında
-        //      (A-05 ...) bu metoda eklenecek.
+        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı; A-05 — Sistem Kelimesi API.
+        services.AddScoped<ILanguageRepository, LanguageRepository>();
+        services.AddScoped<IWordConceptRepository, WordConceptRepository>();
 
         return services;
     }

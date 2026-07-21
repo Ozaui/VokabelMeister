@@ -119,6 +119,7 @@ public class ExceptionHandlingMiddleware
             InvalidSocialTokenException => HttpStatusCode.Unauthorized,
             QrSessionGoneException => HttpStatusCode.Gone,
             QrSessionForbiddenException => HttpStatusCode.Forbidden,
+            DuplicateWordException => HttpStatusCode.Conflict,
             _ => HttpStatusCode.BadRequest,
         };
 }

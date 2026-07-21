@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command/Query Handler'ları — Create/Update/Delete/Get</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'command-handlerlari',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '05_repository-katmani.html',
+    sonrakiBolum: '07_controller-validator-testler.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden Liste ve Detay İçin AYRI DTO',
+        aciklama: 'WordConceptListItemDto yalnızca dil+metin (WordTranslationSummaryDto) taşır; WordConceptDetailDto ise WordDetail (gramer/telaffuz) + WordExample\'larıyla TAM çeviri (WordTranslationDto) taşır. `categories[]`/`userProgress` alanları (API_ENDPOINTS.md §5 örneğinde var) A-06/C-03 henüz yazılmadığı için BİLİNÇLİ olarak yok.',
+        neden: 'GET /words (liste) bir admin tablo görünümü — 20 satırlık bir sayfada her satırın gramer JSON\'unu/örnek cümlelerini taşımanın hiçbir tüketicisi yok. GET /words/{id} ise düzenleme formu — TAM veriye ihtiyaç duyar. Aynı DTO ikisi için kullanılsaydı ya liste gereksiz ağır olurdu ya da detay eksik kalırdı.',
+        olmasaydi: 'Tek bir "büyük" DTO kullanılsaydı, GetWordsQueryHandler her sayfa isteğinde 20 kelimenin TÜM WordDetail/WordExample\'larını DB\'den çekip JSON\'a serileştirirdi — admin panel kelime listesini açtığında gereksiz yere YAVAŞLARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordDtos.cs — Liste vs Detay Şekli',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Words/WordDtos.cs',
+        nedenBuKlasor: 'DTOs/Words/ — DTO\'ların entity\'lerle AYNI domain klasör yapısını izlemesi (flat değil, feature\'a göre gruplu).',
+        kod: `public record WordTranslationSummaryDto(string LanguageCode, string Text);
+
+public record WordTranslationDto(
+    string LanguageCode,
+    string Text,
+    string? Definition,
+    WordDetailDto? WordDetail,
+    IReadOnlyList<WordExampleDto> Examples
+);
+
+public record WordConceptListItemDto(
+    int WordConceptId,
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    IReadOnlyList<WordTranslationSummaryDto> Translations
+);
+
+public record WordConceptDetailDto(
+    int WordConceptId,
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    IReadOnlyList<WordTranslationDto> Translations
+);`,
+        satirlar: [
+          {
+            satir: 'public record WordTranslationSummaryDto(string LanguageCode, string Text);',
+            aciklama: 'Liste satırının bir dildeki karşılığı — SADECE iki alan (kod+metin), WordDetail/örnek YOK.',
+            neden: 'Bir önceki slaytın "neden ayrı DTO" gerekçesiyle DOĞRUDAN bağlı — bu record\'un küçüklüğü, GetWordsQueryHandler\'ın döndürdüğü JSON\'un boyutunu bilinçli olarak KÜÇÜK tutar.',
+            olmasaydi: 'WordTranslationDto (tam versiyon) liste için de kullanılsaydı, her satırda `wordDetail: null, examples: []` gibi BOŞ alanlar taşınırdı — API yanıtı gereksiz yere ŞİŞERDİ, hiçbir client bu alanları OKUMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden WordEntityBuilder/WordConceptDtoBuilder — Paylaşılan Statik Yardımcılar',
+        aciklama: 'CreateWordCommandHandler (yeni WordConcept) ve UpdateWordCommandHandler (mevcut kavrama yeni dil eklerken) AYNI "girdiden Word entity ağacı kurma" mantığını paylaşıyor (WordEntityBuilder); dört Handler\'ın (Create/Update/GetById/GetWords) hepsi AYNI "entity ağacından DTO\'ya çevirme" mantığını paylaşıyor (WordConceptDtoBuilder).',
+        neden: 'MediatR Handler\'lar birbirini `_mediator.Send()` ile ÇAĞIRAMAZ (döngüsel bağımlılık riski, CLAUDE.md §3) — IOtpService/QrLoginSessionExpiryExtensions örneğindeki gibi paylaşılan mantık küçük, STATIC bir yardımcıya çıkarılır; DI\'a kayıtlı bir "servis" DEĞİL çünkü state\'siz, saf dönüşüm.',
+        olmasaydi: 'Bu yardımcılar olmasaydı, "bir WordTranslationInput\'tan Word+WordDetail+WordExample ağacı kur" mantığı CreateWordCommandHandler VE UpdateWordCommandHandler\'da AYRI AYRI (ve zamanla BİRBİRİNDEN SAPARAK) yazılırdı — bir gün yalnızca birinde düzeltilen bir bug diğerinde KALIRDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordEntityBuilder.cs — Girdiden Entity Ağacı',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/WordEntityBuilder.cs',
+        nedenBuKlasor: 'Features/Words/ — Command+Handler ile AYNI dosyada DEĞİL çünkü İKİ farklı Handler PAYLAŞIYOR (tek bir Command\'a özel değil), ama yine de Features/Words/ altında flat (ayrı bir Helpers/ klasörü AÇILMADI).',
+        kod: `public static class WordEntityBuilder
+{
+    public static Word Build(WordTranslationInput translation, Language language, int? userId)
+    {
+        var word = new Word
+        {
+            Language = language,
+            Text = translation.Text,
+            Definition = translation.Definition,
+            CreatedByUserId = userId,
+            UpdatedByUserId = userId,
+        };
+
+        if (translation.WordDetail is not null)
+            word.WordDetail = BuildWordDetail(translation.WordDetail, userId);
+
+        if (translation.Examples is not null)
+        {
+            var displayOrder = 0;
+            foreach (var example in translation.Examples)
+            {
+                word.WordExamples.Add(new WordExample
+                {
+                    SentenceText = example.SentenceText,
+                    Level = example.Level,
+                    ExampleType = example.ExampleType,
+                    DisplayOrder = displayOrder++,
+                    CreatedByUserId = userId,
+                    UpdatedByUserId = userId,
+                });
+            }
+        }
+
+        return word;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'Language = language,',
+            aciklama: 'FK\'yi (LanguageId) elle set etmek YERİNE navigation property\'nin kendisi atanır — EF Core Id\'yi bu ilişkiden ÇIKARIR.',
+            neden: 'Handler zaten ILanguageRepository.GetByCodeAsync ile TAM bir Language nesnesi çözmüş durumda (bir sonraki slayt) — ayrıca languageId\'yi elle taşımak gereksiz bir dolaylama olurdu.',
+            olmasaydi: 'LanguageId elle set edilseydi ve Language nesnesi ATANMASAYDI, WordConceptDtoBuilder\'ın `word.Language.Code` erişimi (henüz kaydedilmemiş, tracked olmayan bir entity\'de) NullReferenceException FIRLATIRDI.'
+          },
+          {
+            satir: 'var displayOrder = 0;',
+            aciklama: 'Örnek cümlelerin DisplayOrder\'ı GİRİŞ SIRASINA göre 0\'dan otomatik artırılır — istemci elle bir sıra numarası GÖNDERMEZ.',
+            neden: 'WordExampleInput\'ta DisplayOrder alanı YOK (yalnızca SentenceText/Level/ExampleType) — admin formunda örnekler zaten GİRİLDİKLERİ sırayla gösterilecek, ayrı bir "sıra numarası gir" alanı gereksiz bir kullanıcı yükü OLURDU.',
+            olmasaydi: 'DisplayOrder istemciden ALINSAYDI, iki örneğin aynı numarayı GÖNDERMESİ (ya da boşluklu bir sıra) gibi tutarsız durumlar validator\'da AYRICA ele alınması gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptDtoBuilder.cs — Entity Ağacından DTO\'ya',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/WordConceptDtoBuilder.cs',
+        nedenBuKlasor: null,
+        kod: `public static WordConceptDetailDto BuildDetail(WordConcept concept) =>
+    new(
+        concept.Id,
+        concept.PartOfSpeech,
+        concept.DifficultyLevel,
+        concept.ImageUrl,
+        concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()
+    );
+
+private static WordDetailDto BuildWordDetail(WordDetail detail) =>
+    new(
+        detail.Pronunciation,
+        detail.AudioUrl,
+        detail.Notes,
+        detail.CommonMistakes,
+        ParseGrammarData(detail.GrammarData)
+    );
+
+private static JsonElement? ParseGrammarData(string? grammarDataJson) =>
+    string.IsNullOrWhiteSpace(grammarDataJson) ? null : JsonDocument.Parse(grammarDataJson).RootElement.Clone();`,
+        satirlar: [
+          {
+            satir: 'concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()',
+            aciklama: 'Çeviriler HER ZAMAN LanguageId\'ye göre sıralı döner (de=1 önce, tr=2 sonra) — DB\'den geldikleri sıraya (insert sırası) GÜVENİLMEZ.',
+            neden: 'GET /words/{id} yanıtındaki translations[] dizisinin sırası admin formunda hangi dilin ÜSTTE göründüğünü belirler — sıralama garanti edilmezse, aynı kavram farklı isteklerde farklı sırada dönebilir, admin panel her açılışta alanların YER DEĞİŞTİRDİĞİNİ görürdü.',
+            olmasaydi: 'OrderBy olmasaydı, EF Core\'un Include zincirinin döndürdüğü sıra (genelde INSERT sırası, ama SQL Server bunu GARANTİ ETMEZ) kullanılırdı — UpdateWordCommand\'da PUT ile sonradan eklenen bir dil (eşleştirme) listenin SONUNA düşer, tutarsız bir görünüm yaratırdı.'
+          },
+          {
+            satir: 'string.IsNullOrWhiteSpace(grammarDataJson) ? null : JsonDocument.Parse(grammarDataJson).RootElement.Clone();',
+            aciklama: 'DB\'de düz STRING olarak saklanan GrammarData, yanıtta gerçek bir JSON NESNESİ (string olarak escape edilmiş DEĞİL) olarak döner — `.Clone()` ZORUNLU.',
+            neden: '`JsonDocument.Parse(...).RootElement`, yalnızca kendisini ÜRETEN `JsonDocument` YAŞADIĞI sürece geçerlidir (`JsonDocument` `IDisposable`, `using` bloğu OLMADAN GC\'ye bırakılır) — bu metottan `JsonElement?` olarak DÖNDÜĞÜNDE, `JsonDocument`\'in kendisi hiçbir yerde TUTULMUYOR; `.Clone()` RootElement\'i JsonDocument\'ten BAĞIMSIZ, kalıcı bir kopyaya çevirir.',
+            olmasaydi: '`.Clone()` UNUTULSAYDI, System.Text.Json serileştiricisi bu JsonElement\'i JSON yanıtına YAZMAYA çalıştığında ObjectDisposedException (ya da tanımsız DAVRANIŞ) FIRLATABİLİRDİ — hata yalnızca GC ne zaman ÇALIŞTI\'ysa o an, TESTLERDE HİÇ YAKALANMAYAN, rastgele ÜRETİMDE ortaya çıkan bir bug OLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommand.cs — Command + Handler (Temsili)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/CreateWordCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record CreateWordCommand(
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    IReadOnlyList<WordTranslationInput> Translations
+) : IRequest<WordConceptDetailDto>
+{
+    public bool Force { get; init; }
+    public int? UserId { get; init; }
+    public string? ActorRole { get; init; }
+}
+
+public async Task<WordConceptDetailDto> Handle(CreateWordCommand request, CancellationToken ct)
+{
+    var concept = new WordConcept
+    {
+        PartOfSpeech = request.PartOfSpeech,
+        DifficultyLevel = request.DifficultyLevel,
+        ImageUrl = request.ImageUrl,
+    };
+
+    foreach (var translation in request.Translations)
+    {
+        var language =
+            await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+            ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+
+        if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))
+            throw new DuplicateWordException();
+
+        concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
+    }
+
+    await _wordConceptRepository.AddAsync(concept, request.UserId, ct);
+
+    await _activityLogger.LogAsync(
+        request.UserId, request.ActorRole, "CREATE_WORD",
+        entityType: "WordConcept", entityId: concept.Id,
+        newValue: new { concept.PartOfSpeech, concept.DifficultyLevel,
+            Translations = request.Translations.Select(t => new { t.LanguageCode, t.Text }) },
+        ct: ct
+    );
+
+    return WordConceptDtoBuilder.BuildDetail(concept);
+}`,
+        satirlar: [
+          {
+            satir: 'public bool Force { get; init; }',
+            aciklama: 'Command record\'un GÖVDESİNDE (constructor parametresi) DEĞİL, init-only property olarak tanımlı.',
+            neden: 'API_ENDPOINTS.md §5 `?force=true`\'yu bir QUERY STRING parametresi olarak tanımlıyor, request body alanı DEĞİL — WordsController bunu `[FromQuery] bool force`\'tan okuyup `command with { Force = force }` ile Command\'a EKLER (LogoutCommand\'ın RefreshToken\'ı taşıma deseniyle AYNI).',
+            olmasaydi: 'Force, Command\'ın ana constructor\'ına (Translations ile birlikte) eklenseydi, model binding onu REQUEST BODY\'DEN okumaya çalışırdı — istemcinin `?force=true` yerine gövdeye `"force": true` YAZMASI gerekirdi, bu da API_ENDPOINTS.md\'nin sözleşmesini BOZARDI.'
+          },
+          {
+            satir: 'if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))\n            throw new DuplicateWordException();',
+            aciklama: 'Duplikat kontrolü translations[] İÇİNDEKİ HER dil için AYRI AYRI çalışır — bir dilde çakışma olsa da diğer dilde olmayabilir.',
+            neden: 'Icerik.md "Eşleştirme": iki dil TEK istekte girilebilir, ama her dilin kendi Text\'i kendi dilinde benzersiz kalmalı — "Tisch" (de) zaten varken force=false ile tekrar "Tisch" girilmeye çalışılırsa 409, ama aynı istekte "masa" (tr) YENİ olduğu için o dil sorunsuz eklenir.',
+            olmasaydi: 'Kontrol translations[] genelinde TEK seferlik olsaydı (ör. ilk dildeki sonuca göre karar verilseydi), bir dildeki gerçek bir duplikat GÖZDEN KAÇARDI ya da tam tersi diğer dildeki YANLIŞ bir 409 fırlatılırdı.'
+          },
+          {
+            satir: 'await _wordConceptRepository.AddAsync(concept, request.UserId, ct);',
+            aciklama: 'TEK bir AddAsync çağrısı — concept.Words koleksiyonuna eklenen Word (+WordDetail+WordExample) nesneleri AYRI AYRI kaydedilmez, EF Core\'un change tracker\'ı child\'ları OTOMATİK cascade insert eder.',
+            neden: 'WordConcept aggregate root deseni (Bölüm 5) burada SOMUTLAŞIYOR — Handler yalnızca kök nesneyi (concept) kaydeder, EF Core\'un navigation property\'leri (Words, WordDetail, WordExamples) takip etmesi SAYESİNDE tüm ağaç TEK transaction\'da INSERT edilir.',
+            olmasaydi: 'Her Word/WordDetail/WordExample için AYRI bir AddAsync çağrılsaydı, WordConceptId/WordId FK\'lerini elle set etmek (henüz Id\'leri yokken) GEREKİRDİ — kırılgan, sıra bağımlı bir kod ortaya ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /words — Yeni Kelime Kavramı',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/words',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı — [Authorize(Roles="Admin")].',
+        govde: `{
+  "partOfSpeech": "Noun",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    {
+      "languageCode": "de",
+      "text": "Tisch",
+      "definition": null,
+      "wordDetail": null,
+      "examples": null
+    }
+  ]
+}`,
+        yanit: {
+          durum: '201 Created',
+          govde: `{
+  "wordConceptId": 1,
+  "partOfSpeech": "Noun",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    {
+      "languageCode": "de",
+      "text": "Tisch",
+      "definition": null,
+      "wordDetail": null,
+      "examples": []
+    }
+  ]
+}`
+        },
+        notlar: [
+          'force=true ile tekrar aynı istek atılırsa (duplikat olmasına rağmen) 201 döner: POST /words?force=true',
+          '"de" dilinde Noun ise WordGrammarValidator gender/plural/4 hâl alanlarını GrammarData içinde ZORUNLU kılar — boş bırakılırsa 400.'
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'UpdateWordCommand — "Eşleştirme" PUT\'a Nasıl Yansır',
+        aciklama: 'PUT /words/{id}\'deki translations[] listesindeki her dil, kavramda ZATEN VARSA güncellenir, YOKSA WordEntityBuilder ile CreateWordCommand\'la AYNI kurma mantığıyla EKLENİR. Tek dilli ("eşleşmemiş") bir kavrama ikinci dili PUT ile eklemek, Icerik.md "Eşleştirme"nin "translations[] ile tek istekte iki dil de girilebilir" akışının PUT tarafındaki karşılığı.',
+        neden: 'Ayrı bir "PairWordConceptsCommand" (henüz yazılmadı, sıradaki adım) yalnızca İKİ AYRI kavramı birleştirmek içindir — bir kavrama eksik olan TEK dili eklemek için ayrı bir endpoint açmak gereksiz olurdu, PUT zaten "bu translations[] listesi artık doğru hâl" semantiğini TAŞIYOR.',
+        olmasaydi: 'PUT yalnızca ZATEN VAR olan dilleri güncelleseydi, admin tek dilli bir kelimeyi eşleştirmek için AYRI bir "dil ekle" endpoint\'ine ihtiyaç duyardı — aynı iş (kavrama bir Word eklemek) İKİ farklı yerde İKİ farklı kod yolunda yaşardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateWordCommand.cs — Var/Yok Dil Ayrımı',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/UpdateWordCommand.cs',
+        nedenBuKlasor: null,
+        kod: `foreach (var translation in request.Translations)
+{
+    var language =
+        await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+        ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+
+    var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);
+
+    if (existingWord is null)
+    {
+        if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))
+            throw new DuplicateWordException();
+
+        concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
+        continue;
+    }
+
+    existingWord.Text = translation.Text;
+    existingWord.Definition = translation.Definition;
+    existingWord.UpdatedByUserId = request.UserId;
+}`,
+        satirlar: [
+          {
+            satir: 'var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);',
+            aciklama: 'Ayrım noktası — bu dil kavramda ZATEN VAR MI sorusu, `Words` koleksiyonu bellekte (GetWithTranslationsAsync ile önceden yüklenmiş) ARANARAK cevaplanır, ayrı bir DB sorgusu ATILMAZ.',
+            neden: 'Handler\'ın en başında `GetWithTranslationsAsync` TÜM dilleriyle çekildiği için (Bölüm 5) bu arama bellek içi (LINQ-to-Objects) — N. dil için N. kez DB\'ye gitmek YERİNE, tek sorgu + bellek içi arama tercih edildi.',
+            olmasaydi: 'Her translation için ayrı bir `_wordConceptRepository`sorgusu atılsaydı, 2 dilli bir PUT isteği GEREKSİZ yere 2+ ekstra DB round-trip\'i YAPARDI.'
+          },
+          {
+            satir: 'existingWord.Text = translation.Text;',
+            aciklama: 'Var olan Word\'ün alanları YERİNDE (in-place) güncellenir — yeni bir Word nesnesi OLUŞTURULMAZ, mevcut entity\'nin property\'leri değiştirilir.',
+            neden: 'EF Core\'un change tracker\'ı bu tracked entity üzerindeki değişikliği OTOMATİK algılar — Handler\'ın sonunda tek bir `UpdateAsync(concept, ...)` çağrısı TÜM değişen alanları (concept + değişen Word\'ler) kaydeder.',
+            olmasaydi: 'Yeni bir Word nesnesi oluşturulup ESKİSİNİN yerine eklenmeye çalışılsaydı, EF Core bunu "yeni bir satır" olarak ALGILAR, aynı dilde İKİ Word satırı (biri eski/orphan, biri yeni) oluşma RİSKİ doğardı — Word\'deki `(WordConceptId, LanguageId)` unique index\'i bunu YAKALARDI ama gereksiz bir hataydı.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'PUT /words/{id} — Güncelleme veya Eşleştirme',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/words/1',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Yukarıdaki örnekte oluşturulan tek dilli (yalnızca "de") kavrama "tr" ekleyerek eşleştirir.',
+        govde: `{
+  "partOfSpeech": "Noun",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    { "languageCode": "de", "text": "Tisch", "definition": null, "wordDetail": null, "examples": null },
+    { "languageCode": "tr", "text": "masa", "definition": null, "wordDetail": null, "examples": null }
+  ]
+}`,
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "wordConceptId": 1,
+  "partOfSpeech": "Noun",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    { "languageCode": "de", "text": "Tisch", "definition": null, "wordDetail": null, "examples": [] },
+    { "languageCode": "tr", "text": "masa", "definition": null, "wordDetail": null, "examples": [] }
+  ]
+}`
+        },
+        notlar: [
+          'PartOfSpeech/DifficultyLevel ZORUNLU alanlar — PUT concept-seviyesinde TAM yer değiştirme semantiğine sahip, admin formu mevcut değerleri önceden DOLDURUR.'
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteWordCommand.cs — Cascade Soft Delete',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/DeleteWordCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<Unit> Handle(DeleteWordCommand request, CancellationToken ct)
+{
+    var concept =
+        await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
+
+    await _wordConceptRepository.SoftDeleteWithWordsAsync(request.Id, request.UserId, ct);
+
+    await _activityLogger.LogAsync(
+        request.UserId, request.ActorRole, "DELETE_WORD",
+        entityType: "WordConcept", entityId: request.Id,
+        oldValue: new { concept.PartOfSpeech, concept.DifficultyLevel,
+            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }) },
+        ct: ct
+    );
+
+    return Unit.Value;
+}`,
+        satirlar: [
+          {
+            satir: 'var concept =\n        await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)\n        ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);',
+            aciklama: 'Kavram SoftDeleteWithWordsAsync çağrılmadan ÖNCE bir kez daha okunur — yalnızca 404 kontrolü için DEĞİL, ActivityLog\'un OldValue\'suna yazılacak "silinmeden ÖNCEKİ hâl" verisini toplamak için.',
+            neden: 'SoftDeleteWithWordsAsync kendi içinde ZATEN bir EntityNotFoundException fırlatıyor (Bölüm 5) — ama o noktada concept nesnesi Handler\'a DÖNMÜYOR, yalnızca Id ile çalışıyor; ActivityLog\'a "ne silindi" yazabilmek için Handler\'ın KENDİ elinde bir concept referansı olması GEREKİYOR.',
+            olmasaydi: 'Bu okuma atlanıp doğrudan SoftDeleteWithWordsAsync çağrılsaydı, DELETE_WORD ActivityLog kaydının OldValue\'su BOŞ kalırdı — admin daha sonra "hangi kelime silindi" diye log\'a baktığında yalnızca bir Id GÖRÜRDÜ, PartOfSpeech/çeviri metinleri KAYBOLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'DELETE /words/{id}',
+        yontem: 'DELETE',
+        url: 'http://localhost:5001/api/v1/words/1',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '204 No Content',
+          govde: '(boş gövde)'
+        },
+        notlar: [
+          'Var olmayan bir Id için 404 ApiErrorResponse döner (ENTITY_NOT_FOUND).',
+          'Silinen kavram + TÜM Word\'leri soft-delete olur — DB\'de kalır, GET /words ve GET /words/{id} bir daha GÖSTERMEZ.'
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetWordByIdQuery.cs — Salt Okunur Detay Sorgusu',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetWordByIdQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public record GetWordByIdQuery(int Id) : IRequest<WordConceptDetailDto>;
+
+public async Task<WordConceptDetailDto> Handle(GetWordByIdQuery request, CancellationToken ct)
+{
+    var concept =
+        await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
+
+    return WordConceptDtoBuilder.BuildDetail(concept);
+}`,
+        satirlar: [
+          {
+            satir: 'public record GetWordByIdQuery(int Id) : IRequest<WordConceptDetailDto>;',
+            aciklama: 'CreateWordCommand\'ın aksine UserId/ActorRole/Force property\'leri YOK — bu bir salt okunur sorgu, kimlik/audit bilgisine ihtiyacı yok (IActivityLogger hiç enjekte edilmedi).',
+            neden: 'GetWordsQueryHandler ile AYNI desen — CQRS\'in "Query" tarafı hiçbir state değiştirmediği için ActivityLog\'a yazacak bir "kim ne yaptı" olayı YOK; CLAUDE.md\'nin ActivityLog kuralı yalnızca "İçerik değiştiren" işlemlere UYGULANIYOR.',
+            olmasaydi: 'GetWordByIdQuery de UserId/ActorRole taşısaydı, WordsController\'daki CurrentUserId/CurrentRole okuma kodu HİÇBİR YERE kullanılmadan gereksiz yere ÇAĞRILIRDI — okuma işlemleri için anlamsız bir parametre taşınırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetWordsQuery.cs — Filtre + Sayfalı Liste Sorgusu',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetWordsQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public record GetWordsQuery(
+    string? DifficultyLevel,
+    string? PartOfSpeech,
+    string? Search,
+    int Page = 1,
+    int PageSize = 20
+) : IRequest<PagedResult<WordConceptListItemDto>>;
+
+public async Task<PagedResult<WordConceptListItemDto>> Handle(GetWordsQuery request, CancellationToken ct)
+{
+    var paged = await _wordConceptRepository.GetPagedAsync(
+        request.DifficultyLevel,
+        request.PartOfSpeech,
+        request.Search,
+        request.Page,
+        request.PageSize,
+        ct
+    );
+
+    return new PagedResult<WordConceptListItemDto>(
+        paged.Items.Select(WordConceptDtoBuilder.BuildListItem).ToList(),
+        paged.TotalCount,
+        paged.Page,
+        paged.PageSize
+    );
+}`,
+        satirlar: [
+          {
+            satir: 'int Page = 1,\n    int PageSize = 20',
+            aciklama: 'Command/Query record\'unun KENDİSİNDE varsayılan değer taşıması — WordsController\'daki `[FromQuery] int page = 1` ile AYNI varsayılanı İKİ KEZ tanımlar (controller parametresi + record parametresi).',
+            neden: 'MediatR record\'ları controller DIŞINDA (ör. ileride bir background job\'dan) de doğrudan `new GetWordsQuery(null, null, null)` ile OLUŞTURULABİLİR olmalı — record\'un kendi varsayılanı olmasaydı Page/PageSize her çağıran tarafından ELLE verilmek ZORUNDA kalırdı.',
+            olmasaydi: 'Yalnızca controller\'da varsayılan olsaydı, GetWordsQueryHandlerTests gibi bir birim test `new GetWordsQuery(null, null, null)` yazdığında (controller\'ı hiç ÇAĞIRMADAN) Page/PageSize\'ı ELLE 1/20 vermek ZORUNDA kalırdı — testin "gerçek varsayılan davranışı" doğrulaması ZORLAŞIRDI.'
+          },
+          {
+            satir: 'paged.Items.Select(WordConceptDtoBuilder.BuildListItem).ToList(),',
+            aciklama: 'Repository\'den dönen `PagedResult<WordConcept>` (entity), `WordConceptDtoBuilder.BuildListItem` ile SATIR SATIR `PagedResult<WordConceptListItemDto>`\'ya (DTO) çevrilir — `BuildDetail` DEĞİL, liste ekranına özel KÜÇÜK projeksiyon kullanılır (Bölüm 6\'nın başındaki "neden ayrı DTO" kararı).',
+            neden: 'TotalCount/Page/PageSize aynı KALIRKEN yalnızca Items\'in İÇERİĞİ (entity→DTO) değişir — PagedResult<T>\'nin generic olması bu dönüşümü `Select` ile TEK satırda yapmayı SAĞLAR, yeni bir sayfalama hesaplaması gerekmez.',
+            olmasaydi: '`BuildDetail` kullanılsaydı (yanlışlıkla), her liste satırı WordDetail/örnek cümleleri de TAŞIRDI — Bölüm 6\'nın başındaki "liste ekranı ağırlaşır" sorunu tam olarak BURADA ortaya ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: "GET /words — Filtre + Sayfa",
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/words?level=A1&partOfSpeech=Noun&search=Tisch&page=1&pageSize=20',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Herhangi bir giriş yapmış kullanıcı çağırabilir ([Authorize], Admin şartı YOK).',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "items": [
+    {
+      "wordConceptId": 1,
+      "partOfSpeech": "Noun",
+      "difficultyLevel": "A1",
+      "imageUrl": null,
+      "translations": [
+        { "languageCode": "de", "text": "Tisch" },
+        { "languageCode": "tr", "text": "masa" }
+      ]
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'Tüm query parametreleri opsiyonel — hiçbiri verilmezse page=1&pageSize=20 varsayılanıyla TÜM kelimeler döner.',
+          'categoryId filtresi HENÜZ YOK — A-06 (Kategoriler) tamamlanınca eklenecek.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /words/{id} — Tam Detay',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/words/1',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "wordConceptId": 1,
+  "partOfSpeech": "Noun",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    {
+      "languageCode": "de",
+      "text": "Tisch",
+      "definition": null,
+      "wordDetail": null,
+      "examples": []
+    }
+  ]
+}`
+        },
+        notlar: [
+          'Var olmayan bir Id için 404 ApiErrorResponse döner (ENTITY_NOT_FOUND).'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'WordEntityBuilder', tanim: 'Create/UpdateWordCommandHandler\'ın PAYLAŞTIĞI statik yardımcı — girdi (WordTranslationInput) → entity ağacı (Word+WordDetail+WordExample).' },
+          { terim: 'WordConceptDtoBuilder', tanim: 'Create/Update/GetById/GetWordsQueryHandler\'ın PAYLAŞTIĞI statik yardımcı — entity ağacı → DTO (BuildDetail/BuildListItem).' },
+          { terim: 'Cascade insert (EF Core)', tanim: 'Bir aggregate root (WordConcept) tek AddAsync ile kaydedilirken, navigation property\'lerine (Words) eklenmiş child nesnelerin de OTOMATİK olarak aynı transaction\'da INSERT edilmesi.' },
+          { terim: 'command with { ... }', tanim: 'C# record "with" ifadesi — Command\'ın immutable bir kopyasını, yalnızca belirtilen property\'ler DEĞİŞTİRİLMİŞ olarak üretir (controller\'ın Force/UserId/ActorRole\'ü eklemesi için kullanılır).' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

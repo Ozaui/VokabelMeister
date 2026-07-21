@@ -96,8 +96,8 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | POST | `/words` | Admin | `WordConcept` + `translations[]` (1 veya 2 dil) tek istekte (aynı dilde Text varsa 409, `?force=true`) |
 | PUT | `/words/{id}` | Admin | `translations[]` güncelle / yeni dil ekle |
 | DELETE | `/words/{id}` | Admin | Soft delete (kavram + tüm diller) |
-| GET | `/word-concepts/unmatched` | Admin | `languageId` bazlı eşleşmemiş (tek dilli) kavram listesi (arama+sayfa) |
-| POST | `/word-concepts/{primaryId}/pair` | Admin | `{ "otherConceptId": X }` → 2. dilin `Words`'ünü `primaryId`'ye taşır, `otherConceptId`'yi siler |
+| GET | `/words/unmatched` | Admin | `languageId` bazlı eşleşmemiş (tek dilli) kavram listesi (arama+sayfa) |
+| POST | `/words/pair` | Admin | `{ "primaryId": X, "otherConceptId": Y }` → 2. dilin `Words`'ünü `primaryId`'ye taşır, `otherConceptId`'yi siler |
 
 ```json
 // POST /words (translations[] 1 dil de olabilir — o zaman kavram "eşleşmemiş" kalır)
@@ -111,15 +111,16 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 // GET /words → data[].{ wordConceptId, partOfSpeech, difficultyLevel, translations[], categories[], userProgress }
 //   + pagination { currentPage, totalPages, totalItems }
 
-// GET /word-concepts/unmatched?languageId=1 → data[].{ wordConceptId, languageCode:"de", text:"Anrufbeantworter",
+// GET /words/unmatched?languageId=1 → data[].{ wordConceptId, languageCode:"de", text:"Anrufbeantworter",
 //   partOfSpeech, difficultyLevel, suggestedMatchConceptId: 87 }
 //   → öneri, Definition'ı (ör. "ama, fakat, ancak") virgülle TOKEN'LARA bölüp her birini karşı
 //     dilin Text havuzuna karşı ayrı ayrı dener (bütün string olarak denenirse hiç eşleşmez)
-// POST /word-concepts/12/pair { "otherConceptId": 87 } → 200 { "wordConceptId": 12, "translations": [...2 dil] }
+// POST /words/pair { "primaryId": 12, "otherConceptId": 87 } → 200 { "wordConceptId": 12, "translations": [...2 dil] }
 // → primaryId = 12 (admin hangi kavram üzerinden "Eşleştir" dediyse o); onaydan önce UI'da
 //   "birincil tarafı değiştir" ile 87 de birincil seçilebilir
 // → Bloklayıcı hata YOK: PartOfSpeech/Category/DifficultyLevel çakışırsa 12'ninki sessizce kazanır
 //   (dile göre tür kayması dilin doğası — hata değil, bkz. Icerik.md "Eşleştirme")
+// → primaryId == otherConceptId ise 400 (SAME_CONCEPT_PAIR_NOT_ALLOWED)
 ```
 
 ## 6. Kategoriler

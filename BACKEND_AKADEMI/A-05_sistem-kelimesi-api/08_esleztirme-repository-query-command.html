@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eşleştirme — Repository + Query/Command</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'esleztirme-repository-query-command',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '07_controller-validator-testler.html',
+    sonrakiBolum: '09_esleztirme-controller-postman-testler.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Eşleştirme Nedir — Neden Ayrı Bir Akış?',
+        aciklama: 'Bölüm 6\'daki translations[] akışı, admin ikisini de biliyorsa (de+tr) bir WordConcept\'i TEK istekte kurar. Ama gerçek veri kaynağı genelde iki AYRI toplu import\'tur (Almanca sözlük + Türkçe sözlük, ayrı zamanlarda) — bu durumda her satır KENDİ WordConcept\'ini tek dille oluşturur ("eşleşmemiş" kalır). Eşleştirme, sonradan admin panelden bu tek-dilli kavramları ikili hâle GETİREN akıştır: GetUnmatchedWordConceptsQuery (listele+öner) + PairWordConceptsCommand (birleştir).',
+        neden: 'Toplu import\'u "önce de\'yi tamamen gir, SONRA tr\'yi tamamen gir, ikisini EL İLE eşleştir" şeklinde ayırmak, "ikisini AYNI ANDA, aynı satırda gir" şeklinde zorlamaktan ÇOK daha gerçekçi — iki dilin sözlük kaynakları nadiren birebir aynı sırada/aynı anda hazır olur.',
+        olmasaydi: 'Eşleştirme akışı olmasaydı, translations[] TEK yol olurdu — admin her kelimeyi iki dilde AYNI ANDA elle girmek ZORUNDA kalırdı, toplu importun asıl faydası (hız) KAYBOLURDU.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'suggestedMatchConceptId — Definition Neden Virgülle Token\'lara Bölünür',
+        aciklama: 'Words.Definition serbest bir "anlam notu" — ör. Almanca "aber" kelimesinin Definition\'ı "ama, fakat, ancak" olabilir (birden fazla Türkçe karşılık). WordMatchSuggestionResolver bu string\'i TEK parça olarak karşı dilin Text havuzuna karşı denemez — virgülle böler ("ama"/"fakat"/"ancak") ve HER birini AYRI dener, ayrıca ters yönü de (adayın Text\'i ↔ havuzdaki Definition token\'ları) kontrol eder.',
+        neden: '795+ satırlık bir sözlüğü admin\'in elle tek tek taraması yerine, sözlükte zaten duran karşı-dil glossu (Definition) bir ÖNERİ olarak kullanmak — admin yalnızca ONAYLAR, sıfırdan aramaz (Icerik.md "Eşleştirme").',
+        olmasaydi: '"ama, fakat, ancak" TEK bir string olarak karşı havuzun Text\'ine karşı denenseydi, hiçbir Word.Text bu virgüllü BÜTÜN string\'e tam eşit OLMAZDI — öneri asla bulunmaz, algoritma sessizce İŞE YARAMAZ hâle gelirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordMatchSuggestionResolver.cs — Öneri Algoritması',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/WordMatchSuggestionResolver.cs',
+        nedenBuKlasor: 'Features/Words/ — WordEntityBuilder/WordConceptDtoBuilder (Bölüm 6) ile AYNI "paylaşılan statik yardımcı" deseni.',
+        kod: `public static class WordMatchSuggestionResolver
+{
+    public static int? FindSuggestion(Word candidate, IReadOnlyList<WordConcept> otherLanguagePool)
+    {
+        var candidateTokens = SplitDefinition(candidate.Definition);
+
+        foreach (var poolConcept in otherLanguagePool)
+        {
+            var poolWord = poolConcept.Words.Single();
+
+            if (candidateTokens.Contains(poolWord.Text, StringComparer.OrdinalIgnoreCase))
+                return poolConcept.Id;
+
+            var poolTokens = SplitDefinition(poolWord.Definition);
+            if (poolTokens.Contains(candidate.Text, StringComparer.OrdinalIgnoreCase))
+                return poolConcept.Id;
+        }
+
+        return null;
+    }
+
+    private static string[] SplitDefinition(string? definition) =>
+        string.IsNullOrWhiteSpace(definition)
+            ? []
+            : definition.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+}`,
+        satirlar: [
+          {
+            satir: 'if (candidateTokens.Contains(poolWord.Text, StringComparer.OrdinalIgnoreCase))',
+            aciklama: 'Yön A: adayın Definition token\'larından (ör. "fakat") biri, havuzdaki bir Word\'ün Text\'ine (ör. Türkçe "fakat") TAM eşleşiyor mu.',
+            neden: 'StringComparer.OrdinalIgnoreCase — Almanca isimler büyük harfle başlar (ör. "Tisch"), admin\'in Definition\'a küçük harfle yazması ("tisch") eşleşmeyi BOZMAMALI; büyük/küçük harf bir DİL kuralı değil, bir veri-girişi tutarsızlığı.',
+            olmasaydi: 'Ordinal (case-sensitive) karşılaştırma kullanılsaydı, admin Definition\'a "Mann" yerine "mann" yazdığında öneri HİÇ bulunmazdı — algoritma teknik olarak ÇALIŞIR ama pratikte çoğu satırda SESSİZCE başarısız OLURDU.'
+          },
+          {
+            satir: 'var poolTokens = SplitDefinition(poolWord.Definition);\n            if (poolTokens.Contains(candidate.Text, StringComparer.OrdinalIgnoreCase))',
+            aciklama: 'Yön B (ters yön): adayın Text\'i, havuzdaki bir kavramın Definition token\'larından biriyle eşleşiyor mu — hangi tarafın önce Definition yazıldığı BELLİ DEĞİL, iki dilden hangisi önce import edildiyse Definition o tarafta olabilir.',
+            neden: 'Icerik.md "Eşleştirme" bölümünün "karşı adayın Text\'i (veya tersi)" notu tam olarak bu — tek yönlü arama, Definition\'ı SONRADAN girilen dilde yazılmış kelimeleri KAÇIRIRDI.',
+            olmasaydi: 'Yalnızca Yön A olsaydı, yalnızca "adayın KENDİ Definition\'ı dolu" durumlarda öneri bulunurdu — Definition\'ı BOŞ ama havuzdaki karşı taraf Definition\'ında bu kelimeyi anan satırlar hiç ÖNERİLMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IWordConceptRepository.cs — 3 Yeni Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IWordConceptRepository.cs',
+        nedenBuKlasor: null,
+        kod: `Task<PagedResult<WordConcept>> GetUnmatchedPagedAsync(
+    int languageId, string? search, int page, int pageSize, CancellationToken ct = default);
+
+Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(
+    int excludeLanguageId, CancellationToken ct = default);
+
+Task<WordConcept> PairAsync(
+    int primaryId, int otherConceptId, int? userId, CancellationToken ct = default);`,
+        satirlar: [
+          {
+            satir: 'Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(\n    int excludeLanguageId, CancellationToken ct = default);',
+            aciklama: 'GetUnmatchedPagedAsync SAYFALI döner (liste ekranı), bu metot SAYFALANMAZ — WordMatchSuggestionResolver öneri üretmek için karşı dilin TÜM eşleşmemiş havuzunu taramak ZORUNDA, yalnızca görünen sayfayı değil.',
+            neden: 'Öneri hesaplaması "şu an ekranda görünen 20 satır" ile SINIRLI olsaydı, doğru eşleşme havuzun 21. satırında olduğunda ASLA bulunamazdı — öneri kalitesi sayfalama sınırına BAĞIMLI olurdu.',
+            olmasaydi: 'Bu metot olmadan GetUnmatchedPagedAsync\'i "diğer dil" için TEKRAR çağırmak gerekirdi ama o metot search/sayfa parametreleri TAŞIR — öneri havuzu için anlamsız bir arayüz KÖTÜYE kullanılmış olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptRepository.cs — Liste ve Havuz Sorguları',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/WordConceptRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<PagedResult<WordConcept>> GetUnmatchedPagedAsync(
+    int languageId, string? search, int page, int pageSize, CancellationToken ct = default)
+{
+    var query = _set
+        .Include(c => c.Words).ThenInclude(w => w.Language)
+        .Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId == languageId));
+
+    if (!string.IsNullOrWhiteSpace(search))
+        query = query.Where(c => c.Words.Any(w => w.Text.Contains(search)));
+
+    var totalCount = await query.CountAsync(ct);
+    var items = await query.OrderBy(c => c.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+
+    return new PagedResult<WordConcept>(items, totalCount, page, pageSize);
+}
+
+public async Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(
+    int excludeLanguageId, CancellationToken ct = default) =>
+    await _set
+        .Include(c => c.Words).ThenInclude(w => w.Language)
+        .Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId != excludeLanguageId))
+        .ToListAsync(ct);`,
+        satirlar: [
+          {
+            satir: '.Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId == languageId));',
+            aciklama: '"Eşleşmemiş" durumu ayrı bir IsMatched kolonuyla TUTULMUYOR (Icerik.md kararı) — burada `Words.Count == 1` ile CANLI olarak türetiliyor; global soft-delete filtresi zaten silinmiş Word\'leri bu sayıma KATMIYOR.',
+            neden: 'Bir durumu hem bir kolonda SAKLAYIP hem her Word ekleme/silmede o kolonu SENKRON tutmak, WordConcept.Words koleksiyonundan HER SEFERİNDE türetmekten daha KIRILGAN — senkron unutulursa kolon YALAN söyler.',
+            olmasaydi: 'IsMatched gibi bir kolon olsaydı, PairAsync (bir sonraki slayt) hem Word taşımayı hem bu kolonu iki kavramda da GÜNCELLEMEYİ unutmamak ZORUNDA kalırdı — CreateWordCommand/UpdateWordCommand da AYNI şekilde.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptRepository.cs — PairAsync (Asıl Birleştirme)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/WordConceptRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<WordConcept> PairAsync(
+    int primaryId, int otherConceptId, int? userId, CancellationToken ct = default)
+{
+    var primary = await GetWithTranslationsAsync(primaryId, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), primaryId);
+    var other = await GetWithTranslationsAsync(otherConceptId, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), otherConceptId);
+
+    var otherWord = other.Words.Single();
+    other.Words.Remove(otherWord);
+    otherWord.WordConceptId = primary.Id;
+    otherWord.UpdatedByUserId = userId;
+    primary.Words.Add(otherWord);
+
+    var now = DateTime.UtcNow;
+    other.IsDeleted = true;
+    other.DeletedAt = now;
+    other.DeletedByUserId = userId;
+    other.UpdatedByUserId = userId;
+
+    await _db.SaveChangesAsync(ct);
+
+    return primary;
+}`,
+        satirlar: [
+          {
+            satir: 'var primary = await GetWithTranslationsAsync(primaryId, ct)',
+            aciklama: 'Yeni bir sorgu YAZILMADI — Bölüm 5\'teki GetWithTranslationsAsync (Language+WordDetail+WordExample dahil TAM yükleme) AYNEN kullanıldı, çünkü dönen `primary` doğrudan WordConceptDtoBuilder.BuildDetail\'e GİDECEK.',
+            neden: 'DeleteWordCommand\'ın SoftDeleteWithWordsAsync\'i de (Bölüm 5) AYNI şekilde tam yükleme yapıyordu — bir aggregate\'i "birleştirmek" veya "silmek" için önce onu TAM hâliyle bilmek gerekir, kısmi bir Include DTO oluşturmada eksik alan BIRAKIRDI.',
+            olmasaydi: 'Yalnızca `Include(c => c.Words)` (Language\'sız) yapan hafif bir sorgu kullanılsaydı, dönen `primary.Words[i].Language.Code` NullReferenceException fırlatırdı — WordConceptDtoBuilder Language\'a HER ZAMAN erişir.'
+          },
+          {
+            satir: 'other.Words.Remove(otherWord);\n    otherWord.WordConceptId = primary.Id;\n    otherWord.UpdatedByUserId = userId;\n    primary.Words.Add(otherWord);',
+            aciklama: 'Word\'ün WordConceptId\'si (yabancı anahtar) değiştirilip navigation koleksiyonları (other.Words / primary.Words) EL İLE senkronlanıyor — EF Core\'un "relationship fixup"ına GÜVENİLMİYOR.',
+            neden: 'SaveChangesAsync\'ten HEMEN sonra `primary` (Words koleksiyonuyla) doğrudan WordConceptDtoBuilder\'a dönüyor — fixup\'ın SaveChanges içindeki DetectChanges\'te NE ZAMAN çalıştığına güvenmek yerine, koleksiyonu EL İLE doğru bırakmak, junior bir okuyucu için de "veri nerede" sorusunu BELİRSİZ bırakmaz.',
+            olmasaydi: 'Yalnızca `otherWord.WordConceptId = primary.Id;` yazılıp koleksiyonlar el ile güncellenmeseydi, kod YİNE ÇALIŞABİLİRDİ (EF fixup\'a bağlı) ama bu davranış OKUYUCUYA görünmeyen, "neden çalışıyor" sorusuna dokümansız bir CEVABI olurdu.'
+          },
+          {
+            satir: 'other.IsDeleted = true;\n    other.DeletedAt = now;\n    other.DeletedByUserId = userId;\n    other.UpdatedByUserId = userId;',
+            aciklama: 'Word\'ü BOŞALAN `other` kavramı, SoftDeleteWithWordsAsync (Bölüm 5) ile AYNI dört alan elle set edilerek soft-delete edilir — artık 0 Word\'ü olan bir WordConcept sistemde ANLAMSIZ.',
+            neden: 'Word taşındıktan sonra `other` kavramı GetWords/GetWordById listelerinde "boş" bir satır olarak KALSAYDI, admin panelinde açıklanamaz bir 0-çevirili kayıt GÖRÜNÜRDÜ.',
+            olmasaydi: '`other` silinmeseydi, aynı iki dilin ayrı ayrı import edildiği HER eşleştirmede sistemde kalıcı, boş, hiçbir öğrenme oturumuna GİRMEYEN "hayalet" WordConcept satırları BİRİKİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetUnmatchedWordConceptsQuery.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetUnmatchedWordConceptsQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public record GetUnmatchedWordConceptsQuery(int LanguageId, string? Search, int Page = 1, int PageSize = 20)
+    : IRequest<PagedResult<UnmatchedWordConceptDto>>;
+
+public async Task<PagedResult<UnmatchedWordConceptDto>> Handle(
+    GetUnmatchedWordConceptsQuery request, CancellationToken ct)
+{
+    var paged = await _wordConceptRepository.GetUnmatchedPagedAsync(
+        request.LanguageId, request.Search, request.Page, request.PageSize, ct);
+    var otherLanguagePool = await _wordConceptRepository.GetUnmatchedOtherLanguagePoolAsync(
+        request.LanguageId, ct);
+
+    var items = paged.Items.Select(concept =>
+    {
+        var word = concept.Words.Single();
+        return new UnmatchedWordConceptDto(
+            concept.Id, word.Language.Code, word.Text, word.Definition,
+            concept.PartOfSpeech, concept.DifficultyLevel,
+            WordMatchSuggestionResolver.FindSuggestion(word, otherLanguagePool));
+    }).ToList();
+
+    return new PagedResult<UnmatchedWordConceptDto>(items, paged.TotalCount, paged.Page, paged.PageSize);
+}`,
+        satirlar: [
+          {
+            satir: 'var otherLanguagePool = await _wordConceptRepository.GetUnmatchedOtherLanguagePoolAsync(\n        request.LanguageId, ct);',
+            aciklama: 'Havuz TEK sefer, sayfa döngüsünün DIŞINDA çekilir — sayfadaki 20 satırın HER biri için ayrı ayrı sorgu ATILMAZ.',
+            neden: 'N+1 sorgu problemi klasik bir performans hatası — 20 satırlık bir sayfa için 20 ayrı "havuzu getir" sorgusu ATILSAYDI, bu Query gereksiz yere YAVAŞLARDI; tek sorgu + in-memory eşleştirme (WordMatchSuggestionResolver) bu maliyeti ÖNLER.',
+            olmasaydi: 'Havuz her `Select` iterasyonunda TEKRAR çekilseydi, sayfa boyutu (pageSize) arttıkça sorgu sayısı DOĞRUSAL olarak artardı — 795+ satırlık gerçek veri ölçeğinde bu FARK EDİLİR bir yavaşlık yaratırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'PairWordConceptsCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/PairWordConceptsCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId) : IRequest<WordConceptDetailDto>
+{
+    public int? UserId { get; init; }
+    public string? ActorRole { get; init; }
+}
+
+public async Task<WordConceptDetailDto> Handle(PairWordConceptsCommand request, CancellationToken ct)
+{
+    var primaryBefore =
+        await _wordConceptRepository.GetWithTranslationsAsync(request.PrimaryId, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), request.PrimaryId);
+    var otherBefore =
+        await _wordConceptRepository.GetWithTranslationsAsync(request.OtherConceptId, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), request.OtherConceptId);
+
+    var oldValue = new
+    {
+        Primary = new
+        {
+            ConceptId = primaryBefore.Id,
+            primaryBefore.PartOfSpeech,
+            primaryBefore.DifficultyLevel,
+            Translations = primaryBefore.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+        },
+        Other = new
+        {
+            ConceptId = otherBefore.Id,
+            otherBefore.PartOfSpeech,
+            otherBefore.DifficultyLevel,
+            Translations = otherBefore.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+        },
+    };
+
+    var merged = await _wordConceptRepository.PairAsync(
+        request.PrimaryId,
+        request.OtherConceptId,
+        request.UserId,
+        ct
+    );
+
+    await _activityLogger.LogAsync(
+        request.UserId,
+        request.ActorRole,
+        "PAIR_WORD_CONCEPTS",
+        entityType: "WordConcept",
+        entityId: merged.Id,
+        oldValue: oldValue,
+        newValue: new
+        {
+            merged.PartOfSpeech,
+            merged.DifficultyLevel,
+            Translations = merged.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+            MergedConceptId = request.OtherConceptId,
+        },
+        ct: ct
+    );
+
+    return WordConceptDtoBuilder.BuildDetail(merged);
+}`,
+        satirlar: [
+          {
+            satir: 'var primaryBefore = await _wordConceptRepository.GetWithTranslationsAsync(request.PrimaryId, ct)\n        ?? throw new EntityNotFoundException(typeof(WordConcept), request.PrimaryId);',
+            aciklama: 'Handler, PairAsync\'in KENDİSİ de ikisini yükleyeceği hâlde primary/other\'ı ÖNCEDEN bir kez daha yükler — amaç mutasyon ÖNCESİ hâli ActivityLog\'un OldValue\'suna yazmak.',
+            neden: 'DeleteWordCommandHandler (Bölüm 5) AYNI çift-yükleme desenini kullanıyordu (silmeden önce OldValue için bir GetWithTranslationsAsync, SONRA repository kendi içinde tekrar yüklüyor) — burada AYNI kod stiline sadık kalındı, admin işlemi (nadir, DB\'ye pahalı değil) için tutarlılık HIZDAN daha DEĞERLİ.',
+            olmasaydi: 'Bu ön-yükleme olmasaydı, OldValue snapshot\'ı ALINAMAZDI — PairAsync geriye yalnızca BİRLEŞMİŞ (yani "after") hâli döner, "birleşmeden ÖNCE primary/other ne durumdaydı" sorusu ActivityLog\'da CEVAPSIZ kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'PairWordConceptsCommandValidator.cs — Tek Gerçek Sınır Kontrolü',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/PairWordConceptsCommandValidator.cs',
+        nedenBuKlasor: 'Validators/Words/ — CreateWordCommandValidator (Bölüm 7) ile AYNI klasör.',
+        kod: `public class PairWordConceptsCommandValidator : AbstractValidator<PairWordConceptsCommand>
+{
+    public PairWordConceptsCommandValidator()
+    {
+        RuleFor(x => x.OtherConceptId)
+            .NotEqual(x => x.PrimaryId)
+            .WithMessage("otherConceptId must differ from primaryId.")
+            .WithErrorCode("SAME_CONCEPT_PAIR_NOT_ALLOWED");
+    }
+}`,
+        satirlar: [
+          {
+            satir: '.NotEqual(x => x.PrimaryId)',
+            aciklama: 'Icerik.md "Eşleştirme" bölümünün "bloklayıcı hata YOK" kuralı yalnızca PartOfSpeech/Category/DifficultyLevel ÇAKIŞMASI için geçerli — primaryId==otherConceptId FARKLI bir sorun: aynı EF Core DbContext aynı Id\'yi İKİ KEZ sorgulayınca identity map AYNI tracked nesneyi döner, `other.Words.Remove` çağrısı `primary.Words`\'ü de BOZAR (aynı koleksiyon referansı).',
+            neden: 'Bu bir "iş kuralı ihlali" değil bir "girdi hatası" — admin panel arayüzü zaten aynı satırı iki kez SEÇTİRMEZ ama API doğrudan çağrılırsa (Postman, otomasyon) bu durumu ÖNLEMEK gerekir; CLAUDE.md "yalnızca sistem sınırında doğrula" ilkesine TAM uyar (client input, gerçek bir sınır).',
+            olmasaydi: 'Bu kural olmasaydı, primaryId==otherConceptId ile gelen bir istek WordConceptRepository.PairAsync içinde `other.Words.Single()` sonrası `primary.Words.Add` çağrısında BEKLENMEDİK bir koleksiyon durumuna (aynı nesne üzerinde Remove+Add) yol açıp anlaşılması ZOR bir hataya NEDEN olurdu.'
+          }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

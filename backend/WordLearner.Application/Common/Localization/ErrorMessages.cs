@@ -69,6 +69,41 @@ public static class ErrorMessages
             ["tr"] = "Bu QR oturumunu yalnızca onu tarayan cihaz onaylayabilir/reddedebilir.",
             ["de"] = "Diese QR-Sitzung kann nur von dem Gerät bestätigt/abgelehnt werden, das sie gescannt hat.",
         },
+        ["WORD_TEXT_ALREADY_EXISTS"] = new()
+        {
+            ["tr"] = "Bu dilde aynı metne sahip bir kelime zaten var. Yine de eklemek için 'force' seçeneğini kullanın.",
+            ["de"] = "Es gibt bereits ein Wort mit demselben Text in dieser Sprache. Verwenden Sie die Option 'force', um es trotzdem hinzuzufügen.",
+        },
+        ["PART_OF_SPEECH_REQUIRED"] = new()
+        {
+            ["tr"] = "Kelime türü (partOfSpeech) zorunludur.",
+            ["de"] = "Die Wortart (partOfSpeech) ist erforderlich.",
+        },
+        ["DIFFICULTY_LEVEL_REQUIRED"] = new()
+        {
+            ["tr"] = "Zorluk seviyesi (difficultyLevel) zorunludur.",
+            ["de"] = "Der Schwierigkeitsgrad (difficultyLevel) ist erforderlich.",
+        },
+        ["TRANSLATIONS_REQUIRED"] = new()
+        {
+            ["tr"] = "En az bir dilde çeviri girilmelidir.",
+            ["de"] = "Mindestens eine Übersetzung in einer Sprache ist erforderlich.",
+        },
+        ["LANGUAGE_CODE_REQUIRED"] = new()
+        {
+            ["tr"] = "Dil kodu (languageCode) zorunludur.",
+            ["de"] = "Der Sprachcode (languageCode) ist erforderlich.",
+        },
+        ["WORD_TEXT_REQUIRED"] = new()
+        {
+            ["tr"] = "Kelime metni (text) zorunludur.",
+            ["de"] = "Der Wortlaut (text) ist erforderlich.",
+        },
+        ["SAME_CONCEPT_PAIR_NOT_ALLOWED"] = new()
+        {
+            ["tr"] = "Bir kavram kendisiyle eşleştirilemez.",
+            ["de"] = "Ein Konzept kann nicht mit sich selbst verknüpft werden.",
+        },
 
         // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
         //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye

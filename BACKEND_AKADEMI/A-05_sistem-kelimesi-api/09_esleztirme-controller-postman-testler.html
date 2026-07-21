@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eşleştirme — Controller + Postman + Testler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'esleztirme-controller-postman-testler',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '08_esleztirme-repository-query-command.html',
+    sonrakiBolum: '10_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'WordsController.cs — /words/unmatched ve /words/pair',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/WordsController.cs',
+        nedenBuKlasor: null,
+        kod: `[HttpGet("unmatched")]
+[Authorize(Roles = "Admin")]
+public async Task<ActionResult<PagedResult<UnmatchedWordConceptDto>>> GetUnmatchedWords(
+    [FromQuery] int languageId, [FromQuery] string? search,
+    [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+{
+    var query = new GetUnmatchedWordConceptsQuery(languageId, search, page, pageSize);
+    return Ok(await _mediator.Send(query, ct));
+}
+
+[HttpPost("pair")]
+[Authorize(Roles = "Admin")]
+public async Task<ActionResult<WordConceptDetailDto>> PairWordConcepts(
+    PairWordConceptsCommand command, CancellationToken ct) =>
+    Ok(await _mediator.Send(command with { UserId = CurrentUserId, ActorRole = CurrentRole }, ct));`,
+        satirlar: [
+          {
+            satir: '[HttpGet("unmatched")]',
+            aciklama: 'Aynı WordsController\'a EKLENDİ, yeni bir WordConceptsController AÇILMADI — REFERENCE/API_ENDPOINTS.md ilk taslakta `/word-concepts/unmatched` yazsa da, TASK.md\'nin somut plan maddesi rotayı `/words/unmatched` olarak netleştirdi; bu bölümde doc o gerçek rotaya göre GÜNCELLENDİ.',
+            neden: '`[HttpGet("{id:int}")]` zaten var olan bir rota — "unmatched" bir tamsayı OLMADIĞI için `{id:int}` kısıtlamasıyla ÇAKIŞMAZ, ayrı bir controller açmak (2 endpoint için) YAGNI olurdu.',
+            olmasaydi: 'Ayrı bir WordConceptsController açılsaydı, CurrentUserId/CurrentRole gibi ORTAK yardımcılar (Bölüm 7) ya İKİ controller\'da TEKRAR yazılır ya da paylaşılan bir base class GEREKTİRİRDİ — 2 endpoint için gereksiz bir soyutlama.'
+          },
+          {
+            satir: 'Ok(await _mediator.Send(command with { UserId = CurrentUserId, ActorRole = CurrentRole }, ct));',
+            aciklama: 'PairWordConceptsCommand\'ın PrimaryId/OtherConceptId alanları BODY\'den (model binding) gelir, UserId/ActorRole JWT\'den `with` ile SONRADAN eklenir — CreateWord/UpdateWord (Bölüm 7) ile BİREBİR aynı desen.',
+            neden: 'API_ENDPOINTS.md\'nin ilk taslağındaki `/word-concepts/{primaryId}/pair` (URL\'de primaryId) yerine TEK bir body {primaryId, otherConceptId} tercih edildi — PairWordConceptsCommand zaten İKİ id\'yi de taşıyan bir record, URL+body\'ye BÖLMEK gereksiz bir ikilik yaratırdı.',
+            olmasaydi: 'primaryId URL\'de olsaydı, controller `command with { PrimaryId = primaryId, ... }` gibi bir ÜÇÜNCÜ kaynaktan (route parametresi) veri toplardı — CreateWord/UpdateWord/DeleteWord\'ün {id:int} deseniyle TUTARSIZ bir üçüncü örüntü OLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /words/unmatched — Eşleşmemiş Kavramlar + Öneri',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/words/unmatched?languageId=1&page=1&pageSize=20',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı — [Authorize(Roles="Admin")]. languageId=1 = Almanca (Languages seed sırası, Bölüm 3).',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "items": [
+    {
+      "wordConceptId": 41,
+      "languageCode": "de",
+      "text": "aber",
+      "definition": "ama, fakat, ancak",
+      "partOfSpeech": "Conjunction",
+      "difficultyLevel": "A1",
+      "suggestedMatchConceptId": 87
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'suggestedMatchConceptId null ise havuzda hiçbir Text/Definition örtüşmesi bulunamamıştır — admin listeyi elle tarar.',
+          '`search` opsiyonel query parametresi, yalnızca o dildeki Text içinde arar (GET /words\'teki search ile aynı davranış, Bölüm 6).'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /words/pair — İki Kavramı Birleştir',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/words/pair',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Bir önceki slaytın önerisini onaylıyoruz: primaryId=41 (de "aber"), otherConceptId=87 (tr "fakat").',
+        govde: `{
+  "primaryId": 41,
+  "otherConceptId": 87
+}`,
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "wordConceptId": 41,
+  "partOfSpeech": "Conjunction",
+  "difficultyLevel": "A1",
+  "imageUrl": null,
+  "translations": [
+    { "languageCode": "de", "text": "aber", "definition": "ama, fakat, ancak", "wordDetail": null, "examples": [] },
+    { "languageCode": "tr", "text": "fakat", "definition": null, "wordDetail": null, "examples": [] }
+  ]
+}`
+        },
+        notlar: [
+          'İşlem sonrası wordConceptId=87 artık GET /words/{id} ile bulunamaz — soft-delete edildi (404 ApiErrorResponse döner).',
+          'primaryId ile otherConceptId AYNI gönderilirse 400 ApiErrorResponse (SAME_CONCEPT_PAIR_NOT_ALLOWED) döner.',
+          'PartOfSpeech/DifficultyLevel iki tarafta FARKLI olsa bile istek yine 200 döner — primaryId\'ninki (burada "Conjunction"/"A1") sessizce kazanır, hiçbir 409 fırlatılmaz.'
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Eşleştirme Testleri — Neden "Hata Fırlatılmaması" da Test Edilir',
+        aciklama: '9 yeni test, 2 dosyada: GetUnmatchedWordConceptsQueryHandlerTests (4 — filtre iletimi, Definition→Text öneri, Text→Definition ters yön öneri, örtüşme yoksa null) ve PairWordConceptsCommandHandlerTests (5 — mutlu yol, PartOfSpeech ÇAKIŞMASINDA BİLE exception FIRLATILMADIĞI, primary/other 404, PAIR_WORD_CONCEPTS audit).',
+        neden: 'Çoğu test "X girilirse Y hatası fırlar" doğrular — burada TERSİ de kritik: "PartOfSpeech farklıyken bile act.Should().NotThrowAsync()" testi, Icerik.md\'nin "bloklayıcı hata YOK" kararının gelecekte YANLIŞLIKLA bir Handler\'a 409 kontrolü eklenmesini ENGELLER (test kırmızıya döner).',
+        olmasaydi: 'Bu "fırlatmama" testi olmasaydı, bir sonraki geliştirici PartOfSpeech farkını "muhtemelen bir hata" sanıp CreateWordCommand\'daki DuplicateWordException deseniyle bir kontrol EKLEYEBİLİRDİ — Icerik.md\'nin bilinçli mimari kararı sessizce İHLAL edilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'PairWordConceptsCommandHandlerTests.cs — Çakışma Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Words/PairWordConceptsCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Words/ — CreateWordCommandHandlerTests (Bölüm 7) ile AYNI klasör.',
+        kod: `[Fact]
+public async Task Pair_ConflictingPartOfSpeech_MergesWithoutThrowing()
+{
+    // ARRANGE
+    var primary = Concept(12, "Verb", "A1", German, "anrufen");
+    var other = Concept(87, "Noun", "A1", Turkish, "telefon görüşmesi");
+    var merged = Concept(12, "Verb", "A1", German, "anrufen");
+    merged.Words.Add(new Word { WordConceptId = 12, LanguageId = Turkish.Id, Language = Turkish, Text = "telefon görüşmesi" });
+
+    _wordConceptRepo.Setup(r => r.GetWithTranslationsAsync(12, It.IsAny<CancellationToken>())).ReturnsAsync(primary);
+    _wordConceptRepo.Setup(r => r.GetWithTranslationsAsync(87, It.IsAny<CancellationToken>())).ReturnsAsync(other);
+    _wordConceptRepo
+        .Setup(r => r.PairAsync(12, 87, It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+        .ReturnsAsync(merged);
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(new PairWordConceptsCommand(12, 87), default);
+    var result = await act();
+
+    // ASSERT
+    await act.Should().NotThrowAsync();
+    result.PartOfSpeech.Should().Be("Verb");
+}`,
+        satirlar: [
+          {
+            satir: 'var primary = Concept(12, "Verb", "A1", German, "anrufen");\n    var other = Concept(87, "Noun", "A1", Turkish, "telefon görüşmesi");',
+            aciklama: 'Icerik.md\'nin verdiği GERÇEK örnek kullanıldı — Almanca ayrılabilir bir fiil ("anrufen" = aramak) Türkçede bir isim tamlaması ("telefon görüşmesi") olabilir; PartOfSpeech Verb↔Noun FARKLI ama bu bir VERİ HATASI değil.',
+            neden: 'Rastgele bir çakışma (ör. "A"/"B") yerine dokümandaki GERÇEK dilbilimsel örneği kullanmak, testi okuyan bir junior\'a "bu neden hata SAYILMIYOR" sorusunu SOMUT bir örnekle CEVAPLAR.',
+            olmasaydi: 'Soyut bir çakışma kullanılsaydı (ör. "Noun"/"Adjective" rastgele), test YİNE geçerdi ama okuyucu "bu gerçekten mantıklı mı yoksa test verisi mi keyfi" sorusunu KENDİ başına Icerik.md\'ye GERİ DÖNÜP doğrulamak ZORUNDA kalırdı.'
+          },
+          {
+            satir: 'result.PartOfSpeech.Should().Be("Verb");',
+            aciklama: 'Yalnızca "hata fırlamadı" değil, "primaryId\'nin (12, Verb) PartOfSpeech\'i KAZANDI" da doğrulanıyor — otherın "Noun"u sessizce GÖRMEZDEN gelindi.',
+            neden: '"Exception fırlamadı" tek başına yeterli değil — Handler yanlışlıkla otherın PartOfSpeech\'ini kazandıran bir kod yazsaydı (primary/other karışıklığı), bu da hatasız ÇALIŞIRDI ama YANLIŞ sonuç ÜRETİRDİ; sonuç değerinin doğrulanması bu sınıf hatayı da YAKALAR.',
+            olmasaydi: 'Yalnızca NotThrowAsync() kontrol edilseydi, primary/other parametrelerinin YER DEĞİŞTİRDİĞİ bir Handler hatası (result.PartOfSpeech "Noun" dönse bile) bu test TARAFINDAN fark EDİLMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Test Senaryoları — Aynı Pattern İzler',
+        terimler: [
+          { terim: 'GetUnmatched_DefinitionMatchesPoolText / PoolDefinitionMatchesCandidateText', tanim: 'WordMatchSuggestionResolver\'ın İKİ yönünü (Definition→Text ve Text→Definition) AYRI AYRI doğrular — Icerik.md "aber"→"ama, fakat, ancak" örneğiyle BİREBİR.' },
+          { terim: 'GetUnmatched_NoOverlap_SuggestedMatchConceptIdIsNull', tanim: 'Havuzda hiçbir örtüşme yoksa exception DEĞİL, `null` döndüğü doğrulanır — öneri bulunamaması bir HATA durumu değil, "liste elle taranır" NORMAL bir sonuç.' },
+          { terim: 'Pair_PrimaryNotFound / OtherConceptNotFound', tanim: 'Var olmayan bir Id — GetWithTranslationsAsync null dönünce EntityNotFoundException (404), PairAsync\'in HİÇ çağrılmadığı (Times.Never) ayrıca doğrulanır (Delete deseniyle AYNI, Bölüm 7).' },
+          { terim: 'Pair_Success_LogsPairWordConceptsActivity', tanim: 'IActivityLogger.LogAsync\'in "PAIR_WORD_CONCEPTS" action\'ı, EntityType="WordConcept", entityId=primaryId (BİRLEŞMİŞ kavramın Id\'si) ile çağrıldığı doğrulanır — CREATE/UPDATE/DELETE_WORD (Bölüm 6-7) ile AYNI IActivityLogger deseni.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm Özeti — Eşleştirme Akışı Tamamlandı',
+        maddeler: [
+          'WordMatchSuggestionResolver — Definition\'ı virgülle token\'lara bölüp İKİ yönlü (Definition↔Text) öneri arayan paylaşılan yardımcı.',
+          'IWordConceptRepository + WordConceptRepository — GetUnmatchedPagedAsync (sayfalı liste), GetUnmatchedOtherLanguagePoolAsync (sayfalanmayan öneri havuzu), PairAsync (Word taşıma + soft-delete, tek SaveChangesAsync).',
+          'GetUnmatchedWordConceptsQuery + PairWordConceptsCommand — CreateWord/UpdateWord/DeleteWord (Bölüm 6-7) ile AYNI MediatR CQRS deseni.',
+          'PairWordConceptsCommandValidator — tek kural: otherConceptId != primaryId (identity map çakışmasını önler).',
+          'WordsController — GET /words/unmatched, POST /words/pair — yeni bir controller AÇILMADAN, mevcut Admin-rollü yapıya eklendi.',
+          'PAIR_WORD_CONCEPTS ActivityLog entegrasyonu — OldValue (birleşmeden önce primary+other), NewValue (birleşmiş sonuç + MergedConceptId).',
+          '9 yeni birim testi (2 dosya) — toplam 193/193 yeşil (184 + 9).',
+          'A-05 (Sistem Kelimesi API) BURADA TAMAMLANDI — sıradaki görev A-06 (Kategori API).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

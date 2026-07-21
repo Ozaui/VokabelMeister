@@ -201,7 +201,7 @@
       Toplam 144/144 yeşil.
 - [x] ➜ **BACKEND_AKADEMI'ye işle**
 
-### A-05 — Sistem Kelimesi API (Words) 🔄
+### A-05 — Sistem Kelimesi API (Words) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §5
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
 - [x] **Entity:** `Language`, `WordConcept`, `Word`, `WordDetail`, `WordExample` + EF config + migration
@@ -235,11 +235,34 @@
       validator.html` — 6 slayt, her satır tek tek açıklandı: alan sabitleri, constructor/Custom
       rule, EnumerateFailures dağıtımı, ValidateGerman/ValidateTurkish, JsonElement yardımcı
       metotları)
-- [ ] `IWordService` + `WordService` (liste filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya
-      2 dil tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`; 1 dilse kavram
-      "eşleşmemiş" kalır — bkz. `Icerik.md` "Eşleştirme")
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı, tek dilli kavram listesi +
+- [x] `IWordConceptRepository`/`WordConceptRepository` + `ILanguageRepository`/`LanguageRepository`
+      (sayfalı liste, tüm dilleriyle detay, duplikat kontrolü, kavram+diller birlikte soft delete)
+      + 5 MediatR Command/Query (`Application/Features/Words/`): `CreateWordCommand`,
+      `UpdateWordCommand`, `DeleteWordCommand`, `GetWordByIdQuery`, `GetWordsQuery` — paylaşılan
+      `WordEntityBuilder` (girdi→entity ağacı) ve `WordConceptDtoBuilder` (entity ağacı→DTO,
+      koşullu AutoMapper kuralına göre elle inşa edildi) + `DuplicateWordException` (409,
+      `WORD_TEXT_ALREADY_EXISTS`) + `CreateWordCommandValidator`/`UpdateWordCommandValidator`
+      (FluentValidation, `WordGrammarValidator`'ı her `translations[]` öğesi için çağırır).
+      `translations[]` 1 veya 2 dil tek işlemde oluşturulur/güncellenir, duplikat 409 + `?force=true`;
+      1 dilse kavram "eşleşmemiş" kalır, `PUT` ile eksik dil eklenerek eşleştirilebilir —
+      bkz. `Icerik.md` "Eşleştirme"
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`05_repository-katmani.html`, `06_command-handlerlari.html`)
+- [x] `WordsController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD — projedeki
+      İLK `[Authorize(Roles="Admin")]` kullanımı)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`07_controller-validator-testler.html`)
+- [x] **`IActivityLogger` entegrasyonu** (A-04'te yazıldı — bkz. `Loglama_Domain.md`, `Action` kolonunun
+      örnek değeri zaten `CREATE_WORD` idi): `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD` üç Command
+      Handler'da (`EntityType=WordConcept`, `OldValue`/`NewValue` JSON diff) — `PAIR_WORD_CONCEPTS`
+      aşağıdaki "Eşleştirme" adımıyla birlikte eklenecek, henüz YOK.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`06_command-handlerlari.html` içindeki Handler kod slaytlarına işlendi)
+- [x] **Birim testleri:** `CreateWordCommandHandlerTests` (5 — tek/iki dil, duplikat 409 + force
+      bypass, bilinmeyen dil 404, CREATE_WORD audit), `UpdateWordCommandHandlerTests` (5 — mevcut
+      çeviri güncelleme, eşleştirme ile ikinci dil ekleme, duplikat 409, 404, UPDATE_WORD audit),
+      `DeleteWordCommandHandlerTests` (3 — soft delete çağrısı, 404, DELETE_WORD audit),
+      `GetWordByIdQueryHandlerTests` (2), `GetWordsQueryHandlerTests` (1 — filtre/sayfa iletimi).
+      Toplam 184/184 yeşil (167 + 17).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`07_controller-validator-testler.html`)
+- [x] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı, tek dilli kavram listesi +
       `suggestedMatchConceptId` — karşı dilin `Definition`↔`Text` örtüşmesiyle önerilen aday;
       `Definition` virgülle ayrılmış çoklu karşılık içerebildiği için [ör. "ama, fakat, ancak"]
       **token'lara bölünüp her biri ayrı denenir**, tek string olarak denenmez — yoksa hiç
@@ -248,21 +271,25 @@
       (`primaryId`+`otherConceptId` → 2. dilin `Words`'ünü taşı, boş kalan kavramı sil;
       `primaryId` = admin'in işlemi başlattığı taraf; **bloklayıcı hata yok** —
       `PartOfSpeech`/`Category`/`DifficultyLevel` çakışsa bile `primaryId`'ninki sessizce kazanır,
-      çünkü diller arası tür kayması dilin doğası, veri hatası değil) —
+      çünkü diller arası tür kayması dilin doğası, veri hatası değil) — paylaşılan
+      `WordMatchSuggestionResolver` (iki yönlü Definition↔Text arama) + `IWordConceptRepository`'ye
+      3 yeni metot (`GetUnmatchedPagedAsync`/`GetUnmatchedOtherLanguagePoolAsync`/`PairAsync`) +
+      `PairWordConceptsCommandValidator` (`otherConceptId != primaryId`, `SAME_CONCEPT_PAIR_NOT_ALLOWED`) —
       `Icerik.md` "Eşleştirme" bölümü tek doğruluk kaynağı
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `WordController` (`[Authorize]` liste/detay, `[Authorize(Roles="Admin")]` CRUD+eşleştirme)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **`IActivityLogger` entegrasyonu** (A-04'te yazıldı — bkz. `Loglama_Domain.md`, `Action` kolonunun
-      örnek değeri zaten `CREATE_WORD` idi): `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/
-      `PAIR_WORD_CONCEPTS` (`EntityType=WordConcept`, `OldValue`/`NewValue` JSON diff — eşleştirmede
-      birleşen iki kavramın id'leri `Detail`e yazılır)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `WordServiceTests` (liste filtre, duplikat 409 + force, CRUD yetki,
-      eşleştirme mutlu yol + `PartOfSpeech`/`Category` çakışmasında sessizce `primaryId`'nin kazanması
-      [hata fırlatılmaması], `suggestedMatchConceptId` üretimi, `WordGrammarValidator` her
-      dil×tür kombinasyonu için, `IActivityLogger` çağrısı doğru `Action`/`EntityType` ile)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`08_esleztirme-repository-query-command.html`)
+- [x] `WordsController`'a eşleştirme endpoint'leri (`GET /words/unmatched`, `POST /words/pair`) —
+      `docs/REFERENCE/API_ENDPOINTS.md`/`Icerik.md`'deki eski `/word-concepts/...` taslağı bu gerçek
+      rotaya göre güncellendi (ayrı bir controller açılmadı, YAGNI)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`09_esleztirme-controller-postman-testler.html`)
+- [x] **`IActivityLogger` entegrasyonu:** `PAIR_WORD_CONCEPTS` (`EntityType=WordConcept`,
+      `OldValue`=birleşmeden önce primary+other, `NewValue`=birleşmiş sonuç + `MergedConceptId`)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`09_esleztirme-controller-postman-testler.html`)
+- [x] **Birim testleri:** eşleştirme mutlu yol + `PartOfSpeech`/`Category` çakışmasında sessizce
+      `primaryId`'nin kazanması (hata fırlatılmaması), `suggestedMatchConceptId` üretimi
+      (çoklu `Definition` token'lara bölünerek denenmesi + ters yön dahil), primary/other 404,
+      `IActivityLogger` çağrısı doğru `Action`/`EntityType` ile — 9 yeni test (2 dosya),
+      toplam 193/193 yeşil (184 + 9)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`09_esleztirme-controller-postman-testler.html` + kapanış `10_ozet-sozluk.html`)
 
 ### A-06 — Kategori API (Categories) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §6

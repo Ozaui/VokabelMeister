@@ -157,7 +157,7 @@ girilir) + o dilin `Words`/`WordDetail`/`WordExample`'ı. **Eşleşene kadar bu 
 oturumuna girmez** — `LearningSessions` sorgusu yalnızca 2 dilli (eşleşmiş) `WordConcept`'leri kaynak alır.
 
 **Eşleştirme işlemi (Admin panel, B-03'ün bir parçası — bkz. A-05):**
-- `GET /word-concepts/unmatched?languageId={id}` — o dilde eşleşmemiş kavramların listesi (arama+sayfa),
+- `GET /words/unmatched?languageId={id}` — o dilde eşleşmemiş kavramların listesi (arama+sayfa),
   her satırda **`suggestedMatchConceptId`** (varsa) — karşı dilin eşleşmemiş havuzunda bu kavramın
   `Definition`'ı (serbest anlam notu, bkz. `Words.Definition` yorumu) ile karşı adayın `Text`'i
   (veya tersi) örtüşen en iyi aday. **`Definition` virgülle (`,`) ayrılmış birden fazla karşılık
@@ -166,7 +166,7 @@ oturumuna girmez** — `LearningSessions` sorgusu yalnızca 2 dilli (eşleşmiş
   hiçbir tekil kelimeye tam eşleşmez, öneri hiç bulunmaz). **Amaç:** 795+ satırı admin'in elle tek
   tek taraması yerine, halihazırda satırlarda duran karşı-dil glossu bir öneri olarak kullanmak —
   admin yalnızca **onaylar**, sıfırdan aramaz. Öneri yoksa liste manuel taranır.
-- `POST /word-concepts/{primaryId}/pair` `{ "otherConceptId": X }` — `otherConceptId`'nin tek
+- `POST /words/pair` `{ "primaryId": Y, "otherConceptId": X }` — `otherConceptId`'nin tek
   `Words` satırını `primaryId`'ye taşır (`WordConceptId` güncellenir), `otherConceptId`'yi (artık
   boş kalan kavram) siler. Sonuç: tek `WordConcept`, 2 dilde `Words`. **Bloklayıcı hata yok** —
   eşleştirme her zaman başarılı olur.

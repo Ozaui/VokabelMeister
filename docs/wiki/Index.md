@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. Sırada **A-05 (Sistem Kelimesi API)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. Sırada **A-06 (Kategori API)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -140,6 +140,46 @@
 - `BACKEND_AKADEMI/A-04_loglama-sistemi/` (12 bölüm) — zincir A-03.3'ün son bölümüne bağlandı, kök
   `index.html`'e kart eklendi.
 
+### Yazılmış Kod Düğümleri (A-05 — Sistem Kelimesi API, tamamlandı)
+- [[Icerik_Domain]] — `Language`/`WordConcept`/`Word`/`WordDetail`/`WordExample` entity+config
+  (`Language` `BaseEntity`'den TÜREMEZ — statik seed/referans tablosu), tek migration
+  (`AddWordsSchema`), `Languages` seed (`de`,`tr`).
+- `WordGrammarValidator` (`Application/Validators/Words/`) — `AbstractValidator<WordGrammarInput>`,
+  Command'a bağlı değil bağımsız/tekrar kullanılabilir; `LanguageId`'ye göre dile, sonra
+  `PartOfSpeech`'e göre türe dallanır ([[Alman_Dili_Ozellikleri]] §10 / [[Turkce_Dili_Ozellikleri]]
+  §9), 22 `ErrorMessages` kodu, 23 birim testi.
+- `IWordConceptRepository`/`WordConceptRepository` (aggregate root — Word/WordDetail/WordExample
+  için AYRI repository AÇILMADI) + `ILanguageRepository`/`LanguageRepository` (`BaseEntity`'siz
+  istisna) + `DuplicateWordException` (409, `WORD_TEXT_ALREADY_EXISTS`).
+- **7 MediatR Command/Query** (`Application/Features/Words/`): `CreateWordCommand`,
+  `UpdateWordCommand` (mevcut çeviri güncelleme VEYA eksik dili ekleyerek eşleştirme),
+  `DeleteWordCommand` (cascade soft delete — `SoftDeleteWithWordsAsync`), `GetWordByIdQuery`,
+  `GetWordsQuery`, `GetUnmatchedWordConceptsQuery`, `PairWordConceptsCommand` — paylaşılan
+  `WordEntityBuilder` (girdi→entity), `WordConceptDtoBuilder` (entity→DTO, koşullu AutoMapper
+  kuralına göre elle inşa) ve `WordMatchSuggestionResolver` (Definition'ı virgülle token'lara
+  bölüp İKİ yönlü — Definition↔Text — öneri arayan saf statik yardımcı).
+- `PairWordConceptsCommandValidator` — tek kural: `otherConceptId != primaryId` (aynı
+  `DbContext`'in aynı Id'yi iki kez yüklemesiyle oluşacak identity-map çakışmasını önler,
+  `SAME_CONCEPT_PAIR_NOT_ALLOWED`).
+- `WordsController` — projedeki İLK `[Authorize(Roles="Admin")]` kullanımı; 7 endpoint:
+  `GET/POST/PUT/DELETE /words`, `GET /words/{id}`, `GET /words/unmatched`, `POST /words/pair`
+  (Eşleştirme için ayrı bir controller AÇILMADI, YAGNI).
+- **`IActivityLogger` entegrasyonu:** `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`
+  dört Handler'da (`EntityType=WordConcept`, `OldValue`/`NewValue` JSON diff).
+- **Eşleştirme (Pairing) mimari kararı:** ayrı ayrı import edilen `de`/`tr` içeriğini birleştirirken
+  **bloklayıcı hata YOK** — `PartOfSpeech`/`Category`/`DifficultyLevel` çakışsa bile `primaryId`
+  (admin'in işlemi başlattığı taraf) sessizce kazanır, çünkü diller arası tür kayması dilin doğası,
+  veri hatası değil (bkz. [[Icerik_Domain]] "Eşleştirme").
+- **Doküman senkronizasyonu:** eşleştirme uç noktaları ilk taslakta `/word-concepts/unmatched` +
+  `/word-concepts/{primaryId}/pair` (ayrı bir controller varsayan eski tasarım) olarak
+  dokümante edilmişti; gerçek kod mevcut `WordsController`'a eklendi (`/words/unmatched`,
+  `/words/pair`, `primaryId` body'de) — `API_ENDPOINTS.md`/`Icerik.md`/bu wiki güncellendi.
+- **Birim testleri:** 5 CRUD Handler test dosyası (17 test) + `GetUnmatchedWordConceptsQueryHandlerTests`
+  (4) + `PairWordConceptsCommandHandlerTests` (5) — **toplam 193/193 birim testi yeşil**
+  (167 grammar-öncesi + 17 CRUD + 9 eşleştirme).
+- `BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` (10 bölüm, ilk kez bir `ozet-sozluk` kapanışı aldı) —
+  zincir A-04'ün son bölümüne bağlı, kök `index.html`'e kart eklendi.
+
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
 
 - [[Veritabani_Semasi]] — ERD özeti, genel kurallar
@@ -169,7 +209,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, sıradaki A-05) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, sıradaki A-06) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -1026,3 +1066,35 @@ A-04_loglama-sistemi/` (12 bölüm) yazıldı, zincir A-03.3'e bağlandı. **Etk
 `docs/TASK.md`, `docs/TASK/{A_admin_panel_backend,C_kullanici_backend}.md`, `docs/wiki/Database/
 Loglama_Domain.md` (yeniden yazıldı), bu dosya, kök `CLAUDE.md` (2 yeni kural). **Sıradaki task:
 A-05 (Sistem Kelimesi API — Words).***
+
+*Otuz üçüncü INGEST (2026-07-21) — **A-05 (Sistem Kelimesi API) tamamlandı ✅** (CRUD katmanı bir
+önceki oturumda yazılmıştı; bu oturumda yalnızca kalan tek parça — "Eşleştirme" akışı — eklendi):
+`WordMatchSuggestionResolver` (Definition'ı virgülle token'lara bölüp İKİ yönlü — Definition↔Text —
+öneri arayan saf statik yardımcı, Icerik.md "Eşleştirme"deki "çoklu eşanlamlıdan yalnızca biri
+eşleştirilir" kararına birebir uyar) → `IWordConceptRepository`'ye 3 yeni metot
+(`GetUnmatchedPagedAsync` sayfalı liste, `GetUnmatchedOtherLanguagePoolAsync` sayfalanmayan öneri
+havuzu, `PairAsync` — Word'ü taşıyıp boş kalan kavramı soft-delete eden tek `SaveChangesAsync`) →
+`GetUnmatchedWordConceptsQuery` + `PairWordConceptsCommand` (CreateWord/UpdateWord/DeleteWord ile
+BİREBİR aynı MediatR CQRS deseni) → `PairWordConceptsCommandValidator` (tek kural:
+`otherConceptId != primaryId` — identity map çakışmasını önler, `SAME_CONCEPT_PAIR_NOT_ALLOWED`) →
+`WordsController`'a `GET /words/unmatched` + `POST /words/pair` (yeni bir controller AÇILMADI) →
+`PAIR_WORD_CONCEPTS` `IActivityLogger` entegrasyonu (OldValue=birleşmeden önce primary+other,
+NewValue=birleşmiş sonuç+`MergedConceptId`) → 9 yeni birim testi (2 dosya), **toplam 193/193 yeşil**
+(184+9).
+
+**Doküman düzeltmesi (drift):** `docs/REFERENCE/API_ENDPOINTS.md`, `docs/DATABASE_SCHEMA/Icerik.md`
+ve bu wikinin [[Icerik_Domain]] sayfası eşleştirme uç noktalarını `GET /word-concepts/unmatched` +
+`POST /word-concepts/{primaryId}/pair` (ayrı bir kaynak controller varsayan eski taslak) olarak
+listeliyordu; `docs/TASK/A_admin_panel_backend.md`'nin somut plan maddesi ise rotayı mevcut
+`WordsController`'a ekleyecek şekilde (`GET /words/unmatched`, `POST /words/pair`, `primaryId` URL'de
+değil body'de) netleştirmişti. Gerçek kod TASK.md'ye göre yazıldı (ayrı bir `WordConceptsController`
+2 endpoint için YAGNI olurdu) — üç doküman da bu gerçek rotaya göre güncellendi, [[Icerik_Domain]]'in
+"Planlanan Kod" bölümündeki eski `IWordService`/`WordService` deseni de (A-03 retrofit'inden sonra
+geçersiz kalmıştı) gerçek MediatR Command/Query listesiyle değiştirildi.
+
+`BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` 7→10 bölüme çıktı (`08_esleztirme-repository-query-
+command.html`, `09_esleztirme-controller-postman-testler.html`, `10_ozet-sozluk.html` — görev artık
+tamamlandığı için İLK kez bir kapanış dosyası eklendi), kök `BACKEND_AKADEMI/index.html`'e A-05 kartı
+eklendi. **Etkilenen dosyalar:** `docs/REFERENCE/API_ENDPOINTS.md` §5, `docs/DATABASE_SCHEMA/
+Icerik.md` "Eşleştirme" bölümü, `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-05 ✅), bu
+dosya, `docs/wiki/Database/Icerik_Domain.md`. **Sıradaki task: A-06 (Kategori API — Categories).***

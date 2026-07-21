@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Repository Katmanı — WordConcept + Language</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-katmani',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API (Words)',
+    oncekiBolum: '04_word-grammar-validator.html',
+    sonrakiBolum: '06_command-handlerlari.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ayrı Bir Word/WordDetail/WordExample Repository Yok',
+        aciklama: 'WordConcept, Word/WordDetail/WordExample\'ın hepsini kapsayan bir "aggregate root" — tüm CRUD işlemleri IWordConceptRepository üzerinden, DbContext\'e Include zinciriyle child olarak yönetiliyor. Ayrı bir IWordRepository/IWordDetailRepository AÇILMADI.',
+        neden: 'Word/WordDetail/WordExample hiçbir zaman WordConcept\'ten BAĞIMSIZ var olmuyor veya sorgulanmıyor — API_ENDPOINTS.md §5\'teki hiçbir endpoint "bana tek başına bir Word getir" demiyor, hep "bana bu kavramın TÜM dillerini getir" diyor. Ayrı repository\'ler gerçek bir tüketicisi olmadan spekülatif bir soyutlama OLURDU (YAGNI, aynı karar A-05 planında baştan verildi).',
+        olmasaydi: 'Ayrı repository\'ler açılsaydı, CreateWordCommand gibi bir Handler hem IWordConceptRepository hem IWordRepository\'yi enjekte edip aralarında elle SENKRONİZE olmak zorunda kalırdı — "WordConcept kaydedildi ama Word\'ü unutuldu" gibi yarım-yazılmış durumlar (transaction sınırı netleşmediği için) DOĞARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IWordConceptRepository.cs — Aggregate Sözleşmesi',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IWordConceptRepository.cs',
+        nedenBuKlasor: 'Interfaces/Repositories/ — Auth/QrLogin/Logging repository arayüzleriyle AYNI klasör, flat (feature alt klasörü açılmadı).',
+        kod: `public interface IWordConceptRepository : IRepository<WordConcept>
+{
+    Task<PagedResult<WordConcept>> GetPagedAsync(
+        string? difficultyLevel,
+        string? partOfSpeech,
+        string? search,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    );
+
+    Task<WordConcept?> GetWithTranslationsAsync(int id, CancellationToken ct = default);
+
+    Task<bool> ExistsWordTextAsync(int languageId, string text, CancellationToken ct = default);
+
+    Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface IWordConceptRepository : IRepository<WordConcept>',
+            aciklama: 'A-02\'de yazılan generic IRepository<T>\'yi (GetByIdAsync/AddAsync/UpdateAsync/SoftDeleteAsync) MİRAS ALIR — bu dört metot burada TEKRAR YAZILMAZ, yalnızca WordConcept\'e ÖZEL 4 sorgu eklenir.',
+            neden: 'Auth\'taki IRefreshTokenRepository, QrLogin\'deki IQrLoginSessionRepository ile BİREBİR aynı desen — generic CRUD + aggregate\'e özel sorgular ayrımı, her yeni repository\'de tekerleği YENİDEN İCAT ETMEZ.',
+            olmasaydi: 'IRepository<T> miras alınmasaydı, GetByIdAsync/AddAsync/UpdateAsync/SoftDeleteAsync\'in dördü de bu arayüzde ve WordConceptRepository\'de TEKRAR yazılırdı — CreateWordCommandHandler\'ın çağırdığı AddAsync(concept, userId, ct) imzası hiçbir yerde OLMAZDI.'
+          },
+          {
+            satir: 'Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default);',
+            aciklama: 'IRepository<T>.SoftDeleteAsync YETERSİZ kalıyor çünkü o yalnızca WordConcept\'in kendisini işaretler — bu metot WordConcept + TÜM Word satırlarını TEK transaction\'da soft-delete eder.',
+            neden: 'Word ayrı bir DbSet olduğu için WordConcept.IsDeleted=true olması Word satırlarını OTOMATİK etkilemez (global soft-delete filtresi her DbSet\'i KENDİ IsDeleted kolonuna göre süzer) — parent silinip child\'ların aktif KALMASI, "silinmiş" bir kavramın kelimelerinin hâlâ GET /words\'te görünmesi gibi bir tutarsızlık yaratırdı.',
+            olmasaydi: 'Bu metot olmasaydı DeleteWordCommandHandler yalnızca genel SoftDeleteAsync\'i çağırırdı — WordConcept silinmiş görünse de altındaki Word\'ler (Tisch/masa) hâlâ GetPagedAsync\'in Include zincirinde AKTİF kalır, silinmiş bir kavramın kelimeleri listede/detayda SIZARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptRepository.cs — Liste + Detay Sorguları',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/WordConceptRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ — QrLoginSessionRepository/ActivityLogRepository ile AYNI seviyede, flat.',
+        kod: `public async Task<PagedResult<WordConcept>> GetPagedAsync(
+    string? difficultyLevel,
+    string? partOfSpeech,
+    string? search,
+    int page,
+    int pageSize,
+    CancellationToken ct = default
+)
+{
+    var query = _set.Include(c => c.Words).ThenInclude(w => w.Language).AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(difficultyLevel))
+        query = query.Where(c => c.DifficultyLevel == difficultyLevel);
+    if (!string.IsNullOrWhiteSpace(partOfSpeech))
+        query = query.Where(c => c.PartOfSpeech == partOfSpeech);
+    if (!string.IsNullOrWhiteSpace(search))
+        query = query.Where(c => c.Words.Any(w => w.Text.Contains(search)));
+
+    var totalCount = await query.CountAsync(ct);
+    var items = await query
+        .OrderBy(c => c.Id)
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
+        .ToListAsync(ct);
+
+    return new PagedResult<WordConcept>(items, totalCount, page, pageSize);
+}
+
+public Task<WordConcept?> GetWithTranslationsAsync(int id, CancellationToken ct = default) =>
+    _set
+        .Include(c => c.Words)
+        .ThenInclude(w => w.Language)
+        .Include(c => c.Words)
+        .ThenInclude(w => w.WordDetail)
+        .Include(c => c.Words)
+        .ThenInclude(w => w.WordExamples)
+        .FirstOrDefaultAsync(c => c.Id == id, ct);`,
+        satirlar: [
+          {
+            satir: 'var query = _set.Include(c => c.Words).ThenInclude(w => w.Language).AsQueryable();',
+            aciklama: 'Liste sorgusu yalnızca Words+Language\'ı Include eder — WordDetail/WordExample YOK.',
+            neden: 'GET /words liste ekranı yalnızca WordTranslationSummaryDto (dil+metin) döner, gramer/örnek cümle GÖSTERMEZ — gereksiz Include, N+1 değil ama gereksiz JOIN\'lerle sorguyu YAVAŞLATIRDI (100 kelimelik bir sayfada her birinin gramer JSON\'unu çekmenin hiçbir faydası yok).',
+            olmasaydi: 'WordDetail/WordExample de Include edilseydi, GET /words her çağrıda kullanılmayacak veriyi (bazen büyük bir GrammarData JSON\'u) DB\'den TAŞIRDI — liste ekranı gereksiz yere YAVAŞLARDI.'
+          },
+          {
+            satir: '.Include(c => c.Words)\n        .ThenInclude(w => w.WordDetail)',
+            aciklama: 'GetWithTranslationsAsync (detay/güncelleme) ise WordDetail+WordExample\'ı DA Include eder — GetPagedAsync\'in TAM TERSİ tercih.',
+            neden: 'GET /words/{id} ve UpdateWordCommandHandler\'ın ikisi de TAM detaya ihtiyaç duyuyor — biri göstermek için, diğeri var olan bir çeviriyi güncellerken hangi WordDetail\'in zaten VAR olduğunu bilmek için (bkz. bir sonraki bölüm, UpdateWordCommand).',
+            olmasaydi: 'WordDetail Include edilmeseydi, UpdateWordCommandHandler\'daki `existingWord.WordDetail is null` kontrolü HER ZAMAN true dönerdi (lazy-loading kapalı olduğundan EF Core bu alanı hiç DOLDURMAZDI) — var olan bir gramer verisi ÜZERİNE YAZMAK yerine yanlışlıkla YENİ bir WordDetail satırı OLUŞTURULURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptRepository.cs — Duplikat Kontrolü + Cascade Soft Delete',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/WordConceptRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public Task<bool> ExistsWordTextAsync(int languageId, string text, CancellationToken ct = default) =>
+    _db.Words.AnyAsync(w => w.LanguageId == languageId && w.Text == text, ct);
+
+public async Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default)
+{
+    var concept =
+        await _set.Include(c => c.Words).FirstOrDefaultAsync(c => c.Id == id, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), id);
+
+    var now = DateTime.UtcNow;
+
+    concept.IsDeleted = true;
+    concept.DeletedAt = now;
+    concept.DeletedByUserId = userId;
+    concept.UpdatedByUserId = userId;
+
+    foreach (var word in concept.Words)
+    {
+        word.IsDeleted = true;
+        word.DeletedAt = now;
+        word.DeletedByUserId = userId;
+        word.UpdatedByUserId = userId;
+    }
+
+    await _db.SaveChangesAsync(ct);
+}`,
+        satirlar: [
+          {
+            satir: '_db.Words.AnyAsync(w => w.LanguageId == languageId && w.Text == text, ct);',
+            aciklama: 'WordConcept ÜZERİNDEN değil, doğrudan `_db.Words` DbSet\'i üzerinden sorgular — duplikat kontrolü kavram düzeyinde değil, "bu dilde bu metin var mı" düzeyinde.',
+            neden: 'CreateWordCommand/UpdateWordCommand\'ın 409 kararı (Icerik.md "Eşleştirme") kavram bazlı DEĞİL, TEK bir dildeki Text bazlı — aynı Almanca "Tisch" iki farklı WordConcept altında iki kez girilmemeli, ama "Tisch" (de) ile "masa" (tr) aynı ANDA var olabilir çünkü farklı dil.',
+            olmasaydi: 'WordConcept.Words koleksiyonu üzerinden (ör. `_set.Any(c => c.Words.Any(...))`) sorgulansaydı sonuç AYNI olurdu ama global soft-delete filtresi WordConcept ve Word\'e AYRI AYRI uygulandığı için doğrudan Words DbSet\'i üzerinden sorgulamak daha net, WordConcept\'in kendisini hiç YÜKLEMEDEN cevap verir.'
+          },
+          {
+            satir: 'foreach (var word in concept.Words)\n    {\n        word.IsDeleted = true;',
+            aciklama: 'WordConcept.IsDeleted=true yapmak YETMEZ — döngü, kavrama bağlı HER Word\'ü de tek tek IsDeleted=true yapar, sonra TEK bir SaveChangesAsync ile hepsi birlikte kaydedilir.',
+            neden: 'IWordConceptRepository.cs\'teki "Neden bu metot" gerekçesiyle BİREBİR aynı: iki ayrı DbSet, iki ayrı IsDeleted kolonu — biri unutulursa "silinmiş kavramın hâlâ aktif kelimesi var" tutarsızlığı doğar.',
+            olmasaydi: 'Yalnızca WordConcept işaretlenip Word\'ler ATLANSAYDI, DeleteWordCommandHandlerTests.Delete_ExistingConcept_CallsSoftDeleteWithWords testinin doğruladığı davranış (concept+words BİRLİKTE) BOZULURDU — silinen bir kelimenin çevirileri GET /words/{id}\'de hâlâ görünmeye devam EDERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ILanguageRepository.cs + LanguageRepository.cs — BaseEntity\'siz İstisna',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/ILanguageRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public interface ILanguageRepository
+{
+    Task<Language?> GetByCodeAsync(string code, CancellationToken ct = default);
+    Task<Language?> GetByIdAsync(int id, CancellationToken ct = default);
+    Task<IReadOnlyList<Language>> GetAllActiveAsync(CancellationToken ct = default);
+}
+
+public class LanguageRepository : ILanguageRepository
+{
+    private readonly WordLearnerDbContext _db;
+
+    public LanguageRepository(WordLearnerDbContext db) => _db = db;
+
+    public Task<Language?> GetByCodeAsync(string code, CancellationToken ct = default) =>
+        _db.Languages.FirstOrDefaultAsync(l => l.Code == code, ct);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface ILanguageRepository',
+            aciklama: 'IRepository<T>\'yi KULLANMAZ — Language BaseEntity\'den türemediği için (Bölüm 2) generic T : BaseEntity kısıtına UYMUYOR, ActivityLogRepository/SecurityLogRepository ile AYNI istisna deseni (farklı gerekçeyle: onlar insert-only, bu statik referans).',
+            neden: 'GetByCodeAsync — CreateWordCommand/UpdateWordCommandHandler\'ın `translations[].languageCode` ("de"/"tr") string\'ini Language.Id\'ye ÇÖZMESİ için var; API tüketicisi (admin formu) dil kodunu YAZAR, DB\'nin iç Id\'sini BİLMEZ.',
+            olmasaydi: 'ILanguageRepository BaseEntity kısıtlı IRepository<T>\'yi kullanmaya ZORLANSAYDI, Language entity\'sinin CreatedAt/IsDeleted gibi hiç anlamı olmayan alanlara SAHİP OLMASI gerekirdi — Bölüm 1\'deki "Language neden BaseEntity\'den türemez" kararı NAKZEDİLMİŞ olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DuplicateWordException.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/DuplicateWordException.cs',
+        nedenBuKlasor: 'Common/Exceptions/ — DuplicateEmailException/QrSessionGoneException ile AYNI klasör.',
+        kod: `public class DuplicateWordException : AppException
+{
+    public DuplicateWordException()
+        : base("WORD_TEXT_ALREADY_EXISTS", "Word creation attempt: text already exists for this language.")
+    { }
+}`,
+        satirlar: [
+          {
+            satir: 'base("WORD_TEXT_ALREADY_EXISTS", "Word creation attempt: text already exists for this language.")',
+            aciklama: 'İlk parametre (Code) istemciye ErrorMessages.Resolve ile tr/de çözülür; ikinci parametre (.Message) YALNIZCA loglarda görünen İngilizce geliştirici mesajı — CLAUDE.md "İstisna: istemciye giden mesaj" kuralı.',
+            neden: 'ExceptionHandlingMiddleware.cs\'e eklenen `DuplicateWordException => HttpStatusCode.Conflict` eşlemesiyle BİRLİKTE çalışır — bu exception fırlatıldığında istemci otomatik 409 alır, DuplicateEmailException\'ın Auth\'ta yaptığı İLE BİREBİR aynı mekanizma.',
+            olmasaydi: 'Code yerine doğrudan bir İngilizce/Türkçe cümle .Message\'a yazılsaydı, admin panel Almanca açtığında da Türkçe bir hata METNİ görürdü — CLAUDE.md\'nin "istemci mesajı dile göre kalır" kararı BOZULURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Aggregate Root', tanim: 'Bir nesne kümesinin (WordConcept + Word + WordDetail + WordExample) DIŞARIYA tek bir kapı üzerinden (IWordConceptRepository) açılması — child\'lara doğrudan erişilmez, hep parent üzerinden.' },
+          { terim: 'ExistsWordTextAsync', tanim: 'Duplikat 409 kararının dayandığı sorgu — dil+metin ikilisi zaten var mı, WordConcept değil doğrudan Words DbSet\'i üzerinden.' },
+          { terim: 'Cascade soft delete', tanim: 'Parent (WordConcept) silinirken TÜM child (Word) satırlarının da TEK transaction\'da IsDeleted=true yapılması — iki ayrı DbSet olduğu için otomatik gerçekleşmez, elle yazılması gerekir.' },
+          { terim: 'InfrastructureServiceExtensions.cs (DI)', tanim: '`services.AddScoped<ILanguageRepository, LanguageRepository>(); services.AddScoped<IWordConceptRepository, WordConceptRepository>();` — A-04\'teki log repository kayıtlarıyla (`07_logger-servisleri.html`) AYNI "Scoped, DbContext ile aynı yaşam süresi" gerekçesiyle, eskiden "sonraki feature repository\'ler buraya eklenecek" notunun YERİNE geçti.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
