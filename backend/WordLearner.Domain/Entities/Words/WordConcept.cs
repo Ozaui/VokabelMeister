@@ -8,8 +8,10 @@
 //        satır modeliyle çözülür — CLAUDE.md "Çoklu dil" kuralı. Bir kavram tek
 //        dilde Word'e sahipse "eşleşmemiş" sayılır (ayrı bir IsMatched kolonu
 //        açılmadı — bkz. Icerik.md "Eşleştirme").
-// BAĞIMLILIKLAR: BaseEntity, Word (1:N — her dil için bir satır).
+// BAĞIMLILIKLAR: BaseEntity, Word (1:N — her dil için bir satır), WordCategory (1:N — A-06).
 // ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Entities.Categories;
 
 namespace WordLearner.Domain.Entities.Words;
 
@@ -33,4 +35,7 @@ public class WordConcept : BaseEntity
 
     // AMAÇ: Bu kavramın her dildeki karşılığı (0, 1 veya 2 satır — 1 satır = "eşleşmemiş").
     public ICollection<Word> Words { get; set; } = new List<Word>();
+
+    // AMAÇ: Bu kavramın bağlı olduğu kategoriler (A-06 — Kategori API).
+    public ICollection<WordCategory> WordCategories { get; set; } = new List<WordCategory>();
 }

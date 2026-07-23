@@ -11,6 +11,7 @@
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Categories;
 using WordLearner.Domain.Entities.Logging;
 using WordLearner.Domain.Entities.Words;
 
@@ -56,6 +57,15 @@ public class WordLearnerDbContext : DbContext
 
     // AMAÇ: Seviyeli örnek cümleler, 1:N Word (A-05).
     public DbSet<WordExample> WordExamples => Set<WordExample>();
+
+    // AMAÇ: Hiyerarşik (self-ref) kategori çekirdeği (A-06 — Kategori API).
+    public DbSet<Category> Categories => Set<Category>();
+
+    // AMAÇ: Bir kategorinin tek dildeki adı (A-06).
+    public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+
+    // AMAÇ: WordConcept↔Category M:N ara tablosu (A-06).
+    public DbSet<WordCategory> WordCategories => Set<WordCategory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

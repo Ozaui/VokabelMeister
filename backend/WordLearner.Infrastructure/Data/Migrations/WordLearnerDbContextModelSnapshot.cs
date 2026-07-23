@@ -358,6 +358,525 @@ namespace WordLearner.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.Category", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MaxLevel")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("MinLevel")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<int?>("ParentCategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentCategoryId");
+
+                    b.ToTable("Categories", t =>
+                        {
+                            t.HasCheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN ('A1','A2','B1','B2','C1','C2')");
+
+                            t.HasCheckConstraint("CK_Categories_MinLevel", "MinLevel IS NULL OR MinLevel IN ('A1','A2','B1','B2','C1','C2')");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Color = "#FF6B6B",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 1,
+                            Icon = "people",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Color = "#FF8C42",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 2,
+                            Icon = "family",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Color = "#95E1D3",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 3,
+                            Icon = "food",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Color = "#4ECDC4",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 4,
+                            Icon = "house",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Color = "#AA96DA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 5,
+                            Icon = "school",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Color = "#FCBAD3",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 6,
+                            Icon = "numbers",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            Color = "#A8EDEA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 7,
+                            Icon = "colors",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            Color = "#FFD89B",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 8,
+                            Icon = "time",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            Color = "#FB7D5B",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 9,
+                            Icon = "body",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            Color = "#84DCC6",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 10,
+                            Icon = "animal",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            Color = "#F38181",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 11,
+                            Icon = "work",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A2"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            Color = "#C7CEEA",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 12,
+                            Icon = "travel",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A2"
+                        });
+                });
+
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.CategoryTranslation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("LanguageId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LanguageId");
+
+                    b.HasIndex("CategoryId", "LanguageId")
+                        .IsUnique();
+
+                    b.ToTable("CategoryTranslations");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CategoryId = 1,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Menschen"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CategoryId = 1,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "İnsanlar"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CategoryId = 2,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Familie"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CategoryId = 2,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Aile"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CategoryId = 3,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Essen"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CategoryId = 3,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Yemek"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CategoryId = 4,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Haus"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CategoryId = 4,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Ev"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CategoryId = 5,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Schule"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CategoryId = 5,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Okul"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CategoryId = 6,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Zahlen"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CategoryId = 6,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Sayılar"
+                        },
+                        new
+                        {
+                            Id = 13,
+                            CategoryId = 7,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Farben"
+                        },
+                        new
+                        {
+                            Id = 14,
+                            CategoryId = 7,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Renkler"
+                        },
+                        new
+                        {
+                            Id = 15,
+                            CategoryId = 8,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Zeit"
+                        },
+                        new
+                        {
+                            Id = 16,
+                            CategoryId = 8,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Zaman"
+                        },
+                        new
+                        {
+                            Id = 17,
+                            CategoryId = 9,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Körperteile"
+                        },
+                        new
+                        {
+                            Id = 18,
+                            CategoryId = 9,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Vücut"
+                        },
+                        new
+                        {
+                            Id = 19,
+                            CategoryId = 10,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Tiere"
+                        },
+                        new
+                        {
+                            Id = 20,
+                            CategoryId = 10,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Hayvanlar"
+                        },
+                        new
+                        {
+                            Id = 21,
+                            CategoryId = 11,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Arbeit"
+                        },
+                        new
+                        {
+                            Id = 22,
+                            CategoryId = 11,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "İş"
+                        },
+                        new
+                        {
+                            Id = 23,
+                            CategoryId = 12,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 1,
+                            Name = "Reisen"
+                        },
+                        new
+                        {
+                            Id = 24,
+                            CategoryId = 12,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            LanguageId = 2,
+                            Name = "Seyahat"
+                        });
+                });
+
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.WordCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WordConceptId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("WordConceptId", "CategoryId")
+                        .IsUnique();
+
+                    b.ToTable("WordCategories");
+                });
+
             modelBuilder.Entity("WordLearner.Domain.Entities.Logging.ActivityLog", b =>
                 {
                     b.Property<long>("Id")
@@ -832,6 +1351,54 @@ namespace WordLearner.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.Category", b =>
+                {
+                    b.HasOne("WordLearner.Domain.Entities.Categories.Category", "ParentCategory")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentCategory");
+                });
+
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.CategoryTranslation", b =>
+                {
+                    b.HasOne("WordLearner.Domain.Entities.Categories.Category", "Category")
+                        .WithMany("Translations")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WordLearner.Domain.Entities.Words.Language", "Language")
+                        .WithMany()
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Language");
+                });
+
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.WordCategory", b =>
+                {
+                    b.HasOne("WordLearner.Domain.Entities.Categories.Category", "Category")
+                        .WithMany("WordCategories")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WordLearner.Domain.Entities.Words.WordConcept", "WordConcept")
+                        .WithMany("WordCategories")
+                        .HasForeignKey("WordConceptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("WordConcept");
+                });
+
             modelBuilder.Entity("WordLearner.Domain.Entities.Logging.ActivityLog", b =>
                 {
                     b.HasOne("WordLearner.Domain.Entities.Auth.User", "User")
@@ -905,6 +1472,15 @@ namespace WordLearner.Infrastructure.Data.Migrations
                     b.Navigation("RefreshTokens");
                 });
 
+            modelBuilder.Entity("WordLearner.Domain.Entities.Categories.Category", b =>
+                {
+                    b.Navigation("Children");
+
+                    b.Navigation("Translations");
+
+                    b.Navigation("WordCategories");
+                });
+
             modelBuilder.Entity("WordLearner.Domain.Entities.Words.Word", b =>
                 {
                     b.Navigation("WordDetail");
@@ -914,6 +1490,8 @@ namespace WordLearner.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("WordLearner.Domain.Entities.Words.WordConcept", b =>
                 {
+                    b.Navigation("WordCategories");
+
                     b.Navigation("Words");
                 });
 #pragma warning restore 612, 618

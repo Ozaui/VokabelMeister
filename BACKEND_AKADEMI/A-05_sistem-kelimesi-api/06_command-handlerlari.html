@@ -69,6 +69,13 @@ public record WordConceptDetailDto(
         olmasaydi: 'Bu yardımcılar olmasaydı, "bir WordTranslationInput\'tan Word+WordDetail+WordExample ağacı kur" mantığı CreateWordCommandHandler VE UpdateWordCommandHandler\'da AYRI AYRI (ve zamanla BİRBİRİNDEN SAPARAK) yazılırdı — bir gün yalnızca birinde düzeltilen bir bug diğerinde KALIRDI.'
       },
       {
+        tur: 'kavram',
+        baslik: 'Neden AutoMapper DEĞİL — WordConceptDtoBuilder Elle Yazıldı',
+        aciklama: 'A-03\'te AutoMapper GERÇEKTEN kullanılmıştı (bkz. A-03_auth-register/07_dto-automapper.html — `RegisterCommand`\'dan `User` entity\'sine, `User`\'dan `UserDto`\'ya düz alan-alan eşleştirme). Burada AYNI paket projede kurulu olmasına rağmen `WordConceptDtoBuilder` elle (bir AutoMapper Profile OLMADAN) yazıldı — CLAUDE.md §3\'ün koşullu AutoMapper kuralı gereği: "Profile yalnızca Handler gerçekten bir Entity→DTO dönüşümü yapıyorsa yazılır; DTO birden çok entity\'yi BİRLEŞTİRİYORSA elle inşa edilir."',
+        neden: '`WordConceptDetailDto`, TEK bir entity\'nin (`WordConcept`) alanlarını DEĞİL, BEŞ ayrı entity\'yi (`WordConcept`+`Word`+`WordDetail`+`WordExample`+`Language`) `translations[]` diye iç içe bir yapıya BİRLEŞTİRİYOR — bu bir "AutoMapper.Map<WordConceptDetailDto>(concept)" çağrısıyla ifade edilemez; AutoMapper\'ın `ForMember`/`ProjectTo` gibi araçları TEK bir kaynak-hedef çiftini eşlemek için tasarlanmış, N-den-1\'e birleştirme + iç içe koleksiyon inşası (translations içindeki examples) onun doğal alanı DEĞİL. Zorlanırsa okunması AutoMapper config\'inde GİZLENİR, elle yazılan kod kadar açık OLMAZ.',
+        olmasaydi: 'Burada da bir AutoMapper Profile yazılmaya ZORLANSAYDI, `ForMember(dest => dest.Translations, opt => opt.MapFrom(...))` gibi iç içe bir konfigürasyon gerekirdi — bu konfigürasyonun kendisi test edilebilir bir "kod" DEĞİL, reflection üzerinden ÇALIŞMA ZAMANINDA çözülen bir kural seti olurdu; bir alan adı yanlış yazılsa derleme zamanında DEĞİL, ancak testte (ya da hiç yakalanmazsa production\'da) fark edilirdi. Elle yazılan `WordConceptDtoBuilder` ise düz C#, derleyici HER satırı kontrol eder.'
+      },
+      {
         tur: 'kod',
         baslik: 'WordEntityBuilder.cs — Girdiden Entity Ağacı',
         dosyaYolu: 'backend/WordLearner.Application/Features/Words/WordEntityBuilder.cs',
@@ -138,6 +145,30 @@ public record WordConceptDetailDto(
         concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()
     );
 
+public static WordConceptListItemDto BuildListItem(WordConcept concept) =>
+    new(
+        concept.Id,
+        concept.PartOfSpeech,
+        concept.DifficultyLevel,
+        concept.ImageUrl,
+        concept
+            .Words.OrderBy(w => w.LanguageId)
+            .Select(w => new WordTranslationSummaryDto(w.Language.Code, w.Text))
+            .ToList()
+    );
+
+private static WordTranslationDto BuildTranslation(Word word) =>
+    new(
+        word.Language.Code,
+        word.Text,
+        word.Definition,
+        word.WordDetail is null ? null : BuildWordDetail(word.WordDetail),
+        word
+            .WordExamples.OrderBy(e => e.DisplayOrder)
+            .Select(e => new WordExampleDto(e.Id, e.SentenceText, e.Level, e.ExampleType, e.PairedExampleId))
+            .ToList()
+    );
+
 private static WordDetailDto BuildWordDetail(WordDetail detail) =>
     new(
         detail.Pronunciation,
@@ -150,6 +181,30 @@ private static WordDetailDto BuildWordDetail(WordDetail detail) =>
 private static JsonElement? ParseGrammarData(string? grammarDataJson) =>
     string.IsNullOrWhiteSpace(grammarDataJson) ? null : JsonDocument.Parse(grammarDataJson).RootElement.Clone();`,
         satirlar: [
+          {
+            satir: 'public static WordConceptListItemDto BuildListItem(WordConcept concept) =>',
+            aciklama: '`BuildDetail`\'in liste-ekranı KARDEŞİ — aynı WordConcept ağacından, yalnızca `WordTranslationSummaryDto` (dil+metin) üreten KÜÇÜK bir projeksiyon (Bölüm 6\'nın başındaki "neden ayrı DTO" kararının doğrudan UYGULAMASI). `GetWordsQuery` Handler\'ı (bir sonraki slayt) bunu her sayfa satırı için ÇAĞIRIR.',
+            neden: 'GET /words (liste) WordDetail/WordExample TAŞIMADIĞI için, `BuildDetail`\'i çağırıp gereksiz alanları ATMAK yerine baştan KÜÇÜK bir DTO üreten ayrı bir metot yazmak, gereksiz DB→DTO dönüşüm İŞİNİ (WordDetail parse etme, örnekleri sıralama) hiç ÇALIŞTIRMAZ.',
+            olmasaydi: '`BuildListItem` olmasaydı, `GetWordsQueryHandler` her sayfa isteğinde `BuildDetail`\'i çağırıp sonra `WordDetail`/`Examples`\'ı elle ATMAK zorunda kalırdı — hem gereksiz JSON parse (ParseGrammarData) işi YAPILIR hem de kodun niyeti ("bu liste ekranı, detay DEĞİL") gizlenirdi.'
+          },
+          {
+            satir: 'private static WordTranslationDto BuildTranslation(Word word) =>',
+            aciklama: '`BuildDetail`\'in `Select(BuildTranslation)` çağrısının GERÇEK gövdesi — tek bir Word entity\'sini, dil kodu + metin + (varsa) WordDetail + (sıralı) örnek cümleleriyle TAM bir `WordTranslationDto`\'ya çevirir.',
+            neden: 'Bu metot `BuildDetail`\'den AYRI tutuldu çünkü `concept.Words.Select(...)` LINQ zincirinin İÇİNDE isimsiz bir lambda yerine adlandırılmış bir metot KULLANMAK, ne yaptığını (`BuildTranslation`) okuyucuya DAHA AÇIK anlatıyor — ayrıca bu metot kendi başına (WordDetail null kontrolü, örnek sıralaması) yeterince KARMAŞIK, inline bir lambda\'ya SIĞDIRILMASI okunabilirliği bozardı.',
+            olmasaydi: 'Bu metot `BuildDetail`\'in İÇİNE inline bir lambda olarak yazılsaydı, `word.WordDetail is null ? null : BuildWordDetail(...)` gibi dallanan bir mantık `Select(w => ...)` satırının İÇİNDE BOĞULUR, `BuildDetail`\'in kendisi çok daha UZUN ve okunması ZOR bir metot OLURDU.'
+          },
+          {
+            satir: 'word.WordDetail is null ? null : BuildWordDetail(word.WordDetail),',
+            aciklama: 'Bir Word\'ün WordDetail\'i (gramer bilgisi) OLMAYABİLİR — Adjective/Adverb gibi türlerde WordGrammarValidator zaten bunu NULL bırakıyor (Bölüm 4), bu satır o durumda `BuildWordDetail`\'i hiç ÇAĞIRMADAN doğrudan `null` döner.',
+            neden: '`BuildWordDetail(WordDetail detail)` parametresi NON-NULLABLE (`WordDetail`, `WordDetail?` DEĞİL) — bu metoda `null` GEÇİRİLSEYDİ `detail.Pronunciation` gibi bir erişim NullReferenceException FIRLATIRDI, bu yüzden çağrı öncesi null-kontrolü ZORUNLU.',
+            olmasaydi: 'Bu null-kontrolü olmadan doğrudan `BuildWordDetail(word.WordDetail)` çağrılsaydı, Adjective/Adverb gibi WordDetail\'i hiç olmayan bir kelimenin DTO\'ya çevrilmesi (GET /words/{id} çağrısı) bir NullReferenceException ile 500 HATASINA düşerdi.'
+          },
+          {
+            satir: 'word\n            .WordExamples.OrderBy(e => e.DisplayOrder)\n            .Select(e => new WordExampleDto(e.Id, e.SentenceText, e.Level, e.ExampleType, e.PairedExampleId))\n            .ToList()',
+            aciklama: 'Örnek cümleler DB\'den geldikleri sırayla DEĞİL, `DisplayOrder`\'a göre SIRALI döner — `WordEntityBuilder`/`UpdateWordCommand`\'ın örnekleri EKLERKEN atadığı sıra numarası burada GERİ OKUNUR.',
+            neden: '`BuildDetail`\'in `Translations`\'ı `LanguageId`\'ye göre sıralamasıyla AYNI gerekçe (bir önceki slayt) — B-03\'teki kelime kartında örnek cümlelerin HER ZAMAN aynı sırada (admin\'in girdiği/istediği sırada) görünmesi, DB\'nin garanti ETMEDİĞİ bir INSERT sırasına bırakılmamalı.',
+            olmasaydi: '`OrderBy(e => e.DisplayOrder)` olmasaydı, SQL Server\'ın garanti ETMEDİĞİ bir sırayla (genelde fiziksel depolama sırası) dönen örnekler, admin panelde HER açılışta farklı bir SIRAYLA görünebilirdi — kullanıcı deneyimini TUTARSIZ kılardı.'
+          },
           {
             satir: 'concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()',
             aciklama: 'Çeviriler HER ZAMAN LanguageId\'ye göre sıralı döner (de=1 önce, tr=2 sonra) — DB\'den geldikleri sıraya (insert sırası) GÜVENİLMEZ.',
@@ -288,31 +343,122 @@ public async Task<WordConceptDetailDto> Handle(CreateWordCommand request, Cancel
       },
       {
         tur: 'kod',
-        baslik: 'UpdateWordCommand.cs — Var/Yok Dil Ayrımı',
+        baslik: 'UpdateWordCommand.cs — Var/Yok Dil Ayrımı (Handle Metodunun TAMAMI)',
         dosyaYolu: 'backend/WordLearner.Application/Features/Words/UpdateWordCommand.cs',
         nedenBuKlasor: null,
-        kod: `foreach (var translation in request.Translations)
+        kod: `public async Task<WordConceptDetailDto> Handle(UpdateWordCommand request, CancellationToken ct)
 {
-    var language =
-        await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
-        ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+    var concept =
+        await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
+        ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
 
-    var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);
-
-    if (existingWord is null)
+    var oldValue = new
     {
-        if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))
-            throw new DuplicateWordException();
+        concept.PartOfSpeech,
+        concept.DifficultyLevel,
+        Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+    };
 
-        concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
-        continue;
+    concept.PartOfSpeech = request.PartOfSpeech;
+    concept.DifficultyLevel = request.DifficultyLevel;
+    if (request.ImageUrl is not null)
+        concept.ImageUrl = request.ImageUrl;
+
+    foreach (var translation in request.Translations)
+    {
+        var language =
+            await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+            ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+
+        var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);
+
+        if (existingWord is null)
+        {
+            if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))
+                throw new DuplicateWordException();
+
+            concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
+            continue;
+        }
+
+        existingWord.Text = translation.Text;
+        existingWord.Definition = translation.Definition;
+        existingWord.UpdatedByUserId = request.UserId;
+
+        if (translation.WordDetail is not null)
+        {
+            if (existingWord.WordDetail is null)
+                existingWord.WordDetail = WordEntityBuilder.BuildWordDetail(translation.WordDetail, request.UserId);
+            else
+            {
+                existingWord.WordDetail.Pronunciation = translation.WordDetail.Pronunciation;
+                existingWord.WordDetail.AudioUrl = translation.WordDetail.AudioUrl;
+                existingWord.WordDetail.Notes = translation.WordDetail.Notes;
+                existingWord.WordDetail.CommonMistakes = translation.WordDetail.CommonMistakes;
+                existingWord.WordDetail.GrammarData = translation.WordDetail.GrammarData?.GetRawText();
+                existingWord.WordDetail.UpdatedByUserId = request.UserId;
+            }
+        }
+
+        if (translation.Examples is not null)
+        {
+            var displayOrder = existingWord.WordExamples.Count;
+            foreach (var example in translation.Examples)
+            {
+                existingWord.WordExamples.Add(
+                    new WordExample
+                    {
+                        SentenceText = example.SentenceText,
+                        Level = example.Level,
+                        ExampleType = example.ExampleType,
+                        DisplayOrder = displayOrder++,
+                        CreatedByUserId = request.UserId,
+                        UpdatedByUserId = request.UserId,
+                    }
+                );
+            }
+        }
     }
 
-    existingWord.Text = translation.Text;
-    existingWord.Definition = translation.Definition;
-    existingWord.UpdatedByUserId = request.UserId;
+    await _wordConceptRepository.UpdateAsync(concept, request.UserId, ct);
+
+    await _activityLogger.LogAsync(
+        request.UserId,
+        request.ActorRole,
+        "UPDATE_WORD",
+        entityType: "WordConcept",
+        entityId: concept.Id,
+        oldValue: oldValue,
+        newValue: new
+        {
+            concept.PartOfSpeech,
+            concept.DifficultyLevel,
+            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+        },
+        ct: ct
+    );
+
+    return WordConceptDtoBuilder.BuildDetail(concept);
 }`,
         satirlar: [
+          {
+            satir: 'var oldValue = new\n    {\n        concept.PartOfSpeech,\n        concept.DifficultyLevel,\n        Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),\n    };',
+            aciklama: 'Herhangi bir alan DEĞİŞTİRİLMEDEN ÖNCE, kavramın "eski hâli" anonim bir nesneye YAKALANIR — DeleteWordCommand\'daki OldValue toplama gerekçesiyle AYNI.',
+            neden: 'UPDATE_WORD ActivityLog kaydının OldValue/NewValue diff\'i (CLAUDE.md §1 "İçerik değiştiren her CRUD... OldValue/NewValue JSON diff") ancak DEĞİŞİKLİKTEN ÖNCEKİ durum bir yerde SAKLANIRSA mümkün — concept nesnesinin kendisi aşağıda YERİNDE (in-place) değiştirileceği için, "önce"yi görmenin TEK yolu bu anlık görüntüyü ÖNCEDEN almak.',
+            olmasaydi: 'Bu satır olmasaydı, concept.PartOfSpeech gibi alanlar aşağıda YENİ değerle EZİLDİKTEN sonra "eski değer neydi" sorusuna hiçbir zaman CEVAP verilemezdi — ActivityLog\'un OldValue alanı ya boş kalırdı ya da (yanlışlıkla) YENİ değerin bir kopyası olurdu, diff anlamsızlaşırdı.'
+          },
+          {
+            satir: 'concept.PartOfSpeech = request.PartOfSpeech;\n    concept.DifficultyLevel = request.DifficultyLevel;',
+            aciklama: 'Kavram-seviyesi (translations[] dışı) iki alan TAM YER DEĞİŞTİRME semantiğiyle güncellenir — istek ne getirdiyse o yazılır, eski değerle KARŞILAŞTIRMA yapılmaz.',
+            neden: 'UpdateWordCommand.cs dosya başı yorumu: "PartOfSpeech/DifficultyLevel ZORUNLU (nullable DEĞİL)... PUT bu yüzden concept-seviyesi alanlarda TAM YER DEĞİŞTİRME semantiğine sahip (admin formu zaten mevcut değerleri önceden DOLDURUR)" — WordGrammarValidator\'ın hangi türe göre doğrulayacağını BİLMESİ için PartOfSpeech her PUT\'ta MUTLAKA gelmeli.',
+            olmasaydi: 'Bu alanlar nullable/opsiyonel OLSAYDI (PATCH-tarzı kısmi güncelleme), translations[] içindeki WordGrammarValidator çağrısı "hangi türe göre doğrulayayım" sorusuna CEVAP veremezdi — DB\'ye ayrı bir sorgu ATMADAN PartOfSpeech bilinemezdi.'
+          },
+          {
+            satir: 'if (request.ImageUrl is not null)\n        concept.ImageUrl = request.ImageUrl;',
+            aciklama: 'ImageUrl İSTİSNAİ olarak PartOfSpeech/DifficultyLevel gibi KOŞULSUZ ezilmez — yalnızca istek NULL OLMAYAN bir değer getirdiyse güncellenir.',
+            neden: 'ImageUrl nullable ve OPSİYONEL bir alan (görsel her kelimede zorunlu değil) — istemci bu alanı hiç GÖNDERMEDİĞİNDE (null bıraktığında) mevcut görseli YANLIŞLIKLA silmemek için bu koşul var; PartOfSpeech/DifficultyLevel ise zaten ZORUNLU olduğu için böyle bir korumaya ihtiyaçları yok.',
+            olmasaydi: 'Koşulsuz `concept.ImageUrl = request.ImageUrl;` yazılsaydı, admin formu ImageUrl alanını her PUT\'ta GÖNDERMEK zorunda kalırdı — aksi halde (form bu alanı hiç TAŞIMIYORSA) her güncelleme var olan görseli SESSİZCE null\'a DÜŞÜRÜRDÜ.'
+          },
           {
             satir: 'var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);',
             aciklama: 'Ayrım noktası — bu dil kavramda ZATEN VAR MI sorusu, `Words` koleksiyonu bellekte (GetWithTranslationsAsync ile önceden yüklenmiş) ARANARAK cevaplanır, ayrı bir DB sorgusu ATILMAZ.',
@@ -324,6 +470,42 @@ public async Task<WordConceptDetailDto> Handle(CreateWordCommand request, Cancel
             aciklama: 'Var olan Word\'ün alanları YERİNDE (in-place) güncellenir — yeni bir Word nesnesi OLUŞTURULMAZ, mevcut entity\'nin property\'leri değiştirilir.',
             neden: 'EF Core\'un change tracker\'ı bu tracked entity üzerindeki değişikliği OTOMATİK algılar — Handler\'ın sonunda tek bir `UpdateAsync(concept, ...)` çağrısı TÜM değişen alanları (concept + değişen Word\'ler) kaydeder.',
             olmasaydi: 'Yeni bir Word nesnesi oluşturulup ESKİSİNİN yerine eklenmeye çalışılsaydı, EF Core bunu "yeni bir satır" olarak ALGILAR, aynı dilde İKİ Word satırı (biri eski/orphan, biri yeni) oluşma RİSKİ doğardı — Word\'deki `(WordConceptId, LanguageId)` unique index\'i bunu YAKALARDI ama gereksiz bir hataydı.'
+          },
+          {
+            satir: 'if (existingWord.WordDetail is null)\n                existingWord.WordDetail = WordEntityBuilder.BuildWordDetail(translation.WordDetail, request.UserId);',
+            aciklama: 'Bu dilin WordDetail\'i HENÜZ yoksa (ör. Word Text+Definition ile "yarım" oluşturulmuş, gramer verisi sonradan ekleniyor) YENİ bir WordDetail entity\'si WordEntityBuilder ile KURULUR — CreateWordCommand\'daki kurma mantığıyla AYNI yardımcı.',
+            neden: 'Bir Word\'ün WordDetail\'i olmadan var olması TEKNİK olarak MÜMKÜN (WordDetail ayrı bir tablo, 1-1 opsiyonel ilişki) — ama WordGrammarValidator (Bölüm 4) Noun/Verb için GrammarData\'yı ZORUNLU kıldığından, admin önce Text\'i girip SONRA gramer bilgisini PUT ile TAMAMLAYABİLMELİ.',
+            olmasaydi: 'Bu null-kontrolü olmasaydı, `existingWord.WordDetail.Pronunciation = ...` gibi bir satır doğrudan çalıştırılmaya çalışılırsa (WordDetail null İKEN) bir NullReferenceException FIRLATILIRDI — admin gramer bilgisini SONRADAN eklemeye çalıştığında istek 500 ile ÇÖKERDİ.'
+          },
+          {
+            satir: 'existingWord.WordDetail.Pronunciation = translation.WordDetail.Pronunciation;\n                existingWord.WordDetail.AudioUrl = translation.WordDetail.AudioUrl;\n                existingWord.WordDetail.Notes = translation.WordDetail.Notes;\n                existingWord.WordDetail.CommonMistakes = translation.WordDetail.CommonMistakes;\n                existingWord.WordDetail.GrammarData = translation.WordDetail.GrammarData?.GetRawText();\n                existingWord.WordDetail.UpdatedByUserId = request.UserId;',
+            aciklama: 'WordDetail ZATEN varsa, TÜM alanları (Pronunciation/AudioUrl/Notes/CommonMistakes/GrammarData) TEK TEK, istekten gelen değerle YERİNDE güncellenir — kısmi güncelleme YOK, gönderilen değer ne olursa olsun YAZILIR.',
+            neden: 'PUT\'un "tam yer değiştirme" semantiği (dosya başı yorumu) WordDetail seviyesinde de GEÇERLİ — admin formu zaten mevcut GrammarData\'yı ÖNCEDEN doldurup gösteriyor, bu yüzden burada "yalnızca DOLU olanı güncelle" gibi bir kısmi mantığa GEREK yok.',
+            olmasaydi: 'Bu alanlar TEK TEK güncellenmeseydi (ör. yalnızca yeni bir WordDetail nesnesiyle DEĞİŞTİRİLSEYDİ), EF Core bunu tracked entity\'nin YERİNE yeni bir satır gibi ALGILAYABİLİR, aynı Word için İKİ WordDetail satırı riski (foreign key unique kısıtı varsa hata, yoksa veri KİRLİLİĞİ) doğardı.'
+          },
+          {
+            satir: 'var displayOrder = existingWord.WordExamples.Count;',
+            aciklama: 'YENİ eklenecek örnek cümlelerin DisplayOrder\'ı, mevcut örnek SAYISINDAN devam eder (0\'dan DEĞİL) — WordEntityBuilder.Build\'daki (yeni Word için 0\'dan başlayan) sayaçtan FARKLI bir başlangıç noktası.',
+            neden: 'Bu Word\'ün ZATEN var olan örnekleri (ör. 2 tane) varsa, PUT ile eklenen yeni örnekler bunların SONUNA eklenmeli (DisplayOrder=2,3,...) — 0\'dan başlansaydı, yeni örnekler var olan örneklerle AYNI DisplayOrder\'ı PAYLAŞIR, B-03\'teki kelime kartında örnek cümlelerin SIRASI belirsizleşirdi.',
+            olmasaydi: '`existingWord.WordExamples.Count` yerine sabit `0`\'dan başlansaydı, ikinci bir PUT isteğinde eklenen örnekler MEVCUT örneklerle AYNI DisplayOrder değerlerini (0, 1, 2...) alır, kelime kartındaki örnek cümle SIRALAMASI (hangi örnek önce gösterilecek) ÇAKIŞIRDI.'
+          },
+          {
+            satir: 'if (translation.Examples is not null)',
+            aciklama: 'Bu blok yalnızca EKLEME yapar — mevcut örnekleri SİLMEZ/değiştirmez (dosya başındaki "NEDEN yalnızca EKLEME" yorumunda AÇIKLANDIĞI gibi, hangi örneğin "aynı" sayılacağı henüz netleşmediği için bilinçli olarak KAPSAM DIŞI).',
+            neden: 'API_ENDPOINTS.md §5\'te mevcut örnekleri düzenleme/silme akışı henüz TANIMLANMADI — admin\'in "yeni bir örnek cümle EKLEMEK" ihtiyacı bu haliyle karşılanırken, var olan bir örneği düzenlemek/silmek YAGNI gereği ayrı bir endpoint\'e/task\'a BIRAKILDI.',
+            olmasaydi: 'Bu blok mevcut örnekleri de SİLİP yeniden OLUŞTURSAYDI, WordExample.Id\'ler her PUT\'ta DEĞİŞİR, o Id\'ye bağlı başka bir kayıt (ör. `PairedExampleId` ile bağlanmış bir çeviri) SESSİZCE KOPARDI — mevcut halinde bu risk YOK çünkü var olan satırlara hiç DOKUNULMUYOR.'
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(\n        request.UserId,\n        request.ActorRole,\n        "UPDATE_WORD",',
+            aciklama: 'CLAUDE.md §1 "İçerik değiştiren her CRUD... IActivityLogger\'a yazar" kuralının UpdateWordCommand\'daki SOMUTLAŞMASI — Action=UPDATE_WORD, CreateWordCommand\'ın CREATE_WORD\'üyle SİMETRİK.',
+            neden: 'PUT hem "var olan çeviriyi güncelleme" hem "eksik dili ekleyerek eşleştirme" gibi FARKLI senaryoları TEK bir Action koduyla (UPDATE_WORD) kapsıyor — hangi senaryonun gerçekleştiği admin log\'u OKURKEN OldValue/NewValue diff\'inden (translations[] listesindeki fark) ÇIKARILABİLİR, ayrı bir Action koduna gerek YOK.',
+            olmasaydi: 'ActivityLog çağrısı hiç yapılmasaydı, admin panelin (A-07) "kim ne zaman hangi kelimeyi değiştirdi" sorgusu UpdateWordCommand için HİÇBİR kayıt BULAMAZDI — CLAUDE.md\'nin zorunlu kuralı ihlal edilirdi.'
+          },
+          {
+            satir: 'return WordConceptDtoBuilder.BuildDetail(concept);',
+            aciklama: 'Handler\'ın SON satırı — güncellenmiş (concept.Words koleksiyonu artık YENİ/değişmiş Word\'leri de İÇEREN) kavram, CreateWordCommand\'la AYNI `BuildDetail` yardımcısıyla DTO\'ya çevrilir.',
+            neden: 'PUT isteği de POST gibi TAM bir WordConceptDetailDto döner — admin formu güncelleme SONRASI ekranı YENİDEN doldurmak için ayrı bir GET isteği ATMAK zorunda KALMAZ, PUT yanıtının kendisi güncel hâli zaten TAŞIR.',
+            olmasaydi: 'Yalnızca bir `Unit`/boş yanıt dönseydi (DeleteWordCommand gibi), admin formu güncelleme sonrası ekranı YENİLEMEK için AYRICA bir GET /words/{id} isteği ATMAK zorunda kalırdı — gereksiz bir ekstra round-trip.'
           }
         ]
       },
@@ -403,7 +585,7 @@ public async Task<WordConceptDetailDto> Handle(CreateWordCommand request, Cancel
           govde: '(boş gövde)'
         },
         notlar: [
-          'Var olmayan bir Id için 404 ApiErrorResponse döner (ENTITY_NOT_FOUND).',
+          'Var olmayan bir Id için 404 ApiErrorResponse döner (NOT_FOUND).',
           'Silinen kavram + TÜM Word\'leri soft-delete olur — DB\'de kalır, GET /words ve GET /words/{id} bir daha GÖSTERMEZ.'
         ]
       },
@@ -534,7 +716,7 @@ public async Task<PagedResult<WordConceptListItemDto>> Handle(GetWordsQuery requ
 }`
         },
         notlar: [
-          'Var olmayan bir Id için 404 ApiErrorResponse döner (ENTITY_NOT_FOUND).'
+          'Var olmayan bir Id için 404 ApiErrorResponse döner (NOT_FOUND).'
         ]
       },
       {

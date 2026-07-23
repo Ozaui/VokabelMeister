@@ -291,22 +291,50 @@
       toplam 193/193 yeşil (184 + 9)
 - [x] ➜ **BACKEND_AKADEMI'ye işle** (`09_esleztirme-controller-postman-testler.html` + kapanış `10_ozet-sozluk.html`)
 
-### A-06 — Kategori API (Categories) ⬜
+### A-06 — Kategori API (Categories) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin — Kategori Yönetimi), D-06 (Web — Kategoriler Sayfası), E-08 (Mobil — Kategoriler Ekranı)
-- [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation` (dil başına ad), `WordCategory`
-      ara tablo (`WordConceptId`↔`CategoryId`) + EF config + migration
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `ICategoryService` + `CategoryService` (hiyerarşik liste, kategoriye ait kelimeler, CRUD Admin)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] Silme koruması (alt kategori/aktif kelime varsa 409), `CategoriesController`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **`IActivityLogger` entegrasyonu** (A-04): `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
+> **Not (A-05'ten sonra düzeltme):** Bu listenin ilk hâli "ICategoryService/CategoryService" deseninden
+> bahsediyordu — CLAUDE.md §3'e göre bu desen artık TERK EDİLDİ (kanonik desen MediatR Command+Handler,
+> A-05'te uygulandığı gibi). Aşağıdaki maddeler buna göre güncellendi.
+- [x] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation` (dil başına ad), `WordCategory`
+      ara tablo (`WordConceptId`↔`CategoryId`, `Word` DEĞİL — kategori dilden bağımsız bir kavram
+      özelliği) + EF config (CHECK constraint MinLevel/MaxLevel, self-ref FK Restrict, 2 UNIQUE index)
+      + migration `AddCategoriesSchema` (12 kategori + 24 çeviri HasData seed, DATABASE_SCHEMA.md'deki
+      sırayla birebir), gerçek DB'ye uygulandı, mevcut 193 test hâlâ yeşil. `WordConcept.cs`'e saf
+      ekleme: `WordCategories` navigasyonu (A-06 sonunda Word DTO'larına `categories[]` eklenmesi için).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-06_kategori-api/` — 3 bölüm: neden 3 tablo,
+      Entity+EF Config, Migration+DbContext; A-05'in son bölümüyle zincir bağlandı)
+- [x] `ICategoryRepository`/`CategoryRepository` (hiyerarşik liste — bellekte level filtresi, kategoriye
+      ait kelimeler `IWordConceptRepository.GetPagedAsync`'in categoryId parametresi üzerinden, silme
+      koruması sorguları `HasChildrenAsync`/`HasActiveWordsAsync`, döngü koruması `WouldCreateCycleAsync`)
+      + MediatR Command/Query (`Application/Features/Categories/`): `CreateCategoryCommand`,
+      `UpdateCategoryCommand`, `DeleteCategoryCommand`, `GetCategoriesQuery`, `GetCategoryWordsQuery`
+      + `CategoryDtoBuilder` (elle yazılan, AutoMapper DEĞİL — A-05'teki WordConceptDtoBuilder kararıyla
+      aynı gerekçe) — A-05'teki `IWordConceptRepository`/5 Command-Query deseniyle birebir.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`04_repository-katmani.html`, `05_command-handlerlari.html`)
+- [x] Silme koruması (alt kategori→`CategoryHasChildrenException`, aktif kelime→`CategoryHasActiveWordsException`,
+      döngü→`CategoryParentCycleException`, hepsi 409/400), `CategoriesController` (API_ENDPOINTS.md §6'daki
+      5 endpoint, [Authorize]/[Authorize(Roles="Admin")] ayrımı A-05 ile birebir)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`06_controller-validator-testler.html`)
+- [x] **`IActivityLogger` entegrasyonu** (A-04): `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
       (`EntityType=Category`, `OldValue`/`NewValue` JSON diff)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `CategoryServiceTests` (hiyerarşik liste, silme koruması 409,
-      `IActivityLogger` çağrısı doğru `Action` ile)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (aynı bölümde işlendi)
+- [x] **Birim testleri:** `Tests/Features/Categories/` (5 dosya, 21 test — hiyerarşik liste + orphan
+      terfi, silme koruması 409×2, döngü koruması 400×2, `IActivityLogger` çağrısı doğru `Action` ile).
+      **Sıra dışı ek:** A-05'in `GET /words` borcu da kapatıldı — `categoryId` filtresi + `categories[]`
+      alanı (`WordDtos.cs`/`WordConceptDtoBuilder.cs`/`CreateWordCommand`/`UpdateWordCommand`/
+      `GetWordsQuery`/`WordsController` güncellendi, A-05 testlerine 5 yeni test eklendi). **Ayrıca A-06'nın
+      kendi kod denetiminde (bu oturumda, çok-agent'lı bir inceleme ile) 2 gerçek hata bulunup düzeltildi:**
+      (1) `UpdateWordCommand`/`UpdateCategoryCommand`'da audit log'un `oldValue.Translations`'ı tembel
+      (deferred) LINQ yüzünden mutasyon SONRASI değeri yazıyordu — `.ToList()` ile materyalize edildi,
+      regresyon testi eklendi; (2) `CreateWordCommand`/`UpdateWordCommand`'a gönderilen tekrarlanan
+      `categoryIds`, UNIQUE index ihlaliyle yakalanmayan bir 500'e yol açabiliyordu — `.Distinct()` ile
+      düzeltildi. Ayrıca `WordConceptRepository.SoftDeleteWithWordsAsync`'e eksik olan `WordCategories`
+      cascade soft-delete'i eklendi (silinen kelimenin kategori bağı yetim kalmasın diye). Toplam
+      219/219 yeşil (193 + 26 yeni).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`07_word-tarafi-retrofit.html` — retrofit + iki hata düzeltmesi
+      kod-degisiklik slaytlarıyla işlendi, `08_ozet-sozluk.html` kapanış; kök `index.html`'e kart eklendi)
 
 ### A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §11

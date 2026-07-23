@@ -20,31 +20,75 @@
         baslik: 'SecurityLog.cs — Neden BaseEntity Yok, Neden EmailHash 44 Karakter',
         dosyaYolu: 'backend/WordLearner.Domain/Entities/Logging/SecurityLog.cs',
         nedenBuKlasor: 'Entities/Logging/ altında — Auth/ (User, RefreshToken, QrLoginSession) ile AYNI seviyede yeni bir domain klasörü, çünkü loglama Auth\'un bir parçası DEĞİL, ayrı bir cross-cutting concern.',
-        kod: `public class SecurityLog
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// SecurityLog.cs
+//
+// AMAÇ: Güvenlik olayı kaydı (başarısız login, rate-limit, yetkisiz erişim vb.).
+// NEDEN: BaseEntity'den TÜRETİLMEZ (ActivityLog.cs'teki gerekçeyle aynı — insert-only,
+//        değişmez). \`ISecurityLogger\` bu tabloya yazar; ActivityLog'dan farkı, bunun
+//        "hukuka/güvenliğe aykırı olabilecek" olayları (çoğunlukla kullanıcının kendi
+//        BAŞARISIZ denemeleri) tutması — ActivityLog ise başarılı işlemlerin audit'idir.
+// BAĞIMLILIKLAR: User (N:1, opsiyonel), LogEventType enum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Domain.Entities.Logging;
+
+public class SecurityLog
 {
     public long Id { get; set; }
 
+    // AMAÇ: Olayın türü (LoginFailed|OtpFailed|RateLimitHit|... — bkz. LogEventType).
     public LogEventType EventType { get; set; }
 
+    // AMAÇ: Olayla ilişkili kullanıcı (biliniyorsa). Ör. LoginFailed'de kullanıcı e-postayla
+    //       bulunduysa dolar; e-posta hiç kayıtlı değilse NULL kalır.
     public int? UserId { get; set; }
 
+    // AMAÇ: Kullanıcı henüz kimliği doğrulanmadan (LoginFailed vb.) ilişkilendirme yapabilmek
+    //       için ham e-postanın SHA-256 hash'i. NEDEN 44 karakter: IPasswordService.HashToken
+    //       SHA-256(32 byte)→Base64 üretir, sabit 44 karakter (bkz. RefreshTokens.TokenHash/
+    //       QrLoginSessions.QrTokenHash/Users.OriginalEmailHash ile aynı desen — Loglama.md'deki
+    //       eski VARCHAR(88) değeri bu projenin genelinde 2026-07-11'de düzeltilen bir hataydı,
+    //       SecurityLog o düzeltme sırasında henüz kodlanmadığı için gözden kaçmıştı).
     public string? EmailHash { get; set; }
 
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
 
+    // AMAÇ: Olaya özel ek ayrıntı — serbest metin DEĞİL, sabit bir Code (ör. "LoginOtp",
+    //       "TOKEN_REPLAY_FAMILY_REVOKED"). NEDEN: CLAUDE.md §1 "İkinci istisna" —
+    //       admin panel de bir istemci olduğu için bu alan da tr/de'ye admin GET
+    //       /admin/logs/* ile OKURKEN, kendi Accept-Language'ıyla çözülür (yazılma
+    //       anında değil); ErrorMessages/SuccessMessages ile birebir aynı Code-sonra-çöz
+    //       deseni, yalnızca çözme anı farklı.
     public string? Detail { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // AMAÇ: Navigation property — ActivityLog.User ile aynı gerekçeyle tek yönlü.
     public User? User { get; set; }
 }`,
         satirlar: [
+          {
+            satir: '// AMAÇ: Güvenlik olayı kaydı (başarısız login, rate-limit, yetkisiz erişim vb.).',
+            aciklama: 'Dosya başındaki ZORUNLU AMAÇ/NEDEN/BAĞIMLILIKLAR yorum bloğunun İLK satırı — bu entity\'nin VAR OLMA SEBEBİNİ tek cümlede özetler.',
+            neden: 'CLAUDE.md §1\'in "her dosya başı AMAÇ/NEDEN/BAĞIMLILIKLAR" kuralı — bir sonraki geliştirici (ya da junior), sınıfın GÖVDESİNİ okumadan önce "bu ne işe yarar" sorusunun cevabını burada bulmalıdır.',
+            olmasaydi: 'Bu blok olmasaydı, ActivityLog.cs ile SecurityLog.cs\'in NE FARK ettiğini anlamak için her iki dosyanın da TÜM alanlarını okuyup KARŞILAŞTIRMAK gerekirdi — dosya başındaki tek bir NEDEN cümlesi bu karşılaştırmayı GEREKSİZ kılar.'
+          },
           {
             satir: 'public long Id { get; set; }',
             aciklama: 'BIGINT — BaseEntity\'nin `int Id`\'sinden FARKLI. Yüksek hacimli insert-only tablolarda (her başarısız login, her istek loglanabilir) satır sayısı int\'in ~2.1 milyar sınırını AŞABİLİR.',
             neden: 'SecurityLog gibi sürekli büyüyen, hiç silinmeyen bir tabloda BIGINT tercih etmek ileride bir migration GEREKTİRMEZ — baştan doğru tip seçmek, "int taştı" krizini ÖNLER.',
             olmasaydi: 'int Id kullanılsaydı, çok yoğun trafikte (yıllar içinde milyarlarca satır) bir gün Id ÜRETİLEMEZ hâle gelirdi — o noktada tüm tabloyu BIGINT\'e taşımak, canlı sistemde ÇOK maliyetli bir migration olurdu.'
+          },
+          {
+            satir: '// AMAÇ: Olayın türü (LoginFailed|OtpFailed|RateLimitHit|... — bkz. LogEventType).',
+            aciklama: 'EventType property\'sinin HEMEN üstündeki, property-seviyesinde AMAÇ yorumu — hangi enum değerlerinin BEKLENDİĞİNİ, ayrı bir dosyaya (LogEventType.cs) gitmeden ÖZETLER.',
+            neden: 'CLAUDE.md §1\'in "her public property\'nin yanına AMAÇ" beklentisiyle TUTARLI — property adı (EventType) TEK BAŞINA hangi 10 değerden birini alabileceğini SÖYLEMEZ.',
+            olmasaydi: 'Bu yorum olmasaydı, bir geliştirici EventType\'ın alabileceği değerleri ÖĞRENMEK için LogEventType.cs dosyasını AYRICA açmak ZORUNDA kalırdı — küçük ama tekrarlayan bir bağlam değiştirme MALİYETİ.'
           },
           {
             satir: 'public LogEventType EventType { get; set; }',
@@ -53,10 +97,28 @@
             olmasaydi: 'Serbest string olsaydı, 8 farklı Handler\'da (Login/VerifyEmail/ResetPassword/ConfirmAccountDeletion/VerifyLoginOtp/Refresh/ConfirmQrLogin/DenyQrLogin) aynı olayı FARKLI yazımlarla ("LoginFailed" vs "login_failed") loglama riski doğardı — admin panelin filtre dropdown\'ı bu tutarsızlığı YANSITIRDI.'
           },
           {
+            satir: '// AMAÇ: Kullanıcı henüz kimliği doğrulanmadan (LoginFailed vb.) ilişkilendirme yapabilmek',
+            aciklama: 'EmailHash property\'sinin üstündeki (5 satırlık) yorum bloğunun İLK satırı — hash\'in NEDEN gerektiğini (kimlik doğrulanmadan İLİŞKİLENDİRME) açıklar.',
+            neden: 'LoginFailed gibi bir olay, kullanıcı HENÜZ doğrulanmadığı (yanlış şifre girdiği) için UserId doldurulamaz — ama "bu e-postayla kaç deneme yapıldı" sorusu YİNE de cevaplanabilmelidir; bu yorum o gerekçeyi taşır.',
+            olmasaydi: 'Bu yorum olmasaydı, EmailHash\'in NEDEN UserId\'den AYRI bir alan olarak var olduğu (ikisi de "kullanıcıyı bulma" amacına hizmet ediyor gibi görünür) belirsiz kalırdı.'
+          },
+          {
             satir: 'public string? EmailHash { get; set; }',
             aciklama: 'Ham e-posta DEĞİL — `IPasswordService.HashToken(email)` (SHA-256→Base64, sabit 44 karakter) ile üretilen hash. RefreshTokens.TokenHash/Users.OriginalEmailHash/QrLoginSessions.QrTokenHash ile AYNI fonksiyon, AYNI uzunluk.',
             neden: 'REFERENCE/SECURITY.md §6 "PII" kuralı: ham e-posta ASLA loglanmaz — ama yine de "bu e-postayla kaç başarısız deneme oldu" sorusunu cevaplayabilmek için bir İLİŞKİLENDİRME anahtarı gerekir; hash bunu PII sızdırmadan sağlar.',
             olmasaydi: 'Ham e-posta saklansaydı, SecurityLog tablosu bir GDPR/KVKK ihlali riski taşırdı — DB sızıntısında binlerce kullanıcının e-postası (parola denemeleriyle BİRLİKTE) açığa çıkardı.'
+          },
+          {
+            satir: '// AMAÇ: Olaya özel ek ayrıntı — serbest metin DEĞİL, sabit bir Code (ör. "LoginOtp",',
+            aciklama: 'Detail property\'sinin üstündeki yorum bloğunun İLK satırı — CLAUDE.md §1\'in "İkinci istisna" kuralına (ActivityLog/SecurityLog\'un admin\'e görünen alanları) DOĞRUDAN referans verir.',
+            neden: 'Detail alanının serbest metin DEĞİL bir Code olması, ve bu Code\'un ne ZAMAN (yazılma anında değil, admin OKUDUĞUNDA) tr/de\'ye çözüleceği, kodun KENDİSİNDEN anlaşılmaz — bu yorum olmadan bir geliştirici Detail\'e DOĞRUDAN Türkçe/Almanca serbest metin yazma HATASINA düşebilirdi.',
+            olmasaydi: 'Bu yorum olmasaydı, bir sonraki geliştirici Detail\'e "e-posta zaten kayıtlı" gibi SABİT bir dilde serbest metin YAZABİLİRDİ — bu, admin panel farklı bir Accept-Language ile okuduğunda YANLIŞ dilde bir kayıt GÖSTERİRDİ.'
+          },
+          {
+            satir: '// AMAÇ: Navigation property — ActivityLog.User ile aynı gerekçeyle tek yönlü.',
+            aciklama: 'User property\'sinin HEMEN üstündeki, tek satırlık AMAÇ yorumu — daha önce ActivityLog.cs\'te açıklanmış AYNI gerekçeye (tek yönlü ilişki) KISACA işaret eder.',
+            neden: 'Aynı gerekçe iki ayrı dosyada UZUN UZADIYA TEKRAR edilmez — ActivityLog.cs\'e bir REFERANS vermek, kod tekrarını (ve iki açıklamanın zamanla BİRBİRİNDEN SAPMASI riskini) önler.',
+            olmasaydi: 'Bu yorum olmasaydı, "User property\'si NEDEN var ama User.SecurityLogs koleksiyonu YOK" sorusu her iki dosyada da AYRI AYRI cevaplanması gereken bir soru olarak kalırdı.'
           },
           {
             satir: 'public User? User { get; set; }',

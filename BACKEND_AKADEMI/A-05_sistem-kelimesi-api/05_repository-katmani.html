@@ -165,7 +165,7 @@ public async Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToke
       {
         tur: 'kod',
         baslik: 'ILanguageRepository.cs + LanguageRepository.cs — BaseEntity\'siz İstisna',
-        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/ILanguageRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/ILanguageRepository.cs + backend/WordLearner.Infrastructure/Repositories/LanguageRepository.cs',
         nedenBuKlasor: null,
         kod: `public interface ILanguageRepository
 {
@@ -182,6 +182,12 @@ public class LanguageRepository : ILanguageRepository
 
     public Task<Language?> GetByCodeAsync(string code, CancellationToken ct = default) =>
         _db.Languages.FirstOrDefaultAsync(l => l.Code == code, ct);
+
+    public Task<Language?> GetByIdAsync(int id, CancellationToken ct = default) =>
+        _db.Languages.FirstOrDefaultAsync(l => l.Id == id, ct);
+
+    public async Task<IReadOnlyList<Language>> GetAllActiveAsync(CancellationToken ct = default) =>
+        await _db.Languages.Where(l => l.IsActive).OrderBy(l => l.DisplayOrder).ToListAsync(ct);
 }`,
         satirlar: [
           {
@@ -189,6 +195,18 @@ public class LanguageRepository : ILanguageRepository
             aciklama: 'IRepository<T>\'yi KULLANMAZ — Language BaseEntity\'den türemediği için (Bölüm 2) generic T : BaseEntity kısıtına UYMUYOR, ActivityLogRepository/SecurityLogRepository ile AYNI istisna deseni (farklı gerekçeyle: onlar insert-only, bu statik referans).',
             neden: 'GetByCodeAsync — CreateWordCommand/UpdateWordCommandHandler\'ın `translations[].languageCode` ("de"/"tr") string\'ini Language.Id\'ye ÇÖZMESİ için var; API tüketicisi (admin formu) dil kodunu YAZAR, DB\'nin iç Id\'sini BİLMEZ.',
             olmasaydi: 'ILanguageRepository BaseEntity kısıtlı IRepository<T>\'yi kullanmaya ZORLANSAYDI, Language entity\'sinin CreatedAt/IsDeleted gibi hiç anlamı olmayan alanlara SAHİP OLMASI gerekirdi — Bölüm 1\'deki "Language neden BaseEntity\'den türemez" kararı NAKZEDİLMİŞ olurdu.'
+          },
+          {
+            satir: 'public Task<Language?> GetByIdAsync(int id, CancellationToken ct = default) =>',
+            aciklama: '`GetByCodeAsync`\'in Id-bazlı KARDEŞİ — dil kodu yerine Language.Id ile arar. PairWordConceptsCommandHandler gibi zaten bir `LanguageId` int\'ine SAHİP olan çağıranlar (Word.LanguageId üzerinden) için, tekrar Code\'a çevirip GetByCodeAsync çağırmaya GEREK bırakmaz.',
+            neden: 'Bazı akışlarda elde zaten bir `Word.LanguageId` (int, DB foreign key) var — bu durumda Code\'a hiç ihtiyaç yok, doğrudan Id ile sorgulamak bir dönüşüm ADIMI daha AZ demek.',
+            olmasaydi: 'Bu metot olmasaydı, yalnızca LanguageId bilen bir çağıran önce `GetAllActiveAsync` ile TÜM dilleri çekip elle `.First(l => l.Id == id)` yapmak ya da var olmayan bir Code\'a çevirme adımı EKLEMEK zorunda kalırdı — gereksiz bir dolaylama.'
+          },
+          {
+            satir: 'public async Task<IReadOnlyList<Language>> GetAllActiveAsync(CancellationToken ct = default) =>',
+            aciklama: 'Aktif (IsActive=true) dilleri, `DisplayOrder`\'a göre sıralı döner — GET /languages gibi bir "hangi diller destekleniyor" listesi için (admin formundaki dil seçici dropdown\'ının kaynağı).',
+            neden: '`IsActive` filtresi — Languages tablosuna ileride üçüncü bir dil (`en`) eklenip henüz içerik girilmeden önce `IsActive=false` ile PASİF tutulabilmesi için (GERMAN_LANGUAGE_FEATURES.md §10 "en tanımlı ama henüz kullanılmıyor" notu) — admin formunda seçilemeyen ama DB\'de kaydı DURAN bir dil.',
+            olmasaydi: 'Bu metot olmasaydı, admin formunun dil seçici dropdown\'ı hangi dillerin GERÇEKTEN kullanıma açık olduğunu (en gibi henüz içerik girilmeyen bir dili HARİÇ tutarak) öğrenemezdi — ya tüm Languages satırları (pasif olanlar dahil) gösterilirdi ya da bu filtre her çağıran tarafta AYRI AYRI tekrar yazılırdı.'
           }
         ]
       },

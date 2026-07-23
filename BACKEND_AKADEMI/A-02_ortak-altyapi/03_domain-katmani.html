@@ -40,27 +40,78 @@
         baslik: 'BaseEntity.cs — Tam Dosya, Satır Satır',
         dosyaYolu: 'backend/WordLearner.Domain/Entities/BaseEntity.cs',
         nedenBuKlasor: 'Entities/ klasörünün KÖKÜNDE durur (Auth/ gibi bir alt-domain klasöründe DEĞİL) çünkü BaseEntity hiçbir tek domain\'e ait değil — User (Auth), Word (Kelime), Category (Kategori) gibi TÜM entity\'lerin ortak atası. CLAUDE.md §5: "BaseEntity hariç her entity bir domain alt klasöründe" kuralı bunun içindir.',
-        kod: `namespace WordLearner.Domain.Entities;
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// BaseEntity.cs
+//
+// AMAÇ: Tüm domain entity'lerinin türeceği ortak taban sınıf.
+// NEDEN: Id, zaman damgaları ve soft delete alanlarını tek yerden yönetir;
+//        entity'lere tekrar tekrar aynı alanları yazmayı önler.
+// BAĞIMLILIKLAR: Yok — saf C# sınıfı, hiçbir dış pakete bağımlı değil.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Entities;
 
 public abstract class BaseEntity
 {
+    // AMAÇ: Her kaydın birincil anahtarı.
+    // NEDEN: EF Core bu adı otomatik PK olarak tanır; ayrıca konfigürasyon gerekmez.
     public int Id { get; set; }
 
+    // AMAÇ: Kaydın ilk oluşturulduğu an (UTC).
+    // NEDEN: Audit trail ve sıralama için zorunlu; UTC kullanmak zaman dilimi hatalarını önler.
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // AMAÇ: Kaydın son güncellendiği an (UTC). Hiç güncellenmemişse null.
+    // NEDEN: Nullable olması "hiç güncellenmedi" ile "CreatedAt anında güncellendi" durumlarını
+    //        ayırt eder; WordLearnerDbContext.SaveChangesAsync yalnızca gerçek bir güncelleme
+    //        (EntityState.Modified) olduğunda bu alanı set eder, ekleme sırasında dokunmaz.
     public DateTime? UpdatedAt { get; set; }
 
+    // AMAÇ: Kaydın silinip silinmediğini gösteren bayrak (soft delete).
+    // NEDEN: Fiziksel silme yerine bu bayrağı set ederiz; böylece silinmiş kayıtlar
+    //        DB'de kalır, geri yüklenebilir ve audit geçmişi korunur.
+    //        WordLearnerDbContext'teki global query filter bu bayrağa göre filtreler.
     public bool IsDeleted { get; set; }
 
+    // AMAÇ: Kaydın soft delete yapıldığı an (UTC). Silinmemişse null.
+    // NEDEN: Kullanıcı hesabı 30 günlük grace period sonrası anonimleştirme (A-10)
+    //        gibi süre bazlı işlemlerde bu tarih kullanılır.
     public DateTime? DeletedAt { get; set; }
 
+    // AMAÇ: Kaydı oluşturan kullanıcının Id'si.
+    // NEDEN: Repository<T>.AddAsync bu alanı set eder; Auth (A-03) tamamlanana kadar
+    //        çağıran taraf userId geçmediği için null kalır — FK, User entity yazılınca (A-03) bağlanır.
     public int? CreatedByUserId { get; set; }
 
+    // AMAÇ: Kaydı en son güncelleyen (soft delete dâhil) kullanıcının Id'si.
+    // NEDEN: Repository<T>.UpdateAsync/SoftDeleteAsync her çağrıda bu alanı günceller;
+    //        "son işlemi kim yaptı" sorusu ActivityLog'a gitmeden doğrudan kayıttan cevaplanır.
     public int? UpdatedByUserId { get; set; }
 
+    // AMAÇ: Kaydı soft delete eden kullanıcının Id'si. Silinmemişse null.
+    // NEDEN: DeletedAt "ne zaman", bu alan "kim" sorusunu cevaplar;
+    //        Repository<T>.SoftDeleteAsync ikisini birlikte set eder.
     public int? DeletedByUserId { get; set; }
 }`,
         satirlar: [
+          {
+            satir: '// AMAÇ: Tüm domain entity\'lerinin türeceği ortak taban sınıf.',
+            aciklama: 'Dosyanın en üstündeki blok yorumu — CLAUDE.md\'nin her dosya başında zorunlu tuttuğu AMAÇ/NEDEN/BAĞIMLILIKLAR üçlüsünün ilk satırı; bu sınıfın "ne işe yaradığını" tek cümlede özetler.',
+            neden: 'Bir geliştirici (ya da 6 ay sonra dosyaya dönen SEN) kodun satırlarını okumadan ÖNCE "bu dosya niye var" sorusuna cevap bulmalı — bu blok, aşağıdaki 7 property\'yi okumaya başlamadan bağlamı verir.',
+            olmasaydi: 'Bu blok olmasaydı, dosyaya yeni bakan biri BaseEntity\'nin sıradan, önemsiz bir sınıf mı yoksa TÜM entity\'lerin türediği kritik bir taban mı olduğunu anlamak için önce onu KULLANAN başka dosyalara (User.cs, Word.cs...) bakmak zorunda kalırdı.'
+          },
+          {
+            satir: '// BAĞIMLILIKLAR: Yok — saf C# sınıfı, hiçbir dış pakete bağımlı değil.',
+            aciklama: 'BAĞIMLILIKLAR satırı, bu dosyanın hangi paketlere/projelere ihtiyaç duyduğunu (burada: HİÇBİRİNE) açıkça belirtir.',
+            neden: 'Domain katmanının "hiçbir şeye bağımlı olmama" ilkesi (Bölüm 2\'deki Clean Architecture kuralı) burada SOMUT bir kanıta dönüşür — bu satır, ilkeyi soyut bir kural olmaktan çıkarıp BU dosyaya özel gerçek bir taahhüt hâline getirir.',
+            olmasaydi: 'Bu not olmasaydı, ileride biri BaseEntity\'ye ör. bir EF Core `using` satırı eklemeye kalkışabilirdi — bu yorum, "bu dosyaya dış bağımlılık EKLENMEZ" niyetini gelecekteki geliştiriciler için açıkça kayıt altına alır.'
+          },
+          {
+            satir: '// AMAÇ: Her kaydın birincil anahtarı.',
+            aciklama: 'Id property\'sinin üstündeki AMAÇ/NEDEN yorumu — CLAUDE.md\'nin gerektirdiği "satır açıklaması" deseninin bir örneği; dosyadaki 7 alanın HEPSİNİN üstünde aynı ikili yorum (AMAÇ/NEDEN) tekrarlanır.',
+            neden: '`public int Id { get; set; }` satırı TEK BAŞINA "bu bir int property" der ama "EF Core onu neden özel gördüğü" gibi bir bilgi taşımaz — yorum, kodun kendisinin anlatamadığı gerekçeyi ekler.',
+            olmasaydi: 'Bu yorumlar (ve dosyadaki eşdeğerleri) olmasaydı, yeni bir entity yazan geliştirici Id property\'sini yanlışlıkla farklı bir isimle (ör. "WordId") yazabilir, EF Core\'un onu otomatik PK olarak TANIMADIĞINI ancak migration çalıştırınca (çok geç bir noktada) fark ederdi.'
+          },
           {
             satir: 'public abstract class BaseEntity',
             aciklama: '"abstract" anahtar kelimesi, bu sınıfın tek başına örneklenemeyeceği anlamına gelir — `new BaseEntity()` yazılamaz.',

@@ -6,13 +6,15 @@
 //        DTO'lar — liste yalnızca Text seviyesinde (WordTranslationSummaryDto),
 //        detay ise WordDetail+WordExample'larıyla TAM translation (WordTranslationDto)
 //        taşır; liste ekranının WordDetail/WordExample'a ihtiyacı yok, gereksiz
-//        veri taşımaktan kaçınılır. `categories[]`/`userProgress` alanları
-//        (API_ENDPOINTS.md §5 örneğinde var) A-06 (Kategoriler) ve C-03 (SRS) henüz
-//        yazılmadığı için BİLİNÇLİ olarak bu DTO'larda YOK — o task'lar geldiğinde eklenecek.
-// BAĞIMLILIKLAR: Yok (saf DTO'lar).
+//        veri taşımaktan kaçınılır. `categories[]` alanı A-06'da EKLENDİ — A-05
+//        döneminde "Category tabloları henüz yok" notuyla BİLİNÇLİ olarak dışarıda
+//        bırakılmıştı. `userProgress` (API_ENDPOINTS.md §5 örneğinde var) C-03 (SRS)
+//        henüz yazılmadığı için hâlâ YOK.
+// BAĞIMLILIKLAR: WordLearner.Application.DTOs.Categories.WordCategorySummaryDto (A-06).
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Text.Json;
+using WordLearner.Application.DTOs.Categories;
 
 namespace WordLearner.Application.DTOs.Words;
 
@@ -46,7 +48,8 @@ public record WordConceptListItemDto(
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
-    IReadOnlyList<WordTranslationSummaryDto> Translations
+    IReadOnlyList<WordTranslationSummaryDto> Translations,
+    IReadOnlyList<WordCategorySummaryDto> Categories
 );
 
 // AMAÇ: `GET /words/{id}`, `POST /words`, `PUT /words/{id}` yanıtı.
@@ -55,7 +58,8 @@ public record WordConceptDetailDto(
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
-    IReadOnlyList<WordTranslationDto> Translations
+    IReadOnlyList<WordTranslationDto> Translations,
+    IReadOnlyList<WordCategorySummaryDto> Categories
 );
 
 // AMAÇ: `GET /words/unmatched` liste satırı — bir dilde eşleşmemiş (tek Word'lü)

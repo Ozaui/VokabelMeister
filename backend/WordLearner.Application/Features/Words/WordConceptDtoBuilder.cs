@@ -13,7 +13,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Text.Json;
+using WordLearner.Application.DTOs.Categories;
 using WordLearner.Application.DTOs.Words;
+using WordLearner.Domain.Entities.Categories;
 using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
@@ -27,7 +29,8 @@ public static class WordConceptDtoBuilder
             concept.PartOfSpeech,
             concept.DifficultyLevel,
             concept.ImageUrl,
-            concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()
+            concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList(),
+            BuildCategories(concept)
         );
 
     // AMAÇ: Liste satırı DTO'su — yalnızca dil+metin (WordDetail/örnekler taşınmaz).
@@ -40,8 +43,32 @@ public static class WordConceptDtoBuilder
             concept
                 .Words.OrderBy(w => w.LanguageId)
                 .Select(w => new WordTranslationSummaryDto(w.Language.Code, w.Text))
-                .ToList()
+                .ToList(),
+            BuildCategories(concept)
         );
+
+    // AMAÇ: Bir WordConcept'in bağlı olduğu kategorilerin HAFİF özetini kurar (A-06) —
+    //       CategoryDtoBuilder'daki tam `CategoryDto` DEĞİL, WordCategorySummaryDto
+    //       (bkz. CategoryDtos.cs "NEDEN" — bir kelime listesinde Children/WordCount
+    //       gereksiz).
+    // NEDEN wc.Category.Id (navigasyon), wc.CategoryId (skaler FK) DEĞİL: yeni eklenen
+    //       bir WordCategory'de (CreateWordCommand/UpdateWordCommand) yalnızca `Category`
+    //       navigasyonu set edilir — WordEntityBuilder'ın `Word.Language = language`
+    //       deseniyle AYNI karar (LanguageId DEĞİL). Skaler FK, EF Core'un fixup'ı
+    //       yalnızca gerçek bir DbContext SaveChangesAsync'i sırasında doldurur; bu
+    //       metot her zaman navigasyon üzerinden okuyarak hem SaveChanges ÖNCESİ
+    //       (bu metodun kendisi tam olarak bu anda çağrılıyor) hem SONRASI doğru sonuç verir.
+    private static IReadOnlyList<WordCategorySummaryDto> BuildCategories(WordConcept concept) =>
+        concept
+            .WordCategories.OrderBy(wc => wc.DisplayOrder)
+            .Select(wc => new WordCategorySummaryDto(
+                wc.Category.Id,
+                wc.Category.Translations.OrderBy(t => t.LanguageId).Select(BuildCategoryTranslation).ToList()
+            ))
+            .ToList();
+
+    private static CategoryTranslationDto BuildCategoryTranslation(CategoryTranslation t) =>
+        new(t.Language.Code, t.Name, t.Description);
 
     private static WordTranslationDto BuildTranslation(Word word) =>
         new(

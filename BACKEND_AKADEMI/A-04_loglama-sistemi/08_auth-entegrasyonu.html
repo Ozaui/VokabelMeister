@@ -23,59 +23,118 @@
         olmasaydi: 'Bu entegrasyon yapılmasaydı, REFERENCE/SECURITY.md §6\'daki "SecurityLog: LoginFailed, OtpFailed, RateLimitHit, ..." tablosu YALNIZCA bir TASARIM belgesi olarak KALIRDI — hiçbir gerçek başarısız login denemesi, hiçbir replay saldırısı asla İZLENEMEZDİ, admin panelin (A-07) güvenlik log ekranı SONSUZA kadar BOŞ görünürdü.'
       },
       {
-        tur: 'kod',
-        baslik: 'LoginCommand.cs — LoginFailed: Temsili Örnek',
+        tur: 'kod-degisiklik',
+        baslik: 'LoginCommand.cs — A-03\'te Öğretilen Handler\'a A-04\'te Ne Eklendi',
         dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginCommand.cs',
-        nedenBuKlasor: null,
-        kod: `public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
-{
-    public string? Language { get; init; }
-    public string? ClientIp { get; init; }
-}
+        neden: 'A-03/14\'te (Login OTP) bu Handler\'ı `ISecurityLogger` OLMADAN öğrenmiştik — o zaman A-04 henüz yazılmamıştı. Bu bölümde bu SecurityLog entegrasyonu eklendiğinde Handler\'ın TAMAMI (yalnızca yeni satırlar değil) tekrar gösteriliyor ki eski/yeni hâl arasındaki fark net görülsün.',
+        diff: ` public record LoginCommand(string Email, string Password) : IRequest<MessageResponse>
+ {
+     public string? Language { get; init; }
++    public string? ClientIp { get; init; }
+ }
 
-public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
-{
-    private readonly ISecurityLogger _securityLogger;
-    // ...diğer bağımlılıklar (IUserRepository, IPasswordService, IOtpService, IEmailService)
+ public class LoginCommandHandler : IRequestHandler<LoginCommand, MessageResponse>
+ {
+     private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(
+         Guid.NewGuid().ToString(),
+         workFactor: 12
+     );
 
-    public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)
-    {
-        var user = await _userRepository.GetByEmailAsync(request.Email, ct);
-        var hashToVerify = user?.PasswordHash ?? FakePasswordHashForTiming;
-        var passwordValid = _passwordService.Verify(request.Password, hashToVerify);
+     private readonly IUserRepository _userRepository;
+     private readonly IPasswordService _passwordService;
+     private readonly IOtpService _otpService;
+     private readonly IEmailService _emailService;
++    private readonly ISecurityLogger _securityLogger;
 
-        if (user is null || user.PasswordHash is null || !passwordValid)
-        {
-            await _securityLogger.LogAsync(
-                LogEventType.LoginFailed, user?.Id, request.Email, request.ClientIp, ct: ct);
-            throw new InvalidCredentialsException();
-        }
+     public LoginCommandHandler(
+         IUserRepository userRepository,
+         IPasswordService passwordService,
+         IOtpService otpService,
+-        IEmailService emailService
++        IEmailService emailService,
++        ISecurityLogger securityLogger
+     )
+     {
+         _userRepository = userRepository;
+         _passwordService = passwordService;
+         _otpService = otpService;
+         _emailService = emailService;
++        _securityLogger = securityLogger;
+     }
 
-        // ...OTP üretimi ve gönderimi devam eder
-    }
-}`,
+     public async Task<MessageResponse> Handle(LoginCommand request, CancellationToken ct)
+     {
+         var user = await _userRepository.GetByEmailAsync(request.Email, ct);
+         var hashToVerify = user?.PasswordHash ?? FakePasswordHashForTiming;
+         var passwordValid = _passwordService.Verify(request.Password, hashToVerify);
+
+-        if (user is null || user.PasswordHash is null || !passwordValid)
+-            throw new InvalidCredentialsException();
++        if (user is null || user.PasswordHash is null || !passwordValid)
++        {
++            await _securityLogger.LogAsync(
++                LogEventType.LoginFailed,
++                user?.Id,
++                request.Email,
++                request.ClientIp,
++                ct: ct
++            );
++            throw new InvalidCredentialsException();
++        }
+
+         if (!user.IsActive)
+             throw new AccountNotActiveException();
+
+         var (otpCode, otpHash) = _otpService.Generate();
+         user.PendingOtpCodeHash = otpHash;
+         user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
+         user.PendingOtpCodePurpose = OtpPurpose.LoginOtp;
+         await _userRepository.UpdateAsync(user, user.Id, ct);
+
+         await _emailService.SendLoginOtpAsync(user.Email, otpCode, ct);
+         return new MessageResponse("OTP_SENT", SuccessMessages.Resolve("OTP_SENT", request.Language));
+     }
+ }`,
         satirlar: [
           {
             satir: 'public string? ClientIp { get; init; }',
-            aciklama: 'A-04\'te LoginCommand\'a YENİ eklenen alan — daha önce yalnızca `Language` vardı. `AuthController.Login` artık `command with { Language = Language, ClientIp = ClientIp }` ile İKİSİNİ birden geçirir.',
+            aciklama: 'A-04\'te LoginCommand\'a YENİ eklenen alan — daha önce (A-03/14) yalnızca `Language` vardı. `AuthController.Login` artık `command with { Language = Language, ClientIp = ClientIp }` ile İKİSİNİ birden geçirir.',
             neden: 'LoginFailed olayının IP\'siz LOGLANMASI, "bu IP\'den kaç başarısız deneme oldu" gibi en TEMEL güvenlik sorusunu bile CEVAPSIZ bırakırdı — VerifyLoginOtpCommand\'da (A-03) zaten VAR olan ClientIp deseni burada da TEKRARLANDI.',
             olmasaydi: 'ClientIp eklenmeseydi, SecurityLog.IpAddress kolonu LoginFailed olaylarında HER ZAMAN null kalırdı — REFERENCE/SECURITY.md §4\'teki "Login 5/15dk" rate-limit\'inin İLERİDE (A-XX) IP-bazlı yapılmak istenmesi durumunda bu VERİ hiç TOPLANMAMIŞ olurdu.'
           },
           {
+            satir: 'private readonly ISecurityLogger _securityLogger;',
+            aciklama: 'A-04\'te eklenen 5. bağımlılık — A-03/14\'te Handler yalnızca 4 servis (`IUserRepository`, `IPasswordService`, `IOtpService`, `IEmailService`) alıyordu.',
+            neden: 'LogAsync çağrısı bu alanın (constructor\'da enjekte edilen) üzerinden yapılır — DI konteyneri A-04\'te `ISecurityLogger`\'ı zaten `ApplicationServiceExtensions.cs`\'e kaydetmişti (A-02 denetiminde doğrulandı), bu yüzden yalnızca Handler\'ın KENDİSİNİN bunu istemesi yeterli.',
+            olmasaydi: 'Bu alan eklenmeseydi, aşağıdaki `LogAsync` çağrısı hiç YAZILAMAZDI — Handler\'ın SecurityLog\'a erişecek bir yolu olmazdı.'
+          },
+          {
+            satir: 'ISecurityLogger securityLogger',
+            aciklama: 'Constructor parametre listesine A-04\'te eklenen 5. parametre — bir önceki satırdaki `IEmailService emailService` artık virgülle bitiyor (liste devam ediyor).',
+            neden: 'MediatR/DI konteyneri Handler\'ı bu constructor imzasına göre kurar — yeni bir bağımlılık eklemenin TEK yolu bu listeye eklemektir, `new LoginCommandHandler(...)` hiçbir yerde elle çağrılmadığı için (DI Container çağırıyor) mevcut çağrı noktalarını KIRMAZ.',
+            olmasaydi: 'Parametre eklenmeseydi, `_securityLogger` alanı hiçbir zaman ATANAMAZDI (constructor\'da doldurulacak bir kaynağı olmazdı), derleme hatası verirdi.'
+          },
+          {
+            satir: '_securityLogger = securityLogger;',
+            aciklama: 'Diğer 4 atamayla AYNI satırın hemen altına eklenen 5. atama.',
+            neden: 'Constructor\'ın TEK işi budur — enjekte edilen bağımlılıkları alanlara aktarmak; yeni bir bağımlılık eklendiğinde bu atamanın da eklenmesi ZORUNLUDUR, yoksa alan hep null kalır.',
+            olmasaydi: 'Bu satır olmasaydı, `_securityLogger` alanı DI\'dan parametre olarak gelse bile null KALIRDI — Handle metodundaki `_securityLogger.LogAsync(...)` çağrısı çalışma zamanında `NullReferenceException` FIRLATIRDI.'
+          },
+          {
             satir: 'if (user is null || user.PasswordHash is null || !passwordValid)',
-            aciklama: 'Timing-attack önleminin (A-03) KORUNDUĞU nokta — `_passwordService.Verify` ÜÇ durumda da (kullanıcı yok, şifre yok, şifre yanlış) ÇAĞRILMIŞ olur, yalnızca SONUÇ bu satırda değerlendirilir.',
+            aciklama: 'Timing-attack önleminin (A-03) KORUNDUĞU nokta — `_passwordService.Verify` ÜÇ durumda da (kullanıcı yok, şifre yok, şifre yanlış) ÇAĞRILMIŞ olur, yalnızca SONUÇ bu satırda değerlendirilir. A-03\'te bu `if` tek satırlık bir `throw` idi (blok yoktu); A-04\'te bloklu hâle geldi çünkü artık İKİ ifade (log + throw) çalıştırılıyor.',
             neden: 'SecurityLog entegrasyonu, timing-attack önlemini BOZMAMALI — LogAsync çağrısı bu `if` bloğunun İÇİNDE, yani "karar verildikten SONRA" yapılır, karardan ÖNCE değil.',
-            olmasaydi: 'LogAsync çağrısı `Verify`\'dan ÖNCE yapılsaydı (ör. "önce logla, sonra doğrula"), bu DEĞİŞMEZDİ — ama LogAsync\'in KENDİSİ ek bir DB yazma süresi eklediği için, ileride bu sürenin "kullanıcı var/yok" durumları ARASINDA FARKLI olup olmadığı AYRICA ölçülmesi gereken bir detaydır (bu görevde ölçülmedi, YAGNI — gerçek bir performans sorunu GÖZLEMLENMEDEN optimize edilmez).'
+            olmasaydi: 'LogAsync çağrısı `Verify`\'dan ÖNCE yapılsaydı (ör. "önce logla, sonra doğrula"), timing-attack önlemi BOZULMAZDI ama LogAsync\'in KENDİSİ ek bir DB yazma süresi eklediği için, bu sürenin "kullanıcı var/yok" durumları ARASINDA FARKLI olup olmadığı AYRICA ölçülmesi gereken bir detaydır (bu görevde ölçülmedi, YAGNI).'
           },
           {
             satir: 'await _securityLogger.LogAsync(',
-            aciklama: '`user?.Id` — kullanıcı BULUNAMADIYSA (null), UserId de null KALIR; ama `request.Email` HER ZAMAN geçirilir (hash\'lenerek EmailHash\'e yazılacak, SecurityLogger.cs Bölüm 7).',
+            aciklama: 'A-04\'te eklenen YENİ blok — `user?.Id` kullanıcı BULUNAMADIYSA (null) null KALIR; ama `request.Email` HER ZAMAN geçirilir (hash\'lenerek EmailHash\'e yazılacak, SecurityLogger.cs Bölüm 7).',
             neden: 'Kullanıcı bulunamasa bile hangi e-postanın DENENDİĞİ (hash\'lenmiş hâliyle) loglanmalı — "bu e-posta adresine yönelik art arda deneme" (kullanıcı olsun ya da olmasın) bir BRUTE-FORCE/enumeration saldırısının İZİDİR.',
             olmasaydi: 'Yalnızca `user?.Id` loglanıp email ATLANSAYDI, VAR OLMAYAN bir e-postaya yönelik saldırı DENEMELERİ (ör. "hangi e-postalar sistemde kayıtlı" taraması) HİÇ İZLENEMEZDİ — UserId zaten null olduğu için hiçbir İLİŞKİLENDİRME yapılamazdı.'
           },
           {
             satir: 'throw new InvalidCredentialsException();',
-            aciklama: 'Loglama, exception FIRLATILMADAN ÖNCE `await` ile TAMAMLANIR — yani SecurityLog kaydı DB\'ye YAZILDIKTAN sonra hata istemciye DÖNER.',
+            aciklama: 'A-03\'te de VARDI, A-04\'te LogAsync çağrısının ALTINA taşındı — loglama, exception FIRLATILMADAN ÖNCE `await` ile TAMAMLANIR, yani SecurityLog kaydı DB\'ye YAZILDIKTAN sonra hata istemciye DÖNER.',
             neden: '`await` kullanılmadan (fire-and-forget) loglanıp hemen exception fırlatılsaydı, ASP.NET Core isteği SONLANDIRDIĞINDA arka planda YARIM kalan bir Task riski doğardı — `await` bu riski ORTADAN KALDIRIR, log kaydının GERÇEKTEN yazıldığından EMİN olunur.',
             olmasaydi: '`await` olmadan çağrılsaydı (`_securityLogger.LogAsync(...); throw ...;` — await YOK), bazı isteklerde (özellikle sunucu KAPANIRKEN/yeniden başlarken) log kaydı HİÇ YAZILMADAN kaybolabilirdi — sessiz veri KAYBI.'
           }

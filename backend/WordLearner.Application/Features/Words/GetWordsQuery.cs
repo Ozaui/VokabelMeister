@@ -2,10 +2,9 @@
 // GetWordsQuery.cs
 //
 // AMAÇ: GET /words — filtre+sayfalı kelime kavramı listesi.
-// NEDEN: `categoryId` filtresi (API_ENDPOINTS.md §5) BİLİNÇLİ olarak henüz YOK —
-//        A-06 (Kategoriler) yazılmadan Category/WordCategory tabloları mevcut
-//        değil; o task tamamlanınca bu Query'ye eklenecek (A-05 planı "Sıra Dışı
-//        Notlar"). `search`, kelimenin HERHANGİ bir dildeki Text'inde arar.
+// NEDEN `categoryId` artık VAR (A-06 eklemesi): A-05 döneminde Category/WordCategory
+//        tabloları mevcut olmadığı için BİLİNÇLİ olarak dışarıda bırakılmıştı — o borç
+//        burada kapatıldı. `search`, kelimenin HERHANGİ bir dildeki Text'inde arar.
 // BAĞIMLILIKLAR: IWordConceptRepository, WordConceptDtoBuilder, PagedResult<T>.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -21,7 +20,11 @@ public record GetWordsQuery(
     string? PartOfSpeech,
     string? Search,
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 20,
+    // NEDEN trailing + default null: A-05'te pozisyonel argümanla yazılmış mevcut
+    //        test/çağrı siteleri BOZULMASIN diye (CreateWordCommand.CategoryIds ile
+    //        AYNI karar).
+    int? CategoryId = null
 ) : IRequest<PagedResult<WordConceptListItemDto>>;
 
 public class GetWordsQueryHandler
@@ -38,6 +41,7 @@ public class GetWordsQueryHandler
             request.DifficultyLevel,
             request.PartOfSpeech,
             request.Search,
+            request.CategoryId,
             request.Page,
             request.PageSize,
             ct

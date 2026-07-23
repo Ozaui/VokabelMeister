@@ -19,10 +19,16 @@ public interface IWordConceptRepository : IRepository<WordConcept>
 {
     // AMAÇ: Liste ekranı için filtre+sayfa — her kavramın dillerini (yalnızca
     //       Text seviyesinde, WordDetail/WordExample olmadan) de yükler.
+    // NEDEN categoryId (A-06 eklemesi): A-05'te bilinçli olarak YOKTU (Category/
+    //        WordCategory tabloları henüz yoktu) — GetWordsQuery.cs'teki A-05 dönemi
+    //        notu bu eklemeyi işaret ediyordu. GetCategoryWordsQuery (A-06) da AYNI
+    //        metodu kullanır (categoryId dolu, diğer filtreler null) — ayrı bir
+    //        "kategoriye göre kelime" sorgusu YAZILMADI (YAGNI, tek metot iki tüketici).
     Task<PagedResult<WordConcept>> GetPagedAsync(
         string? difficultyLevel,
         string? partOfSpeech,
         string? search,
+        int? categoryId,
         int page,
         int pageSize,
         CancellationToken ct = default

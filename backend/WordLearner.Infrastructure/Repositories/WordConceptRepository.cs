@@ -24,16 +24,26 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
 
     // AMAÇ: Liste ekranı — dil bazında yalnızca Word.Text seviyesinde Include (WordDetail/
     //       WordExample YOK, liste satırı bu kadar detay göstermiyor, gereksiz sorgu yükünden kaçınılır).
+    //       WordCategories.Category.Translations Include'u A-06'da eklendi — WordConceptDtoBuilder'ın
+    //       `categories[]` alanını (ayrı bir sorgu atmadan) kurabilmesi için.
     public async Task<PagedResult<WordConcept>> GetPagedAsync(
         string? difficultyLevel,
         string? partOfSpeech,
         string? search,
+        int? categoryId,
         int page,
         int pageSize,
         CancellationToken ct = default
     )
     {
-        var query = _set.Include(c => c.Words).ThenInclude(w => w.Language).AsQueryable();
+        var query = _set
+            .Include(c => c.Words)
+            .ThenInclude(w => w.Language)
+            .Include(c => c.WordCategories)
+            .ThenInclude(wc => wc.Category)
+            .ThenInclude(cat => cat.Translations)
+            .ThenInclude(t => t.Language)
+            .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(difficultyLevel))
             query = query.Where(c => c.DifficultyLevel == difficultyLevel);
@@ -41,6 +51,8 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
             query = query.Where(c => c.PartOfSpeech == partOfSpeech);
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.Words.Any(w => w.Text.Contains(search)));
+        if (categoryId is not null)
+            query = query.Where(c => c.WordCategories.Any(wc => wc.CategoryId == categoryId.Value));
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
@@ -53,6 +65,9 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
     }
 
     // AMAÇ: Detay/güncelleme — her dilin WordDetail (gramer) ve WordExample'larıyla birlikte yükler.
+    // NEDEN WordCategories Include'u (A-06 eklemesi): WordConceptDtoBuilder.BuildDetail'in
+    //       `categories[]` alanını kurabilmesi + UpdateWordCommandHandler'ın mevcut kategori
+    //       bağlarını (CategoryIds tam yer değiştirme) GÖREBİLMESİ için.
     public Task<WordConcept?> GetWithTranslationsAsync(int id, CancellationToken ct = default) =>
         _set
             .Include(c => c.Words)
@@ -61,6 +76,10 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
             .ThenInclude(w => w.WordDetail)
             .Include(c => c.Words)
             .ThenInclude(w => w.WordExamples)
+            .Include(c => c.WordCategories)
+            .ThenInclude(wc => wc.Category)
+            .ThenInclude(cat => cat.Translations)
+            .ThenInclude(t => t.Language)
             .FirstOrDefaultAsync(c => c.Id == id, ct);
 
     // AMAÇ: Aynı dilde aynı Text'e sahip başka bir Word var mı — WordConcept üzerinden
@@ -69,10 +88,18 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
         _db.Words.AnyAsync(w => w.LanguageId == languageId && w.Text == text, ct);
 
     // AMAÇ: WordConcept + tüm Word'lerini TEK transaction'da (SaveChangesAsync tek çağrı) soft-delete eder.
+    // NEDEN WordCategories de dahil (A-06 eklemesi): Category/WordCategory tabloları A-05'te
+    //       yoktu; bu metot yalnızca WordConcept+Words'ü kapsıyordu. WordCategory eklendikten
+    //       sonra buraya dahil edilmezse, silinmiş bir kavrama ait kategori bağı DB'de
+    //       IsDeleted=false olarak YETİM kalırdı — CategoryRepository.HasActiveWordsAsync/
+    //       GetWordCountsAsync bunu `!wc.WordConcept.IsDeleted` ile AYRICA telafi ediyor
+    //       olsa da, gelecekte yazılacak yeni bir sorgu (ör. "kategorideki kelimeler" admin
+    //       ekranı) bu kontrolü unutabilirdi — kaynağında (silme anında) temizlemek, her yeni
+    //       sorgunun bu kuralı YENİDEN hatırlaması gerekliliğini ORTADAN KALDIRIR.
     public async Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default)
     {
         var concept =
-            await _set.Include(c => c.Words).FirstOrDefaultAsync(c => c.Id == id, ct)
+            await _set.Include(c => c.Words).Include(c => c.WordCategories).FirstOrDefaultAsync(c => c.Id == id, ct)
             ?? throw new EntityNotFoundException(typeof(WordConcept), id);
 
         var now = DateTime.UtcNow;
@@ -88,6 +115,14 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
             word.DeletedAt = now;
             word.DeletedByUserId = userId;
             word.UpdatedByUserId = userId;
+        }
+
+        foreach (var wordCategory in concept.WordCategories)
+        {
+            wordCategory.IsDeleted = true;
+            wordCategory.DeletedAt = now;
+            wordCategory.DeletedByUserId = userId;
+            wordCategory.UpdatedByUserId = userId;
         }
 
         await _db.SaveChangesAsync(ct);

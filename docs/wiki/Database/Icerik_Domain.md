@@ -1,6 +1,6 @@
 # İçerik Domain (Words, Categories — sistem içeriği)
 
-**Özet:** Yalnızca **Admin**'in yazabildiği, tüm giriş yapmış kullanıcıların okuyabildiği sistem içeriği — çoklu dile açık kelimeler (kavram + dil başına satır), gramer detayları, örnek cümleler ve hiyerarşik kategoriler. Şu an yalnızca Almanca-Türkçe içerik yazılıyor; yeni dil eklemek (örn. İngilizce) yeni migration gerektirmez, yalnızca `Languages`'e satır + ilgili kavramlara `Words`/`CategoryTranslations` satırı eklemektir. `WordDetail.GrammarData`'nın Almanca'ya özel şeması [[Alman_Dili_Ozellikleri]]'ndeki kurallara birebir dayanır. Kod olarak [[Gelistirme_Yol_Haritasi]]'nde **A-05 (Words) ✅ tamamlandı** (Eşleştirme dahil, bkz. Otuz üçüncü INGEST); **A-06 (Categories)** henüz yazılmadı. Kullanıcının kendi kişisel kartları (`UserCards`) bu domain'in **dışındadır** → [[Kisisel_Icerik_Domain]].
+**Özet:** Yalnızca **Admin**'in yazabildiği, tüm giriş yapmış kullanıcıların okuyabildiği sistem içeriği — çoklu dile açık kelimeler (kavram + dil başına satır), gramer detayları, örnek cümleler ve hiyerarşik kategoriler. Şu an yalnızca Almanca-Türkçe içerik yazılıyor; yeni dil eklemek (örn. İngilizce) yeni migration gerektirmez, yalnızca `Languages`'e satır + ilgili kavramlara `Words`/`CategoryTranslations` satırı eklemektir. `WordDetail.GrammarData`'nın Almanca'ya özel şeması [[Alman_Dili_Ozellikleri]]'ndeki kurallara birebir dayanır. Kod olarak [[Gelistirme_Yol_Haritasi]]'nde **A-05 (Words) ✅ tamamlandı** (Eşleştirme dahil, bkz. Otuz üçüncü INGEST); **A-06 (Categories) ✅ tamamlandı** (bkz. Otuz dördüncü INGEST). Kullanıcının kendi kişisel kartları (`UserCards`) bu domain'in **dışındadır** → [[Kisisel_Icerik_Domain]].
 **Kütüphaneler:** —
 **Bağlantılar:** [[Veritabani_Semasi]] · [[Alman_Dili_Ozellikleri]] · [[Turkce_Dili_Ozellikleri]] · [[Ingilizce_Dili_Ozellikleri]] · [[Roller_ve_Erisim]] · [[SRS_Domain]] · [[Kisisel_Icerik_Domain]]
 
@@ -62,16 +62,24 @@ kapsanır — Türkçe/İngilizce eklenince tekrar etiketlemeye gerek yok.
 `PartOfSpeech` matrisini uygular — `de` → [[Alman_Dili_Ozellikleri]] §10, `tr` →
 [[Turkce_Dili_Ozellikleri]] §9 (795 kelime/eşdeğer gerçek içerikten ölçülmüş desenler; iki dilin
 matrisi birbirinden bağımsız, kopyalanamaz — ör. "bileşik kelime notu" `de`'de yalnızca Noun'da,
-`tr`'de Noun+Verb'de). Eşleştirme uç noktaları: `GET /word-concepts/unmatched?languageId=`
+`tr`'de Noun+Verb'de). Eşleştirme uç noktaları (`WordsController` üzerinde, ayrı bir
+`WordConceptsController` YOK): `GET /words/unmatched?languageId=`
 (+ `suggestedMatchConceptId` — `Definition`↔`Text` örtüşmesiyle önerilen aday, elle taramayı azaltır),
-`POST /word-concepts/{primaryId}/pair` — **bloklayıcı hata yok**: `PartOfSpeech`/kategori/seviye
+`POST /words/pair` (`primaryId` body'de, URL'de DEĞİL) — **bloklayıcı hata yok**: `PartOfSpeech`/kategori/seviye
 çakışsa bile `primaryId`'ninki sessizce kazanır (diller arası tür kayması dilin doğası, veri hatası
 değil — bkz. Otuzuncu INGEST).
 
-## Planlanan Kod
-- A-05: `Language`/`WordConcept`/`Word`/`WordDetail`/`WordExample` entity + `Language` seed (de/tr) →
-  `WordGrammarValidator` (dil+tür bazlı koşullu kural) → `IWordService`/`WordService` (liste
-  filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya 2 dil, duplikat 409 + `?force=true`) →
-  eşleştirme (`GetUnmatchedWordConceptsQuery`/`PairWordConceptsCommand`) → `WordController`.
-- A-06: `Category`/`CategoryTranslation`/`WordCategory` entity → `ICategoryService`/`CategoryService`
-  (hiyerarşik liste, silme koruması — alt kategori/aktif kelime varsa 409) → `CategoriesController`.
+## Yazılan Kod (Planlanan Kod DEĞİL — ikisi de tamamlandı)
+- A-05 ✅: `Language`/`WordConcept`/`Word`/`WordDetail`/`WordExample` entity + `Language` seed (de/tr) →
+  `WordGrammarValidator` (dil+tür bazlı koşullu kural) → `IWordConceptRepository` + 5 MediatR
+  Command/Query (liste filtre+sayfa, detay, CRUD Admin — `translations[]` 1 veya 2 dil, duplikat 409 +
+  `?force=true`) → eşleştirme (`GetUnmatchedWordConceptsQuery`/`PairWordConceptsCommand`) →
+  `WordsController`. (Kanonik desen MediatR Command+Handler — `IWordService`/`WordService` deseni
+  A-03 retrofit'inden sonra TERK EDİLDİ, `CLAUDE.md` §3.)
+- A-06 ✅: `Category`/`CategoryTranslation`/`WordCategory` entity (self-ref hiyerarşi, CHECK
+  MinLevel/MaxLevel, 2 UNIQUE index) → `ICategoryRepository` + 5 MediatR Command/Query (hiyerarşik
+  liste, silme koruması — alt kategori→`CategoryHasChildrenException`, aktif kelime→
+  `CategoryHasActiveWordsException`, döngü→`CategoryParentCycleException`, hepsi 409/400) →
+  `CategoriesController` — A-05'teki repository+Command/Query deseniyle birebir aynı. `GET /words`'e
+  sıra dışı retrofit: `categoryId` filtresi + yanıtta `categories[]` alanı eklendi (A-05'in bıraktığı
+  borç, A-06 sırasında kapatıldı). 219/219 birim testi yeşil (193+26). Detay → Otuz dördüncü INGEST.

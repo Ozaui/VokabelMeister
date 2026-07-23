@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command/Query Handler'ları — Create/Update/Delete/Get</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'command-handlerlari',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '04_repository-katmani.html',
+    sonrakiBolum: '06_controller-validator-testler.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'CategoryDtos.cs — Tek DTO + Kelime Özeti',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Categories/CategoryDtos.cs',
+        nedenBuKlasor: 'DTOs/Categories/ — WordDtos (A-05) ile AYNI, entity klasör yapısını izleyen konum.',
+        kod: `// AMAÇ: Bir Category'nin tek bir dildeki adı.
+public record CategoryTranslationDto(string LanguageCode, string Name, string? Description);
+
+// AMAÇ: \`GET /categories\`, \`POST/PUT /categories\` yanıtındaki bir kategori düğümü —
+//       \`Children\` alanı iç içe (recursive) olduğu için ağaç yapısını doğrudan taşır.
+public record CategoryDto(
+    int Id,
+    int? ParentCategoryId,
+    int DisplayOrder,
+    string? Icon,
+    string? Color,
+    string? MinLevel,
+    string? MaxLevel,
+    IReadOnlyList<CategoryTranslationDto> Translations,
+    int? WordCount,
+    IReadOnlyList<CategoryDto> Children
+);
+
+// AMAÇ: Bir kelimenin bağlı olduğu kategorinin HAFİF özeti — GET /words yanıtındaki
+//       \`categories[]\` alanında kullanılır (A-06 sonu, WordDtos.cs güncellemesi).
+// NEDEN: Tam \`CategoryDto\` DEĞİL — Children/WordCount gibi alanlar bir kelime
+//        listesinde anlamsız (döngüsel/gereksiz veri); yalnızca "bu kelime hangi
+//        kategoride, o kategori nasıl gösterilir" sorusuna cevap verecek kadarı taşınır.
+public record WordCategorySummaryDto(int CategoryId, IReadOnlyList<CategoryTranslationDto> Translations);`,
+        satirlar: [
+          {
+            satir: 'public record CategoryDto(',
+            aciklama: 'A-05\'in WordConceptListItemDto/WordConceptDetailDto AYRIMI burada YOK — \`GET /categories\` (liste) ve \`POST/PUT /categories\` (tekil) AYNI \`CategoryDto\`\'yu kullanır.',
+            neden: 'A-05\'te liste/detay ayrımı, detay DTO\'sunun WordDetail/WordExample gibi AĞIR alt-varlıklar taşımasından doğuyordu — Category\'de böyle bir ağırlık farkı YOK: \`CategoryDto\` zaten hafif (birkaç düz alan + küçük bir Translations listesi), liste ekranı da AĞACI (Children dahil) göstermek zorunda olduğu için (API_ENDPOINTS.md §6 "Hiyerarşik") ayrı bir "özet" DTO\'nun kazandıracağı bir şey yok.',
+            olmasaydi: 'Ayrı bir CategoryListItemDto (Children\'sız) yazılsaydı, GET /categories zaten hiyerarşik bir ağaç dönmesi GEREKTİĞİ için (bir liste öğesinin Children\'ı olmazsa ağaç KURULAMAZ) bu DTO\'nun pratikte hiçbir zaman kullanılamayan, ölü bir tip OLURDU.'
+          },
+          {
+            satir: 'public record WordCategorySummaryDto(int CategoryId, IReadOnlyList<CategoryTranslationDto> Translations);',
+            aciklama: 'NOT: Bu DTO şu an hiçbir Handler tarafından ÜRETİLMİYOR — GetWordsQuery/GetWordByIdQuery\'nin (A-05) yanıtına \`categories[]\` alanı eklenmesi bu bölümün DEVAMINDA (bölüm 07) WordDtos.cs güncellemesiyle YAPILACAK; A-06 planının bilinçli, aynı görev içinde tamamlanacak bir sonraki adımı.',
+            neden: 'WordConcept.cs\'e Bölüm 2\'de eklenen \`WordCategories\` navigasyonu ZATEN bu alanı beslemek İÇİN vardı ("A-06 henüz yazılmadığı için BİLİNÇLİ olarak YOK" notunun KAPANIŞI) — DTO\'nun kendisi tüketicisinden ÖNCE yazılmış olsa da, tüketici (WordConceptDtoBuilder güncellemesi) AYNI görevin (A-06) planlı bir sonraki adımı, spekülatif bir "ileride lazım olur" DEĞİL.',
+            olmasaydi: 'Bu DTO CategoryDtos.cs\'e HİÇ eklenmeseydi, bir sonraki bölümde WordDtos.cs güncellenirken \`categories[]\` alanının şeklini TANIMLAMAK için CategoryDtos.cs\'e GERİ dönmek gerekirdi — kategoriye özgü bir DTO\'yu Words feature\'ının İÇİNE tanımlamak, DTOs/Categories/ ile DTOs/Words/ arasındaki sorumluluk sınırını BULANIKLAŞTIRIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateCategoryCommand.cs — Command + Handler (Temsili)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/CreateCategoryCommand.cs',
+        nedenBuKlasor: 'Features/Categories/ — Command+Handler AYNI dosyada (CLAUDE.md §5), \`CategoryTranslationInput\` de burada tanımlı çünkü hem Create hem Update (bir sonraki slayt) bu input\'u PAYLAŞIYOR. NOT (Temsili): \`CreateCategoryCommandHandler\` sınıf tanımı, private alanlar ve constructor (DI ile ICategoryRepository/ILanguageRepository/IActivityLogger enjeksiyonu) burada GÖSTERİLMİYOR — bu, A-05\'in CreateWordCommandHandler ile BİREBİR aynı, sıradan bir DI constructor kalıbı (WordsController\'daki gibi), tekrar öğretmeye değecek yeni bir şey YOK; yalnızca Handle metodunun GÖVDESİ (asıl iş mantığı) gösteriliyor.',
+        kod: `// AMAÇ: Bir dildeki kategori adı/kısa açıklama girdisi.
+public record CategoryTranslationInput(string LanguageCode, string Name, string? Description);
+
+public record CreateCategoryCommand(
+    int? ParentCategoryId,
+    int DisplayOrder,
+    string? Icon,
+    string? Color,
+    string? MinLevel,
+    string? MaxLevel,
+    IReadOnlyList<CategoryTranslationInput> Translations
+) : IRequest<CategoryDto>
+{
+    public int? UserId { get; init; }
+    public string? ActorRole { get; init; }
+}
+
+public async Task<CategoryDto> Handle(CreateCategoryCommand request, CancellationToken ct)
+{
+    if (request.ParentCategoryId is not null)
+        _ =
+            await _categoryRepository.GetByIdAsync(request.ParentCategoryId.Value, ct)
+            ?? throw new EntityNotFoundException(typeof(Category), request.ParentCategoryId.Value);
+
+    var category = new Category
+    {
+        ParentCategoryId = request.ParentCategoryId,
+        DisplayOrder = request.DisplayOrder,
+        Icon = request.Icon,
+        Color = request.Color,
+        MinLevel = request.MinLevel,
+        MaxLevel = request.MaxLevel,
+    };
+
+    foreach (var translation in request.Translations)
+    {
+        var language =
+            await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+            ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+
+        category.Translations.Add(
+            new CategoryTranslation
+            {
+                Language = language,
+                Name = translation.Name,
+                Description = translation.Description,
+                CreatedByUserId = request.UserId,
+                UpdatedByUserId = request.UserId,
+            }
+        );
+    }
+
+    await _categoryRepository.AddAsync(category, request.UserId, ct);
+
+    await _activityLogger.LogAsync(
+        request.UserId,
+        request.ActorRole,
+        "CREATE_CATEGORY",
+        entityType: "Category",
+        entityId: category.Id,
+        newValue: new
+        {
+            category.ParentCategoryId,
+            category.DisplayOrder,
+            Translations = request.Translations.Select(t => new { t.LanguageCode, t.Name }),
+        },
+        ct: ct
+    );
+
+    return CategoryDtoBuilder.BuildSingle(category);
+}`,
+        satirlar: [
+          {
+            satir: 'if (request.ParentCategoryId is not null)',
+            aciklama: 'ParentCategoryId gönderildiyse, o Id\'ye sahip bir kategori GERÇEKTEN var mı önce KONTROL edilir — yoksa 404.',
+            neden: 'Category.ParentCategoryId self-ref bir FK, DB seviyesinde \`Restrict\` (Bölüm 2) — var olmayan bir Id\'ye INSERT denendiğinde DB zaten bir FK ihlali hatasıyla REDDEDER, ama bu ÇIPLAK bir SQL exception olur (500), API_ENDPOINTS.md\'nin beklediği düzgün bir 404 ApiErrorResponse DEĞİL; uygulama katmanında ÖNCEDEN kontrol etmek, DB hatasını anlamlı bir HTTP durum koduna ÇEVİRİR.',
+            olmasaydi: 'Bu kontrol olmasaydı, admin formu bir yazım hatasıyla (ör. silinmiş/hiç var olmamış bir parentCategoryId) POST attığında istek "500 Internal Server Error" ile ÇÖKERDİ — admin panelin hata mesajı gösterme mekanizması (ApiErrorResponse.Code bazlı) bu durumda hiçbir anlamlı bilgi GÖSTEREMEZDİ.'
+          },
+          {
+            satir: 'category.Translations.Add(',
+            aciklama: 'Her dil için YENİ bir CategoryTranslation nesnesi kurulup \`category.Translations\` koleksiyonuna EKLENİR — Create\'te "zaten var mı" kontrolü YOK çünkü kategori henüz DB\'de bile yok, tüm çeviriler ZORUNLU olarak yeni.',
+            neden: 'WordEntityBuilder.Build (A-05) ile AYNI \`Language = language\` deseni — FK\'yi (LanguageId) elle set etmek YERİNE navigation property\'nin kendisi atanır, EF Core Id\'yi bu ilişkiden ÇIKARIR.',
+            olmasaydi: 'Language nesnesi ATANMAYIP yalnızca bir LanguageId int\'i set edilseydi, \`CategoryDtoBuilder.BuildSingle\`\'ın \`BuildTranslation(t) => new(t.Language.Code, ...)\` çağrısı (henüz kaydedilmemiş, tracked olmayan bir entity\'de) NullReferenceException FIRLATIRDI.'
+          },
+          {
+            satir: 'await _categoryRepository.AddAsync(category, request.UserId, ct);',
+            aciklama: 'TEK bir AddAsync çağrısı — \`category.Translations\`\'a eklenen CategoryTranslation nesneleri AYRI AYRI kaydedilmez, EF Core\'un change tracker\'ı child\'ları OTOMATİK cascade insert eder.',
+            neden: 'WordConcept aggregate root deseninin (A-05) BİREBİR aynısı — Handler yalnızca kök nesneyi (category) kaydeder, EF Core\'un navigation property\'yi (Translations) takip etmesi SAYESİNDE Category + tüm CategoryTranslation satırları TEK transaction\'da INSERT edilir.',
+            olmasaydi: 'Her CategoryTranslation için AYRI bir AddAsync çağrılsaydı, CategoryId FK\'sini elle set etmek (henüz Category\'nin Id\'si YOKKEN) GEREKİRDİ — kırılgan, sıra bağımlı bir kod ortaya ÇIKARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'UpdateCategoryCommand — Create\'ten Farkı: İKİ Ekstra Kontrol',
+        aciklama: 'UpdateCategoryCommand\'ın çeviri KURMA döngüsü (\`Translations\` foreach\'i) CreateCategoryCommand\'la ÇOK benzer bir kalıp izliyor — yalnızca "bu dil kategoride ZATEN VAR MI" ayrımı EKLENİYOR (A-05\'in UpdateWordCommand\'ındaki "var/yok" desenle AYNI). Bu bölüm o TEKRAR eden kısmı yeniden TAM göstermek yerine, Update\'in Create\'ten GERÇEKTEN farklı olduğu İKİ noktaya odaklanıyor: (1) ParentCategoryId değişince çalışan İKİ kontrol, (2) çeviri döngüsündeki var/yok dallanması.',
+        neden: 'STANDART.md\'nin "temsili öğretim" kuralı: aynı yapıyı (translation kurma döngüsü) iki kez TAM kod bloğuyla göstermek, okuyucuya YENİ bir mühendislik kararı ÖĞRETMEZ — asıl öğrenmesi gereken şey, PUT\'un Create\'te HİÇ var olmayan bir riski (var olan bir hiyerarşiyi BOZMA riski) nasıl ele aldığı.',
+        olmasaydi: 'UpdateCategoryCommand\'ın TAMAMI (Create\'le ortak olan kısımlar dahil) tekrar gösterilseydi, bu bölüm gereksiz yere UZARDI ve okuyucu "bu az önce gördüğüm koddan FARKI ne" sorusunu KENDİSİ bulmak zorunda kalırdı — oysa bu bölümün amacı tam olarak o farkı ÖNE ÇIKARMAK.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommand.cs — ParentCategoryId İki Kontrol',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/UpdateCategoryCommand.cs',
+        nedenBuKlasor: 'Handle metodunun TAMAMI DEĞİL — yalnızca Create\'ten FARKLI olan ParentCategoryId bloğu (STANDART.md "temsili öğretim" kararı, bir önceki kavram slaytı).',
+        kod: `if (request.ParentCategoryId is not null && request.ParentCategoryId != category.ParentCategoryId)
+{
+    _ =
+        await _categoryRepository.GetByIdAsync(request.ParentCategoryId.Value, ct)
+        ?? throw new EntityNotFoundException(typeof(Category), request.ParentCategoryId.Value);
+
+    if (
+        request.ParentCategoryId == category.Id
+        || await _categoryRepository.WouldCreateCycleAsync(category.Id, request.ParentCategoryId.Value, ct)
+    )
+        throw new CategoryParentCycleException();
+}`,
+        satirlar: [
+          {
+            satir: 'if (request.ParentCategoryId is not null && request.ParentCategoryId != category.ParentCategoryId)',
+            aciklama: 'Bu blok yalnızca ParentCategoryId GERÇEKTEN DEĞİŞİYORSA çalışır — admin formu mevcut parent\'ı AYNEN geri gönderirse (tipik bir PUT senaryosu, alan değişmemiş) hiçbir ekstra sorgu ATILMAZ.',
+            neden: '\`WouldCreateCycleAsync\` (Bölüm 4) her çağrıldığında en az bir DB round-trip\'i (ve döngü varsa daha fazlası) YAPIYOR — parent değişmediği sürece bir döngü RİSKİ de yok (kategori zaten kendi mevcut konumunda), bu kontrolü ATLAMAK hem doğru hem daha HIZLI.',
+            olmasaydi: 'Bu koşul olmadan HER PUT isteğinde (parent değişse de değişmese de) \`WouldCreateCycleAsync\` çağrılsaydı, admin formunun her "kaydet" tıklamasında (çoğu zaman parent DEĞİŞMEMİŞKEN) gereksiz bir DB sorgu ZİNCİRİ tetiklenirdi.'
+          },
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(Category), request.ParentCategoryId.Value);',
+            aciklama: 'BİRİNCİ kontrol — CreateCategoryCommand\'daki AYNI 404 kontrolü: yeni parent GERÇEKTEN var mı.',
+            neden: 'Update\'te de Create\'teki AYNI risk geçerli — admin formu var olmayan/silinmiş bir kategori Id\'sine PUT ile bağlanmaya çalışabilir; bu kontrol olmadan aynı DB FK hatası (500) riski OLURDU.',
+            olmasaydi: 'Bu kontrol atlanıp doğrudan ikinci (döngü) kontrolüne geçilseydi, var olmayan bir parentCategoryId için \`WouldCreateCycleAsync\` "bulunamadı, ata zinciri burada BİTTİ" anlamında \`false\` dönerdi (while döngüsü \`current is null\` olduğunda durur) — döngü YOK denip UpdateAsync çağrılır, sonra DB\'nin FK constraint\'i devreye girip 500 hatası VERİRDİ; aynı hata sınıfı (var olmayan Id) iki farklı, tutarsız sonuç (400 yerine 500) ÜRETİRDİ.'
+          },
+          {
+            satir: '|| await _categoryRepository.WouldCreateCycleAsync(category.Id, request.ParentCategoryId.Value, ct)',
+            aciklama: 'İKİNCİ kontrol — Create\'te HİÇ olmayan, Update\'e ÖZGÜ bir risk: bu kategoriyi KENDİSİNİN (\`== category.Id\`) veya kendi ALT AĞACINDAKİ (\`WouldCreateCycleAsync\`) bir kategorinin altına taşımak.',
+            neden: 'Create\'te bu kontrol GEREKSİZ çünkü YENİ bir kategori henüz hiçbir kategorinin atası OLAMAZ (kendi Id\'si daha oluşmadı, hiçbir ParentCategoryId ona işaret ETMİYOR) — bu risk YALNIZCA var olan, zaten bir hiyerarşinin İÇİNDE olan bir kategori TAŞINDIĞINDA ortaya çıkar; \`category.Id == request.ParentCategoryId\` en BASİT döngü (kendine kendi parent\'ı olmak) özel bir HIZLI-YOL olarak ayrıca kontrol edilir, \`WouldCreateCycleAsync\` ise DAHA DERİN (torun/torunun torunu) döngüleri yakalar.',
+            olmasaydi: 'Bu kontrol olmasaydı, "Meyve" kategorisini kendi alt kategorisi "Turunçgil"in ALTINA taşımak İZİN verilirdi — Bölüm 4\'te açıklandığı gibi CategoryDtoBuilder.BuildTree bu döngüyü kurmaya çalıştığında sonsuz recursive çağrı (StackOverflowException) ile ÇÖKERDİ, ya da en iyi ihtimalle admin panelinde "Meyve"nin altında "Turunçgil", onun altında yine "Meyve" görünen, ASLA bitmeyen bir ağaç GÖSTERİLMEYE çalışılırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommand.cs — Var/Yok Çeviri Ayrımı',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/UpdateCategoryCommand.cs',
+        nedenBuKlasor: 'Yalnızca çeviri döngüsü — Create\'ten farkı (existing kontrolü) burada, kavram slaytında açıklanan "temsili öğretim" kararı gereği.',
+        kod: `foreach (var translation in request.Translations)
+{
+    var language =
+        await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+        ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+
+    var existing = category.Translations.FirstOrDefault(t => t.LanguageId == language.Id);
+
+    if (existing is null)
+    {
+        category.Translations.Add(
+            new CategoryTranslation
+            {
+                Language = language,
+                Name = translation.Name,
+                Description = translation.Description,
+                CreatedByUserId = request.UserId,
+                UpdatedByUserId = request.UserId,
+            }
+        );
+        continue;
+    }
+
+    existing.Name = translation.Name;
+    existing.Description = translation.Description;
+    existing.UpdatedByUserId = request.UserId;
+}`,
+        satirlar: [
+          {
+            satir: 'var existing = category.Translations.FirstOrDefault(t => t.LanguageId == language.Id);',
+            aciklama: 'A-05\'in UpdateWordCommand\'ındaki \`existingWord\` aramasıyla BİREBİR aynı desen — bu dil kategoride ZATEN VAR MI sorusu, \`Translations\` koleksiyonu bellekte (Handler\'ın başında \`GetWithTranslationsAsync\` ile önceden yüklenmiş) ARANARAK cevaplanır, ayrı bir DB sorgusu ATILMAZ.',
+            neden: 'PUT\'un "translations[] listesindeki her dil, VARSA güncellenir, YOKSA eklenir" semantiği (dosya başı yorumu) — bu, admin formunun "İngilizce çeviriyi düzenle" ile "yeni bir dil ekle"yi AYNI istekte, AYRI bir endpoint olmadan yapabilmesini sağlar.',
+            olmasaydi: 'Bu ayrım olmasaydı (her zaman \`Add\` çağrılsaydı), aynı kategori için aynı dilde İKİNCİ bir çeviri girişimi \`(CategoryId, LanguageId)\` UNIQUE index\'ine (Bölüm 2) ÇARPAR, PUT isteği beklenmedik bir DB hatasıyla BAŞARISIZ olurdu — admin mevcut bir çeviriyi "güncellemek" isterken aslında YENİ bir satır eklemeye ÇALIŞMIŞ olurdu.'
+          },
+          {
+            satir: 'existing.Name = translation.Name;',
+            aciklama: 'Var olan CategoryTranslation\'ın alanları YERİNDE (in-place) güncellenir — yeni bir nesne OLUŞTURULMAZ.',
+            neden: 'EF Core\'un change tracker\'ı bu tracked entity üzerindeki değişikliği OTOMATİK algılar — Handler\'ın sonunda tek bir \`UpdateAsync(category, ...)\` çağrısı TÜM değişen alanları (category + değişen/eklenen Translation\'lar) kaydeder, A-05\'in UpdateWordCommand\'ındaki \`existingWord.Text = ...\` deseniyle AYNI.',
+            olmasaydi: 'Yeni bir CategoryTranslation nesnesi oluşturulup ESKİSİNİN yerine EKLENMEYE çalışılsaydı, EF Core bunu "yeni bir satır" olarak ALGILAR, aynı dilde İKİ Translation satırı (biri eski/orphan, biri yeni) oluşma RİSKİ doğardı — \`(CategoryId, LanguageId)\` unique index\'i bunu YAKALARDI ama gereksiz bir hata OLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteCategoryCommand.cs — 409 Koruma Sırası',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/DeleteCategoryCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<Unit> Handle(DeleteCategoryCommand request, CancellationToken ct)
+{
+    var category =
+        await _categoryRepository.GetWithTranslationsAsync(request.Id, ct)
+        ?? throw new EntityNotFoundException(typeof(Category), request.Id);
+
+    if (await _categoryRepository.HasChildrenAsync(request.Id, ct))
+        throw new CategoryHasChildrenException();
+
+    if (await _categoryRepository.HasActiveWordsAsync(request.Id, ct))
+        throw new CategoryHasActiveWordsException();
+
+    await _categoryRepository.SoftDeleteAsync(request.Id, request.UserId, ct);
+
+    await _activityLogger.LogAsync(
+        request.UserId,
+        request.ActorRole,
+        "DELETE_CATEGORY",
+        entityType: "Category",
+        entityId: request.Id,
+        oldValue: new
+        {
+            category.ParentCategoryId,
+            Translations = category.Translations.Select(t => new { LanguageCode = t.Language.Code, t.Name }),
+        },
+        ct: ct
+    );
+
+    return Unit.Value;
+}`,
+        satirlar: [
+          {
+            satir: 'if (await _categoryRepository.HasChildrenAsync(request.Id, ct))',
+            aciklama: 'İKİ kontrolden BİRİNCİSİ — alt kategori var mı.',
+            neden: 'Bu kontrol İKİ sebeple ÖNCE çalışır: (1) Ucuz — \`HasChildrenAsync\` yalnızca Categories tablosu üzerinde JOIN\'siz bir \`AnyAsync\` (Bölüm 4), \`HasActiveWordsAsync\` ise WordCategories→WordConcept JOIN\'i gerektiriyor; ucuz sorgu önce denenirse, alt kategorisi olan bir silme isteği daha PAHALI sorguya hiç GEREK KALMADAN reddedilir. (2) Mantıksal öncelik — bir kategori hem alt kategoriye HEM aktif kelimeye sahipse, admin önce hiyerarşik sorunu (alt kategorileri taşı/sil) çözmeli; o çözülmeden aktif-kelime uyarısı TEK BAŞINA bir sonraki ADIM olamaz.',
+            olmasaydi: 'Sıra tersine çevrilseydi (önce HasActiveWordsAsync), HER silme denemesinde JOIN\'li, daha PAHALI bir sorgu ÖNCE çalıştırılırdı — çoğu zaman alt kategori kontrolü zaten YETERLİYKEN (kategori boş bir yaprak değilse) gereksiz bir DB maliyeti EKLENMİŞ olurdu.'
+          },
+          {
+            satir: 'if (await _categoryRepository.HasActiveWordsAsync(request.Id, ct))',
+            aciklama: 'İKİNCİ kontrol — yalnızca kategori bir YAPRAK (alt kategorisi yok) İSE buraya kadar gelinir; bu noktada kendisine bağlı aktif kelime var mı kontrol edilir.',
+            neden: 'Bir kategori alt kategorisi OLMASA bile hâlâ B-03\'teki kelime kartlarından birine BAĞLI olabilir — bu kategori silinirse o kelimenin "hangi kategoride" bilgisi KOPARDI (WordCategory satırı "hayalet" bir CategoryId\'ye işaret EDERDİ), bu yüzden ikinci bir savunma hattı GEREKLİ.',
+            olmasaydi: 'Bu kontrol hiç olmasaydı, aktif kelimelere bağlı bir yaprak kategori SESSİZCE silinebilirdi — GET /words yanıtındaki (ileriki bölüm) \`categories[]\` alanı artık VAR OLMAYAN bir kategoriye işaret eden bir CategoryId taşırdı, admin panel bu kategoriyi göstermeye çalışırken 404/boş bir sonuçla KARŞILAŞIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetCategoriesQuery.cs — Koşullu Kelime Sayısı',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/GetCategoriesQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public record GetCategoriesQuery(string? Level, bool IncludeWordCount) : IRequest<IReadOnlyList<CategoryDto>>;
+
+public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, IReadOnlyList<CategoryDto>>
+{
+    private readonly ICategoryRepository _categoryRepository;
+
+    public GetCategoriesQueryHandler(ICategoryRepository categoryRepository) =>
+        _categoryRepository = categoryRepository;
+
+    public async Task<IReadOnlyList<CategoryDto>> Handle(GetCategoriesQuery request, CancellationToken ct)
+    {
+        var flat = await _categoryRepository.GetAllWithTranslationsAsync(request.Level, ct);
+
+        var wordCounts = request.IncludeWordCount ? await _categoryRepository.GetWordCountsAsync(ct) : null;
+
+        return CategoryDtoBuilder.BuildTree(flat, wordCounts);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var wordCounts = request.IncludeWordCount ? await _categoryRepository.GetWordCountsAsync(ct) : null;',
+            aciklama: '\`GetWordCountsAsync\` (WordCategories tablosunun TAMAMINI \`GROUP BY CategoryId\` ile tarayan bir sorgu, Bölüm 4) yalnızca istemci \`includeWordCount=true\` GÖNDERDİĞİNDE çalıştırılır — varsayılan istekte HİÇ çağrılmaz.',
+            neden: 'B-04\'ün admin listesi "bu kategoride N kelime var" GÖSTERMEK isteyebilir, ama mobil/web istemcinin kategori AĞACINI (ör. bir kelime kartı formunda dropdown doldurmak için) çekerken bu SAYIYA hiç ihtiyacı YOK — koşulsuz her zaman hesaplansaydı, o istemciler için GEREKSİZ bir GROUP BY sorgusu her \`GET /categories\` çağrısında ÇALIŞIRDI.',
+            olmasaydi: '\`GetWordCountsAsync\` KOŞULSUZ her zaman çağrılsaydı, mobil uygulamanın sık sık çektiği "kategori ağacını GÖSTER" isteği (WordCount hiç KULLANILMAYACAKKEN) her seferinde WordCategories tablosunun TAMAMINI tarayan bir GROUP BY sorgusu TETİKLERDİ — gereksiz bir DB yükü.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetCategoryWordsQuery.cs — Doğrulama + Paylaşılan GetPagedAsync',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/GetCategoryWordsQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<PagedResult<WordConceptListItemDto>> Handle(GetCategoryWordsQuery request, CancellationToken ct)
+{
+    _ =
+        await _categoryRepository.GetByIdAsync(request.CategoryId, ct)
+        ?? throw new EntityNotFoundException(typeof(Category), request.CategoryId);
+
+    var paged = await _wordConceptRepository.GetPagedAsync(
+        difficultyLevel: null,
+        partOfSpeech: null,
+        search: null,
+        categoryId: request.CategoryId,
+        page: request.Page,
+        pageSize: request.PageSize,
+        ct: ct
+    );
+
+    return new PagedResult<WordConceptListItemDto>(
+        paged.Items.Select(WordConceptDtoBuilder.BuildListItem).ToList(),
+        paged.TotalCount,
+        paged.Page,
+        paged.PageSize
+    );
+}`,
+        satirlar: [
+          {
+            satir: '?? throw new EntityNotFoundException(typeof(Category), request.CategoryId);',
+            aciklama: 'Kelimeleri sorgulamadan ÖNCE kategorinin GERÇEKTEN var olup olmadığı kontrol edilir.',
+            neden: 'Bu kontrol olmadan da \`GetPagedAsync(categoryId: yanlisId, ...)\` bir HATA fırlatmaz — yalnızca 0 sonuçlu, SESSİZCE boş bir sayfa DÖNER; bu, "kategori Id\'si yanlış yazıldı" (404 olmalı) ile "bu kategoride HENÜZ kelime yok" (200 + boş liste olmalı) durumlarını AYIRT EDEMEZ hale getirir.',
+            olmasaydi: 'Bu kontrol olmasaydı, admin panelinde bir yazım hatasıyla var olmayan bir categoryId\'ye istek atıldığında API sessizce "0 sonuç" DÖNERDİ — kullanıcı "bu kategori boş" mu yoksa "bu kategori hiç YOK" mu ayırt EDEMEZDİ, hatalı bir URL fark edilmeden GEÇERDİ.'
+          },
+          {
+            satir: 'var paged = await _wordConceptRepository.GetPagedAsync(',
+            aciklama: 'AYRI bir "kategoriye göre kelime" sorgu mantığı YAZILMADI — A-05\'in \`IWordConceptRepository.GetPagedAsync\`\'i A-06\'da \`categoryId\` parametresi ALACAK şekilde genişletildi (bkz. IWordConceptRepository.cs güncel hâli), bu Query o AYNI metodu, diğer filtreler NULL, yalnızca categoryId dolu şekilde ÇAĞIRIR.',
+            neden: 'YAGNI: \`GetWordsQuery\` (A-05, genel liste) ile \`GetCategoryWordsQuery\` (A-06, kategoriye göre liste) aynı "filtre+sayfa" ihtiyacını PAYLAŞIYOR — categoryId de sadece BİR filtre daha; ayrı bir metot (\`GetByCategory\`) yazmak, sayfalama/sıralama mantığını İKİ yerde TEKRARLAMAK anlamına gelirdi.',
+            olmasaydi: 'Ayrı bir \`GetPagedByCategoryAsync\` yazılsaydı, GetPagedAsync\'teki filtreleme/sayfalama mantığı (Bölüm A-05) BİREBİR kopyalanır, bir gün YALNIZCA birinde düzeltilen bir bug (ör. sayfalama sınırı hatası) DİĞERİNDE kalırdı — WordEntityBuilder/WordConceptDtoBuilder\'ın (A-05) paylaşılan yardımcı GEREKÇESİYLE AYNI risk.'
+          },
+          {
+            satir: 'paged.Items.Select(WordConceptDtoBuilder.BuildListItem).ToList(),',
+            aciklama: 'A-05\'in \`WordConceptDtoBuilder.BuildListItem\`\'i BURADA da (Categories feature\'ından) çağrılıyor — Category\'ye özel bir DTO oluşturucu YAZILMADI.',
+            neden: 'Bu sorgunun döndürdüğü şey KAVRAMSAL olarak "bir kelime listesi", yalnızca farklı bir FİLTREYLE (categoryId) elde edilmiş — WordConceptListItemDto\'nun şekli GetWordsQuery\'ninkiyle BİREBİR aynı olduğu için ayrı bir dönüştürücü yazmak salt KOD TEKRARI olurdu.',
+            olmasaydi: 'Category\'ye özel bir \`CategoryWordListItemDto\` yazılsaydı, istemci (admin panel) AYNI kelime kartı bileşenini GET /words ve GET /categories/{id}/words yanıtları için FARKLI şekillerde ele almak zorunda kalırdı — gereksiz bir sözleşme ÇEŞİTLENMESİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Silme Koruması İstisnaları — Üçü Birlikte',
+        terimler: [
+          { terim: 'CategoryHasChildrenException', tanim: '\`CATEGORY_HAS_CHILDREN\`, 409 Conflict — DeleteCategoryCommand\'ın İLK kontrolü (alt kategorisi olan bir kategori silinemez). ExceptionHandlingMiddleware bu tipi otomatik 409\'a çevirir, DuplicateWordException (A-05) ile AYNI mekanizma.' },
+          { terim: 'CategoryHasActiveWordsException', tanim: '\`CATEGORY_HAS_ACTIVE_WORDS\`, 409 Conflict — DeleteCategoryCommand\'ın İKİNCİ kontrolü (yaprak kategori ama hâlâ aktif kelimeye bağlı). Aynı 409 durum kodunu paylaşsa da AYRI bir Code taşır — admin panel loglarında (A-07) "neden silinemedi" TAM olarak hangi koruma OLDUĞUNU gösterebilsin diye.' },
+          { terim: 'CategoryParentCycleException', tanim: '\`CATEGORY_CANNOT_BE_OWN_PARENT\`, 400 Bad Request (409 DEĞİL) — UpdateCategoryCommand\'ın ParentCategoryId koruması. Diğer ikisinden FARKLI durum kodu: bu bir ÇAKIŞMA (var olan bir kaynakla çatışma) değil, GEÇERSİZ bir girdi — self-ref bir hiyerarşide "kendi alt ağacına taşınma" kuralı bir DB CHECK constraint\'i ile ifade EDİLEMEDİĞİ için (bir satırın kendi alt ağacında olup olmadığı SATIRIN KENDİSİNE bakarak anlaşılamaz) uygulama katmanında (WouldCreateCycleAsync ile) kontrol edilir.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '\`CategoryDtos.cs\`: \`CategoryDto\` (liste+detay TEK tip, A-05\'in aksine), \`WordCategorySummaryDto\` (henüz tüketicisiz — bir sonraki bölümde WordDtos.cs\'e bağlanacak)',
+          '\`CreateCategoryCommand\`: ParentCategoryId 404 kontrolü + çeviri kurma (WordEntityBuilder deseniyle AYNI \`Language = language\` ataması)',
+          '\`UpdateCategoryCommand\`: ParentCategoryId değişikliğinde İKİ kontrol (404 + \`WouldCreateCycleAsync\` ile CategoryParentCycleException) + çeviride var/yok ayrımı (A-05 UpdateWordCommand deseniyle AYNI)',
+          '\`DeleteCategoryCommand\`: HasChildrenAsync ÖNCE (ucuz sorgu + mantıksal öncelik), HasActiveWordsAsync SONRA — İKİ ayrı 409 istisnası',
+          '\`GetCategoriesQuery\`: \`includeWordCount\` KOŞULLU olarak GetWordCountsAsync\'i tetikler',
+          '\`GetCategoryWordsQuery\`: categoryId doğrulaması (404) + A-05\'in \`IWordConceptRepository.GetPagedAsync\`\'ine categoryId eklenerek PAYLAŞILAN kullanımı (YAGNI: tek metot iki tüketici)',
+          '3 yeni istisna: CategoryHasChildrenException/CategoryHasActiveWordsException (409), CategoryParentCycleException (400)',
+          'Sıradaki bölüm: Controller + Validator + Testler'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -120,6 +120,8 @@ public class ExceptionHandlingMiddleware
             QrSessionGoneException => HttpStatusCode.Gone,
             QrSessionForbiddenException => HttpStatusCode.Forbidden,
             DuplicateWordException => HttpStatusCode.Conflict,
+            CategoryHasChildrenException => HttpStatusCode.Conflict,
+            CategoryHasActiveWordsException => HttpStatusCode.Conflict,
             _ => HttpStatusCode.BadRequest,
         };
 }

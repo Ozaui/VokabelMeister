@@ -19,7 +19,7 @@
         tur: 'kapak',
         ustBaslik: 'BÖLÜM 2',
         baslik: 'Entity + EF Config — İki Katmanlı Savunma',
-        altBaslik: 'Migration\'ın KENDİSİNİ (AddUserThemePreference) ZATEN A-03/04\'te satır satır GÖRDÜK — burada NEREDEN geldiğini, User.cs\'İ ve UserConfiguration.cs\'İ görüyoruz.'
+        altBaslik: 'User.cs + UserConfiguration.cs\'e tek satırlık bir ekleme, `dotnet ef migrations add` bunu OTOMATİK olarak bir migration dosyasına (AddUserThemePreference) dönüştürür — bu bölümde üçünü de görüyoruz.'
       },
       {
         tur: 'kod',
@@ -52,11 +52,68 @@
         ]
       },
       {
-        tur: 'kavram',
-        baslik: 'Migration — A-03/04\'te Zaten Gördük, Burada Bağlamı Tamamlıyoruz',
-        aciklama: '`AddUserThemePreference` MİGRASYONU (`Up`: AddColumn + AddCheckConstraint, `Down`: DropCheckConstraint + DropColumn) A-03/04\'te, "VAR OLAN bir TABLOYA NOT NULL bir KOLON EKLERKEN defaultValue ZORUNLU" KONSEPTİNİN ÖRNEĞİ OLARAK SATIR SATIR İNCELENMİŞTİ. Şimdi ÖĞRENDİĞİMİZ BAĞLAMLA (A-03.3\'ün "CurrentLevel emsalini takip ETME" KARARI), O MİGRASYONUN NEDEN VAR OLDUĞUNU DA BİLİYORUZ: User.cs\'e YENİ bir ALAN + UserConfiguration.cs\'e YENİ bir CONSTRAINT EKLENDİĞİNDE, `dotnet ef migrations add` BU İKİ DEĞİŞİKLİĞİ OTOMATİK OLARAK TEK bir MİGRASYON DOSYASINDA BİRLEŞTİRİR.',
-        neden: 'Bu, A-03/04\'teki "migration DOSYALARI ELLE YAZILMAZ, EF Core\'UN MODEL-DIFF MOTORU TARAFINDAN ÜRETİLİR" İLKESİNİN, RETROFIT SENARYOSUNDAKİ (VAR OLAN bir TABLOYA SONRADAN EKLEME) SOMUT KANITIDIR — GELİŞTİRİCİ, User.cs VE UserConfiguration.cs\'İ (BU BÖLÜMDEKİ İKİ satır) DEĞİŞTİRİR, MİGRASYONUN KENDİSİNİ (Up/Down METOTLARI) YAZMAZ.',
-            olmasaydi: 'Migration OTOMASYONU OLMASAYDI, `AddColumn`/`AddCheckConstraint` ÇAĞRILARINI (A-03/04\'teki TÜM PARAMETRELERİYLE — name/table/type/maxLength/nullable/defaultValue) ELLE YAZMAK GEREKİRDİ; BİR PARAMETRENİN YANLIŞ YAZILMASI (ör. defaultValue UNUTULMASI), VAR OLAN MİLYONLARCA KULLANICI SATIRI İÇİN MİGRASYONUN BAŞARISIZ OLMASINA YOL AÇARDI (A-03/04\'teki TAM OLARAK BU RİSK).'
+        tur: 'kod',
+        baslik: 'AddUserThemePreference.cs — Var Olan Tabloya Kolon Ekleme',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260711225640_AddUserThemePreference.cs',
+        nedenBuKlasor: 'A-03/04\'te Register\'ın GERÇEK ilk migration\'ını (AddUserAndRefreshToken — TAMAMEN yeni tablolar oluşturan) gördük; BU migration ise VAR OLAN Users tablosuna SONRADAN tek bir kolon ekliyor — iki senaryo (yeni tablo / var olan tabloya ekleme) arasındaki fark burada somutlaşıyor.',
+        kod: `protected override void Up(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.AddColumn<string>(
+        name: "ThemePreference",
+        table: "Users",
+        type: "nvarchar(10)",
+        maxLength: 10,
+        nullable: false,
+        defaultValue: "System");
+
+    migrationBuilder.AddCheckConstraint(
+        name: "CK_Users_ThemePreference",
+        table: "Users",
+        sql: "ThemePreference IN ('Light','Dark','System')");
+}
+
+protected override void Down(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.DropCheckConstraint(
+        name: "CK_Users_ThemePreference",
+        table: "Users");
+
+    migrationBuilder.DropColumn(
+        name: "ThemePreference",
+        table: "Users");
+}`,
+        satirlar: [
+          {
+            satir: 'name: "ThemePreference",',
+            aciklama: '`AddColumn<string>`, VAR OLAN "Users" tablosuna TEK bir kolon ekler — A-03/04\'teki `CreateTable`\'ın AKSİNE, burada sıfırdan bir tablo YARATILMAZ.',
+            neden: 'Bu bölümün BAŞINDAKİ `User.cs`/`UserConfiguration.cs` değişikliğinin (bir önceki iki slayt) veritabanı KARŞILIĞI TAM OLARAK budur — EF Core, C# modelindeki YENİ property\'yi görüp bu `AddColumn` çağrısını KENDİSİ üretir.',
+            olmasaydi: 'Bu migration hiç ÇALIŞTIRILMASAYDI, `User.ThemePreference` yalnızca C# TARAFINDA var olurdu — EF Core her SORGUDA "Users tablosunda ThemePreference kolonu YOK" hatasıyla PATLARDI.'
+          },
+          {
+            satir: 'nullable: false,',
+            aciklama: 'Kolon NOT NULL olarak eklenir — User.cs\'teki `public string ThemePreference { get; set; } = "System";` tanımının (non-nullable) veritabanı seviyesindeki KARŞILIĞI.',
+            neden: 'C# tarafında "asla null değil" varsayımıyla yazılan kod (ör. ileride `user.ThemePreference.ToLower()`), veritabanından GERÇEKTEN null bir değer okunursa çökebilir — bu parametre iki katmanı TUTARLI tutar.',
+            olmasaydi: 'Kolon nullable bırakılsaydı, C# tarafındaki non-nullable varsayım ile veritabanı şeması ARASINDA bir TUTARSIZLIK oluşurdu.'
+          },
+          {
+            satir: 'defaultValue: "System");',
+            aciklama: 'Bu tablo migration ÇALIŞTIRILDIĞINDA ZATEN var olan kayıtlar İÇERİYORDU (Users tablosu, Register\'ın ilk migration\'ından — A-03/04 — GÜNLER önce oluşturulmuştu) — NOT NULL bir kolon varsayılan değersiz eklenseydi, mevcut satırlar için "bu kolonun değeri ne olacak" sorusu CEVAPSIZ kalır, migration BAŞARISIZ olurdu.',
+            neden: '"System" varsayılanı, Bölüm 1\'de tartıştığımız "en az sürpriz" ilkesiyle TUTARLI — var olan kullanıcılar hiçbir şey seçmeden bu değeri alır.',
+            olmasaydi: 'defaultValue verilmeseydi, SQL Server var olan satırlar için NOT NULL bir kolona hangi değeri YAZACAĞINI bilemez, migration veritabanına UYGULANAMAZDI.'
+          },
+          {
+            satir: 'sql: "ThemePreference IN (\'Light\',\'Dark\',\'System\')");',
+            aciklama: 'UserConfiguration.cs\'teki (bir önceki slayt) CHECK constraint tanımının, migration\'a YANSIMIŞ SQL karşılığı — A-03/03\'teki CurrentLevel/Role/AuthProvider constraint\'leriyle AYNI "CK_" konvansiyonu.',
+            neden: 'Enum yerine string kullanmanın BEDELİ, veritabanı seviyesinde bir CHECK constraint ile ÖDENİR — C# tarafı geçersiz bir string\'i ENGELLEMEZ, bu satır SON SAVUNMA HATTIDIR.',
+            olmasaydi: 'Bu constraint olmasaydı, bir bug ya da elle veritabanı güncellemesi ThemePreference\'ı "Blue" gibi tanınmayan bir değere ayarlayabilirdi — arayüz bu değeri Light/Dark/System dışında bir şey olarak tanımaz, sessizce yanlış bir temayla render ederdi.'
+          },
+          {
+            satir: 'protected override void Down(MigrationBuilder migrationBuilder)',
+            aciklama: 'Up\'ın yaptığı her şeyi TERS sırayla geri alır — önce constraint (ona bağlı olan), sonra kolon (bağımlı olunan) silinir.',
+            neden: 'Sıra ÖNEMLİDİR: kolon silinmeden önce ona bağlı constraint silinmelidir, aksi halde SQL Server "önce bağımlı constraint\'i sil" hatasıyla kolon silmeyi REDDEDER.',
+            olmasaydi: 'Sıra ters olsaydı (önce DropColumn, sonra DropCheckConstraint), Down migration\'ı yarım kalmış bir hatayla BAŞARISIZ olurdu.'
+          }
+        ]
       },
       {
         tur: 'ozet',
@@ -65,7 +122,7 @@
           'ThemePreference, User.cs\'e CurrentLevel İLE BİREBİR aynı şekilde (non-nullable string, sabit VARSAYILAN) EKLENDİ',
           '"System" varsayılanı, kullanıcı TERCİH belirtmeden önce EN AZ sürpriz yaratan DAVRANIŞTIR',
           'UserConfiguration.cs, MaxLength(10) + HasDefaultValue("System") İLE, CurrentLevel İLE AYNI zincirleme DESENİ takip eder',
-          'Migration\'ın KENDİSİ (AddColumn+AddCheckConstraint) A-03/04\'te DETAYLI incelendi — burada NEREDEN geldiğini, HANGİ İKİ değişikliğin (Entity+Config) onu TETİKLEDİĞİNİ gördük'
+          'AddUserThemePreference migration\'ı (AddColumn+AddCheckConstraint), A-03/04\'teki Register migration\'ından (CreateTable) FARKLI bir senaryoyu — VAR OLAN bir tabloya SONRADAN kolon ekleme — temsil eder'
         ]
       }
     ]

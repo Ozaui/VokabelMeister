@@ -48,6 +48,9 @@
     public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
         _set.FirstOrDefaultAsync(e => e.Id == id, ct);
 
+    public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>
+        await _set.ToListAsync(ct);
+
     public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)
     {
         entity.CreatedByUserId = userId;
@@ -56,6 +59,8 @@
         await _db.SaveChangesAsync(ct);
         return entity;
     }
+
+    public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }`,
         satirlar: [
           {
@@ -113,6 +118,18 @@
             olmasaydi: 'Bunun yerine senkron `First()` kullanılsaydı, sorgu tamamlanana kadar o thread başka hiçbir isteğe hizmet veremezdi — yüksek trafik altında sunucu daha az eşzamanlı istek karşılayabilirdi.'
           },
           {
+            satir: 'public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>',
+            aciklama: 'Belirli bir Id aramadan, `T` tipindeki TÜM (silinmemiş) kayıtları getiren metodun imzası — dönüş tipi `IEnumerable<T>`, tek bir kayıt değil bir koleksiyon.',
+            neden: 'Bir listeleme ekranı (ör. admin panelde tüm kelimeleri göstermek, Bölüm 8\'deki `RepositoryTests`\'in `repo.GetAllAsync()` çağrısı) "şu Id\'li kaydı getir" değil, "hepsini getir" ister — bu ihtiyaç GetByIdAsync ile karşılanamaz; IRepository<T> arayüzü bu yüzden ayrı bir metot tanımlar.',
+            olmasaydi: 'Bu metot olmasaydı, her feature repository (UserRepository, WordRepository...) "tüm kayıtları getir" ihtiyacı için kendi GetAllAsync\'ini SIFIRDAN yazardı — Repository<T>\'nin var oluş amacı olan kod tekrarını önleme (DRY) bu noktada delinirdi.'
+          },
+          {
+            satir: 'await _set.ToListAsync(ct);',
+            aciklama: 'Metodun gövdesi — `_set` üzerinden TÜM kayıtları çekip bir listeye (`List<T>`) dönüştürür; hiçbir ekstra `.Where(...)` filtresi YAZILMAZ.',
+            neden: 'Filtre elle yazılmamasına RAĞMEN dönen liste yalnızca silinmemiş kayıtları içerir, çünkü `_set` zaten WordLearnerDbContext\'in (Bölüm 4) global soft-delete query filter\'ından GEÇMİŞ bir DbSet\'tir — `IsDeleted == false` koşulu EF Core tarafından OTOMATİK, sorgunun arkasında eklenir.',
+            olmasaydi: 'Global query filter olmasaydı, bu satır `IsDeleted = true` olan (soft-delete edilmiş) kayıtları da listeye DAHİL ederdi — kullanıcı arayüzünde "silinmiş" bir kelime kartının hâlâ görünmesi gibi ciddi bir veri sızıntısı ortaya çıkardı.'
+          },
+          {
             satir: 'public virtual async Task<T> AddAsync(T entity, int? userId = null, CancellationToken ct = default)',
             aciklama: 'Yeni bir entity ekleme metodunun imzası — `userId` opsiyonel (sistem tarafından oluşturulan kayıtlarda null kalabilir), `ct` her I/O metodunda zorunlu olan CancellationToken (CLAUDE.md kuralı).',
             neden: '`async Task<T>` dönüş tipi, bu metodun içinde `await` kullanılacağını ve eklenen entity\'yi (Id\'si veritabanı tarafından atandıktan SONRA) geri döneceğini belirtir.',
@@ -147,6 +164,12 @@
             aciklama: 'Veritabanına yazıldıktan SONRAKİ entity (artık veritabanının ürettiği Id\'yi de İÇEREN hâli) çağırana geri döner.',
             neden: 'Handler, yeni oluşturulan kaydın Id\'sine ihtiyaç duyar (ör. RegisterResponse\'da `user.Id` döndürmek için) — bu Id, `SaveChangesAsync`tan ÖNCE bilinmez, ancak SONRA `entity.Id` üzerinden okunabilir.',
             olmasaydi: 'Bu satır olmasaydı, metot `void`/`Task` dönerdi ve çağıran kod yeni oluşturulan kaydın veritabanı tarafından üretilen Id\'sine ERİŞEMEZDİ.'
+          },
+          {
+            satir: 'public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);',
+            aciklama: 'AddAsync/UpdateAsync/SoftDeleteAsync zaten kendi içlerinde SaveChangesAsync çağırıyor — bu, IRepository<T> arayüzünün sunduğu AYRI, public bir "toplu kaydet" metodu: bir Handler, AYNI DbContext üzerinde birden fazla değişikliği (ör. bir entity\'yi güncelle + ayrı bir entity ekle) TEK bir SaveChangesAsync çağrısında birleştirmek istediğinde kullanılır.',
+            neden: 'Repository<T>, `_db` alanını `protected` tutar (Clean Architecture: Application katmanı Infrastructure/EF Core\'a doğrudan bağımlı OLAMAZ, Bölüm 2) — Handler bu yüzden `_db.SaveChangesAsync()`\'e DOĞRUDAN erişemez; bu public wrapper, DbContext\'i dışarı SIZDIRMADAN aynı yeteneği IRepository<T> soyutlaması üzerinden sunar.',
+            olmasaydi: 'Bu wrapper olmasaydı, birden fazla değişikliği TEK bir atomik kayıtta birleştirmek isteyen bir Handler ya WordLearnerDbContext\'i doğrudan constructor\'ına enjekte etmek zorunda kalırdı (Application\'ın Infrastructure\'a bağımlı hale gelmesi, Bölüm 2\'nin ihlali) ya da her değişikliği AYRI AddAsync/UpdateAsync çağrılarıyla (ayrı ayrı SaveChangesAsync ile) kaydetmek zorunda kalırdı — bu da "ya biri başarılı ya biri başarısız olursa" tutarsız bir ara durum riski yaratırdı.'
           }
         ]
       },

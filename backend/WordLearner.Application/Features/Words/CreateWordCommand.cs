@@ -11,8 +11,8 @@
 //        3) WordConcept + Word(+WordDetail+WordExample) ağacını kur  4) Tek
 //        AddAsync ile kaydet (EF child'ları da cascade insert eder)  5) CREATE_WORD
 //        ActivityLog'u yaz  6) Detay DTO'sunu dön.
-// BAĞIMLILIKLAR: IWordConceptRepository, ILanguageRepository, IActivityLogger,
-//                WordConceptDtoBuilder.
+// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
+//                IActivityLogger, WordConceptDtoBuilder.
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System.Text.Json;
@@ -21,6 +21,7 @@ using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Words;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Categories;
 using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
@@ -51,7 +52,13 @@ public record CreateWordCommand(
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
-    IReadOnlyList<WordTranslationInput> Translations
+    IReadOnlyList<WordTranslationInput> Translations,
+    // NEDEN default null + trailing (A-06 eklemesi): API_ENDPOINTS.md §5 `POST /words`
+    //        örneğinde `categoryIds` gövdede opsiyonel bir alan — hiç gönderilmezse
+    //        kavram kategorisiz oluşturulur (B-04'ün "önce kelime, sonra kategorile"
+    //        akışını da desteklemesi için). Trailing + default sayesinde A-05'te
+    //        pozisyonel argümanla yazılmış mevcut test/çağrı siteleri BOZULMAZ.
+    IReadOnlyList<int>? CategoryIds = null
 ) : IRequest<WordConceptDetailDto>
 {
     // NEDEN init-property (gövdede DEĞİL): API_ENDPOINTS.md §5 `?force=true`'yu bir
@@ -68,16 +75,19 @@ public record CreateWordCommand(
 public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordConceptDetailDto>
 {
     private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly ILanguageRepository _languageRepository;
     private readonly IActivityLogger _activityLogger;
 
     public CreateWordCommandHandler(
         IWordConceptRepository wordConceptRepository,
+        ICategoryRepository categoryRepository,
         ILanguageRepository languageRepository,
         IActivityLogger activityLogger
     )
     {
         _wordConceptRepository = wordConceptRepository;
+        _categoryRepository = categoryRepository;
         _languageRepository = languageRepository;
         _activityLogger = activityLogger;
     }
@@ -102,6 +112,32 @@ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordC
 
             concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
         }
+
+        // NEDEN Category.GetByIdAsync (var olma kontrolü) + doğrudan navigasyon
+        //       ekleme (A-06): concept henüz Id'siz olduğu için WordCategory.WordConceptId'yi
+        //       elle atamak yerine EF Core'un cascade-insert graph fixup'ına bırakılır —
+        //       WordEntityBuilder.Build'deki `concept.Words.Add(...)` ile AYNI desen.
+        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): İstemci `categoryIds`
+        //       içinde aynı Id'yi yanlışlıkla iki kez gönderirse, `WordCategoryConfiguration`'daki
+        //       `(WordConceptId, CategoryId)` UNIQUE index'i SaveChangesAsync sırasında bir SQL
+        //       istisnası fırlatırdı — bu, ExceptionHandlingMiddleware'de YAKALANMAYAN bir
+        //       exception olduğu için istemciye anlamsız bir 500 dönerdi (400 yerine).
+        if (request.CategoryIds is not null)
+            foreach (var categoryId in request.CategoryIds.Distinct())
+            {
+                var category =
+                    await _categoryRepository.GetByIdAsync(categoryId, ct)
+                    ?? throw new EntityNotFoundException(typeof(Category), categoryId);
+
+                concept.WordCategories.Add(
+                    new WordCategory
+                    {
+                        Category = category,
+                        CreatedByUserId = request.UserId,
+                        UpdatedByUserId = request.UserId,
+                    }
+                );
+            }
 
         await _wordConceptRepository.AddAsync(concept, request.UserId, ct);
 

@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Controller + Validator + Testler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-validator-testler',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '05_command-handlerlari.html',
+    sonrakiBolum: '07_word-tarafi-retrofit.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'CategoriesController.cs — İnce Controller, Word\'sController İle AYNI Yetki Deseni',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/CategoriesController.cs',
+        nedenBuKlasor: 'API/Controllers/ — WordsController (A-05) ile AYNI seviyede, flat.',
+        kod: `[ApiController]
+[Route("api/v1/categories")]
+public class CategoriesController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public CategoriesController(IMediator mediator) => _mediator = mediator;
+
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+
+    [HttpGet]
+    [Authorize]
+    [ProducesResponseType(typeof(IReadOnlyList<CategoryDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetCategories(
+        [FromQuery] string? level,
+        [FromQuery] bool includeWordCount = false,
+        CancellationToken ct = default
+    )
+    {
+        var query = new GetCategoriesQuery(level, includeWordCount);
+        return Ok(await _mediator.Send(query, ct));
+    }
+
+    [HttpGet("{id:int}/words")]
+    [Authorize]
+    [ProducesResponseType(typeof(PagedResult<WordConceptListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PagedResult<WordConceptListItemDto>>> GetCategoryWords(
+        int id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    )
+    {
+        var query = new GetCategoryWordsQuery(id, page, pageSize);
+        return Ok(await _mediator.Send(query, ct));
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CategoryDto>> CreateCategory(CreateCategoryCommand command, CancellationToken ct)
+    {
+        var response = await _mediator.Send(
+            command with
+            {
+                UserId = CurrentUserId,
+                ActorRole = CurrentRole,
+            },
+            ct
+        );
+        return StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    [HttpPut("{id:int}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CategoryDto>> UpdateCategory(
+        int id,
+        UpdateCategoryCommand command,
+        CancellationToken ct
+    ) =>
+        Ok(
+            await _mediator.Send(
+                command with
+                {
+                    Id = id,
+                    UserId = CurrentUserId,
+                    ActorRole = CurrentRole,
+                },
+                ct
+            )
+        );
+
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DeleteCategory(int id, CancellationToken ct)
+    {
+        await _mediator.Send(new DeleteCategoryCommand(id) { UserId = CurrentUserId, ActorRole = CurrentRole }, ct);
+        return NoContent();
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[Authorize(Roles = "Admin")]',
+            aciklama: 'GetCategories ve GetCategoryWords düz `[Authorize]` (giriş yapmış herkes), Create/Update/Delete `[Authorize(Roles = "Admin")]` — WordsController\'daki (A-05) İLK admin-rollü endpoint kararının BİREBİR tekrarı.',
+            neden: 'CLAUDE.md "Roller ve sahiplik": Category, Word gibi SİSTEM içeriği — bir kullanıcının kişisel verisi DEĞİL, tüm kullanıcıların paylaştığı içerik. Bu yüzden UserCard\'daki gibi "sahiplik" (UserId filtresi) kontrolü değil, düz ROL kontrolü yeterli.',
+            olmasaydi: 'Yalnızca [Authorize] kullanılsaydı, Admin OLMAYAN herhangi bir giriş yapmış kullanıcı POST/PUT/DELETE /categories çağırıp kategori ağacını (ve dolaylı olarak TÜM kullanıcıların gördüğü kelime sınıflandırmasını) değiştirebilirdi.'
+          },
+          {
+            satir: 'private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+            aciklama: 'WordsController\'daki (A-05) CurrentUserId/CurrentRole helper\'larının KOPYASI — her admin-rollü controller\'da tekrar eden, ama controller\'a ÖZEL olduğu için (ControllerBase\'e taşınmadı) satır satır aynı kalan iki property.',
+            neden: 'IActivityLogger.LogAsync\'in "kim yaptı" parametrelerini (UserId/ActorRole) doldurmak için — CREATE_CATEGORY/UPDATE_CATEGORY/DELETE_CATEGORY kayıtlarının hangi admin tarafından yapıldığını İZLEMEK, WordsController ile AYNI gerekçe.',
+            olmasaydi: 'Bu iki property paylaşılan bir base class\'a (ör. AdminControllerBase) taşınabilirdi ama YAGNI: şu an yalnızca İKİ controller (Words, Categories) bu deseni kullanıyor — üçüncü bir tekrar (ör. A-07) geldiğinde ortak bir soyutlamaya taşımak daha ANLAMLI olur, iki tekrar için erken soyutlama YAPILMAZ.'
+          },
+          {
+            satir: 'Id = id,',
+            aciklama: 'UpdateCategory\'de route\'tan gelen `id`, body\'den bind edilen Command\'ın (Id alanı yoksa) Id\'sini `with` ifadesiyle EZER — UpdateWordCommand\'daki (A-05) AYNI karar.',
+            neden: 'İstemcinin body\'de İSTENMEYEN bir Id göndererek `PUT /categories/5` çağrısıyla farklı bir kategoriyi (ör. Id=99) güncellemesini ENGELLEMEK — URL\'deki id TEK güvenilir kaynak, body\'deki olası bir Id alanı yoksayılır.',
+            olmasaydi: 'Route id\'si yoksayılıp yalnızca body\'deki Id kullanılsaydı, `PUT /categories/5` çağrısı body\'de `"id": 99` göndererek FARKLI bir kaydı güncelleyebilirdi — REST\'in "URL kaynağı belirler" ilkesi İHLAL edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /categories — Hiyerarşik Liste',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/categories?level=A1&includeWordCount=true',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Herhangi bir giriş yapmış kullanıcı çağırabilir ([Authorize], Admin şartı YOK). `level`/`includeWordCount` opsiyonel — ikisi de gönderilmezse tüm ağaç, kelime sayısı olmadan döner.',
+        yanit: {
+          durum: '200 OK',
+          govde: `[
+  {
+    "id": 3,
+    "parentCategoryId": null,
+    "displayOrder": 3,
+    "icon": "food",
+    "color": "#95E1D3",
+    "minLevel": "A1",
+    "maxLevel": null,
+    "translations": [
+      { "languageCode": "de", "name": "Essen", "description": null },
+      { "languageCode": "tr", "name": "Yemek", "description": null }
+    ],
+    "wordCount": 12,
+    "children": []
+  }
+]`
+        }
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /categories/{id}/words — Kategorinin Kelimeleri',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/categories/3/words?page=1&pageSize=20',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Herhangi bir giriş yapmış kullanıcı çağırabilir. `GetCategoryWordsQuery`, `IWordConceptRepository.GetPagedAsync`\'i categoryId dolu çağırır (bkz. Bölüm 5).',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "items": [
+    {
+      "wordConceptId": 1,
+      "partOfSpeech": "Noun",
+      "difficultyLevel": "A1",
+      "imageUrl": null,
+      "translations": [
+        { "languageCode": "de", "text": "Apfel" },
+        { "languageCode": "tr", "text": "elma" }
+      ],
+      "categories": [
+        { "categoryId": 3, "translations": [ { "languageCode": "de", "name": "Essen", "description": null }, { "languageCode": "tr", "name": "Yemek", "description": null } ] }
+      ]
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'Var olmayan bir kategori Id\'si için 404 ApiErrorResponse döner (NOT_FOUND) — kategorinin kendisi kontrol edilir, kelime sayısı sıfır olsa bile 404 DEĞİL boş `items[]` döner.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /categories — Yeni Kategori',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/categories',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı — [Authorize(Roles="Admin")].',
+        govde: `{
+  "parentCategoryId": null,
+  "displayOrder": 13,
+  "icon": "sport",
+  "color": "#B5EAD7",
+  "minLevel": "A2",
+  "maxLevel": null,
+  "translations": [
+    { "languageCode": "de", "name": "Sport", "description": null },
+    { "languageCode": "tr", "name": "Spor", "description": null }
+  ]
+}`,
+        yanit: {
+          durum: '201 Created',
+          govde: `{
+  "id": 13,
+  "parentCategoryId": null,
+  "displayOrder": 13,
+  "icon": "sport",
+  "color": "#B5EAD7",
+  "minLevel": "A2",
+  "maxLevel": null,
+  "translations": [
+    { "languageCode": "de", "name": "Sport", "description": null },
+    { "languageCode": "tr", "name": "Spor", "description": null }
+  ],
+  "wordCount": null,
+  "children": []
+}`
+        },
+        notlar: [
+          'parentCategoryId verilip var olmayan bir Id\'ye işaret ederse 404 ApiErrorResponse (NOT_FOUND).',
+          'translations[] boşsa 400 (CATEGORY_TRANSLATIONS_REQUIRED); bir öğede name boşsa 400 (CATEGORY_NAME_REQUIRED).'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'PUT /categories/{id} — Güncelleme',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/categories/13',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Yukarıdaki örnekte oluşturulan kategorinin rengini ve Türkçe adını değiştirir.',
+        govde: `{
+  "parentCategoryId": null,
+  "displayOrder": 13,
+  "icon": "sport",
+  "color": "#FFB3BA",
+  "minLevel": "A2",
+  "maxLevel": null,
+  "translations": [
+    { "languageCode": "de", "name": "Sport", "description": null },
+    { "languageCode": "tr", "name": "Spor Aktiviteleri", "description": null }
+  ]
+}`,
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "id": 13,
+  "parentCategoryId": null,
+  "displayOrder": 13,
+  "icon": "sport",
+  "color": "#FFB3BA",
+  "minLevel": "A2",
+  "maxLevel": null,
+  "translations": [
+    { "languageCode": "de", "name": "Sport", "description": null },
+    { "languageCode": "tr", "name": "Spor Aktiviteleri", "description": null }
+  ],
+  "wordCount": null,
+  "children": []
+}`
+        },
+        notlar: [
+          'parentCategoryId, kategorinin KENDİSİNE veya kendi alt ağacındaki bir kategoriye işaret ederse 400 (CATEGORY_CANNOT_BE_OWN_PARENT).',
+          'Var olmayan bir Id için 404 ApiErrorResponse (NOT_FOUND).'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'DELETE /categories/{id}',
+        yontem: 'DELETE',
+        url: 'http://localhost:5001/api/v1/categories/13',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '204 No Content',
+          govde: '(boş gövde)'
+        },
+        notlar: [
+          'Var olmayan bir Id için 404 ApiErrorResponse döner (NOT_FOUND).',
+          'Alt kategorisi varsa 409 (CATEGORY_HAS_CHILDREN) — önce alt kategoriler taşınmalı/silinmeli.',
+          'Bağlı aktif kelimesi varsa 409 (CATEGORY_HAS_ACTIVE_WORDS) — önce kelimeler başka bir kategoriye taşınmalı.',
+          'Silinen kategori soft-delete olur — DB\'de kalır, GET /categories bir daha GÖSTERMEZ.'
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateCategoryCommandValidator.cs — CategoryTranslationRules Paylaşılan Döngüsü',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Categories/CreateCategoryCommandValidator.cs',
+        nedenBuKlasor: 'Validators/Categories/ — Validators/Words/ (A-05) ile AYNI seviyede yeni bir domain klasörü.',
+        kod: `public class CreateCategoryCommandValidator : AbstractValidator<CreateCategoryCommand>
+{
+    public CreateCategoryCommandValidator()
+    {
+        RuleFor(x => x.Translations)
+            .NotEmpty()
+            .WithMessage("At least one translation is required.")
+            .WithErrorCode("CATEGORY_TRANSLATIONS_REQUIRED");
+
+        RuleFor(x => x).Custom((command, context) => CategoryTranslationRules.ValidateTranslations(command.Translations, context));
+    }
+}
+
+// AMAÇ: CreateCategoryCommandValidator ve UpdateCategoryCommandValidator'ın
+//       PAYLAŞTIĞI translation doğrulama döngüsü.
+internal static class CategoryTranslationRules
+{
+    public static void ValidateTranslations<T>(
+        IReadOnlyList<CategoryTranslationInput> translations,
+        ValidationContext<T> context
+    )
+    {
+        foreach (var translation in translations)
+        {
+            if (string.IsNullOrWhiteSpace(translation.LanguageCode))
+            {
+                context.AddFailure(Failure("LANGUAGE_CODE_REQUIRED"));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(translation.Name))
+                context.AddFailure(Failure("CATEGORY_NAME_REQUIRED"));
+        }
+    }
+
+    private static ValidationFailure Failure(string code) =>
+        new("Translations", $"Translation validation failed: {code}.") { ErrorCode = code };
+}`,
+        satirlar: [
+          {
+            satir: 'public CreateCategoryCommandValidator()',
+            aciklama: 'WordGrammarValidator entegrasyonu (A-05\'in CreateWordCommandValidator\'ı) burada YOK — constructor parametresiz. Category\'nin translation\'larında Word\'deki gibi dile/türe göre değişen bir GrammarData JSON\'u yok, yalnızca düz `Name`/`Description` alanları var.',
+            neden: 'Category, Word\'den daha basit bir modele sahip — bir kategori adının "doğruluğu" dilbilgisel bir kural setine değil, yalnızca "boş olmama"ya bağlı. Var olmayan bir karmaşıklık için var olmayan bir bağımlılık (IValidator<WordGrammarInput> benzeri bir Category-özel doğrulayıcı) İCAT EDİLMEDİ (YAGNI).',
+            olmasaydi: 'Category için de bir "CategoryGrammarValidator" yazılsaydı, hiçbir zaman kullanılmayan (Category\'nin hiç GrammarData\'sı yok) bir soyutlama koda EKLENMİŞ olurdu — CLAUDE.md §3\'ün "spekülatif ortak tip yazılmaz" kuralına aykırı düşerdi.'
+          },
+          {
+            satir: 'internal static class CategoryTranslationRules',
+            aciklama: 'CreateCategoryCommandValidator ve UpdateCategoryCommandValidator\'ın PAYLAŞTIĞI translation döngüsü — WordTranslationRules (A-05, CreateWordCommandValidator.cs) ile BİREBİR aynı desen, yalnızca gramer kontrolü adımı YOK.',
+            neden: 'İki Command\'ın (Create/Update) translations[] doğrulama mantığı BİREBİR aynı: LanguageCode zorunlu, Name zorunlu — bu döngü iki validator\'da AYRI AYRI yazılsaydı, bir kural (ör. yeni bir CATEGORY_NAME_TOO_LONG kontrolü) birinde eklenip diğerinde UNUTULABİLİRDİ.',
+            olmasaydi: 'Bu paylaşılan sınıf olmasaydı, UpdateCategoryCommandValidator kendi translations[] döngüsünü SIFIRDAN yazardı — WordTranslationRules\'ın A-05\'te çözdüğü AYNI kod tekrarı problemi burada TEKRAR ortaya çıkardı.'
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(translation.LanguageCode))',
+            aciklama: 'Her translation için EN ÖNCE kontrol edilen alan — WordTranslationRules\'daki (A-05) AYNI "LanguageCode önce" sırası.',
+            neden: 'CreateCategoryCommandHandler (bir önceki bölüm) `translation.LanguageCode` ile `ILanguageRepository.GetByCodeAsync` çağırır — boş bir LanguageCode ile bu çağrı ALAKASIZ bir "dil bulunamadı" hatası üretir, asıl sorunu (alan hiç doldurulmamış) GİZLERDİ.',
+            olmasaydi: 'Bu kontrol olmasaydı, boş LanguageCode doğrudan repository sorgusuna GEÇERDİ ve admin "dil bulunamadı" gibi YANILTICI bir mesaj görürdü — LANGUAGE_CODE_REQUIRED çok daha AÇIK bir hata.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommandValidator.cs — Kısa, Çünkü Mantığın Tamamı Paylaşılıyor',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Categories/UpdateCategoryCommandValidator.cs',
+        nedenBuKlasor: null,
+        kod: `public class UpdateCategoryCommandValidator : AbstractValidator<UpdateCategoryCommand>
+{
+    public UpdateCategoryCommandValidator()
+    {
+        RuleFor(x => x.Translations)
+            .NotEmpty()
+            .WithMessage("At least one translation is required.")
+            .WithErrorCode("CATEGORY_TRANSLATIONS_REQUIRED");
+
+        RuleFor(x => x).Custom((command, context) => CategoryTranslationRules.ValidateTranslations(command.Translations, context));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'RuleFor(x => x).Custom((command, context) => CategoryTranslationRules.ValidateTranslations(command.Translations, context));',
+            aciklama: 'CreateCategoryCommandValidator\'daki SATIRIN birebir kopyası — iki validator, tek bir `internal static class CategoryTranslationRules`\'ı (bir önceki slaytta tanımlı, AYNI dosyada yaşıyor) çağırır.',
+            neden: 'Update\'in translations[] kuralı Create\'inkiyle FARKLI DEĞİL: bir kategori güncellenirken de her translation\'ın LanguageCode+Name\'i dolu olmalı — iki Command\'ın FARKLI olan tek yanı (parent döngü/silme koruması gibi) zaten Validator seviyesinde DEĞİL, Handler seviyesinde (CategoryParentCycleException) kontrol ediliyor.',
+            olmasaydi: 'UpdateCategoryCommandValidator kendi bağımsız translations[] doğrulamasını YAZSAYDI, bu dosya CreateCategoryCommandValidator.cs\'in ALT kısmıyla neredeyse ÖZDEŞ ~15 satırlık bir kod tekrarı OLURDU — CategoryTranslationRules bunu TEK satıra indiriyor.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Handler Testleri — 5 Dosya, Temsili Örnek DeleteCategoryCommandHandlerTests',
+        aciklama: '5 Handler için 5 test dosyası (`WordLearner.Tests/Features/Categories/`) — her biri ICategoryRepository/ILanguageRepository/IWordConceptRepository/IActivityLogger\'ı Moq ile mock\'lar, gerçek bir DB\'ye HİÇ dokunmaz (CreateWordCommandHandlerTests, A-05, ile AYNI desen). Temsili örnek olarak DeleteCategoryCommandHandlerTests seçildi — 409 KORUMA SIRASININ (önce HasChildrenAsync, sonra HasActiveWordsAsync, ancak ikisi de false ise SoftDeleteAsync) test üzerinde NET görünmesi.',
+        neden: 'CLAUDE.md §7 kuralı: "Her public servis/Handler metodunun birim testi AYNI task içinde yazılır." STANDART.md\'nin "Temsili öğretim (YAGNI)" kuralı: tekrarlayan test aileleri TEK bir temsili `kod` slaytıyla + `sozluk`\'te "aynı pattern\'i izler" notuyla öğretilir — 5 dosyanın HEPSİNİ ayrı ayrı slayt yapmak, DeleteCategoryCommandHandlerTests\'in zaten gösterdiği "mock\'la + Verify et" desenini 4 kez TEKRARLARDI.',
+        olmasaydi: '5 dosyanın hepsi tam kod olarak gösterilseydi, okuyucu 5. dosyaya geldiğinde "yine aynı Moq kurulumu" diye SIKILIRDI ve asıl öğretici fark (döngü koruması, orphan promotion gibi Category\'ye ÖZGÜ testler) diğerlerinin arasında KAYBOLURDU — sozluk slaytı bu farkları ÖNE ÇIKARIR.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteCategoryCommandHandlerTests.cs — 409 Koruma Sırası',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Categories/DeleteCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Categories/ — Tests/Features/Words/ (A-05) ile AYNI yapı.',
+        kod: `public class DeleteCategoryCommandHandlerTests
+{
+    private readonly Mock<ICategoryRepository> _categoryRepo = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    private DeleteCategoryCommandHandler CreateHandler() => new(_categoryRepo.Object, _activityLogger.Object);
+
+    private static readonly Language German = new() { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
+
+    private static Category ExistingCategory() =>
+        new()
+        {
+            Id = 10,
+            Translations = new List<CategoryTranslation>
+            {
+                new()
+                {
+                    LanguageId = German.Id,
+                    Language = German,
+                    Name = "Essen",
+                },
+            },
+        };
+
+    [Fact]
+    public async Task Delete_CategoryNotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _categoryRepo.Setup(r => r.GetWithTranslationsAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync((Category?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new DeleteCategoryCommand(10), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Delete_HasChildren_ThrowsCategoryHasChildrenException()
+    {
+        // ARRANGE
+        _categoryRepo
+            .Setup(r => r.GetWithTranslationsAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExistingCategory());
+        _categoryRepo.Setup(r => r.HasChildrenAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new DeleteCategoryCommand(10), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<CategoryHasChildrenException>();
+        _categoryRepo.Verify(r => r.SoftDeleteAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_HasActiveWords_ThrowsCategoryHasActiveWordsException()
+    {
+        // ARRANGE
+        _categoryRepo
+            .Setup(r => r.GetWithTranslationsAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExistingCategory());
+        _categoryRepo.Setup(r => r.HasChildrenAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _categoryRepo.Setup(r => r.HasActiveWordsAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new DeleteCategoryCommand(10), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<CategoryHasActiveWordsException>();
+        _categoryRepo.Verify(r => r.SoftDeleteAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_NoBlockers_SoftDeletesAndLogsActivity()
+    {
+        // ARRANGE
+        _categoryRepo
+            .Setup(r => r.GetWithTranslationsAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExistingCategory());
+        _categoryRepo.Setup(r => r.HasChildrenAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _categoryRepo.Setup(r => r.HasActiveWordsAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var handler = CreateHandler();
+        var command = new DeleteCategoryCommand(10) { UserId = 7, ActorRole = "Admin" };
+
+        // ACT
+        await handler.Handle(command, default);
+
+        // ASSERT
+        _categoryRepo.Verify(r => r.SoftDeleteAsync(10, 7, It.IsAny<CancellationToken>()), Times.Once);
+        _activityLogger.Verify(
+            l =>
+                l.LogAsync(
+                    7,
+                    "Admin",
+                    "DELETE_CATEGORY",
+                    "Category",
+                    10,
+                    It.IsAny<object>(),
+                    null,
+                    null,
+                    null,
+                    default
+                ),
+            Times.Once
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: '_categoryRepo.Setup(r => r.HasChildrenAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(true);',
+            aciklama: '`Delete_HasChildren_...` testinde HasActiveWordsAsync HİÇ mock\'lanmıyor — Handler\'ın HasChildrenAsync=true bulduğu AN exception fırlatıp HasActiveWordsAsync\'e HİÇ ulaşmadığının dolaylı kanıtı (mock\'lanmamış bir çağrı yapılsaydı Moq varsayılan/null dönerdi, test yine de GEÇERDİ ama gerçek Handler sırası burada DOĞRULANMIŞ olmazdı — asıl garanti bir alttaki Times.Never).',
+            neden: 'DeleteCategoryCommandHandler (bir önceki bölüm) İKİ ayrı 409 nedenini (alt kategori VAR / aktif kelime VAR) sırayla kontrol ediyor — bu test SIRALAMANIN "önce children" olduğunu, bir sonraki test ise "children yoksa active words" adımına geçildiğini AYRI AYRI doğruluyor.',
+            olmasaydi: 'Sıralama testleri olmasaydı, Handler\'daki iki if bloğunun YER DEĞİŞTİRMESİ (ör. önce HasActiveWordsAsync kontrolü) fark edilmeden geçerdi — iş kuralı olarak bir fark YARATMASA da (ikisi de 409), hangi exception\'ın önce fırlatıldığı API_ENDPOINTS.md\'nin döküman ettiği davranışla TUTARSIZ olabilirdi.'
+          },
+          {
+            satir: '_categoryRepo.Verify(r => r.SoftDeleteAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'CreateWordCommandHandlerTests\'teki (A-05) `AddAsync ... Times.Never` deseninin BİREBİR aynısı — yalnızca exception fırlatıldığını değil, YAN ETKİNİN (silme) hiç GERÇEKLEŞMEDİĞİNİ ayrıca doğruluyor.',
+            neden: 'Bir Handler\'ın exception fırlatması TEK BAŞINA yeterli değil — SoftDeleteAsync exception\'dan ÖNCE çağrılıp SONRA exception atılsaydı (yanlış sıra), DB\'de alt kategorisi olan bir kategori YİNE DE silinmiş OLURDU; Times.Never bu sıralama hatasını da YAKALAR.',
+            olmasaydi: 'Yalnızca `ThrowAsync<CategoryHasChildrenException>()` kontrol edilseydi, SoftDeleteAsync\'i exception\'dan ÖNCE çağıran hatalı bir Handler de bu testi GEÇERDİ — gerçek DB\'de alt kategorisi olan bir kategori SESSİZCE silinirdi.'
+          },
+          {
+            satir: '"DELETE_CATEGORY",',
+            aciklama: 'DELETE_CATEGORY audit çağrısının TÜM parametreleri (UserId=7, ActorRole="Admin", Action, EntityType, EntityId=10, OldValue dolu, NewValue=null) TEK bir Verify\'de doğrulanıyor.',
+            neden: 'NewValue=null olması, DELETE işleminin "önceki hâl vardı, yeni hâl yok" semantiğini yansıtır — CREATE\'te (OldValue=null, NewValue dolu) ve UPDATE\'te (ikisi de dolu) FARKLI bir kalıp; bu üçünün her birinin doğru kombinasyonla çağrıldığını test etmek, ActivityLog\'un `OldValue`/`NewValue` JSON diff kuralının (CLAUDE.md) doğru uygulandığının kanıtı.',
+            olmasaydi: 'Yalnızca `LogAsync\'in ÇAĞRILDIĞI` (parametresiz Verify) kontrol edilseydi, yanlış bir Action string\'i (ör. "UPDATE_CATEGORY" yazım hatası) veya yanlış bir EntityId geçilse bile test YEŞİL kalırdı — admin panelin log ekranı YANLIŞ bilgi gösterirdi, hiçbir test bunu YAKALAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer 4 Test Dosyası — Aynı Pattern İzler',
+        terimler: [
+          { terim: 'CreateCategoryCommandHandlerTests (4 test)', tanim: 'İki dilde translation ile oluşturma, var olmayan ParentCategoryId → 404 (AddAsync hiç çağrılmaz), bilinmeyen LanguageCode → 404, başarılı oluşturmada CREATE_CATEGORY audit (OldValue=null, NewValue dolu).' },
+          { terim: 'UpdateCategoryCommandHandlerTests (7 test)', tanim: 'Var olan çevirinin YERİNDE güncellenmesi (yeni satır EKLENMEZ), eksik dilin İKİNCİ çeviri olarak eklenmesi, var olmayan Parent → 404, kendini kendi parent\'ı yapma → CategoryParentCycleException, kendi ALT AĞACINDAKİ bir kategoriye taşınma (WouldCreateCycleAsync üzerinden) → AYNI exception, başarılı güncellemede UPDATE_CATEGORY audit (OldValue+NewValue ikisi de dolu), audit log\'un `oldValue.Translations`\'ının GÜNCELLEMEDEN ÖNCEKİ adı taşıdığının doğrulanması (A-06 denetiminde bulunan deferred-LINQ regresyonuna karşı, bkz. Bölüm 7).' },
+          { terim: 'GetCategoriesQueryHandlerTests (4 test)', tanim: 'Düz ParentCategoryId listesinin iç içe ağaca çevrilmesi, `level` filtresiyle üstü ELENEN bir alt kategorinin köke TERFİ etmesi (orphan promotion, CategoryDtoBuilder), includeWordCount=true iken WordCount doldurulması, includeWordCount=false iken GetWordCountsAsync\'in HİÇ ÇAĞRILMADIĞI.' },
+          { terim: 'GetCategoryWordsQueryHandlerTests (2 test)', tanim: 'Var olmayan kategori Id\'si → 404, var olan kategoride categoryId\'nin IWordConceptRepository.GetPagedAsync\'e AYNEN iletilip dönen sayfanın liste DTO\'suna çevrildiği.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm Özeti — CRUD Tamamlandı',
+        maddeler: [
+          'CategoriesController — 5 endpoint (GET /categories, GET /categories/{id}/words, POST, PUT, DELETE /categories/{id}) — WordsController (A-05) ile AYNI [Authorize] vs [Authorize(Roles="Admin")] deseni.',
+          'CreateCategoryCommandValidator/UpdateCategoryCommandValidator — CategoryTranslationRules paylaşılan döngüsü (WordTranslationRules, A-05 ile AYNI mimari karar, gramer adımı olmadan).',
+          '21 yeni birim testi (5 dosya: Create/Update/Delete/GetCategories/GetCategoryWords) — mock\'lanmış repository/ActivityLogger, gerçek DB\'ye dokunmaz. Toplam proje test sayısı için bkz. Bölüm 8.',
+          'Sıradaki bölüm: A-05\'in Word tarafının A-06 için retrofit edilmesi (WordDtos.cs, GetWordsQuery.cs ve ilgili dosyalardaki `categories[]`/`categoryId` eklemeleri).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

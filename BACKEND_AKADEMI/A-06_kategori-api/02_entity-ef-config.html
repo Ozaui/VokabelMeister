@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entity + EF Config</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-ef-config',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '01_hiyerarsi-ve-coklu-dil.html',
+    sonrakiBolum: '03_migration-dbcontext.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'Category.cs — Self-Ref Hiyerarşi',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Categories/Category.cs',
+        nedenBuKlasor: 'Entities/Categories/ — Words/ ile AYNI seviyede yeni bir domain klasörü; namespace WordLearner.Domain.Entities.Categories klasör yapısıyla birebir eşleşir (CLAUDE.md §5). DATABASE_SCHEMA.md\'de Categories/Words AYNI "Icerik.md" dosyasında belgelense de, kod tarafında A-05 (Words) ve A-06 (Categories) ayrı task\'lar/ayrı controller\'lar olduğu için ayrı klasörde tutulur.',
+        kod: `public class Category : BaseEntity
+{
+    public int? ParentCategoryId { get; set; }
+    public Category? ParentCategory { get; set; }
+
+    public int DisplayOrder { get; set; }
+
+    public string? Icon { get; set; }
+
+    public string? Color { get; set; }
+
+    public string? MinLevel { get; set; }
+    public string? MaxLevel { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public ICollection<Category> Children { get; set; } = new List<Category>();
+    public ICollection<CategoryTranslation> Translations { get; set; } = new List<CategoryTranslation>();
+    public ICollection<WordCategory> WordCategories { get; set; } = new List<WordCategory>();
+}`,
+        satirlar: [
+          {
+            satir: 'public int? ParentCategoryId { get; set; }',
+            aciklama: 'Nullable int — NULL ise bu bir kök kategori, dolu ise bir başka Category\'nin (kendi tablosunun) altında.',
+            neden: 'WordConcept.PartOfSpeech gibi C# tarafında enum yerine düz alan tutulur ama bu sefer sebep farklı: bu bir FK, kısıtlı bir değer kümesi DEĞİL. Self-referencing FK, sınırsız derinlikte bir ağaç kurmanın DB seviyesinde en ucuz yolu — ayrı bir "kategori seviyesi" tablo seti gerektirmez.',
+            olmasaydi: 'Bu alan olmasaydı (ör. yalnızca düz bir Categories listesi), B-04\'ün admin panelinde "Meyve" kategorisini "Yiyecek" kategorisinin ALTINA yerleştirmenin hiçbir yolu OLMAZDI — her kategori birbirinden bağımsız, düz bir liste olarak kalırdı.'
+          },
+          {
+            satir: 'public ICollection<Category> Children { get; set; } = new List<Category>();',
+            aciklama: 'ParentCategoryId ilişkisinin TERSİ — bir kategorinin doğrudan altındaki kategoriler.',
+            neden: '`GetCategoriesQuery` (ileriki bölüm) hiyerarşik bir ağaç DÖNDÜRMEK zorunda (API_ENDPOINTS.md §6: "Hiyerarşik (level, includeWordCount)") — bu koleksiyon olmadan, "bu kategorinin çocukları kim" sorusunu cevaplamak için her seferinde `Categories.Where(c => c.ParentCategoryId == id)` gibi AYRI bir sorgu yazmak gerekirdi; EF Core navigation property bunu tek bir Include zinciriyle çözer.',
+            olmasaydi: 'Bu koleksiyon olmasaydı, DtoBuilder\'ın ağacı kurması için EF Core\'un otomatik "fixup" mekanizmasına GÜVENEMEZDİK — WordConcept.Words\'te olduğu gibi, ilişkinin HER İKİ ucu da (Parent + Children) tanımlı olmalı ki EF, bir sorguda yüklenen kategorileri bellekte otomatik bağlasın.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryTranslation.cs — Dil Başına Ad',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Categories/CategoryTranslation.cs',
+        nedenBuKlasor: null,
+        kod: `public class CategoryTranslation : BaseEntity
+{
+    public int CategoryId { get; set; }
+    public Category Category { get; set; } = null!;
+
+    public int LanguageId { get; set; }
+    public Language Language { get; set; } = null!;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string? Description { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public string Name { get; set; } = string.Empty;',
+            aciklama: 'Kategorinin bu dildeki adı — ör. LanguageId=1 (de) için "Essen", LanguageId=2 (tr) için "Yemek".',
+            neden: 'Word.Text ile BİREBİR aynı desen (A-05) — bir "kavramın" (burada Category, orada WordConcept) dile özel karşılığı, kavramın kendisine değil ayrı bir çeviri satırına yazılır.',
+            olmasaydi: 'Name, Category.cs\'e doğrudan eklenseydi (tek dilli varsayım), her yeni dil TÜM kategori satırlarını GÜNCELLEMEYİ gerektirirdi ve iki dil aynı anda hiç GÖSTERİLEMEZDİ (admin panelin dil değiştirme özelliği buna dayanıyor).'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordCategory.cs — M:N Ara Tablo',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Categories/WordCategory.cs',
+        nedenBuKlasor: null,
+        kod: `public class WordCategory : BaseEntity
+{
+    public int WordConceptId { get; set; }
+    public WordConcept WordConcept { get; set; } = null!;
+
+    public int CategoryId { get; set; }
+    public Category Category { get; set; } = null!;
+
+    public int DisplayOrder { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'public int WordConceptId { get; set; }',
+            aciklama: 'Word DEĞİL, WordConcept — kategori dilden bağımsız bir kavram özelliği (bkz. bir önceki bölüm "Neden WordConceptId, WordId Değil?").',
+            neden: 'Bir önceki bölümdeki kavram slaytında detaylandırıldı: "Tisch" (de) ve "masa" (tr) aynı WordConcept\'in iki Word\'ü olduğu için AYNI kategori setini paylaşmalı.',
+            olmasaydi: 'WordId üzerinden kurulsaydı A-05\'in Eşleştirme (Pairing) akışında iki ayrı dilde girilen içeriğin kategori bilgisi ÇAKIŞABİLİRDİ — hangisinin kazanacağına karar vermek gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConcept.cs — Yeni Bir Navigasyon Eklendi (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Words/WordConcept.cs',
+        nedenBuKlasor: 'Bu bir `kod-degisiklik` DEĞİL — WordConcept\'in var olan hiçbir alanı/satırı değişmedi, yalnızca YENİ, bağımsız bir navigasyon property\'si eklendi (STANDART.md §3.2 "saf ekleme" kuralı). Bu yüzden tüm dosya değil, yalnızca eklenen satır + bağlamı gösteriliyor.',
+        kod: `    // AMAÇ: Bu kavramın her dildeki karşılığı (0, 1 veya 2 satır — 1 satır = "eşleşmemiş").
+    public ICollection<Word> Words { get; set; } = new List<Word>();
+
+    // AMAÇ: Bu kavramın bağlı olduğu kategoriler (A-06 — Kategori API).
+    public ICollection<WordCategory> WordCategories { get; set; } = new List<WordCategory>();
+}`,
+        satirlar: [
+          {
+            satir: 'public ICollection<WordCategory> WordCategories { get; set; } = new List<WordCategory>();',
+            aciklama: 'WordCategory ilişkisinin WordConcept tarafındaki ucu — Category.WordCategories ile birlikte EF Core\'un iki yönlü fixup yapabilmesi için.',
+            neden: 'GetWordsQuery/GetWordByIdQuery\'nin (A-05, bu görevde güncellenecek) yanıtına `categories[]` alanı eklenebilmesi için — A-05\'in WordDtos.cs dosyasındaki "A-06 henüz yazılmadığı için BİLİNÇLİ olarak YOK" notu burada kapatılıyor.',
+            olmasaydi: 'Bu navigasyon olmasaydı, WordConceptDtoBuilder bir WordConcept\'in kategorilerini göstermek için AYRI bir sorgu (`_db.WordCategories.Where(wc => wc.WordConceptId == id)`) çalıştırmak zorunda kalırdı — Include zinciriyle TEK sorguda gelmezdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryConfiguration.cs — CHECK Constraint + Self-Ref FK + Seed',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Categories/CategoryConfiguration.cs',
+        nedenBuKlasor: 'Data/Configurations/Categories/ — Words/ ile AYNI seviyede, entity klasör yapısını birebir yansıtır.',
+        kod: `public class CategoryConfiguration : IEntityTypeConfiguration<Category>
+{
+    private static readonly DateTime SeedCreatedAt = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    public void Configure(EntityTypeBuilder<Category> builder)
+    {
+        builder.Property(c => c.Icon).HasMaxLength(100);
+        builder.Property(c => c.Color).HasMaxLength(10);
+        builder.Property(c => c.MinLevel).HasMaxLength(2);
+        builder.Property(c => c.MaxLevel).HasMaxLength(2);
+
+        builder.HasIndex(c => c.ParentCategoryId);
+
+        builder
+            .HasOne(c => c.ParentCategory)
+            .WithMany(c => c.Children)
+            .HasForeignKey(c => c.ParentCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Categories_MinLevel", "MinLevel IS NULL OR MinLevel IN ('A1','A2','B1','B2','C1','C2')");
+            t.HasCheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN ('A1','A2','B1','B2','C1','C2')");
+        });
+
+        builder.HasData(
+            Seed(1, 1, "A1", "#FF6B6B", "people"),
+            Seed(2, 2, "A1", "#FF8C42", "family"),
+            Seed(3, 3, "A1", "#95E1D3", "food"),
+            Seed(4, 4, "A1", "#4ECDC4", "house"),
+            Seed(5, 5, "A1", "#AA96DA", "school"),
+            Seed(6, 6, "A1", "#FCBAD3", "numbers"),
+            Seed(7, 7, "A1", "#A8EDEA", "colors"),
+            Seed(8, 8, "A1", "#FFD89B", "time"),
+            Seed(9, 9, "A1", "#FB7D5B", "body"),
+            Seed(10, 10, "A1", "#84DCC6", "animal"),
+            Seed(11, 11, "A2", "#F38181", "work"),
+            Seed(12, 12, "A2", "#C7CEEA", "travel")
+        );
+    }
+
+    private static Category Seed(int id, int displayOrder, string minLevel, string color, string icon) =>
+        new()
+        {
+            Id = id,
+            DisplayOrder = displayOrder,
+            MinLevel = minLevel,
+            Color = color,
+            Icon = icon,
+            IsActive = true,
+            CreatedAt = SeedCreatedAt,
+        };
+}`,
+        satirlar: [
+          {
+            satir: '.OnDelete(DeleteBehavior.Restrict);',
+            aciklama: 'ParentCategoryId FK\'sı Cascade DEĞİL, Restrict — bir üst kategori silinmeye çalışıldığında, altında hâlâ alt kategori varsa DB bu işlemi REDDEDER.',
+            neden: 'WordExample.PairedExampleId (A-05) self-ref FK\'sindeki AYNI karar: SQL Server self-referencing bir FK\'de Cascade seçilirse "multiple cascade paths" hatası riski taşır VE zaten iş kuralı olarak (DeleteCategoryCommand, ileriki bölüm) alt kategorisi olan bir kategorinin silinmesi zaten 409 ile ENGELLENECEK — DB\'deki Restrict, uygulama katmanındaki bu kontrolün DB seviyesindeki son savunma hattı.',
+            olmasaydi: 'Cascade olsaydı, bir üst kategori yanlışlıkla silindiğinde TÜM alt ağacı (ve muhtemelen SQL Server\'ın izin vermeyeceği çoklu cascade yolu hatasını) SESSİZCE silerdi — uygulama katmanındaki 409 koruması BYPASS edilebilir bir güvenlik ağı olurdu, DB seviyesinde gerçek bir kilit yoktu demektir.'
+          },
+          {
+            satir: 'private static readonly DateTime SeedCreatedAt = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);',
+            aciklama: 'HasData ile eklenen 12 kategori satırının CreatedAt\'i için SABİT bir tarih — DateTime.UtcNow DEĞİL.',
+            neden: 'HasData, migration\'ın Up() metoduna gömülen SABİT (derleme zamanında bilinen) değerler üretir — `DateTime.UtcNow` kullansaydık, `dotnet ef migrations add` her çalıştırıldığında (ör. bir sonraki migration\'da model karşılaştırılırken) FARKLI bir CreatedAt üretir, snapshot her seferinde "değişti" görünürdü.',
+            olmasaydi: 'DateTime.UtcNow kullanılsaydı, EF Core\'un migration snapshot karşılaştırması her `migrations add` çalıştığında Categories seed verisinde SAHTE bir fark (yalnızca CreatedAt farklı) bulur, gereksiz bir "boş" migration üretilmesine yol AÇARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'CategoryTranslationConfiguration.cs + WordCategoryConfiguration.cs — Aynı Deseni İzleyen İki Config',
+        terimler: [
+          { terim: 'CategoryTranslationConfiguration.cs', tanim: 'LanguageConfiguration/WordConfiguration ile AYNI desen: `(CategoryId, LanguageId)` üzerinde UNIQUE index (bir kategorinin aynı dilde iki adı olamaz), Category\'ye FK Cascade (kategori silinince çevirileri de gider), Language\'a FK Restrict (Language sabit/seed, silinmesi beklenmez). 24 satırlık HasData seed — 12 kategori × 2 dil (de/tr), DATABASE_SCHEMA.md\'deki INSERT sırasıyla birebir.' },
+          { terim: 'WordCategoryConfiguration.cs', tanim: '`(WordConceptId, CategoryId)` üzerinde UNIQUE index — aynı kavram aynı kategoriye iki kez eklenemez. Hem WordConcept hem Category\'ye Cascade — ara tablo satırının TEK BAŞINA bir varlık anlamı yok, iki taraftan biri silinince bu bağın da gitmesi doğru (WordConfiguration\'daki WordConcept→Word Cascade\'iyle aynı gerekçe). Seed verisi YOK — hangi kelimenin hangi kategoriye ait olduğu admin panelden (B-04) veya A-07 toplu import\'undan girilecek içerik.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

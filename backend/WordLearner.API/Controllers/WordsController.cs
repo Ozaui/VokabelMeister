@@ -37,6 +37,9 @@ public class WordsController : ControllerBase
     private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
 
     // AMAÇ: Filtre+sayfalı kelime kavramı listesi.
+    // NEDEN categoryId parametresi (A-06 eklemesi): API_ENDPOINTS.md §5'in "level,
+    //        categoryId, partOfSpeech, search, page, pageSize" filtre listesinde
+    //        A-05 döneminden beri VARDI ama Category tabloları o zaman yoktu.
     [HttpGet]
     [Authorize]
     [ProducesResponseType(typeof(PagedResult<WordConceptListItemDto>), StatusCodes.Status200OK)]
@@ -44,12 +47,13 @@ public class WordsController : ControllerBase
         [FromQuery] string? level,
         [FromQuery] string? partOfSpeech,
         [FromQuery] string? search,
+        [FromQuery] int? categoryId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default
     )
     {
-        var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize);
+        var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize, categoryId);
         return Ok(await _mediator.Send(query, ct));
     }
 

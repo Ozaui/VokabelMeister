@@ -195,6 +195,9 @@ builder
     .HasMaxLength(20)
     .HasDefaultValue(QrLoginStatus.Pending);
 
+builder.Property(q => q.RequesterIp).HasMaxLength(45);
+builder.Property(q => q.RequesterDeviceInfo).HasMaxLength(500);
+
 builder.HasIndex(q => q.QrTokenHash);
 builder.HasIndex(q => q.ExpiresAt);
 
@@ -202,7 +205,15 @@ builder
     .HasOne(q => q.User)
     .WithMany()
     .HasForeignKey(q => q.UserId)
-    .OnDelete(DeleteBehavior.SetNull);`,
+    .OnDelete(DeleteBehavior.SetNull);
+
+builder.ToTable(t =>
+{
+    t.HasCheckConstraint(
+        "CK_QrLoginSessions_Status",
+        "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')"
+    );
+});`,
         satirlar: [
           {
             satir: 'builder.Property(q => q.QrTokenHash).HasMaxLength(44).IsRequired();',
@@ -247,6 +258,18 @@ builder
             olmasaydi: 'Bu satır OLMASAYDI, C# TARAFINDAKİ VARSAYILAN YİNE ÇALIŞIRDI (EF Core NESNEYİ OLUŞTURURKEN ZATEN "Pending" ATAR) — ama VERİTABANI ŞEMASININ KENDİSİ bir VARSAYILAN TAŞIMAZDI, İKİ KATMAN (C#/DB) ARASINDA KÜÇÜK bir TUTARSIZLIK OLURDU.'
           },
           {
+            satir: 'builder.Property(q => q.RequesterIp).HasMaxLength(45);',
+            aciklama: 'IP adresini tutan kolonun uzunluk sınırı — 45, IPv6\'nın metin gösteriminin (ör. tam açılmış, `::ffff:` önekli bir adres) alabileceği EN UZUN karakter sayısıdır.',
+            neden: '.NET\'in `IPAddress.ToString()` çıktısı IPv4\'te en fazla 15 karakter, IPv6\'da ise (özel durumlar dahil) 45 karaktere kadar çıkabilir — bu sabit, ASP.NET Core\'un kendi `HttpContext.Connection.RemoteIpAddress` değerini karşılamak için yaygın kullanılan bir kolon boyutudur.',
+            olmasaydi: 'MaxLength IPv4 varsayılarak (ör. 15) DAR seçilseydi, IPv6 üzerinden bağlanan bir istemcinin adresi kolona SIĞMAZ, `GenerateQrLoginCommand`/`ScanQrLoginCommand` her çalıştığında bir veritabanı hatası fırlatırdı.'
+          },
+          {
+            satir: 'builder.Property(q => q.RequesterDeviceInfo).HasMaxLength(500);',
+            aciklama: 'İsteği yapan cihazın User-Agent gibi serbest metin bir açıklamasını tutan kolonun üst sınırı.',
+            neden: 'User-Agent string\'leri tarayıcıdan tarayıcıya, cihazdan cihaza büyük farklılık gösterir (bazı mobil WebView\'ler veya botlar birkaç yüz karaktere ulaşan değerler gönderebilir) — 500, gerçek dünyadaki bu değişkenliği güvenli biçimde kapsayan, ama yine de sınırsız BÜYÜMEYİ (ör. kötü niyetli bir istemcinin devasa bir header göndermesi) engelleyen bir tavan.',
+            olmasaydi: 'Bu alan HasMaxLength ile sınırlanmasaydı EF Core varsayılan olarak `nvarchar(max)` üretirdi — hem gereksiz depolama esnekliği hem de bu kolon üzerinde bir index/karşılaştırma gerektiğinde (ör. ileride şüpheli cihaz tespiti) performans sorunlarına yol açabilirdi.'
+          },
+          {
             satir: 'builder.HasIndex(q => q.QrTokenHash);',
             aciklama: 'A-03/03\'teki `builder.HasIndex(u => u.Email)` İLE AYNI AMAÇ — HER scan/confirm/deny/status İSTEĞİNDE token HASH\'İNE GÖRE ARAMA YAPILDIĞI İÇİN, bu SÜTUN İNDEKSLENİR.',
             neden: 'A-03/03\'teki Email İNDEKSİNDEN FARKLI olarak `IsUnique()` ÇAĞRILMAZ — ÇÜNKÜ (TEORİDE) İKİ FARKLI oturumun AYNI HASH\'E SAHİP OLMASI (64 byte RASTGELE token\'IN ÇAKIŞMASI) İSTATİSTİKSEL OLARAK İHMAL EDİLEBİLİR bir OLASILIK, VE bu BENZERSİZLİĞİ VERİTABANI SEVİYESİNDE ZORUNLU KILMANIN EK bir GÜVENLİK FAYDASI YOKTUR.',
@@ -281,6 +304,18 @@ builder
             aciklama: 'A-03/03\'teki User\'IN KENDİSİNDE GÖRMEDİĞİMİZ bir DAVRANIŞ — kullanıcı SİLİNİRSE (kalıcı ANONİMLEŞTİRME, A-10), BU oturumun UserId\'si `null`A DÜŞER, oturum kaydının KENDİSİ SİLİNMEZ.',
             neden: 'KAYNAK KODDAKİ YORUMDA belirtildiği GİBİ: "kullanıcı SİLİNSE BİLE OTURUM KAYDI AUDIT İÇİN KALIR" — QR oturumları, GÜVENLİK İNCELEMESİ AÇISINDAN DEĞERLİ bir GEÇMİŞ KAYITTIR, kullanıcının SİLİNMESİYLE bu GEÇMİŞİN de KAYBOLMASI İSTENMEZ.',
             olmasaydi: '`DeleteBehavior.Cascade` (VARSAYILAN DAVRANIŞ) KULLANILSAYDI, bir kullanıcı ANONİMLEŞTİRİLDİĞİNDE TÜM QR oturum GEÇMİŞİ de OTOMATİK OLARAK SİLİNİRDİ — bir GÜVENLİK İNCELEMESİNDE "bu kullanıcı GEÇMİŞTE QR İLE NE ZAMAN GİRİŞ YAPTI" SORUSU CEVAPSIZ KALIRDI.'
+          },
+          {
+            satir: 'builder.ToTable(t =>',
+            aciklama: 'Bir önceki `.Property()`/`.HasIndex()`/`.HasOne()` çağrılarından FARKLI olarak, bu KEZ tek bir property\'ye değil TABLONUN KENDİSİNE bir kural eklenir — `ToTable`\'ın ikinci overload\'ı, tablo seviyesinde ek yapılandırma (burada bir check constraint) tanımlamayı sağlar.',
+            neden: 'Check constraint bir kolona değil, o kolonun ALABİLECEĞİ DEĞER KÜMESİNE bağlı bir kısıtlama olduğu için EF Core API\'sinde `Property()` değil `ToTable()` altında tanımlanır — bu, A-03/03\'teki `CK_Users_Level`/`CK_Users_Role` check constraint\'leriyle AYNI konvansiyon.',
+            olmasaydi: 'Bu blok hiç yazılmasaydı, `.HasConversion<string>()` ile string olarak saklanan Status kolonuna EF Core dışından (ör. ham SQL veya başka bir uygulama) "Foo" gibi enum\'da karşılığı olmayan bir değer yazılabilirdi — C# tarafındaki enum güvenliği, veritabanı seviyesinde hiçbir karşılığı olmayan sahte bir güvenlik olurdu.'
+          },
+          {
+            satir: '"Status IN (\'Pending\',\'Scanned\',\'Confirmed\',\'Consumed\',\'Denied\',\'Expired\')"',
+            aciklama: 'Constraint\'in gerçek SQL ifadesi — Status kolonunun alabileceği TEK TEK altı değeri (bir önceki bölümdeki QrLoginStatus enum\'ının string karşılıkları) sıralar.',
+            neden: 'Bu liste, QrLoginStatus enum\'ındaki (Bölüm 2\'nin bir önceki slaydı) altı üyeyle BİREBİR eşleşmek ZORUNDADIR — C# tarafında yeni bir durum eklenip bu SQL string\'i güncellenmezse, o yeni durum veritabanına HİÇ YAZILAMAZ.',
+            olmasaydi: 'Bu ifade eksik ya da yanlış yazılsaydı (ör. bir enum değeri unutulsaydı), o durumdaki bir oturum kaydedilmeye çalışıldığında CHECK constraint İHLALİ nedeniyle bir veritabanı hatası fırlatılır, kullanıcı QR akışının ortasında beklenmedik bir 500 hatasıyla karşılaşırdı.'
           }
         ]
       },

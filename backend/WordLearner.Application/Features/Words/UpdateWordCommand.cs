@@ -16,8 +16,8 @@
 // NASIL: 1) Kavramı tüm dilleriyle yükle  2) Concept-seviyesi alanları güncelle
 //        3) Her translation için: dil zaten varsa alanlarını güncelle, yoksa
 //        duplikat kontrolüyle yeni Word ekle  4) UPDATE_WORD ActivityLog'u yaz.
-// BAĞIMLILIKLAR: IWordConceptRepository, ILanguageRepository, IActivityLogger,
-//                WordEntityBuilder, WordConceptDtoBuilder.
+// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
+//                IActivityLogger, WordEntityBuilder, WordConceptDtoBuilder.
 // ─────────────────────────────────────────────────────────────────────────────
 
 using MediatR;
@@ -25,6 +25,7 @@ using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Words;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Categories;
 using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
@@ -34,7 +35,12 @@ public record UpdateWordCommand(
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
-    IReadOnlyList<WordTranslationInput> Translations
+    IReadOnlyList<WordTranslationInput> Translations,
+    // NEDEN NULL = "dokunma", boş liste = "tümünü kaldır" (A-06 eklemesi): CreateWordCommand.
+    //        CategoryIds ile AYNI trailing+default kararı — ayrıca PUT'un ImageUrl'deki
+    //        "null ise dokunma" davranışıyla TUTARLI, tam yer değiştirme yalnızca alan
+    //        GERÇEKTEN gönderildiğinde uygulanır.
+    IReadOnlyList<int>? CategoryIds = null
 ) : IRequest<WordConceptDetailDto>
 {
     // NEDEN init-property: CreateWordCommand.Force ile aynı gerekçe — query string'ten gelir.
@@ -47,16 +53,19 @@ public record UpdateWordCommand(
 public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordConceptDetailDto>
 {
     private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly ILanguageRepository _languageRepository;
     private readonly IActivityLogger _activityLogger;
 
     public UpdateWordCommandHandler(
         IWordConceptRepository wordConceptRepository,
+        ICategoryRepository categoryRepository,
         ILanguageRepository languageRepository,
         IActivityLogger activityLogger
     )
     {
         _wordConceptRepository = wordConceptRepository;
+        _categoryRepository = categoryRepository;
         _languageRepository = languageRepository;
         _activityLogger = activityLogger;
     }
@@ -67,11 +76,18 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
             await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
             ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
 
+        // NEDEN .ToList() (A-06 denetiminde bulunan hata düzeltmesi): `Select(...)` tembel
+        //       (deferred) bir IEnumerable döner — aşağıdaki döngü `existingWord.Text`'i
+        //       DEĞİŞTİRİR ve bu AYNI Word nesnelerine işaret eder; .ToList() ile hemen
+        //       MATERYALİZE edilmezse, `_activityLogger.LogAsync` içindeki JsonSerializer
+        //       bu listeyi SONRADAN (mutasyonlardan SONRA) enumerate eder ve "eski" değer
+        //       olarak aslında YENİ değerleri yazardı — audit log'un "değişiklik yok" gibi
+        //       yanıltıcı görünmesine yol açardı.
         var oldValue = new
         {
             concept.PartOfSpeech,
             concept.DifficultyLevel,
-            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }).ToList(),
         };
 
         concept.PartOfSpeech = request.PartOfSpeech;
@@ -143,6 +159,41 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
                         }
                     );
                 }
+            }
+        }
+
+        // NEDEN tam yer değiştirme (A-06 eklemesi): CategoryIds gönderildiyse (NULL değilse),
+        //       yeni listede OLMAYAN mevcut bağlar KALDIRILIR, listede olup henüz bağlı
+        //       OLMAYANLAR eklenir — translations[] listesinin "concept-seviyesi TAM YER
+        //       DEĞİŞTİRME" semantiğiyle aynı mantık (bkz. dosya başı NEDEN notu).
+        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): CreateWordCommand.cs'teki
+        //       AYNI gerekçe — tekrarlanan bir Id, UNIQUE index ihlaliyle yakalanmayan bir 500'e
+        //       yol açardı. Ayrıca `existingCategoryIds` döngüden ÖNCE bir kez hesaplandığı için
+        //       (kaldırma sonrası, ekleme başlamadan) Distinct() olmadan aynı Id iki kez "mevcut
+        //       değil" filtresinden geçip İKİ KEZ eklenmeye çalışılırdı — Distinct() bu ikinci
+        //       riski de aynı anda ortadan kaldırır.
+        if (request.CategoryIds is not null)
+        {
+            var newCategoryIds = request.CategoryIds.Distinct().ToList();
+            var toRemove = concept.WordCategories.Where(wc => !newCategoryIds.Contains(wc.CategoryId)).ToList();
+            foreach (var wordCategory in toRemove)
+                concept.WordCategories.Remove(wordCategory);
+
+            var existingCategoryIds = concept.WordCategories.Select(wc => wc.CategoryId).ToHashSet();
+            foreach (var categoryId in newCategoryIds.Where(id => !existingCategoryIds.Contains(id)))
+            {
+                var category =
+                    await _categoryRepository.GetByIdAsync(categoryId, ct)
+                    ?? throw new EntityNotFoundException(typeof(Category), categoryId);
+
+                concept.WordCategories.Add(
+                    new WordCategory
+                    {
+                        Category = category,
+                        CreatedByUserId = request.UserId,
+                        UpdatedByUserId = request.UserId,
+                    }
+                );
             }
         }
 

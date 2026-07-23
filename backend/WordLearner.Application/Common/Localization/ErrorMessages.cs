@@ -105,6 +105,34 @@ public static class ErrorMessages
             ["de"] = "Ein Konzept kann nicht mit sich selbst verknüpft werden.",
         },
 
+        // NEDEN bu blok: CategoryHasChildrenException/CategoryHasActiveWordsException (A-06) —
+        //       DeleteCategoryCommand'ın 409 silme koruması (API_ENDPOINTS.md §6).
+        ["CATEGORY_HAS_CHILDREN"] = new()
+        {
+            ["tr"] = "Bu kategorinin alt kategorileri var. Önce alt kategorileri silin veya taşıyın.",
+            ["de"] = "Diese Kategorie hat Unterkategorien. Löschen oder verschieben Sie zuerst die Unterkategorien.",
+        },
+        ["CATEGORY_HAS_ACTIVE_WORDS"] = new()
+        {
+            ["tr"] = "Bu kategoriye bağlı aktif kelimeler var. Önce kelimeleri başka bir kategoriye taşıyın.",
+            ["de"] = "Dieser Kategorie sind aktive Wörter zugeordnet. Verschieben Sie zuerst die Wörter in eine andere Kategorie.",
+        },
+        ["CATEGORY_NAME_REQUIRED"] = new()
+        {
+            ["tr"] = "Kategori adı (name) zorunludur.",
+            ["de"] = "Der Kategoriename (name) ist erforderlich.",
+        },
+        ["CATEGORY_TRANSLATIONS_REQUIRED"] = new()
+        {
+            ["tr"] = "En az bir dilde kategori adı girilmelidir.",
+            ["de"] = "Mindestens ein Kategoriename in einer Sprache ist erforderlich.",
+        },
+        ["CATEGORY_CANNOT_BE_OWN_PARENT"] = new()
+        {
+            ["tr"] = "Bir kategori kendisinin veya kendi alt kategorisinin altına taşınamaz.",
+            ["de"] = "Eine Kategorie kann nicht sich selbst oder ihrer eigenen Unterkategorie untergeordnet werden.",
+        },
+
         // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
         //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye
         //       giden gerçek mesaj, her kuralın WithErrorCode() ile taşıdığı bu kodlar

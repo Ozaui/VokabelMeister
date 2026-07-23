@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Word Tarafının Retrofit'i</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'word-tarafi-retrofit',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '06_controller-validator-testler.html',
+    sonrakiBolum: '08_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden A-05\'in Kodu Geri Dönüp Değişti?',
+        aciklama: 'A-05 (Sistem Kelimesi API) tamamlandığında iki dosyada BİLİNÇLİ, açıkça yazılmış "henüz yok" notu vardı. WordDtos.cs\'in dosya başı yorumunda: "`categories[]`/`userProgress` alanları (API_ENDPOINTS.md §5 örneğinde var) A-06 (Kategoriler) ve C-03 (SRS) henüz yazılmadığı için BİLİNÇLİ olarak bu DTO\'larda YOK — o task\'lar geldiğinde eklenecek." GetWordsQuery.cs\'te ise: "`categoryId` filtresi (API_ENDPOINTS.md §5) BİLİNÇLİ olarak henüz YOK — A-06 (Kategoriler) yazılmadan Category/WordCategory tabloları mevcut değil; o task tamamlanınca bu Query\'ye eklenecek." Bu bölüm, A-06\'nın kendi entity/repository/command katmanlarını yazmasının YANI SIRA, geriye dönüp bu İKİ notu KAPATTIĞINI (WordDtos.cs\'e `categories[]`, GetWordsQuery.cs\'e `categoryId`) gösteriyor — `userProgress` notu ise C-03 yazılmadığı için HÂLÂ açık.',
+        neden: 'Bu, bir hata düzeltmesi DEĞİL, planlanmış bir teknik borç kapatma — CLAUDE.md §3\'ün dikey dilim mimarisi gereği, A-05 kendi görev kapsamında (Category tabloları henüz yokken) "şimdilik yok" diyerek DURDU; A-06 bu tabloları GERÇEKTEN yazınca, o notun işaret ettiği iş buraya (A-06\'nın kendi bölümüne) taşınır. STANDART.md §3.1 tam olarak bu senaryo için var: eski bölüm (A-05 Bölüm 3) SESSİZCE bırakılmaz/güncellenmez, değişikliği yapan YENİ görevin (A-06) bölümüne bir `kod-degisiklik` slaytı eklenir.',
+        olmasaydi: 'Bu notlar hiç kapatılmasaydı, WordDtos.cs sonsuza kadar "categories[] A-06 gelince eklenecek" demeye devam ederdi — ama A-06 zaten TAMAMLANMIŞ olurdu, kod ile yorum birbiriyle ÇELİŞİRDİ. Bir junior geliştirici bu yorumu okuyup "demek /words yanıtında hâlâ kategori yok" diye YANLIŞ bir sonuca varır, GET /words yanıtında `categories[]` alanını GÖRDÜĞÜNDE kafası KARIŞIRDI.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordDtos.cs — categories[] Alanı Eklendi (Record İmza Değişikliği)',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Words/WordDtos.cs',
+        neden: 'A-06\'da Category/CategoryTranslation/WordCategory tabloları + WordCategorySummaryDto (CategoryDtos.cs) yazıldığı için — A-05 döneminde bu DTO henüz YOKTU, WordConceptListItemDto/WordConceptDetailDto bu yüzden Categories alanı OLMADAN tasarlanmıştı.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // WordDtos.cs
+ //
+ // AMAÇ: \`GET /words\`, \`GET /words/{id}\`, \`POST/PUT /words\` yanıtlarının DTO'ları.
+ // NEDEN: Liste (WordConceptListItemDto) ve detay (WordConceptDetailDto) AYRI
+ //        DTO'lar — liste yalnızca Text seviyesinde (WordTranslationSummaryDto),
+ //        detay ise WordDetail+WordExample'larıyla TAM translation (WordTranslationDto)
+ //        taşır; liste ekranının WordDetail/WordExample'a ihtiyacı yok, gereksiz
+-//        veri taşımaktan kaçınılır. \`categories[]\`/\`userProgress\` alanları
+-//        (API_ENDPOINTS.md §5 örneğinde var) A-06 (Kategoriler) ve C-03 (SRS) henüz
+-//        yazılmadığı için BİLİNÇLİ olarak bu DTO'larda YOK — o task'lar geldiğinde eklenecek.
+-// BAĞIMLILIKLAR: Yok (saf DTO'lar).
++//        veri taşımaktan kaçınılır. \`categories[]\` alanı A-06'da EKLENDİ — A-05
++//        döneminde "Category tabloları henüz yok" notuyla BİLİNÇLİ olarak dışarıda
++//        bırakılmıştı. \`userProgress\` (API_ENDPOINTS.md §5 örneğinde var) C-03 (SRS)
++//        henüz yazılmadığı için hâlâ YOK.
++// BAĞIMLILIKLAR: WordLearner.Application.DTOs.Categories.WordCategorySummaryDto (A-06).
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using System.Text.Json;
++using WordLearner.Application.DTOs.Categories;
+ 
+ namespace WordLearner.Application.DTOs.Words;
+ 
+ // AMAÇ: Bir Word'ün dile özel gramer/telaffuz bilgisi.
+ public record WordDetailDto(
+     string? Pronunciation,
+     string? AudioUrl,
+     string? Notes,
+     string? CommonMistakes,
+     JsonElement? GrammarData
+ );
+ 
+ // AMAÇ: Bir Word'e ait tek bir örnek cümle.
+ public record WordExampleDto(int Id, string SentenceText, string Level, string ExampleType, int? PairedExampleId);
+ 
+ // AMAÇ: Liste ekranında bir dilin YALNIZCA metni (WordDetail/örnekler YOK).
+ public record WordTranslationSummaryDto(string LanguageCode, string Text);
+ 
+ // AMAÇ: Detay ekranında bir dilin TAM içeriği.
+ public record WordTranslationDto(
+     string LanguageCode,
+     string Text,
+     string? Definition,
+     WordDetailDto? WordDetail,
+     IReadOnlyList<WordExampleDto> Examples
+ );
+ 
+ // AMAÇ: \`GET /words\` liste satırı.
+ public record WordConceptListItemDto(
+     int WordConceptId,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    IReadOnlyList<WordTranslationSummaryDto> Translations
++    IReadOnlyList<WordTranslationSummaryDto> Translations,
++    IReadOnlyList<WordCategorySummaryDto> Categories
+ );
+ 
+ // AMAÇ: \`GET /words/{id}\`, \`POST /words\`, \`PUT /words/{id}\` yanıtı.
+ public record WordConceptDetailDto(
+     int WordConceptId,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    IReadOnlyList<WordTranslationDto> Translations
++    IReadOnlyList<WordTranslationDto> Translations,
++    IReadOnlyList<WordCategorySummaryDto> Categories
+ );
+ 
+ // AMAÇ: \`GET /words/unmatched\` liste satırı — bir dilde eşleşmemiş (tek Word'lü)
+ //       kavram + karşı dilin eşleşmemiş havuzunda önerilen eşleşme adayı
+ //       (bkz. Icerik.md "Eşleştirme", WordMatchSuggestionResolver).
+ public record UnmatchedWordConceptDto(
+     int WordConceptId,
+     string LanguageCode,
+     string Text,
+     string? Definition,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     int? SuggestedMatchConceptId
+ );`,
+        satirlar: [
+          {
+            satir: 'IReadOnlyList<WordCategorySummaryDto> Categories',
+            aciklama: 'Hem liste (WordConceptListItemDto) HEM detay (WordConceptDetailDto) DTO\'suna TRAILING (son sırada) eklendi — pozisyonel değil, isimlendirilmiş.',
+            neden: 'record\'un pozisyonel constructor\'ı kullanan var olan test/çağrı siteleri (A-05\'ten kalan) BOZULMASIN diye — CreateWordCommand.CategoryIds\'teki "trailing + default" kararıyla AYNI mühendislik gerekçesi, burada default DEĞİL (bu alan DTO çıktısı, İSTEMCİDEN gelmiyor) ama SIRA yine de sona eklendi.',
+            olmasaydi: 'Categories alanı ARAYA (ör. ImageUrl ile Translations arasına) eklenseydi, WordConceptDtoBuilder.BuildDetail/BuildListItem\'daki pozisyonel `new(...)` çağrıları (aynı dosyada, hemen bir sonraki slaytta) YANLIŞ alana YANLIŞ değer atardı — derleyici bunu YAKALAMAZDI (tipler uyumlu olduğu sürece), çalışma zamanında SESSİZCE yanlış veri dönerdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordConceptDtoBuilder.cs — BuildCategories Metodu Eklendi',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/WordConceptDtoBuilder.cs',
+        neden: 'WordDtos.cs\'e eklenen Categories alanının GERÇEK içeriğini kuran kod burada yaşıyor — WordConceptDtoBuilder, A-05\'ten beri Entity→DTO dönüşümünün TEK noktası (CLAUDE.md\'nin koşullu AutoMapper kuralı), bu yüzden yeni bir dönüşüm de BURAYA eklendi, yeni bir builder sınıfı AÇILMADI.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // WordConceptDtoBuilder.cs
+ //
+ // AMAÇ: WordConcept (+ Words/WordDetail/WordExample) entity ağacını DTO'lara
+ //       (WordConceptDetailDto/WordConceptListItemDto) çeviren paylaşılan yardımcı.
+ // NEDEN: CLAUDE.md'nin koşullu AutoMapper kuralı — bu bir düz 1:1 Entity→DTO
+ //        dönüşümü DEĞİL, WordConcept+Word+WordDetail+WordExample+Language'ı
+ //        \`translations[]\` şeklinde BİRLEŞTİREN bir projeksiyon; AutoMapper Profile
+ //        yerine elle inşa edilir (QrLogin DTO'larıyla aynı karar). CreateWordCommand/
+ //        UpdateWordCommand/GetWordByIdQuery/GetWordsQuery handler'larının HEPSİ bu
+ //        TEK noktayı kullanır, dönüşüm mantığı tekrarlanmaz.
+ // BAĞIMLILIKLAR: WordConcept/Word entity'leri, WordDtos.cs.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using System.Text.Json;
++using WordLearner.Application.DTOs.Categories;
+ using WordLearner.Application.DTOs.Words;
++using WordLearner.Domain.Entities.Categories;
+ using WordLearner.Domain.Entities.Words;
+ 
+ namespace WordLearner.Application.Features.Words;
+ 
+ public static class WordConceptDtoBuilder
+ {
+     // AMAÇ: Tam detay DTO'su — her dilin WordDetail/örnekleriyle birlikte.
+     public static WordConceptDetailDto BuildDetail(WordConcept concept) =>
+         new(
+             concept.Id,
+             concept.PartOfSpeech,
+             concept.DifficultyLevel,
+             concept.ImageUrl,
+-            concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList()
++            concept.Words.OrderBy(w => w.LanguageId).Select(BuildTranslation).ToList(),
++            BuildCategories(concept)
+         );
+ 
+     // AMAÇ: Liste satırı DTO'su — yalnızca dil+metin (WordDetail/örnekler taşınmaz).
+     public static WordConceptListItemDto BuildListItem(WordConcept concept) =>
+         new(
+             concept.Id,
+             concept.PartOfSpeech,
+             concept.DifficultyLevel,
+             concept.ImageUrl,
+             concept
+                 .Words.OrderBy(w => w.LanguageId)
+                 .Select(w => new WordTranslationSummaryDto(w.Language.Code, w.Text))
+-                .ToList()
++                .ToList(),
++            BuildCategories(concept)
+         );
+ 
++    // AMAÇ: Bir WordConcept'in bağlı olduğu kategorilerin HAFİF özetini kurar (A-06) —
++    //       CategoryDtoBuilder'daki tam \`CategoryDto\` DEĞİL, WordCategorySummaryDto
++    //       (bkz. CategoryDtos.cs "NEDEN" — bir kelime listesinde Children/WordCount
++    //       gereksiz).
++    // NEDEN wc.Category.Id (navigasyon), wc.CategoryId (skaler FK) DEĞİL: yeni eklenen
++    //       bir WordCategory'de (CreateWordCommand/UpdateWordCommand) yalnızca \`Category\`
++    //       navigasyonu set edilir — WordEntityBuilder'ın \`Word.Language = language\`
++    //       deseniyle AYNI karar (LanguageId DEĞİL). Skaler FK, EF Core'un fixup'ı
++    //       yalnızca gerçek bir DbContext SaveChangesAsync'i sırasında doldurur; bu
++    //       metot her zaman navigasyon üzerinden okuyarak hem SaveChanges ÖNCESİ
++    //       (bu metodun kendisi tam olarak bu anda çağrılıyor) hem SONRASI doğru sonuç verir.
++    private static IReadOnlyList<WordCategorySummaryDto> BuildCategories(WordConcept concept) =>
++        concept
++            .WordCategories.OrderBy(wc => wc.DisplayOrder)
++            .Select(wc => new WordCategorySummaryDto(
++                wc.Category.Id,
++                wc.Category.Translations.OrderBy(t => t.LanguageId).Select(BuildCategoryTranslation).ToList()
++            ))
++            .ToList();
++
++    private static CategoryTranslationDto BuildCategoryTranslation(CategoryTranslation t) =>
++        new(t.Language.Code, t.Name, t.Description);
++
+     private static WordTranslationDto BuildTranslation(Word word) =>
+         new(
+             word.Language.Code,
+             word.Text,
+             word.Definition,
+             word.WordDetail is null ? null : BuildWordDetail(word.WordDetail),
+             word
+                 .WordExamples.OrderBy(e => e.DisplayOrder)
+                 .Select(e => new WordExampleDto(e.Id, e.SentenceText, e.Level, e.ExampleType, e.PairedExampleId))
+                 .ToList()
+         );
+ 
+     private static WordDetailDto BuildWordDetail(WordDetail detail) =>
+         new(
+             detail.Pronunciation,
+             detail.AudioUrl,
+             detail.Notes,
+             detail.CommonMistakes,
+             ParseGrammarData(detail.GrammarData)
+         );
+ 
+     // AMAÇ: DB'de string olarak saklanan GrammarData JSON'unu, yanıtta gerçek bir
+     //       JSON nesnesi (string olarak KAÇIRILMIŞ/escaped değil) olarak döndürür.
+     // NEDEN: \`.Clone()\` — JsonDocument.Parse'ın ürettiği JsonDocument bu metottan
+     //        çıkışta implicit olarak GC'ye bırakılıyor; Clone() olmadan RootElement
+     //        yalnızca kendi JsonDocument'i YAŞADIĞI sürece güvenli sayılır, Clone()
+     //        ile JsonDocument'ten bağımsız, kalıcı bir kopya alınır.
+     private static JsonElement? ParseGrammarData(string? grammarDataJson) =>
+         string.IsNullOrWhiteSpace(grammarDataJson) ? null : JsonDocument.Parse(grammarDataJson).RootElement.Clone();
+ }`,
+        satirlar: [
+          {
+            satir: 'wc.Category.Id,',
+            aciklama: 'wc.Category.Id — NAVİGASYON üzerinden okunuyor, wc.CategoryId (skaler FK) DEĞİL.',
+            neden: 'CreateWordCommandHandler/UpdateWordCommandHandler (bir sonraki iki slayt) yeni bir WordCategory eklerken yalnızca `Category = category` navigasyonunu SET ediyor, `CategoryId` skaler alanını ELLE atamıyor — EF Core bu skaler FK\'yi yalnızca gerçek bir SaveChangesAsync sırasında fixup ile doldurur. BuildDetail/BuildListItem SaveChanges\'TEN HEMEN SONRA (CreateWordCommandHandler.Handle\'ın return satırında) çağrılıyor olsa da, bu metot her iki çağrı bağlamında da (SaveChanges öncesi/sonrası) DOĞRU sonuç vermesi için tutarlı şekilde navigasyon okuyacak şekilde yazıldı.',
+            olmasaydi: 'wc.CategoryId kullanılsaydı, CreateWordCommandHandler içinde SaveChangesAsync\'ten ÖNCE bu builder çağrılsaydı (bugün çağrılmıyor ama gelecekte bir refactor bunu değiştirebilirdi) CategoryId hâlâ 0 (default) OLURDU — navigasyon üzerinden okumak bu KIRILGANLIĞI baştan ORTADAN KALDIRIYOR.'
+          },
+          {
+            satir: 'private static IReadOnlyList<WordCategorySummaryDto> BuildCategories(WordConcept concept) =>',
+            aciklama: 'Hem BuildDetail hem BuildListItem\'ın çağırdığı TEK, private, paylaşılan bir yardımcı metot — WordCategorySummaryDto\'nun HAFİF (Children/WordCount\'suz) DTO şekliyle CategoryDtos.cs\'teki tanımla birebir eşleşir.',
+            neden: 'Kategori özetini kurma mantığı (DisplayOrder\'a göre sırala + her birini WordCategorySummaryDto\'ya çevir) TEK yerde yaşamalı — BuildDetail ve BuildListItem bunu AYRI AYRI yazsaydı, ileride bir alan eklendiğinde (ör. kategori rengi) biri güncellenip diğeri UNUTULABİLİRDİ.',
+            olmasaydi: 'Bu yardımcı metot olmasaydı, BuildDetail ve BuildListItem\'ın HER İKİSİNE de neredeyse ÖZDEŞ bir `concept.WordCategories.OrderBy(...).Select(...).ToList()` bloğu KOPYALANIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'GetWordsQuery.cs — categoryId Filtresi Eklendi',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetWordsQuery.cs',
+        neden: 'A-05 döneminde Category/WordCategory tabloları mevcut olmadığı için BİLİNÇLİ olarak dışarıda bırakılan filtre (dosya başı NEDEN notu) — bu borç A-06\'da kapatıldı, GetWordsQuery.cs\'in NEDEN yorumu da bunu yansıtacak şekilde güncellendi.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // GetWordsQuery.cs
+ //
+ // AMAÇ: GET /words — filtre+sayfalı kelime kavramı listesi.
+-// NEDEN: \`categoryId\` filtresi (API_ENDPOINTS.md §5) BİLİNÇLİ olarak henüz YOK —
+-//        A-06 (Kategoriler) yazılmadan Category/WordCategory tabloları mevcut
+-//        değil; o task tamamlanınca bu Query'ye eklenecek (A-05 planı "Sıra Dışı
+-//        Notlar"). \`search\`, kelimenin HERHANGİ bir dildeki Text'inde arar.
++// NEDEN \`categoryId\` artık VAR (A-06 eklemesi): A-05 döneminde Category/WordCategory
++//        tabloları mevcut olmadığı için BİLİNÇLİ olarak dışarıda bırakılmıştı — o borç
++//        burada kapatıldı. \`search\`, kelimenin HERHANGİ bir dildeki Text'inde arar.
+ // BAĞIMLILIKLAR: IWordConceptRepository, WordConceptDtoBuilder, PagedResult<T>.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using MediatR;
+ using WordLearner.Application.Common.Models;
+ using WordLearner.Application.DTOs.Words;
+ using WordLearner.Application.Interfaces.Repositories;
+ 
+ namespace WordLearner.Application.Features.Words;
+ 
+ public record GetWordsQuery(
+     string? DifficultyLevel,
+     string? PartOfSpeech,
+     string? Search,
+     int Page = 1,
+-    int PageSize = 20
++    int PageSize = 20,
++    // NEDEN trailing + default null: A-05'te pozisyonel argümanla yazılmış mevcut
++    //        test/çağrı siteleri BOZULMASIN diye (CreateWordCommand.CategoryIds ile
++    //        AYNI karar).
++    int? CategoryId = null
+ ) : IRequest<PagedResult<WordConceptListItemDto>>;
+ 
+ public class GetWordsQueryHandler
+     : IRequestHandler<GetWordsQuery, PagedResult<WordConceptListItemDto>>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+ 
+     public GetWordsQueryHandler(IWordConceptRepository wordConceptRepository) =>
+         _wordConceptRepository = wordConceptRepository;
+ 
+     public async Task<PagedResult<WordConceptListItemDto>> Handle(GetWordsQuery request, CancellationToken ct)
+     {
+         var paged = await _wordConceptRepository.GetPagedAsync(
+             request.DifficultyLevel,
+             request.PartOfSpeech,
+             request.Search,
++            request.CategoryId,
+             request.Page,
+             request.PageSize,
+             ct
+         );
+ 
+         return new PagedResult<WordConceptListItemDto>(
+             paged.Items.Select(WordConceptDtoBuilder.BuildListItem).ToList(),
+             paged.TotalCount,
+             paged.Page,
+             paged.PageSize
+         );
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'int? CategoryId = null',
+            aciklama: 'GetWordsQuery record\'ına TRAILING + default null olarak eklendi — CreateWordCommand.CategoryIds ile AYNI "mevcut pozisyonel çağrı siteleri bozulmasın" kararı.',
+            neden: 'GetWordsQueryHandlerTests (A-05, halihazırda mevcut) gibi test dosyaları `new GetWordsQuery(level, partOfSpeech, search, page, pageSize)` şeklinde POZİSYONEL argümanlarla yazılmıştı — CategoryId trailing+default olmasaydı bu çağrılar DERLENMEZDİ, A-05\'in tüm test dosyaları A-06\'da elle GÜNCELLENMEK zorunda kalırdı.',
+            olmasaydi: 'CategoryId araya (ör. Search ile Page arasına) eklenseydi VEYA default değeri olmasaydı, A-05\'te yazılmış HER pozisyonel çağrı (test dosyaları dahil) DERLEME HATASI verirdi — A-06\'nın kapsamı, ilgisiz A-05 testlerini güncellemeye kadar GENİŞLERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IWordConceptRepository.cs — GetPagedAsync İmzasına categoryId Eklendi',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IWordConceptRepository.cs',
+        neden: 'GetWordsQuery.cs\'teki CategoryId alanının Repository katmanına AKMASI için — arayüz önce (bu slayt), implementasyon bir sonraki slaytta değişiyor.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // IWordConceptRepository.cs
+ //
+ // AMAÇ: WordConcept aggregate root'una özel sorgular — sayfalı liste, tüm
+ //       dilleriyle detay, duplikat kontrolü, kavram+diller birlikte soft delete.
+ // NEDEN: Word/WordDetail/WordExample için AYRI top-level repository AÇILMAZ —
+ //        hepsi bu repository üzerinden (DbContext'e Include zinciriyle) child
+ //        olarak yönetilir; aggregate root deseni, ayrı repository'ler gerçek
+ //        bir tüketici olmadan spekülatif olurdu (YAGNI, bkz. A-05 planı).
+ // BAĞIMLILIKLAR: IRepository<WordConcept>, PagedResult<T>.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using WordLearner.Application.Common.Models;
+ using WordLearner.Domain.Entities.Words;
+ 
+ namespace WordLearner.Application.Interfaces.Repositories;
+ 
+ public interface IWordConceptRepository : IRepository<WordConcept>
+ {
+     // AMAÇ: Liste ekranı için filtre+sayfa — her kavramın dillerini (yalnızca
+     //       Text seviyesinde, WordDetail/WordExample olmadan) de yükler.
++    // NEDEN categoryId (A-06 eklemesi): A-05'te bilinçli olarak YOKTU (Category/
++    //        WordCategory tabloları henüz yoktu) — GetWordsQuery.cs'teki A-05 dönemi
++    //        notu bu eklemeyi işaret ediyordu. GetCategoryWordsQuery (A-06) da AYNI
++    //        metodu kullanır (categoryId dolu, diğer filtreler null) — ayrı bir
++    //        "kategoriye göre kelime" sorgusu YAZILMADI (YAGNI, tek metot iki tüketici).
+     Task<PagedResult<WordConcept>> GetPagedAsync(
+         string? difficultyLevel,
+         string? partOfSpeech,
+         string? search,
++        int? categoryId,
+         int page,
+         int pageSize,
+         CancellationToken ct = default
+     );
+ 
+     // AMAÇ: Detay/güncelleme ekranı için tüm dilleri + WordDetail + WordExample'larıyla yükler.
+     Task<WordConcept?> GetWithTranslationsAsync(int id, CancellationToken ct = default);
+ 
+     // AMAÇ: Bir dilde aynı Text'e sahip başka bir Word olup olmadığını kontrol eder
+     //       (duplikat 409 + ?force=true kararı için).
+     Task<bool> ExistsWordTextAsync(int languageId, string text, CancellationToken ct = default);
+ 
+     // AMAÇ: WordConcept + ona bağlı TÜM Word satırlarını tek işlemde soft-delete eder.
+     // NEDEN: Repository<T>.SoftDeleteAsync yalnızca WordConcept'in kendisini işaretler —
+     //        Word'ler ayrı bir DbSet olduğu için parent silinince child'ların aktif
+     //        kalmaması bu metotla garanti edilir (bkz. A-05 planı karar #2).
+     Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default);
+ 
+     // AMAÇ: \`languageId\`'de eşleşmemiş (tam olarak 1 Word'ü olan) kavramların
+     //       filtre+sayfalı listesi — \`GET /words/unmatched\` (bkz. Icerik.md "Eşleştirme").
+     Task<PagedResult<WordConcept>> GetUnmatchedPagedAsync(
+         int languageId,
+         string? search,
+         int page,
+         int pageSize,
+         CancellationToken ct = default
+     );
+ 
+     // AMAÇ: \`excludeLanguageId\` DIŞINDAKİ dillerde eşleşmemiş kavramların TAMAMI —
+     //       WordMatchSuggestionResolver'ın öneri üretmek için taradığı havuz
+     //       (sayfalanmaz, öneri hesaplaması tüm havuza karşı yapılmalı).
+     Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(
+         int excludeLanguageId,
+         CancellationToken ct = default
+     );
+ 
+     // AMAÇ: \`otherConceptId\`'nin tek Word'ünü \`primaryId\`'ye taşır, boş kalan
+     //       \`otherConceptId\`'yi soft-delete eder, birleşmiş \`primaryId\`'yi döner.
+     // NEDEN: Bloklayıcı hata yok (Icerik.md "Eşleştirme") — PartOfSpeech/Category/
+     //        DifficultyLevel çakışsa bile primaryId'ninki sessizce kazanır.
+     Task<WordConcept> PairAsync(int primaryId, int otherConceptId, int? userId, CancellationToken ct = default);
+ }`,
+        satirlar: [
+          {
+            satir: 'int? categoryId,',
+            aciklama: 'GetPagedAsync\'in imzasına, GetWordsQuery.cs\'teki CategoryId ile AYNI konumda (page/pageSize\'dan ÖNCE) eklendi — bu metodun mevcut TÜM çağıranları (GetWordsQueryHandler, bir sonraki bölümdeki GetCategoryWordsQueryHandler) parametre listesini GÜNCELLEMEK zorunda kaldı.',
+            neden: 'GetCategoryWordsQuery (A-06, önceki bölüm) da AYNI GetPagedAsync metodunu kullanır — categoryId dolu, diğer filtreler (difficultyLevel/partOfSpeech/search) null geçilerek. Ayrı bir "kategoriye göre kelime listesi" sorgusu YAZILMADI (YAGNI, tek metot iki tüketiciye hizmet ediyor).',
+            olmasaydi: 'Ayrı bir GetByCategoryPagedAsync metodu yazılsaydı, GetPagedAsync\'teki filtre/sayfalama mantığı (Include zinciri, Skip/Take) NEREDEYSE BİREBİR bu yeni metotta TEKRARLANIRDI — iki metot arasında bir tutarsızlık (ör. biri WordCategories Include\'unu unutur) doğabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordConceptRepository.cs — GetPagedAsync Filtresi + İki Include Zinciri + Cascade Soft Delete',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/WordConceptRepository.cs',
+        neden: 'IWordConceptRepository.cs\'teki arayüz değişikliğinin GERÇEK implementasyonu — categoryId filtresi + WordCategories.Category.Translations Include\'u (WordConceptDtoBuilder.BuildCategories\'in ayrı bir sorgu atmadan çalışabilmesi için) GetPagedAsync VE GetWithTranslationsAsync\'in İKİSİNE de eklendi. Ayrıca SoftDeleteWithWordsAsync artık WordCategories\'i de cascade soft-delete ediyor (WordConcept silinince kategori bağının YETİM kalmaması için).',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // WordConceptRepository.cs
+ //
+ // AMAÇ: IWordConceptRepository'nin EF Core implementasyonu.
+ // NEDEN: Repository<WordConcept>'i miras alarak genel CRUD'u yeniden yazmadan
+ //        yalnızca WordConcept aggregate'ine özgü sorguları ekler.
+ // BAĞIMLILIKLAR: EF Core, Repository<WordConcept>, WordLearnerDbContext,
+ //                WordConcept/Word entity'leri, PagedResult<T>, EntityNotFoundException.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using Microsoft.EntityFrameworkCore;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.Common.Models;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Domain.Entities.Words;
+ using WordLearner.Infrastructure.Data;
+ 
+ namespace WordLearner.Infrastructure.Repositories;
+ 
+ public class WordConceptRepository : Repository<WordConcept>, IWordConceptRepository
+ {
+     public WordConceptRepository(WordLearnerDbContext db)
+         : base(db) { }
+ 
+     // AMAÇ: Liste ekranı — dil bazında yalnızca Word.Text seviyesinde Include (WordDetail/
+     //       WordExample YOK, liste satırı bu kadar detay göstermiyor, gereksiz sorgu yükünden kaçınılır).
++    //       WordCategories.Category.Translations Include'u A-06'da eklendi — WordConceptDtoBuilder'ın
++    //       \`categories[]\` alanını (ayrı bir sorgu atmadan) kurabilmesi için.
+     public async Task<PagedResult<WordConcept>> GetPagedAsync(
+         string? difficultyLevel,
+         string? partOfSpeech,
+         string? search,
++        int? categoryId,
+         int page,
+         int pageSize,
+         CancellationToken ct = default
+     )
+     {
+-        var query = _set.Include(c => c.Words).ThenInclude(w => w.Language).AsQueryable();
++        var query = _set
++            .Include(c => c.Words)
++            .ThenInclude(w => w.Language)
++            .Include(c => c.WordCategories)
++            .ThenInclude(wc => wc.Category)
++            .ThenInclude(cat => cat.Translations)
++            .ThenInclude(t => t.Language)
++            .AsQueryable();
+ 
+         if (!string.IsNullOrWhiteSpace(difficultyLevel))
+             query = query.Where(c => c.DifficultyLevel == difficultyLevel);
+         if (!string.IsNullOrWhiteSpace(partOfSpeech))
+             query = query.Where(c => c.PartOfSpeech == partOfSpeech);
+         if (!string.IsNullOrWhiteSpace(search))
+             query = query.Where(c => c.Words.Any(w => w.Text.Contains(search)));
++        if (categoryId is not null)
++            query = query.Where(c => c.WordCategories.Any(wc => wc.CategoryId == categoryId.Value));
+ 
+         var totalCount = await query.CountAsync(ct);
+         var items = await query
+             .OrderBy(c => c.Id)
+             .Skip((page - 1) * pageSize)
+             .Take(pageSize)
+             .ToListAsync(ct);
+ 
+         return new PagedResult<WordConcept>(items, totalCount, page, pageSize);
+     }
+ 
+     // AMAÇ: Detay/güncelleme — her dilin WordDetail (gramer) ve WordExample'larıyla birlikte yükler.
++    // NEDEN WordCategories Include'u (A-06 eklemesi): WordConceptDtoBuilder.BuildDetail'in
++    //       \`categories[]\` alanını kurabilmesi + UpdateWordCommandHandler'ın mevcut kategori
++    //       bağlarını (CategoryIds tam yer değiştirme) GÖREBİLMESİ için.
+     public Task<WordConcept?> GetWithTranslationsAsync(int id, CancellationToken ct = default) =>
+         _set
+             .Include(c => c.Words)
+             .ThenInclude(w => w.Language)
+             .Include(c => c.Words)
+             .ThenInclude(w => w.WordDetail)
+             .Include(c => c.Words)
+             .ThenInclude(w => w.WordExamples)
++            .Include(c => c.WordCategories)
++            .ThenInclude(wc => wc.Category)
++            .ThenInclude(cat => cat.Translations)
++            .ThenInclude(t => t.Language)
+             .FirstOrDefaultAsync(c => c.Id == id, ct);
+ 
+     // AMAÇ: Aynı dilde aynı Text'e sahip başka bir Word var mı — WordConcept üzerinden
+     //       değil doğrudan Words DbSet'i üzerinden sorgular (soft-delete filtresi otomatik uygulanır).
+     public Task<bool> ExistsWordTextAsync(int languageId, string text, CancellationToken ct = default) =>
+         _db.Words.AnyAsync(w => w.LanguageId == languageId && w.Text == text, ct);
+ 
+     // AMAÇ: WordConcept + tüm Word'lerini TEK transaction'da (SaveChangesAsync tek çağrı) soft-delete eder.
++    // NEDEN WordCategories de dahil (A-06 eklemesi): Category/WordCategory tabloları A-05'te
++    //       yoktu; bu metot yalnızca WordConcept+Words'ü kapsıyordu. WordCategory eklendikten
++    //       sonra buraya dahil edilmezse, silinmiş bir kavrama ait kategori bağı DB'de
++    //       IsDeleted=false olarak YETİM kalırdı — CategoryRepository.HasActiveWordsAsync/
++    //       GetWordCountsAsync bunu \`!wc.WordConcept.IsDeleted\` ile AYRICA telafi ediyor
++    //       olsa da, gelecekte yazılacak yeni bir sorgu (ör. "kategorideki kelimeler" admin
++    //       ekranı) bu kontrolü unutabilirdi — kaynağında (silme anında) temizlemek, her yeni
++    //       sorgunun bu kuralı YENİDEN hatırlaması gerekliliğini ORTADAN KALDIRIR.
+     public async Task SoftDeleteWithWordsAsync(int id, int? userId, CancellationToken ct = default)
+     {
+         var concept =
+-            await _set.Include(c => c.Words).FirstOrDefaultAsync(c => c.Id == id, ct)
++            await _set.Include(c => c.Words).Include(c => c.WordCategories).FirstOrDefaultAsync(c => c.Id == id, ct)
+             ?? throw new EntityNotFoundException(typeof(WordConcept), id);
+ 
+         var now = DateTime.UtcNow;
+ 
+         concept.IsDeleted = true;
+         concept.DeletedAt = now;
+         concept.DeletedByUserId = userId;
+         concept.UpdatedByUserId = userId;
+ 
+         foreach (var word in concept.Words)
+         {
+             word.IsDeleted = true;
+             word.DeletedAt = now;
+             word.DeletedByUserId = userId;
+             word.UpdatedByUserId = userId;
+         }
+ 
++        foreach (var wordCategory in concept.WordCategories)
++        {
++            wordCategory.IsDeleted = true;
++            wordCategory.DeletedAt = now;
++            wordCategory.DeletedByUserId = userId;
++            wordCategory.UpdatedByUserId = userId;
++        }
++
+         await _db.SaveChangesAsync(ct);
+     }
+ 
+     // AMAÇ: Liste ekranı — \`languageId\`'de tam olarak 1 Word'ü olan (eşleşmemiş) kavramlar.
+     public async Task<PagedResult<WordConcept>> GetUnmatchedPagedAsync(
+         int languageId,
+         string? search,
+         int page,
+         int pageSize,
+         CancellationToken ct = default
+     )
+     {
+         var query = _set
+             .Include(c => c.Words)
+             .ThenInclude(w => w.Language)
+             .Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId == languageId));
+ 
+         if (!string.IsNullOrWhiteSpace(search))
+             query = query.Where(c => c.Words.Any(w => w.Text.Contains(search)));
+ 
+         var totalCount = await query.CountAsync(ct);
+         var items = await query.OrderBy(c => c.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+ 
+         return new PagedResult<WordConcept>(items, totalCount, page, pageSize);
+     }
+ 
+     // AMAÇ: Öneri hesaplaması için \`excludeLanguageId\` DIŞINDAKİ dillerde eşleşmemiş
+     //       TÜM kavramlar (sayfalanmaz — WordMatchSuggestionResolver tüm havuzu tarar).
+     public async Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(
+         int excludeLanguageId,
+         CancellationToken ct = default
+     ) =>
+         await _set
+             .Include(c => c.Words)
+             .ThenInclude(w => w.Language)
+             .Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId != excludeLanguageId))
+             .ToListAsync(ct);
+ 
+     // AMAÇ: \`otherConceptId\`'nin tek Word'ünü \`primaryId\`'ye taşır, boş kalan
+     //       \`otherConceptId\`'yi soft-delete eder — tek SaveChangesAsync ile.
+     public async Task<WordConcept> PairAsync(
+         int primaryId,
+         int otherConceptId,
+         int? userId,
+         CancellationToken ct = default
+     )
+     {
+         var primary =
+             await GetWithTranslationsAsync(primaryId, ct)
+             ?? throw new EntityNotFoundException(typeof(WordConcept), primaryId);
+         var other =
+             await GetWithTranslationsAsync(otherConceptId, ct)
+             ?? throw new EntityNotFoundException(typeof(WordConcept), otherConceptId);
+ 
+         var otherWord = other.Words.Single();
+         other.Words.Remove(otherWord);
+         otherWord.WordConceptId = primary.Id;
+         otherWord.UpdatedByUserId = userId;
+         primary.Words.Add(otherWord);
+ 
+         var now = DateTime.UtcNow;
+         other.IsDeleted = true;
+         other.DeletedAt = now;
+         other.DeletedByUserId = userId;
+         other.UpdatedByUserId = userId;
+ 
+         await _db.SaveChangesAsync(ct);
+ 
+         return primary;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'query = query.Where(c => c.WordCategories.Any(wc => wc.CategoryId == categoryId.Value));',
+            aciklama: 'GetPagedAsync\'in filtre zincirine (difficultyLevel/partOfSpeech/search ile AYNI "yalnızca doluysa uygula" desende) categoryId eklendi.',
+            neden: 'GetCategoryWordsQuery (önceki bölüm) ve GetWordsQuery\'nin `?categoryId=` parametresi (bu bölüm) AYNI kodu paylaşıyor — bir WordConcept\'in bu kategoriye ait olup olmadığı, WordCategories ara tablosu üzerinden `Any` ile kontrol edilir (EXISTS alt sorgusuna çevrilir, N+1 YARATMAZ).',
+            olmasaydi: 'Bu filtre olmasaydı, GetCategoryWordsQuery (önceki bölüm) categoryId\'yi GetPagedAsync\'e geçse bile hiçbir ETKİSİ olmazdı — `GET /categories/{id}/words` TÜM kelimeleri (filtresiz) dönerdi, endpoint\'in adı yalan söylerdi.'
+          },
+          {
+            satir: 'foreach (var wordCategory in concept.WordCategories)',
+            aciklama: 'SoftDeleteWithWordsAsync\'in (A-05) var olan Words döngüsünün HEMEN ALTINA, AYNI desenle (IsDeleted/DeletedAt/DeletedByUserId/UpdatedByUserId dörtlüsü) eklenen ikinci bir döngünün başlangıcı.',
+            neden: 'Bir WordConcept silindiğinde, ona bağlı WordCategory satırları A-06 öncesinde HİÇ yoktu — A-06 sonrasında bu satırlar var ve silinmezse, `IsDeleted=true` bir WordConcept\'e işaret eden `IsDeleted=false` bir WordCategory DB\'de YETİM kalırdı (CategoryRepository.HasActiveWordsAsync/GetWordCountsAsync bunu `!wc.WordConcept.IsDeleted` kontrolüyle AYRICA telafi etse de, kaynağında temizlemek her yeni sorgunun bu kuralı hatırlamasını GEREKTİRMEZ).',
+            olmasaydi: 'Bu döngü eklenmeseydi, silinmiş bir kelimenin kategori bağı DB\'de "aktif" görünmeye devam ederdi — gelecekte yazılacak, `!wc.WordConcept.IsDeleted` kontrolünü İÇERMEYEN yeni bir sorgu (ör. basit bir admin raporu) silinmiş kelimeleri YANLIŞLIKLA aktif kategori istatistiğine DAHİL ederdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'CreateWordCommand.cs — CategoryIds Eklendi (Yeni WordConcept\'i Kategorilere Bağlama)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/CreateWordCommand.cs',
+        neden: 'A-06\'da Category tabloları yazıldığı için — API_ENDPOINTS.md §5 `POST /words` örneğinde `categoryIds` gövdede opsiyonel bir alan olarak zaten VARDI, A-05 bunu (o zaman Category tablosu olmadığı için) uygulayamamıştı. `.Distinct()` çağrısı ise A-06\'nın KENDİ denetiminde (bu oturumda) bulunan bağımsız bir hata düzeltmesi: istemci `categoryIds` içinde aynı Id\'yi iki kez gönderirse, `WordCategoryConfiguration`\'daki `(WordConceptId, CategoryId)` UNIQUE index\'i SaveChangesAsync sırasında yakalanmayan bir SQL istisnası fırlatır, istemciye anlamsız bir 500 dönerdi.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // CreateWordCommand.cs
+ //
+ // AMAÇ: POST /words — bir WordConcept'i 1 veya 2 dilde (translations[]) tek
+ //       işlemde oluşturur.
+ // NEDEN: Tek dilse kavram "eşleşmemiş" kalır (bkz. Icerik.md "Eşleştirme") —
+ //        ayrı bir IsMatched kolonu yok, bu durum COUNT(Words)'ten türetilir.
+ //        Aynı dilde aynı Text zaten varsa (Force=false) DuplicateWordException
+ //        (409); Force=true ise çakışmaya rağmen oluşturulur.
+ // NASIL: 1) Her translation için Language'ı çöz  2) Force değilse duplikat kontrolü
+ //        3) WordConcept + Word(+WordDetail+WordExample) ağacını kur  4) Tek
+ //        AddAsync ile kaydet (EF child'ları da cascade insert eder)  5) CREATE_WORD
+ //        ActivityLog'u yaz  6) Detay DTO'sunu dön.
+-// BAĞIMLILIKLAR: IWordConceptRepository, ILanguageRepository, IActivityLogger,
+-//                WordConceptDtoBuilder.
++// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
++//                IActivityLogger, WordConceptDtoBuilder.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using System.Text.Json;
+ using MediatR;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.DTOs.Words;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Services;
++using WordLearner.Domain.Entities.Categories;
+ using WordLearner.Domain.Entities.Words;
+ 
+ namespace WordLearner.Application.Features.Words;
+ 
+ // AMAÇ: Bir dildeki tek bir örnek cümle girdisi.
+ public record WordExampleInput(string SentenceText, string Level, string ExampleType = "Normal");
+ 
+ // AMAÇ: Bir dildeki gramer/telaffuz girdisi — GrammarData ham JSON olarak taşınır
+ //       (WordGrammarValidator bunu dile/türe göre doğrular, bkz. Validators/Words/).
+ public record WordDetailInput(
+     string? Pronunciation,
+     string? AudioUrl,
+     string? Notes,
+     string? CommonMistakes,
+     JsonElement? GrammarData
+ );
+ 
+ // AMAÇ: Bir WordConcept'in tek bir dildeki girdisi.
+ public record WordTranslationInput(
+     string LanguageCode,
+     string Text,
+     string? Definition,
+     WordDetailInput? WordDetail,
+     IReadOnlyList<WordExampleInput>? Examples
+ );
+ 
+ public record CreateWordCommand(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    IReadOnlyList<WordTranslationInput> Translations
++    IReadOnlyList<WordTranslationInput> Translations,
++    // NEDEN default null + trailing (A-06 eklemesi): API_ENDPOINTS.md §5 \`POST /words\`
++    //        örneğinde \`categoryIds\` gövdede opsiyonel bir alan — hiç gönderilmezse
++    //        kavram kategorisiz oluşturulur (B-04'ün "önce kelime, sonra kategorile"
++    //        akışını da desteklemesi için). Trailing + default sayesinde A-05'te
++    //        pozisyonel argümanla yazılmış mevcut test/çağrı siteleri BOZULMAZ.
++    IReadOnlyList<int>? CategoryIds = null
+ ) : IRequest<WordConceptDetailDto>
+ {
+     // NEDEN init-property (gövdede DEĞİL): API_ENDPOINTS.md §5 \`?force=true\`'yu bir
+     //        QUERY string parametresi olarak tanımlıyor, body alanı değil — controller
+     //        bunu \`[FromQuery]\`'den okuyup \`with { Force = force }\` ile ekler.
+     public bool Force { get; init; }
+ 
+     // NEDEN init-property: JWT'den (CurrentUserId/Role) gelir, gövdede yer almaz —
+     //        controller model binding'den SONRA \`with\` ile ekler (LogoutCommand deseni).
+     public int? UserId { get; init; }
+     public string? ActorRole { get; init; }
+ }
+ 
+ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordConceptDetailDto>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
++    private readonly ICategoryRepository _categoryRepository;
+     private readonly ILanguageRepository _languageRepository;
+     private readonly IActivityLogger _activityLogger;
+ 
+     public CreateWordCommandHandler(
+         IWordConceptRepository wordConceptRepository,
++        ICategoryRepository categoryRepository,
+         ILanguageRepository languageRepository,
+         IActivityLogger activityLogger
+     )
+     {
+         _wordConceptRepository = wordConceptRepository;
++        _categoryRepository = categoryRepository;
+         _languageRepository = languageRepository;
+         _activityLogger = activityLogger;
+     }
+ 
+     public async Task<WordConceptDetailDto> Handle(CreateWordCommand request, CancellationToken ct)
+     {
+         var concept = new WordConcept
+         {
+             PartOfSpeech = request.PartOfSpeech,
+             DifficultyLevel = request.DifficultyLevel,
+             ImageUrl = request.ImageUrl,
+         };
+ 
+         foreach (var translation in request.Translations)
+         {
+             var language =
+                 await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+                 ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+ 
+             if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct))
+                 throw new DuplicateWordException();
+ 
+             concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
+         }
+ 
++        // NEDEN Category.GetByIdAsync (var olma kontrolü) + doğrudan navigasyon
++        //       ekleme (A-06): concept henüz Id'siz olduğu için WordCategory.WordConceptId'yi
++        //       elle atamak yerine EF Core'un cascade-insert graph fixup'ına bırakılır —
++        //       WordEntityBuilder.Build'deki \`concept.Words.Add(...)\` ile AYNI desen.
++        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): İstemci \`categoryIds\`
++        //       içinde aynı Id'yi yanlışlıkla iki kez gönderirse, WordCategoryConfiguration'daki
++        //       (WordConceptId, CategoryId) UNIQUE index'i SaveChangesAsync sırasında bir SQL
++        //       istisnası fırlatırdı — bu, ExceptionHandlingMiddleware'de YAKALANMAYAN bir
++        //       exception olduğu için istemciye anlamsız bir 500 dönerdi (400 yerine).
++        if (request.CategoryIds is not null)
++            foreach (var categoryId in request.CategoryIds.Distinct())
++            {
++                var category =
++                    await _categoryRepository.GetByIdAsync(categoryId, ct)
++                    ?? throw new EntityNotFoundException(typeof(Category), categoryId);
++
++                concept.WordCategories.Add(
++                    new WordCategory
++                    {
++                        Category = category,
++                        CreatedByUserId = request.UserId,
++                        UpdatedByUserId = request.UserId,
++                    }
++                );
++            }
++
+         await _wordConceptRepository.AddAsync(concept, request.UserId, ct);
+ 
+         await _activityLogger.LogAsync(
+             request.UserId,
+             request.ActorRole,
+             "CREATE_WORD",
+             entityType: "WordConcept",
+             entityId: concept.Id,
+             newValue: new
+             {
+                 concept.PartOfSpeech,
+                 concept.DifficultyLevel,
+                 Translations = request.Translations.Select(t => new { t.LanguageCode, t.Text }),
+             },
+             ct: ct
+         );
+ 
+         return WordConceptDtoBuilder.BuildDetail(concept);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'IReadOnlyList<int>? CategoryIds = null',
+            aciklama: 'Translations\'tan SONRA, trailing + default null olarak eklendi — hiç gönderilmezse kavram KATEGORİSİZ oluşturulur.',
+            neden: 'API_ENDPOINTS.md §5\'in `POST /words` örneğinde categoryIds OPSİYONEL bir gövde alanı — B-04\'ün (Admin — Kategori Yönetimi, henüz yazılmadı) "önce kelime oluştur, sonra kategorile" akışını da desteklemesi gerekiyor; zorunlu olsaydı, kategorisiz bir kelime oluşturmanın hiçbir yolu OLMAZDI.',
+            olmasaydi: 'CategoryIds zorunlu (non-nullable, default\'suz) olsaydı, A-05\'te yazılmış (bu görevden ÖNCEki) pozisyonel `new CreateWordCommand(...)` çağrıları (varsa) DERLENMEZDİ — trailing+default, tıpkı GetWordsQuery.CategoryId gibi, geriye dönük UYUMLULUĞU garanti ediyor.'
+          },
+          {
+            satir: 'foreach (var categoryId in request.CategoryIds.Distinct())',
+            aciklama: 'Words döngüsünden HEMEN SONRA eklenen yeni bir blok — `.Distinct()` tekrarlanan Id\'leri eler, her categoryId için ICategoryRepository.GetByIdAsync ile VAR OLMA kontrolü yapılır, bulunamazsa 404.',
+            neden: 'Var olmayan bir CategoryId ile bir WordConcept\'i kategorilendirmeye çalışmak, FK constraint\'e (CategoryConfiguration, Bölüm 2) GÜVENİLEBİLECEK bir hata DEĞİL — SaveChangesAsync anında bir DbUpdateException fırlatılırdı, bu da 500 gibi ANLAMSIZ bir HTTP durum koduna çevrilirdi; burada ERKEN, açık bir 404 ile ENGELLENİYOR (ParentCategoryId kontrolü, CreateCategoryCommandHandler ile AYNI desen). `.Distinct()` olmasaydı, tekrarlanan bir Id UNIQUE index ihlaliyle YAKALANMAYAN bir 500\'e yol açardı.',
+            olmasaydi: 'Bu kontrol olmasaydı, `POST /words` isteğine yanlış/eski bir categoryId (ör. silinmiş bir kategori) geçildiğinde istemci 500 Internal Server Error görürdü — CLAUDE.md\'nin öngördüğü tutarlı hata mimarisi (AppException.Code + doğru HTTP durumu) BOZULURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UpdateWordCommand.cs — CategoryIds Tam Yer Değiştirme + İki Bağımsız Hata Düzeltmesi',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/UpdateWordCommand.cs',
+        neden: 'CreateWordCommand.cs ile AYNI A-06 gerekçesi (CategoryIds), ARTI bu oturumda A-06\'nın KENDİ denetiminde fark edilen İKİ bağımsız hata düzeltmesi: (1) `oldValue`\'daki Translations projeksiyonu tembel (deferred) bir IEnumerable\'dı — aşağıdaki döngü Word nesnelerini MUTASYONA uğratmadan ÖNCE bu listeyi .ToList() ile MATERYALİZE etmek gerekiyordu, yoksa audit log\'un "eski değer"i aslında "yeni değer"i yazıyordu; (2) CategoryIds\'te tekrarlanan bir Id, UNIQUE index ihlaliyle yakalanmayan bir 500\'e yol açabilirdi — `.Distinct()` bunu engeller (CreateWordCommand.cs\'teki AYNI düzeltme).',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // UpdateWordCommand.cs
+ //
+ // AMAÇ: PUT /words/{id} — mevcut çevirileri günceller veya kavrama eksik olan
+ //       dili ekler (eşleşmemiş bir kavramı eşleştirebilir).
+ // NEDEN: \`Translations\` listesindeki her dil, kavramda zaten VARSA güncellenir,
+ //        YOKSA yeni bir Word olarak eklenir (WordEntityBuilder ile CreateWord'le
+ //        aynı kurma mantığı) — bu da Icerik.md "Eşleştirme"deki "translations[]
+ //        ile tek istekte iki dil de girilebilir" akışının bir parçası.
+ // NEDEN PartOfSpeech/DifficultyLevel ZORUNLU (nullable DEĞİL, CreateWordCommand'la
+ //        birebir aynı): WordGrammarValidator, translation'ları PartOfSpeech'e göre
+ //        doğrular — bu alan opsiyonel olsaydı (PATCH-tarzı kısmi güncelleme),
+ //        validator "hangi türe göre doğrulayayım" sorusuna DB'ye gitmeden CEVAP
+ //        VEREMEZDİ. PUT bu yüzden concept-seviyesi alanlarda TAM YER DEĞİŞTİRME
+ //        semantiğine sahip (admin formu zaten mevcut değerleri önceden DOLDURUR).
+ // NASIL: 1) Kavramı tüm dilleriyle yükle  2) Concept-seviyesi alanları güncelle
+ //        3) Her translation için: dil zaten varsa alanlarını güncelle, yoksa
+ //        duplikat kontrolüyle yeni Word ekle  4) UPDATE_WORD ActivityLog'u yaz.
+-// BAĞIMLILIKLAR: IWordConceptRepository, ILanguageRepository, IActivityLogger,
+-//                WordEntityBuilder, WordConceptDtoBuilder.
++// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
++//                IActivityLogger, WordEntityBuilder, WordConceptDtoBuilder.
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using MediatR;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.DTOs.Words;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Services;
++using WordLearner.Domain.Entities.Categories;
+ using WordLearner.Domain.Entities.Words;
+ 
+ namespace WordLearner.Application.Features.Words;
+ 
+ public record UpdateWordCommand(
+     int Id,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    IReadOnlyList<WordTranslationInput> Translations
++    IReadOnlyList<WordTranslationInput> Translations,
++    // NEDEN NULL = "dokunma", boş liste = "tümünü kaldır" (A-06 eklemesi): CreateWordCommand.
++    //        CategoryIds ile AYNI trailing+default kararı — ayrıca PUT'un ImageUrl'deki
++    //        "null ise dokunma" davranışıyla TUTARLI, tam yer değiştirme yalnızca alan
++    //        GERÇEKTEN gönderildiğinde uygulanır.
++    IReadOnlyList<int>? CategoryIds = null
+ ) : IRequest<WordConceptDetailDto>
+ {
+     // NEDEN init-property: CreateWordCommand.Force ile aynı gerekçe — query string'ten gelir.
+     public bool Force { get; init; }
+ 
+     public int? UserId { get; init; }
+     public string? ActorRole { get; init; }
+ }
+ 
+ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordConceptDetailDto>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
++    private readonly ICategoryRepository _categoryRepository;
+     private readonly ILanguageRepository _languageRepository;
+     private readonly IActivityLogger _activityLogger;
+ 
+     public UpdateWordCommandHandler(
+         IWordConceptRepository wordConceptRepository,
++        ICategoryRepository categoryRepository,
+         ILanguageRepository languageRepository,
+         IActivityLogger activityLogger
+     )
+     {
+         _wordConceptRepository = wordConceptRepository;
++        _categoryRepository = categoryRepository;
+         _languageRepository = languageRepository;
+         _activityLogger = activityLogger;
+     }
+ 
+     public async Task<WordConceptDetailDto> Handle(UpdateWordCommand request, CancellationToken ct)
+     {
+         var concept =
+             await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
+             ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
+ 
++        // NEDEN .ToList() (A-06 denetiminde bulunan hata düzeltmesi): \`Select(...)\` tembel
++        //       (deferred) bir IEnumerable döner — aşağıdaki döngü \`existingWord.Text\`'i
++        //       DEĞİŞTİRİR ve bu AYNI Word nesnelerine işaret eder; .ToList() ile hemen
++        //       MATERYALİZE edilmezse, \`_activityLogger.LogAsync\` içindeki JsonSerializer
++        //       bu listeyi SONRADAN (mutasyonlardan SONRA) enumerate eder ve "eski" değer
++        //       olarak aslında YENİ değerleri yazardı — audit log'un "değişiklik yok" gibi
++        //       yanıltıcı görünmesine yol açardı.
+         var oldValue = new
+         {
+             concept.PartOfSpeech,
+             concept.DifficultyLevel,
+-            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
++            Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }).ToList(),
+         };
+ 
+         concept.PartOfSpeech = request.PartOfSpeech;
+         concept.DifficultyLevel = request.DifficultyLevel;
+         if (request.ImageUrl is not null)
+             concept.ImageUrl = request.ImageUrl;
+ 
+         foreach (var translation in request.Translations)
+         {
+             var language =
+                 await _languageRepository.GetByCodeAsync(translation.LanguageCode, ct)
+                 ?? throw new EntityNotFoundException(typeof(Language), translation.LanguageCode);
+ 
+             var existingWord = concept.Words.FirstOrDefault(w => w.LanguageId == language.Id);
+ 
+             if (existingWord is null)
+             {
+                 // NEDEN: Bu dil kavramda henüz yok — yeni ekleniyor (eşleşmemiş bir
+                 //        kavramı eşleştirmenin bir yolu). Aynı duplikat kontrolü
+                 //        CreateWordCommand ile birebir aynı (Force ile bypass edilebilir).
+                 if (
+                     !request.Force
+                     && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct)
+                 )
+                     throw new DuplicateWordException();
+ 
+                 concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
+                 continue;
+             }
+ 
+             existingWord.Text = translation.Text;
+             existingWord.Definition = translation.Definition;
+             existingWord.UpdatedByUserId = request.UserId;
+ 
+             if (translation.WordDetail is not null)
+             {
+                 if (existingWord.WordDetail is null)
+                     existingWord.WordDetail = WordEntityBuilder.BuildWordDetail(translation.WordDetail, request.UserId);
+                 else
+                 {
+                     existingWord.WordDetail.Pronunciation = translation.WordDetail.Pronunciation;
+                     existingWord.WordDetail.AudioUrl = translation.WordDetail.AudioUrl;
+                     existingWord.WordDetail.Notes = translation.WordDetail.Notes;
+                     existingWord.WordDetail.CommonMistakes = translation.WordDetail.CommonMistakes;
+                     existingWord.WordDetail.GrammarData = translation.WordDetail.GrammarData?.GetRawText();
+                     existingWord.WordDetail.UpdatedByUserId = request.UserId;
+                 }
+             }
+ 
+             // NEDEN yalnızca EKLEME: mevcut örnekleri silme/eşleştirme burada
+             // kapsam dışı bırakıldı (YAGNI) — hangi örneğin "aynı" sayılacağı
+             // (SentenceText tam eşleşmesi mi, id bazlı mı) API_ENDPOINTS.md §5'te
+             // netleşmemiş; admin yeni örnek eklemek istediğinde bu yeterli, mevcut
+             // örnekleri düzenlemek/silmek ayrı bir endpoint'e bırakılabilir.
+             if (translation.Examples is not null)
+             {
+                 var displayOrder = existingWord.WordExamples.Count;
+                 foreach (var example in translation.Examples)
+                 {
+                     existingWord.WordExamples.Add(
+                         new WordExample
+                         {
+                             SentenceText = example.SentenceText,
+                             Level = example.Level,
+                             ExampleType = example.ExampleType,
+                             DisplayOrder = displayOrder++,
+                             CreatedByUserId = request.UserId,
+                             UpdatedByUserId = request.UserId,
+                         }
+                     );
+                 }
+             }
+         }
+ 
++        // NEDEN tam yer değiştirme (A-06 eklemesi): CategoryIds gönderildiyse (NULL değilse),
++        //       yeni listede OLMAYAN mevcut bağlar KALDIRILIR, listede olup henüz bağlı
++        //       OLMAYANLAR eklenir — translations[] listesinin "concept-seviyesi TAM YER
++        //       DEĞİŞTİRME" semantiğiyle aynı mantık (bkz. dosya başı NEDEN notu).
++        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): CreateWordCommand.cs'teki
++        //       AYNI gerekçe — tekrarlanan bir Id, UNIQUE index ihlaliyle yakalanmayan bir 500'e
++        //       yol açardı. Ayrıca \`existingCategoryIds\` döngüden ÖNCE bir kez hesaplandığı için
++        //       (kaldırma sonrası, ekleme başlamadan) Distinct() olmadan aynı Id iki kez "mevcut
++        //       değil" filtresinden geçip İKİ KEZ eklenmeye çalışılırdı — Distinct() bu ikinci
++        //       riski de aynı anda ortadan kaldırır.
++        if (request.CategoryIds is not null)
++        {
++            var newCategoryIds = request.CategoryIds.Distinct().ToList();
++            var toRemove = concept.WordCategories.Where(wc => !newCategoryIds.Contains(wc.CategoryId)).ToList();
++            foreach (var wordCategory in toRemove)
++                concept.WordCategories.Remove(wordCategory);
++
++            var existingCategoryIds = concept.WordCategories.Select(wc => wc.CategoryId).ToHashSet();
++            foreach (var categoryId in newCategoryIds.Where(id => !existingCategoryIds.Contains(id)))
++            {
++                var category =
++                    await _categoryRepository.GetByIdAsync(categoryId, ct)
++                    ?? throw new EntityNotFoundException(typeof(Category), categoryId);
++
++                concept.WordCategories.Add(
++                    new WordCategory
++                    {
++                        Category = category,
++                        CreatedByUserId = request.UserId,
++                        UpdatedByUserId = request.UserId,
++                    }
++                );
++            }
++        }
++
+         await _wordConceptRepository.UpdateAsync(concept, request.UserId, ct);
+ 
+         await _activityLogger.LogAsync(
+             request.UserId,
+             request.ActorRole,
+             "UPDATE_WORD",
+             entityType: "WordConcept",
+             entityId: concept.Id,
+             oldValue: oldValue,
+             newValue: new
+             {
+                 concept.PartOfSpeech,
+                 concept.DifficultyLevel,
+                 Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }),
+             },
+             ct: ct
+         );
+ 
+         return WordConceptDtoBuilder.BuildDetail(concept);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'Translations = concept.Words.Select(w => new { LanguageCode = w.Language.Code, w.Text }).ToList(),',
+            aciklama: '`oldValue`\'nun Translations alanına eklenen `.ToList()` — bu satır CategoryIds\'le İLGİSİZ, bu oturumda A-06 denetimi sırasında FARK EDİLEN, A-05\'ten kalma bağımsız bir hata.',
+            neden: 'LINQ\'nun `Select(...)` metodu TEMBEL (deferred execution) — gerçek enumerate işlemi ne zaman gerçekleşirse (ör. JsonSerializer bu nesneyi SERİALİZE ederken) o ANDAKİ `concept.Words` durumunu YANSITIR. Bu metodun altındaki döngü `existingWord.Text = translation.Text;` ile TAM OLARAK bu Word nesnelerini DEĞİŞTİRİYOR — `.ToList()` olmadan, `oldValue.Translations` "eski" değil "yeni" (mutasyon SONRASI) değerleri TAŞIRDI.',
+            olmasaydi: '.ToList() eksik kalsaydı, UPDATE_WORD audit kaydındaki OldValue/NewValue JSON\'ları Translations alanında NEREDEYSE HER ZAMAN AYNI (yeni) değerleri gösterirdi — admin panelin log ekranı "hangi metin hangi metne değişti" sorusuna asla DOĞRU cevap VEREMEZDİ, CLAUDE.md\'nin "OldValue/NewValue JSON diff" kuralı SESSİZCE ihlal edilmiş olurdu (hiçbir test veya derleyici hatası bunu yakalamazdı, yalnızca gözlemle fark edilebilirdi).'
+          },
+          {
+            satir: 'var newCategoryIds = request.CategoryIds.Distinct().ToList();',
+            aciklama: 'CategoryIds gönderildiyse (NULL değilse), önce `.Distinct()` ile tekrarlar elenip bir listeye alınır — bundan sonraki TÜM işlemler (kaldırma + ekleme) bu tekilleştirilmiş liste üzerinden yapılır.',
+            neden: 'API_ENDPOINTS.md §5\'in PUT semantiği: NULL = "bu alana dokunma", DOLU liste (boş liste dahil) = "tam olarak BUNLAR olsun" — TAM YER DEĞİŞTİRME (tıpkı translations[]\'in concept-seviyesi alanları PUT ile TAMAMEN yenilemesi gibi). `.Distinct()` olmadan, aynı Id iki kez gönderilirse hem UNIQUE index ihlali (500) hem de aşağıdaki "mevcut değil" filtresinin aynı Id\'yi İKİ KEZ eklemeye çalışması riski doğardı — `newCategoryIds` bu iki riski TEK yerde kapatır.',
+            olmasaydi: 'Yalnızca ekleme (toRemove adımı olmadan) yapılsaydı, `PUT /words/5` isteğine `categoryIds: [3]` gönderen bir admin, kelimenin ÖNCEDEN bağlı olduğu [3, 7] kategorilerinden 7\'yi ASLA çıkaramazdı — istemcinin gönderdiği liste ile DB\'deki gerçek durum sürekli AÇILIRDI, PUT\'un "istemcinin gönderdiği TAM hâl budur" beklentisi İHLAL edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordsController.cs — GetWords\'e categoryId Query Parametresi Eklendi',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/WordsController.cs',
+        neden: 'GetWordsQuery.cs\'e eklenen CategoryId alanının HTTP katmanına AKMASI için — API_ENDPOINTS.md §5\'in filtre listesindeki (level, categoryId, partOfSpeech, search, page, pageSize) categoryId, A-05 döneminden beri dökümante EDİLMİŞTİ ama Category tabloları o zaman yoktu.',
+        diff: ` // ─────────────────────────────────────────────────────────────────────────────
+ // WordsController.cs
+ //
+ // AMAÇ: REFERENCE/API_ENDPOINTS.md §5'teki sistem kelimesi (Words) endpoint'lerini
+ //       MediatR üzerinden ilgili Command/Query'e bağlayan ince controller katmanı.
+ // NEDEN: Liste/detay okuma herkese açık ([Authorize] — giriş yapmış herkes),
+ //        CRUD yalnızca Admin ([Authorize(Roles="Admin")]) — CLAUDE.md "Roller ve
+ //        sahiplik": sistem içeriği CRUD Admin, okuma [Authorize]. Bu, projedeki
+ //        İLK \`[Authorize(Roles="Admin")]\` kullanımıdır (Auth/QrLogin'de emsal yoktu).
+ // BAĞIMLILIKLAR: IMediator, ValidationFilter (global, Program.cs'de kayıtlı).
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ using System.Security.Claims;
+ using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using WordLearner.Application.Common.Models;
+ using WordLearner.Application.DTOs.Words;
+ using WordLearner.Application.Features.Words;
+ 
+ namespace WordLearner.API.Controllers;
+ 
+ [ApiController]
+ [Route("api/v1/words")]
+ public class WordsController : ControllerBase
+ {
+     private readonly IMediator _mediator;
+ 
+     public WordsController(IMediator mediator) => _mediator = mediator;
+ 
+     // AMAÇ: JWT'deki NameIdentifier claim'inden mevcut kullanıcının Id'sini okur —
+     //       IActivityLogger'a "kim yaptı" bilgisini taşımak için (AuthController deseni).
+     private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+ 
+     // AMAÇ: JWT'deki Role claim'i — ActivityLog.ActorRole'e yazılır (kaydın yazıldığı
+     //       andaki rolü dondurur, kullanıcının rolü sonradan değişse bile).
+     private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+ 
+     // AMAÇ: Filtre+sayfalı kelime kavramı listesi.
++    // NEDEN categoryId parametresi (A-06 eklemesi): API_ENDPOINTS.md §5'in "level,
++    //        categoryId, partOfSpeech, search, page, pageSize" filtre listesinde
++    //        A-05 döneminden beri VARDI ama Category tabloları o zaman yoktu.
+     [HttpGet]
+     [Authorize]
+     [ProducesResponseType(typeof(PagedResult<WordConceptListItemDto>), StatusCodes.Status200OK)]
+     public async Task<ActionResult<PagedResult<WordConceptListItemDto>>> GetWords(
+         [FromQuery] string? level,
+         [FromQuery] string? partOfSpeech,
+         [FromQuery] string? search,
++        [FromQuery] int? categoryId,
+         [FromQuery] int page = 1,
+         [FromQuery] int pageSize = 20,
+         CancellationToken ct = default
+     )
+     {
+-        var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize);
++        var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize, categoryId);
+         return Ok(await _mediator.Send(query, ct));
+     }
+ 
+     // AMAÇ: Bir kelime kavramının tüm dilleriyle (WordDetail+örnekler dahil) tam detayı.
+     [HttpGet("{id:int}")]
+     [Authorize]
+     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]
+     [ProducesResponseType(StatusCodes.Status404NotFound)]
+     public async Task<ActionResult<WordConceptDetailDto>> GetWordById(int id, CancellationToken ct) =>
+         Ok(await _mediator.Send(new GetWordByIdQuery(id), ct));
+ 
+     // AMAÇ: Yeni bir WordConcept + 1 veya 2 dilde translations[] oluşturur.
+     [HttpPost]
+     [Authorize(Roles = "Admin")]
+     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status201Created)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+     public async Task<ActionResult<WordConceptDetailDto>> CreateWord(
+         [FromQuery] bool force,
+         CreateWordCommand command,
+         CancellationToken ct
+     )
+     {
+         var response = await _mediator.Send(
+             command with
+             {
+                 Force = force,
+                 UserId = CurrentUserId,
+                 ActorRole = CurrentRole,
+             },
+             ct
+         );
+         return StatusCode(StatusCodes.Status201Created, response);
+     }
+ 
+     // AMAÇ: Mevcut çevirileri günceller veya kavrama eksik olan dili ekler.
+     [HttpPut("{id:int}")]
+     [Authorize(Roles = "Admin")]
+     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+     public async Task<ActionResult<WordConceptDetailDto>> UpdateWord(
+         int id,
+         [FromQuery] bool force,
+         UpdateWordCommand command,
+         CancellationToken ct
+     ) =>
+         Ok(
+             await _mediator.Send(
+                 command with
+                 {
+                     Id = id,
+                     Force = force,
+                     UserId = CurrentUserId,
+                     ActorRole = CurrentRole,
+                 },
+                 ct
+             )
+         );
+ 
+     // AMAÇ: WordConcept'i + tüm dillerini soft-delete eder.
+     [HttpDelete("{id:int}")]
+     [Authorize(Roles = "Admin")]
+     [ProducesResponseType(StatusCodes.Status204NoContent)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+     public async Task<IActionResult> DeleteWord(int id, CancellationToken ct)
+     {
+         await _mediator.Send(new DeleteWordCommand(id) { UserId = CurrentUserId, ActorRole = CurrentRole }, ct);
+         return NoContent();
+     }
+ 
+     // AMAÇ: \`languageId\`'de eşleşmemiş (tek dilli) kavramların filtre+sayfalı
+     //       listesi + karşı dilin havuzunda önerilen eşleşme adayı.
+     [HttpGet("unmatched")]
+     [Authorize(Roles = "Admin")]
+     [ProducesResponseType(typeof(PagedResult<UnmatchedWordConceptDto>), StatusCodes.Status200OK)]
+     public async Task<ActionResult<PagedResult<UnmatchedWordConceptDto>>> GetUnmatchedWords(
+         [FromQuery] int languageId,
+         [FromQuery] string? search,
+         [FromQuery] int page = 1,
+         [FromQuery] int pageSize = 20,
+         CancellationToken ct = default
+     )
+     {
+         var query = new GetUnmatchedWordConceptsQuery(languageId, search, page, pageSize);
+         return Ok(await _mediator.Send(query, ct));
+     }
+ 
+     // AMAÇ: \`otherConceptId\`'nin tek Word'ünü \`primaryId\`'ye taşıyarak iki
+     //       eşleşmemiş kavramı tek (2 dilli) kavrama birleştirir.
+     [HttpPost("pair")]
+     [Authorize(Roles = "Admin")]
+     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+     public async Task<ActionResult<WordConceptDetailDto>> PairWordConcepts(
+         PairWordConceptsCommand command,
+         CancellationToken ct
+     ) => Ok(await _mediator.Send(command with { UserId = CurrentUserId, ActorRole = CurrentRole }, ct));
+ }`,
+        satirlar: [
+          {
+            satir: '[FromQuery] int? categoryId,',
+            aciklama: 'GetWords action\'ının parametre listesine, `search` ile `page` arasına (API_ENDPOINTS.md §5\'teki filtre SIRASIYLA aynı yerde) eklendi.',
+            neden: 'ASP.NET Core model binding\'de `[FromQuery]` parametrelerinin C# imzasındaki SIRASI, URL\'deki query string sırasıyla İLGİSİZ (isimle eşleşir) — bu yüzden sıra tercihi TAMAMEN OKUNABİLİRLİK için, API_ENDPOINTS.md dokümantasyonuyla BİREBİR eşleşmesi (dokümana bakan bir geliştiricinin controller imzasında AYNI sırayı GÖRMESİ) amaçlanıyor.',
+            olmasaydi: 'categoryId eklenmeseydi, GetWordsQuery.cs\'e eklenen CategoryId alanı HTTP\'den ASLA DOLDURULAMAZDI — GetWordsQueryHandler her zaman `categoryId: null` alırdı, `GET /words?categoryId=3` isteği SESSİZCE yoksayılırdı (400 veya hata YOK, sadece filtre ÇALIŞMAZDI — en sinsi tür bug).'
+          },
+          {
+            satir: 'var query = new GetWordsQuery(level, partOfSpeech, search, page, pageSize, categoryId);',
+            aciklama: 'GetWordsQuery çağrısına, TRAILING pozisyonda categoryId eklendi — record\'daki alan sırasıyla (DifficultyLevel, PartOfSpeech, Search, Page, PageSize, CategoryId) BİREBİR eşleşiyor.',
+            neden: 'GetWordsQuery.cs\'teki CategoryId\'nin trailing+default olma kararıyla DOĞRUDAN bağlı — bu satırın pozisyonel kalabilmesinin (isimlendirilmiş argümana geçmeden) SEBEBİ, alanın record\'da EN SONDA tanımlanmış olması.',
+            olmasaydi: 'CategoryId record\'da ARAYA eklenmiş olsaydı, bu satırdaki pozisyonel argümanlar YANLIŞ alanlara eşleşirdi (ör. categoryId değeri page\'e giderdi) — derleyici tip uyuşmazlığı varsa YAKALAR (int/int? farkı), ama burada page/pageSize/categoryId hepsi int-uyumlu olduğu için SESSİZCE yanlış eşleşebilirdi.'
+          }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -24,14 +24,31 @@
 {
     public CreateWordCommandValidator(IValidator<WordGrammarInput> grammarValidator)
     {
-        RuleFor(x => x.PartOfSpeech).NotEmpty().WithErrorCode("PART_OF_SPEECH_REQUIRED");
-        RuleFor(x => x.DifficultyLevel).NotEmpty().WithErrorCode("DIFFICULTY_LEVEL_REQUIRED");
-        RuleFor(x => x.Translations).NotEmpty().WithErrorCode("TRANSLATIONS_REQUIRED");
+        RuleFor(x => x.PartOfSpeech)
+            .NotEmpty()
+            .WithMessage("PartOfSpeech must not be empty.")
+            .WithErrorCode("PART_OF_SPEECH_REQUIRED");
+
+        RuleFor(x => x.DifficultyLevel)
+            .NotEmpty()
+            .WithMessage("DifficultyLevel must not be empty.")
+            .WithErrorCode("DIFFICULTY_LEVEL_REQUIRED");
+
+        RuleFor(x => x.Translations)
+            .NotEmpty()
+            .WithMessage("At least one translation is required.")
+            .WithErrorCode("TRANSLATIONS_REQUIRED");
 
         RuleFor(x => x)
-            .Custom((command, context) =>
-                WordTranslationRules.ValidateTranslations(
-                    command.Translations, command.PartOfSpeech, grammarValidator, context));
+            .Custom(
+                (command, context) =>
+                    WordTranslationRules.ValidateTranslations(
+                        command.Translations,
+                        command.PartOfSpeech,
+                        grammarValidator,
+                        context
+                    )
+            );
     }
 }
 
@@ -41,10 +58,17 @@ internal static class WordTranslationRules
         IReadOnlyList<WordTranslationInput> translations,
         string partOfSpeech,
         IValidator<WordGrammarInput> grammarValidator,
-        ValidationContext<T> context)
+        ValidationContext<T> context
+    )
     {
         foreach (var translation in translations)
         {
+            if (string.IsNullOrWhiteSpace(translation.LanguageCode))
+            {
+                context.AddFailure(Failure("LANGUAGE_CODE_REQUIRED"));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(translation.Text))
             {
                 context.AddFailure(Failure("WORD_TEXT_REQUIRED"));
@@ -53,12 +77,16 @@ internal static class WordTranslationRules
 
             var grammarDataJson = translation.WordDetail?.GrammarData?.GetRawText();
             var grammarResult = grammarValidator.Validate(
-                new WordGrammarInput(translation.LanguageCode, partOfSpeech, grammarDataJson));
+                new WordGrammarInput(translation.LanguageCode, partOfSpeech, grammarDataJson)
+            );
 
             foreach (var failure in grammarResult.Errors)
                 context.AddFailure(failure);
         }
     }
+
+    private static ValidationFailure Failure(string code) =>
+        new("Translations", $"Translation validation failed: {code}.") { ErrorCode = code };
 }`,
         satirlar: [
           {
@@ -68,10 +96,28 @@ internal static class WordTranslationRules
             olmasaydi: 'Gramer kuralları burada TEKRAR yazılsaydı, Bölüm 4\'teki 23 birim testin doğruladığı DE/TR Noun/Verb matrisi burada BAĞIMSIZ bir kopya olarak yaşardı — biri güncellenirken diğeri UNUTULABİLİRDİ.'
           },
           {
+            satir: '.WithMessage("PartOfSpeech must not be empty.")',
+            aciklama: 'FluentValidation\'ın `.WithMessage(...)` çağrısı — İngilizce, sabit bir GELİŞTİRİCİ mesajı (log\'a/`ValidationFailure.ErrorMessage`\'a yazılır), istemciye GİDEN mesaj DEĞİL.',
+            neden: 'CLAUDE.md §1 "Dil" kuralı: exception `.Message`/log mesajları İngilizce kalır — istemciye giden GERÇEK mesaj `WithErrorCode`\'daki koddan (`PART_OF_SPEECH_REQUIRED`) `ErrorMessages.Resolve` ile Accept-Language\'a göre ÇÖZÜLÜR; `.WithMessage` burada yalnızca FluentValidation\'ın `ErrorMessage` alanını (asla istemciye SIZMAYACAK) doldurmak için var.',
+            olmasaydi: '`.WithMessage(...)` hiç yazılmasaydı, FluentValidation kendi VARSAYILAN İngilizce mesajını ("\'Part Of Speech\' must not be empty.") üretirdi — işlevsel bir fark YARATMAZDI (istemci yine ErrorCode üzerinden çözülen mesajı görür) ama proje genelindeki (PasswordRuleExtensions vb.) "her RuleFor\'un kendi açık mesajını YAZMASI" stiline UYMAZDI.'
+          },
+          {
             satir: 'internal static class WordTranslationRules',
             aciklama: 'CreateWordCommandValidator ve UpdateWordCommandValidator\'ın PAYLAŞTIĞI translation döngüsü — `internal` çünkü yalnızca bu iki validator TÜKETİYOR, Application katmanı dışına sızdırılmasına gerek YOK.',
             neden: 'İki Command\'ın (Create/Update) translations[] doğrulama mantığı BİREBİR aynı — WordEntityBuilder/WordConceptDtoBuilder\'daki (Bölüm 6) "paylaşılan statik yardımcı" kararıyla AYNI gerekçe, burada validator seviyesinde tekrarlanıyor.',
             olmasaydi: 'Bu yardımcı olmasaydı, UpdateWordCommandValidator kendi translations[] döngüsünü AYRI yazardı — WORD_TEXT_REQUIRED gibi bir kontrol birinde güncellenip diğerinde UNUTULABİLİRDİ.'
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(translation.LanguageCode))\n            {\n                context.AddFailure(Failure("LANGUAGE_CODE_REQUIRED"));\n                continue;\n            }',
+            aciklama: 'Her translation için EN ÖNCE kontrol edilen alan — `LanguageCode` boşsa, `Text`/GrammarData kontrolüne HİÇ geçilmeden `continue` ile bir sonraki translation\'a atlanır.',
+            neden: 'Bir sonraki satırdaki `grammarValidator.Validate(new WordGrammarInput(translation.LanguageCode, ...))` çağrısı `LanguageCode`\'un "de"/"tr" olmasını BEKLİYOR — boş bir LanguageCode ile çağrılırsa WordGrammarValidator\'ın `EnumerateFailures`\'ı `GRAMMAR_LANGUAGE_UNSUPPORTED` gibi ALAKASIZ bir hata üretir, asıl sorunun (dil kodu hiç GİRİLMEMİŞ) kendisi GİZLENİRDİ.',
+            olmasaydi: 'Bu kontrol olmasaydı, boş bir `LanguageCode` doğrudan WordGrammarValidator\'a GEÇERDİ ve admin "GRAMMAR_LANGUAGE_UNSUPPORTED" gibi YANILTICI bir hata görürdü — gerçek sorun ("dil kodu alanını hiç doldurmadınız") çok daha AÇIK bir mesajla (LANGUAGE_CODE_REQUIRED) anlatılabilecekken KARMAŞIKLAŞTIRILIRDI.'
+          },
+          {
+            satir: 'private static ValidationFailure Failure(string code) =>\n        new("Translations", $"Translation validation failed: {code}.") { ErrorCode = code };',
+            aciklama: 'WordGrammarValidator.cs\'teki (Bölüm 4) `Failure` yardımcısının BİREBİR aynı deseni — tüm `Translations` alanı hatalarının TEK kurulma noktası, `PropertyName` sabit "Translations", gerçek istemci mesajı `ErrorCode`\'dan ÇÖZÜLÜR.',
+            neden: 'LANGUAGE_CODE_REQUIRED/WORD_TEXT_REQUIRED gibi birden fazla kod AYNI şekilde (`ValidationFailure` kurma biçimi) üretilmeli — Bölüm 4\'teki `Failure` metoduyla AYNI mühendislik kararı (bir gün `ValidationFailure`\'ın kurulma şekli değişirse TEK yer güncellenir), burada `Application/Validators/Words/` içinde farklı bir sınıfta olduğu için AYRI bir kopyaya ihtiyaç var.',
+            olmasaydi: 'Her `context.AddFailure(...)` çağrısında `new ValidationFailure("Translations", "...") { ErrorCode = "..." }` TEKRAR yazılsaydı, LANGUAGE_CODE_REQUIRED ve WORD_TEXT_REQUIRED\'ın HER İKİSİNDE de neredeyse ÖZDEŞ bir kod bloğu tekrarlanırdı.'
           }
         ]
       },
@@ -131,7 +177,7 @@ public class WordsController : ControllerBase
       {
         tur: 'kavram',
         baslik: 'Handler Testleri — Neden Repository/ActivityLogger Mock\'lanır',
-        aciklama: '5 Handler için 5 test dosyası (`WordLearner.Tests/Features/Words/`) — her biri IWordConceptRepository/ILanguageRepository/IActivityLogger\'ı Moq ile mock\'lar, gerçek bir DB\'ye HİÇ dokunmaz. CreateWordCommandHandlerTests temsili örnek: tek/iki dil oluşturma, duplikat 409 + force bypass, bilinmeyen dil 404, CREATE_WORD audit çağrısı — 5 test.',
+        aciklama: '5 Handler için 5 test dosyası (`WordLearner.Tests/Features/Words/`) — her biri IWordConceptRepository/ILanguageRepository/IActivityLogger\'ı Moq ile mock\'lar, gerçek bir DB\'ye HİÇ dokunmaz. CreateWordCommandHandlerTests temsili örnek: tek/iki dil oluşturma, duplikat 409 + force bypass, bilinmeyen dil 404, CREATE_WORD audit çağrısı — 6 test.',
         neden: 'CLAUDE.md §7 kuralı: "Her public servis/Handler metodunun birim testi AYNI task içinde yazılır" — Handler\'ın DB\'ye bağımlı olmadan, yalnızca kendi iş mantığını (Force/duplikat/eşleştirme kararları) DOĞRU verdiğini garanti eden testler bunlar; gerçek DB entegrasyonu Faz F\'nin kapsamı.',
         olmasaydi: 'Testler gerçek bir DbContext (in-memory bile olsa) kullansaydı, her test dosyası SqlServer/InMemory provider kurulumuna BAĞIMLI olurdu ve testler YAVAŞLARDI — Moq ile mock\'lamak, RepositoryTests\'in (A-02) zaten DOĞRULADIĞI EF Core davranışını burada TEKRAR test etmekten KAÇINIR.'
       },

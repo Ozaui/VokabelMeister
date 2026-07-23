@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neden Category + CategoryTranslation + WordCategory?</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'hiyerarsi-ve-coklu-dil',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '../A-05_sistem-kelimesi-api/10_ozet-sozluk.html',
+    sonrakiBolum: '02_entity-ef-config.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'A-06 · KATEGORİ API',
+        baslik: 'Kelimeleri Kategoriye Ayırmak',
+        altBaslik: 'Self-referencing hiyerarşi + çoklu dil + M:N ilişki — A-05\'in üzerine üç yeni tablo'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Tek Bir "Category" Tablosu Yetmiyor?',
+        aciklama: 'Bir kategori (ör. "Yiyecek") üç ayrı sorumluluğu birden taşımak zorunda: (1) hiyerarşide nerede olduğu (üst kategorisi kim), (2) her dilde nasıl adlandırıldığı ("Essen" / "Yemek"), (3) hangi kelimelerin bu kategoriye ait olduğu. Bu üç sorumluluk, A-06\'da ÜÇ ayrı tabloya bölündü: `Categories` (çekirdek + hiyerarşi), `CategoryTranslations` (dil başına ad) ve `WordCategories` (kategori↔kelime bağı).',
+        neden: 'A-05\'te WordConcept/Word ayrımıyla ÇÖZÜLMÜŞ aynı problem burada tekrar karşımıza çıkıyor: kategori adı dile göre değişiyor ("Essen" de, "Yemek" tr), ama kategorinin KENDİSİ (rengi, ikonu, hiyerarşideki yeri) dilden bağımsız. Adı Categories tablosuna NameDE/NameTR gibi ad-hoc kolonlarla eklemek CLAUDE.md\'nin "Çoklu dil" kuralını (dile özel ad-hoc alan entity/DTO\'ya eklenmez) doğrudan ihlal ederdi — üçüncü bir dil (ör. en) eklenmek istendiğinde şemaya yeni bir kolon açmak gerekirdi.',
+        olmasaydi: 'Tek tabloda NameDE/NameTR olsaydı, B-04 (Admin — Kategori Yönetimi) formunda "yeni bir dil ekle" özelliği İSTENEMEZDİ — her yeni dil bir migration gerektirirdi. Oysa CategoryTranslations modeliyle yeni bir dil, Languages\'e 1 satır + CategoryTranslations\'a N satır eklemekle (migration GEREKMEDEN) desteklenir — DATABASE_SCHEMA.md\'nin "yeni dil = migration gerekmez" kararıyla birebir tutarlı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'ParentCategoryId — Neden Self-Referencing FK?',
+        aciklama: '`Categories.ParentCategoryId`, yine `Categories.Id`\'ye işaret eden nullable bir kolon. NULL ise kategori kök seviyede (ör. "Yiyecek"), dolu ise bir üst kategorinin altında (ör. "Meyve" → parent "Yiyecek"). Bu tek kolon, TEORİDE sınırsız derinlikte bir ağaç kurmaya yeter — "Yiyecek" → "Meyve" → "Turunçgil" gibi.',
+        neden: 'Ayrı bir CategoryLevel1/CategoryLevel2/CategoryLevel3 tablo seti (sabit 3 seviyeli hiyerarşi) YAZILMADI — DATABASE_SCHEMA.md\'nin ERD notunda "Categories self-ref (ParentCategoryId)" kararı zaten buydu, ve wiki\'deki geçmiş bir INGEST kaydı (Index.md) bu kararın kullanıcı tarafından "sistemimiz derinlik destekliyor mu" diye sorgulanıp DOĞRULANDIĞINI gösteriyor. Sabit seviyeli bir tasarım, admin ileride 4. bir seviye istediğinde YENİ BİR TABLO + migration gerektirirdi; self-ref bu ihtiyacı hiç doğurmaz.',
+        olmasaydi: 'Sabit N-seviyeli bir şema (CategoryLevel1Id, CategoryLevel2Id gibi WordConcept üzerinde iki ayrı FK kolonu) olsaydı, bir kelimenin "kaç seviye derinlikte" kategorilendirileceği ŞEMAYA GÖMÜLÜRDÜ — B-04\'ün admin formu yalnızca o sabit derinliğe kadar kategori seçtirebilirdi, daha derin bir sınıflandırma isteyen bir içerik ekibi bir sonraki backend değişikliğini BEKLEMEK zorunda kalırdı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'WordCategories — Neden WordConceptId, WordId Değil?',
+        aciklama: '`WordCategories` ara tablosu `WordConceptId`↔`CategoryId` üzerinden kurulu — A-05\'in `Word` (dile özel) satırı ÜZERİNDEN DEĞİL, dilden bağımsız `WordConcept` üzerinden. Yani "Tisch" (de) ve "masa" (tr) — aynı WordConcept\'in iki Word\'ü — kategoriyi PAYLAŞIR, ayrı ayrı kategorilendirilmez.',
+        neden: 'Kategori (ör. "Ev eşyaları") bir kelimenin ANLAMINA ait bir özellik, hangi dilde yazıldığına değil — "Tisch" de Almanca dilbilgisiyle, "masa" tr Türkçe dilbilgisiyle ifade edilse de İKİSİ DE aynı "masa" kavramını temsil ediyor ve aynı kategoriye ait olmalı. WordId üzerinden kursaydık, admin panelde her WordConcept için dil sayısı kadar (2\'ye kadar) AYRI kategori seçimi yapmak gerekirdi — aynı işi iki kez yapmak.',
+        olmasaydi: 'WordId üzerinden kurulsaydı, A-05\'in "Eşleştirme" akışında (PairWordConceptsCommand) iki ayrı dilde ayrı ayrı import edilmiş "Tisch" ve "masa" eşleştirildiğinde, ikisinin ÖNCEDEN girilmiş kategori bilgileri farklı olabilir ve hangisinin "doğru" olduğuna karar vermek gerekirdi — kavram bazlı modelde bu çelişki hiç OLUŞAMAZ, kategori zaten kavrama (WordConcept\'e) bağlı.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

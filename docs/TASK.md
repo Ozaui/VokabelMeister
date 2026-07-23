@@ -33,8 +33,11 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-06 — Kategori API (Categories)` ⬜ (`A-05 — Sistem Kelimesi API (Words)` ✅
-tamamlandı: Entity+EF config+migration+seed+WordGrammarValidator+Repository+7 Command/Query
-(CRUD+Eşleştirme)+Controller+193 birim testi, Backend Akademi'ye işlendi) → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme)` ⬜
+(`A-06 — Kategori API (Categories)` ✅ tamamlandı: 3 entity+EF config+migration+seed+
+ICategoryRepository+5 Command/Query+CategoriesController+21 birim testi + A-05'in `GET /words`
+retrofit'i (`categoryId`/`categories[]`, 5 yeni test) + kod denetiminde bulunan 2 hatanın
+düzeltilmesi (deferred LINQ audit log hatası, tekrarlanan categoryId→500 riski), toplam
+219 birim testi, Backend Akademi'ye işlendi) → `TASK/A_admin_panel_backend.md`
 
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi

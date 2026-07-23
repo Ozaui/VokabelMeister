@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Repository Katmanı — Hiyerarşi + Silme Koruması</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-katmani',
+    bolumBaslik: 'A-06 — Kategori API (Categories)',
+    oncekiBolum: '03_migration-dbcontext.html',
+    sonrakiBolum: '05_command-handlerlari.html',
+    slaytlar: [
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ayrı Bir CategoryTranslation/WordCategory Repository Yok',
+        aciklama: 'Category, CategoryTranslation ve WordCategory\'nin ÜÇÜNÜ birden kapsayan bir "aggregate root" — tüm CRUD ve sorgu işlemleri ICategoryRepository üzerinden, DbContext\'e Include zinciriyle child olarak yönetiliyor. A-05\'in IWordConceptRepository ile BİREBİR aynı karar (bkz. IWordConceptRepository.cs "NEDEN" açıklaması).',
+        neden: 'CategoryTranslation hiçbir zaman Category\'den BAĞIMSIZ var olmuyor veya sorgulanmıyor — API_ENDPOINTS.md §6\'daki hiçbir endpoint "bana tek başına bir çeviri getir" demiyor, hep "bana bu kategorinin TÜM çevirilerini getir" diyor. WordCategory de aynı şekilde yalnızca "bu kategoriye bağlı kelime var mı" sorularının (silme koruması) İÇİNDE, Category\'nin bir uzantısı olarak sorgulanıyor. Ayrı repository\'ler gerçek bir tüketicisi olmadan spekülatif bir soyutlama OLURDU (YAGNI).',
+        olmasaydi: 'Ayrı bir ICategoryTranslationRepository açılsaydı, CreateCategoryCommand gibi bir Handler hem ICategoryRepository hem ICategoryTranslationRepository\'yi enjekte edip aralarında elle SENKRONİZE olmak zorunda kalırdı — "Category kaydedildi ama çevirisi unutuldu" gibi yarım-yazılmış durumlar (transaction sınırı netleşmediği için) DOĞARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ICategoryRepository.cs — Aggregate Sözleşmesi',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/ICategoryRepository.cs',
+        nedenBuKlasor: 'Interfaces/Repositories/ — IWordConceptRepository/ILanguageRepository ile AYNI klasör, flat (feature alt klasörü açılmadı).',
+        kod: `public interface ICategoryRepository : IRepository<Category>
+{
+    // AMAÇ: \`GET /categories\` için TÜM (silinmemiş) kategorilerin düz listesi —
+    //       Translations+Language dahil. Ağaç, bu düz listeden BELLEKTE (CategoryDtoBuilder)
+    //       kurulur; sınırsız derinlikte bir hiyerarşiyi tek sorguda Include zinciriyle
+    //       çekmenin EF Core'da doğrudan bir yolu olmadığı için (ParentCategory'yi N kez
+    //       zincirlemek gerekirdi) bu, kategori sayısı küçük olduğu sürece (onlarca,
+    //       binlerce değil) en basit ve doğru yaklaşım.
+    // NEDEN level filtresi burada: MinLevel/MaxLevel düz alan karşılaştırması, join
+    //       gerektirmiyor — DB'ye WHERE olarak gönderilmesi ekstra bir sorgu maliyeti
+    //       YARATMAZ. Bir kategori, \`level\` NULL ise ya da (MinLevel NULL VEYA
+    //       MinLevel<=level) VE (MaxLevel NULL VEYA level<=MaxLevel) ise eşleşir.
+    Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default);
+
+    // AMAÇ: Detay/güncelleme — tek bir kategoriyi Translations'ıyla birlikte yükler.
+    Task<Category?> GetWithTranslationsAsync(int id, CancellationToken ct = default);
+
+    // AMAÇ: \`includeWordCount=true\` olduğunda her kategorinin bağlı AKTİF (soft-delete
+    //       edilmemiş WordConcept'e ait) WordCategory sayısını döner — yalnızca
+    //       istendiğinde hesaplanır, her \`GET /categories\`'de gereksiz JOIN yapılmaz.
+    Task<IReadOnlyDictionary<int, int>> GetWordCountsAsync(CancellationToken ct = default);
+
+    // AMAÇ: \`categoryId\`'nin en az bir alt kategorisi (soft-delete edilmemiş) var mı —
+    //       DeleteCategoryCommand'ın 409 koruması (CategoryHasChildrenException).
+    Task<bool> HasChildrenAsync(int categoryId, CancellationToken ct = default);
+
+    // AMAÇ: \`categoryId\`'ye bağlı en az bir aktif WordConcept var mı — DeleteCategoryCommand'ın
+    //       409 koruması (CategoryHasActiveWordsException).
+    Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken ct = default);
+
+    // AMAÇ: \`categoryId\`'nin ParentCategoryId'sini \`newParentId\` yapmak bir DÖNGÜ yaratır mı —
+    //       yani newParentId, categoryId'nin KENDİSİ veya alt ağacındaki bir kategori mi?
+    //       UpdateCategoryCommandHandler'ın CategoryParentCycleException koruması.
+    Task<bool> WouldCreateCycleAsync(int categoryId, int newParentId, CancellationToken ct = default);
+}`,
+        satirlar: [
+          {
+            satir: 'public interface ICategoryRepository : IRepository<Category>',
+            aciklama: 'A-02\'de yazılan generic IRepository<T>\'yi (GetByIdAsync/AddAsync/UpdateAsync/SoftDeleteAsync) MİRAS ALIR — bu dört metot burada TEKRAR YAZILMAZ, yalnızca Category\'ye ÖZEL 5 sorgu eklenir.',
+            neden: 'IWordConceptRepository ile BİREBİR aynı desen — generic CRUD + aggregate\'e özel sorgular ayrımı, her yeni repository\'de tekerleği YENİDEN İCAT ETMEZ.',
+            olmasaydi: 'IRepository<T> miras alınmasaydı, GetByIdAsync/AddAsync/UpdateAsync/SoftDeleteAsync\'in dördü de bu arayüzde ve CategoryRepository\'de TEKRAR yazılırdı — CreateCategoryCommandHandler\'ın çağırdığı AddAsync(category, userId, ct) imzası hiçbir yerde OLMAZDI.'
+          },
+          {
+            satir: 'Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default);',
+            aciklama: 'Dönüş tipi bir AĞAÇ değil, DÜZ bir liste (\`IReadOnlyList<Category>\`) — hiyerarşiyi kurma sorumluluğu bu metoda değil, bir sonraki bölümün CategoryDtoBuilder\'ına AİT.',
+            neden: 'EF Core\'un Include zinciri sabit, ÖNCEDEN bilinen bir derinlik gerektirir (\`.Include(x => x.Children).ThenInclude(x => x.Children)...\`) — Category\'nin self-ref hiyerarşisi TEORİDE sınırsız derinlikte olduğu için (Bölüm 1), tek bir sorguda ağacı DOĞRUDAN çekmenin EF Core\'da genel bir yolu yok; düz liste + bellekte ağaç kurma bu sınırı AŞAR.',
+            olmasaydi: 'Repository katmanı ağacı KENDİSİ kursaydı, kategori sayısı arttıkça (B-04\'te admin yüzlerce kategori eklerse) bu mantık DB sorgu kodunun İÇİNE gömülür, test edilmesi CategoryDtoBuilder\'ın saf C# birim testinden çok daha ZOR (DB bağımlı) olurdu.'
+          },
+          {
+            satir: 'Task<bool> WouldCreateCycleAsync(int categoryId, int newParentId, CancellationToken ct = default);',
+            aciklama: 'Bir sonraki bölümde UpdateCategoryCommandHandler\'ın ParentCategoryId değişikliğini kabul etmeden ÖNCE çağırdığı, hiyerarşiye ÖZGÜ tek sorgu.',
+            neden: 'Self-referencing bir hiyerarşide "bu değişiklik döngü yaratır mı" sorusu TEK bir satıra bakarak CEVAPLANAMAZ — kategorinin YUKARI doğru tüm atalarının zincirini gezmek gerekir (bkz. CategoryRepository.cs implementasyon slaytı), bu yüzden ayrı, adı açık bir sözleşme metodu olarak tanımlandı.',
+            olmasaydi: 'Bu metot olmasaydı, UpdateCategoryCommandHandler kendi İÇİNDE bir while döngüsüyle atalarını gezmek zorunda kalırdı — DB erişim mantığı (EF Core sorgusu) Application katmanına SIZARDI, CLAUDE.md\'nin katman ayrımı (Domain ← Application ← Infrastructure) İHLAL edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryRepository.cs — GetAllWithTranslationsAsync (Bellekte Filtre)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/CategoryRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ — WordConceptRepository/LanguageRepository ile AYNI seviyede, flat.',
+        kod: `public async Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default)
+{
+    // NEDEN önce ToListAsync sonra bellekte filtre: MinLevel/MaxLevel karşılaştırması
+    // (string.Compare) EF Core'un SQL Server sağlayıcısında GÜVENİLİR şekilde SQL'e
+    // çevrilmez (bkz. Repository ICategoryRepository.cs "NEDEN level filtresi burada"
+    // notu) — kategori sayısı küçük olduğu için (onlarca) bellekte filtrelemek
+    // hem daha güvenli (davranış C#'ın kendi string sıralamasıyla garanti) hem basit.
+    var all = await _set
+        .Include(c => c.Translations)
+        .ThenInclude(t => t.Language)
+        .OrderBy(c => c.DisplayOrder)
+        .ToListAsync(ct);
+
+    if (string.IsNullOrWhiteSpace(level))
+        return all;
+
+    return all.Where(c =>
+            (c.MinLevel is null || string.CompareOrdinal(c.MinLevel, level) <= 0)
+            && (c.MaxLevel is null || string.CompareOrdinal(level, c.MaxLevel) <= 0)
+        )
+        .ToList();
+}`,
+        satirlar: [
+          {
+            satir: '.Include(c => c.Translations)',
+            aciklama: 'Düz listedeki HER kategori, çevirileriyle (+dil bilgisiyle) BİRLİKTE tek sorguda gelir — bir sonraki bölümdeki CategoryDtoBuilder, her düğüm için AYRICA bir DB sorgusu ATMAZ.',
+            neden: 'CategoryDtoBuilder.BuildTree bu düz listeyi bellekte gezip her düğümün \`category.Translations\`\'ına erişiyor — lazy loading bu projede KAPALI (A-05\'in aynı kararı), bu yüzden ihtiyaç duyulacak HER navigation baştan Include edilmek ZORUNDA.',
+            olmasaydi: 'Bu Include olmadan \`category.Translations\`\'a erişilmeye çalışılsaydı, EF Core boş bir koleksiyon dönerdi (lazy loading kapalı olduğu için hata bile FIRLATMAZ, sessizce YANLIŞ sonuç verir) — GET /categories yanıtındaki HER kategori adı boş DİZİ olarak görünürdü, hata ayıklaması ZOR bir bug olurdu.'
+          },
+          {
+            satir: '(c.MinLevel is null || string.CompareOrdinal(c.MinLevel, level) <= 0)',
+            aciklama: 'Bu satır C# tarafında (LINQ-to-Objects) çalışıyor, SQL\'e ÇEVRİLMİYOR — \`all\` zaten \`ToListAsync\` ile belleğe alınmış durumda, \`.Where\` burada bir DB sorgusu DEĞİL, düz bir C# koleksiyon filtresi.',
+            neden: 'EF Core\'un SQL Server sağlayıcısı \`string.CompareOrdinal\`/\`string.Compare\` gibi kültürden bağımsız string karşılaştırma metotlarını GÜVENİLİR şekilde SQL\'e çeviremiyor (bazı EF Core sürümlerinde çalışır görünse de sağlayıcıya göre DAVRANIŞI değişebilir) — "A1" <= "B2" gibi seviye karşılaştırmaları DB\'nin COLLATION ayarına (case-sensitivity, aksan duyarlılığı) bırakılırsa, C#\'ın ordinal karşılaştırmasından FARKLI bir sonuç ÜRETEBİLİR.',
+            olmasaydi: 'Bu filtre \`.Where\` içinde EF Core\'a (SQL\'e çevrilmek üzere) BIRAKILSAYDI, dev makinede (LocalDB) çalışan bir sorgu production SQL Server\'da (farklı bir COLLATION ile) SESSİZCE farklı sonuç dönebilirdi — ya da EF Core çeviremediği bir ifadeyle karşılaştığında runtime\'da bir InvalidOperationException FIRLATIRDI.'
+          },
+          {
+            satir: 'var all = await _set',
+            aciklama: 'Metodun TEK DB round-trip\'i — filtre uygulanmadan ÖNCE TÜM (silinmemiş) kategoriler tek seferde çekilir.',
+            neden: 'Kategori sayısı DATABASE_SCHEMA.md\'nin öngördüğü ölçekte (onlarca, admin panelinden elle girilen içerik) küçük olduğu için tüm tabloyu belleğe almak PAHALI değil — WordConcept\'in binlerce satırlık sayfalı listesinden (GetPagedAsync, A-05) BİLİNÇLİ olarak farklı bir ölçek varsayımı.',
+            olmasaydi: 'Kategori sayısı gerçekten binlere ULAŞSAYDI, bu yaklaşım (tüm tabloyu belleğe çekmek) performans SORUNU yaratırdı — ama o noktada dahi çözüm "level filtresini SQL\'e taşı" DEĞİL, "hiyerarşiyi CTE/recursive SQL sorgusuyla DB tarafında kur" olurdu; şu anki veri ölçeğinde bu KARMAŞIKLIK gereksiz.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryRepository.cs — Silme Koruması Sorguları',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/CategoryRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public Task<bool> HasChildrenAsync(int categoryId, CancellationToken ct = default) =>
+    _set.AnyAsync(c => c.ParentCategoryId == categoryId, ct);
+
+public Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken ct = default) =>
+    _db.WordCategories.AnyAsync(wc => wc.CategoryId == categoryId && !wc.WordConcept.IsDeleted, ct);`,
+        satirlar: [
+          {
+            satir: '_set.AnyAsync(c => c.ParentCategoryId == categoryId, ct);',
+            aciklama: '\`AnyAsync\` — kategorinin altındaki çocuk sayısını SAYMAZ, yalnızca "en az bir tane var mı" sorusuna EXISTS sorgusuyla cevap verir.',
+            neden: 'DeleteCategoryCommandHandler\'ın (bir sonraki bölüm) tek ihtiyacı "silinsin mi engellensin mi" — kaç çocuk olduğu bilgisi hiçbir yerde KULLANILMIYOR, \`Count()\`/\`CountAsync\` kullanmak SQL Server\'a "TÜM eşleşen satırları SAY" dedirtirdi, \`Any\`\'nin ürettiği "ilk eşleşmede DUR" EXISTS sorgusundan daha PAHALI.',
+            olmasaydi: '\`CountAsync() > 0\` yazılsaydı, sonuç AYNI olurdu ama SQL Server yürütme planı bir kategorinin YÜZLERCE alt kategorisi olsa bile HEPSİNİ saymaya çalışırdı — \`AnyAsync\` ilk eşleşen satırda SORGUYU durdurur, gereksiz bir tarama YAPILMAZ.'
+          },
+          {
+            satir: '_db.WordCategories.AnyAsync(wc => wc.CategoryId == categoryId && !wc.WordConcept.IsDeleted, ct);',
+            aciklama: '\`!wc.WordConcept.IsDeleted\` kontrolü BİLİNÇLİ ve ZORUNLU — yalnızca \`WordCategories.CategoryId == categoryId\` yeterli DEĞİL.',
+            neden: 'A-05\'in DeleteWordCommand\'ı (SoftDeleteWithWordsAsync) bir WordConcept silindiğinde YALNIZCA WordConcept+Word satırlarını soft-delete ediyor, WordCategory ara tablosuna hiç DOKUNMUYOR (DeleteCategoryCommand.cs dosya başı yorumundaki "CASCADE bir birlikte soft-delete YOK" notuyla AYNI gerçek, ters yönden) — yani silinmiş bir WordConcept\'e ait "hayalet" bir WordCategory satırı DB\'de kalmaya devam EDER, bu kontrol olmadan hâlâ "aktif" sayılırdı.',
+            olmasaydi: 'Bu kontrol olmasaydı, admin daha önce silinmiş (soft-delete) bir kelimenin TEK bağlı olduğu kategoriyi silmeye çalıştığında YANLIŞ bir 409 CATEGORY_HAS_ACTIVE_WORDS hatası ALIRDI — o kelime GET /words\'te zaten hiçbir yerde GÖRÜNMÜYOR, ama kategori silinmeyi REDDEDERDİ, admin için ANLAMSIZ bir engelleme olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryRepository.cs — WouldCreateCycleAsync (Yukarı Tırmanma)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/CategoryRepository.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<bool> WouldCreateCycleAsync(int categoryId, int newParentId, CancellationToken ct = default)
+{
+    var current = (int?)newParentId;
+    var visited = new HashSet<int>();
+
+    while (current is not null)
+    {
+        if (current.Value == categoryId)
+            return true;
+
+        // NEDEN visited kontrolü: DB'de zaten bozuk (kendinden önceki bir kod hatasıyla
+        // oluşmuş) bir döngü varsa bu ÖNLEM olmadan while sonsuza kadar dönerdi.
+        if (!visited.Add(current.Value))
+            return false;
+
+        current = await _set.Where(c => c.Id == current.Value).Select(c => c.ParentCategoryId).FirstOrDefaultAsync(ct);
+    }
+
+    return false;
+}`,
+        satirlar: [
+          {
+            satir: 'var current = (int?)newParentId;',
+            aciklama: 'Algoritma AŞAĞIDAN (categoryId\'nin alt ağacını tarayarak) DEĞİL, YUKARIDAN başlar — \`newParentId\`\'den başlayıp onun atalarını (parent\'ının parent\'ını...) TIRMANIR.',
+            neden: 'Soru aslında "categoryId, newParentId\'nin bir ATASI mı" sorusuyla EŞDEĞER (bir düğüm kendi atası olamaz) — bunu newParentId\'den yukarı doğru YÜRÜYEREK cevaplamak, categoryId\'nin TÜM alt ağacını (potansiyel olarak çok daha GENİŞ bir küme) aşağı doğru gezmekten çok daha UCUZ: yukarı doğru zincir TEK bir yol (her düğümün TEK ebeveyni var), aşağı doğru ise dallanan bir ağaç.',
+            olmasaydi: 'Aşağı doğru (categoryId\'nin Children\'ını recursive gezerek) arama yapılsaydı, derin/geniş bir alt ağaçta HER seviyede birden çok dal aynı anda taranması GEREKİRDİ — yukarı tırmanma ise her adımda TEK bir sonraki düğüme (ParentCategoryId) bakar, en fazla ağacın DERİNLİĞİ kadar adım atar.'
+          },
+          {
+            satir: 'if (current.Value == categoryId)',
+            aciklama: 'Tırmanma sırasında atalardan biri TAM OLARAK categoryId\'nin kendisiyse, döngü TESPİT edilmiş demektir — newParentId, categoryId\'nin (doğrudan veya dolaylı) bir ALT kategorisi.',
+            neden: 'Bu, UpdateCategoryCommandHandler\'ın (bir sonraki bölüm) sorduğu asıl soru: "Meyve" kategorisini kendi alt kategorisi olan "Turunçgil"in ALTINA taşımaya çalışmak, ağaçta koptu bir DÖNGÜ yaratır — bu satır tam olarak bu senaryoyu YAKALAR.',
+            olmasaydi: 'Bu kontrol olmasaydı, "Turunçgil"i "Meyve"nin (kendi atasının) ParentCategoryId\'si yapmak İZİN verilirdi — GetAllWithTranslationsAsync\'ten sonra CategoryDtoBuilder.BuildTree bu döngüyü kurmaya çalıştığında (byParent lookup\'ı sonsuz derinlikte recursive Build çağırır) StackOverflowException ile ÇÖKERDİ.'
+          },
+          {
+            satir: 'if (!visited.Add(current.Value))',
+            aciklama: 'HashSet\'e eklenmeye çalışılan bir Id zaten VARSA (\`Add\` false döner), döngü \`false\` ile SESSİZCE durur — categoryId\'ye hiç RASTLANMADAN.',
+            neden: 'Bu, "DB\'de zaten bozuk bir döngü varsa" savunması — normalde WouldCreateCycleAsync\'in KENDİSİ her PUT isteğinde yeni döngüleri ENGELLEDİĞİ için DB\'de asla döngü OLUŞMAMASI gerekir, ama migration\'la elle girilen veri/gelecekteki bir bug ihtimaline karşı sonsuz döngüye girmeden \`false\` dönmek, bir 500 hatasından/timeout\'tan daha GÜVENLİ bir başarısızlık modu.',
+            olmasaydi: 'Bu kontrol olmadan DB\'de (herhangi bir sebeple) A→B→A gibi bozuk bir zincir OLUŞMUŞ olsaydı, \`while (current is not null)\` döngüsü categoryId\'ye HİÇ rastlamadan sonsuza kadar DÖNER, isteği işleyen thread\'i tıkardı — bir kullanıcı isteği tüm uygulamayı YAVAŞLATABİLİRDİ.'
+          },
+          {
+            satir: 'current = await _set.Where(c => c.Id == current.Value).Select(c => c.ParentCategoryId).FirstOrDefaultAsync(ct);',
+            aciklama: 'Her adımda TÜM Category nesnesi DEĞİL, yalnızca ParentCategoryId kolonu \`Select\` ile PROJEKSIYONLANIR — Icon/Color/Translations gibi o an gerek DUYULMAYAN alanlar hiç ÇEKİLMEZ.',
+            neden: 'Bu döngü, ağacın DERİNLİĞİ kadar (genelde 2-3 seviye, DATABASE_SCHEMA.md\'nin öngördüğü ölçekte) ayrı bir DB round-trip\'i YAPIYOR — her adımda mümkün olan en KÜÇÜK veriyi çekmek, N adımlık bu döngünün toplam maliyetini MİNİMİZE eder.',
+            olmasaydi: '\`Select(c => c.ParentCategoryId)\` yerine \`FirstOrDefaultAsync(c => c.Id == current.Value)\` ile TÜM Category nesnesi çekilseydi, her tırmanma adımı gereksiz yere Icon/Color/MinLevel/MaxLevel gibi hiç KULLANILMAYAN alanları da DB\'den taşırdı — küçük ama gereksiz bir performans MALİYETİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden AutoMapper DEĞİL — CategoryDtoBuilder Elle Yazıldı',
+        aciklama: 'A-03\'te AutoMapper GERÇEKTEN kullanılmıştı (bkz. A-03_auth-register/07_dto-automapper.html — \`CreateMap<User, RegisterResponse>()\`, düz alan-alan eşleştirme). A-05\'te WordConceptDtoBuilder de AYNI gerekçeyle elle yazılmıştı. Burada, CategoryDtoBuilder\'ın \`BuildTree\` metodu için de AutoMapper Profile YAZILMADI — ama gerekçe A-05\'inkinden FARKLI: WordConceptDtoBuilder BEŞ entity\'yi BİRLEŞTİRİYORDU, CategoryDtoBuilder ise DÜZ bir listeyi RECURSIVE bir AĞACA dönüştürüyor.',
+        neden: '\`BuildTree\`\'nin kaynağı TEK bir Category DEĞİL — \`IReadOnlyList<Category> flat\` + bunlardan kurulan bir \`ILookup<int?, Category> byParent\`. AutoMapper\'ın \`CreateMap<TSource,TDest>()\` konvansiyonu, TEK bir kaynak nesnenin alanlarını TEK bir hedef nesnenin alanlarına eşler — burada her düğümün DTO\'sunu üretmek için KOMŞU düğümlerin (byParent lookup\'ındaki kardeşlerinin) bilgisine ihtiyaç var, bu AutoMapper\'ın "kaynak nesnenin kendi alanlarına bakarak eşleştirme yap" modelinin DIŞINDA. Ayrıca \`BuildTree\`\'nin "level filtresinden sonra kalan orphan düğümleri köke terfi ettir" kuralı (\`idSet\`/\`roots\` satırları) tamamen alana özgü bir İŞ KURALI — bir alan eşleştirmesi değil, bir VERİ BÜTÜNLÜĞÜ kararı.',
+        olmasaydi: 'Zorlanıp özel bir AutoMapper \`ITypeConverter<IReadOnlyList<Category>, IReadOnlyList<CategoryDto>>\` yazılsaydı, İÇİNDE yine AYNI \`ToLookup\`/recursive \`Select\` mantığı olurdu — yalnızca bu mantık AutoMapper\'ın konfigürasyon kaydı (\`CreateMap\`) ARKASINA gizlenirdi. GetCategoriesQueryHandler\'ı okuyan bir junior, \`_mapper.Map<...>(flat)\` satırının ARDINDA "orphan terfi" gibi kritik bir iş kuralı olduğunu HİÇ GÖREMEZDİ — elle yazılan \`CategoryDtoBuilder.BuildTree\` ise bu kararı doğrudan, okunabilir C# kodunda GÖSTERİR.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryDtoBuilder.cs — BuildTree (Düz Liste → Recursive Ağaç)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/CategoryDtoBuilder.cs',
+        nedenBuKlasor: 'Features/Categories/ — WordConceptDtoBuilder (A-05) ile AYNI konum kararı: Command+Handler\'lar birbirini çağıramadığı için (CLAUDE.md §3) paylaşılan dönüşüm mantığı static bir yardımcıya çıkarılır, ama DI\'a kayıtlı bir "servis" DEĞİL. NOT: gerçek dosyada BuildTree ile private Build arasında public BuildSingle metodu da var — bu slaytta ATLANDI, hemen SIRADAKİ slaytta ayrı ve TAM olarak gösteriliyor (iki ayrı sorumluluk, iki ayrı slayt).',
+        kod: `public static IReadOnlyList<CategoryDto> BuildTree(
+    IReadOnlyList<Category> flat,
+    IReadOnlyDictionary<int, int>? wordCounts
+)
+{
+    var idSet = flat.Select(c => c.Id).ToHashSet();
+    var byParent = flat.ToLookup(c => c.ParentCategoryId);
+
+    var roots = flat.Where(c => c.ParentCategoryId is null || !idSet.Contains(c.ParentCategoryId.Value));
+
+    return roots.OrderBy(c => c.DisplayOrder).Select(c => Build(c, byParent, wordCounts)).ToList();
+}
+
+private static CategoryDto Build(
+    Category category,
+    ILookup<int?, Category> byParent,
+    IReadOnlyDictionary<int, int>? wordCounts
+) =>
+    new(
+        category.Id,
+        category.ParentCategoryId,
+        category.DisplayOrder,
+        category.Icon,
+        category.Color,
+        category.MinLevel,
+        category.MaxLevel,
+        category.Translations.OrderBy(t => t.LanguageId).Select(BuildTranslation).ToList(),
+        wordCounts is null ? null : wordCounts.GetValueOrDefault(category.Id),
+        byParent[category.Id]
+            .OrderBy(c => c.DisplayOrder)
+            .Select(c => Build(c, byParent, wordCounts))
+            .ToList()
+    );`,
+        satirlar: [
+          {
+            satir: 'var idSet = flat.Select(c => c.Id).ToHashSet();',
+            aciklama: '\`flat\` listedeki TÜM Id\'lerin kümesi — bir kategorinin ParentCategoryId\'sinin bu listede GERÇEKTEN var olup olmadığını O(1) sürede sormak için.',
+            neden: 'Bu, dosya başı yorumundaki "orphan-promotion" kararının TEMELİ: \`GetCategoriesQuery\`\'nin \`level\` filtresi uygulandığında (ICategoryRepository.GetAllWithTranslationsAsync) bir üst kategori filtreye TAKILIP elenebilir ama onun altındaki bir kategori filtreyi GEÇEBİLİR — bu durumda "benim parent\'ım \`flat\` içinde var mı" sorusu HIZLI cevaplanmalı, her düğüm için \`flat.Any(x => x.Id == parentId)\` (O(n)) çağırmak N kategori için O(n²) OLURDU.',
+            olmasaydi: '\`idSet\` olmadan doğrudan \`flat.Any(...)\` kullanılsaydı, kategori sayısı arttıkça (B-04\'ün admin panelinde yüzlerce kategori girilirse) \`BuildTree\`\'nin maliyeti KARESEL büyürdü — küçük ölçekte fark edilmez ama gereksiz bir tasarım BORCU olurdu.'
+          },
+          {
+            satir: 'var roots = flat.Where(c => c.ParentCategoryId is null || !idSet.Contains(c.ParentCategoryId.Value));',
+            aciklama: 'Kök seviye YALNIZCA gerçek kökler (ParentCategoryId NULL) DEĞİL, aynı zamanda "parent\'ı flat listede artık YOK olan" düğümleri de İÇERİR — bu, dosya başı yorumundaki "orphan-promotion" kuralının UYGULANDIĞI satır.',
+            neden: '\`?level=A1\` gibi bir filtre, "Turunçgil" (MinLevel=A1) kategorisini listede BIRAKIRKEN üstündeki "Meyve" (MinLevel=A2, filtreye TAKILAN) kategorisini ELEYEBİLİR — bu durumda "Turunçgil"in ParentCategoryId\'si (Meyve\'nin Id\'si) artık \`idSet\`\'te YOK; bu satır olmadan "Turunçgil" hiçbir \`byParent\` grubuna GİRMEZ (\`byParent[Meyve.Id]\` boş kalır ama "Turunçgil" hiçbir root listesinde de yer ALMAZ), sonuçtaki DTO ağacından TAMAMEN KAYBOLURDU.',
+            olmasaydi: 'Bu satır yalnızca \`c.ParentCategoryId is null\` olsaydı, \`?level=A1\` ile filtrelenmiş bir istekte üst kategorisi filtreye takılan HER alt kategori (Turunçgil dahil) sessizce kaybolurdu — admin panelinde "A1 seviyesi" filtrelendiğinde bazı A1 kategorilerinin GÖRÜNMEDİĞİ, kafa karıştırıcı bir bug OLURDU.'
+          },
+          {
+            satir: '.Select(c => Build(c, byParent, wordCounts))',
+            aciklama: '\`Children\` alanı, \`Build\` metodunun KENDİSİNİ çağırarak (recursive) doldurulur — her çocuk için AYNI \`byParent\` lookup\'ı ve \`wordCounts\` sözlüğü TEKRAR kullanılır, yeniden HESAPLANMAZ.',
+            neden: '\`ToLookup\` bir kez kurulduktan sonra \`byParent[anyKey]\` erişimi O(1) — recursive çağrının her seviyesinde \`flat\` listesini yeniden TARAMAK yerine, önceden GRUPLANMIŞ bir yapıdan okur; bu, ağacın DERİNLİĞİ ne olursa olsun toplam maliyeti O(n) civarında TUTAR (n = flat.Count).',
+            olmasaydi: '\`byParent\` yerine her seviyede \`flat.Where(c => c.ParentCategoryId == category.Id)\` çağrılsaydı, N düğümlük bir ağaçta bu O(n) filtre HER düğüm için TEKRARLANIR, toplam maliyet O(n²)\'ye ÇIKARDI — büyük bir kategori ağacında BuildTree fark edilir şekilde YAVAŞLARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryDtoBuilder.cs — BuildSingle (POST/PUT Yanıtı)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Categories/CategoryDtoBuilder.cs',
+        nedenBuKlasor: null,
+        kod: `public static CategoryDto BuildSingle(Category category) =>
+    new(
+        category.Id,
+        category.ParentCategoryId,
+        category.DisplayOrder,
+        category.Icon,
+        category.Color,
+        category.MinLevel,
+        category.MaxLevel,
+        category.Translations.OrderBy(t => t.LanguageId).Select(BuildTranslation).ToList(),
+        WordCount: null,
+        Children: Array.Empty<CategoryDto>()
+    );`,
+        satirlar: [
+          {
+            satir: 'WordCount: null,',
+            aciklama: 'BuildSingle çağrıldığında (Create/UpdateCategoryCommandHandler, bir sonraki bölüm) WordCount HER ZAMAN null döner — BuildTree\'deki gibi opsiyonel bir \`wordCounts\` parametresi bile ALMAZ.',
+            neden: 'POST/PUT /categories yanıtı yalnızca "az önce oluşturduğun/güncellediğin kategori BU" bilgisini taşır — o kategoriye bağlı kelime sayısını hesaplamak (\`GetWordCountsAsync\`, tüm WordCategories tablosunu tarayan bir GROUP BY) bu senaryoda anlamsız bir EKSTRA sorgu OLURDU, hiçbir istemci yeni oluşturulan bir kategoride "kaç kelime var" bilgisine (henüz sıfır olduğu zaten BELLİ) ihtiyaç duymaz.',
+            olmasaydi: 'CreateCategoryCommandHandler gerçek bir WordCount hesaplamaya ÇALIŞSAYDI, her POST isteği gereksiz bir \`GetWordCountsAsync\` çağrısı (tüm tabloyu tarayan GROUP BY) YAPARDI — sonuç HER ZAMAN 0 olacağı için bu sorgu tamamen İSRAF olurdu.'
+          },
+          {
+            satir: 'Children: Array.Empty<CategoryDto>()',
+            aciklama: 'Yeni oluşturulan/güncellenen kategorinin \`Children\`\'ı HER ZAMAN boş dizi — BuildTree\'nin aksine bu metot ağacı YENİDEN KURMAZ, yalnızca TEK bir düğümü DTO\'ya çevirir.',
+            neden: 'Bir kategori YARATILDIĞINDA henüz hiçbir alt kategorisi OLAMAZ (yeni Id\'si var, hiçbir Category\'nin ParentCategoryId\'si buna işaret ETMİYOR); GÜNCELLENDİĞİNDE ise mevcut çocukları göstermek için TÜM ağacı (GetAllWithTranslationsAsync + BuildTree) yeniden kurmak, PUT isteğinin AMACINA (tek bir kategoriyi güncellemek) göre gereksiz bir MALİYET olurdu.',
+            olmasaydi: 'PUT /categories/{id} yanıtında GERÇEK Children listesi dönmeye ÇALIŞILSAYDI, UpdateCategoryCommandHandler TÜM kategori ağacını (\`GetAllWithTranslationsAsync\`) yeniden çekip \`BuildTree\` çağırmak ZORUNDA kalırdı — güncellenen TEK bir kategori için tüm veritabanını TEKRAR taramak, PUT isteğinin maliyetini GEREKSİZ yere artırırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '\`ICategoryRepository\`/\`CategoryRepository\`: hiyerarşik düz liste (\`GetAllWithTranslationsAsync\`), tek kategori detay (\`GetWithTranslationsAsync\`), koşullu kelime sayısı (\`GetWordCountsAsync\`), İKİ silme koruması sorgusu (\`HasChildrenAsync\`/\`HasActiveWordsAsync\`), döngü tespiti (\`WouldCreateCycleAsync\`)',
+          '\`GetAllWithTranslationsAsync\`: level filtresi BİLİNÇLİ olarak SQL\'e değil belleğe bırakıldı (\`string.CompareOrdinal\`\'ın SQL çevirisi güvenilir değil)',
+          '\`WouldCreateCycleAsync\`: newParentId\'den YUKARI doğru tırmanan, \`visited\` HashSet\'iyle korunan bir döngü tespiti — categoryId\'nin alt ağacını AŞAĞI gezmekten daha ucuz',
+          '\`CategoryDtoBuilder.BuildTree\`: düz listeyi \`ToLookup\`la GRUPLAYIP recursive kuran, level filtresi sonrası orphan düğümleri köke TERFİ eden AutoMapper-DIŞI bir dönüşüm; \`BuildSingle\`: POST/PUT yanıtı için Children/WordCount olmadan TEK düğüm',
+          'Sıradaki bölüm: Command/Query Handler\'ları — Create/Update/Delete/GetCategories/GetCategoryWords, ParentCategoryId doğrulaması + döngü koruması + 409 silme kuralları'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

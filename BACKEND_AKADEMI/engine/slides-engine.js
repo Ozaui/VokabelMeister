@@ -203,10 +203,57 @@
       </div>`;
   }
 
+  // AMAÇ: Daha önce öğretilmiş bir kodun SONRADAN değiştiği durumları (ör. bir Handler'a yeni
+  //       bir bağımlılık/log çağrısı eklendi) git-diff tarzı tek blokta gösterir — silinen
+  //       satırlar kırmızı+üstü çizili, eklenen satırlar yeşil.
+  // NEDEN: `kod` slaytı "bu dosya böyle yazıldı" der ama kodun SONRADAN değiştiğini göstermez;
+  //        okuyucu iki farklı zamanda okuduğu iki slaytı zihninde birleştirmek zorunda kalırdı.
+  //        Bu slayt, tıpkı bir git diff'te olduğu gibi, önce/sonra farkını VE nedenini tek yerde
+  //        gösterir — "neden" alanı zorunlu çünkü bir değişiklik her zaman bir olayın (yeni görev,
+  //        yeni gereksinim) sonucudur, sebepsiz kod değişikliği olmaz.
+  // `diff` alanı: her satırın İLK karakteri `+` (eklendi), `-` (silindi) veya ` ` (değişmedi) —
+  //        gerisi kodun kendisi (git unified diff formatıyla aynı disiplin).
+  function renderKodDegisiklik(s, activeIdx) {
+    const lines = String(s.diff == null ? '' : s.diff).replace(/\n$/, '').split('\n');
+    const bySatir = new Map();
+    (s.satirlar || []).forEach((x, idx) => {
+      if (x.satir) bySatir.set(x.satir.trim(), idx);
+    });
+    const rendered = lines
+      .map((raw) => {
+        const marker = raw.charAt(0);
+        const content = raw.slice(1);
+        const cls = marker === '+' ? 'diff-line diff-added'
+          : marker === '-' ? 'diff-line diff-removed'
+          : 'diff-line diff-context';
+        const markerChar = marker === '+' ? '+' : marker === '-' ? '−' : ' ';
+        const trimmed = content.trim();
+        const idx = bySatir.has(trimmed) ? bySatir.get(trimmed) : -1;
+        const escaped = esc(content);
+        const markerSpan = `<span class="diff-marker">${markerChar}</span>`;
+        if (idx === -1) return `<span class="${cls}">${markerSpan}${escaped || ' '}</span>`;
+        return `<span class="${cls} src-line-annotated" data-idx="${idx}" tabindex="0">${markerSpan}${escaped}</span>`;
+      })
+      .join('\n');
+    return `
+      <div class="slide slide-kod-degisiklik">
+        <div class="kod-head">
+          <h2 class="slide-baslik">${esc(s.baslik)}</h2>
+          ${s.dosyaYolu ? `<div class="kod-dosya-yolu">📄 ${esc(s.dosyaYolu)}</div>` : ''}
+        </div>
+        ${s.neden ? `<div class="kod-degisiklik-neden"><b>Neden değişti:</b> ${esc(s.neden)}</div>` : ''}
+        <div class="kod-split">
+          <pre class="kod-pre"><code id="kodBlock">${rendered}</code></pre>
+          <div id="annotationHost">${renderAnnotationPanel(s.satirlar, activeIdx)}</div>
+        </div>
+      </div>`;
+  }
+
   const RENDERERS = {
     kapak: renderKapak,
     kavram: renderKavram,
     kod: renderKod,
+    'kod-degisiklik': renderKodDegisiklik,
     karsilastirma: renderKarsilastirma,
     sozluk: renderSozluk,
     ozet: renderOzet,
@@ -233,7 +280,7 @@
     nextBtn.disabled = atLast && !MODULE.sonrakiBolum;
     nextBtn.textContent = atLast && MODULE.sonrakiBolum ? 'Sonraki Bölüm ›' : '›';
 
-    if (s.tur === 'kod' && s.satirlar && s.satirlar.length) {
+    if ((s.tur === 'kod' || s.tur === 'kod-degisiklik') && s.satirlar && s.satirlar.length) {
       document.querySelectorAll('.src-line-annotated').forEach((el) => {
         el.addEventListener('click', () => {
           const idx = Number(el.getAttribute('data-idx'));

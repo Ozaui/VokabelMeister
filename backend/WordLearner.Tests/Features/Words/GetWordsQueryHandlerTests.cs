@@ -43,7 +43,7 @@ public class GetWordsQueryHandlerTests
             Words = new List<Word> { new() { LanguageId = German.Id, Language = German, Text = "Tisch" } },
         };
         _wordConceptRepo
-            .Setup(r => r.GetPagedAsync("A1", "Noun", "Tisch", 2, 10, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetPagedAsync("A1", "Noun", "Tisch", null, 2, 10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PagedResult<WordConcept>(new List<WordConcept> { concept }, 1, 2, 10));
         var handler = CreateHandler();
         var query = new GetWordsQuery("A1", "Noun", "Tisch", 2, 10);

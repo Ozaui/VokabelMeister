@@ -50,6 +50,9 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ILanguageRepository, LanguageRepository>();
         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
 
+        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı; A-06 — Kategori API.
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+
         return services;
     }
 }
