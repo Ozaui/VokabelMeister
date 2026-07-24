@@ -435,18 +435,56 @@ yeniden yazılması, ve self-lockout koruması (`SelfAdminActionNotAllowedExcept
 - [ ] **Birim testleri:** moderasyon liste filtresi, silme + audit log doğrulaması
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
-### A-08 — Medya / Dosya Yükleme API ⬜
+### A-08 — Medya / Dosya Yükleme API ✅
 **Referans:** REFERENCE/ENV.md §7
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi formundaki görsel yükleme)
-- [ ] `IFileStorageService` + `LocalFileStorageService`, `Word.ImageUrl` + migration
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `MediaController` (`POST /media/images/upload`), `UseStaticFiles`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **`IActivityLogger` entegrasyonu** (A-04): `UPLOAD_MEDIA` (`EntityType=Word` — hangi kelimenin
+> **Kapsam düzeltmesi (bu madde yazılırken bulundu):** `Word.ImageUrl` + migration zaten A-05'te
+> yazılmış — `WordConcept.ImageUrl` (`nvarchar(500)`, `AddWordsSchema` migration'ında) dil bağımsız
+> bir kavram özelliği olarak duruyor (bkz. `CreateWordCommand`/`UpdateWordCommand`). A-08 bu alana
+> YENİ bir migration eklemez, yalnızca admin panelin bu alana yazılacak URL'i **üretmesini**
+> sağlayan yükleme uç noktasını yazar.
+- [x] `IFileStorageService` + `LocalFileStorageService` (uzantı: jpg/jpeg/png/webp, boyut: 5 MB
+      üst sınır, `Guid` tabanlı benzersiz ad üretimi — orijinal dosya adı KORUNMAZ) +
+      `UnsupportedFileTypeException`/`FileTooLargeException` (400) + `ErrorMessages.cs`'e 2 kod
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-08_medya-api/01_dosya-depolama-servisi.html`)
+- [x] `MediaController` (`POST /media/images/upload`, `[Authorize(Roles="Admin")]`, projedeki İLK
+      `multipart/form-data`/`IFormFile` uç noktası — HealthController ile aynı desen, MediatR
+      DIŞINDA), `UseStaticFiles` (`Program.cs`, auth'tan ÖNCE — `/uploads` herkese açık)
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-08_medya-api/02_media-controller-static-files.html`)
+- [x] **`IActivityLogger` entegrasyonu** (A-04): `UPLOAD_MEDIA` (`EntityType=Word` — hangi kelimenin
       görseli olacaksa, henüz bağlanmadıysa `EntityId=NULL`)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `FileStorageServiceTests` (boyut/uzantı doğrulama, benzersiz ad üretimi)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (aynı bölümde işlendi)
+- [x] **Birim testleri:** `FileStorageServiceTests` (8 test — boyut/uzantı/İÇERİK doğrulama, diske
+      gerçekten yazma, benzersiz ad üretimi, büyük/küçük harf duyarsız uzantı, sınır [boundary]
+      testi, içerik-sahteciliği [spoofing] regresyon testi; Moq YERİNE gerçek geçici klasör
+      kullanır çünkü servisin tek bağımlılığı `IConfiguration`). Toplam 252/252 yeşil (244 A-07
+      sonu + 8 yeni).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`BACKEND_AKADEMI/A-08_medya-api/03_testler-ozet-sozluk.html`,
+      kök `index.html`'e kart eklendi)
+
+**Kod denetimi (2 bağımsız subagent — biri backend kodunu, biri Backend Akademi içeriğini
+inceledi), 2 gerçek düzeltme:**
+1. **Yalnızca uzantı kontrolü yeterli değildi (güvenlik):** `LocalFileStorageService` yalnızca dosya
+   ADININ uzantısına bakıyordu, gerçek içeriğe (magic bytes) bakmıyordu — bir `.exe`, adı
+   `foto.png` yapılarak yüklenip `/uploads` altında herkese açık servis edilebilirdi. Düzeltme:
+   dosyanın ilk baytları (PNG/JPEG/WEBP imzaları) doğrulanır, uzantıyla eşleşmiyorsa
+   `UnsupportedFileTypeException` (aynı kod, artık iki nedenden fırlıyor). Regresyon testi:
+   `SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException`.
+2. **Eksik dosya yanlış hata şekli döndürüyordu (tutarlılık):** `IFormFile file` (nullable
+   OLMAYAN) + `[ApiController]` kombinasyonu, `file` alanı hiç gönderilmediğinde ASP.NET Core'un
+   kendi ham `ProblemDetails` JSON'ını dönüyordu — projenin her hata için kullandığı
+   `ApiErrorResponse{code, message}` şeklinin DIŞINDA. Düzeltme: `IFormFile?` (nullable) + elle
+   kontrol + yeni `FileRequiredException` (`FILE_REQUIRED`, 400). Ayrıca savunma-derinliği için
+   `[RequestSizeLimit(5 MB)]` eklendi (Kestrel'in ~28.6 MB'lık varsayılanından çok daha erken
+   reddeder).
+
+Her iki düzeltme de `BACKEND_AKADEMI/A-08_medya-api/`'ye işlendi (bölüm 1: içerik doğrulaması,
+bölüm 2: eksik dosya + RequestSizeLimit), test sayısı 250→252'ye çıktı.
+
+**A-08 TAMAMLANDI (2026-07-24).** `IFileStorageService`/`LocalFileStorageService` + `MediaController`
+(1 endpoint, projedeki ilk `multipart/form-data`) + `UseStaticFiles` + `IActivityLogger` (`UPLOAD_MEDIA`),
+252/252 birim testi yeşil, `BACKEND_AKADEMI/A-08_medya-api/` (3 bölüm) işlendi. Kapsam düzeltmesi:
+`Word.ImageUrl` için yeni migration gerekmedi (A-05'te zaten vardı).
 
 ### A-09 — SMTP Ayarları API ⬜
 **Referans:** REFERENCE/SECURITY.md §3.2, REFERENCE/ENV.md §5

@@ -1,6 +1,16 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. Sırada **A-08 (Medya/Dosya Yükleme API)** var. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. **A-08 ✅
+tamamlandı** (2026-07-24) — Medya/Dosya Yükleme API: `IFileStorageService`/`LocalFileStorageService`
+(Application/Services, uzantı+boyut+İÇERİK [magic bytes] doğrulama, `Guid` tabanlı benzersiz ad
+üretimi), `MediaController` (projedeki İLK `multipart/form-data`/`IFormFile` uç noktası,
+HealthController ile aynı desende MediatR DIŞINDA), `app.UseStaticFiles()`, `IActivityLogger`
+(`UPLOAD_MEDIA`), **252/252 birim testi yeşil**; kapsam düzeltmesi — `Word.ImageUrl` için yeni
+migration gerekmedi (`WordConcept.ImageUrl` A-05'te zaten vardı); kod denetiminde (2 subagent)
+bulunan 2 gerçek düzeltme — yalnızca uzantı kontrolü yeterli değildi (magic-byte doğrulaması
+eklendi), eksik dosya ASP.NET Core'un ham hata şekliyle dönüyordu (`FileRequiredException` ile
+düzeltildi); detay → Otuz yedinci + Otuz sekizinci INGEST. Sırada **A-09 (SMTP Ayarları API)** var.
+Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -209,7 +219,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, A-06 ✅, A-07 ✅, sıradaki A-08) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, A-06 ✅, A-07 ✅, A-08 ✅, sıradaki A-09) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -1288,3 +1298,82 @@ ERTELENMİŞ** — `UserCard` entity'si C-02'de yazılana kadar bekliyor, Faz A'
 ENGELLEMEZ. **Etkilenen dosyalar:** bu dosya (Özet paragrafı + Proje Durumu Özeti tablosu + bu
 INGEST), `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-07 ✅). **Sıradaki task:
 A-08 (Medya/Dosya Yükleme API).***
+
+*Otuz yedinci INGEST (2026-07-24, aynı gün) — **A-08 (Medya/Dosya Yükleme API) tamamlandı ✅:**
+**Kapsam düzeltmesi (bu görev başlarken bulundu):** TASK/A_admin_panel_backend.md'deki A-08 maddesinin
+ilk hâli "Word.ImageUrl + migration" diyordu — kod taranınca `WordConcept.ImageUrl`
+(`nvarchar(500)`) A-05'te (`AddWordsSchema` migration'ı) ZATEN yazılmış olduğu görüldü
+(`CreateWordCommand`/`UpdateWordCommand` bu alanı zaten okuyup yazıyor). A-08 bu yüzden YENİ bir
+migration eklemedi, yalnızca o alana yazılacak URL'i üreten yükleme uç noktasını yazdı.
+**`IFileStorageService`/`LocalFileStorageService`** (`Application/Interfaces/Services` +
+`Application/Services` — `DevEmailService` ile AYNI flat konvansiyon, Infrastructure'a KONMADI):
+sözleşme `IFormFile` DEĞİL saf `Stream`+`originalFileName`+`fileSizeBytes` alır (Application katmanı
+hiçbir ASP.NET Core paketine bağımlı değil, bu tasarım kararı korundu); implementasyon `IConfiguration`'ı
+JwtTokenService ile AYNI ham-indexer deseniyle okur (`IOptions<T>` gibi yeni bir soyutlama İCAT
+EDİLMEDİ), uzantı (jpg/jpeg/png/webp) + boyut (5 MB) doğrular, `Guid` tabanlı benzersiz ad üretir
+(orijinal dosya adı path-traversal/çakışma riskiyle KORUNMAZ). `UnsupportedFileTypeException`/
+`FileTooLargeException` (`DuplicateWordException` ile AYNI şablon, 400) + `ErrorMessages.cs`'e 2 kod.
+**Not (bir sonraki INGEST'te güncellendi):** bu servis bir kod denetiminde yalnızca uzantı
+kontrolünün yeterli olmadığı bulunup magic-byte (içerik) doğrulaması eklenerek genişletildi —
+detay → Otuz sekizinci INGEST.
+**`MediaController`** (`POST /media/images/upload`) — `HealthController` ile AYNI desende MediatR
+DIŞINDA (saf altyapı, iş kuralı yok); projedeki İLK `multipart/form-data`/`IFormFile` uç noktası,
+`[Authorize(Roles="Admin")]`. Başarılı yüklemede `IActivityLogger.LogAsync("UPLOAD_MEDIA",
+entityType: "Word", entityId: null, ...)` — `EntityId` NULL çünkü yükleme ve kelimeye BAĞLAMA
+(`imageUrl`'i `POST/PUT /words`e yazma) iki AYRI istek, yükleme anında hangi WordConcept'e
+bağlanacağı bilinmiyor. **`app.UseStaticFiles()`** (Program.cs, saf ekleme, auth'tan ÖNCE) —
+`wwwroot/uploads` klasörünü `/uploads` yolunda herkese açık servis eder; `.gitignore`'a
+`wwwroot/uploads/*` (yalnızca `.gitkeep` hariç) eklendi, yüklenen dosyalar runtime çıktısı, kaynak
+koda ait değil. **Birim testleri:** `FileStorageServiceTests` (6 test) — `ActivityLoggerTests`'in
+Moq desenini DEĞİL, gerçek geçici (`Path.GetTempPath()`) klasörü kullanır çünkü servisin tek
+bağımlılığı `IConfiguration`, mock'lanacak bir repository/arayüz yok; her test `IDisposable` ile
+kendi klasörünü temizler. **Toplam 250/250 birim testi yeşil** (244 A-07 sonu + 6 yeni).
+`BACKEND_AKADEMI/A-08_medya-api/` (3 bölüm: Dosya Depolama Servisi, MediaController+UseStaticFiles,
+Testler+Özet) yazıldı, zincir A-07'nin son bölümüne bağlandı, kök `index.html`'e kart eklendi.
+`docs/REFERENCE/API_ENDPOINTS.md`'ye yeni §5.1 (Medya) eklendi. **Etkilenen dosyalar:** bu dosya
+(Özet paragrafı + Proje Durumu Özeti tablosu + bu INGEST), `docs/TASK.md`, `docs/TASK/
+A_admin_panel_backend.md` (A-08 ✅), `docs/REFERENCE/API_ENDPOINTS.md`, `.gitignore`. **Sıradaki
+task: A-09 (SMTP Ayarları API).***
+
+*Otuz sekizinci INGEST (2026-07-24, aynı gün) — **A-08 kod denetimi: iki bağımsız subagent
+(biri backend kodunu, biri `BACKEND_AKADEMI/A-08_medya-api/` içeriğini inceledi), 2 gerçek hata
+bulunup ikisi de düzeltildi.** **(1) Backend — güvenlik:** `LocalFileStorageService` yalnızca dosya
+ADININ uzantısına bakıyordu (`Path.GetExtension`), gerçek İÇERİĞE hiç bakmıyordu — bir `.exe`, adı
+`foto.png` yapılarak yüklenip `/uploads` altında herkese açık servis edilebilirdi (content
+spoofing). Düzeltme: `SaveImageAsync` artık dosyanın ilk baytlarını (PNG `89 50 4E 47...`, JPEG
+`FF D8 FF`, WEBP `RIFF....WEBP` imzaları) okuyup uzantıyla eşleştiriyor, eşleşmiyorsa AYNI
+`UnsupportedFileTypeException` (artık iki nedenden fırlıyor: yanlış uzantı VEYA sahte içerik) —
+stream seekable olmayabileceği için okunan header baytları elle yazılıp akışın kalanı ayrıca
+kopyalanıyor (`ReadHeaderAsync` yardımcı metodu). Regresyon testi:
+`SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException`. **(2)
+Backend — tutarlılık:** `IFormFile file` (nullable OLMAYAN) + `[ApiController]` + proje-genelinde
+`<Nullable>enable</Nullable>` kombinasyonu, `file` alanı hiç gönderilmeden istek atıldığında
+ASP.NET Core'un kendi ham `ProblemDetails` JSON'ını dönüyordu (`{"errors":{"file":[...]}}`) —
+projenin HER hata için kullandığı `ApiErrorResponse{code, message}` sözleşmesinin DIŞINDA, hiç
+`ErrorMessages`'ten geçmeden. Düzeltme: `IFormFile?` (nullable) + elle `file is null || file.Length
+== 0` kontrolü + yeni `FileRequiredException` (`FILE_REQUIRED`, 400, `DuplicateWordException` ile
+AYNI şablon). Ayrıca savunma-derinliği için `[RequestSizeLimit(5 * 1024 * 1024)]` eklendi — Kestrel'in
+~28.6 MB'lık varsayılan istek gövdesi üst sınırından ÇOK DAHA ERKEN, 5 MB'lık iş kuralı sınırını
+transport katmanında uygular (öncesinde `LocalFileStorageService`'in kendi boyut kontrolü DOĞRU ama
+gövde TAMAMEN alındıktan SONRA çalışıyordu). **Test sayısı 250→252** (`SaveImageAsync_
+ExactlyAtSizeLimit_Succeeds` sınır testi de bu turda eklendi — önceden yalnızca sınırın ÜSTÜ test
+ediliyordu, tam sınırın kabul edildiği hiç kanıtlanmamıştı). **(3) Backend Akademi — sadakat:**
+ikinci subagent, `03_testler-ozet-sozluk.html`'deki bir test `kod` slaytının GERÇEK test dosyasıyla
+eşleşmediğini (fabrikasyon — `CreateFakeImageStream()` çağrısı yerine uydurma bir `new
+MemoryStream(...)` satırı, yardımcı metodun kendisi hiç gösterilmeden) ve `02_media-controller-
+static-files.html`'deki `MediaController.cs` slaytının "Tam Dosya" iddia edip aslında header/using/
+namespace/satır-içi yorumları atladığını buldu — STANDART.md'nin "birebir kopyalanır, kısaltılmaz,
+uydurulmaz" kuralının ihlali. Düzeltme: A-08'in 3 bölümü de GÜNCEL koda göre YENİDEN yazıldı —
+tüm `kod` slaytları artık gerçek dosyalarla (trailing newline hariç) BİREBİR aynı (otomatik diff
+ile doğrulandı), her 4 HTML dosyası `node --check` ile JS-geçerliliği açısından test edildi
+(hepsi PASS), `satirlar[]` alanları programatik olarak `kod` içeriğiyle çapraz kontrol edildi
+(hepsi PASS). Her iki bölüme birer yeni `kavram` slaytı eklendi ("Kod Denetimi: ..." başlıklı,
+A-07'nin kendi kod denetimi bulgularını anlattığı desenin AYNISI). **Etkilenen dosyalar:**
+`backend/WordLearner.Application/Services/LocalFileStorageService.cs`,
+`backend/WordLearner.API/Controllers/MediaController.cs`,
+`backend/WordLearner.Application/Common/Exceptions/FileRequiredException.cs` (yeni),
+`backend/WordLearner.Application/Common/Localization/ErrorMessages.cs`,
+`backend/WordLearner.API/Middleware/ExceptionHandlingMiddleware.cs`,
+`backend/WordLearner.Tests/Services/FileStorageServiceTests.cs` (6→8 test),
+`BACKEND_AKADEMI/A-08_medya-api/` (3 bölümün tamamı), `docs/TASK/A_admin_panel_backend.md` (A-08
+notuna kod denetimi eklendi), `docs/TASK.md`, bu dosya. **252/252 birim testi yeşil.***

@@ -342,6 +342,30 @@ public static class ErrorMessages
             ["de"] = "Mindestens eine Zeile ist erforderlich.",
         },
 
+        // NEDEN bu kod (A-08): LocalFileStorageService — yalnızca .jpg/.jpeg/.png/.webp
+        //       kabul edilir, diğer uzantılar diske yazılmadan ÖNCE reddedilir.
+        ["UNSUPPORTED_FILE_TYPE"] = new()
+        {
+            ["tr"] = "Desteklenmeyen dosya türü. Yalnızca JPG, PNG veya WEBP yükleyebilirsiniz.",
+            ["de"] = "Nicht unterstützter Dateityp. Sie können nur JPG, PNG oder WEBP hochladen.",
+        },
+
+        // NEDEN bu kod (A-08): LocalFileStorageService — MaxFileSizeBytes (5 MB) sınırını
+        //       aşan dosyalar diske yazılmadan ÖNCE reddedilir.
+        ["FILE_TOO_LARGE"] = new()
+        {
+            ["tr"] = "Dosya boyutu izin verilen üst sınırı (5 MB) aşıyor.",
+            ["de"] = "Die Dateigröße überschreitet das zulässige Limit (5 MB).",
+        },
+
+        // NEDEN bu kod (A-08, kod denetiminde bulundu): MediaController — hiç dosya
+        //       gönderilmeden (veya 0 baytlık bir dosyayla) istek atıldığında fırlatılır.
+        ["FILE_REQUIRED"] = new()
+        {
+            ["tr"] = "Yüklenecek bir dosya seçmelisiniz.",
+            ["de"] = "Sie müssen eine Datei zum Hochladen auswählen.",
+        },
+
         // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
         //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
         //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.

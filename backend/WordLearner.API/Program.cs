@@ -227,6 +227,13 @@ app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// NEDEN AUTH'TAN ÖNCE: /uploads altındaki dosyalar (kelime kartı görselleri) herkese
+// açık statik varlıklar — REFERENCE/ENV.md §7. `wwwroot/uploads` (LocalFileStorageService'in
+// yazdığı klasör) varsayılan `UseStaticFiles()` konvansiyonuyla `/uploads` yolunda servis
+// edilir; [Authorize] gerektiren API rotalarından TAMAMEN ayrı bir istek hattı (auth/rate
+// limiter bu isteklere hiç uğramaz — görsel görüntülemek için token gerekmemeli).
+app.UseStaticFiles();
+
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();

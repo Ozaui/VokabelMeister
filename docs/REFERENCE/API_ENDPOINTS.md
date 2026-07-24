@@ -123,6 +123,23 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 // → primaryId == otherConceptId ise 400 (SAME_CONCEPT_PAIR_NOT_ALLOWED)
 ```
 
+## 5.1 Medya (Görsel Yükleme)
+
+> Bir kelime kavramının `imageUrl` alanına (yukarıdaki §5) yazılacak URL'i üretir — bu iki endpoint
+> arasında otomatik bir bağ YOKTUR, admin panel formu yükleme bittikten sonra dönen `url`'i
+> `POST`/`PUT /words`in `imageUrl` alanına elle koyar. Yalnızca `.jpg`/`.jpeg`/`.png`/`.webp`, üst
+> sınır 5 MB.
+
+| Metot | Yol | Auth | Açıklama |
+|-------|-----|------|----------|
+| POST | `/media/images/upload` | Admin | `multipart/form-data`, tek alan: `file` |
+
+```
+// POST /media/images/upload (Content-Type: multipart/form-data, alan adı "file")
+// → 201 { "url": "https://localhost:7001/uploads/3f9ab2c1d4e94f5a8b6c7d8e9f0a1b2c.png" }
+// → 400 UNSUPPORTED_FILE_TYPE / FILE_TOO_LARGE (5 MB üstü)
+```
+
 ## 6. Kategoriler
 
 > `POST/PUT` gövdesinde `translations: [{languageCode, name}, ...]`.

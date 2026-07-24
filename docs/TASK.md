@@ -33,7 +33,19 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-08 — Medya / Dosya Yükleme API` ⬜ → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-09 — SMTP Ayarları API` ⬜ → `TASK/A_admin_panel_backend.md`
+(`A-08 — Medya / Dosya Yükleme API` ✅ tamamlandı 2026-07-24: `IFileStorageService`/
+`LocalFileStorageService` (uzantı jpg/jpeg/png/webp + 5 MB boyut + İÇERİK [magic bytes]
+doğrulaması, `Guid` tabanlı benzersiz ad üretimi), `MediaController` (`POST /media/images/upload`,
+projedeki İLK `multipart/form-data`/`IFormFile` uç noktası — HealthController ile aynı desende
+MediatR DIŞINDA), `app.UseStaticFiles()` (`/uploads` herkese açık), `IActivityLogger`
+(`UPLOAD_MEDIA`, `EntityType=Word`/`EntityId=NULL`) — **252/252 yeşil**, Backend Akademi'ye işlendi
+(3 bölüm), kök karta eklendi. **Kapsam düzeltmesi:** `Word.ImageUrl` için yeni migration GEREKMEDİ
+— bu alan (`WordConcept.ImageUrl`) A-05'te zaten yazılmıştı, TASK maddesinin ilk hâli yanlış
+okunabilirdi. **Kod denetimi (2 subagent — kod + Backend Akademi), 2 gerçek düzeltme:** yalnızca
+uzantı kontrolü yeterli değildi (magic-byte doğrulaması eklendi — bir `.exe`, adı `.png` yapılarak
+yüklenebiliyordu), eksik dosya ASP.NET Core'un ham hata şekliyle dönüyordu (`IFormFile?` +
+`FileRequiredException` ile projenin standart `ApiErrorResponse` sözleşmesine alındı).)
 (`A-07 — Admin API` ✅ tamamlandı 2026-07-24: dört dilim — Kullanıcı Yönetimi (`IUserRepository`
 genişletmesi + 4 Command/Query + projedeki ilk çift-loglama [`IActivityLogger`+`ISecurityLogger`] +
 self-lockout koruması), İstatistik (`GetAdminStatisticsQuery` — toplam/aktif/dondurulmuş kullanıcı,
@@ -43,11 +55,6 @@ toplam kelime/kategori, kayıt grafiği; `LoginsByDay` bilinçli olarak yazılma
 `SecurityLog.Detail` çözme borcu kapandı) — `AdminController`'ın 9 endpoint'i, **244/244 yeşil**,
 kod denetiminde 2 gerçek düzeltme (tüketicisiz DTO geri alındı, self-lockout koruması eklendi),
 Backend Akademi'ye işlendi (7 bölüm), kök karta eklendi. `UserCard` moderasyonu **A-07.1**'e
-ertelendi (C-02 bekliyor, bkz. `TASK/A_admin_panel_backend.md` A-07.1))
-(`A-06 — Kategori API (Categories)` ✅ tamamlandı: 3 entity+EF config+migration+seed+
-ICategoryRepository+5 Command/Query+CategoriesController+21 birim testi + A-05'in `GET /words`
-retrofit'i (`categoryId`/`categories[]`, 5 yeni test) + kod denetiminde bulunan 2 hatanın
-düzeltilmesi (deferred LINQ audit log hatası, tekrarlanan categoryId→500 riski), toplam
-219 birim testi, Backend Akademi'ye işlendi) → `TASK/A_admin_panel_backend.md`
+ertelendi (C-02 bekliyor, bkz. `TASK/A_admin_panel_backend.md` A-07.1)) → `TASK/A_admin_panel_backend.md`
 
 ⬜ Başlanmadı · 🔄 Devam ediyor · ✅ Tamamlandı · ⛔ Engellendi

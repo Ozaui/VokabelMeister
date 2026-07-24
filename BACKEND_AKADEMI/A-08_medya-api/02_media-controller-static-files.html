@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MediaController + UseStaticFiles</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'media-controller-static-files',
+    bolumBaslik: 'A-08 — Medya / Dosya Yükleme API',
+    oncekiBolum: '01_dosya-depolama-servisi.html',
+    sonrakiBolum: '03_testler-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'MediaController + UseStaticFiles',
+        altBaslik: 'Bir önceki bölümde yazılan LocalFileStorageService\'i çağıran ince bir controller, yazılan dosyaların tarayıcıdan doğrudan görüntülenebilmesini sağlayan static file middleware, ve bir kod denetiminde bulunan İKİNCİ gerçek hata.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'MediaController Neden HealthController İle Aynı Desende (MediatR DIŞINDA)',
+        aciklama: 'WordsController/AdminController gibi diğer TÜM controller\'lar `IMediator.Send(command/query)` ile çalışıyor — her istek bir Command/Query+Handler\'a yönleniyor. MediaController bu deseni İZLEMİYOR: doğrudan `IFileStorageService`\'i enjekte edip çağırıyor, tıpkı A-04\'teki `HealthController`\'ın doğrudan `WordLearnerDbContext`\'i çağırması gibi.',
+        neden: 'CLAUDE.md §3\'ün MediatR kanonik deseni, bir "feature"ın birden fazla adımdan (doğrulama, iş kuralı, birden fazla repository çağrısı) oluştuğu durumlar için tasarlanmış katman ayrımı sağlar. Bir dosyayı diske yazıp URL döndürmek TEK bir adım — aradaki Command/Handler katmanı hiçbir gerçek karmaşıklığı yönetmezdi, yalnızca `_mediator.Send(new UploadImageCommand(...))` şeklinde bir dolaylama (indirection) eklerdi.',
+        olmasaydi: 'Bir `UploadImageCommand`+`UploadImageCommandHandler` yazılsaydı, Handler\'ın TEK yaptığı iş `_fileStorageService.SaveImageAsync(...)`\'i çağırıp sonucu döndürmek olurdu — sıfır iş kuralı barındıran bir Handler, "her endpoint MediatR\'dan geçer" kuralını dogma olarak uygulamış olur, HealthController\'ın zaten kurduğu "saf altyapı = doğrudan servis" istisnasıyla ÇELİŞİRDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'MediaUploadResponse.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/MediaUploadResponse.cs',
+        nedenBuKlasor: 'DTOs/ altında flat — HealthResponse ile AYNI gerekçe: hiçbir domain\'e (Auth/Icerik/Admin) ait değil, tek endpoint için ayrı bir alt klasör açmak YAGNI ihlali olurdu.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// MediaUploadResponse.cs
+//
+// AMAÇ: POST /media/images/upload yanıt zarfı.
+// NEDEN: Herhangi bir domain'e (Auth/Icerik/...) ait olmadığı için DTOs/ altında
+//        flat durur (HealthResponse ile aynı gerekçe — YAGNI, tek endpoint).
+// BAĞIMLILIKLAR: Yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.DTOs;
+
+public record MediaUploadResponse(string Url);`,
+        satirlar: [
+          {
+            satir: 'public record MediaUploadResponse(string Url);',
+            aciklama: 'Tek alanlı, saf bir zarf — yalnızca yüklenen görselin herkese açık URL\'i.',
+            neden: 'Admin panelin ihtiyacı yalnızca bu: yükleme bitince dönen `url`\'i formun `imageUrl` state\'ine yazıp `POST/PUT /words` isteğine ekleyecek (A-05). Ek metadata (dosya boyutu, MIME tipi vb.) istemcinin BUGÜN kullanacağı bir şey değil.',
+            olmasaydi: 'Yanıta kullanılmayan ekstra alanlar eklenseydi, CLAUDE.md\'nin "spekülatif ortak tip yazılmaz" kuralına (TASK.md) aykırı, hiçbir tüketicisi olmayan alanlar taşınmış olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Kod Denetimi (Subagent İncelemesi): Eksik Dosyanın Yanlış Hata Şekli',
+        aciklama: 'A-08 ilk yazıldığında action imzası `UploadImage(IFormFile file, ...)` idi — `file` NULLABLE OLMAYAN bir tipti. Bu proje `<Nullable>enable</Nullable>` + `[ApiController]` kullandığı için ASP.NET Core, non-nullable bir `IFormFile` parametresini OTOMATİK olarak "zorunlu" sayar. Kodu inceleyen bir subagent şunu buldu: istemci `file` alanını HİÇ göndermeden bir istek atarsa, istek action\'a hiç GİRMEDEN, `ValidationFilter`\'dan da `ExceptionHandlingMiddleware`\'den de GEÇMEDEN, ASP.NET Core\'un kendi ham `ProblemDetails` JSON\'ıyla (`{"errors":{"file":["The file field is required."]}}`) 400 dönerdi — projenin İSTİSNASIZ her hata için kullandığı `ApiErrorResponse {code, message}` şeklinin DIŞINDA, un-lokalize bir yanıt.',
+        neden: 'Bu proje boyunca TEK bir hata sözleşmesi kuruldu: her 4xx/5xx `ApiErrorResponse{code, message}` şeklinde, `code` `Accept-Language`\'a göre `ErrorMessages`\'ten çözülür. Admin panelin hata gösterme mantığı bu TEK şekle güvenir — bir endpoint\'in kendi başına FARKLI bir şekilde hata dönmesi, o ekranın hata gösterme kodunu YA ÇÖKERTİR YA DA sessizce "bilinmeyen hata" gösterir.',
+        olmasaydi: 'Bu bulunmasaydı, admin panelin "görsel seçilmeden Yükle\'ye basılırsa" senaryosu (gerçek bir kullanıcı hatası, sık karşılaşılabilir) kullanıcıya YA çökme YA DA anlamsız bir hata mesajı olarak yansırdı — oysa aynı ekrandaki DİĞER TÜM hatalar (dosya çok büyük, yanlış format) düzgün, lokalize bir mesaj gösteriyor olurdu; tutarsız bir kullanıcı deneyimi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'FileRequiredException.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/FileRequiredException.cs',
+        nedenBuKlasor: 'Common/Exceptions/ — DuplicateWordException/UnsupportedFileTypeException ile AYNI klasör, AYNI şablon.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// FileRequiredException.cs
+//
+// AMAÇ: \`POST /media/images/upload\` isteğinde hiç dosya gönderilmediğinde
+//       (veya gönderilen dosya 0 bayt olduğunda) fırlatılır.
+// NEDEN: \`IFormFile file\` parametresi NULLABLE (\`IFormFile?\`) yapılmazsa, ASP.NET
+//        Core'un [ApiController] + nullable-reference-types kombinasyonu bu alanı
+//        OTOMATİK "zorunlu" sayıp kendi ham \`ProblemDetails\` JSON'ını (projenin
+//        \`ApiErrorResponse\` şeklini DEĞİL) döner — istemci HER hata için AYNI
+//        zarfı bekler, bu istisna o tutarlılığı korur (kod denetiminde bulundu).
+// BAĞIMLILIKLAR: AppException.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class FileRequiredException : AppException
+{
+    public FileRequiredException()
+        : base("FILE_REQUIRED", "Media upload attempt: no file was provided in the request.")
+    { }
+}`,
+        satirlar: [
+          {
+            satir: 'public class FileRequiredException : AppException',
+            aciklama: 'Diğer TÜM `AppException` alt tipleriyle (DuplicateWordException, CategoryParentCycleException) AYNI şablon — parametresiz constructor, sabit Code + sabit İngilizce log mesajı, istemciye giden metin `ErrorMessages.cs`\'ten dile göre çözülür.',
+            neden: 'Bir önceki slaytta anlatılan bulguyu kapatan asıl düzeltme BURASI — artık "dosya yok" durumu da diğer HER hata gibi Code-sonra-çöz desenine giriyor, ASP.NET Core\'un kendi ham hata şekli devreye hiç girmiyor (bkz. MediaController\'daki `IFormFile?` + elle kontrol).',
+            olmasaydi: 'Bu exception yazılmasaydı, "dosya yok" durumunu düzeltmenin TEK yolu `IFormFile file`\'ı non-nullable BIRAKIP ASP.NET Core\'un otomatik davranışına GÜVENMEK olurdu — bu da bir önceki slaytın anlattığı tutarsızlığı ÇÖZMEZDİ, yalnızca gizlerdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'MediaController.cs — Tam Dosya (Kod Denetimi SONRASI Nihai Hâli)',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/MediaController.cs',
+        nedenBuKlasor: 'API/Controllers/ — WordsController/AdminController ile AYNI seviyede, flat.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// MediaController.cs
+//
+// AMAÇ: POST /media/images/upload — admin panelin bir kelime kartına ekleyeceği
+//       görseli sunucuya yükleyip herkese açık bir URL döndüren uç nokta
+//       (REFERENCE/ENV.md §7).
+// NEDEN MediatR Command+Handler DEĞİL: HealthController ile AYNI gerekçe — bu
+//       bir CQRS dikey dilimi değil, tek bir servis çağrısına (IFileStorageService)
+//       sarılı saf bir G/Ç işlemi; iş kuralı/domain mantığı taşımıyor (YAGNI).
+// BAĞIMLILIKLAR: IFileStorageService, IActivityLogger.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Models;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.API.Controllers;
+
+[ApiController]
+[Route("api/v1/media")]
+public class MediaController : ControllerBase
+{
+    private readonly IFileStorageService _fileStorageService;
+    private readonly IActivityLogger _activityLogger;
+
+    public MediaController(IFileStorageService fileStorageService, IActivityLogger activityLogger)
+    {
+        _fileStorageService = fileStorageService;
+        _activityLogger = activityLogger;
+    }
+
+    // AMAÇ: WordsController/AdminController ile AYNI desen — IActivityLogger'a "kim yaptı" bilgisi.
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+
+    // AMAÇ: Bir görseli yükler, diske yazar ve herkese açık URL'ini döner.
+    // NEDEN Admin: Görsel yalnızca admin panelin kelime formu üzerinden yüklenir
+    //       (B-03) — CLAUDE.md "sistem içeriği CRUD Admin" kuralıyla aynı sınıf.
+    [HttpPost("images/upload")]
+    [Authorize(Roles = "Admin")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    [ProducesResponseType(typeof(MediaUploadResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<MediaUploadResponse>> UploadImage(IFormFile? file, CancellationToken ct)
+    {
+        // NEDEN file NULLABLE (kod denetiminde bulundu): \`IFormFile file\` (nullable OLMAYAN)
+        //       yazılsaydı, \`[ApiController]\` + nullable-reference-types kombinasyonu bu alanı
+        //       OTOMATİK zorunlu sayar — istek \`file\` alanı hiç GÖNDERMEDEN atılırsa, MVC
+        //       action'a hiç GİRMEDEN kendi ham ProblemDetails JSON'ını döner (projenin
+        //       ApiErrorResponse şekli DEĞİL, ErrorMessages'tan da GEÇMEZ). \`IFormFile?\` bu
+        //       otomatik davranışı KAPATIR, kontrol elle (aşağıda) yapılır.
+        if (file is null || file.Length == 0)
+            throw new FileRequiredException();
+
+        await using var stream = file.OpenReadStream();
+        var url = await _fileStorageService.SaveImageAsync(stream, file.FileName, file.Length, ct);
+
+        // NEDEN EntityType=Word/EntityId=NULL: Görsel bu aşamada henüz hiçbir
+        //       WordConcept'e bağlanmadı — admin panel formu yükleme bittikten
+        //       SONRA dönen URL'i POST/PUT /words'ün imageUrl alanına koyar (A-05).
+        await _activityLogger.LogAsync(
+            CurrentUserId,
+            CurrentRole,
+            "UPLOAD_MEDIA",
+            entityType: "Word",
+            entityId: null,
+            newValue: new { Url = url, file.FileName, file.Length },
+            ct: ct
+        );
+
+        return StatusCode(StatusCodes.Status201Created, new MediaUploadResponse(url));
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[RequestSizeLimit(5 * 1024 * 1024)]',
+            aciklama: 'Kestrel\'in kendi varsayılan istek gövdesi üst sınırı (~28.6 MB) çok daha yüksek — bu öznitelik OLMADAN, 5 MB\'lık iş kuralı sınırından kat kat büyük bir dosya (ör. 20 MB) TAMAMEN alınıp buffer\'landıktan SONRA `LocalFileStorageService` tarafından reddedilirdi.',
+            neden: 'Kod denetiminde bulunan bir başka gözlem: `LocalFileStorageService`\'in kendi boyut kontrolü DOĞRU çalışıyor ama YETERİNCE ERKEN çalışmıyor — istek gövdesi zaten sunucuya TAMAMEN alındıktan sonra devreye giriyor. Bu öznitelik, ASP.NET Core\'un kendisine "bu action için gövde sınırı 5 MB" der, aşımı çok daha ERKEN (transport katmanında) keser.',
+            olmasaydi: 'Bu öznitelik olmadan, admin-only bir endpoint olsa bile, kötü niyetli ya da hatalı bir istemci tekrar tekrar büyük (ama Kestrel limitinin altında) dosyalar göndererek sunucunun bant genişliğini/belleğini gereksiz yere MEŞGUL edebilirdi — düşük öncelikli ama gerçek bir savunma-derinliği (defense in depth) eksikliği.'
+          },
+          {
+            satir: 'public async Task<ActionResult<MediaUploadResponse>> UploadImage(IFormFile? file, CancellationToken ct)',
+            aciklama: '`IFormFile?` — bir önceki iki slaytta anlatılan kod denetimi düzeltmesinin uygulandığı satır.',
+            neden: 'Nullable işaretlemek, ASP.NET Core\'un "bu parametre olmadan istek 400\'e düşsün" otomatik davranışını KAPATIR — kontrol artık BİZİM elimizde (`FileRequiredException`), projenin TEK hata sözleşmesinin dışına ÇIKILMAZ.',
+            olmasaydi: 'Parametre non-nullable KALSAYDI, aşağıdaki `if (file is null...)` satırına ASLA ULAŞILAMAZDI — ASP.NET Core isteği çok daha ÖNCE, kendi ham hata şekliyle REDDEDERDİ; bu satırın burada durması TAM OLARAK o davranışı ENGELLEMEK içindir.'
+          },
+          {
+            satir: 'if (file is null || file.Length == 0)',
+            aciklama: 'İki ayrı boş-durum kontrolü: `file is null` (alan hiç gönderilmedi) VE `file.Length == 0` (alan gönderildi ama içeriği boş bir dosya).',
+            neden: 'Model binding "dosya hiç yok" ile "0 baytlık boş bir dosya gönderildi" durumlarını AYNI şekilde ele almaz — `file` her iki durumda da farklı davranabilir (bazı istemciler boş bir dosya seçimini 0 baytlık gerçek bir `IFormFile` olarak gönderir). İkisini TEK bir kontrolde birleştirmek, her iki senaryoyu da AYNI, tutarlı hatayla (FILE_REQUIRED) karşılar.',
+            olmasaydi: 'Yalnızca `file is null` kontrol edilseydi, 0 baytlık bir dosya `LocalFileStorageService.SaveImageAsync`\'e kadar İLERLERDİ — orada uzantı/boyut geçebilir ama magic-byte kontrolü (bir önceki bölüm) BOŞ bir header\'la karşılaşıp yine reddederdi; sonuç aynı olsa da HATA MESAJI yanlış olurdu (UNSUPPORTED_FILE_TYPE, oysa gerçek sorun "dosya seçilmedi").'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /media/images/upload',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/media/images/upload',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı. Postman\'de gövde tipi "form-data" seçilir (RAW/JSON DEĞİL) — tek bir key eklenir: key=`file`, tip=`File` (Postman\'de key satırının sağındaki açılır menüden "Text" yerine "File" seçilir), value=bilgisayardan gerçek bir .jpg/.png/.webp seçilir (uzantısı doğru ama içeriği sahte bir dosya artık 400 UNSUPPORTED_FILE_TYPE alır — bkz. önceki bölümün magic-byte kontrolü).',
+        yanit: {
+          durum: '201 Created',
+          govde: `{
+  "url": "https://localhost:7001/uploads/3f9ab2c1d4e94f5a8b6c7d8e9f0a1b2c.png"
+}`
+        },
+        notlar: [
+          'Content-Type header\'ını ELLE "multipart/form-data" yazmayın — Postman form-data seçildiğinde bunu (doğru "boundary" değeriyle birlikte) OTOMATİK ekler; elle yazmak boundary\'yi BOZAR ve isteği 400\'e düşürür.',
+          '`file` alanını BOŞ bırakıp gönderirseniz artık 400 `FILE_REQUIRED` (projenin standart ApiErrorResponse şeklinde) alırsınız — ASP.NET Core\'un ham hata sayfası DEĞİL (kod denetiminde düzeltildi).',
+          'Dönen `url`, bir sonraki adımda `POST /words`in `imageUrl` alanına (A-05, REFERENCE/API_ENDPOINTS.md §5) AYNEN kopyalanır — bu iki endpoint arasında otomatik bir bağ YOKTUR, admin panel formu bu köprüyü elle kurar.'
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'UseStaticFiles — Yüklenen Dosya Nasıl Görüntülenir?',
+        aciklama: 'Dosya diske `wwwroot/uploads/` altına yazıldıktan sonra, o dosyanın bir tarayıcıdan doğrudan (herhangi bir controller/API çağrısı OLMADAN) açılabilmesi gerekiyor — `Program.cs`e eklenen tek satır `app.UseStaticFiles();`, ASP.NET Core\'un `wwwroot` klasörünün İÇERİĞİNİ, klasör yapısını BİREBİR koruyarak `/` kök yolunda servis etmesini sağlar; `wwwroot/uploads/abc.png` böylece `/uploads/abc.png`de görüntülenebilir hâle gelir.',
+        neden: 'Bu, tam olarak `FileStorage:BaseUrl` (appsettings — `https://localhost:7001/uploads`) + `LocalFileStorageService`\'in `UploadPath`i (`wwwroot/uploads`) arasındaki EŞLEŞMEYİ sağlayan parça — LocalFileStorageService bir dosyayı FİZİKSEL olarak nereye yazdığını bilir, UseStaticFiles o fiziksel konumu HTTP\'den erişilebilir kılar; ikisi ayrı ayrı yapılandırılmış olsa da AYNI klasör yoluna işaret ettikleri için birbirini tamamlar.',
+        olmasaydi: '`UseStaticFiles()` eklenmeseydi, `LocalFileStorageService` dosyayı diske BAŞARIYLA yazardı (SaveImageAsync 201 dönerdi) ama dönen URL\'e (`https://localhost:7001/uploads/...`) giden HERHANGİ bir tarayıcı isteği 404 alırdı — Kestrel, hiçbir controller/middleware bu yolu EŞLEMEDİĞİ için isteği hiçbir yere yönlendiremezdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — UseStaticFiles (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'Composition root — tüm middleware pipeline kayıtları burada (CLAUDE.md/A-02).',
+        kod: `app.UseMiddleware<RequestResponseLoggingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// NEDEN AUTH'TAN ÖNCE: /uploads altındaki dosyalar (kelime kartı görselleri) herkese
+// açık statik varlıklar — REFERENCE/ENV.md §7. \`wwwroot/uploads\` (LocalFileStorageService'in
+// yazdığı klasör) varsayılan \`UseStaticFiles()\` konvansiyonuyla \`/uploads\` yolunda servis
+// edilir; [Authorize] gerektiren API rotalarından TAMAMEN ayrı bir istek hattı (auth/rate
+// limiter bu isteklere hiç uğramaz — görsel görüntülemek için token gerekmemeli).
+app.UseStaticFiles();
+
+app.UseCors("Default");
+app.UseAuthentication();
+app.UseAuthorization();`,
+        satirlar: [
+          {
+            satir: 'app.UseStaticFiles();',
+            aciklama: 'Parametresiz çağrı — varsayılan kök klasör (`{ContentRoot}/wwwroot`) ve varsayılan istek öneki (`/`, yani wwwroot\'un İÇİNDEKİ klasör yapısı URL\'e AYNEN yansır).',
+            neden: 'Geliştirmede `FileStorage:UploadPath=wwwroot/uploads` zaten `wwwroot`\'un altında — parametresiz `UseStaticFiles()`in varsayılan davranışı bu klasörü OLDUĞU GİBİ (`/uploads/...`) servis etmeye YETER; özel bir `PhysicalFileProvider`/`RequestPath` yapılandırmasına gerek yok (REFERENCE/ENV.md §7\'nin kendisi de bu basit yaklaşımı ÖNGÖRÜYOR).',
+            olmasaydi: 'Prod\'da `UploadPath` `wwwroot` DIŞINDA mutlak bir yola (`/var/app/uploads`) taşınırsa, bu basit çağrı o klasörü SERVİS ETMEZ — ama ENV.md bu senaryoda dosyaların bir ters proxy (nginx vb.) tarafından DOĞRUDAN servis edilmesini varsayıyor; bu, uygulamanın kendisinin çözmesi gereken bir sorun OLARAK TASARLANMADI (YAGNI — bugün gerçek bir prod dağıtımı yok).'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'multipart/form-data', tanim: 'Hem metin alanlarını hem ikili (binary) dosya içeriğini TEK bir HTTP gövdesinde taşıyabilen içerik türü — dosya yüklemenin HTTP standardı.' },
+          { terim: 'IFormFile', tanim: 'ASP.NET Core\'un bir yüklenen dosyayı temsil eden tipi — `FileName`/`Length`/`ContentType` metadata\'sı + `OpenReadStream()` ile içeriğe erişim sağlar.' },
+          { terim: 'Implicit required (nullable reference types)', tanim: '`<Nullable>enable</Nullable>` + `[ApiController]` birlikte kullanıldığında, non-nullable bir action parametresinin ASP.NET Core tarafından OTOMATİK "zorunlu" sayılması — `?` ile işaretlemek bu otomatik davranışı kapatır.' },
+          { terim: 'RequestSizeLimit', tanim: 'Belirli bir action için istek gövdesi üst sınırını Kestrel\'in genel varsayılanından DAHA DÜŞÜK bir değere çeken öznitelik — aşım, gövde tamamen okunmadan ÖNCE reddedilir.' },
+          { terim: 'wwwroot', tanim: 'ASP.NET Core\'un "herkese açık statik dosya" konvansiyonu — `UseStaticFiles()` varsayılan olarak bu klasörü servis eder.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '`MediaUploadResponse` (DTOs, flat) — yalnızca `url`.',
+          '`MediaController` — HealthController ile AYNI desen (MediatR DIŞINDA), projedeki İLK `multipart/form-data`/`IFormFile` uç noktası, `[Authorize(Roles="Admin")]`.',
+          '**Kod denetimi düzeltmesi:** `IFormFile?` (nullable) + `FileRequiredException` — eksik dosya artık ASP.NET Core\'un ham hata şekli DEĞİL, projenin standart `ApiErrorResponse`\'u ile 400 döner.',
+          '`[RequestSizeLimit(5 MB)]` — Kestrel\'in ~28.6 MB\'lık varsayılan üst sınırından ÇOK DAHA ERKEN, 5 MB\'lık iş kuralı sınırını uygular.',
+          '`IActivityLogger` entegrasyonu: `UPLOAD_MEDIA` (`EntityType=Word`, `EntityId=NULL` — yükleme ve kelimeye bağlama iki ayrı istek).',
+          '`app.UseStaticFiles()` (Program.cs, saf ekleme) — `wwwroot/uploads` klasörü `/uploads` yolunda, auth\'tan ÖNCE, herkese açık servis edilir.',
+          'Sıradaki bölüm: `FileStorageServiceTests` + A-08 kapanışı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

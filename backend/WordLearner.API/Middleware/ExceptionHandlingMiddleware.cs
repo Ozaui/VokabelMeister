@@ -122,6 +122,9 @@ public class ExceptionHandlingMiddleware
             DuplicateWordException => HttpStatusCode.Conflict,
             CategoryHasChildrenException => HttpStatusCode.Conflict,
             CategoryHasActiveWordsException => HttpStatusCode.Conflict,
+            UnsupportedFileTypeException => HttpStatusCode.BadRequest,
+            FileTooLargeException => HttpStatusCode.BadRequest,
+            FileRequiredException => HttpStatusCode.BadRequest,
             _ => HttpStatusCode.BadRequest,
         };
 }

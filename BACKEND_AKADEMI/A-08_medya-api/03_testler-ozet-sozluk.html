@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-08 — Testler + Özet + Sözlük</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'testler-ozet-sozluk',
+    bolumBaslik: 'A-08 — Medya / Dosya Yükleme API',
+    oncekiBolum: '02_media-controller-static-files.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'FileStorageServiceTests + A-08 Kapanışı',
+        altBaslik: 'A-05/A-06/A-07 gibi Mock tabanlı bir test DEĞİL — LocalFileStorageService gerçek disk G/Ç yaptığı için testler de geçici (temp) bir klasörde GERÇEK dosya yazıp okuyor. İki kod denetimi düzeltmesinden sonra 2 yeni regresyon testi eklendi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Moq DEĞİL, Gerçek Geçici Klasör',
+        aciklama: 'ActivityLoggerTests/UserRepositoryTests gibi projedeki diğer servis testleri ya bir arayüzü (`IActivityLogRepository`) Moq ile taklit eder ya da in-memory bir EF Core DbContext kullanır. `LocalFileStorageService`\'in TEK bağımlılığı `IConfiguration` — mock\'lanacak bir "repository" yok, doğrulanması gereken şey servisin KENDİSİNİN disk davranışı (doğru klasöre mi yazıyor, aynı ada iki kez mi yazıyor, gerçekten SAHTE bir dosyayı reddediyor mu). Bu yüzden `FileStorageServiceTests`, `IDisposable` ile her testte `Path.GetTempPath()` altında benzersiz bir klasör açıp testin sonunda SİLER.',
+        neden: 'Bir mock, "SaveImageAsync çağrıldı mı" sorusuna cevap verirdi ama "gerçekten doğru baytlar doğru dosyaya yazıldı mı" ya da "gerçekten sahte-imzalı bir dosya reddediliyor mu" sorularına CEVAP VEREMEZDİ — bu servisin TEK gerçek riski budur, sahte bir arayüz bu riski test ETMEZ.',
+        olmasaydi: 'Testler yalnızca "SaveImageAsync bir string döndürdü" diye GEÇSEYDİ, `Directory.CreateDirectory`/`FileStream`/`CopyToAsync` çağrılarındaki gerçek bir hata (ör. yanlış Path.Combine sırası) YA DA magic-byte kontrolünün gerçekten çalıştığı YAKALANAMAZDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'FileStorageServiceTests.cs — Kurulum + Spoofing Regresyon Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/FileStorageServiceTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — ActivityLoggerTests ile AYNI klasör, flat (servis testleri Features/ altındaki Handler testlerinden AYRI tutulur).',
+        kod: `public class FileStorageServiceTests : IDisposable
+{
+    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly byte[] JpegSignature = [0xFF, 0xD8, 0xFF];
+
+    private readonly string _tempUploadPath;
+
+    public FileStorageServiceTests()
+    {
+        _tempUploadPath = Path.Combine(Path.GetTempPath(), $"wordlearner-tests-{Guid.NewGuid():N}");
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempUploadPath))
+            Directory.Delete(_tempUploadPath, recursive: true);
+    }
+
+    private LocalFileStorageService CreateService()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["FileStorage:UploadPath"] = _tempUploadPath,
+                    ["FileStorage:BaseUrl"] = "https://localhost:7001/uploads",
+                }
+            )
+            .Build();
+
+        return new LocalFileStorageService(configuration);
+    }
+
+    private static MemoryStream CreateImageStream(byte[] signature, int totalSize = 16)
+    {
+        var bytes = new byte[Math.Max(totalSize, signature.Length)];
+        signature.CopyTo(bytes, 0);
+        return new MemoryStream(bytes);
+    }
+
+    [Fact]
+    public async Task SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException()
+    {
+        var service = CreateService();
+        using var stream = CreateImageStream(JpegSignature); // gerçek içerik JPEG, ad .png
+
+        var act = () => service.SaveImageAsync(stream, "spoofed.png", stream.Length);
+
+        await act.Should().ThrowAsync<UnsupportedFileTypeException>();
+        Directory.Exists(_tempUploadPath).Should().BeFalse();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];',
+            aciklama: 'Test dosyası, `LocalFileStorageService`\'in KENDİ imza sabitlerini (bir önceki bölümde görülen `PngSignature`/`JpegSignature`) BAĞIMSIZ olarak kendi içinde de tanımlar.',
+            neden: 'Bu, ilk yazımda ("önceki hâlde" — bkz. bir önceki slaytın "kod denetimi" notu) testlerin gerçek bir imzayla BAŞLAMAYAN, rastgele sıfır baytlardan oluşan sahte akışlar kullanmasının (`new MemoryStream(new byte[sizeBytes])`) artık YETERSİZ kaldığı gerçeğinin doğrudan sonucu — magic-byte kontrolü eklendikten sonra "geçerli" senaryoların GERÇEK bir imzayla başlaması ZORUNLU hâle geldi.',
+            olmasaydi: 'Bu güncelleme yapılmasaydı, `LocalFileStorageService`\'e magic-byte kontrolü eklenir eklenmez (bir önceki bölüm) önceden yazılan 6 testin 5\'i (rastgele sıfır bayt = geçersiz imza) İSTENMEDEN kırılırdı — kod denetimi düzeltmesi test paketiyle ÇAKIŞIRDI.'
+          },
+          {
+            satir: 'private static MemoryStream CreateImageStream(byte[] signature, int totalSize = 16)',
+            aciklama: 'Gerçek bir imzayla BAŞLAYAN, geri kalanı dolgu (padding) olan bir akış üretir — eski `CreateFakeImageStream(int sizeBytes)` yardımcı metodunun YERİNİ alır.',
+            neden: 'Farklı testler farklı formatlar (`.png`/`.jpg`) ve farklı boyutlar (16 bayt / tam 5 MB sınır testi) için GERÇEKÇİ akışlara ihtiyaç duyar — tek bir parametreli yardımcı, bu ihtiyaçların HEPSİNİ tek bir yerden karşılar.',
+            olmasaydi: 'Her testin kendi baytlarını elle inşa etmesi gerekseydi, 8 test dosyasının HER birinde neredeyse AYNI 3-4 satırlık dizi oluşturma kodu TEKRARLANIRDI — DRY ihlali, ve imza baytları YANLIŞ kopyalanırsa (typo) test SESSİZCE geçersiz bir senaryo test ETMİŞ olurdu.'
+          },
+          {
+            satir: 'using var stream = CreateImageStream(JpegSignature); // gerçek içerik JPEG, ad .png',
+            aciklama: 'Bu SATIR, bölüm 1\'de anlatılan magic-byte açığının KAPATILDIĞINI kanıtlayan asıl regresyon testi — dosya adı `.png` (uzantı kontrolünü GEÇER) ama gerçek içerik bir JPEG imzasıyla BAŞLIYOR (içerik kontrolünü GEÇMEMESİ gerekir).',
+            neden: 'Bir önceki (düzeltme öncesi) implementasyon yalnızca `Path.GetExtension`\'a bakıyordu — bu test TAM OLARAK o zayıf implementasyonun KABUL EDECEĞİ, ama düzeltilmiş implementasyonun REDDETMESİ gereken senaryoyu üretir. Bu test yeşilken kod yanlışlıkla eski davranışa DÖNERSE (regresyon), test KIRMIZIYA döner.',
+            olmasaydi: 'Bu test yazılmasaydı, magic-byte kontrolü ileride (ör. bir performans optimizasyonu sırasında) YANLIŞLIKLA kaldırılabilir/bypasslanabilirdi ve HİÇBİR test bunu YAKALAMAZDI — güvenlik açığı SESSİZCE geri gelirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Yazılan Testler — Tam Liste (8 test)',
+        maddeler: [
+          '`SaveImageAsync_ValidPngFile_ReturnsUrlWithBaseUrlPrefix` — gerçek PNG imzasıyla başlayan akış, URL `FileStorage:BaseUrl` ile başlıyor mu.',
+          '`SaveImageAsync_ValidFile_WritesFileToUploadPath` — dosya gerçekten diske, DOĞRU içerikle (header+kalan akış birlikte) yazıldı mı.',
+          '`SaveImageAsync_CalledTwiceWithSameOriginalName_GeneratesUniqueFileNames` — benzersiz ad üretimi.',
+          '`SaveImageAsync_UnsupportedExtension_ThrowsUnsupportedFileTypeException` — .exe reddedilir, içerik hiç okunmadan.',
+          '`SaveImageAsync_FileSizeExceedsLimit_ThrowsFileTooLargeException` — 5 MB üstü reddedilir, diske dokunulmaz.',
+          '`SaveImageAsync_ExactlyAtSizeLimit_Succeeds` — **YENİ (kod denetimi sonrası eklendi):** tam 5 MB\'ın (5 MB + 1 bayt DEĞİL) kabul edildiğini kanıtlayan sınır (boundary) testi.',
+          '`SaveImageAsync_UppercaseExtension_IsAcceptedCaseInsensitively` — "PHOTO.JPG" da kabul edilir (gerçek JPEG imzasıyla).',
+          '`SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException` — **YENİ (kod denetimi sonrası eklendi):** asıl spoofing regresyon testi, önceki slaytta gösterildi.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'A-08 Boyunca Yazılan Yeni Kavramlar/Dosyalar',
+        terimler: [
+          { terim: 'IFileStorageService / LocalFileStorageService', tanim: 'Görsel yükleme sözleşmesi (Application/Interfaces/Services) + yerel disk implementasyonu (Application/Services) — uzantı/boyut/İÇERİK (magic bytes) doğrulama, Guid tabanlı benzersiz ad üretimi.' },
+          { terim: 'MediaController', tanim: 'Projedeki İLK `multipart/form-data`/`IFormFile` uç noktası — HealthController ile AYNI desende, MediatR DIŞINDA (saf altyapı, iş kuralı yok).' },
+          { terim: 'UseStaticFiles', tanim: '`wwwroot/uploads` klasörünü `/uploads` yolunda, auth\'tan ÖNCE, herkese açık servis eden middleware — LocalFileStorageService\'in yazdığı dosyaları tarayıcıdan görüntülenebilir kılar.' },
+          { terim: 'UnsupportedFileTypeException / FileTooLargeException / FileRequiredException', tanim: '`AppException`\'dan türeyen, 400 dönen üç doğrulama hatası — DuplicateWordException ile AYNI şablon (sabit Code, dile göre çözülen mesaj). Sonuncusu bir kod denetiminde eklendi.' },
+          { terim: 'Magic bytes (dosya imzası)', tanim: 'Bir dosya formatının sabit ilk baytları (PNG/JPEG/WEBP) — yalnızca uzantıya güvenmenin yeterli OLMADIĞI bir kod denetiminde bulunup eklendi.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Sayılarla A-08',
+        maddeler: [
+          '1 yeni servis (`IFileStorageService`/`LocalFileStorageService`), 1 yeni controller (`MediaController`, 1 endpoint).',
+          '3 yeni exception (`UnsupportedFileTypeException`/`FileTooLargeException`/`FileRequiredException` — sonuncusu kod denetiminde) + `ErrorMessages.cs`\'e 3 yeni kod (tr/de).',
+          '2 saf ekleme: `app.UseStaticFiles()` (Program.cs), `[RequestSizeLimit]` (MediaController, kod denetiminde).',
+          'Kapsam düzeltmesi: `Word.ImageUrl` için migration GEREKMEDİ (A-05\'te zaten vardı).',
+          '**İki bağımsız subagent incelemesi (kod + akademi) İKİ gerçek hata buldu ve ikisi de düzeltildi:** (1) yalnızca uzantı kontrolü — magic-byte doğrulaması eklendi; (2) eksik dosya ASP.NET Core\'un ham hata şekliyle 400 dönüyordu — `IFormFile?`+`FileRequiredException` ile projenin standart hata sözleşmesine alındı.',
+          'Toplam 244 (A-07 sonu) → **252 birim testi** — A-08 6 test ile başladı, kod denetimi sonrası 2 yeni regresyon testiyle 8\'e çıktı.',
+          'Sıradaki task: **A-09 — SMTP Ayarları API** (`TASK/A_admin_panel_backend.md`).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
