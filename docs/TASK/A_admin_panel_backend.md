@@ -336,27 +336,103 @@
 - [x] ➜ **BACKEND_AKADEMI'ye işle** (`07_word-tarafi-retrofit.html` — retrofit + iki hata düzeltmesi
       kod-degisiklik slaytlarıyla işlendi, `08_ozet-sozluk.html` kapanış; kök `index.html`'e kart eklendi)
 
-### A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme) ⬜
+### A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Toplu Import + Log Görüntüleme) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §11
-**Frontend karşılığı:** B-05 (Kullanıcı Yönetimi), B-06 (Paylaşım/İçerik Moderasyonu), B-07 (İstatistik Paneli), B-08 (Log Görüntüleme Paneli)
-- [ ] `IAdminService` + `AdminService`
+**Frontend karşılığı:** B-05 (Kullanıcı Yönetimi), B-06 (Paylaşım/İçerik Moderasyonu — bkz. not), B-07 (İstatistik Paneli), B-08 (Log Görüntüleme Paneli)
+> **Not (A-06'dan sonra düzeltme, 2026-07-23):** Bu listenin ilk hâli "IAdminService/AdminService"
+> deseninden bahsediyordu — CLAUDE.md §3'e göre bu desen artık TERK EDİLDİ (kanonik desen MediatR
+> Command+Handler, A-05/A-06'da uygulandığı gibi). Aşağıdaki maddeler buna göre güncellendi.
+> **Kapsam düzeltmesi:** "İçerik moderasyonu (kart liste + silme)" maddesi `UserCard` entity'sine
+> bağımlı — o entity henüz kodda yok, ancak **C-02**'de (`TASK/C_kullanici_backend.md`) yazılacak.
+> Roadmap sırası A→B→C olduğu için A-07 şu an bu entity'ye erişemez; bu madde A-07'nin kapsamından
+> ÇIKARILDI, C-02 bitince küçük bir retrofit task'ı (**A-07.1**) olarak eklenecek — A-03.2/A-06'daki
+> "sonradan borç kapatma" deseniyle aynı (bkz. `../wiki/Index.md` ilgili INGEST'ler).
+- [x] **Entity/DTO yok** (kullanıcı yönetimi mevcut `User` entity'sini kullanır, `Role`/`IsActive`
+      zaten `Auth.md`'de var) — `IUserRepository`'ye admin'e özel sorgular (liste/arama/sayfalama,
+      istatistik) veya varsa mevcut Auth repository'sinin genişletilmesi
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`01_neden-entity-yok-repository.html`)
+- [x] Kullanıcı: MediatR Command/Query (`Application/Features/Admin/`) — liste/arama/detay
+      (`GetUsersQuery`/`GetUserByIdQuery`), rol değiştir (`UpdateUserRoleCommand`), hesap dondur/aktif
+      (`UpdateUserStatusCommand`) — her işlem **`IActivityLogger`**'a (`UPDATE_USER_ROLE`/
+      `UPDATE_USER_STATUS`) **ve** rol/durum değişimi admin'e özel hassas işlem olduğu için ayrıca
+      **`ISecurityLogger`**'a (`LogEventType.AdminAction`) yazar (bkz. `CLAUDE.md` "İçerik değiştiren
+      her CRUD..." kuralı). **Self-lockout koruması** (kod denetiminde bulunan açık soru, kullanıcı
+      onayıyla eklendi): `Id==UserId` ise `SelfAdminActionNotAllowedException` (400,
+      `CANNOT_MODIFY_OWN_ACCOUNT`) — bir admin kendi rolünü/durumunu DEĞİŞTİREMEZ.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`02_command-query-handlerlari.html`)
+- [x] Genel istatistik: `GetAdminStatisticsQuery` (`Application/Features/Admin/GetAdminStatisticsQuery.cs`)
+      — `IUserRepository.GetStatisticsAsync` (toplam/aktif/dondurulmuş, bu dilimde daha önce
+      tüketicisiz yazılıp kod denetiminde geri alınmıştı — CLAUDE.md §3 "spekülatif tip yazılmaz",
+      bu Handler gerçek/ilk tüketicisi) + `IWordConceptRepository`/`ICategoryRepository`'ye
+      `GetTotalCountAsync` (toplam kelime/kategori) + `IUserRepository.GetRegistrationDatesAsync`
+      (son N günün kayıt grafiği, ham `CreatedAt` listesi — günlere gruplama Handler'da bellekte,
+      sıfır-kayıtlı günler de doldurularak boşluksuz bir seri üretilir). **`LoginsByDay` BİLİNÇLİ
+      OLARAK YAZILMADI:** `Users.LastLoginAt` yalnızca en son girişin üzerine yazıldığı TEK bir alan,
+      bir login-event geçmişi tablosu YOK — "son N günün HER GÜNÜ kaç login oldu" sorusu mevcut
+      şemayla cevaplanamaz; bunun için SecurityLog'a yeni bir `LogEventType` (ör. `LoginSucceeded`)
+      eklenip her başarılı girişte loglanması gerekir — ayrı, kapsamı büyük bir task, burada
+      SPEKÜLATİF olarak açılmadı (YAGNI). `AdminController`'a `GET /admin/statistics` eklendi.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`04_istatistik.html`)
+- [x] Toplu kelime import (`BulkImportWordsCommand`, `Application/Features/Admin/`) — Icerik.md
+      "Eşleştirme" kararına göre HER SATIR bağımsız, TEK dilli bir `WordConcept` açar (A-05'in
+      `translations[]`'ının AKSİNE, 2 dili tek satırda BİRLEŞTİRMEZ — eşleştirme A-05'in
+      `GET /words/unmatched`/`POST /words/pair` akışına SONRADAN bırakılır). Satır bazında A-05
+      `WordGrammarValidator` çağrılır (dil+tür'e göre koşullu kural, `GERMAN_LANGUAGE_FEATURES.md §10`)
+      + A-05'in `WordTranslationInput`/`WordEntityBuilder`'ı YENİDEN KULLANILDI (yeni tip AÇILMADI).
+      **Best-effort:** bir satır (duplikat/gramer hatası/dil-kategori bulunamadı) BAŞARISIZ olursa
+      istek TÜMDEN reddedilmez — `BulkImportResultDto.Results[]` her satırı RowIndex+ErrorCode ile
+      raporlar, admin yalnızca hatalı satırları düzeltir (795+ satırlık gerçek kullanım senaryosu).
+      Import tek bir **`BULK_IMPORT_WORDS`** ActivityLog kaydı alır — satır sayısı `NewValue`'da
+      (795 ayrı `CREATE_WORD` DEĞİL). `AdminController`'a `POST /admin/words/import` eklendi.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`05_toplu-import.html`)
+- [x] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security`
+      (filtre+sayfa) — 3 yeni Query (`GetActivityLogsQuery`/`GetApplicationLogsQuery`/
+      `GetSecurityLogsQuery`, `Application/Features/Admin/`) + yeni sözlük `Common/Localization/
+      LogMessages.cs` (`ErrorMessages`/`SuccessMessages`'ın PAYLAŞTIĞI `LocalizedMessageResolver`'ı
+      yeniden kullanır). **Kapsam netleştirmesi (bu madde yazılırken bulundu):** yalnızca
+      `SecurityLog.Detail` gerçekten sabit bir Code — `Accept-Language`'a göre admin OKURKEN çözülür
+      (A-04'ten beri bekleyen borç kapandı). `ActivityLog.Action`/`OldValue`/`NewValue` BU SÖZLÜĞÜN
+      KAPSAMI DIŞINDA bırakıldı: `Action` CLAUDE.md'nin AÇIKÇA belirttiği gibi zaten sabit/dilden
+      bağımsız kalır (çevrilmez); `OldValue`/`NewValue` ise gerçek kullanımda (A-05/A-06/A-07'nin
+      TÜM `IActivityLogger.LogAsync` çağrıları) sabit bir Code DEĞİL, alan adı+değer çiftlerinden
+      oluşan YAPISAL JSON diff — bir Code sözlüğüne UYMUYOR, ham JSON olarak döner. CLAUDE.md
+      §1'in "İkinci istisna" metni OldValue/NewValue'yü de anıyor ama gerçek kod bu genişlikte
+      hiç uygulanmadı; bu, dokümanın lafzıyla pratik arasındaki bir hassasiyet farkı olarak burada
+      not düşülüyor (CLAUDE.md metnine dokunulmadı, yalnızca gerçek davranış netleştirildi).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`06_log-goruntuleme.html`)
+- [x] `AdminController` (`[Authorize(Roles="Admin")]`) — 9 endpoint TAMAMLANDI: `GET /admin/users`,
+      `GET /admin/users/{id}`, `PUT /admin/users/{id}/role`, `PUT /admin/users/{id}/status`,
+      `GET /admin/statistics`, `POST /admin/words/import`, `GET /admin/logs/activity`,
+      `GET /admin/logs/application`, `GET /admin/logs/security`
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`06_log-goruntuleme.html`, kapanış `07_ozet-sozluk.html`)
+- [x] **Birim testleri:** her Command/Query Handler için ayrı test dosyası (`Tests/Features/Admin/`
+      — rol değiştir, dondur/aktif, istatistik, import satır bazlı doğrulama, log filtreleme)
+      TAMAMLANDI: 9 Handler test dosyası + `UserRepositoryTests`'e 4 yeni test, toplam **244/244
+      yeşil** (219 A-06 sonu + 25 A-07) — 2 test self-lockout korumasını, 4 test
+      `BulkImportWordsCommandHandler`'ın best-effort davranışını, 5 test log Query'lerinin filtre
+      iletimi+Detail çözme davranışını (bilinen kod/bilinmeyen kod/null) doğrular.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`06_log-goruntuleme.html`)
+
+**A-07 TAMAMLANDI (2026-07-24).** Dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import,
+Log Görüntüleme), 9 endpoint, 244/244 birim testi yeşil, `BACKEND_AKADEMI/A-07_admin-api/` (7 bölüm)
+işlendi, kök `BACKEND_AKADEMI/index.html`'e kart eklendi. Kod denetiminde bulunan 2 gerçek düzeltme:
+tüketicisiz yazılan `AdminStatisticsDto`/`GetStatisticsAsync`'in geri alınıp gerçek tüketicisiyle
+yeniden yazılması, ve self-lockout koruması (`SelfAdminActionNotAllowedException`). A-07.1
+(UserCard Moderasyonu) hâlâ ERTELENMİŞ — C-02 bekliyor, Faz A'nın "bitti" sayılmasını ENGELLEMEZ.
+
+### A-07.1 — UserCard Moderasyonu (ertelendi) ⬜
+**Referans:** `TASK/C_kullanici_backend.md` C-02 (`UserCard` entity)
+> **Neden ayrı task:** A-07'nin ilk kapsamındaydı, ama `UserCard` entity'si C-02'de yazılana kadar
+> kodlanamaz (bkz. A-07'nin notu). C-02 tamamlanınca buraya dönülür — A-03.2/A-06'daki "sonradan borç
+> kapatma" desenidir, Faz A'nın "bitti" sayılması bu task'ı beklemez (B/C fazlarına geçiş engellenmez).
+- [ ] `GetUserCardsForModerationQuery` (admin — tüm kullanıcıların kartları, filtre+sayfa)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] Kullanıcı: liste/arama/detay, rol değiştir, hesap dondur/aktif (her işlem **ActivityLog**'a)
+- [ ] `DeleteUserCardAsAdminCommand` (`IActivityLogger` → **`DELETE_USER_CARD`**, `EntityType=UserCard`
+      — `Loglama_Domain.md`'deki `Action` örneğiyle birebir)
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] İçerik moderasyonu (kart liste + silme — silme **`DELETE_USER_CARD`** ile `IActivityLogger`'a,
-      `Loglama_Domain.md`'deki `Action` örneğiyle birebir), genel istatistik, toplu kelime import
-      (satır bazında A-05 `WordGrammarValidator` — dil+tür'e göre koşullu kural, `GERMAN_LANGUAGE_FEATURES.md §10`;
-      import da tek bir **`BULK_IMPORT_WORDS`** ActivityLog kaydı alır — satır sayısı `NewValue`'da)
+- [ ] `AdminController`'a `GET /admin/user-cards`, `DELETE /admin/user-cards/{id}` endpoint'leri
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Log görüntüleme:** `GET /admin/logs/activity`, `/admin/logs/application`, `/admin/logs/security` (filtre+sayfa) —
-      `SecurityLog.Detail`/`ActivityLog.OldValue`/`NewValue` içindeki Code'lar (A-04'te yazıldı, ör.
-      `TOKEN_REPLAY_FAMILY_REVOKED`) `Accept-Language`'a göre yeni bir tr/de sözlükten çözülüp
-      döndürülür — `ErrorMessages`/`SuccessMessages` ile birebir aynı desen, tek fark log satırı
-      yazılırken değil admin OKURKEN çözülmesi (bkz. `CLAUDE.md` "İkinci istisna")
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `AdminController` (`[Authorize(Roles="Admin")]`)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `AdminServiceTests` (rol değiştir, dondur/aktif, import, log filtreleme)
+- [ ] **Birim testleri:** moderasyon liste filtresi, silme + audit log doğrulaması
 - [ ] ➜ **BACKEND_AKADEMI'ye işle**
 
 ### A-08 — Medya / Dosya Yükleme API ⬜

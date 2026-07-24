@@ -315,6 +315,33 @@ public static class ErrorMessages
             ["de"] = "Verben dürfen keine Substantivfelder (Plural, Fälle) enthalten.",
         },
 
+        // NEDEN bu kod (A-07): UpdateUserRoleCommandValidator — Role yalnızca User/Admin olabilir
+        //       (Users.Role CHECK constraint'iyle aynı küme, ama DB hatasına düşmeden önce
+        //       uygulama katmanında yakalanır).
+        ["INVALID_USER_ROLE"] = new()
+        {
+            ["tr"] = "Rol yalnızca User veya Admin olabilir.",
+            ["de"] = "Die Rolle kann nur User oder Admin sein.",
+        },
+
+        // NEDEN bu kod (A-07): UpdateUserRoleCommandHandler/UpdateUserStatusCommandHandler —
+        //       bir admin kendi rolünü/hesap durumunu DEĞİŞTİREMEZ (kaza sonucu kilitlenme riski).
+        ["CANNOT_MODIFY_OWN_ACCOUNT"] = new()
+        {
+            ["tr"] = "Kendi rolünüzü veya hesap durumunuzu değiştiremezsiniz.",
+            ["de"] = "Sie können Ihre eigene Rolle oder Ihren Kontostatus nicht ändern.",
+        },
+
+        // NEDEN bu kod (A-07): BulkImportWordsCommandValidator — Rows boşsa (hiç satır
+        //       gönderilmemişse) TÜM istek bu tek kod ile 400 alır; satır bazlı hatalar
+        //       BURADAN DEĞİL, BulkImportResultDto.Results'taki ErrorCode'lardan okunur
+        //       (200 yanıtın içinde, HTTP hata kanalını KULLANMAZ).
+        ["BULK_IMPORT_ROWS_REQUIRED"] = new()
+        {
+            ["tr"] = "En az bir satır gereklidir.",
+            ["de"] = "Mindestens eine Zeile ist erforderlich.",
+        },
+
         // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
         //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
         //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.

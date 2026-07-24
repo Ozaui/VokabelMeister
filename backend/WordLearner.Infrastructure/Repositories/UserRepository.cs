@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Common.Models;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Infrastructure.Data;
@@ -18,6 +19,52 @@ public class UserRepository : Repository<User>, IUserRepository
 {
     public UserRepository(WordLearnerDbContext db)
         : base(db) { }
+
+    // AMAÇ: Admin panel kullanıcı listesi — arama Email/FirstName/LastName'de,
+    //       `_set` zaten Repository<T>'nin soft-delete global filtresini taşır.
+    public async Task<PagedResult<User>> GetPagedAsync(
+        string? search,
+        string? role,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
+    {
+        var query = _set.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(u =>
+                u.Email.Contains(search) || u.FirstName.Contains(search) || u.LastName.Contains(search)
+            );
+        if (!string.IsNullOrWhiteSpace(role))
+            query = query.Where(u => u.Role == role);
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderBy(u => u.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new PagedResult<User>(items, totalCount, page, pageSize);
+    }
+
+    // AMAÇ: Admin panel istatistik kartları — toplam/aktif/dondurulmuş kullanıcı sayısı.
+    public async Task<(int TotalUsers, int ActiveUsers, int FrozenUsers)> GetStatisticsAsync(
+        CancellationToken ct = default
+    )
+    {
+        var total = await _set.CountAsync(ct);
+        var active = await _set.CountAsync(u => u.IsActive, ct);
+        return (total, active, total - active);
+    }
+
+    // AMAÇ: Admin panel kayıt grafiği — `fromUtc`'den bu yana her kaydın CreatedAt'i,
+    //       ham liste olarak (günlere gruplama Handler'da yapılır).
+    public async Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(
+        DateTime fromUtc,
+        CancellationToken ct = default
+    ) => await _set.Where(u => u.CreatedAt >= fromUtc).Select(u => u.CreatedAt).ToListAsync(ct);
 
     // AMAÇ: E-postaya göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
     // NEDEN: IgnoreQueryFilters() olmadan grace period içindeki (soft-delete'li) bir

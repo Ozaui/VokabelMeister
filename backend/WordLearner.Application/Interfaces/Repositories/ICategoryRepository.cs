@@ -52,4 +52,8 @@ public interface ICategoryRepository : IRepository<Category>
     //       yani newParentId, categoryId'nin KENDİSİ veya alt ağacındaki bir kategori mi?
     //       UpdateCategoryCommandHandler'ın CategoryParentCycleException koruması.
     Task<bool> WouldCreateCycleAsync(int categoryId, int newParentId, CancellationToken ct = default);
+
+    // AMAÇ: `GET /admin/statistics` için toplam (soft-delete edilmemiş) Category sayısı.
+    // NEDEN A-07'de eklendi: GetAdminStatisticsQuery'nin "toplam kategori" sayacı.
+    Task<int> GetTotalCountAsync(CancellationToken ct = default);
 }

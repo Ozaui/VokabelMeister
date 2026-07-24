@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Toplu Kelime Import — BulkImportWordsCommand</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'toplu-import',
+    bolumBaslik: 'A-07 — Admin API (Toplu İçe Aktarma Dilimi)',
+    oncekiBolum: '04_istatistik.html',
+    sonrakiBolum: '06_log-goruntuleme.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'Toplu Kelime Import — BulkImportWordsCommand',
+        altBaslik: 'A-07\'nin üçüncü dilimi: POST /admin/words/import. 795+ satırlık gerçek içerik girişi senaryosu için A-05\'in Icerik.md "Eşleştirme" tasarımını yeniden kullanıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Her Satır TEK Dilli Bir WordConcept Açar',
+        aciklama: 'A-05\'in CreateWordCommand\'ı bir kelimeyi 1 VEYA 2 dilde (translations[]) TEK işlemde oluşturuyordu. BulkImportWordsCommand FARKLI bir varsayımla çalışır: her satır KENDİ BAŞINA bir WordConcept açar, yalnızca TEK dilde. İki dilin (de/tr) birleştirilmesi bu Command\'ın işi DEĞİL — A-05\'te zaten yazılan `GET /words/unmatched` + `POST /words/pair` akışına (Eşleştirme) BIRAKILIR.',
+        neden: 'Icerik.md\'nin "Eşleştirme" bölümündeki mimari karar: "de ve tr içeriği ayrı ayrı, kendi toplu import akışlarıyla girilir" — GERÇEK dünyada 795 Almanca kelime ve N Türkçe kelime genellikle FARKLI kaynaklardan (iki ayrı CSV/sözlük dosyası), FARKLI zamanlarda girilir; admin\'in ikisini elle senkronize ederek TEK bir dosyada birleştirmesini BEKLEMEK gerçekçi değil.',
+        olmasaydi: 'Bu Command her satırda 2 dilin de dolu olmasını ZORUNLU kılsaydı, admin Almanca içeriği İTHAL EDEMEZDİ (Türkçe karşılığı henüz yoksa) — oysa mevcut tasarım (WordConcept "eşleşmemiş" kalabilir) TAM OLARAK bu senaryoyu desteklemek için A-05\'te zaten kurulmuştu; bu Command o altyapıyı YOK SAYIP kendi paralel bir kısıtlama getirmiş OLURDU.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Best-Effort (Bir Satır Hatalıysa Tümü Reddedilmez)',
+        aciklama: '795 satırlık bir importta, TEK bir satırın (ör. eksik PartOfSpeech, yazım hatasıyla yanlış dil kodu) hatalı olması OLAĞAN bir durum. Bu Command bu satırı REDDEDER ama diğer 794 satırı YİNE DE işler — sonunda `BulkImportResultDto.Results[]` her satırın RowIndex\'i + (varsa) ErrorCode\'uyla bir rapor döner.',
+        neden: 'A-05/A-06\'nın TÜM Command\'ları (CreateWordCommand, CreateCategoryCommand) "TÜMÜ-YA-DA-HİÇBİRİ" (all-or-nothing) çalışır — bu DOĞRU davranış çünkü onlar TEK bir kaydı temsil ediyor. Bulk import ise KAVRAMSAL olarak N BAĞIMSIZ işlem — birini reddetmenin diğerlerini ETKİLEMEMESİ gerekir, tıpkı N ayrı `POST /words` isteği atılmış gibi (yalnızca TEK bir HTTP round-trip\'te).',
+        olmasaydi: 'All-or-nothing çalışsaydı (ilk hatada TÜM transaction geri alınsaydı), admin 795 satırlık bir dosyayı yükleyip TEK bir yazım hatası yüzünden "0 kelime eklendi" ile KARŞILAŞIRDI — hatayı bulup dosyayı DÜZELTİP TEKRAR yüklemesi gerekirdi, bu da büyük bir dosyada YAVAŞ bir deneme-yanılma DÖNGÜSÜNE yol açardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'BulkImportWordsCommand.cs — Girdi/Çıktı Tipleri',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/BulkImportWordsCommand.cs',
+        nedenBuKlasor: 'Features/Admin/ — A-07\'nin diğer Command/Query\'leriyle AYNI konum.',
+        kod: `public record BulkImportWordRow(
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    WordTranslationInput Translation,
+    IReadOnlyList<int>? CategoryIds = null
+);
+
+public record BulkImportRowResultDto(int RowIndex, string LanguageCode, string Text, bool Success, string? ErrorCode);
+
+public record BulkImportResultDto(
+    int TotalRows,
+    int ImportedCount,
+    int SkippedCount,
+    IReadOnlyList<BulkImportRowResultDto> Results
+);
+
+public record BulkImportWordsCommand(IReadOnlyList<BulkImportWordRow> Rows) : IRequest<BulkImportResultDto>
+{
+    public int? UserId { get; init; }
+    public string? ActorRole { get; init; }
+}`,
+        satirlar: [
+          {
+            satir: 'WordTranslationInput Translation,',
+            aciklama: 'A-05\'in `CreateWordCommand.cs`\'inde tanımlı `WordTranslationInput` (LanguageCode/Text/Definition/WordDetail/Examples) BURADA TEKRAR TANIMLANMADI — doğrudan İTHAL EDİLİP kullanıldı.',
+            neden: 'Bu tipin alanları (bir dildeki kelime girdisi) CreateWordCommand\'daki ile BİREBİR aynı ihtiyacı karşılıyor — A-06\'nın CategoryTranslationInput\'u paylaşma KARARIYLA AYNI YAGNI gerekçesi: aynı şekli iki kez modellemek, bir gün BİRİNİN güncellenip DİĞERİNİN unutulması riskini doğurur.',
+            olmasaydi: 'Ayrı bir `BulkImportTranslationInput` yazılsaydı, WordEntityBuilder.Build (A-05, tek bir Word ağacı kuran paylaşılan yardımcı) bu YENİ tipi KABUL ETMEZDİ — ya WordEntityBuilder\'ı İKİ tipi de alacak şekilde GENİŞLETMEK ya da bulk import için AYRI bir entity-kurma fonksiyonu YAZMAK gerekirdi, ikisi de gereksiz kod tekrarı.'
+          },
+          {
+            satir: 'public record BulkImportRowResultDto(int RowIndex, string LanguageCode, string Text, bool Success, string? ErrorCode);',
+            aciklama: 'Yalnızca `Success`/`ErrorCode` DEĞİL, `LanguageCode`/`Text` de taşınıyor — admin panelin (B-03) "hangi satır başarısız oldu" sorusuna, satır numarasının YANINDA okunabilir bir İPUCU (hangi kelime) verebilmesi için.',
+            neden: '795 satırlık bir CSV\'de yalnızca `RowIndex: 342` görmek, admin\'in orijinal dosyaya geri dönüp o satırı ARAMASINI gerektirirdi — `LanguageCode`/`Text` ile birlikte "342: de/Schadenfreude → WORD_TEXT_ALREADY_EXISTS" gibi doğrudan OKUNABİLİR bir sonuç satırı oluşur.',
+            olmasaydi: 'Yalnızca RowIndex dönseydi, admin panel hata listesini GÖSTERMEK için orijinal isteğin gövdesini (795 satır) AYRICA saklamak/eşleştirmek ZORUNDA kalırdı — bu bilgi zaten Handler\'ın elindeyken (`row.Translation.Text`), yanıta EKLEMEMEK gereksiz bir round-trip yaratırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'BulkImportWordsCommand.cs — Handle (Döngü + Tek ActivityLog)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/BulkImportWordsCommand.cs',
+        nedenBuKlasor: null,
+        kod: `public async Task<BulkImportResultDto> Handle(BulkImportWordsCommand request, CancellationToken ct)
+{
+    var results = new List<BulkImportRowResultDto>(request.Rows.Count);
+
+    for (var i = 0; i < request.Rows.Count; i++)
+    {
+        var row = request.Rows[i];
+        var errorCode = await TryImportRowAsync(row, request.UserId, ct);
+        results.Add(new BulkImportRowResultDto(i, row.Translation.LanguageCode, row.Translation.Text, errorCode is null, errorCode));
+    }
+
+    var importedCount = results.Count(r => r.Success);
+    var skippedCount = results.Count - importedCount;
+
+    await _activityLogger.LogAsync(
+        request.UserId,
+        request.ActorRole,
+        "BULK_IMPORT_WORDS",
+        entityType: "WordConcept",
+        newValue: new { TotalRows = request.Rows.Count, ImportedCount = importedCount, SkippedCount = skippedCount },
+        ct: ct
+    );
+
+    return new BulkImportResultDto(request.Rows.Count, importedCount, skippedCount, results);
+}`,
+        satirlar: [
+          {
+            satir: 'var errorCode = await TryImportRowAsync(row, request.UserId, ct);',
+            aciklama: '`TryImportRowAsync` (bir sonraki slayt) hiçbir exception FIRLATMAZ — A-05/A-06\'nın Handler\'larının AKSİNE (onlar `EntityNotFoundException`/`DuplicateWordException` FIRLATIR), burada başarısızlık bir DÖNÜŞ DEĞERİ (`string? errorCode`).',
+            neden: 'Bir `try/catch` ile döngü içinde exception yakalamak YERİNE doğrudan bir "sonuç kodu" döndürmek, bu döngünün NEDEN var olduğunu (her satır bağımsız, hata AKIŞ KONTROLÜ için kullanılmıyor) daha AÇIK bir şekilde ifade eder — C#\'ta exception\'lar İSTİSNAİ durumlar için tasarlanmıştır, ama burada "satır hatalı" PEK ÇOK bulk import\'ta OLAĞAN bir durumdur.',
+            olmasaydi: 'TryImportRowAsync\'in İÇİNDEKİ mantık (CreateWordCommandHandler\'daki gibi) exception FIRLATSAYDI, bu döngü HER satır için bir `try { } catch (AppException ex) { errorCode = ex.Code; }` bloğu YAZMAK ZORUNDA kalırdı — işlevsel olarak AYNI sonucu verir ama exception\'ları AKIŞ KONTROLÜ için kullanmak (özellikle 795 kez, sıcak bir döngüde) hem daha YAVAŞ hem daha az OKUNABİLİR olurdu.'
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Döngünün DIŞINDA, TÜM satırlar işlendikten SONRA TEK bir çağrı — `entityId` YOK (tek bir WordConcept\'i değil, TOPLU bir işlemi temsil ediyor), `newValue` yalnızca ÖZET sayaçlar taşıyor (795 satırın HER BİRİNİN detayı DEĞİL).',
+            neden: 'TASK/A_admin_panel_backend.md\'nin AÇIKÇA belirttiği karar: "import tek bir BULK_IMPORT_WORDS ActivityLog kaydı alır — satır sayısı NewValue\'da" — 795 ayrı CREATE_WORD kaydı YAZILSAYDI, admin panelin aktivite akışı (B-08) TEK bir import işlemiyle BOĞULURDU (795 satırlık gerçek bir kayıt, o günün TÜM diğer aktivitesini SAYFALARCA gerisine İTERDİ).',
+            olmasaydi: 'Her satır kendi CREATE_WORD kaydını yazsaydı, ActivityLog tablosu tek bir importla 795 satır BÜYÜRDÜ — bu hem depolama hem de B-08\'in "son N aktivite" görünümünün ANLAMINI (gerçekten SON, ÇEŞİTLİ olayları göstermek) BOZARDI, ekran neredeyse TAMAMEN tek bir import\'un satırlarıyla DOLARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'BulkImportWordsCommand.cs — TryImportRowAsync (Sıralı Kontroller)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/BulkImportWordsCommand.cs',
+        nedenBuKlasor: null,
+        kod: `private async Task<string?> TryImportRowAsync(BulkImportWordRow row, int? userId, CancellationToken ct)
+{
+    if (string.IsNullOrWhiteSpace(row.Translation.LanguageCode))
+        return "LANGUAGE_CODE_REQUIRED";
+    if (string.IsNullOrWhiteSpace(row.Translation.Text))
+        return "WORD_TEXT_REQUIRED";
+    if (string.IsNullOrWhiteSpace(row.PartOfSpeech))
+        return "PART_OF_SPEECH_REQUIRED";
+    if (string.IsNullOrWhiteSpace(row.DifficultyLevel))
+        return "DIFFICULTY_LEVEL_REQUIRED";
+
+    var grammarResult = _grammarValidator.Validate(
+        new WordGrammarInput(row.Translation.LanguageCode, row.PartOfSpeech, row.Translation.WordDetail?.GrammarData?.GetRawText())
+    );
+    if (!grammarResult.IsValid)
+        return grammarResult.Errors[0].ErrorCode;
+
+    var language = await _languageRepository.GetByCodeAsync(row.Translation.LanguageCode, ct);
+    if (language is null)
+        return "LANGUAGE_NOT_FOUND";
+
+    if (await _wordConceptRepository.ExistsWordTextAsync(language.Id, row.Translation.Text, ct))
+        return "WORD_TEXT_ALREADY_EXISTS";
+
+    var concept = new WordConcept { PartOfSpeech = row.PartOfSpeech, DifficultyLevel = row.DifficultyLevel, ImageUrl = row.ImageUrl };
+    concept.Words.Add(WordEntityBuilder.Build(row.Translation, language, userId));
+
+    // ... kategori ekleme (CreateWordCommand'daki .Distinct() deseniyle AYNI) ...
+
+    await _wordConceptRepository.AddAsync(concept, userId, ct);
+    return null;
+}`,
+        satirlar: [
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(row.Translation.LanguageCode))',
+            aciklama: 'Bu 4 temel kontrol, CreateWordCommandValidator\'ın (A-05, FluentValidation) yaptığı AYNI zorunluluk kontrollerinin BİREBİR aynı hata kodlarıyla BURADA, ELLE tekrarı.',
+            neden: 'FluentValidation (ValidationFilter) İSTEĞİN TAMAMINI reddetmek için tasarlanmış — Bölüm 5\'in kavram slaytındaki "best-effort" kararı gereği bu kontroller SATIR SEVİYESİNDE olmalı, TÜM isteği durduran bir Validator\'da DEĞİL. Aynı hata KODLARININ (`WORD_TEXT_REQUIRED` vb.) kullanılması, ErrorMessages.cs\'e YENİ kod EKLEMEYİ gereksiz kılıyor — bu kodlar zaten A-05\'ten beri tr/de çevirili.',
+            olmasaydi: 'Bu kontroller BulkImportWordsCommandValidator\'a (FluentValidation) TAŞINSAYDI, TEK bir satırda eksik bir `PartOfSpeech` TÜM 795 satırlık isteği 400 ile REDDEDERDİ — Bölüm 5\'in TAM ÖNLEMEYE ÇALIŞTIĞI senaryonun KENDİSİ.'
+          },
+          {
+            satir: 'var grammarResult = _grammarValidator.Validate(',
+            aciklama: 'A-05\'in `WordGrammarValidator`\'ı (`IValidator<WordGrammarInput>`, DI\'a kayıtlı) doğrudan Handler\'a ENJEKTE EDİLİP elle çağrılıyor — CreateWordCommandValidator\'ın (FluentValidation pipeline\'ı İÇİNDE) çağırdığı AYNI validator, ama BURADA pipeline DIŞINDA, elle.',
+            neden: 'Dil+tür bazlı gramer kuralı (ör. Almanca isimde cinsiyet zorunlu) HİÇBİR ŞEKİLDE tekrar YAZILMAMALI — WordGrammarValidator zaten TEK doğruluk kaynağı (A-05), bu Command onu ÇAĞIRIR, YENİDEN İMPLEMENTE ETMEZ.',
+            olmasaydi: 'Gramer kuralları burada TEKRAR yazılsaydı (kopyala-yapıştır), bir gün WordGrammarValidator\'da (A-05) düzeltilen bir kural (ör. yeni bir zorunlu alan) BURADA UNUTULURDU — tek satırlık `POST /words` ile bulk import FARKLI doğrulama SONUÇLARI verirdi, aynı veri bir yoldan KABUL EDİLİP diğerinden REDDEDİLEBİLİRDİ.'
+          },
+          {
+            satir: 'if (await _wordConceptRepository.ExistsWordTextAsync(language.Id, row.Translation.Text, ct))\n        return "WORD_TEXT_ALREADY_EXISTS";',
+            aciklama: 'CreateWordCommand\'daki `Force` parametresi BURADA YOK — duplikat bir satır her zaman SESSİZCE atlanır (`ErrorCode: WORD_TEXT_ALREADY_EXISTS`), 409 fırlatılmaz.',
+            neden: '795 satırlık bir dosyada admin\'in HER duplikat satır için tek tek "?force=true mi?" kararı vermesi PRATİK DEĞİL — bulk import\'un doğal kullanım senaryosu zaten "yeni içerik ekle", var olan bir kelimeyi BİLEREK ÜZERİNE YAZMAK değil.',
+            olmasaydi: '`Force` parametresi satır bazlı eklenseydi, `BulkImportWordRow`\'a bir alan daha (`Force`) EKLENİR, admin\'in CSV\'sinde her satır için bu değeri DOLDURMASI gerekirdi — 795 satırın NEREDEYSE TAMAMINDA `false` olacak bir alan için gereksiz bir KARMAŞIKLIK.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminController.cs — POST /admin/words/import',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AdminController.cs',
+        nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — Bölüm 4\'teki 5 endpoint\'in ARDINA, 6\'ıncı olarak eklendi.',
+        kod: `[HttpPost("words/import")]
+[ProducesResponseType(typeof(BulkImportResultDto), StatusCodes.Status200OK)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+public async Task<ActionResult<BulkImportResultDto>> BulkImportWords(BulkImportWordsCommand command, CancellationToken ct) =>
+    Ok(await _mediator.Send(command with { UserId = CurrentUserId, ActorRole = CurrentRole }, ct));`,
+        satirlar: [
+          {
+            satir: '[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]',
+            aciklama: 'Bu 400, SATIR bazlı hatalar İÇİN DEĞİL (onlar HER ZAMAN 200 + `BulkImportResultDto` içinde döner) — yalnızca `Rows` TAMAMEN BOŞSA (`BulkImportWordsCommandValidator`) TÜM istek reddedilir.',
+            neden: 'HTTP durum kodu SEMANTİĞİ: "istek biçimsel olarak GEÇERSİZ" (hiç satır yok) ile "istek geçerli, ama BAZI satırlar iş kuralına göre İŞLENEMEDİ" AYRI kavramlar — ikincisi bir HTTP hatası DEĞİL, işin NORMAL bir sonucu (200 OK, gövdede detay).',
+            olmasaydi: 'Satır bazlı bir hata da 400\'e ÇEVRİLSEYDİ (ör. "1 satır başarısız, TÜM istek 400"), istemci (admin panel) 794 BAŞARILI satırın sonucuna ULAŞAMAZDI — HTTP\'nin "kısmi başarı" durumları için 200 + gövde detayı KULLANMASI (207 Multi-Status gibi özel kodlara GEREK KALMADAN) daha BASİT bir sözleşme.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/admin/words/import',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/admin/words/import',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Gövde `{ rows: [...] }` — API_ENDPOINTS.md §11\'in ilk taslağı "JSON array" diyordu, gerçek kod MediatR Command\'ın ValidationFilter ile doğrulanabilmesi için `rows` alanına SARILMIŞ bir obje bekler (WordsController/CategoriesController\'ın Command-binding deseniyle TUTARLI).',
+        govde: `{
+  "rows": [
+    { "partOfSpeech": "Noun", "difficultyLevel": "A1", "translation": { "languageCode": "de", "text": "Haus", "definition": "ev" } },
+    { "partOfSpeech": "Noun", "difficultyLevel": "A1", "translation": { "languageCode": "xx", "text": "Unbekannt" } }
+  ]
+}`,
+        yanit: {
+          durum: 200,
+          govde: `{
+  "totalRows": 2,
+  "importedCount": 1,
+  "skippedCount": 1,
+  "results": [
+    { "rowIndex": 0, "languageCode": "de", "text": "Haus", "success": true, "errorCode": null },
+    { "rowIndex": 1, "languageCode": "xx", "text": "Unbekannt", "success": false, "errorCode": "LANGUAGE_NOT_FOUND" }
+  ]
+}`
+        },
+        notlar: [
+          '`rows` boş bir dizi ("rows": []) gönderilirse 400 ApiErrorResponse (BULK_IMPORT_ROWS_REQUIRED) — bu TEK istisna, diğer her hata satır bazlı raporlanır.',
+          'Almanca isim/fiil gramer kuralı ihlalleri (ör. Gender eksik) WordGrammarValidator\'ın ürettiği GERÇEK hata koduyla (ör. GRAMMAR_DE_NOUN_GENDER_REQUIRED) döner — A-05 Bölüm 4\'teki AYNI kod kümesi.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Best-effort (satır bazlı en iyi çaba)', tanim: 'Bir toplu işlemde her öğenin BAĞIMSIZ değerlendirildiği, bir öğenin hatasının diğerlerini ETKİLEMEDİĞİ işlem modeli — "tümü ya da hiçbiri" (all-or-nothing) transaction modelinin ZITTI.' },
+          { terim: 'BulkImportRowResultDto', tanim: 'Bir satırın içe aktarma sonucu — RowIndex, LanguageCode, Text, Success, (varsa) ErrorCode. HTTP hata kanalını KULLANMAZ, her zaman 200 yanıtın İÇİNDE döner.' },
+          { terim: 'WordTranslationInput / WordEntityBuilder (A-05\'ten yeniden kullanım)', tanim: 'Bu bölümde YENİDEN TANIMLANMAYIP doğrudan A-05\'ten (CreateWordCommand.cs) İTHAL EDİLEN, bir dildeki kelime girdisini/entity ağacını temsil eden tipler.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-07 (Toplu Import Dilimi) — Ne Yazıldı?',
+        maddeler: [
+          '`BulkImportWordRow`/`BulkImportRowResultDto`/`BulkImportResultDto` — A-05\'in `WordTranslationInput`\'unu YENİDEN KULLANIR, yeni bir tip AÇMAZ.',
+          '`BulkImportWordsCommand`: her satır BAĞIMSIZ tek-dilli bir `WordConcept` açar (Icerik.md "Eşleştirme" tasarımına göre) — 2 dilin BİRLEŞTİRİLMESİ A-05\'in eşleştirme akışına BIRAKILIR.',
+          'Best-effort: bir satırın hatası (duplikat/gramer/dil-kategori bulunamadı) diğer satırların işlenmesini DURDURMAZ — `TryImportRowAsync` exception FIRLATMAZ, bir hata kodu DÖNER.',
+          'A-05\'in `WordGrammarValidator`\'ı elle enjekte edilip ÇAĞRILDI (yeniden implemente EDİLMEDİ) — gramer kuralı TEK doğruluk kaynağında kalır.',
+          'Force YOK — duplikat satırlar SESSİZCE atlanır (`WORD_TEXT_ALREADY_EXISTS`), 409 fırlatılmaz.',
+          'TEK bir `BULK_IMPORT_WORDS` ActivityLog kaydı (795 ayrı `CREATE_WORD` DEĞİL) — satır sayıları `NewValue`\'da.',
+          '`BulkImportWordsCommandValidator`: yalnızca "Rows boş mu" kontrolü — satır bazlı doğrulama Handler\'da, TÜM isteği reddetmeyecek şekilde.',
+          '`AdminController`\'a `POST /admin/words/import` (6\'ıncı endpoint) + Postman örneği.',
+          '4 yeni Handler testi — proje toplamı 239/239 yeşil (235+4).',
+          'A-07\'nin son dilimi (log görüntüleme) HENÜZ yazılmadı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

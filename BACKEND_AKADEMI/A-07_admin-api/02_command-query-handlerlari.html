@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command/Query Handler'ları — Liste + İkili Loglama</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'command-query-handlerlari',
+    bolumBaslik: 'A-07 — Admin API (Kullanıcı Yönetimi)',
+    oncekiBolum: '01_neden-entity-yok-repository.html',
+    sonrakiBolum: '03_controller-validator-testler.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'GetUsersQuery.cs — Command+Handler AYNI Dosyada (Temsili Query)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/GetUsersQuery.cs',
+        nedenBuKlasor: 'Features/Admin/ — Features/Categories/, Features/Words/ ile AYNI seviyede, YENİ bir domain klasörü (CLAUDE.md §5: Command+Handler aynı dosyada, ayrı Commands/Handlers klasörüne bölünmez).',
+        kod: `public record GetUsersQuery(string? Search, string? Role, int Page = 1, int PageSize = 20)
+    : IRequest<PagedResult<AdminUserListItemDto>>;
+
+public class GetUsersQueryHandler : IRequestHandler<GetUsersQuery, PagedResult<AdminUserListItemDto>>
+{
+    private readonly IUserRepository _userRepository;
+
+    public GetUsersQueryHandler(IUserRepository userRepository) => _userRepository = userRepository;
+
+    public async Task<PagedResult<AdminUserListItemDto>> Handle(GetUsersQuery request, CancellationToken ct)
+    {
+        var paged = await _userRepository.GetPagedAsync(request.Search, request.Role, request.Page, request.PageSize, ct);
+
+        return new PagedResult<AdminUserListItemDto>(
+            paged.Items
+                .Select(u => new AdminUserListItemDto(
+                    u.Id,
+                    u.Email,
+                    u.FirstName,
+                    u.LastName,
+                    u.Role,
+                    u.IsActive,
+                    u.IsEmailVerified,
+                    u.CreatedAt,
+                    u.LastLoginAt
+                ))
+                .ToList(),
+            paged.TotalCount,
+            paged.Page,
+            paged.PageSize
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record GetUsersQuery(string? Search, string? Role, int Page = 1, int PageSize = 20)',
+            aciklama: 'GetWordsQuery/GetCategoriesQuery (A-05/A-06) ile BİREBİR aynı ince Query şekli — filtre alanları + sayfalama, `Page`/`PageSize`\'ın varsayılan değerleri (1/20) Command\'ın KENDİSİNDE tanımlı.',
+            neden: 'Varsayılan değerlerin Command\'da (Controller\'da değil) tanımlanması, `GetUsersQuery`\'nin doğrudan (Controller dışında, ör. bir test veya ileride bir başka Handler\'dan) çağrıldığı her yerde AYNI varsayılanı garanti eder — Controller\'ın `[FromQuery] int page = 1` parametresi zaten AYNI değeri taşıyor, bu bir TEKRAR değil, iki farklı katmanın (HTTP sözleşmesi + Command sözleşmesi) kendi varsayılanını KENDİ bildirmesi.',
+            olmasaydi: 'Varsayılan değerler yalnızca Controller\'da olsaydı, `page`/`pageSize` gönderilmeden `new GetUsersQuery(search, role, 0, 0)` gibi bir çağrı (ör. ileride yazılacak bir arka plan job\'ından) YANLIŞLIKLA sıfır sayfa boyutuyla çağrılabilirdi — Command\'ın kendi varsayılanı bu riski KAPATIR.'
+          },
+          {
+            satir: 'public GetUsersQueryHandler(IUserRepository userRepository) => _userRepository = userRepository;',
+            aciklama: 'Tek bağımlılık — `IUserRepository`. `IActivityLogger`/`ISecurityLogger` YOK; bu bir OKUMA işlemi, hiçbir veri değiştirmiyor.',
+            neden: 'CLAUDE.md\'nin "İçerik değiştiren her CRUD... IActivityLogger\'a yazar" kuralı yalnızca YAZMA işlemleri için geçerli — bir listeyi GÖRÜNTÜLEMEK "içerik değiştirmek" DEĞİL, bu yüzden GetUsersQuery/GetUserByIdQuery (bir sonraki bölüm) hiçbir logger enjekte ETMİYOR; bu ayrım UpdateUserRoleCommand/UpdateUserStatusCommand\'ın (bu bölümün asıl konusu) neden İKİ logger\'a ihtiyaç duyduğunu daha NET görünür kılıyor.',
+            olmasaydi: 'Her `GET /admin/users` isteği bir ActivityLog satırı YARATSAYDI, log tablosu (insert-only, CLAUDE.md) admin panelin her sayfa yenilemesinde/filtre değişiminde ŞİŞERDİ — asıl önemli olan "kim ne DEĞİŞTİRDİ" bilgisi, gürültü içinde KAYBOLURDU.'
+          },
+          {
+            satir: '.Select(u => new AdminUserListItemDto(',
+            aciklama: 'Entity→DTO dönüşümü AutoMapper Profile İLE DEĞİL, elle bir `new AdminUserListItemDto(...)` ile yapılıyor.',
+            neden: 'CLAUDE.md §3 "koşullu AutoMapper" kuralı: Profile yalnızca dönüşüm GERÇEK bir Entity→DTO map\'iyse VE bu map\'in kendisi tekrar eden/karmaşık bir mantık taşıyorsa değer katar — burada dokuz alanın DÜZ, hiçbir hesaplama/dallanma İÇERMEYEN bir konumsal kopyası var; `CreateMap<User, AdminUserListItemDto>()` yazmak, XML config yerine C# kullanmanın GETİRDİĞİ bir fayda olmadan, yalnızca bir dolaylılık KATMANI eklerdi.',
+            olmasaydi: 'Bir AutoMapper Profile açılsaydı, bu basit projeksiyon için `IMapper`\'ı Handler\'a enjekte etmek, test kurulumunda gerçek bir `MapperConfiguration` inşa etmek (CLAUDE.md\'nin belirttiği "gerçek Profile\'dan kurulur" kuralı) gerekirdi — GetUsersQueryHandlerTests bu yükü TAŞIMADAN, doğrudan `new GetUsersQueryHandler(_userRepo.Object)` ile test EDİLEBİLİYOR.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateUserRoleCommand.cs — Command+Handler (Temsili, İkili Loglamanın Tanıtıldığı Yer)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/UpdateUserRoleCommand.cs',
+        nedenBuKlasor: 'Features/Admin/ — GetUsersQuery ile AYNI dosya yapısı deseni (Command+Handler birlikte).',
+        kod: `public record UpdateUserRoleCommand(int Id, string Role) : IRequest<Unit>
+{
+    public int? UserId { get; init; }
+    public string? ActorRole { get; init; }
+    public string? IpAddress { get; init; }
+}
+
+public class UpdateUserRoleCommandHandler : IRequestHandler<UpdateUserRoleCommand, Unit>
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IActivityLogger _activityLogger;
+    private readonly ISecurityLogger _securityLogger;
+
+    public UpdateUserRoleCommandHandler(
+        IUserRepository userRepository,
+        IActivityLogger activityLogger,
+        ISecurityLogger securityLogger
+    )
+    {
+        _userRepository = userRepository;
+        _activityLogger = activityLogger;
+        _securityLogger = securityLogger;
+    }
+
+    public async Task<Unit> Handle(UpdateUserRoleCommand request, CancellationToken ct)
+    {
+        if (request.Id == request.UserId)
+            throw new SelfAdminActionNotAllowedException();
+
+        var user =
+            await _userRepository.GetByIdAsync(request.Id, ct)
+            ?? throw new EntityNotFoundException(typeof(User), request.Id);
+
+        var oldRole = user.Role;
+        user.Role = request.Role;
+        await _userRepository.UpdateAsync(user, request.UserId, ct);
+
+        await _activityLogger.LogAsync(
+            request.UserId,
+            request.ActorRole,
+            "UPDATE_USER_ROLE",
+            entityType: "User",
+            entityId: user.Id,
+            oldValue: new { Role = oldRole },
+            newValue: new { user.Role },
+            ipAddress: request.IpAddress,
+            ct: ct
+        );
+
+        await _securityLogger.LogAsync(
+            LogEventType.AdminAction,
+            userId: user.Id,
+            ipAddress: request.IpAddress,
+            detail: "USER_ROLE_CHANGED",
+            ct: ct
+        );
+
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'if (request.Id == request.UserId)',
+            aciklama: 'Kod denetiminde bulunan bir açık tasarım sorusuna (bu bölüm ilk yazıldığında YOKTU) kullanıcı onayıyla eklenen bir koruma — hedef Id, isteği yapan adminin KENDİ Id\'siyle (`request.UserId`, controller\'da JWT\'den okunur) AYNIYSA reddedilir.',
+            neden: 'Bir admin kendi rolünü kazayla `User`\'a düşürürse (ör. formda yanlış satır seçimi), ve sistemde BAŞKA bir admin yoksa, hiçbir hesap artık admin işlemi YAPAMAZ — DB\'ye elle müdahale dışında geri dönüşü olmayan bir kilitlenme. Bu kontrol `GetByIdAsync`\'TEN ÖNCE çalışır, gereksiz bir DB sorgusu bile atılmaz.',
+            olmasaydi: 'Bu kontrol olmasaydı, TEK admin\'li bir sistemde (küçük bir dağıtımda gerçekçi bir senaryo) bir form hatası tüm admin paneli KİLİTLERDİ — kimse artık `[Authorize(Roles="Admin")]` endpoint\'lerine erişemez, DB\'de elle `UPDATE Users SET Role=\'Admin\'` çalıştırmak GEREKİRDİ.'
+          },
+          {
+            satir: 'public string? IpAddress { get; init; }',
+            aciklama: 'CreateCategoryCommand/UpdateCategoryCommand\'ın (A-06) `UserId`/`ActorRole` çiftine EK olarak YENİ bir alan: `IpAddress`. A-05/A-06\'nın hiçbir Command\'ında bu alan YOKTU.',
+            neden: '`ISecurityLogger.LogAsync` (A-04\'te yazıldı) imzası `ipAddress` parametresi BEKLİYOR — güvenlik logları (SecurityLog) "hangi IP\'den yapıldı" bilgisini İÇERİK loglarından (ActivityLog) FARKLI olarak ZORUNLU tutuyor (REFERENCE/SECURITY.md); bu bilgi Controller\'da `HttpContext.Connection.RemoteIpAddress`\'ten okunup Command\'a taşınması GEREKİYOR çünkü Handler\'ın `HttpContext`\'e doğrudan erişimi YOK (Application katmanı, HTTP\'den bağımsız).',
+            olmasaydi: '`IpAddress` Command\'a taşınmasaydı, `_securityLogger.LogAsync` çağrısı bu alanı `null` göndermek ZORUNDA kalırdı — REFERENCE/SECURITY.md\'nin "hassas admin işlemleri IP\'siyle İZLENİR" beklentisi A-07\'de KARŞILANMAZDI, bir güvenlik olayı incelemesinde "bu rol değişikliği HANGİ IP\'den yapıldı" sorusu CEVAPSIZ kalırdı.'
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'BİRİNCİ log çağrısı — genel "kim ne yaptı" izi. `Action="UPDATE_USER_ROLE"`, `oldValue`/`newValue` yalnızca `Role` alanını taşıyan KÜÇÜK, ODAKLI bir diff.',
+            neden: 'CLAUDE.md: "İçerik değiştiren her CRUD... A-04\'te yazılan IActivityLogger\'a yazar." Rol değişimi `User` entity\'sinde bir alanı GÜNCELLEYEN bir işlem — CreateCategoryCommand/UpdateCategoryCommand (A-06) ile AYNI, ZORUNLU birinci adım.',
+            olmasaydi: 'Yalnızca ISecurityLogger çağrılsaydı (ActivityLogger ATLANSAYDI), admin panelin GENEL aktivite akışı (B-08, hangi admin hangi kaydı ne zaman değiştirdi) bu değişikliği hiç GÖSTERMEZDİ — ActivityLog ve SecurityLog FARKLI sorulara cevap veriyor (biri "ne değişti", diğeri "güvenlik açısından önemli bir olay oldu mu"), biri diğerinin YERİNE geçemez.'
+          },
+          {
+            satir: 'await _securityLogger.LogAsync(',
+            aciklama: 'İKİNCİ log çağrısı — A-04/A-06\'nın HİÇBİR Handler\'ında görülmeyen YENİ bir desen: aynı işlem HEM ActivityLogger HEM SecurityLogger\'a yazıyor. `LogEventType.AdminAction`, `detail: "USER_ROLE_CHANGED"`.',
+            neden: 'CLAUDE.md: "Admin\'e özel hassas işlemler (rol/hesap durumu değişimi, SMTP ayarları) AYRICA ISecurityLogger\'a (LogEventType.AdminAction) da yazar." Bir kullanıcının rolünü User↔Admin değiştirmek, WordsController\'ın CREATE_WORD\'ünden (yalnızca içerik) KATEGORİK olarak daha hassas — biri kelime kartı ekliyor, diğeri bir hesaba SİSTEM YÖNETİMİ yetkisi veriyor/alıyor; CLAUDE.md bu ikisini AYNI önemde görmüyor, ikincisi için EK bir güvenlik izi istiyor.',
+            olmasaydi: 'Yalnızca ActivityLogger çağrılsaydı, bir rol yükseltmesi (User→Admin) yalnızca genel aktivite akışında (potansiyel olarak binlerce CREATE_WORD/UPDATE_CATEGORY kaydının ARASINDA) GÖRÜNÜRDÜ — bir güvenlik denetiminde "son 30 günde kaç kez rol değiştirildi" gibi bir soruyu cevaplamak için TÜM ActivityLog tablosunu Action="UPDATE_USER_ROLE" ile FİLTRELEMEK gerekirdi; SecurityLog.LogEventType.AdminAction bu sorguyu doğrudan, kendi amacına özel bir tablo/filtre ile YANITLAR.'
+          },
+          {
+            satir: 'detail: "USER_ROLE_CHANGED",',
+            aciklama: '`Detail` alanı sabit bir metin DEĞİL, bir CODE (`USER_ROLE_CHANGED`) — CLAUDE.md\'nin "ikinci istisna" kuralına göre bu kod, admin panel `GET /admin/logs/security` (A-07\'nin sonraki bir dilimi) ile OKUNURKEN, okuyan admin\'in KENDİ `Accept-Language`\'ıyla çözülecek.',
+            neden: 'CLAUDE.md: "SecurityLog\'un ... Detail ... admin panelin kendisi bir istemci olduğu için ... bir Code olarak yazılır ... tr/de çözümü ancak admin GET /admin/logs/* ile OKURKEN KENDİ Accept-Language\'ıyla yapılabilir." Log satırı YAZILIRKEN (bu Handler çalışırken) hangi admin\'in bunu HANGİ dilde okuyacağı BİLİNMEZ — bu yüzden burada sabit, dilden bağımsız bir Code yazılır, çeviri OKUMA anına ERTELENİR.',
+            olmasaydi: '`detail` alanına doğrudan Türkçe bir cümle ("Kullanıcının rolü değiştirildi") yazılsaydı, ileride bir Almanca arayüzle admin panele giren bir admin bu logu OKUDUĞUNDA Türkçe bir metinle KARŞILAŞIRDI — CLAUDE.md\'nin tr/de simetrisini bu tek log satırı için BOZARDI; ayrıca "aynı olayı filtrele" (ör. tüm USER_ROLE_CHANGED kayıtlarını bul) sorgusu, serbest metin ARAMASINA muhtaç kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'İkili Loglama — Neden A-04/A-06\'da Hiç Görülmedi',
+        aciklama: 'A-04 (Loglama Sistemi) hem `IActivityLogger` hem `ISecurityLogger`\'ı YAZDI, ama o görevde onları TÜKETEN bir Handler yoktu (A-04, altyapıyı kurdu). A-06\'nın CreateCategoryCommand/UpdateCategoryCommand/DeleteCategoryCommand\'ı yalnızca `IActivityLogger` çağırıyor — Category bir "içerik" (system content), rol/hesap durumu gibi bir "yetki" konusu DEĞİL. A-07\'nin UpdateUserRoleCommand/UpdateUserStatusCommand, projede İLK KEZ İKİ logger\'ı AYNI Handler\'da, AYNI işlem için ÇAĞIRAN kod.',
+        neden: 'CLAUDE.md\'nin "İçerik değiştiren her CRUD" ve "Admin\'e özel hassas işlemler ... AYRICA ISecurityLogger\'a" kuralları AYRI cümleler — bu, ikisinin BİRBİRİNİ dışlamadığını, bazı işlemlerin (rol/durum değişimi gibi) HER İKİ kategoriye de GİRDİĞİNİ gösteriyor: hem "içerik değişti" (User.Role/User.IsActive alanı) hem "hassas bir admin işlemi oldu" (yetki/erişim etkisi).',
+        olmasaydi: 'Bu ayrım fark edilmeseydi, bir junior geliştirici "zaten ActivityLogger çağırdım, SecurityLogger\'a gerek yok" diye DÜŞÜNEBİLİRDİ — bu durumda B-08\'in güvenlik log ekranı (yalnızca SecurityLog\'u okuyan) rol/hesap durumu değişikliklerini HİÇ GÖSTERMEZDİ, bir güvenlik olayı incelemesinde "bu hesabın rolü ne zaman/kim tarafından değiştirildi" sorusu SecurityLog tarafında CEVAPSIZ kalırdı.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'GetUserByIdQuery ve UpdateUserStatusCommand — Aynı Pattern İzler',
+        terimler: [
+          { terim: 'GetUserByIdQuery (`Application/Features/Admin/GetUserByIdQuery.cs`)', tanim: 'GetUsersQuery\'nin TEKİL karşılığı — `IUserRepository.GetByIdAsync` (soft-delete filtresi NORMAL uygulanır, `GetByIdIncludingDeletedAsync` BİLEREK kullanılmaz: admin bu ekrandan silinmiş bir hesabı yönetemez) çağırır, bulamazsa `EntityNotFoundException` (404), bulursa `AdminUserDetailDto`\'ya (13 alan — TotalXP/LifetimeXP/StreakDays/LoginCount/LastLoginIP gibi liste DTO\'sunda OLMAYAN istatistik alanları dahil) elle map eder. AutoMapper Profile YOK — GetUsersQuery ile AYNI gerekçe (düz, hesaplamasız projeksiyon).' },
+          { terim: 'UpdateUserStatusCommand (`Application/Features/Admin/UpdateUserStatusCommand.cs`)', tanim: 'UpdateUserRoleCommand ile YAPISAL olarak BİREBİR aynı: `Id==UserId` self-koruması → `GetByIdAsync` → 404 → alanı değiştir (`Role` yerine `IsActive`) → `UpdateAsync` → İKİ logger. TEK gerçek fark: `ISecurityLogger.detail` sabit bir string DEĞİL, `request.IsActive` durumuna göre DALLANIYOR — `USER_ACCOUNT_FROZEN` (dondurulduğunda) / `USER_ACCOUNT_REACTIVATED` (aktifleştirildiğinde). Ayrıca `Reason` (admin\'in serbest metin notu, ör. "Abuse report") YALNIZCA `ActivityLog.NewValue`\'a yazılır — API_ENDPOINTS.md §11\'in `{ isActive, reason }` gövdesi, kullanıcıya HİÇBİR yanıtta gösterilmez, yalnızca admin denetim izinde kalır.' },
+          { terim: 'SelfAdminActionNotAllowedException (`Common/Exceptions/SelfAdminActionNotAllowedException.cs`)', tanim: '`CANNOT_MODIFY_OWN_ACCOUNT`, 400 Bad Request (varsayılan `AppException` statüsü, `CategoryParentCycleException`\'daki gibi özel bir switch case GEREKMEZ) — UpdateUserRoleCommand VE UpdateUserStatusCommand\'ın PAYLAŞTIĞI tek istisna, iki ayrı exception sınıfı AÇILMADI (aynı kural, aynı sonuç).' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '`GetUsersQuery`/`GetUserByIdQuery`: salt-okunur, hiçbir logger enjekte etmez — CLAUDE.md\'nin log kuralı yalnızca YAZMA işlemlerini kapsar.',
+          '`UpdateUserRoleCommand`: `Role` günceller, `IActivityLogger` (UPDATE_USER_ROLE) + `ISecurityLogger` (LogEventType.AdminAction, detail=USER_ROLE_CHANGED) — projede İLK ikili loglama örneği.',
+          '`UpdateUserStatusCommand`: AYNI ikili loglama deseni, `IsActive` günceller, SecurityLog.detail dondurma/aktifleştirmeye göre USER_ACCOUNT_FROZEN/USER_ACCOUNT_REACTIVATED olarak dallanır; `Reason` yalnızca ActivityLog.NewValue\'da (kullanıcıya sızdırılmaz).',
+          'Kod denetimi eklemesi: her iki Command da `Id==UserId` ise `SelfAdminActionNotAllowedException` (400) fırlatır — bir admin kendi rolünü/durumunu DEĞİŞTİREMEZ, kaza sonucu kilitlenme riskine karşı.',
+          'Her iki Command da yeni bir `IpAddress` alanı taşır — SecurityLog\'un IP izleme zorunluluğu, Command\'ın kendisine bir alan olarak eklenmesini gerektirdi (A-05/A-06\'nın Command\'larında hiç yoktu).',
+          'Sıradaki bölüm: Controller + 4 Postman örneği + Validator + Testler'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

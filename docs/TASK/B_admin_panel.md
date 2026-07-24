@@ -1,3 +1,4 @@
+
 # FAZ B — Admin Panel (`/admin`)
 
 > **Yöntem/standart:** Bu dosyadaki her feature, `../TASK.md`'deki **⭐ Frontend Çalışma Yöntemi** ve

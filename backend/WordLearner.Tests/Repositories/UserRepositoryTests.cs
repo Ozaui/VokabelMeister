@@ -260,4 +260,98 @@ public class UserRepositoryTests
         // ASSERT
         sonuc.Should().BeNull();
     }
+
+    /// <summary>
+    /// GetPagedAsync_SearchAndRoleFilter_ReturnsMatchingUsersOnly
+    ///
+    /// AMAÇ: A-07 admin liste ekranı — search (Email/FirstName/LastName) VE role
+    ///       filtresinin BİRLİKTE uygulandığını, eşleşmeyen kayıtların dönmediğini doğrulamak.
+    /// </summary>
+    [Fact]
+    public async Task GetPagedAsync_SearchAndRoleFilter_ReturnsMatchingUsersOnly()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        await repo.AddAsync(new User { Email = "ada@example.com", FirstName = "Ada", LastName = "Lovelace", Role = "Admin" });
+        await repo.AddAsync(new User { Email = "grace@example.com", FirstName = "Grace", LastName = "Hopper", Role = "User" });
+        await repo.AddAsync(new User { Email = "ada2@example.com", FirstName = "Ada", LastName = "Byron", Role = "User" });
+
+        // ACT
+        var sonuc = await repo.GetPagedAsync("ada", "User", 1, 20);
+
+        // ASSERT
+        sonuc.TotalCount.Should().Be(1);
+        sonuc.Items.Should().ContainSingle(u => u.Email == "ada2@example.com");
+    }
+
+    /// <summary>
+    /// GetPagedAsync_SoftDeletedUser_ExcludedFromList
+    ///
+    /// AMAÇ: Admin genel listenin soft-delete'li/anonimleştirilmiş hesapları GÖRMEDİĞİNİ
+    ///       doğrulamak — GetByEmailAsync'in aksine burada IgnoreQueryFilters YOK (bilinçli
+    ///       tercih, bkz. IUserRepository.GetPagedAsync "NEDEN").
+    /// </summary>
+    [Fact]
+    public async Task GetPagedAsync_SoftDeletedUser_ExcludedFromList()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eklenen = await repo.AddAsync(new User { Email = "silinen@example.com", FirstName = "A", LastName = "B" });
+        await repo.SoftDeleteAsync(eklenen.Id);
+
+        // ACT
+        var sonuc = await repo.GetPagedAsync(null, null, 1, 20);
+
+        // ASSERT
+        sonuc.TotalCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// GetStatisticsAsync_MixOfActiveAndFrozen_ReturnsCorrectCounts
+    /// </summary>
+    [Fact]
+    public async Task GetStatisticsAsync_MixOfActiveAndFrozen_ReturnsCorrectCounts()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        await repo.AddAsync(new User { Email = "aktif1@example.com", FirstName = "A", LastName = "B", IsActive = true });
+        await repo.AddAsync(new User { Email = "aktif2@example.com", FirstName = "A", LastName = "B", IsActive = true });
+        await repo.AddAsync(new User { Email = "donuk@example.com", FirstName = "A", LastName = "B", IsActive = false });
+
+        // ACT
+        var (total, active, frozen) = await repo.GetStatisticsAsync();
+
+        // ASSERT
+        total.Should().Be(3);
+        active.Should().Be(2);
+        frozen.Should().Be(1);
+    }
+
+    /// <summary>
+    /// GetRegistrationDatesAsync_OnlyReturnsDatesWithinWindow
+    ///
+    /// AMAÇ: `fromUtc`'den ÖNCEKİ bir kaydın (dışarıda kalması gereken) listeye
+    ///       SIZMADIĞINI, penceredeki kayıtların HAM (gruplanmamış) döndüğünü doğrulamak
+    ///       — gruplama Handler'ın sorumluluğu (bkz. IUserRepository "NEDEN" notu).
+    /// </summary>
+    [Fact]
+    public async Task GetRegistrationDatesAsync_OnlyReturnsDatesWithinWindow()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var eskiKullanici = await repo.AddAsync(new User { Email = "eski@example.com", FirstName = "A", LastName = "B" });
+        eskiKullanici.CreatedAt = DateTime.UtcNow.AddDays(-100);
+        await repo.UpdateAsync(eskiKullanici);
+        await repo.AddAsync(new User { Email = "yeni@example.com", FirstName = "A", LastName = "B" });
+
+        // ACT
+        var sonuc = await repo.GetRegistrationDatesAsync(DateTime.UtcNow.Date.AddDays(-30));
+
+        // ASSERT
+        sonuc.Should().HaveCount(1);
+    }
 }

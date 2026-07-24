@@ -33,7 +33,17 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-07 — Admin API (Kullanıcı Yönetimi + İstatistik + Log Görüntüleme)` ⬜
+**Sıradaki task:** `A-08 — Medya / Dosya Yükleme API` ⬜ → `TASK/A_admin_panel_backend.md`
+(`A-07 — Admin API` ✅ tamamlandı 2026-07-24: dört dilim — Kullanıcı Yönetimi (`IUserRepository`
+genişletmesi + 4 Command/Query + projedeki ilk çift-loglama [`IActivityLogger`+`ISecurityLogger`] +
+self-lockout koruması), İstatistik (`GetAdminStatisticsQuery` — toplam/aktif/dondurulmuş kullanıcı,
+toplam kelime/kategori, kayıt grafiği; `LoginsByDay` bilinçli olarak yazılmadı), Toplu Kelime Import
+(`BulkImportWordsCommand` — her satır bağımsız tek dilli `WordConcept`, best-effort, TEK
+`BULK_IMPORT_WORDS` ActivityLog kaydı), Log Görüntüleme (`LogMessages.cs` ile A-04'ten beri bekleyen
+`SecurityLog.Detail` çözme borcu kapandı) — `AdminController`'ın 9 endpoint'i, **244/244 yeşil**,
+kod denetiminde 2 gerçek düzeltme (tüketicisiz DTO geri alındı, self-lockout koruması eklendi),
+Backend Akademi'ye işlendi (7 bölüm), kök karta eklendi. `UserCard` moderasyonu **A-07.1**'e
+ertelendi (C-02 bekliyor, bkz. `TASK/A_admin_panel_backend.md` A-07.1))
 (`A-06 — Kategori API (Categories)` ✅ tamamlandı: 3 entity+EF config+migration+seed+
 ICategoryRepository+5 Command/Query+CategoriesController+21 birim testi + A-05'in `GET /words`
 retrofit'i (`categoryId`/`categories[]`, 5 yeni test) + kod denetiminde bulunan 2 hatanın

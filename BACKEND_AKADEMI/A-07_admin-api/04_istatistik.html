@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>İstatistik Dilimi — GetAdminStatisticsQuery</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'istatistik',
+    bolumBaslik: 'A-07 — Admin API (İstatistik Dilimi)',
+    oncekiBolum: '03_controller-validator-testler.html',
+    sonrakiBolum: '05_toplu-import.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'İstatistik Dilimi — GetAdminStatisticsQuery',
+        altBaslik: 'A-07\'nin ikinci dilimi: GET /admin/statistics. Bu bölüm aynı zamanda bir önceki bölümde kod denetiminde geri alınan AdminStatisticsDto/GetStatisticsAsync\'in GERÇEK, ilk tüketicisi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Şimdi "Gerçek Tüketici" Doğru — Bölüm 1\'deki Hatadan Fark',
+        aciklama: 'Bölüm 1\'de `AdminStatisticsDto`/`GetStatisticsAsync` yazılıp SONRA geri alınmıştı çünkü hiçbir Handler onları ÜRETMİYORDU. Bu bölümde AYNI ikisi GERİ GELİYOR — ama bu sefer aynı COMMIT\'te, aynı Handler\'ın (`GetAdminStatisticsQueryHandler`) doğrudan çağırdığı, gerçek bir tüketicisiyle BİRLİKTE. CLAUDE.md §3\'ün kuralı "önce yaz, sonra bir gün kullanılır" DEĞİL, "kullanan kodla AYNI ANDA yaz" — fark tam olarak burada.',
+        neden: 'Bu iki yazımın (Bölüm 1 ve Bölüm 4) yan yana durması, junior bir geliştiriciye YAGNI kuralının SOYUT bir ilke değil, SOMUT bir zamanlama kararı olduğunu gösteriyor: "bu DTO/metot ne zaman yazılır" sorusunun cevabı her zaman "onu ÇAĞIRAN kodla aynı Pull Request\'te/commit\'te".',
+        olmasaydi: 'Bu ayrım vurgulanmasaydı, bir sonraki geliştirici "A-06\'daki WordCategorySummaryDto da böyle önceden yazılmıştı, sorun değil" diye YANLIŞ bir emsal çıkarabilirdi — oysa WordCategorySummaryDto\'nun A-06\'da GERÇEK bir tüketicisi (WordConceptDtoBuilder.BuildCategories) vardı, "önceden yazma" YAGNI\'yi İHLAL ETMEMİŞTİ; AdminStatisticsDto\'nun İLK yazımında bu yoktu.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden LoginsByDay YAZILMADI',
+        aciklama: 'TASK dosyasının ilk planı "kayıt/login grafiği" diyordu — iki grafik. Bu bölümde yalnızca `RegistrationsByDay` (kayıt grafiği) yazıldı, `LoginsByDay` (login grafiği) BİLİNÇLİ olarak YAZILMADI. Sebep veri modelinde: `Users.LastLoginAt` tek bir DateTime alanı — her yeni girişte ÜZERİNE YAZILIYOR, önceki girişin izi KAYBOLUYOR. "Son 30 günün HER GÜNÜ kaç login oldu" sorusu, bir login-event GEÇMİŞİ (her girişin AYRI bir satır olduğu bir tablo) olmadan cevaplanamaz.',
+        neden: 'A-04\'te yazılan `SecurityLog` bir aday gibi görünebilir (zaten her önemli olayı LogEventType ile kaydediyor) ama şu an `LoginFailed`/`OtpFailed`/`TokenReplay`/... var, BAŞARILI bir login için bir `LogEventType` YOK — SecurityLog şu an yalnızca "ANORMAL" olayları (başarısızlıklar, admin işlemleri) tutuyor, "her başarılı login" gibi YÜKSEK HACİMLİ, rutin bir olayı buraya eklemek SecurityLog\'un "güvenlik olayı" tanımını GENİŞLETMEK anlamına gelir — bu, A-07\'nin kapsamını aşan, AYRI bir mimari karar.',
+        olmasaydi: 'Var olmayan bir veriden `LoginsByDay` "üretilmeye" çalışılsaydı (ör. `LastLoginAt`\'i yanlış yorumlayıp "bugün giriş yapanlar" gibi YANLIŞ bir yaklaşıma), admin panel B-07\'nin istatistik grafiği YANLIŞ/EKSİK veri gösterirdi — ör. bir kullanıcı bugün 5 kez giriş yapsa bile `LastLoginAt` yalnızca SON girişi tutar, "bugün kaç login oldu" sorusuna asla doğru cevap VEREMEZ; sessizce yanlış bir grafik göstermek, hiç göstermemekten DAHA KÖTÜ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminUserDtos.cs — AdminStatisticsDto (Yeniden)',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Admin/AdminUserDtos.cs',
+        nedenBuKlasor: 'Bölüm 1\'deki AYNI dosya, AYNI konum — yalnızca bu sefer gerçek bir Handler\'la BİRLİKTE ekleniyor.',
+        kod: `// AMAÇ: \`GET /admin/statistics\` yanıtındaki tek bir günün kaydı sayısı — yalnızca
+//       kayıt (registration) grafiği için, bkz. AdminStatisticsDto NEDEN notu.
+public record AdminDailyCountDto(DateOnly Date, int Count);
+
+// AMAÇ: \`GET /admin/statistics\` yanıtı (GetAdminStatisticsQuery'nin gerçek tüketicisi).
+// NEDEN LoginsByDay YOK: ... (bkz. Bölüm 4 kavram slaytı)
+public record AdminStatisticsDto(
+    int TotalUsers,
+    int ActiveUsers,
+    int FrozenUsers,
+    int TotalWordConcepts,
+    int TotalCategories,
+    IReadOnlyList<AdminDailyCountDto> RegistrationsByDay
+);`,
+        satirlar: [
+          {
+            satir: 'public record AdminDailyCountDto(DateOnly Date, int Count);',
+            aciklama: '`DateTime` DEĞİL `DateOnly` — bu alan yalnızca bir GÜNÜ temsil ediyor, saat/dakika/saniye/UTC-offset gibi bir anlamı YOK.',
+            neden: '.NET 6+\'da eklenen `DateOnly`, tam olarak bu senaryo İÇİN var — "bugün kaç kayıt oldu" sorusunun cevabı bir SAATİ değil bir GÜNÜ ifade eder; `DateTime` kullanılsaydı saat kısmı hep `00:00:00` gibi ANLAMSIZ bir sabit taşırdı, JSON\'a serileştirilirken de gereksiz bir zaman dilimi belirsizliği (`Z` son eki var mı yok mu) doğardı.',
+            olmasaydi: '`DateTime` kullanılsaydı, admin panelin grafik kütüphanesi (Chart.js vb.) her tarihi ÖNCE bir "gün"e normalize etmek ZORUNDA kalırdı (saat kısmını görmezden gelerek) — API sözleşmesi yanlışlıkla "bu bir zaman damgası" izlenimi VERİRDİ, oysa gerçekte bir gün kimliğidir.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserRepository.cs — GetStatisticsAsync + GetRegistrationDatesAsync (Yeniden)',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IUserRepository.cs',
+        nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — `GetStatisticsAsync` Bölüm 1\'de YAZILIP GERİ ALINMIŞTI, burada AYNI imzayla, ama bu sefer GetAdminStatisticsQueryHandler\'ın gerçek çağrısıyla birlikte geri geliyor. `GetRegistrationDatesAsync` TAMAMEN yeni.',
+        kod: `Task<(int TotalUsers, int ActiveUsers, int FrozenUsers)> GetStatisticsAsync(CancellationToken ct = default);
+
+// AMAÇ: \`GET /admin/statistics\`'in kayıt grafiği — \`fromUtc\` (dahil) ve sonrasındaki
+//       her User.CreatedAt değerini HAM olarak döner; günlere GRUPLAMA Handler'da
+//       (bellekte) yapılır.
+Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, CancellationToken ct = default);`,
+        satirlar: [
+          {
+            satir: 'Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, CancellationToken ct = default);',
+            aciklama: 'Repository GÜNLERE GÖRE GRUPLANMIŞ bir sonuç DEĞİL, HAM bir `DateTime` listesi döner — gruplama Handler\'ın işi.',
+            neden: 'CategoryRepository\'nin (A-06) "bellekte filtre" kararıyla AYNI gerekçe: EF Core\'un SQL Server sağlayıcısı `DateTime.Date`/`EF.Functions.DateDiffDay` gibi bir gruplama ifadesini HER DURUMDA güvenilir şekilde SQL\'e çeviremiyor; bu sorgunun döndürdüğü satır sayısı (son 30 günün kayıtları, admin panel için) KÜÇÜK bir veri olduğundan bellekte gruplamak hem GÜVENLİ hem BASİT.',
+            olmasaydi: 'Repository katmanında `GROUP BY` denenip SQL Server sağlayıcısı bunu çeviremediğinde, EF Core ya bir ÇALIŞMA ZAMANI hatası fırlatır ya da (daha KÖTÜsü) sessizce İSTEMCİ tarafında (client evaluation) çalıştırıp performans UYARISI verir — hangisi olursa olsun, bu sorunu Handler\'a bellekte gruplama YAPARAK baştan ÖNLEMEK daha ÖNGÖRÜLEBİLİR.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetAdminStatisticsQuery.cs — Handler (Üç Repository + Bellekte Gruplama)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/GetAdminStatisticsQuery.cs',
+        nedenBuKlasor: 'Features/Admin/ — GetUsersQuery ile AYNI konum. NOT: Bu Handler, A-07\'nin İLK Handler\'ı olarak ÜÇ FARKLI repository\'yi (IUserRepository, IWordConceptRepository, ICategoryRepository) AYNI ANDA enjekte ediyor — GetUsersQuery/UpdateUserRoleCommand gibi öncekiler yalnızca IUserRepository kullanıyordu.',
+        kod: `public async Task<AdminStatisticsDto> Handle(GetAdminStatisticsQuery request, CancellationToken ct)
+{
+    var (totalUsers, activeUsers, frozenUsers) = await _userRepository.GetStatisticsAsync(ct);
+    var totalWordConcepts = await _wordConceptRepository.GetTotalCountAsync(ct);
+    var totalCategories = await _categoryRepository.GetTotalCountAsync(ct);
+
+    var fromUtc = DateTime.UtcNow.Date.AddDays(-(request.DaysForGraph - 1));
+    var registrationDates = await _userRepository.GetRegistrationDatesAsync(fromUtc, ct);
+
+    var countsByDate = registrationDates
+        .GroupBy(d => DateOnly.FromDateTime(d))
+        .ToDictionary(g => g.Key, g => g.Count());
+
+    var registrationsByDay = Enumerable
+        .Range(0, request.DaysForGraph)
+        .Select(offset =>
+        {
+            var date = DateOnly.FromDateTime(fromUtc).AddDays(offset);
+            return new AdminDailyCountDto(date, countsByDate.GetValueOrDefault(date));
+        })
+        .ToList();
+
+    return new AdminStatisticsDto(
+        totalUsers, activeUsers, frozenUsers,
+        totalWordConcepts, totalCategories,
+        registrationsByDay
+    );
+}`,
+        satirlar: [
+          {
+            satir: 'var fromUtc = DateTime.UtcNow.Date.AddDays(-(request.DaysForGraph - 1));',
+            aciklama: '`DaysForGraph - 1` (ve `-1` DEĞİL) — bugünü DAHİL eden N günlük bir pencere kurmak için. `DaysForGraph=30` ise pencere bugünden 29 gün ÖNCESİNE kadar gider, toplam 30 gün (bugün dahil).',
+            neden: '"Son 30 gün" ifadesi sezgisel olarak BUGÜNÜ de içerir — `AddDays(-30)` yazılsaydı pencere 31 günü kapsardı (bugün + 30 gün öncesi), kullanıcının beklediği "30 günlük grafik" ile UYUŞMAZDI.',
+            olmasaydi: 'Bu `-1` düzeltmesi olmasaydı, `daysForGraph=30` istendiğinde `registrationsByDay` listesi YİNE 30 eleman DÖNERDİ (Enumerable.Range(0,30) sabit) ama `fromUtc` bir gün ERKEN başlardı — grafiğin İLK günü aslında "31 gün önce" olurdu, `Enumerable.Range` ile üretilen tarih dizisi ile `fromUtc`nin GERÇEK anlamı birbirinden KAYARDI (subtle off-by-one).'
+          },
+          {
+            satir: 'var countsByDate = registrationDates',
+            aciklama: 'HAM `DateTime` listesi, `GroupBy(d => DateOnly.FromDateTime(d))` ile GÜNLERE indirgenip sayılıyor — bu satır, Repository\'nin BİLEREK yapmadığı gruplamayı Handler\'da (bellekte, LINQ-to-Objects ile) TAMAMLIYOR.',
+            neden: 'IUserRepository.GetRegistrationDatesAsync\'in "NEDEN bellekte gruplama" notuyla BİREBİR aynı gerekçe — bu, Repository/Handler arasındaki sorumluluk SINIRININ SOMUT bir örneği: Repository "veriyi getir", Handler "veriyi işle".',
+            olmasaydi: 'Gruplama da Repository\'ye TAŞINSAYDI, Repository katmanı `Dictionary<DateOnly,int>` gibi bir "sunum" tipi DÖNMÜŞ olurdu — CLAUDE.md §5\'in katman ayrımına (Domain←Application←Infrastructure←API) göre bu tip kararı (nasıl gruplanır, nasıl sunulur) Application katmanının (Handler) sorumluluğunda kalmalı, Infrastructure yalnızca HAM veriye erişim sağlar.'
+          },
+          {
+            satir: 'return new AdminDailyCountDto(date, countsByDate.GetValueOrDefault(date));',
+            aciklama: '`GetValueOrDefault` — bir günde HİÇ kayıt yoksa (dictionary\'de o gün YOKSA) `int`\'in varsayılanı olan `0` döner, exception FIRLAMAZ.',
+            neden: 'Admin panelin grafiği (B-07) N günlük, BOŞLUKSUZ bir eksen BEKLER — bir günde kayıt olmaması "veri eksik" değil "o gün 0 kayıt oldu" anlamına GELMELİ, grafik kütüphanesinin bu farkı AYIRT etmesine gerek KALMAMALI.',
+            olmasaydi: '`countsByDate[date]` (indexer, GetValueOrDefault DEĞİL) kullanılsaydı, kayıtsız bir gün için `KeyNotFoundException` FIRLARDI — `GET /admin/statistics` neredeyse HER ÇAĞRIDA (aktif kayıt olmayan bir gün olması gayet NORMAL) 500 hatasıyla ÇÖKERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminController.cs — GET /admin/statistics',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AdminController.cs',
+        nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — Bölüm 3\'teki 4 endpoint\'in ARDINA, 5\'inci endpoint olarak eklendi. Sınıfın kendisi (constructor, CurrentUserId/CurrentRole/ClientIp) DEĞİŞMEDİ.',
+        kod: `// AMAÇ: Genel istatistik — toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori,
+//       son \`daysForGraph\` günün kayıt grafiği için ham sayılar.
+[HttpGet("statistics")]
+[ProducesResponseType(typeof(AdminStatisticsDto), StatusCodes.Status200OK)]
+public async Task<ActionResult<AdminStatisticsDto>> GetStatistics(
+    [FromQuery] int daysForGraph = 30,
+    CancellationToken ct = default
+) => Ok(await _mediator.Send(new GetAdminStatisticsQuery(daysForGraph), ct));`,
+        satirlar: [
+          {
+            satir: '[FromQuery] int daysForGraph = 30,',
+            aciklama: 'Bu endpoint\'in TEK query parametresi — grafik penceresinin uzunluğu, varsayılan 30 gün. `[Authorize]` YOK çünkü sınıf seviyesinde `[Authorize(Roles="Admin")]` ZATEN var (Bölüm 1\'in kararı).',
+            neden: 'GetUsersQuery\'nin `page`/`pageSize` parametreleriyle AYNI desen — admin panel farklı zaman aralıkları (7/30/90 gün) göstermek isteyebilir, bu sabit KODLANMAK yerine istemciye BIRAKILDI.',
+            olmasaydi: '`daysForGraph` sabitlenip (ör. her zaman 30) parametre olarak AÇILMASAYDI, B-07\'nin "son 7 gün" gibi bir görünüm seçeneği sunması İÇİN backend\'e YENİ bir endpoint/parametre eklemek GEREKİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/admin/statistics',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/admin/statistics?daysForGraph=7',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Gövde gerektirmez — `daysForGraph` opsiyonel bir query parametresi (varsayılan 30).',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "totalUsers": 128,
+  "activeUsers": 121,
+  "frozenUsers": 7,
+  "totalWordConcepts": 812,
+  "totalCategories": 12,
+  "registrationsByDay": [
+    { "date": "2026-07-18", "count": 0 },
+    { "date": "2026-07-19", "count": 2 },
+    { "date": "2026-07-20", "count": 0 },
+    { "date": "2026-07-21", "count": 1 },
+    { "date": "2026-07-22", "count": 0 },
+    { "date": "2026-07-23", "count": 3 },
+    { "date": "2026-07-24", "count": 1 }
+  ]
+}`
+        },
+        notlar: [
+          '`registrationsByDay` her zaman `daysForGraph` uzunluğunda — kayıt olmayan günler `count: 0` ile GÖRÜNÜR, listede eksik gün OLMAZ.',
+          '`[Authorize(Roles="Admin")]` — Admin olmayan bir token ile 403 Forbidden döner.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'DateOnly', tanim: '.NET 6+ tip — yalnızca yıl/ay/gün taşır, saat/UTC bilgisi YOK. Bir "gün"ü temsil eden alanlarda (`AdminDailyCountDto.Date`) `DateTime` yerine tercih edilir.' },
+          { terim: 'Bellekte gruplama (in-memory grouping)', tanim: 'Repository\'nin döndürdüğü HAM listenin, Handler\'da C# `GroupBy`/`Dictionary` ile işlenmesi — EF Core\'un SQL\'e her zaman güvenilir çeviremediği gruplama ifadelerinden (ör. tarih kırpma) kaçınmak için A-06\'dan beri kullanılan bir desen.' },
+          { terim: 'Off-by-one (bire bir kayma) hatası', tanim: '`fromUtc` hesabındaki `DaysForGraph - 1` düzeltmesinin önlediği hata türü — "son N gün" gibi bir pencere hesaplanırken bugünün dahil olup olmadığının UNUTULMASI, beklenenden bir fazla/eksik günlük bir aralık üretir.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-07 (İstatistik Dilimi) — Ne Yazıldı?',
+        maddeler: [
+          '`AdminStatisticsDto`/`AdminDailyCountDto` — Bölüm 1\'de tüketicisiz yazılıp geri alınan DTO, bu kez gerçek tüketicisiyle (bu bölümün Handler\'ı) BİRLİKTE.',
+          '`IUserRepository.GetStatisticsAsync` (aynı gerekçeyle geri geldi) + `GetRegistrationDatesAsync` (yeni, ham liste döner) — gruplama Handler\'da.',
+          '`IWordConceptRepository`/`ICategoryRepository`\'e `GetTotalCountAsync` — A-05/A-06\'nın repository\'lerine SAF EKLEME.',
+          '`GetAdminStatisticsQuery`: A-07\'nin İLK üç-repository\'li Handler\'ı, bellekte tarih gruplama + sıfır-kayıtlı gün doldurma (`GetValueOrDefault`).',
+          'Bilinçli kapsam daraltması: `LoginsByDay` YAZILMADI — mevcut şemada (`Users.LastLoginAt` tek alan) bir login-event geçmişi yok, bu YENİ bir SecurityLog LogEventType gerektirir (A-07\'nin dışında, ayrı bir karar).',
+          '`AdminController`\'a `GET /admin/statistics` eklendi (5\'inci endpoint) + Postman örneği.',
+          '2 yeni Handler testi + `UserRepositoryTests`\'e 2 yeni test — proje toplamı 235/235 yeşil (231+4).',
+          'A-07\'nin kalan dilimleri (toplu kelime import, log görüntüleme) HENÜZ yazılmadı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

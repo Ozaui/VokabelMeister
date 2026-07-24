@@ -80,4 +80,7 @@ public class CategoryRepository : Repository<Category>, ICategoryRepository
 
         return false;
     }
+
+    // AMAÇ: Admin istatistik kartı — toplam (soft-delete edilmemiş) Category sayısı.
+    public Task<int> GetTotalCountAsync(CancellationToken ct = default) => _set.CountAsync(ct);
 }

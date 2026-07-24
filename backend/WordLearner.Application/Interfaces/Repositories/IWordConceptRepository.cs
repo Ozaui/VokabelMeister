@@ -70,4 +70,8 @@ public interface IWordConceptRepository : IRepository<WordConcept>
     // NEDEN: Bloklayıcı hata yok (Icerik.md "Eşleştirme") — PartOfSpeech/Category/
     //        DifficultyLevel çakışsa bile primaryId'ninki sessizce kazanır.
     Task<WordConcept> PairAsync(int primaryId, int otherConceptId, int? userId, CancellationToken ct = default);
+
+    // AMAÇ: `GET /admin/statistics` için toplam (soft-delete edilmemiş) WordConcept sayısı.
+    // NEDEN A-07'de eklendi: GetAdminStatisticsQuery'nin "toplam kelime" sayacı.
+    Task<int> GetTotalCountAsync(CancellationToken ct = default);
 }

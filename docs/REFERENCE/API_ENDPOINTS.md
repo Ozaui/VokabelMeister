@@ -220,9 +220,9 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 |-------|-----|----------|
 | GET | `/admin/users` · `/admin/users/{id}` | Liste (page, search, role) / detay+istatistik |
 | PUT | `/admin/users/{id}/role` · `/status` | `{ role }` / `{ isActive, reason }` |
-| GET/DELETE | `/admin/user-cards[/{id}]` | Moderasyon: liste / sil |
-| GET | `/admin/statistics` | Genel istatistik |
-| POST | `/admin/words/import` | Toplu kelime (JSON array) |
+| GET/DELETE | `/admin/user-cards[/{id}]` | Moderasyon: liste / sil — **A-07.1'e ertelendi**, `UserCard` entity'si C-02'de yazılana kadar kodlanamaz (bkz. `TASK/A_admin_panel_backend.md`) |
+| GET | `/admin/statistics?daysForGraph=` | Toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, son N günün kayıt grafiği (varsayılan 30 gün; `LoginsByDay` yok — login-event geçmişi şemada yok) |
+| POST | `/admin/words/import` | `{ rows: [{ partOfSpeech, difficultyLevel, imageUrl?, translation: { languageCode, text, definition?, wordDetail?, examples? }, categoryIds? }] }` — satır bazlı best-effort, yanıt `{ totalRows, importedCount, skippedCount, results: [{ rowIndex, languageCode, text, success, errorCode? }] }` |
 | GET/PUT | `/admin/smtp-settings` | Şifre `***` maskeli |
 | POST | `/admin/smtp-settings/test` | Test e-postası |
 

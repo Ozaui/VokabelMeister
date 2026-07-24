@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log Görüntüleme — Code-Sonra-Çöz Deseninin İkinci Uygulaması</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'log-goruntuleme',
+    bolumBaslik: 'A-07 — Admin API (Log Görüntüleme Dilimi)',
+    oncekiBolum: '05_toplu-import.html',
+    sonrakiBolum: '07_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'Log Görüntüleme — SecurityLog.Detail Nihayet Çözülüyor',
+        altBaslik: 'A-07\'nin SON dilimi: GET /admin/logs/activity|application|security. A-04\'ten (2026-07-19) beri bekleyen bir borç burada kapanıyor — SecurityLog.Detail\'in Code-sonra-çöz deseni.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'A-04\'ten Beri Bekleyen Borç: SecurityLog.Detail Hiç Çözülmemişti',
+        aciklama: 'A-04 (Loglama Sistemi), SecurityLog.Detail\'e serbest Türkçe cümle yerine sabit bir Code yazma kararını (`TOKEN_REPLAY_FAMILY_REVOKED` gibi) CLAUDE.md\'ye "İkinci istisna" olarak işledi — ama bu Code\'ları tr/de\'ye ÇÖZECEK sözlük "A-07\'de yazılacak" notuyla ERTELENMİŞTİ. A-05 ve A-06 boyunca bu borç HİÇ dokunulmadan kaldı; bu bölüm onu KAPATIYOR.',
+        neden: 'ErrorMessages/SuccessMessages (A-03/A-03.2) İSTEK anında çözülüyordu (Accept-Language o anki HTTP isteğinden okunuyordu) — ama SecurityLog satırı YAZILDIĞINDA hangi admin\'in bunu NE ZAMAN, hangi dille OKUYACAĞI bilinmiyor. Çözüm gecikmesi (yazma anı → okuma anı) bu yüzden MİMARİ bir zorunluluktu, bir ihmal değil — A-07\'nin admin log görüntüleme endpoint\'i yazılana kadar "okuma anı" diye bir şey YOKTU.',
+        olmasaydi: 'SecurityLog.Detail A-04\'te İSTEK anında (log YAZILIRKEN) çözülüp SABİT bir dilde (ör. her zaman Türkçe) kaydedilseydi, Almanca arayüzle çalışan bir admin `GET /admin/logs/security`\'yi OKUDUĞUNDA Türkçe metinlerle KARŞILAŞIRDI — üstelik geriye dönük olarak DÜZELTİLEMEZDİ (DB\'ye zaten Türkçe YAZILMIŞ olurdu), Code-sonra-çöz deseninin TÜM avantajı (aynı satırı FARKLI adminlerin FARKLI dillerde okuyabilmesi) KAYBOLURDU.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden LogMessages, ActivityLog.Action/OldValue/NewValue\'yü KAPSAMAZ',
+        aciklama: 'CLAUDE.md §1\'in "İkinci istisna" metni Detail/OldValue/NewValue\'yü BİRLİKTE anıyor. Bu bölüm yazılırken gerçek koda (A-05/A-06/A-07\'nin `IActivityLogger.LogAsync` çağrıları) bakıldığında ActivityLog.OldValue/NewValue\'nun HİÇBİR ZAMAN sabit bir Code OLMADIĞI görüldü — bunlar `{ PartOfSpeech, DifficultyLevel, Translations }` gibi YAPISAL JSON diff\'ler, alan adı+değer çiftleri. `LogMessages.cs` bu yüzden YALNIZCA SecurityLog.Detail\'i kapsar; ActivityLog.Action da (CLAUDE.md\'nin AÇIKÇA belirttiği gibi) sabit kalır, hiç çevrilmez.',
+        neden: 'Bir JSON diff\'i (`{"Role":"Admin"}`) "çevirmek" KAVRAMSAL olarak anlamsız — hangi dile çevrilecek, alan ADI mı ("Role") yoksa DEĞER mi ("Admin")? Code sözlüğü BİR string\'i BİR string\'e eşler, YAPISAL bir veriyi DEĞİL; ActivityLog.OldValue/NewValue zaten kendi başına anlaşılır, ham veri olarak (admin panelin JSON\'u okunabilir bir tabloya ÇEVİRMESİ, B-08\'in kendi işi).',
+            olmasaydi: 'OldValue/NewValue\'yü de "Code" gibi ele almaya ÇALIŞILSAYDI, her CREATE_WORD/UPDATE_CATEGORY/UPDATE_USER_ROLE çağrı noktasının (A-05\'ten beri onlarca yer) YENİDEN YAZILMASI gerekirdi — dahası, bu JSON diff\'lerdeki GERÇEK veri (ör. hangi kelime, hangi rol) audit\'in TÜM AMACI, "koda" indirgemek bu bilgiyi YOK EDERDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogMessages.cs — Detail Sözlüğü (ErrorMessages ile AYNI Desen)',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Localization/LogMessages.cs',
+        nedenBuKlasor: 'Common/Localization/ — ErrorMessages.cs/SuccessMessages.cs ile AYNI klasör, AYNI seviye. `LocalizedMessageResolver` (o iki dosyanın PAYLAŞTIĞI çözme algoritması) BURADA da yeniden kullanıldı.',
+        kod: `public static string? Resolve(string? code, string? language) =>
+    code is null ? null : LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);`,
+        satirlar: [
+          {
+            satir: 'code is null ? null : LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);',
+            aciklama: 'ErrorMessages.Resolve/SuccessMessages.Resolve\'un (A-03/A-03.2) İMZASINDAN TEK FARKI: `code` NULLABLE — SecurityLog.Detail\'in KENDİSİ opsiyonel bir alan (ör. RateLimitHit\'in bazı çağrılarında Detail hiç verilmez).',
+            neden: 'ErrorMessages/SuccessMessages\'ın çağrıldığı yerlerde `code` HER ZAMAN dolu (bir AppException/MessageResponse\'un Code\'u asla null olamaz) — ama SecurityLogDto oluşturulurken `log.Detail` GERÇEKTEN null OLABİLİR, bu null\'u `LocalizedMessageResolver`\'a (o metot nullable kabul ETMİYOR) göndermek NullReferenceException riski taşırdı.',
+            olmasaydi: 'Bu null-check olmadan doğrudan `LocalizedMessageResolver.Resolve(Messages, log.Detail, ...)` çağrılsaydı, `Detail`\'i null olan HER satır (ör. çoğu QrLoginConfirmed/QrLoginDenied kaydı) `messages.TryGetValue(null, ...)` ile ÇÖKERDİ (ArgumentNullException) — GetSecurityLogs endpoint\'i neredeyse HER sayfada 500 DÖNERDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetSecurityLogsQuery.cs — Handler (Language Taşıyan TEK A-07 Query\'si)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Admin/GetSecurityLogsQuery.cs',
+        nedenBuKlasor: null,
+        kod: `public record GetSecurityLogsQuery(
+    LogEventType? EventType,
+    string? IpAddress,
+    DateTime? From,
+    DateTime? To,
+    int Page = 1,
+    int PageSize = 20
+) : IRequest<PagedResult<SecurityLogDto>>
+{
+    public string? Language { get; init; }
+}
+
+// Handle içinde:
+paged.Items.Select(l => new SecurityLogDto(
+    l.Id,
+    l.EventType.ToString(),
+    l.UserId,
+    l.IpAddress,
+    l.UserAgent,
+    LogMessages.Resolve(l.Detail, request.Language),
+    l.CreatedAt
+))`,
+        satirlar: [
+          {
+            satir: 'public string? Language { get; init; }',
+            aciklama: 'CreateWordCommand\'daki `UserId`/`ActorRole` init-property deseninin AYNISI — Controller, `RequestLanguageResolver.Resolve(HttpContext)`\'i `with { Language = ... }` ile EKLER (AuthController\'ın `Language` property\'siyle BİREBİR aynı zincir).',
+            neden: 'A-07\'nin diğer İKİ log Query\'sinde (GetActivityLogsQuery/GetApplicationLogsQuery) bu alan YOK — yalnızca SecurityLog\'un Detail\'i çeviri GEREKTİRİYOR, gereksiz yere HER Query\'ye bir Language alanı eklemek (kullanılmayacakken) YAGNI ihlali OLURDU.',
+            olmasaydi: 'Language, Query\'nin bir alanı OLMASAYDI, Handler `HttpContext`\'e DOĞRUDAN erişmek ZORUNDA kalırdı — Application katmanının HTTP\'den BAĞIMSIZ kalması gerektiği kuralını (CLAUDE.md §5, katman ayrımı) İHLAL EDERDİ.'
+          },
+          {
+            satir: 'l.EventType.ToString(),',
+            aciklama: '`LogEventType` enum\'ı `string`\'e ÇEVRİLİYOR — QrStatusResponse\'un (`session.Status.ToString()`, A-03.1) BİREBİR aynı deseni.',
+            neden: 'Program.cs\'te `JsonStringEnumConverter` KAYITLI DEĞİL — System.Text.Json enum\'ları VARSAYILAN olarak TAM SAYIYA (int) serileştirir; admin panelin "AdminAction" gibi OKUNABİLİR bir string BEKLEMESİ için Handler\'da elle `.ToString()` çağrılır.',
+            olmasaydi: '`.ToString()` çağrılmasaydı, `GET /admin/logs/security` yanıtında `eventType: 7` gibi ANLAMSIZ bir sayı DÖNERDİ — admin panel bu sayıyı hangi `LogEventType`\'a karşılık geldiğini bulmak için KENDİ elinde AYRI bir enum-index eşlemesi TUTMAK zorunda kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminController.cs — 3 Log Endpoint\'i (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AdminController.cs',
+        nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — Bölüm 5\'teki 6 endpoint\'in ARDINA, 7-8-9\'uncu olarak eklendi. `Language` property\'si (AuthController deseni) sınıfa YENİ eklendi.',
+        kod: `[HttpGet("logs/security")]
+[ProducesResponseType(typeof(PagedResult<SecurityLogDto>), StatusCodes.Status200OK)]
+public async Task<ActionResult<PagedResult<SecurityLogDto>>> GetSecurityLogs(
+    [FromQuery] LogEventType? eventType,
+    [FromQuery] string? ip,
+    [FromQuery] DateTime? from,
+    [FromQuery] DateTime? to,
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 20,
+    CancellationToken ct = default
+) => Ok(await _mediator.Send(new GetSecurityLogsQuery(eventType, ip, from, to, page, pageSize) { Language = Language }, ct));`,
+        satirlar: [
+          {
+            satir: '[FromQuery] LogEventType? eventType,',
+            aciklama: 'ASP.NET Core\'un model binder\'ı bir enum query parametresini İSMİYLE ("AdminAction", "LoginFailed" vb.) OTOMATİK çözer — elle bir `Enum.TryParse` YAZILMADI.',
+            neden: 'Bu, framework\'ün YERLEŞİK bir davranışı — `?eventType=AdminAction` gibi bir istek geldiğinde ASP.NET Core bunu `LogEventType.AdminAction`\'a ÇEVİRİR, geçersiz bir değer (`?eventType=Foo`) gönderilirse model binding HATASI (400) OLUŞUR; elle parse YAZMAK bu HAZIR mekanizmayı TEKRARLARDI.',
+            olmasaydi: '`[FromQuery] string? eventType` alıp Handler\'da elle `Enum.TryParse<LogEventType>(eventType, true, out var parsed)` yazılsaydı, geçersiz bir değer için 400 DÖNDÜRME mantığının da ELLE yazılması gerekirdi — ASP.NET Core\'un zaten YAPTIĞI bir işi tekrar İCAT ETMEK.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/admin/logs/security',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/admin/logs/security?eventType=AdminAction&page=1&pageSize=20',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Accept-Language header\'ı "de" gönderilirse Detail Almanca döner — aynı satır tr header\'ıyla TEKRAR istenirse Türkçe döner (satır DB\'de DEĞİŞMEDİ, yalnızca OKUMA anında ÇÖZÜLDÜ).',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "items": [
+    {
+      "id": 128,
+      "eventType": "AdminAction",
+      "userId": 5,
+      "ipAddress": "1.2.3.4",
+      "userAgent": null,
+      "detail": "Benutzerrolle geändert",
+      "createdAt": "2026-07-24T10:15:00Z"
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'Accept-Language "tr" (veya header hiç yoksa) ile AYNI istek atılırsa `detail: "Kullanıcı rolü değiştirildi"` döner.',
+          '`GET /admin/logs/activity` ve `/admin/logs/application` AYNI desende ama HİÇBİR alan çevrilmez (Action/Message İngilizce/sabit kalır).'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'GetActivityLogsQuery / GetApplicationLogsQuery — Aynı Pattern, Çeviri YOK',
+        terimler: [
+          { terim: 'GetActivityLogsQuery (`Application/Features/Admin/GetActivityLogsQuery.cs`)', tanim: 'GetSecurityLogsQuery ile AYNI sayfalama/filtre iskeleti (`userId`/`action`/`entityType`/`from`/`to`) ama Language ALANI YOK — Action sabit kalır, OldValue/NewValue ham JSON olarak taşınır (bkz. bu bölümün ikinci kavram slaydı).' },
+          { terim: 'GetApplicationLogsQuery (`Application/Features/Admin/GetApplicationLogsQuery.cs`)', tanim: 'Serilog\'un yazdığı `ApplicationLog` tablosunu (`level`/`from`/`to`/`search` filtresiyle) okur — CLAUDE.md "DB/log/geliştirici İngilizce görür" kuralı gereği HİÇBİR alan çevrilmez, Message zaten İngilizce sabit şablonlarla üretiliyor.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-07 (Log Görüntüleme Dilimi) — Ne Yazıldı?',
+        maddeler: [
+          '`LogMessages.cs` — A-04\'ten beri bekleyen borç kapandı: `SecurityLog.Detail` artık admin OKURKEN kendi Accept-Language\'ına göre çözülüyor (ErrorMessages/SuccessMessages ile AYNI Code-sonra-çöz deseni, PAYLAŞILAN LocalizedMessageResolver).',
+          '`ActivityLog.Action`/`OldValue`/`NewValue` BİLİNÇLİ OLARAK çeviri KAPSAMI DIŞINDA bırakıldı — CLAUDE.md\'nin metni bunları da anıyor ama gerçek kullanım (YAPISAL JSON diff) bir Code sözlüğüne UYMUYOR.',
+          '3 yeni Query: `GetActivityLogsQuery`/`GetApplicationLogsQuery` (çeviri yok) + `GetSecurityLogsQuery` (Language taşıyan TEK A-07 Query\'si).',
+          '`AdminController`\'a 3 endpoint (`GET /admin/logs/activity|application|security`) — toplam 9 endpoint\'e ulaştı.',
+          '5 yeni Handler testi (bilinen kod→çeviri, bilinmeyen kod→aynen, null→null dahil) — proje toplamı 244/244 yeşil (239+5).',
+          '**A-07 (Admin API) TAMAMEN BİTTİ** — Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme, dört dilim de yazıldı ve test edildi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neden Entity Yok + Repository Genişletmesi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'neden-entity-yok-repository',
+    bolumBaslik: 'A-07 — Admin API (Kullanıcı Yönetimi)',
+    oncekiBolum: '../A-06_kategori-api/08_ozet-sozluk.html',
+    sonrakiBolum: '02_command-query-handlerlari.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Neden Yeni Bir Entity Yok — Repository Genişletmesi',
+        altBaslik: 'A-07, A-05/A-06\'nın aksine hiçbir yeni tablo AÇMIYOR — A-03\'te zaten var olan `User` entity\'sini admin gözünden yönetiyor. Bu bölüm önce bu kapsam kararını, sonra TASK dosyasının A-06\'dan sonra düzeltilen bir notunu ("IAdminService" deseninin terki) açıklıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Yeni Bir Entity/Migration Yok',
+        aciklama: 'A-05 (Word) ve A-06 (Category), her ikisi de sıfırdan yeni tablolar açan görevlerdi — Entity → EF Config → Migration ile başladılar. A-07\'nin "Kullanıcı Yönetimi" dilimi ise hiçbir yeni tablo AÇMIYOR: `Users` tablosu ve `Role`/`IsActive` kolonları A-03\'te (Auth/Register) zaten yazılmıştı. Bu dilimde yapılan tek şey, o VAR OLAN entity\'yi ADMİN gözünden sorgulayan bir yeni repository metodu (`GetPagedAsync`) eklemek.',
+        neden: 'CLAUDE.md §3\'ün "Backend API Yazım Sırası" listesi (Entity→EF Config→Migration→Command/Query→...) bir ZORUNLULUK sırası değil, YENİ bir veri modeli gerektiren görevler için bir sıra — admin panelinin "kullanıcıları listele/rolünü değiştir" ihtiyacı YENİ bir veri modeli DEĞİL, VAR OLAN `User` tablosuna YENİ bir SORGU ve YENİ bir YAZMA yolu (rol/durum güncelleme). Var olan bir tabloya yeni bir entity/migration eklemek, DB\'de zaten karşılığı olan bir şeyi TEKRAR modellemek olurdu.',
+        olmasaydi: 'A-07 için "AdminUser" gibi ayrı bir entity/tablo açılsaydı, `Users` tablosuyla `AdminUser` arasında SENKRONİZE edilmesi gereken iki kopya veri OLUŞURDU — bir kullanıcı A-03\'ün RegisterCommand\'ıyla `Users`\'a yazılırken admin panel onu HİÇ GÖRMEZDİ (`AdminUser` tablosuna hiçbir zaman yansımayan bir kayıt), ya da tam tersi iki tabloyu her yazımda ELLE eşitlemek gerekirdi — DB_SCHEMA.md\'nin "her veri TEK bir yerde yaşar" ilkesinin doğrudan ihlali.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'TASK Düzeltmesi: "IAdminService" Deseni Terk Edildi',
+        aciklama: 'TASK/A_admin_panel_backend.md\'deki A-07 maddesinin İLK yazılan hâli "IAdminService/AdminService" adında bir servis arayüzünden bahsediyordu — bu, A-03\'te kullanılan eski "Servis Arayüzü/Servis" desenine ait bir kalıntıydı. A-06\'da (Kategori API) bu desen zaten TERK EDİLMİŞ, kanonik desenin MediatR Command+Handler olduğu netleşmişti (`ICategoryService` hiç yazılmadı, doğrudan `CreateCategoryCommand`+`CreateCategoryCommandHandler`). TASK dosyası 2026-07-23\'te bu notla güncellendi; A-07 da baştan bu kanonik desenle yazıldı — hiçbir `IAdminService` arayüzü hiç VAR OLMADI.',
+        neden: 'CLAUDE.md §3: "Kanonik desen MediatR Command+Handler; \'Servis Arayüzü/Servis\' deseni terk edildi." Bir `IAdminService.GetUsersAsync(...)`/`UpdateUserRoleAsync(...)` yazılsaydı, controller bu servisi enjekte edip çağırırdı — ama bu, MediatR\'ın zaten çözdüğü bir sorunu (istek→handler yönlendirmesi) İKİNCİ bir soyutlama katmanıyla TEKRAR çözmek olurdu; A-05/A-06\'nın hiçbirinde böyle bir servis katmanı YOK, A-07\'nin farklı bir desen kullanması tutarsız bir mimari YARATIRDI.',
+        olmasaydi: '`IAdminService` yazılsaydı, dört ayrı işlem (liste/detay/rol/durum) TEK bir şişkin arayüzde toplanırdı (Interface Segregation\'ın ihlali) — her yeni admin işlemi (istatistik, log görüntüleme, toplu import; A-07\'nin sonraki dilimleri) bu arayüze YENİ bir metot eklemeyi gerektirirdi, oysa MediatR\'da her işlem KENDİ Command/Query\'sinde, birbirinden bağımsız yaşar; bir dilimi değiştirmek diğerini ETKİLEMEZ.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Kod Denetimi: GetStatisticsAsync/AdminStatisticsDto Neden Yazılıp Sonra Silindi?',
+        aciklama: 'Bu dilim ilk yazıldığında `IUserRepository`\'ye `GetPagedAsync`\'in yanına bir de `GetStatisticsAsync` (toplam/aktif/dondurulmuş sayaç) eklenmiş, `DTOs/Admin/AdminUserDtos.cs`\'e de bir `AdminStatisticsDto` yazılmıştı — gerekçe "A-06\'daki `WordCategorySummaryDto` gibi, aynı görevin bir sonraki dilimi (istatistik) için önceden hazırlanan bir DTO" sanılmıştı. Bu oturumda yapılan bir kod denetiminde bu kıyasın YANLIŞ olduğu bulundu: `WordCategorySummaryDto` A-06\'da GERÇEKTEN bir tüketiciye (`WordConceptDtoBuilder.BuildCategories`) sahipti, `AdminStatisticsDto` ise hiçbir Handler/Controller tarafından ÜRETİLMİYORDU — `GetStatisticsAsync`\'i çağıran TEK yer kendi birim testiydi. İkisi de bu dilimden ÇIKARILDI; istatistik dilimi yazılırken `GetAdminStatisticsQuery`\'siyle BİRLİKTE, gerçek tüketicisiyle AYNI ANDA yeniden eklenecek.',
+        neden: 'CLAUDE.md §3: "Spekülatif ortak tip yazılmaz. Bir DTO/response zarfı/yardımcı, onu FİİLEN kullanan İLK somut kod yazılırken, o kodun PARÇASI olarak yazılır." Bir repository metodunun/DTO\'nun yalnızca kendi birim testi tarafından çağrılması, gerçek bir tüketici SAYILMAZ — test, "bu kod doğru çalışıyor mu" sorusuna cevap verir, "bu kod GEREKLİ mi" sorusuna değil.',
+        olmasaydi: 'Bu ikisi silinmeden bırakılsaydı, repo\'da hiçbir API endpoint\'inin veya Handler\'ın ULAŞAMADIĞI, yalnızca kendi testiyle "yeşil" görünen ÖLÜ bir kod parçası KALIRDI — bir sonraki geliştirici (veya AI asistan) bu metodu görüp "zaten var, kullanılıyor olmalı" varsayımıyla YANLIŞ bir zemine YASLANABİLİRDİ; gerçekte hiçbir controller onu ÇAĞIRMIYORDU.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserRepository.cs — GetPagedAsync (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IUserRepository.cs',
+        nedenBuKlasor: 'Interfaces/Repositories/ — ICategoryRepository/IWordConceptRepository ile AYNI klasör, flat. NOT: Bu bir SAF EKLEME (STANDART.md §3.2) — var olan GetByEmailAsync/GetByGoogleIdAsync gibi metotların gövdesi DEĞİŞMEDİ, yalnızca iki YENİ, bağımsız metot eklendi; bu yüzden dosyanın TAMAMI değil, eklenen kısım + öncesi/sonrasından birer metot gösteriliyor.',
+        kod: `public interface IUserRepository : IRepository<User>
+{
+    // AMAÇ: \`GET /admin/users\` — arama (Email/FirstName/LastName) + role filtresiyle
+    //       sayfalı kullanıcı listesi. Soft-delete filtresi NORMAL uygulanır
+    //       (GetByEmailAsync'in aksine) — admin panel silinmiş/anonimleştirilmiş
+    //       hesapları bu genel listede GÖRMEZ, yalnızca aktif hesap tabanını yönetir.
+    Task<PagedResult<User>> GetPagedAsync(
+        string? search,
+        string? role,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    );
+
+    // AMAÇ: E-postaya göre kullanıcı bulur — soft delete filtresini YOK SAYAR.
+    // NEDEN: Grace period (30 gün) içindeki soft-delete'li bir hesap login/register
+    //        akışlarında hâlâ görülebilmeli (hesap kurtarma, tekrar kayıt engeli için) —
+    //        global soft delete filtresi bu senaryoda bilerek bypass edilir; IsDeleted/
+    //        IsAnonymized kontrolü çağıran (AuthService) tarafında yapılır.
+    Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
+
+    // ... (GetByIdIncludingDeletedAsync, GetByGoogleIdAsync, GetByAppleIdAsync,
+    //      OriginalEmailHashExistsAsync — A-03/A-03.1'den, DEĞİŞMEDİ)
+}`,
+        satirlar: [
+          {
+            satir: 'Task<PagedResult<User>> GetPagedAsync(',
+            aciklama: 'Dönüş tipi `PagedResult<User>` — Entity\'nin KENDİSİ, henüz bir DTO değil. `GetUsersQueryHandler` (bir sonraki bölüm) bu sayfayı `AdminUserListItemDto`\'ya ÇEVİRİR.',
+            neden: 'GetWordsQuery/GetCategoryWordsQuery (A-05/A-06) ile AYNI katman ayrımı: Repository katmanı DB\'den ne geldiğini bilir (Entity), Handler bunu API sözleşmesine (DTO) çevirir — Repository\'nin DTO\'yu BİLMESİ, Application→Infrastructure bağımlılık yönünü (CLAUDE.md §5) TERSİNE çevirirdi (DTOs Application katmanında yaşıyor, Repository interface\'i de Application\'da ama implementasyonu Infrastructure\'da).',
+            olmasaydi: '`GetPagedAsync` doğrudan `PagedResult<AdminUserListItemDto>` dönseydi, Infrastructure katmanındaki `UserRepository`\'nin `WordLearner.Application.DTOs.Admin` namespace\'ine bağımlı olması GEREKİRDİ — bu, "hangi katman DTO şeklini belirler" sorusunu BULANIKLAŞTIRır, ileride DTO şekli değiştiğinde (ör. yeni bir alan eklendiğinde) Repository katmanına da DOKUNMAK gerekirdi.'
+          },
+          {
+            satir: '// AMAÇ: `GET /admin/users` — arama (Email/FirstName/LastName) + role filtresiyle',
+            aciklama: 'Bu satırın hemen altındaki "Soft-delete filtresi NORMAL uygulanır" notu, bu bölümün EN ÖNEMLİ mimari kararı — `_set` (Repository<T>\'nin taban queryable\'ı) hiçbir `IgnoreQueryFilters()` ÇAĞIRMAZ.',
+            neden: 'GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync/OriginalEmailHashExistsAsync (hepsi A-03/A-03.1\'den) BİLEREK `IgnoreQueryFilters()` kullanıyor çünkü grace-period kurtarma akışlarının soft-delete\'li bir kaydı GÖRMESİ gerekiyor — admin genel listesi ise TAM TERSİ bir ihtiyaca hizmet ediyor: "şu an sistemde aktif olarak var olan hesapları YÖNET", silinmiş/anonimleştirilmiş bir hesabı YÖNETİLECEK bir kayıt olarak GÖSTERMEMELİ.',
+            olmasaydi: '`GetPagedAsync` de `IgnoreQueryFilters()` kullansaydı, admin panelin kullanıcı listesinde 30 gün önce hesabını silmiş, e-postası anonimleştirilmiş ("deleted_42@deleted.invalid") bir kayıt GÖRÜNÜRDÜ — admin bu "hayalet" kaydı YANLIŞLIKLA gerçek bir kullanıcı sanıp rolünü değiştirmeye/dondurmaya ÇALIŞABİLİRDİ, anlamsız bir işlem.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserRepository.cs — GetPagedAsync (İmplementasyon)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/UserRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/ — CategoryRepository/WordConceptRepository ile AYNI seviyede, flat. NOT: Yine SAF EKLEME — GetByEmailAsync ve sonrası (STANDART.md §3.2) DEĞİŞMEDİ, yalnızca gösteriliyor ki okuyucu "bu iki yeni metot dosyanın NERESİNE eklendi" sorusuna cevap bulsun.',
+        kod: `public class UserRepository : Repository<User>, IUserRepository
+{
+    public UserRepository(WordLearnerDbContext db)
+        : base(db) { }
+
+    // AMAÇ: Admin panel kullanıcı listesi — arama Email/FirstName/LastName'de,
+    //       \`_set\` zaten Repository<T>'nin soft-delete global filtresini taşır.
+    public async Task<PagedResult<User>> GetPagedAsync(
+        string? search,
+        string? role,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
+    {
+        var query = _set.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(u =>
+                u.Email.Contains(search) || u.FirstName.Contains(search) || u.LastName.Contains(search)
+            );
+        if (!string.IsNullOrWhiteSpace(role))
+            query = query.Where(u => u.Role == role);
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderBy(u => u.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new PagedResult<User>(items, totalCount, page, pageSize);
+    }
+
+    // AMAÇ: E-postaya göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
+    public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
+        _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
+
+    // ... (GetByIdIncludingDeletedAsync, GetByGoogleIdAsync, GetByAppleIdAsync,
+    //      OriginalEmailHashExistsAsync — DEĞİŞMEDİ)
+}`,
+        satirlar: [
+          {
+            satir: 'var query = _set.AsQueryable();',
+            aciklama: '`_set` — Repository<T>\'nin taban `DbSet<User>`\'ı, hiçbir `IgnoreQueryFilters()` çağrısı YOK. `AsQueryable()` burada yalnızca sonraki `.Where` zincirinin okunabilirliği için, davranışı DEĞİŞTİRMEZ.',
+            neden: 'Bu, bir önceki slaytta açıklanan "admin genel listesi soft-delete\'li hesapları GÖRMEMELİ" kararının UYGULANDIĞI satır — `_set` zaten `WordLearnerDbContext`\'in global query filter\'ını (HasQueryFilter, A-02) taşıyor, bu metot BİLEREK o filtreyi bozmuyor.',
+            olmasaydi: 'Bu satırda `_set.IgnoreQueryFilters()` yazılsaydı, GetPagedAsync_SoftDeletedUser_ExcludedFromList testi (bu bölümün testler kısmında) KIRILIRDI — soft-delete\'li bir kullanıcı listeye SIZARDI, admin panelde "hayalet" bir satır olarak GÖRÜNÜRDÜ.'
+          },
+          {
+            satir: 'u.Email.Contains(search) || u.FirstName.Contains(search) || u.LastName.Contains(search)',
+            aciklama: 'ÜÇ alanda TEK bir arama kutusu — `search` metni Email VEYA FirstName VEYA LastName\'İN HERHANGİ BİRİNDE geçiyorsa eşleşir.',
+            neden: 'Admin panelin arama kutusu (B-05) tek bir metin alanı — kullanıcı "ada" yazdığında ne aradığını (isim mi, e-posta mı) BELİRTMEZ; üç alanı `OR` ile birleştirmek, en yaygın admin arama senaryosunu (isim VEYA e-posta parçasıyla arama) TEK bir alanla karşılar.',
+            olmasaydi: 'Yalnızca Email\'de arama yapılsaydı, admin bir kullanıcının adını ("Ada Lovelace") bilip e-postasını BİLMEDİĞİ durumda o kullanıcıyı hiç BULAMAZDI — kullanıcı listesi B-05\'in temel senaryosunu (destek talebi geldiğinde kullanıcıyı isimle bulmak) KARŞILAYAMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          'Yeni entity/migration YOK — A-03\'ün `User` entity\'si admin gözünden genişletildi, DB\'de yeni bir tablo AÇILMADI.',
+          'TASK düzeltmesi: "IAdminService/AdminService" deseni A-06\'da zaten terk edilen "Servis Arayüzü/Servis" kalıntısıydı — A-07 baştan MediatR Command+Handler ile yazıldı.',
+          '`IUserRepository`/`UserRepository`\'e SAF EKLEME: `GetPagedAsync` (arama+role filtresi, soft-delete filtresi BİLEREK normal uygulanır — GetByEmailAsync\'in `IgnoreQueryFilters()`\'ının AKSİNE).',
+          'Kod denetimi düzeltmesi: `GetStatisticsAsync`/`AdminStatisticsDto` (tüketicisiz yazılmıştı) bu dilimden ÇIKARILDI — istatistik dilimi yazılırken gerçek tüketicisiyle (`GetAdminStatisticsQuery`) BİRLİKTE geri gelecek.',
+          'Sıradaki bölüm: Command/Query Handler\'ları — GetUsersQuery, UpdateUserRoleCommand (ikili loglama: IActivityLogger + ISecurityLogger)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

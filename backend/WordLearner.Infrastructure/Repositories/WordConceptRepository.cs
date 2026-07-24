@@ -195,4 +195,7 @@ public class WordConceptRepository : Repository<WordConcept>, IWordConceptReposi
 
         return primary;
     }
+
+    // AMAÇ: Admin istatistik kartı — toplam (soft-delete edilmemiş) WordConcept sayısı.
+    public Task<int> GetTotalCountAsync(CancellationToken ct = default) => _set.CountAsync(ct);
 }

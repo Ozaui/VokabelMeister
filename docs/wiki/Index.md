@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. Sırada **A-07 (Admin API)** var (bkz. `TASK/A_admin_panel_backend.md`). Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. Sırada **A-08 (Medya/Dosya Yükleme API)** var. Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
@@ -209,7 +209,7 @@
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, A-06 ✅, sıradaki A-07) |
+| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, A-06 ✅, A-07 ✅, sıradaki A-08) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -1137,3 +1137,154 @@ zincir A-05'in son bölümüyle bağlandı, kök `BACKEND_AKADEMI/index.html`'e 
 **Etkilenen dosyalar:** `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-06 ✅), bu dosya,
 `docs/wiki/Database/Icerik_Domain.md`. **Sıradaki task: A-07 (Admin API — Kullanıcı Yönetimi +
 İstatistik + Log Görüntüleme).***
+
+*Otuz beşinci INGEST (2026-07-24) — **kod yazılmadı, yalnızca wiki bakım/telafi (catch-up) turu:**
+kullanıcı son commit'lerin wiki'ye işlenip işlenmediğini sordu. Denetimde [[Index.md]] ve
+[[Icerik_Domain]]'in her INGEST'te (Otuz üçüncü/Otuz dördüncü) düzenli güncellendiği, ama dört
+**Backend/Architecture** düğümünün A-03.2'den beri (A-04/A-05/A-06 boyunca — üç görev, iki hafta)
+hiç dokunulmadan **donuk kaldığı** bulundu: [[WordLearner_Domain]]/[[WordLearner_Infrastructure]]/
+[[WordLearner_API]]/[[WordLearner_Application]] hâlâ yalnızca Auth/QrLogin klasör yapısını
+listiliyordu (Logging/Words/Categories entity'leri, controller'ları, repository'leri, servisleri
+hiç görünmüyordu), [[Backend_Katmanli_Mimari]] açıkça "Word/Category/... (A-05+) henüz yazılmadı"
+diyordu (yanlış — ikisi de tamamlanmıştı), [[Gelistirme_Yol_Haritasi]]'nin Faz A tablosu A-04/A-05/
+A-06'yı hâlâ ⬜ gösteriyordu ve "Sıradaki task" A-04'te kalmıştı. **Kök neden:** A-04/A-05/A-06
+INGEST'leri yalnızca doğrudan ilgili düğümleri (Index, Icerik_Domain) güncelledi, bu dört "genel
+bakış" düğümünü atladı — wiki_schema.md'nin "önemli bir şey değiştiyse ilgili düğüm GÜNCELLENİR"
+kuralı iki katmanlı (spesifik + genel) uygulanmamıştı. **Düzeltme:** dördü de gerçek kod (`backend/
+WordLearner.*`) taranarak A-06 durumuna göre yeniden yazıldı — güncel klasör ağaçları, controller/
+repository/servis listeleri, A-04/A-05/A-06'nın birer özet paragrafı, test sayıları (144→193→219),
+"Sıradaki task: A-07" güncellemesi. **Not:** repo'da commit edilmemiş, yarım kalan A-07 çalışması
+var (`IUserRepository.GetPagedAsync`/`GetStatisticsAsync`, `Features/Admin/GetUsersQuery`/
+`GetUserByIdQuery`, `DTOs/Admin/AdminUserDtos.cs` + `docs/TASK/A_admin_panel_backend.md`'de A-07
+kapsam düzeltmesi/A-07.1 ayrımı) — bu wiki turunda **BİLİNÇLİ OLARAK "tamamlandı" işaretlenmedi**,
+yalnızca [[WordLearner_Application]]'ın DTOs listesinde "A-07, henüz commit edilmedi" notuyla
+geçildi; A-07 gerçekten bitince kendi INGEST'ini alacak. **Etkilenen dosyalar:** `docs/wiki/Backend/
+WordLearner_Domain.md`, `WordLearner_Infrastructure.md`, `WordLearner_API.md`,
+`WordLearner_Application.md`, `docs/wiki/Architecture/Backend_Katmanli_Mimari.md`,
+`Gelistirme_Yol_Haritasi.md`, bu dosya.*
+
+*Otuz altıncı INGEST (2026-07-24) — **A-07 (Admin API) 🔄 devam ediyor — Otuz beşinci INGEST'in
+"bilinçli olarak tamamlandı işaretlenmedi" dediği yarım çalışma bu oturumda gerçek bir dilim olarak
+bitti, ama A-07'nin TAMAMI DEĞİL.** İlk dilim, **Kullanıcı Yönetimi**: `IUserRepository`'ye
+`GetPagedAsync` (arama+role filtreli sayfalı liste — **bilinçli olarak `IgnoreQueryFilters` YOK**,
+admin'in genel kullanıcı listesi soft-delete'li hesapları hiç göstermez, bu A-03.1'in
+`GetByIdIncludingDeletedAsync`'iyle karıştırılmamalı: o tekil kurtarma akışı için bilinçli bir
+istisnaydı, bu ise varsayılan davranış) eklendi. `Application/Features/Admin/` altında A-05/A-06'daki dikey-dilim MediatR CQRS deseniyle
+BİREBİR aynı şekilde 4 Command/Query: `GetUsersQuery`, `GetUserByIdQuery`, `UpdateUserRoleCommand`,
+`UpdateUserStatusCommand`. **Son ikisi (rol değiştirme, hesap dondurma/aktifleştirme) HEM
+`IActivityLogger` HEM `ISecurityLogger` (`LogEventType.AdminAction`) çağırıyor** — bu, A-04'te
+CLAUDE.md'ye yazılan "admin'e özel hassas işlem çift loglanır" kuralının projedeki İLK GERÇEK
+uygulaması (A-05/A-06'da böyle bir işlem hiç yoktu, ikisi de yalnızca `IActivityLogger`'a yazıyordu
+— A-07'nin bu kuralın ilk somut tüketicisi olması tesadüf değil, zaten CLAUDE.md'ye bu kural
+eklenirken A-07 doğrudan hedef gösterilmişti). `Application/DTOs/Admin/AdminUserDtos.cs`:
+`AdminUserListItemDto`/`AdminUserDetailDto`. `AdminController` YENİ oluşturuldu
+(`api/v1/admin`, `[Authorize(Roles="Admin")]` **controller SEVİYESİNDE** — `WordsController`/
+`CategoriesController`'daki endpoint-bazlı rol ayrımından bilinçli olarak FARKLI, çünkü bu
+controller'ın TAMAMI zaten yalnızca Admin'e açık, endpoint başına tekrar yazmak gereksiz olurdu), 4
+endpoint.
+
+**Kod incelemesi + kullanıcı onaylı düzeltme (aynı oturumda):** Bir kod incelemesi (subagent)
+`UpdateUserRoleCommand`/`UpdateUserStatusCommand`'ın bir adminin KENDİ rolünü/durumunu
+değiştirmesine karşı hiçbir korumasının olmadığını buldu — PLAUSIBLE risk olarak işaretlendi (tek
+admin'li bir sistemde kaza sonucu kalıcı kilitlenme). Kullanıcıya soruldu, "hemen koruma ekle"
+seçildi: `SelfAdminActionNotAllowedException` (`CANNOT_MODIFY_OWN_ACCOUNT`, 400) — her iki Handler
+`request.Id == request.UserId` ise repository'e HİÇ ULAŞMADAN bu istisnayı fırlatır, 2 yeni test
+(`Handle_TargetIsActor_ThrowsSelfAdminActionNotAllowedException`) bunu doğrular. **231/231 birim
+testi yeşil, `dotnet build` başarılı.**
+
+**Kod denetimi düzeltmesi (bu oturumda, ayrı bir INGEST'i hak etmeyecek kadar küçük ama önemli):**
+Bu dilim ilk yazıldığında `IUserRepository.GetStatisticsAsync` (toplam/aktif/dondurulmuş sayaç) ve
+`AdminStatisticsDto` de vardı — gerekçe [[Icerik_Domain]]'deki `WordCategorySummaryDto` (A-06) ile
+AYNI YAGNI-istisnası ("aynı görevin planlı sıradaki adımı") sanılmıştı. Bir kod denetiminde bu kıyas
+YANLIŞ bulundu: `WordCategorySummaryDto`'nun A-06'da GERÇEK bir tüketicisi vardı
+(`WordConceptDtoBuilder.BuildCategories`, aynı dilimde), `GetStatisticsAsync`/`AdminStatisticsDto`'yu
+ise hiçbir Handler/Controller üretmiyordu — yalnızca kendi birim testi çağırıyordu, bu "gerçek
+tüketici" SAYILMAZ. CLAUDE.md §3'ün "spekülatif tip yazılmaz" kuralına GERÇEK bir aykırılıktı, ikisi
+de bu oturumda geri alındı (kod + test + `BACKEND_AKADEMI/A-07_admin-api/` slaytları + TASK notları
+senkronize edildi). İstatistik dilimi yazılırken `GetAdminStatisticsQuery` ile BİRLİKTE, gerçek
+tüketicisiyle yeniden eklenecek.
+
+**Kapsam düzeltmesi (aynı oturumda fark edildi, ayrı bir INGEST'i hak etmeyecek kadar küçük):**
+`docs/TASK/A_admin_panel_backend.md`'deki A-07 planı eski bir "IAdminService/AdminService" desenini
+(A-06'nın terk edilmiş `ICategoryService`'iyle aynı hata) varsayıyordu — gerçek kod MediatR
+Command+Handler olduğu için düzeltildi. Ayrıca "İçerik moderasyonu" (UserCard kart liste+silme)
+maddesi, `UserCard` entity'si henüz yazılmadığı (Faz C, C-02) için A-07'nin kapsamından çıkarılıp
+yeni bir **A-07.1** task'ına inceltildi (bağımlılık yönü ters çevrilemez: Faz A içeriği C-02'yi
+bekleyemez, A-07'nin geri kalanı C-02'siz de tamamlanabilir). Bu düzeltme `docs/TASK/
+A_admin_panel_backend.md`'ye işlendi (bu wiki'ye ait değil, dokunulmadı).
+
+[[Auth_Domain]] kontrol edildi — admin'in
+`User`'ı nasıl yöneteceğine dair ne eski/yanlış bir desen (`IAdminService` vb.) ne de eksik bir not
+buldu; sayfa zaten yalnızca `User` entity'sinin kendisini anlatıyor, admin tarafı hiç geçmiyordu —
+bu nedenle DEĞİŞTİRİLMEDİ (A-07'nin geri kalanı/A-07.1 bitince, admin yönetimi kod tarafından ayrı
+bir bölüm olarak eklenmesi daha isabetli olur).
+
+**Aynı oturumun devamı — İstatistik dilimi de tamamlandı:** `GetAdminStatisticsQuery`
+(`Application/Features/Admin/`) A-07'nin İLK üç-repository'li Handler'ı —
+`IUserRepository.GetStatisticsAsync` (yukarıda geri alınan metot, ŞİMDİ gerçek tüketicisiyle
+BİRLİKTE geri geldi) + YENİ `IUserRepository.GetRegistrationDatesAsync` (ham `CreatedAt` listesi,
+günlere gruplama Handler'da bellekte — [[Icerik_Domain]]'deki CategoryRepository "bellekte filtre"
+kararıyla AYNI gerekçe) + `IWordConceptRepository`/`ICategoryRepository`'ye SAF EKLEME
+`GetTotalCountAsync`. **Bilinçli kapsam daraltması:** TASK'ın ilk planındaki "kayıt/login grafiği"nin
+yalnızca YARISI (`RegistrationsByDay`) yazıldı — `LoginsByDay` YAZILMADI, çünkü `Users.LastLoginAt`
+tek bir alan (her girişte üzerine yazılıyor), bir login-event GEÇMİŞİ tablosu yok; bunun için
+SecurityLog'a yeni bir `LogEventType` (ör. `LoginSucceeded`) eklenmesi gerekir — bu, A-07'nin
+dışında AYRI bir mimari karar, burada spekülatif olarak açılmadı. `AdminController`'a
+`GET /admin/statistics` eklendi (5. endpoint). 2 yeni Handler testi + `UserRepositoryTests`'e 2
+yeni test — **toplam 235/235 birim testi yeşil** (231+4).
+
+**Etkilenen dosyalar:** bu dosya (`Index.md` — Özet paragrafı + Proje Durumu Özeti tablosu + bu
+INGEST). `BACKEND_AKADEMI/A-07_admin-api/04_istatistik.html` yazıldı, zincir 03. bölümün son
+slaydına bağlandı.
+
+**Aynı oturumun devamı — Toplu kelime import dilimi de tamamlandı:** `BulkImportWordsCommand`
+(`Application/Features/Admin/`) — [[Icerik_Domain]]'in "Eşleştirme" bölümündeki karara göre HER
+SATIR bağımsız, TEK dilli bir `WordConcept` açar (A-05'in `CreateWordCommand.Translations[]`'ının
+AKSİNE 2 dili TEK satırda BİRLEŞTİRMEZ — eşleştirme A-05'in `GET /words/unmatched`/
+`POST /words/pair` akışına SONRADAN bırakılır, "de ve tr içeriği ayrı ayrı, kendi toplu import
+akışlarıyla girilir" kararının BİREBİR uygulaması). A-05'in `WordTranslationInput`/
+`WordEntityBuilder`/`WordGrammarValidator`'ı YENİDEN KULLANILDI — hiçbiri tekrar YAZILMADI.
+**Best-effort davranış (A-05/A-06'nın all-or-nothing Command'larından BİLİNÇLİ bir sapma):** bir
+satır (duplikat/gramer hatası/dil-kategori bulunamadı) BAŞARISIZ olursa istek TÜMDEN reddedilmez —
+`TryImportRowAsync` hiçbir exception FIRLATMAZ, bir hata kodu DÖNER; `BulkImportResultDto.Results[]`
+her satırı RowIndex+LanguageCode+Text+ErrorCode ile raporlar. Force YOK — duplikat satırlar
+SESSİZCE atlanır (795 satırda tek tek `?force=true` kararı vermek pratik değil). Tüm satırlar
+işlendikten SONRA TEK bir `BULK_IMPORT_WORDS` ActivityLog kaydı (795 ayrı `CREATE_WORD` DEĞİL —
+B-08'in aktivite akışını boğmamak için, TASK dosyasının açıkça belirttiği karar). `AdminController`'a
+`POST /admin/words/import` eklendi (6. endpoint). 4 yeni Handler testi — **toplam 239/239 birim
+testi yeşil** (235+4). `BACKEND_AKADEMI/A-07_admin-api/05_toplu-import.html` yazıldı (6. bölüm),
+zincir 04. bölümün son slaydına bağlandı; `docs/REFERENCE/API_ENDPOINTS.md` §11'in "Toplu kelime
+(JSON array)" taslak notu gerçek gövde şekliyle (`{ rows: [...] }`) güncellendi.
+
+**Etkilenen dosyalar:** bu dosya, `docs/REFERENCE/API_ENDPOINTS.md` §11.
+
+**Aynı oturumun devamı — A-07 TAMAMEN BİTTİ (log görüntüleme dilimi):** `GetActivityLogsQuery`/
+`GetApplicationLogsQuery`/`GetSecurityLogsQuery` (`Application/Features/Admin/`) — A-04'ten beri
+(2026-07-19) bekleyen bir borç kapandı: yeni `Common/Localization/LogMessages.cs`,
+`ErrorMessages`/`SuccessMessages`'ın PAYLAŞTIĞI `LocalizedMessageResolver`'ı yeniden kullanarak
+`SecurityLog.Detail`'i admin OKURKEN (yazılırken DEĞİL) kendi `Accept-Language`'ına göre çözer —
+Code-sonra-çöz deseninin ÜÇÜNCÜ uygulaması (ErrorMessages/SuccessMessages'tan sonra).
+**Kapsam netleştirmesi (bu dilim yazılırken bulundu):** CLAUDE.md §1'in "İkinci istisna" metni
+`Detail`/`OldValue`/`NewValue`'yü BİRLİKTE anıyor, ama gerçek koda (A-05/A-06/A-07'nin TÜM
+`IActivityLogger.LogAsync` çağrıları) bakıldığında `ActivityLog.OldValue`/`NewValue`'nun HİÇBİR
+ZAMAN sabit bir Code OLMADIĞI görüldü — bunlar alan adı+değer çiftlerinden oluşan YAPISAL JSON
+diff'ler (ör. CREATE_WORD'ün NewValue'su `{ PartOfSpeech, DifficultyLevel, Translations }`), bir
+Code sözlüğüne UYMUYOR; `LogMessages.cs` bu yüzden YALNIZCA `SecurityLog.Detail`'i kapsıyor,
+`ActivityLog.Action`/`OldValue`/`NewValue` ham/çevrilmemiş kalıyor (Action zaten CLAUDE.md'nin
+AÇIKÇA belirttiği gibi sabit kalmalıydı). Bu, dokümanın lafzıyla pratik arasındaki bir hassasiyet
+farkı — CLAUDE.md metnine DOKUNULMADI (kapsamı aşan, ayrı bir karar), yalnızca `TASK/
+A_admin_panel_backend.md`'ye ve buraya not düşüldü. `AdminController`'a 3 endpoint eklendi (TOPLAM
+9'a ulaştı). 5 yeni Handler testi — **A-07'nin nihai toplamı: 244/244 birim testi yeşil**
+(219 A-06 sonu + 25 A-07). `BACKEND_AKADEMI/A-07_admin-api/06_log-goruntuleme.html` + kapanış
+`07_ozet-sozluk.html` yazıldı (7 bölüme çıktı), kök `BACKEND_AKADEMI/index.html`'e A-07 kartı
+eklendi (A-06'nın SONRASINA, mevcut kartlara dokunulmadan).
+
+**A-07 (Admin API) artık TAMAMLANDI ✅** — dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime
+Import, Log Görüntüleme), 9 endpoint, 9 yeni MediatR Command/Query, 244/244 yeşil test. Bu görev
+boyunca kod denetiminde bulunan 2 gerçek düzeltme (tüketicisiz `AdminStatisticsDto`/
+`GetStatisticsAsync`'in geri alınıp gerçek tüketicisiyle yeniden yazılması, self-lockout koruması)
+A-05/A-06'nın kod denetimi disipliniyle AYNI çizgide. **A-07.1 (UserCard Moderasyonu) hâlâ
+ERTELENMİŞ** — `UserCard` entity'si C-02'de yazılana kadar bekliyor, Faz A'nın "bitti" sayılmasını
+ENGELLEMEZ. **Etkilenen dosyalar:** bu dosya (Özet paragrafı + Proje Durumu Özeti tablosu + bu
+INGEST), `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-07 ✅). **Sıradaki task:
+A-08 (Medya/Dosya Yükleme API).***

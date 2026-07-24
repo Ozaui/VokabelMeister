@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Controller + Validator + Testler</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-validator-testler',
+    bolumBaslik: 'A-07 — Admin API (Kullanıcı Yönetimi)',
+    oncekiBolum: '02_command-query-handlerlari.html',
+    sonrakiBolum: '04_istatistik.html',
+    slaytlar: [
+      {
+        tur: 'kod',
+        baslik: 'AdminController.cs — Controller Seviyesinde TEK [Authorize(Roles="Admin")]',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AdminController.cs',
+        nedenBuKlasor: 'API/Controllers/ — WordsController/CategoriesController ile AYNI seviyede, flat.',
+        kod: `[ApiController]
+[Route("api/v1/admin")]
+[Authorize(Roles = "Admin")]
+public class AdminController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public AdminController(IMediator mediator) => _mediator = mediator;
+
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+
+    private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    [HttpGet("users")]
+    [ProducesResponseType(typeof(PagedResult<AdminUserListItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResult<AdminUserListItemDto>>> GetUsers(
+        [FromQuery] string? search,
+        [FromQuery] string? role,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    ) => Ok(await _mediator.Send(new GetUsersQuery(search, role, page, pageSize), ct));
+
+    [HttpGet("users/{id:int}")]
+    [ProducesResponseType(typeof(AdminUserDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AdminUserDetailDto>> GetUserById(int id, CancellationToken ct) =>
+        Ok(await _mediator.Send(new GetUserByIdQuery(id), ct));
+
+    [HttpPut("users/{id:int}/role")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateUserRole(int id, UpdateUserRoleCommand command, CancellationToken ct)
+    {
+        await _mediator.Send(
+            command with
+            {
+                Id = id,
+                UserId = CurrentUserId,
+                ActorRole = CurrentRole,
+                IpAddress = ClientIp,
+            },
+            ct
+        );
+        return NoContent();
+    }
+
+    [HttpPut("users/{id:int}/status")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateUserStatus(int id, UpdateUserStatusCommand command, CancellationToken ct)
+    {
+        await _mediator.Send(
+            command with
+            {
+                Id = id,
+                UserId = CurrentUserId,
+                ActorRole = CurrentRole,
+                IpAddress = ClientIp,
+            },
+            ct
+        );
+        return NoContent();
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[Authorize(Roles = "Admin")]',
+            aciklama: 'WordsController/CategoriesController\'ın AKSİNE, bu `[Authorize]` CONTROLLER seviyesinde — HER endpoint için AYRI AYRI tekrarlanmıyor, tek bir satır TÜM `AdminController`\'ı kapsıyor.',
+            neden: 'WordsController/CategoriesController\'da bazı endpoint\'ler düz `[Authorize]` (herhangi bir giriş yapmış kullanıcı okuyabilir), bazıları `[Authorize(Roles="Admin")]` (yalnızca admin yazabilir) — İKİ FARKLI yetki seviyesi AYNI controller\'da bir arada. AdminController\'da ise TEK bir yetki seviyesi var: buradaki HİÇBİR endpoint (GET dahil) admin OLMAYAN bir kullanıcıya AÇIK DEĞİL — CLAUDE.md "Hiçbir public endpoint rol yükseltemez" kuralının doğal SONUCU: bu controller\'ın kendisi rol YÜKSELTEBİLEN (UpdateUserRole) tek yer, bu yüzden en üst seviyede kilitli.',
+            olmasaydi: 'Her endpoint\'e AYRI `[Authorize(Roles = "Admin")]` yazılsaydı, davranış AYNI olurdu ama bir junior geliştirici yeni bir endpoint eklerken (ör. A-07\'nin sonraki dilimi, istatistik) bu attribute\'u YAZMAYI UNUTABİLİRDİ — controller seviyesinde tek satır, YENİ eklenen HER endpoint\'in OTOMATİK korunmasını garanti eder, "unutma riski" YAPISAL olarak ORTADAN KALKAR.'
+          },
+          {
+            satir: 'private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();',
+            aciklama: 'WordsController/CategoriesController\'daki `CurrentUserId`/`CurrentRole` ikilisine EK, YENİ bir üçüncü helper — yalnızca AdminController\'da var.',
+            neden: '`ISecurityLogger.LogAsync` (bir önceki bölüm) `ipAddress` parametresi BEKLİYOR — bu bilgi yalnızca HTTP katmanında (`HttpContext`) mevcut, Application katmanındaki Handler bunu KENDİSİ OKUYAMAZ (CLAUDE.md §5 katman bağımlılık yönü: Domain←Application←Infrastructure←API, API en dışta); Controller bu köprüyü kurmak ZORUNDA.',
+            olmasaydi: 'Bu helper olmasaydı, `UpdateUserRoleCommand`/`UpdateUserStatusCommand`\'ın `IpAddress` alanı HER ZAMAN null KALIRDI (Controller bu alanı hiç DOLDURAMAZDI) — SecurityLog kayıtları "hangi IP\'den" sorusuna asla CEVAP VEREMEZDİ, REFERENCE/SECURITY.md\'nin izleme beklentisi KARŞILANMAZDI.'
+          },
+          {
+            satir: '[HttpPut("users/{id:int}/status")]',
+            aciklama: 'UpdateUserStatus endpoint\'inin `[ProducesResponseType]` listesinde `Status400BadRequest` YOK — yalnızca 204/404.',
+            neden: 'UpdateUserRole\'ün 400\'ü `UpdateUserRoleCommandValidator`\'ın (bu bölümün sonraki kod slaytı) `INVALID_USER_ROLE` kontrolünden geliyor — UpdateUserStatusCommand\'ın hiçbir FluentValidation kuralı YOK (`IsActive` zaten bir `bool`, geçersiz bir değeri MÜMKÜN DEĞİL; `Reason` opsiyonel serbest metin), bu yüzden 400 dönebileceği hiçbir yol yok, `[ProducesResponseType]` listesi gerçek davranışı BİREBİR YANSITIYOR.',
+            olmasaydi: 'Buraya da `Status400BadRequest` eklenseydi, Swagger/OpenAPI dokümantasyonu (bu attribute\'lardan üretilir) istemciye "bu endpoint 400 dönebilir" diye YANLIŞ bir sözleşme VAAT ederdi — frontend geliştiricisi gereksiz bir hata-işleme dalı YAZARDI.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /admin/users — Arama + Rol Filtresi',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/admin/users?search=ada&role=User&page=1&pageSize=20',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı ([Authorize(Roles="Admin")], controller seviyesinde). search/role opsiyonel — ikisi de boş bırakılırsa tüm (soft-delete\'li olmayan) kullanıcılar sayfalı döner.',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "items": [
+    {
+      "id": 12,
+      "email": "ada2@example.com",
+      "firstName": "Ada",
+      "lastName": "Byron",
+      "role": "User",
+      "isActive": true,
+      "isEmailVerified": true,
+      "createdAt": "2026-06-01T10:00:00Z",
+      "lastLoginAt": "2026-07-20T08:15:00Z"
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'Soft-delete\'li/anonimleştirilmiş hesaplar bu listede HİÇ görünmez — bkz. Bölüm 1, GetPagedAsync soft-delete filtresini BİLEREK yok saymaz.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /admin/users/{id} — Detay + İstatistik',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/admin/users/12',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "id": 12,
+  "email": "ada2@example.com",
+  "firstName": "Ada",
+  "lastName": "Byron",
+  "displayName": null,
+  "role": "User",
+  "isActive": true,
+  "isEmailVerified": true,
+  "currentLevel": "A1",
+  "themePreference": "System",
+  "authProvider": "Email",
+  "totalXP": 120,
+  "lifetimeXP": 450,
+  "streakDays": 4,
+  "loginCount": 9,
+  "lastLoginAt": "2026-07-20T08:15:00Z",
+  "lastLoginIP": "203.0.113.5",
+  "createdAt": "2026-06-01T10:00:00Z"
+}`
+        },
+        notlar: [
+          'Var olmayan (veya soft-delete\'li) bir Id için 404 ApiErrorResponse (NOT_FOUND) — GetByIdIncludingDeletedAsync BİLEREK kullanılmaz (Bölüm 2, GetUserByIdQuery sözlük notu).',
+          'UserCard/UserProgress\'e dayalı öğrenme istatistiği (kart sayısı, SRS durumu) BU yanıtta YOK — o tablolar C-02/C-04\'te yazılana kadar mevcut değil.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'PUT /admin/users/{id}/role — Rol Değiştirme',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/admin/users/12/role',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Command\'ın Id\'si URL\'den bindlenir (body\'deki olası bir id alanı `command with { Id = id, ... }` ile EZİLİR — CategoriesController\'daki AYNI karar).',
+        govde: `{
+  "role": "Admin"
+}`,
+        yanit: {
+          durum: '204 No Content',
+          govde: '(boş gövde)'
+        },
+        notlar: [
+          '`role` "User"/"Admin" dışında bir değerse 400 ApiErrorResponse (INVALID_USER_ROLE) — UpdateUserRoleCommandValidator.',
+          'Var olmayan bir Id için 404 ApiErrorResponse (NOT_FOUND).',
+          '`{id}` isteği yapan adminin KENDİ Id\'siyse 400 ApiErrorResponse (CANNOT_MODIFY_OWN_ACCOUNT) — bkz. Bölüm 2, self-lockout koruması.',
+          'Bu istek HEM ActivityLog (UPDATE_USER_ROLE) HEM SecurityLog (AdminAction, USER_ROLE_CHANGED) satırı yaratır — bkz. Bölüm 2.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'PUT /admin/users/{id}/status — Hesap Dondur/Aktifleştir',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/admin/users/12/status',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: '`isActive: false` gönderilmesi hesabı DONDURUR, `true` yeniden AKTİFLEŞTİRİR. `reason` opsiyonel bir admin notu — yalnızca ActivityLog.NewValue\'a yazılır, kullanıcıya hiçbir yanıtta gösterilmez.',
+        govde: `{
+  "isActive": false,
+  "reason": "Abuse report #482"
+}`,
+        yanit: {
+          durum: '204 No Content',
+          govde: '(boş gövde)'
+        },
+        notlar: [
+          'Var olmayan bir Id için 404 ApiErrorResponse (NOT_FOUND) — bu endpoint\'te FluentValidation kuralı olmadığı için 400 dönmez (bkz. Controller kod slaytı notu).',
+          '`{id}` isteği yapan adminin KENDİ Id\'siyse YİNE 400 ApiErrorResponse (CANNOT_MODIFY_OWN_ACCOUNT) döner — bu kontrol FluentValidation DEĞİL, Handler\'ın kendi içinde (bkz. Bölüm 2).',
+          'SecurityLog.detail, isActive=false için "USER_ACCOUNT_FROZEN", isActive=true için "USER_ACCOUNT_REACTIVATED" olarak İKİ FARKLI kod taşır.'
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateUserRoleCommandValidator.cs — Role Beyaz Liste',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Admin/UpdateUserRoleCommandValidator.cs',
+        nedenBuKlasor: 'Validators/Admin/ — Validators/Categories/, Validators/Words/ ile AYNI seviyede, YENİ bir domain klasörü.',
+        kod: `public class UpdateUserRoleCommandValidator : AbstractValidator<UpdateUserRoleCommand>
+{
+    public UpdateUserRoleCommandValidator()
+    {
+        RuleFor(x => x.Role)
+            .Must(role => role is "User" or "Admin")
+            .WithMessage("Role must be 'User' or 'Admin'.")
+            .WithErrorCode("INVALID_USER_ROLE");
+    }
+}`,
+        satirlar: [
+          {
+            satir: '.Must(role => role is "User" or "Admin")',
+            aciklama: 'CLAUDE.md\'nin "Yalnızca iki rol: User ve Admin" kuralının doğrudan UYGULAMASI — `Role` string alanı için bir enum DEĞİL, iki sabit değerden oluşan bir BEYAZ LİSTE kontrolü.',
+            neden: '`Users.Role` kolonu DB seviyesinde bir CHECK constraint\'e sahip (A-03) — bu Validator, DB\'ye ulaşmadan ÖNCE, uygulama katmanında AYNI kısıtlamayı tekrarlıyor; CreateCategoryCommandValidator\'ın "translation.LanguageCode boşsa DB\'ye gitmeden önce yakala" gerekçesiyle AYNI mimari desen (A-06).',
+            olmasaydi: 'Bu kontrol olmasaydı, admin panelinden ("Instructor" gibi CLAUDE.md\'de VAR OLMAYAN bir rol) yazılmış hatalı bir istek doğrudan DB\'nin CHECK constraint\'ine ÇARPARDI — çıplak bir SQL exception (500), API_ENDPOINTS.md\'nin beklediği düzgün bir 400 ApiErrorResponse (INVALID_USER_ROLE) DEĞİL.'
+          },
+          {
+            satir: 'public class UpdateUserRoleCommandValidator : AbstractValidator<UpdateUserRoleCommand>',
+            aciklama: 'UpdateUserStatusCommand için AYRI bir Validator dosyası YOK — `IsActive` (bool) ve `Reason` (opsiyonel serbest metin) alanlarının hiçbiri bir FluentValidation kuralı GEREKTİRMİYOR.',
+            neden: 'YAGNI: Bir alan için doğrulanacak GERÇEK bir kısıtlama yoksa (bool zaten yalnızca true/false olabilir, opsiyonel bir metin alanının uzunluk sınırı gibi bir gereksinim şu an YOK) boş bir Validator sınıfı yazmak, hiçbir şey KONTROL ETMEYEN, yalnızca "her Command\'ın bir Validator\'ı olmalı" YANLIŞ varsayımını tatmin eden ÖLÜ kod olurdu.',
+            olmasaydi: 'Zorunlu olarak boş bir `UpdateUserStatusCommandValidator` yazılsaydı, CLAUDE.md §3\'ün "Spekülatif ortak tip yazılmaz" kuralına aykırı düşerdi — gerçek bir doğrulama ihtiyacı doğmadan (ör. Reason\'a bir uzunluk sınırı gerektiğinde) önceden yazılmış bir kabuk, YAGNI\'nin doğrudan ihlali olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: '4 Test Dosyası — Neyi Doğruluyor',
+        terimler: [
+          { terim: 'GetUsersQueryHandlerTests (1 test)', tanim: '`Handle_ForwardsFilterAndMapsItems` — Handler\'ın `search`/`role`/`page`/`pageSize` filtrelerini `IUserRepository.GetPagedAsync`\'e AYNEN ilettiğini VE dönen `User` listesini doğru alanlarla `AdminUserListItemDto`\'ya çevirdiğini (Id/Email/Role eşleşmesi üzerinden) doğrular.' },
+          { terim: 'GetUserByIdQueryHandlerTests (2 test)', tanim: 'Var olmayan Id → `EntityNotFoundException`; var olan kullanıcı → `AdminUserDetailDto`\'nun İSTATİSTİK alanlarını (LifetimeXP=500, LoginCount=10) DOĞRU taşıdığını doğrular — bu alanlar liste DTO\'sunda YOK, yalnızca detay DTO\'suna ÖZGÜ olduğu için ayrıca test edilir.' },
+          { terim: 'UpdateUserRoleCommandHandlerTests (3 test)', tanim: 'Kendi hesabına işlem denemesi (`Id==UserId`) → `SelfAdminActionNotAllowedException`, repository\'ye HİÇ ULAŞILMADIĞI ayrıca doğrulanır; var olmayan Id → 404 (repository\'nin `UpdateAsync`\'i hiç ÇAĞRILMADIĞI dolaylı olarak, mock hiç setup edilmediği için); geçerli rol değişimi → `user.Role` GÜNCELLENDİĞİ, `IActivityLogger.LogAsync` TÜM parametreleriyle (Action="UPDATE_USER_ROLE", EntityType="User", oldValue/newValue, ipAddress) VE `ISecurityLogger.LogAsync` (LogEventType.AdminAction, detail="USER_ROLE_CHANGED") İKİSİNİN DE tam parametre setiyle `Times.Once` ÇAĞRILDIĞI doğrulanır — bu bölümün en kritik testi, ikili loglamanın İKİ çağrısını da AYRI AYRI Verify eder.' },
+          { terim: 'UpdateUserStatusCommandHandlerTests (4 test)', tanim: 'Kendi hesabına işlem denemesi (`Id==UserId`) → `SelfAdminActionNotAllowedException`; var olmayan Id → 404; dondurma (`isActive: false`) → `SecurityLog.detail="USER_ACCOUNT_FROZEN"`; aktifleştirme (`isActive: true`) → `detail="USER_ACCOUNT_REACTIVATED"` — İKİ AYRI test, Handler\'daki dallanmanın (`request.IsActive ? "..._REACTIVATED" : "..._FROZEN"`) HER İKİ dalını da AYRI AYRI kanıtlar; yalnızca TEK bir test yazılıp Handler\'ın if/else\'inin YANLIŞ dalı fark edilmeden geçebilirdi.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-07 (Kullanıcı Yönetimi Dilimi) — Ne Yazıldı? (231/231 Yeşil)',
+        maddeler: [
+          'Yeni entity/migration YOK — A-03\'ün `User` entity\'si admin gözünden genişletildi (bkz. Bölüm 1).',
+          'TASK düzeltmesi: "IAdminService" deseni A-06\'da zaten terk edilmişti — A-07 baştan MediatR Command+Handler ile yazıldı.',
+          '`IUserRepository`/`UserRepository`: `GetPagedAsync` (arama+role, soft-delete filtresi BİLEREK normal).',
+          '4 MediatR Command/Query: `GetUsersQuery`/`GetUserByIdQuery` (salt-okunur, logger YOK), `UpdateUserRoleCommand`/`UpdateUserStatusCommand` (İKİLİ loglama — IActivityLogger + ISecurityLogger, projede İLK örnek).',
+          '`AdminUserListItemDto`/`AdminUserDetailDto` — A-05/A-06\'daki liste/detay ayrımı deseni.',
+          'Kod denetimi düzeltmesi: bu dilim ilk yazıldığında bir de `GetStatisticsAsync`/`AdminStatisticsDto` vardı — "A-06\'daki WordCategorySummaryDto gibi, aynı görevin sonraki dilimi için önceden yazıldı" sanılmıştı, ama denetimde WordCategorySummaryDto\'nun GERÇEK bir tüketicisi (WordConceptDtoBuilder.BuildCategories) olduğu, bunun ise HİÇBİR Handler tarafından üretilmediği (yalnızca kendi testi tarafından çağrıldığı) bulundu — CLAUDE.md §3\'ün "spekülatif tip yazılmaz" kuralına GERÇEK bir aykırılıktı, ikisi de ÇIKARILDI (bkz. Bölüm 1). İstatistik dilimi yazılırken gerçek tüketicisiyle (`GetAdminStatisticsQuery`) BİRLİKTE geri gelecek.',
+          '`AdminController` — TEK `[Authorize(Roles="Admin")]` controller seviyesinde (WordsController/CategoriesController\'ın endpoint-bazlı ayrımının AKSİNE, bu controller\'da HİÇBİR endpoint admin-dışı erişime açık değil).',
+          '`UpdateUserRoleCommandValidator` — Role beyaz listesi (`INVALID_USER_ROLE`); `UpdateUserStatusCommand`\'ın Validator\'ı YOK (gerçek bir kısıtlama olmadığı için, YAGNI).',
+          '4 Handler test dosyası (10 test — 2\'si self-lockout korumasını doğrular) + `UserRepositoryTests`\'e eklenen 2 yeni test (`GetPagedAsync` arama+rol, soft-delete dışlama) — proje toplamı 231/231 yeşil (A-06 sonu 219 + 12 yeni).',
+          'A-07\'nin kalan dilimleri (istatistik endpoint\'i, toplu kelime import, log görüntüleme) HENÜZ yazılmadı — bu yüzden bu görev "tamamlandı" DEĞİL, "devam ediyor" (bkz. index.html).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
