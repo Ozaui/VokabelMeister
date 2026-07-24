@@ -366,6 +366,72 @@ public static class ErrorMessages
             ["de"] = "Sie müssen eine Datei zum Hochladen auswählen.",
         },
 
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Host boşsa.
+        ["SMTP_HOST_REQUIRED"] = new()
+        {
+            ["tr"] = "SMTP sunucu adresi zorunludur.",
+            ["de"] = "Die SMTP-Serveradresse ist erforderlich.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Port 1-65535 aralığı dışındaysa.
+        ["SMTP_PORT_INVALID"] = new()
+        {
+            ["tr"] = "Port 1 ile 65535 arasında olmalıdır.",
+            ["de"] = "Der Port muss zwischen 1 und 65535 liegen.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Username boşsa.
+        ["SMTP_USERNAME_REQUIRED"] = new()
+        {
+            ["tr"] = "SMTP kullanıcı adı zorunludur.",
+            ["de"] = "Der SMTP-Benutzername ist erforderlich.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Password boşsa.
+        ["SMTP_PASSWORD_REQUIRED"] = new()
+        {
+            ["tr"] = "SMTP şifresi zorunludur.",
+            ["de"] = "Das SMTP-Passwort ist erforderlich.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromEmail boşsa.
+        ["SMTP_FROM_EMAIL_REQUIRED"] = new()
+        {
+            ["tr"] = "Gönderen e-posta adresi zorunludur.",
+            ["de"] = "Die Absender-E-Mail-Adresse ist erforderlich.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromEmail geçerli bir e-posta değilse.
+        ["SMTP_FROM_EMAIL_INVALID"] = new()
+        {
+            ["tr"] = "Gönderen e-posta adresi geçerli değil.",
+            ["de"] = "Die Absender-E-Mail-Adresse ist ungültig.",
+        },
+
+        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromName boşsa.
+        ["SMTP_FROM_NAME_REQUIRED"] = new()
+        {
+            ["tr"] = "Gönderen adı zorunludur.",
+            ["de"] = "Der Absendername ist erforderlich.",
+        },
+
+        // NEDEN bu kod (A-09): TestSmtpSettingsCommandHandler — SmtpSettingsRepository'de
+        //       henüz hiç kayıt yoksa (admin ilk kez PUT yapmadan Test'e basarsa) fırlatılır.
+        ["SMTP_SETTINGS_NOT_CONFIGURED"] = new()
+        {
+            ["tr"] = "Önce SMTP ayarlarını kaydetmelisiniz.",
+            ["de"] = "Sie müssen zuerst die SMTP-Einstellungen speichern.",
+        },
+
+        // NEDEN bu kod (A-09): MailKitSmtpTestService — bağlantı/kimlik doğrulama/gönderim
+        //       denemesi başarısız olursa; gerçek MailKit hata metni istemciye SIZMAZ,
+        //       yalnızca ApplicationLog'a yazılır (SmtpTestFailedException.cs "NEDEN" notu).
+        ["SMTP_TEST_FAILED"] = new()
+        {
+            ["tr"] = "Test e-postası gönderilemedi. SMTP ayarlarını kontrol edin.",
+            ["de"] = "Test-E-Mail konnte nicht gesendet werden. Überprüfen Sie die SMTP-Einstellungen.",
+        },
+
         // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
         //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
         //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.

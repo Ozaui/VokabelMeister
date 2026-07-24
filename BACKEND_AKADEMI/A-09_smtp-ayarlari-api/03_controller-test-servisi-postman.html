@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SmtpSettingsController + ISmtpTestService + Postman</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-test-servisi-postman',
+    bolumBaslik: 'A-09 — SMTP Ayarları API',
+    oncekiBolum: '02_repository-query-command.html',
+    sonrakiBolum: '04_testler-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'SmtpSettingsController + ISmtpTestService + Postman',
+        altBaslik: '3 endpoint (GET/PUT/POST test) taşıyan ayrı bir controller, MailKit ile GERÇEK bir SMTP sunucusuna bağlanıp test e-postası gönderen ISmtpTestService, ve her endpoint için birer Postman örneği.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'ISmtpTestService — IEmailService\'ten NEDEN AYRI Bir Servis',
+        aciklama: 'IEmailService (A-10\'da SmtpEmailService ile gerçek implementasyonunu alacak) kullanıcıya giden ŞABLONLU e-postaları (OTP, hoş geldin, şifre değişti bildirimi) temsil eder. ISmtpTestService ise TEK bir amaca hizmet eder: admin panelin "Test Et" butonu, kaydedilmiş SMTP ayarlarının GERÇEKTEN çalışıp çalışmadığını, ham bir bağlantı+gönderim denemesiyle doğrular.',
+        neden: 'İkisini TEK arayüzde birleştirmek IEmailService\'e "ayarları DB\'den oku, şifreyi çöz" gibi bu görevle (kullanıcıya OTP gönderme) İLGİSİZ bir sorumluluk yükletirdi — IEmailService bugün DevEmailService\'in konsola yazdığı basit bir sözleşme, SMTP ayarlarının VAR olup olmadığından HABERSİZ olmalı.',
+        olmasaydi: 'TEK bir arayüzde birleştirilseydi, A-10\'da SmtpEmailService yazıldığında bu servis HEM şablonlu e-posta gönderme HEM "test bağlantısı" mantığını taşırdı — iki farklı çağıranın (OTP akışları vs. admin panelin Test Et butonu) BİRBİRİNDEN TAMAMEN BAĞIMSIZ ihtiyaçları TEK bir sınıfa sıkıştırılmış olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ISmtpTestService.cs + MailKitSmtpTestService.cs — Tam Dosyalar',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/ISmtpTestService.cs + backend/WordLearner.Application/Services/MailKitSmtpTestService.cs',
+        nedenBuKlasor: 'Interfaces/Services/ ve Services/ — IEmailService/DevEmailService ile AYNI iki klasörlü desen.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// ISmtpTestService.cs
+//
+// AMAÇ: \`POST /admin/smtp-settings/test\`in kaydedilmiş SMTP ayarlarıyla gerçekten
+//       bağlanıp bir test e-postası gönderip gönderemediğini doğrulama sözleşmesi.
+// NEDEN IEmailService'ten AYRI: IEmailService (A-10, henüz SmtpEmailService yazılmadı)
+//       kullanıcıya giden ŞABLONLU e-postaları (OTP, hoş geldin vb.) temsil eder —
+//       bu servis yalnızca admin panelin "Test Et" butonunun TEK amacı olan, ham bir
+//       bağlantı+gönderim denemesi. İkisini TEK arayüzde birleştirmek IEmailService'e
+//       "ayarları DB'den oku" gibi bu görevle ilgisiz bir sorumluluk yükletirdi.
+// NEDEN mock'lanabilir bir arayüz (implementasyon değil): CODING_STANDARDS.md §7.4 —
+//       dış servisler (burada gerçek bir SMTP sunucusuna ağ bağlantısı) HER ZAMAN
+//       mock'lanır; TestSmtpSettingsCommandHandler'ın birim testi gerçek bir SMTP
+//       sunucusuna bağlanmadan çalışabilmeli.
+// BAĞIMLILIKLAR: WordLearner.Domain.Entities.System.SmtpSettings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using WordLearner.Domain.Entities.System;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface ISmtpTestService
+{
+    // AMAÇ: Verilen ayarlarla (şifre ÇÖZÜLMÜŞ hâliyle) SMTP sunucusuna bağlanıp
+    //       \`toEmail\`e kısa bir test mesajı gönderir.
+    // NEDEN decryptedPassword AYRI parametre (settings.PasswordEncrypted DEĞİL):
+    //       bu servis şifre çözme mantığını (IEncryptionService) BİLMEMELİ — çağıran
+    //       Handler zaten SmtpSettingsRepository'den okuyup IEncryptionService.Decrypt
+    //       ile çözdüğü düz metni buraya taşır (tek sorumluluk).
+    // NASIL: Başarısız olursa (bağlantı/kimlik doğrulama/gönderim hatası)
+    //        SmtpTestFailedException fırlatır — projenin TEK hata sözleşmesi
+    //        (ApiErrorResponse) dışına çıkılmaz.
+    Task SendTestEmailAsync(
+        SmtpSettings settings,
+        string decryptedPassword,
+        string toEmail,
+        CancellationToken ct = default
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MailKitSmtpTestService.cs
+//
+// AMAÇ: ISmtpTestService'in MailKit tabanlı implementasyonu — verilen SMTP
+//       ayarlarıyla gerçekten bağlanıp bir test e-postası gönderir.
+// NEDEN try/catch içinde tek bir SmtpTestFailedException'a sarılır: MailKit farklı
+//       aşamalarda (DNS/bağlantı, kimlik doğrulama, gönderim) FARKLI exception tipleri
+//       fırlatabilir (SocketException, AuthenticationException, SmtpCommandException…)
+//       — hepsi istemci için AYNI anlama gelir ("test başarısız"), projenin TEK hata
+//       sözleşmesi (ApiErrorResponse) bu çeşitliliği istemciye YANSITMAMALI.
+// BAĞIMLILIKLAR: MailKit.Net.Smtp, MimeKit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.System;
+
+namespace WordLearner.Application.Services;
+
+public class MailKitSmtpTestService : ISmtpTestService
+{
+    public async Task SendTestEmailAsync(
+        SmtpSettings settings,
+        string decryptedPassword,
+        string toEmail,
+        CancellationToken ct = default
+    )
+    {
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(settings.FromName, settings.FromEmail));
+        message.To.Add(MailboxAddress.Parse(toEmail));
+        message.Subject = "VokabelMeister — SMTP Test";
+        message.Body = new TextPart("plain")
+        {
+            Text = "Bu bir test e-postasıdır. SMTP ayarlarınız doğru çalışıyor.",
+        };
+
+        try
+        {
+            using var client = new SmtpClient();
+            // NEDEN EnableSsl→StartTls/None: entity yalnızca tek bir bool taşıyor
+            //       (DATABASE_SCHEMA/Sistem.md) — MailKit'in Auto seçeneği yerine
+            //       açık bir eşleme, hangi modun kullanıldığını kod okuyanına
+            //       (ve BAĞLANTI hatası aldığında admin'e) belirsizlik bırakmaz.
+            var secureOption = settings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;
+            await client.ConnectAsync(settings.Host, settings.Port, secureOption, ct);
+            await client.AuthenticateAsync(settings.Username, decryptedPassword, ct);
+            await client.SendAsync(message, ct);
+            await client.DisconnectAsync(true, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new SmtpTestFailedException(ex.Message);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var secureOption = settings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;',
+            aciklama: 'MailKit\'in `SecureSocketOptions.Auto` (sunucuyla otomatik pazarlık) seçeneği yerine, entity\'nin tek bir bool\'una (EnableSsl) açık bir eşleme.',
+            neden: 'DATABASE_SCHEMA/Sistem.md şeması yalnızca `EnableSsl BIT` taşıyor — bir enum (None/StartTls/SslOnConnect) DEĞİL. Açık eşleme, bir bağlantı hatası aldığında admin\'e/geliştiriciye "hangi modun kullanıldığı" konusunda BELİRSİZLİK bırakmaz.',
+            olmasaydi: '`SecureSocketOptions.Auto` kullanılsaydı, MailKit sunucuyla PAZARLIK ederdi — bu, bazı yanlış yapılandırılmış sunucularda BEKLENMEDİK bir moda düşüp "test başarılı" görünüp GERÇEK e-posta gönderiminde (A-10) FARKLI davranmasına yol açabilirdi (öngörülemez davranış, YAGNI\'nin tam tersi bir karmaşıklık).'
+          },
+          {
+            satir: 'catch (Exception ex) when (ex is not OperationCanceledException)\n        {\n            throw new SmtpTestFailedException(ex.Message);\n        }',
+            aciklama: '`ex.Message` yalnızca `SmtpTestFailedException`ın (log\'a giden) `.Message`ına gider — istemciye giden `Code` ("SMTP_TEST_FAILED") SABİTTİR, gerçek MailKit hata metni asla döndürülen JSON\'a girmez.',
+            neden: 'Gerçek bir SMTP hata metni (ör. "Authentication failed for user X at host Y:587") sunucu adresi/kullanıcı adı gibi bilgi SIZDIRABİLİR — SmtpTestFailedException.cs "NEDEN detail" notu.',
+            olmasaydi: 'Exception olduğu gibi (yeniden sarmalanmadan) yukarı fırlatılsaydı, ExceptionHandlingMiddleware bunu `_ => (500, INTERNAL_SERVER_ERROR)` dalına düşürürdü — hem YANLIŞ durum kodu (bir istemci/yapılandırma sorunu için 500 yerine 502 daha doğru) hem de OperationCanceledException gibi zararsız durumların bile "sunucu hatası" gibi görünmesine yol açardı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'TestSmtpSettingsCommand.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Smtp/TestSmtpSettingsCommand.cs',
+        nedenBuKlasor: 'Features/Smtp/ — GetSmtpSettingsQuery/UpdateSmtpSettingsCommand ile AYNI klasör.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// TestSmtpSettingsCommand.cs
+//
+// AMAÇ: POST /admin/smtp-settings/test — kayıtlı (PUT ile ÖNCEDEN kaydedilmiş)
+//       SMTP ayarlarıyla gerçekten bağlanıp isteği yapan admin'in kendi e-posta
+//       adresine bir test e-postası gönderir.
+// NEDEN request body'de bir SmtpSettings şekli YOK (yalnızca ToEmail):
+//       API_ENDPOINTS.md §11 bu endpoint'i parametresiz listeler — test, ADMIN'İN
+//       O AN DB'DE KAYITLI ayarlarını doğrular (henüz kaydedilmemiş, formda yazılı
+//       ama PUT edilmemiş değerleri DEĞİL) — "önce kaydet, sonra test et" akışı.
+// NEDEN ActivityLog/SecurityLog YOK (UpdateSmtpSettingsCommand'ın AKSİNE): bu
+//        komut hiçbir veriyi DEĞİŞTİRMEZ, yalnızca OKUR ve dışarıya bir e-posta
+//        gönderir — CLAUDE.md'nin "İçerik değiştiren her CRUD" kuralı yalnızca
+//        create/update/delete için geçerli, salt-okunur bir doğrulama eylemi değil.
+// BAĞIMLILIKLAR: ISmtpSettingsRepository, IEncryptionService, ISmtpTestService.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Common.Localization;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Features.Smtp;
+
+public record TestSmtpSettingsCommand : IRequest<MessageResponse>
+{
+    public string ToEmail { get; init; } = string.Empty;
+    public string? Language { get; init; }
+}
+
+public class TestSmtpSettingsCommandHandler : IRequestHandler<TestSmtpSettingsCommand, MessageResponse>
+{
+    private readonly ISmtpSettingsRepository _smtpSettingsRepository;
+    private readonly IEncryptionService _encryptionService;
+    private readonly ISmtpTestService _smtpTestService;
+
+    public TestSmtpSettingsCommandHandler(
+        ISmtpSettingsRepository smtpSettingsRepository,
+        IEncryptionService encryptionService,
+        ISmtpTestService smtpTestService
+    )
+    {
+        _smtpSettingsRepository = smtpSettingsRepository;
+        _encryptionService = encryptionService;
+        _smtpTestService = smtpTestService;
+    }
+
+    public async Task<MessageResponse> Handle(TestSmtpSettingsCommand request, CancellationToken ct)
+    {
+        var settings =
+            await _smtpSettingsRepository.GetCurrentAsync(ct)
+            ?? throw new SmtpSettingsNotConfiguredException();
+
+        var decryptedPassword = _encryptionService.Decrypt(settings.PasswordEncrypted);
+
+        await _smtpTestService.SendTestEmailAsync(settings, decryptedPassword, request.ToEmail, ct);
+
+        return new MessageResponse("SMTP_TEST_EMAIL_SENT", SuccessMessages.Resolve("SMTP_TEST_EMAIL_SENT", request.Language));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record TestSmtpSettingsCommand : IRequest<MessageResponse>',
+            aciklama: '`MessageResponse` — AuthController\'ın "token dönmeyen" endpoint\'lerinde kullandığı AYNI zarf (`DTOs/Auth/` altında, ama Auth\'a ÖZEL değil, projede paylaşılan bir sözleşme).',
+            neden: 'Bu endpoint de (login/forgot-password gibi) veri döndürmez, yalnızca "işlem tetiklendi" bilgisini insan-okunur bir mesajla iletir — yeni bir "SmtpTestResponse" zarfı yazmak GEREKSİZ olurdu (aynı şekle sahip bir DTO\'nun ikinci bir kopyası).',
+            olmasaydi: 'Ayrı bir `SmtpTestResponse(string Message)` yazılsaydı, `SuccessMessages.Resolve` desenini (Code→dile göre çöz) YENİDEN icat etmek ya da MessageResponse\'un yaptığı işi BİREBİR kopyalamak gerekirdi — CLAUDE.md "spekülatif ortak tip yazılmaz" kuralının TERSİ bir gereksiz çoğaltma.'
+          },
+          {
+            satir: 'var settings =\n            await _smtpSettingsRepository.GetCurrentAsync(ct)\n            ?? throw new SmtpSettingsNotConfiguredException();',
+            aciklama: 'UpdateUserRoleCommandHandler\'daki `?? throw new EntityNotFoundException(...)` ile AYNI "null-coalescing throw" deseni.',
+            neden: 'Test edilecek bir ayar yoksa (`existing is null`) MailKit\'e bağlanmaya ÇALIŞMAK anlamsız — bu satır, ISmtpTestService\'e ULAŞMADAN erken ve net bir hata verir.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, `settings.PasswordEncrypted` bir `NullReferenceException` fırlatırdı (500, INTERNAL_SERVER_ERROR) — admin "SMTP ayarlarını önce kaydetmem gerektiğini" ANLAYAMAZDI, yalnızca belirsiz bir sunucu hatası görürdü.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SmtpSettingsController.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/SmtpSettingsController.cs',
+        nedenBuKlasor: 'API/Controllers/ — WordsController/AdminController/MediaController ile AYNI seviyede, flat.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// SmtpSettingsController.cs
+//
+// AMAÇ: REFERENCE/API_ENDPOINTS.md §11'deki \`/admin/smtp-settings\` uç noktalarını
+//       MediatR üzerinden ilgili Command/Query'e bağlayan ince controller katmanı.
+// NEDEN AdminController'A EKLENMEDİ, AYRI bir controller: WordsController/
+//       CategoriesController/MediaController ile AYNI desen — Admin-only bir
+//       domain kaynağı, kendi controller'ında yaşar; AdminController yalnızca
+//       "Kullanıcı Yönetimi/İstatistik/Toplu Import/Log Görüntüleme" dört
+//       dilimini taşır (A-07), SMTP kendi domain'i (System) olduğu için ayrı.
+// BAĞIMLILIKLAR: IMediator, ValidationFilter (global, Program.cs'de kayıtlı).
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Claims;
+using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using WordLearner.API.Common;
+using WordLearner.Application.Common.Models;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.DTOs.Smtp;
+using WordLearner.Application.Features.Smtp;
+
+namespace WordLearner.API.Controllers;
+
+[ApiController]
+[Route("api/v1/admin/smtp-settings")]
+[Authorize(Roles = "Admin")]
+public class SmtpSettingsController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public SmtpSettingsController(IMediator mediator) => _mediator = mediator;
+
+    // AMAÇ: AdminController ile AYNI desen — IActivityLogger/ISecurityLogger'a "kim yaptı" bilgisi.
+    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
+    private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    // AMAÇ: Test e-postasının gönderileceği adres — isteği yapan admin'in KENDİ e-postası.
+    private string CurrentUserEmail => User.FindFirstValue(ClaimTypes.Email)!;
+
+    // AMAÇ: MessageResponse.Message'ın hangi dilde çözüleceği (AuthController ile aynı desen).
+    private string? Language => RequestLanguageResolver.Resolve(HttpContext);
+
+    // AMAÇ: Kayıtlı SMTP ayarlarını döner — şifre alanı "***" ile maskelenir.
+    [HttpGet]
+    [ProducesResponseType(typeof(SmtpSettingsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SmtpSettingsDto>> GetSmtpSettings(CancellationToken ct) =>
+        Ok(await _mediator.Send(new GetSmtpSettingsQuery(), ct));
+
+    // AMAÇ: SMTP ayarlarını kaydeder (ilk kayıtta oluşturur, sonrasında günceller).
+    [HttpPut]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UpdateSmtpSettings(UpdateSmtpSettingsCommand command, CancellationToken ct)
+    {
+        await _mediator.Send(
+            command with
+            {
+                UserId = CurrentUserId,
+                ActorRole = CurrentRole,
+                IpAddress = ClientIp,
+            },
+            ct
+        );
+        return NoContent();
+    }
+
+    // AMAÇ: Kayıtlı SMTP ayarlarıyla gerçekten bağlanıp isteği yapan admin'in kendi
+    //       e-posta adresine bir test e-postası gönderir.
+    [HttpPost("test")]
+    [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<MessageResponse>> TestSmtpSettings(CancellationToken ct) =>
+        Ok(
+            await _mediator.Send(
+                new TestSmtpSettingsCommand { ToEmail = CurrentUserEmail, Language = Language },
+                ct
+            )
+        );
+}`,
+        satirlar: [
+          {
+            satir: '[Route("api/v1/admin/smtp-settings")]',
+            aciklama: 'AdminController\'ın (`api/v1/admin`) AKSİNE tam yol burada SABİT olarak `smtp-settings` içerir — SmtpSettingsController AYRI bir controller olduğu için kendi tam rotasını taşımak zorundadır.',
+            neden: 'API_ENDPOINTS.md §11 bu endpoint\'leri `/admin/smtp-settings` yolunda dokümante ediyor — ayrı bir controller kullanmak (WordsController/CategoriesController deseninin devamı) İLE dokümante edilen URL şeklini (nested altında admin) KORUMAK arasında bir çelişki yok, `[Route]` özniteliği ikisini birden sağlar.',
+            olmasaydi: 'SmtpSettingsController `api/v1/smtp-settings` (admin ÖNEKİ olmadan) olsaydı, API_ENDPOINTS.md\'nin dokümante ettiği yol ile GERÇEK kod arasında bir TUTARSIZLIK oluşurdu — Postman\'den deneyen bir geliştirici dokümandaki yolu kullanıp 404 alırdı.'
+          },
+          {
+            satir: 'private string CurrentUserEmail => User.FindFirstValue(ClaimTypes.Email)!;',
+            aciklama: 'JWT\'nin zaten taşıdığı `Email` claim\'inden (JwtTokenService.GenerateAccessToken, A-03) okunur — test endpoint\'i request body\'sinde bir `toEmail` alanı İSTEMEZ.',
+            neden: '"Kayıtlı SMTP ayarlarıyla KENDİME bir test e-postası gönder" akışı, admin\'in KENDİ hesabına ait e-postayı hedef almalı — bu, hem basit (istemcinin bir e-posta adresi yazmasına gerek yok) hem güvenli (admin, BAŞKA birinin e-postasına rastgele test maili gönderemez).',
+            olmasaydi: 'Request body\'de bir `toEmail` alanı İSTENSEYDİ, herhangi bir admin (ya da çalınmış bir admin token\'ı) bu endpoint\'i kötüye kullanıp KEYFİ bir e-posta adresine istenmeyen içerik gönderebilirdi — SMTP sunucusunu bir "açık röle" gibi kullanan küçük bir kötüye kullanım yüzeyi.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /admin/smtp-settings — Kayıtlı Ayarları Görüntüle',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/admin/smtp-settings',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'accessToken bir Admin kullanıcısına ait olmalı. Body gerekmez.',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "host": "smtp.sendgrid.net",
+  "port": 587,
+  "enableSsl": true,
+  "username": "apikey",
+  "password": "***",
+  "fromEmail": "noreply@vokabelmeister.app",
+  "fromName": "VokabelMeister"
+}`
+        },
+        notlar: [
+          'Hiç kayıt yokken (ilk kurulum) tüm string alanlar boş, `port=587`, `enableSsl=true`, `password=""` (henüz "***" DEĞİL — bkz. Bölüm 2 maskeleme sözleşmesi) döner.',
+          '`password` alanı HİÇBİR ZAMAN gerçek şifreyi (ne düz metin ne şifreli hâlini) taşımaz.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'PUT /admin/smtp-settings — Kaydet',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/admin/smtp-settings',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'İlk kayıtta `password` alanına GERÇEK SMTP şifresi/API anahtarı yazılır. Sonraki bir PUT\'ta yalnızca Host değiştirilecekse, `password` alanına bir önceki GET\'in döndürdüğü "***" AYNEN geri gönderilir (bkz. Bölüm 2).',
+        govde: `{
+  "host": "smtp.sendgrid.net",
+  "port": 587,
+  "enableSsl": true,
+  "username": "apikey",
+  "password": "SG.gercek-api-anahtari",
+  "fromEmail": "noreply@vokabelmeister.app",
+  "fromName": "VokabelMeister"
+}`,
+        yanit: {
+          durum: '204 No Content',
+          govde: '(boş gövde)'
+        },
+        notlar: [
+          'Herhangi bir zorunlu alan boşsa 400 ApiErrorResponse (ör. `SMTP_HOST_REQUIRED`, `SMTP_PASSWORD_REQUIRED`) — UpdateSmtpSettingsCommandValidator.',
+          '`fromEmail` geçerli bir e-posta formatında değilse 400 `SMTP_FROM_EMAIL_INVALID`.',
+          'Bu istek HEM ActivityLog (`UPDATE_SMTP_SETTINGS`) HEM SecurityLog (`AdminAction`, `SMTP_SETTINGS_CHANGED`) satırı yaratır — bkz. Bölüm 2.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /admin/smtp-settings/test — Test E-postası Gönder',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/admin/smtp-settings/test',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Bu isteği atmadan ÖNCE ayarların PUT ile kaydedilmiş olması gerekir (bkz. notlar). Body gerekmez — hedef e-posta, token\'daki admin\'in KENDİ e-postasıdır.',
+        yanit: {
+          durum: '200 OK',
+          govde: `{
+  "code": "SMTP_TEST_EMAIL_SENT",
+  "message": "Test e-postası başarıyla gönderildi."
+}`
+        },
+        notlar: [
+          'SMTP ayarları HİÇ kaydedilmemişse 400 ApiErrorResponse (`SMTP_SETTINGS_NOT_CONFIGURED`) — önce PUT çağırın.',
+          'Host/port yanlışsa ya da kimlik doğrulama başarısız olursa 502 ApiErrorResponse (`SMTP_TEST_FAILED`) — gerçek MailKit hata metni yalnızca sunucu loguna (ApplicationLog) yazılır, yanıt İÇİNDE görünmez.',
+          'Gerçek bir SMTP sunucusu (ör. Mailtrap, SendGrid sandbox, gerçek bir Gmail App Password) olmadan bu istek DAİMA 502 döner — bu beklenen bir davranıştır, hata DEĞİLDİR.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'MailKit', tanim: '.NET için popüler bir SMTP/IMAP/POP3 istemci kütüphanesi — `SmtpClient` sınıfı gerçek bir SMTP sunucusuna bağlanıp kimlik doğrulayıp e-posta gönderir.' },
+          { terim: 'MimeMessage', tanim: 'MailKit\'in (MimeKit paketinden) bir e-postanın tüm içeriğini (From/To/Subject/Body) temsil eden tipi.' },
+          { terim: 'StartTLS', tanim: 'Düz metin bir bağlantıyla başlayıp sonradan TLS\'e YÜKSELEN bir güvenli bağlantı yöntemi — SMTP\'nin 587 portunda yaygın kullanılır.' },
+          { terim: '502 Bad Gateway', tanim: 'Sunucunun bağlandığı bir YUKARI AKIŞ (upstream) servisin (burada: SMTP sunucusu) hatalı yanıt verdiğini/erişilemez olduğunu belirten HTTP durum kodu — istemcinin isteği DEĞİL, dış bağımlılık sorunlu.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '`ISmtpTestService`/`MailKitSmtpTestService` — IEmailService\'ten AYRI (farklı sorumluluk), MailKit ile GERÇEK SMTP bağlantısı+gönderim, tüm hatalar TEK bir `SmtpTestFailedException`a sarılır.',
+          '`TestSmtpSettingsCommand`/Handler — kayıtlı ayarları okur, şifreyi ÇÖZER, admin\'in KENDİ e-postasına test gönderir; ActivityLog/SecurityLog YOK (salt-okunur bir doğrulama, CRUD değil).',
+          '`SmtpSettingsNotConfiguredException` (400) / `SmtpTestFailedException` (502) + `ErrorMessages.cs`\'e yeni kodlar (tr/de).',
+          '`SmtpSettingsController` — WordsController/CategoriesController/MediaController ile AYNI desen (AdminController\'A EKLENMEDİ), `api/v1/admin/smtp-settings`, 3 endpoint.',
+          '3 Postman örneği: GET (kayıt yokken/varken), PUT (ilk kayıt + "***" ile şifre koruma), POST test (502 senaryosu dahil).',
+          'Sıradaki bölüm: birim testleri + A-09 kapanışı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -53,6 +53,9 @@ public static class InfrastructureServiceExtensions
         // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı; A-06 — Kategori API.
         services.AddScoped<ICategoryRepository, CategoryRepository>();
 
+        // NEDEN Scoped: DbContext ile aynı yaşam süresinde olmalı; A-09 — SMTP Ayarları API.
+        services.AddScoped<ISmtpSettingsRepository, SmtpSettingsRepository>();
+
         return services;
     }
 }

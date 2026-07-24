@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SmtpSettings Entity + AES-256-CBC Şifreleme</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'smtp-settings-entity-sifreleme',
+    bolumBaslik: 'A-09 — SMTP Ayarları API',
+    oncekiBolum: '../A-08_medya-api/03_testler-ozet-sozluk.html',
+    sonrakiBolum: '02_repository-query-command.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'SmtpSettings Entity + AES-256-CBC Şifreleme',
+        altBaslik: 'SMTP ayarlarının admin panelden yönetilebilmesi için tek satırlık (singleton) bir yapılandırma tablosu, ve bu tablodaki şifreyi DB\'de düz metin olarak tutmamak için IEncryptionService/AesEncryptionService. Bölüm bir DATABASE_SCHEMA notunun nasıl uygulandığını, sonra da bir kod denetiminde bulunan gerçek bir yapılandırma hatasını anlatıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'DATABASE_SCHEMA.md Notu: Ad-hoc UpdatedByUserId → BaseEntity Standardı',
+        aciklama: 'DATABASE_SCHEMA.md\'nin genel notu şunu söylüyordu: "Bazı tablolarda ad-hoc tanımlıydı (WordConcepts.CreatedBy, SmtpSettings.UpdatedByUserId, ClassWords.CreatedBy) — o tablolar kodlanırken (A-03+) ad-hoc kolonlar kaldırılıp BaseEntity standardıyla birleştirilir." SmtpSettings kodlanırken tam olarak bu yapıldı: entity BaseEntity\'den türetildi, DATABASE_SCHEMA/Sistem.md\'nin taslak SQL\'indeki ayrı `UpdatedByUserId` kolonu AYRICA eklenmedi — BaseEntity zaten aynı isimde bir alan taşıyor.',
+        neden: 'CLAUDE.md "Veri katmanı" kuralı: log tabloları hariç HER tablo BaseEntity taşır. SmtpSettings bir log tablosu değil (insert-only değil, admin onu GÜNCELLER) — bu yüzden istisna kapsamına girmiyor. İki ayrı "kim güncelledi" alanı (BaseEntity.UpdatedByUserId + ad-hoc bir UpdatedByUserId) aynı bilgiyi iki kez tutardı.',
+        olmasaydi: 'Ad-hoc kolon AYRICA eklenseydi, Repository<T>.UpdateAsync (BaseEntity.UpdatedByUserId\'yi otomatik set eden ortak kod) bu ikinci alanı HİÇ bilmezdi — Handler onu elle set etmek ZORUNDA kalırdı, iki alan senkron kalmazsa "kim güncelledi" sorusuna İKİ FARKLI (birbiriyle çelişen) cevap verilebilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'SmtpSettings.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/System/SmtpSettings.cs',
+        nedenBuKlasor: 'Entities/System/ — Category/WordConcept ile AYNI desen (CLAUDE.md §5: her entity kendi domain alt klasöründe). "System" domain adı DATABASE_SCHEMA.md\'nin "Sistem ayarı" satırıyla birebir eşleşir.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// SmtpSettings.cs
+//
+// AMAÇ: Uygulamanın e-posta gönderiminde kullandığı SMTP bağlantı bilgileri —
+//       admin panelden yönetilir, tek satırlık (singleton) bir yapılandırma kaydı
+//       (bkz. DATABASE_SCHEMA/Sistem.md).
+// NEDEN BaseEntity'den türer: CLAUDE.md "Veri katmanı" kuralı — log tabloları
+//       hariç her tablo BaseEntity taşır. DATABASE_SCHEMA.md'nin genel notu bu
+//       tabloda ad-hoc tanımlı \`UpdatedByUserId\` kolonunu (ilk taslak) BaseEntity
+//       standardıyla birleştirilecek şekilde işaretlemişti — burada o birleştirme
+//       yapıldı, ayrı bir \`UpdatedBy\` alanı EKLENMEDİ (BaseEntity.UpdatedByUserId
+//       zaten aynı amacı karşılıyor).
+// NEDEN Password DEĞİL PasswordEncrypted: ham şifre asla DB'ye yazılmaz — AES-256-CBC
+//       ile şifrelenmiş Base64(IV + cipher) burada durur (REFERENCE/SECURITY.md §3.2).
+// BAĞIMLILIKLAR: BaseEntity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Domain.Entities.System;
+
+public class SmtpSettings : BaseEntity
+{
+    // AMAÇ: SMTP sunucu adresi (ör. "smtp.sendgrid.net").
+    public string Host { get; set; } = string.Empty;
+
+    // AMAÇ: SMTP portu — varsayılan 587 (STARTTLS).
+    public int Port { get; set; } = 587;
+
+    // AMAÇ: Bağlantının SSL/TLS (STARTTLS) ile kurulup kurulmayacağı.
+    public bool EnableSsl { get; set; } = true;
+
+    // AMAÇ: SMTP kimlik doğrulama kullanıcı adı.
+    public string Username { get; set; } = string.Empty;
+
+    // AMAÇ: AES-256-CBC ile şifrelenmiş SMTP şifresi — Base64(IV + cipher).
+    public string PasswordEncrypted { get; set; } = string.Empty;
+
+    // AMAÇ: Gönderilen e-postalarda "From" adresi.
+    public string FromEmail { get; set; } = string.Empty;
+
+    // AMAÇ: Gönderilen e-postalarda görünen gönderici adı.
+    public string FromName { get; set; } = string.Empty;
+}`,
+        satirlar: [
+          {
+            satir: 'public class SmtpSettings : BaseEntity',
+            aciklama: 'Category/WordConcept/User ile AYNI taban sınıf — Id, CreatedAt/UpdatedAt, IsDeleted/DeletedAt, CreatedByUserId/UpdatedByUserId/DeletedByUserId otomatik gelir.',
+            neden: 'WordLearnerDbContext.OnModelCreating, BaseEntity\'den türeyen HER entity\'ye otomatik bir soft-delete query filter uygular (reflection ile) — SmtpSettings\'in bunu MİRAS ALMASI, ayrıca hiçbir ekstra kod yazmadan "silinmiş bir ayar satırı asla sorguya karışmaz" garantisini verir.',
+            olmasaydi: 'SmtpSettings BaseEntity\'den TÜREMESEYDİ (Language\'ın istisnasıyla aynı yol izlenseydi), Repository<T>\'yi miras ALAMAZDI — AddAsync/UpdateAsync\'i (CreatedByUserId/UpdatedByUserId set etme mantığı dahil) SIFIRDAN, bu tek entity için YENİDEN yazmak gerekirdi (ISmtpSettingsRepository.cs "NEDEN" notu).'
+          },
+          {
+            satir: 'public string PasswordEncrypted { get; set; } = string.Empty;',
+            aciklama: 'Alan adı bilerek `Password` DEĞİL `PasswordEncrypted` — okuyan kimse (bir sonraki geliştirici, ya da bu kodu gözden geçiren biri) bu alanın İÇİNDE düz metin bir şifre OLMADIĞINI adından anlar.',
+            neden: 'REFERENCE/SECURITY.md §3.2: "SMTP şifresi DB\'de Base64(IV + AES-256-CBC cipher)". İsimlendirme, CLAUDE.md\'nin "içerik değiştiren her CRUD... şifre/hash gibi hassas alanlar diff\'ten hariç tutulur" kuralının UYGULANDIĞI yerlerde (UpdateSmtpSettingsCommand.cs, Bölüm 2) hangi alanın filtrelenmesi gerektiğini de netleştirir.',
+            olmasaydi: 'Alan `Password` olarak adlandırılsaydı, bir sonraki geliştirici (ya da bir kod denetimi) bunun DÜZ METİN bir şifre olduğunu VARSAYIP yanlışlıkla ActivityLog\'un NewValue/OldValue JSON diff\'ine dahil edebilirdi — DB\'de şifreli bile olsa, log tablosunda dahi görünmesi istenmeyen bir alan.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SmtpSettingsConfiguration.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/System/SmtpSettingsConfiguration.cs',
+        nedenBuKlasor: 'Configurations/System/ — entity\'nin Entities/System/ klasörüyle BİREBİR eşleşen konfigürasyon klasörü (CategoryConfiguration ile aynı desen).',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// SmtpSettingsConfiguration.cs
+//
+// AMAÇ: SmtpSettings entity'sinin EF Core tablo eşlemesi.
+// NEDEN MaxLength'ler DATABASE_SCHEMA/Sistem.md'deki NVARCHAR uzunluklarıyla
+//       birebir: Host/Username 255, FromEmail 254 (RFC 5321 üst sınırı), FromName 100.
+//       PasswordEncrypted'e MaxLength verilmez — NVARCHAR(MAX) (Base64 IV+cipher
+//       şifreli metnin uzunluğu sabit değil).
+// BAĞIMLILIKLAR: EF Core, SmtpSettings entity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.System;
+
+namespace WordLearner.Infrastructure.Data.Configurations.System;
+
+public class SmtpSettingsConfiguration : IEntityTypeConfiguration<SmtpSettings>
+{
+    public void Configure(EntityTypeBuilder<SmtpSettings> builder)
+    {
+        builder.Property(s => s.Host).IsRequired().HasMaxLength(255);
+        builder.Property(s => s.Username).IsRequired().HasMaxLength(255);
+        builder.Property(s => s.PasswordEncrypted).IsRequired();
+        builder.Property(s => s.FromEmail).IsRequired().HasMaxLength(254);
+        builder.Property(s => s.FromName).IsRequired().HasMaxLength(100);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'builder.Property(s => s.PasswordEncrypted).IsRequired();',
+            aciklama: 'Diğer TÜM string alanlardan farklı olarak `HasMaxLength` VERİLMEZ.',
+            neden: 'Base64(IV + AES-256-CBC cipher) çıktısının uzunluğu düz metin şifrenin uzunluğuna bağlıdır (PKCS7 padding + 16 baytlık sabit IV) — sabit bir üst sınır koymak, admin çok uzun bir SMTP şifresi/uygulama parolası (ör. bir SendGrid API anahtarı) girdiğinde beklenmedik bir DB kesme (truncation) hatasına yol açabilirdi.',
+            olmasaydi: 'Bir MaxLength (ör. 255) verilseydi ve gerçek SMTP şifresi (API anahtarı gibi) uzun olsaydı, EF Core bunu NVARCHAR(255) kolonuna sığdırmaya çalışırken ya SQL Server bir hata fırlatırdı ya da (yapılandırmaya göre) veri SESSİZCE kırpılırdı — kırpılmış bir şifreli değer ASLA doğru çözülemez (Decrypt her zaman BAŞARISIZ olurdu).'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'IEncryptionService — Neden Kendi Arayüzü Var',
+        aciklama: 'Handler\'lar (UpdateSmtpSettingsCommand, TestSmtpSettingsCommand) somut bir AES implementasyonuna değil, `IEncryptionService.Encrypt(string)`/`Decrypt(string)` sözleşmesine bağımlıdır. Tek implementasyon `AesEncryptionService` — bugün başka bir algoritma yok, ama arayüz yine de var çünkü Handler\'ların birim testlerinde (CODING_STANDARDS.md §7.4) bu servis mock\'lanabilir olmalı.',
+        neden: 'PasswordService (BCrypt) DOĞRUDAN örneklenip test ediliyor (mock YOK) çünkü o servisin KENDİSİ test edilen şey. Ama UpdateSmtpSettingsCommandHandlerTests\'in AMACI "Handler doğru mantığı mı işletiyor" — gerçek AES şifrelemesinin çalışıp çalışmadığı DEĞİL (o, AYRI bir AesEncryptionServiceTests\'in sorumluluğu). Bu ayrım için IEncryptionService\'in mock\'lanabilir bir arayüz olması gerekiyor.',
+        olmasaydi: 'IEncryptionService yerine Handler\'lar doğrudan `AesEncryptionService` somut sınıfına bağımlı olsaydı, UpdateSmtpSettingsCommandHandlerTests HER çalıştığında GERÇEK AES şifrelemesi/çözmesi yapardı — "Encrypt(\'YeniSifre\') çağrıldı mı" gibi basit bir DAVRANIŞ doğrulaması için gereksiz bir kripto bağımlılığı, ve testin AES_ENCRYPTION_KEY yapılandırması olmadan ÇALIŞAMAMASI anlamına gelirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IEncryptionService.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IEncryptionService.cs',
+        nedenBuKlasor: 'Interfaces/Services/ — IEmailService/IFileStorageService ile AYNI klasör, flat (CLAUDE.md §5).',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// IEncryptionService.cs
+//
+// AMAÇ: Hassas bir değeri (SMTP şifresi) DB'ye yazmadan önce şifrelemek/okurken
+//       çözmek için sözleşme (REFERENCE/SECURITY.md §3.2).
+// NEDEN: Handler'lar somut AES implementasyonuna değil bu arayüze bağımlı olmalı —
+//        testlerde gerçek algoritma kullanılabilir (kripto saf/deterministik değil
+//        ama dış bir I/O da değil, bu yüzden PasswordService gibi doğrudan
+//        örneklenip test edilir — CODING_STANDARDS.md §7.4'ün "dış servisler mock'lanır"
+//        kuralı ağ/SMTP/OAuth gibi GERÇEK dış çağrılar içindir, yerel kriptografi için değil).
+// BAĞIMLILIKLAR: Yok — saf sözleşme.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface IEncryptionService
+{
+    // AMAÇ: Düz metni şifreler.
+    // NASIL: Sonuç Base64(rastgele IV + AES-256-CBC cipher) — her çağrıda farklı bir IV
+    //        üretilir, aynı düz metin iki kez şifrelense bile FARKLI bir sonuç üretir.
+    string Encrypt(string plainText);
+
+    // AMAÇ: Encrypt ile üretilmiş bir şifreli metni çözer.
+    // NASIL: Base64 çözülür, ilk 16 bayt IV olarak ayrılır, kalanı AES-256-CBC ile çözülür.
+    string Decrypt(string cipherText);
+}`,
+        satirlar: []
+      },
+      {
+        tur: 'kod',
+        baslik: 'AesEncryptionService.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/Services/AesEncryptionService.cs',
+        nedenBuKlasor: 'Services/ — DevEmailService/JwtTokenService ile AYNI klasör, flat.',
+        kod: `// ─────────────────────────────────────────────────────────────────────────────
+// AesEncryptionService.cs
+//
+// AMAÇ: IEncryptionService'in AES-256-CBC implementasyonu — SMTP şifresini DB'ye
+//       yazmadan önce şifreler (REFERENCE/SECURITY.md §3.2, ENV.md §5).
+// NEDEN IConfiguration doğrudan enjekte edilir (IOptions<T> DEĞİL): JwtTokenService/
+//       LocalFileStorageService ile AYNI proje geneli desen — \`AES_ENCRYPTION_KEY\`
+//       düz bir ortam değişkeni (Jwt:SecretKey gibi iç içe bir bölüm DEĞİL), ASP.NET
+//       Core'un configuration sağlayıcıları ortam değişkenlerini otomatik okur.
+// NEDEN anahtar constructor'da doğrulanır (ilk kullanımda DEĞİL): yanlış yapılandırılmış
+//       bir anahtarla (32 bayt değil) uygulamanın SESSİZCE ayakta kalıp yalnızca SMTP
+//       ayarları kaydedilmeye ÇALIŞILDIĞINDA patlaması yerine, DI konteyneri bu servisi
+//       İLK çözdüğü anda (uygulama başlarken, AddApplicationServices Scoped kaydı ilk
+//       HTTP isteğinde) hatanın hemen görünür olması tercih edilir.
+// BAĞIMLILIKLAR: System.Security.Cryptography, Microsoft.Extensions.Configuration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class AesEncryptionService : IEncryptionService
+{
+    // AMAÇ: AES-256 için zorunlu anahtar uzunluğu.
+    private const int KeySizeBytes = 32;
+
+    private readonly byte[] _key;
+
+    public AesEncryptionService(IConfiguration configuration)
+    {
+        var keyBase64 =
+            configuration["AES_ENCRYPTION_KEY"]
+            ?? throw new InvalidOperationException(
+                "AES_ENCRYPTION_KEY environment variable is not set."
+            );
+
+        _key = Convert.FromBase64String(keyBase64);
+
+        // NEDEN: Yanlış boyutta bir anahtar (ör. rastgele bir metin, 16/24 baytlık bir
+        //        AES-128/192 anahtarı) AES-256-CBC ile UYUMSUZ — sessizce yanlış bir
+        //        boyutla devam etmek yerine (Aes.Key setter'ının kendi exception'ı
+        //        belirsiz olabilir) burada net bir hata mesajıyla erken durdurulur.
+        if (_key.Length != KeySizeBytes)
+            throw new InvalidOperationException(
+                $"AES_ENCRYPTION_KEY must decode to exactly {KeySizeBytes} bytes, got {_key.Length}."
+            );
+    }
+
+    public string Encrypt(string plainText)
+    {
+        using var aes = Aes.Create();
+        aes.Key = _key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        // NEDEN GenerateIV: her şifreleme rastgele bir IV üretir — aynı düz metin iki
+        //       kez şifrelense bile aynı sonucu ÜRETMEZ (IV tekrarı desen sızdırır).
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        var plainBytes = Encoding.UTF8.GetBytes(plainText);
+        var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+
+        // NEDEN IV + cipher TEK Base64 dizide: IV gizli değildir (şifreleme anahtarı
+        //       gizlidir), yalnızca çözme sırasında AYNI IV'ye ihtiyaç duyulur — ayrı
+        //       bir kolonda tutmak yerine cipher'ın BAŞINA eklemek, DB şemasında tek
+        //       bir NVARCHAR(MAX) kolonu (PasswordEncrypted) yeterli kılar.
+        var combined = new byte[aes.IV.Length + cipherBytes.Length];
+        Buffer.BlockCopy(aes.IV, 0, combined, 0, aes.IV.Length);
+        Buffer.BlockCopy(cipherBytes, 0, combined, aes.IV.Length, cipherBytes.Length);
+
+        return Convert.ToBase64String(combined);
+    }
+
+    public string Decrypt(string cipherText)
+    {
+        var combined = Convert.FromBase64String(cipherText);
+
+        using var aes = Aes.Create();
+        aes.Key = _key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        // NEDEN BlockSize/8: AES'in blok boyutu (ve dolayısıyla IV uzunluğu) her zaman
+        //       16 bayttır (128 bit) — anahtar boyutundan (256 bit) BAĞIMSIZDIR.
+        var ivLength = aes.BlockSize / 8;
+        var iv = new byte[ivLength];
+        Buffer.BlockCopy(combined, 0, iv, 0, ivLength);
+        aes.IV = iv;
+
+        var cipherBytes = new byte[combined.Length - ivLength];
+        Buffer.BlockCopy(combined, ivLength, cipherBytes, 0, cipherBytes.Length);
+
+        using var decryptor = aes.CreateDecryptor();
+        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
+        return Encoding.UTF8.GetString(plainBytes);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'if (_key.Length != KeySizeBytes)',
+            aciklama: 'Bu satır bir SONRAKİ slaytta anlatılan, kod denetiminde bulunan GERÇEK bir yapılandırma hatasının YAKALANMASINI sağladı.',
+            neden: 'AES-256 tam olarak 32 baytlık bir anahtar GEREKTİRİR — 29 veya 24 baytlık bir "anahtar" ile `aes.Key = _key` satırı ya belirsiz bir CryptographicException fırlatır ya da (bazı .NET sürümlerinde) sessizce farklı bir AES varyantına (AES-192/AES-128) düşer; ikisi de admin panelin "SMTP ayarlarını kaydettim" sanıp aslında BOZUK bir şifreleme yapmasına yol açardı.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, ENV.md/launchSettings.json\'daki (bir sonraki slaytta anlatılan) 29 baytlık HATALI anahtar SESSİZCE kabul edilir, `Encrypt`/`Decrypt` ya .NET\'in kendi belirsiz bir hatasıyla ya da (daha kötüsü) YANLIŞ ama "çalışan" bir şifreleme ile devam ederdi — ikinci durumda hata çok daha SONRA, üretimde SMTP şifresi çözülemediğinde fark edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Kod Denetimi (Gerçek Bulgu): ENV.md/launchSettings.json\'daki Örnek Anahtar 29 Bayttı',
+        aciklama: 'AesEncryptionServiceTests yazılıp ilk kez çalıştırıldığında, testlerde kullanılan sabit örnek anahtar (ENV.md §5\'teki ve launchSettings.json\'daki `AES_ENCRYPTION_KEY` değeriyle AYNI, projenin var olan taslak değeri) `AesEncryptionService`\'in kendi doğrulaması tarafından REDDEDİLDİ: Base64 çözüldüğünde 32 DEĞİL, 29 bayt üretiyordu. Bu, "32 byte Base64" olduğu YORUM olarak yazılmış ama gerçekte HİÇ doğrulanmamış bir örnek değerdi.',
+        neden: 'Bu bulgu tam olarak bir önceki slaytın anlattığı kontrolün NEDEN var olduğunu KANITLIYOR: doğrulama kodu OLMASAYDI, bu hatalı anahtar projenin geliştirme ortamında SESSİZCE kabul edilir, gerçek bir SMTP ayarı kaydedilip test edilene kadar (A-09\'un `POST /test` endpoint\'i çağrılana kadar) fark edilmezdi.',
+        olmasaydi: '`openssl rand -base64 32` ile GERÇEKTEN 32 bayta çözülen yeni bir anahtar üretilip hem `ENV.md` §5 hem `launchSettings.json` (gitignore\'da olduğu için repoya girmeyen, yerel bir dosya) güncellendi — düzeltme yapılmasaydı, bu projeyi ilk kez `git clone` edip ENV.md\'yi harfiyen takip eden bir geliştirici, AesEncryptionService\'i DI konteyneri ilk çözdüğü anda (herhangi bir SMTP endpoint\'ine ilk istekte) açıklaması İLK BAKIŞTA anlaşılmayan bir `InvalidOperationException` ile karşılaşırdı.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'AES-256-CBC', tanim: '256 bitlik (32 bayt) bir anahtarla, bloklar arasında zincirleme (Cipher Block Chaining) yapan simetrik bir şifreleme algoritması — aynı anahtarla hem şifrelenir hem çözülür.' },
+          { terim: 'IV (Initialization Vector)', tanim: 'Her şifreleme işleminde rastgele üretilen, gizli OLMAYAN ama şifreleme sonucunu (aynı düz metin+anahtar için bile) FARKLILAŞTIRAN bir başlangıç değeri — CBC modunda zorunludur.' },
+          { terim: 'PKCS7 Padding', tanim: 'Düz metnin uzunluğu AES\'in blok boyutunun (16 bayt) tam katı olmadığında, son bloğu doldurmak için kullanılan standart bir yöntem.' },
+          { terim: 'Singleton yapılandırma tablosu', tanim: 'Tabloda HER ZAMAN en fazla bir satır bulunan bir tasarım — SmtpSettings burada tekil bir "uygulama ayarı" satırıdır, kullanıcı/kelime gibi çoklu kayıt yoktur.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Ne Yazıldı?',
+        maddeler: [
+          '`SmtpSettings` (Domain/Entities/System) — BaseEntity\'den türer, DATABASE_SCHEMA.md\'nin ad-hoc `UpdatedByUserId` notunu BaseEntity standardıyla birleştirir.',
+          '`SmtpSettingsConfiguration` — MaxLength\'ler DATABASE_SCHEMA/Sistem.md ile birebir, `PasswordEncrypted`\'e KASITLI olarak MaxLength YOK.',
+          '`AddSmtpSettings` migration.',
+          '`IEncryptionService`/`AesEncryptionService` (AES-256-CBC, rastgele IV, Base64(IV+cipher), 32 bayt anahtar kontrolü constructor\'da).',
+          '**Kod denetimi (gerçek bulgu):** ENV.md/launchSettings.json\'daki örnek `AES_ENCRYPTION_KEY` 29 bayta çözülüyordu (32 DEĞİL) — yeni, GERÇEKTEN 32 baytlık bir anahtarla değiştirildi.',
+          'Sıradaki bölüm: `ISmtpSettingsRepository` + `GetSmtpSettingsQuery`/`UpdateSmtpSettingsCommand` (şifre maskeleme sözleşmesi + çift loglama).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

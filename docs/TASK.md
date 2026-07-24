@@ -33,7 +33,27 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-09 — SMTP Ayarları API` ⬜ → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `A-10 — E-posta Servisi + Hesap Temizleme Görevi` ⬜ → `TASK/A_admin_panel_backend.md`
+(`A-09 — SMTP Ayarları API` ✅ tamamlandı 2026-07-24: `SmtpSettings` (BaseEntity, tekil/singleton
+satır — DATABASE_SCHEMA.md'nin "ad-hoc `UpdatedByUserId` → BaseEntity" birleştirme notu burada
+uygulandı, ayrı bir `UpdatedBy` alanı EKLENMEDİ), `IEncryptionService`/`AesEncryptionService`
+(AES-256-CBC, rastgele IV, Base64(IV+cipher), anahtar `AES_ENCRYPTION_KEY`'in tam 32 bayta
+çözüldüğü constructor'da doğrulanır), `ISmtpSettingsRepository` (tek satır, `GetCurrentAsync`),
+`Features/Smtp/` (`GetSmtpSettingsQuery` — şifre `***` maskeli, `UpdateSmtpSettingsCommand` —
+upsert + "***" gönderilirse eski şifreyi koruma sözleşmesi + `IActivityLogger`/`ISecurityLogger`
+çift loglama [UpdateUserRoleCommand ile aynı desen], `TestSmtpSettingsCommand` — kayıtlı
+ayarlarla admin'in kendi e-postasına test gönderir), `ISmtpTestService`/`MailKitSmtpTestService`
+(projeye MailKit eklendi, A-10'dan önce), `SmtpSettingsController` (`api/v1/admin/smtp-settings`,
+WordsController/CategoriesController/MediaController ile aynı "ayrı domain controller'ı" deseni,
+AdminController'a EKLENMEDİ), Backend Akademi'ye işlendi (4 bölüm), kök karta eklendi. **Kod
+denetimi (2 subagent — kod + Backend Akademi), 5 gerçek düzeltme:** (1) ENV.md/launchSettings.json'daki
+örnek `AES_ENCRYPTION_KEY` 29 bayta çözülüyordu (32 DEĞİL) — GERÇEKTEN 32 baytlık yeni bir anahtarla
+düzeltildi; (2) hiç ayar kaydedilmemişken maske literal'i ("***") gerçek şifre olarak sessizce
+şifrelenebiliyordu — yeni `SmtpPasswordRequiredException` ile kapatıldı; (3) `GetCurrentAsync`'e
+`OrderBy(Id)` eklendi (eşzamanlı PUT'ların DB'de birden fazla satır oluşturabileceği kabul edilmiş
+riskte deterministik okuma için); (4) MailKit'in bilinen bir CVE'si olan 4.3.0 sürümü 4.17.0'a
+yükseltildi; (5) Backend Akademi'de "Tam Dosya" etiketli 5 slayt gerçek dosyalardan eksik satırlar
+içeriyordu, programatik diff ile birebir eşitlendi. **265/265 birim testi yeşil.**)
 (`A-08 — Medya / Dosya Yükleme API` ✅ tamamlandı 2026-07-24: `IFileStorageService`/
 `LocalFileStorageService` (uzantı jpg/jpeg/png/webp + 5 MB boyut + İÇERİK [magic bytes]
 doğrulaması, `Guid` tabanlı benzersiz ad üretimi), `MediaController` (`POST /media/images/upload`,

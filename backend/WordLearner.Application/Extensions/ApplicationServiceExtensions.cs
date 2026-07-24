@@ -69,6 +69,11 @@ public static class ApplicationServiceExtensions
         //       servisleriyle tutarlı yaşam süresi için Scoped seçildi (A-08 — Medya API).
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+        // NEDEN Scoped: Stateless bir servis (Singleton da olabilirdi), ama diğer Application
+        //       servisleriyle tutarlı yaşam süresi için Scoped seçildi (A-09 — SMTP Ayarları API).
+        services.AddScoped<IEncryptionService, AesEncryptionService>();
+        services.AddScoped<ISmtpTestService, MailKitSmtpTestService>();
+
         return services;
     }
 }

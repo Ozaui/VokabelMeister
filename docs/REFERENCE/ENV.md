@@ -32,7 +32,7 @@ JWKS `https://appleid.apple.com/auth/keys`'ten dinamik çekilir.
 
 ## 5. SMTP Şifreleme Anahtarı (AES)
 ```
-AES_ENCRYPTION_KEY=K5v2XmP9qR8nW3jL6tH1cB4yE7uA0oD+N2sF5gM=    # 32 byte Base64 (openssl rand -base64 32)
+AES_ENCRYPTION_KEY=Z0n/xH/HxOpxJfQO3s5qCMQBhW2yKd+Qo9jDESO5t8Q=    # 32 byte Base64 (openssl rand -base64 32)
 ```
 SMTP şifresi DB'de AES-256 şifreli; anahtar DB'de saklanamaz → daima ENV. **Kaybolursa DB'deki SMTP şifreleri çözülemez.**
 

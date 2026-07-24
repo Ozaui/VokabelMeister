@@ -50,6 +50,9 @@ public static class LogMessages
         ["USER_ROLE_CHANGED"] = new() { ["tr"] = "Kullanıcı rolü değiştirildi", ["de"] = "Benutzerrolle geändert" },
         ["USER_ACCOUNT_FROZEN"] = new() { ["tr"] = "Hesap donduruldu", ["de"] = "Konto gesperrt" },
         ["USER_ACCOUNT_REACTIVATED"] = new() { ["tr"] = "Hesap yeniden aktifleştirildi", ["de"] = "Konto reaktiviert" },
+
+        // A-09 — SMTP Ayarları (kimlik bilgisi değişimi hassas, AdminAction).
+        ["SMTP_SETTINGS_CHANGED"] = new() { ["tr"] = "SMTP ayarları değiştirildi", ["de"] = "SMTP-Einstellungen geändert" },
     };
 
     // AMAÇ: Bir Detail koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen metni

@@ -125,6 +125,9 @@ public class ExceptionHandlingMiddleware
             UnsupportedFileTypeException => HttpStatusCode.BadRequest,
             FileTooLargeException => HttpStatusCode.BadRequest,
             FileRequiredException => HttpStatusCode.BadRequest,
+            SmtpSettingsNotConfiguredException => HttpStatusCode.BadRequest,
+            SmtpPasswordRequiredException => HttpStatusCode.BadRequest,
+            SmtpTestFailedException => HttpStatusCode.BadGateway,
             _ => HttpStatusCode.BadRequest,
         };
 }

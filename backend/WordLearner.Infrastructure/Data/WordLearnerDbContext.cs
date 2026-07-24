@@ -13,6 +13,7 @@ using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Entities.Categories;
 using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Entities.System;
 using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Infrastructure.Data;
@@ -66,6 +67,9 @@ public class WordLearnerDbContext : DbContext
 
     // AMAÇ: WordConcept↔Category M:N ara tablosu (A-06).
     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+
+    // AMAÇ: SMTP bağlantı ayarları — tekil (singleton) yapılandırma kaydı (A-09).
+    public DbSet<SmtpSettings> SmtpSettings => Set<SmtpSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

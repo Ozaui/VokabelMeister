@@ -50,6 +50,14 @@ public static class SuccessMessages
             ["tr"] = "Hesabınız silindi. 30 gün içinde tekrar giriş yaparak geri alabilirsiniz.",
             ["de"] = "Ihr Konto wurde gelöscht. Sie können es innerhalb von 30 Tagen durch erneutes Anmelden wiederherstellen.",
         },
+
+        // NEDEN bu kod (A-09): TestSmtpSettingsCommand — MailKitSmtpTestService gerçekten
+        //       bağlanıp bir test e-postası gönderdiğinde (istisna fırlatmadıysa) dönen mesaj.
+        ["SMTP_TEST_EMAIL_SENT"] = new()
+        {
+            ["tr"] = "Test e-postası başarıyla gönderildi.",
+            ["de"] = "Test-E-Mail wurde erfolgreich gesendet.",
+        },
     };
 
     // AMAÇ: Bir başarı koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.

@@ -486,23 +486,47 @@ bölüm 2: eksik dosya + RequestSizeLimit), test sayısı 250→252'ye çıktı.
 252/252 birim testi yeşil, `BACKEND_AKADEMI/A-08_medya-api/` (3 bölüm) işlendi. Kapsam düzeltmesi:
 `Word.ImageUrl` için yeni migration gerekmedi (A-05'te zaten vardı).
 
-### A-09 — SMTP Ayarları API ⬜
+### A-09 — SMTP Ayarları API ✅
 **Referans:** REFERENCE/SECURITY.md §3.2, REFERENCE/ENV.md §5
 **Frontend karşılığı:** B-09 (Admin — SMTP Ayarları Sayfası)
 > SMTP bilgileri DB'de AES-256 şifreli; admin panelden yönetilir, `appsettings.json`'da DEĞİL.
-- [ ] **Entity:** `SmtpSettings` (Host, Port, EnableSsl, Username, **PasswordEncrypted**, FromEmail, FromName, UpdatedBy) + migration
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `IEncryptionService` + `AesEncryptionService` (AES-256-CBC, rastgele IV, anahtar `AES_ENCRYPTION_KEY`)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `ISmtpSettingsRepository`, `SmtpSettingsController` (Admin): `GET` (şifre `***`), `PUT`, `POST .../test`
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Loglama entegrasyonu** (A-04): `PUT` **hem** `IActivityLogger` (`UPDATE_SMTP_SETTINGS`,
+- [x] **Entity:** `SmtpSettings` (Host, Port, EnableSsl, Username, **PasswordEncrypted**, FromEmail, FromName) + migration
+      — **Kapsam düzeltmesi:** ayrı bir `UpdatedBy` alanı EKLENMEDİ; DATABASE_SCHEMA.md'nin
+      "ad-hoc UpdatedByUserId → BaseEntity standardıyla birleştirilir" notu gereği entity
+      `BaseEntity`'den türetildi, `BaseEntity.UpdatedByUserId` zaten aynı amacı karşılıyor.
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] `IEncryptionService` + `AesEncryptionService` (AES-256-CBC, rastgele IV, anahtar `AES_ENCRYPTION_KEY`)
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] `ISmtpSettingsRepository`, `SmtpSettingsController` (Admin): `GET` (şifre `***`), `PUT`, `POST .../test`
+      — `POST .../test` ayrıca `ISmtpTestService`/`MailKitSmtpTestService` (MailKit ile gerçek
+      SMTP bağlantısı) gerektirdi, bu da projeye MailKit 4.3.0 paketini erken (A-10'dan önce) ekledi.
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] **Loglama entegrasyonu** (A-04): `PUT` **hem** `IActivityLogger` (`UPDATE_SMTP_SETTINGS`,
       `NewValue`'da şifre **asla** düz metin yazılmaz — `PasswordEncrypted` alanı JSON diff'ten
       hariç tutulur) **hem** `ISecurityLogger` (`LogEventType.AdminAction` — kimlik bilgisi
       değişikliği hassas, iki log'a da düşer) çağırır
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `AesEncryptionServiceTests` (encrypt/decrypt round-trip, 32 byte anahtar kontrolü)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+- [x] **Birim testleri:** `AesEncryptionServiceTests` (encrypt/decrypt round-trip, 32 byte anahtar kontrolü)
+      + `GetSmtpSettingsQueryHandlerTests`/`UpdateSmtpSettingsCommandHandlerTests`/`TestSmtpSettingsCommandHandlerTests`
+- [x] ➜ **BACKEND_AKADEMI'ye işle**
+
+**Kod denetimi (2 subagent — kod + Backend Akademi), gerçek düzeltmeler:**
+(1) ENV.md/launchSettings.json'daki örnek `AES_ENCRYPTION_KEY` Base64 çözüldüğünde 32 değil 29 bayt
+üretiyordu — `AesEncryptionService`'in constructor doğrulaması bunu yakaladı; `openssl rand -base64
+32` ile gerçekten 32 baytlık yeni bir anahtarla düzeltildi (hem `ENV.md` hem gitignore'da olan yerel
+`launchSettings.json`), test sabiti de güncellendi.
+(2) `UpdateSmtpSettingsCommand`: hiç SMTP ayarı kaydedilmemişken maske literal'i ("***") gönderilirse
+bu literal SESSİZCE gerçek şifre olarak şifrelenip DB'ye yazılabiliyordu — yeni
+`SmtpPasswordRequiredException` (400) ile kapatıldı.
+(3) `SmtpSettingsRepository.GetCurrentAsync`'e `OrderBy(s => s.Id)` eklendi — DB'de tekil-satır
+constraint'i olmadığından eşzamanlı iki PUT'un birden fazla satır oluşturabileceği (bilinçli olarak
+kabul edilmiş, düşük öncelikli bir risk) durumda okuma artık deterministik.
+(4) MailKit 4.3.0'ın bilinen orta önem dereceli bir CVE'si vardı — 4.17.0'a yükseltildi
+(`TECHNICAL_SPECIFICATIONS.md` güncellendi).
+(5) Backend Akademi'de "Tam Dosya" etiketli 5 kod slaytı gerçek dosyalardan eksik satırlar
+(using/yorum) içeriyordu — hepsi programatik diff ile doğrulanarak birebir eşitlenip düzeltildi.
+**265/265 birim testi yeşil** (252'den +13). `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm)
+işlendi, kök karta eklendi.
 
 ### A-10 — E-posta Servisi + Hesap Temizleme Görevi ⬜
 **Referans:** REFERENCE/SECURITY.md §7

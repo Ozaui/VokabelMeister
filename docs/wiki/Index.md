@@ -9,7 +9,20 @@ HealthController ile aynı desende MediatR DIŞINDA), `app.UseStaticFiles()`, `I
 migration gerekmedi (`WordConcept.ImageUrl` A-05'te zaten vardı); kod denetiminde (2 subagent)
 bulunan 2 gerçek düzeltme — yalnızca uzantı kontrolü yeterli değildi (magic-byte doğrulaması
 eklendi), eksik dosya ASP.NET Core'un ham hata şekliyle dönüyordu (`FileRequiredException` ile
-düzeltildi); detay → Otuz yedinci + Otuz sekizinci INGEST. Sırada **A-09 (SMTP Ayarları API)** var.
+düzeltildi); detay → Otuz yedinci + Otuz sekizinci INGEST. **A-09 ✅ tamamlandı** (2026-07-24, aynı
+gün) — SMTP Ayarları API: `SmtpSettings` (BaseEntity, tekil/singleton satır), `IEncryptionService`/
+`AesEncryptionService` (AES-256-CBC, 32 bayt anahtar doğrulaması), `ISmtpSettingsRepository`,
+`Features/Smtp/` (`GetSmtpSettingsQuery` — şifre `***` maskeli, `UpdateSmtpSettingsCommand` — upsert
++ maskeleme sözleşmesi + çift loglama, `TestSmtpSettingsCommand` — admin'in kendi e-postasına test
+gönderir), `ISmtpTestService`/`MailKitSmtpTestService` (projedeki İLK gerçek SMTP bağlantısı,
+MailKit A-10'dan ÖNCE eklendi), `SmtpSettingsController` (`api/v1/admin/smtp-settings`,
+WordsController/CategoriesController/MediaController ile AYNI "ayrı domain controller'ı" deseni),
+**265/265 birim testi yeşil**; kod denetiminde (2 subagent) bulunan 5 gerçek düzeltme — ENV.md/
+launchSettings.json'daki 29 baytlık hatalı örnek AES anahtarı, "***" maske literalinin ilk kayıtta
+gerçek şifre olarak şifrelenebilmesi (`SmtpPasswordRequiredException` ile kapatıldı), eşzamanlı PUT
+determinizmi (`OrderBy(Id)`), MailKit'in CVE'li 4.3.0 sürümü (4.17.0'a yükseltildi), Backend
+Akademi'de 5 "Tam Dosya" slaytının gerçek koddan eksik satırlar içermesi; detay → Otuz dokuzuncu
+INGEST. Sırada **A-10 (E-posta Servisi + Hesap Temizleme Görevi)** var.
 Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
@@ -1377,3 +1390,76 @@ A-07'nin kendi kod denetimi bulgularını anlattığı desenin AYNISI). **Etkile
 `backend/WordLearner.Tests/Services/FileStorageServiceTests.cs` (6→8 test),
 `BACKEND_AKADEMI/A-08_medya-api/` (3 bölümün tamamı), `docs/TASK/A_admin_panel_backend.md` (A-08
 notuna kod denetimi eklendi), `docs/TASK.md`, bu dosya. **252/252 birim testi yeşil.***
+
+*Otuz dokuzuncu INGEST (2026-07-24, aynı gün) — **A-09 (SMTP Ayarları API) tamamlandı ✅:**
+`SmtpSettings` (`Domain/Entities/System`, BaseEntity'den türer — DATABASE_SCHEMA.md'nin "ad-hoc
+`UpdatedByUserId` → BaseEntity standardıyla birleştirilir" notu burada uygulandı, ayrı bir
+`UpdatedBy` alanı EKLENMEDİ) + `SmtpSettingsConfiguration` + `AddSmtpSettings` migration.
+`IEncryptionService`/`AesEncryptionService` (AES-256-CBC, rastgele IV, Base64(IV+cipher),
+`AES_ENCRYPTION_KEY`'in tam 32 bayta çözüldüğü constructor'da doğrulanır — JwtTokenService/
+LocalFileStorageService ile aynı ham `IConfiguration` indexer deseni). `ISmtpSettingsRepository`
+(`IRepository<SmtpSettings>`'i genişletir, tek metodu `GetCurrentAsync` — WHERE'siz, tek satır).
+`Features/Smtp/` (yeni domain klasörü): `GetSmtpSettingsQuery` (kayıt yoksa boş varsayılanlar,
+kayıt varsa şifre "***" ile maskelenir), `UpdateSmtpSettingsCommand` (upsert — tek Command hem
+oluşturma hem güncellemeyi kapsar; "***" gönderilirse eski şifreli değeri KORUMA sözleşmesi;
+`PasswordEncrypted` diff'ten HARİÇ; `IActivityLogger`+`ISecurityLogger` çift loglama —
+UpdateUserRoleCommand'la [A-07] aynı desen), `TestSmtpSettingsCommand` (kayıtlı ayarlarla admin'in
+KENDİ e-postasına test gönderir — request body'de `toEmail` YOK, açık bir röle kötüye kullanımını
+önler; ActivityLog/SecurityLog YOK çünkü salt-okunur). `ISmtpTestService`/`MailKitSmtpTestService`
+— projedeki İLK gerçek SMTP bağlantısı (MailKit paketi eklendi, A-10'dan ÖNCE), tüm MailKit
+exception çeşitliliği TEK bir `SmtpTestFailedException`e (502) sarılır, gerçek hata metni yalnızca
+loga gider. `SmtpSettingsController` (`api/v1/admin/smtp-settings`, WordsController/
+CategoriesController/MediaController ile AYNI "ayrı domain controller'ı" deseni, AdminController'a
+EKLENMEDİ, 3 endpoint). `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm) yazıldı, zincir A-08'in
+son bölümüne bağlandı, kök `index.html`'e kart eklendi.
+
+**Kod denetimi (2 bağımsız subagent — biri backend kodunu, biri Backend Akademi içeriğini
+inceledi), 5 gerçek düzeltme bulunup hepsi kapatıldı:**
+**(1) Yapılandırma (gerçek bulgu, kod incelemesi SIRASINDA kendiliğinden ortaya çıktı):** projenin
+var olan taslak `AES_ENCRYPTION_KEY` örneği (hem `ENV.md` §5 hem gitignore'da olan yerel
+`launchSettings.json`) Base64 çözüldüğünde 32 DEĞİL 29 bayt üretiyordu —
+`AesEncryptionService`'in kendi constructor doğrulaması bunu (testler ilk çalıştırıldığında)
+yakaladı. `openssl rand -base64 32` ile GERÇEKTEN 32 baytlık yeni bir anahtarla düzeltildi.
+**(2) Backend — korelasyon/güvenlik (subagent bulgusu):** `UpdateSmtpSettingsCommand`da hiç SMTP
+ayarı kaydedilmemişken maske literal'i ("***") gönderilirse, bu literal SESSİZCE
+`_encryptionService.Encrypt("***")` ile gerçek şifre olarak DB'ye yazılabiliyordu (sessiz bir
+yanlış-yapılandırma) — yeni `SmtpPasswordRequiredException` (400, `SMTP_PASSWORD_REQUIRED` kodunu
+validator'la PAYLAŞIR) ile kapatıldı, `UpdateSmtpSettingsCommandHandlerTests`'e regresyon testi
+eklendi (4→5 test). **(3) Backend — dayanıklılık (subagent bulgusu, düşük öncelikli kabul edilmiş
+risk):** `SmtpSettingsRepository.GetCurrentAsync`'in DB'de UNIQUE/CHECK constraint'i olmayan
+"tekil satır" varsayımı, eşzamanlı iki PUT'ta birden fazla satır oluşmasına (yarış durumu) izin
+verebiliyordu — bir DB seviyesi constraint EKLENMEDİ (admin-only, düşük trafikli bir ekran için
+bilinçli bir kapsam kararı), ama `OrderBy(s => s.Id)` eklenerek en azından "hangi satır okunur"
+sorusunun cevabı deterministik hâle getirildi. **(4) Tedarik zinciri güvenliği (subagent
+bulgusu):** MailKit 4.3.0'ın bilinen orta önem dereceli bir CVE'si (GHSA-9j88-vvj5-vhgr) vardı —
+4.17.0'a yükseltildi (`TECHNICAL_SPECIFICATIONS.md` referans sürümü güncellendi), transitive
+BouncyCastle.Cryptography CVE'si de bu yükseltmeyle kapandı. **(5) Backend Akademi — sadakat
+(ikinci subagent bulgusu):** "Tam Dosya"/"Tam Dosyalar" etiketli 5 `kod` slaytı (repository ikilisi,
+`UpdateSmtpSettingsCommand.cs`, servis ikilisi, `TestSmtpSettingsCommand.cs`, `SmtpSettingsController.cs`)
+gerçek dosyalardan `using` satırları/yorum blokları eksik gösteriyordu, bir slaytta ise bir yorum
+CÜMLESİ kısaltılıp yeniden yazılmıştı (fabrikasyon) — STANDART.md'nin "birebir kopyalanır,
+kısaltılmaz, uydurulmaz" kuralının ihlali. Tüm 5 slayt GERÇEK güncel koda göre YENİDEN yazıldı;
+doğrulama bu kez Node.js `vm` modülüyle HTML'den `window.MODULE`'ü GERÇEKTEN çalıştırıp her `kod`
+alanını gerçek dosyayla PROGRAMATİK olarak birebir karşılaştıran bir betikle yapıldı (A-08'in
+INGEST'inde elle/görsel karşılaştırmanın kaçırdığı bir sınıf hatayı — kısmi string birleştirme
+hataları — bu kez otomatik diff yakaladı), `satirlar[]` çapraz kontrolü de ayrı bir betikle
+doğrulandı (hepsi PASS). Her iki bölüme (02 ve 03) birer yeni `kavram` slaytı eklendi ("Kod
+Denetimi: ..." başlıklı, A-07/A-08'in kendi kod denetimi bulgularını anlattığı desenin AYNISI).
+
+**252 (A-08 sonu) → 265/265 birim testi yeşil** (13 yeni: 4 Aes + 2 Get + 5 Update + 2 Test).
+**Etkilenen dosyalar:** `backend/WordLearner.Domain/Entities/System/SmtpSettings.cs` (yeni),
+`backend/WordLearner.Infrastructure/Data/Configurations/System/SmtpSettingsConfiguration.cs`
+(yeni), `AddSmtpSettings` migration (yeni), `IEncryptionService.cs`/`AesEncryptionService.cs`
+(yeni), `ISmtpSettingsRepository.cs`/`SmtpSettingsRepository.cs` (yeni), `Features/Smtp/` (yeni,
+3 dosya), `Validators/Smtp/UpdateSmtpSettingsCommandValidator.cs` (yeni),
+`SmtpSettingsNotConfiguredException.cs`/`SmtpTestFailedException.cs`/`SmtpPasswordRequiredException.cs`
+(yeni), `ISmtpTestService.cs`/`MailKitSmtpTestService.cs` (yeni), `SmtpSettingsController.cs`
+(yeni), `WordLearnerDbContext.cs`/`InfrastructureServiceExtensions.cs`/
+`ApplicationServiceExtensions.cs`/`ExceptionHandlingMiddleware.cs` (DI/mapping eklendi),
+`ErrorMessages.cs`/`SuccessMessages.cs`/`LogMessages.cs` (yeni kodlar), `WordLearner.Application.csproj`
+(MailKit 4.17.0), `docs/REFERENCE/ENV.md`/`backend/WordLearner.API/Properties/launchSettings.json`
+(AES anahtarı düzeltildi), `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md` (MailKit sürümü), 4 yeni
+test dosyası, `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm) + `BACKEND_AKADEMI/A-08_medya-api/
+03_testler-ozet-sozluk.html` (`sonrakiBolum` A-09'a bağlandı) + kök `BACKEND_AKADEMI/index.html`
+(kart eklendi), `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-09 ✅), bu dosya. **Sıradaki
+task: A-10 (E-posta Servisi + Hesap Temizleme Görevi).***

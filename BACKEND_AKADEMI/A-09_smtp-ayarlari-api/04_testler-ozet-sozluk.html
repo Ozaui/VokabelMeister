@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — Testler + Özet + Sözlük</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'testler-ozet-sozluk',
+    bolumBaslik: 'A-09 — SMTP Ayarları API',
+    oncekiBolum: '03_controller-test-servisi-postman.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'AesEncryptionServiceTests + A-09 Kapanışı',
+        altBaslik: 'JwtTokenServiceTests ile AYNI desen: gerçek bir in-memory IConfiguration ile GERÇEK AesEncryptionService örneklenir — Moq yok, çünkü doğrulanan şey servisin KENDİ kripto/doğrulama davranışı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden AesEncryptionService Doğrudan Örneklenir (Mock DEĞİL)',
+        aciklama: 'CODING_STANDARDS.md §7.4 "dış servisler (email, OneSignal, Google/Apple) her zaman mock\'lanır" der — ama AES şifreleme bir AĞ ÇAĞRISI değil, saf CPU hesaplaması. PasswordService (BCrypt) NASIL kendi testinde doğrudan örnekleniyorsa, AesEncryptionService de AYNI mantıkla doğrudan örneklenir; mock\'lanan yalnızca Handler seviyesinde `IEncryptionService` (UpdateSmtpSettingsCommandHandlerTests, Bölüm 2).',
+        neden: 'Bu servisin TEK gerçek riski "round-trip bozuk mu, yanlış boyutlu anahtar sessizce mi kabul ediliyor" — bunlar TAM OLARAK gerçek algoritmayı ÇALIŞTIRMADAN test EDİLEMEZ sorular. Bir mock "Encrypt çağrıldı mı" der ama "gerçekten doğru çözülüyor mu" sorusuna asla cevap veremez.',
+        olmasaydi: 'AesEncryptionService de mock\'lanan bir arayüz ARKASINDA test edilseydi, gerçek AES-256-CBC implementasyonunun KENDİSİ (IV üretimi, PKCS7 padding, Buffer.BlockCopy sıralaması) HİÇBİR testte GERÇEKTEN çalıştırılmamış olurdu — bu servisteki bir buga (ör. IV\'nin YANLIŞ baytlarda saklanması) hiçbir test asla dokunmazdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AesEncryptionServiceTests.cs — Round-Trip + Yanlış Anahtar Boyutu',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/AesEncryptionServiceTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — JwtTokenServiceTests/PasswordServiceTests ile AYNI klasör, flat.',
+        kod: `public class AesEncryptionServiceTests
+{
+    private static IConfiguration CreateConfiguration(string? keyBase64) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AES_ENCRYPTION_KEY"] = keyBase64 })
+            .Build();
+
+    private const string Valid32ByteKey = "Z0n/xH/HxOpxJfQO3s5qCMQBhW2yKd+Qo9jDESO5t8Q=";
+
+    [Fact]
+    public void Encrypt_ValidPlainText_ProducesCipherThatDecryptReturnsOriginal()
+    {
+        var servis = new AesEncryptionService(CreateConfiguration(Valid32ByteKey));
+        var duzMetin = "SmtpSifresi123!";
+
+        var sifreli = servis.Encrypt(duzMetin);
+        var cozulen = servis.Decrypt(sifreli);
+
+        sifreli.Should().NotBe(duzMetin);
+        cozulen.Should().Be(duzMetin);
+    }
+
+    [Fact]
+    public void Constructor_KeyIsNot32Bytes_ThrowsInvalidOperationException()
+    {
+        var kisaAnahtar = Convert.ToBase64String(new byte[16]);
+
+        var act = () => new AesEncryptionService(CreateConfiguration(kisaAnahtar));
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'private static IConfiguration CreateConfiguration(string? keyBase64) =>',
+            aciklama: 'JwtTokenServiceTests.CreateConfiguration ile BİREBİR aynı yardımcı metot deseni — Moq yerine gerçek bir `ConfigurationBuilder().AddInMemoryCollection(...)`.',
+            neden: '`IConfiguration`\'ı Moq ile taklit etmek (`Mock<IConfiguration>().Setup(c => c["AES_ENCRYPTION_KEY"]).Returns(...)`) hem daha KIRILGAN (indexer\'ın davranışını manuel taklit eder) hem GERÇEK `ConfigurationBuilder` davranışını (ör. anahtar bulunamazsa null dönmesi) test ETMEZ.',
+            olmasaydi: 'Moq kullanılsaydı, `configuration["AES_ENCRYPTION_KEY"]` okumasının GERÇEKTEN nasıl davrandığını (ör. büyük/küçük harf duyarlılığı, iç içe anahtar ayracı `:`) test dışı bırakmış olurduk — sahte bir davranış, gerçek bir konfigürasyon hatasını YAKALAYAMAZ.'
+          },
+          {
+            satir: 'var kisaAnahtar = Convert.ToBase64String(new byte[16]);',
+            aciklama: '16 sıfır bayt (AES-128 boyutu) — Bölüm 1\'de bulunan GERÇEK hatanın (29 baytlık örnek anahtar) küçük, deterministik bir TEKRARI.',
+            neden: 'Bu test, tam olarak Bölüm 1\'de ENV.md/launchSettings.json\'da bulunan gerçek sorunu (yanlış boyutlu bir anahtarın SESSİZCE kabul edilmesi riskini) bir daha asla YAŞANMAYACAĞINI garanti eden regresyon testidir.',
+            olmasaydi: 'Bu test OLMASAYDI, `AesEncryptionService`\'in constructor doğrulaması ileride (bir refactor sırasında) YANLIŞLIKLA gevşetilebilir/kaldırılabilirdi ve hiçbir test bunu YAKALAMAZDI — Bölüm 1\'in anlattığı gerçek olay SESSİZCE tekrar edebilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Test Dosyaları — Aynı Pattern\'i İzler',
+        terimler: [
+          { terim: 'GetSmtpSettingsQueryHandlerTests (2 test)', tanim: 'Kayıt yokken boş varsayılanlar, kayıt varken şifrenin "***" ile maskelendiği — UpdateUserRoleCommandHandlerTests ile AYNI Mock<IRepository> deseni.' },
+          { terim: 'UpdateSmtpSettingsCommandHandlerTests (5 test)', tanim: 'Yeni kayıt oluşturma, "***" gönderildiğinde eski şifreyi KORUMA, gerçek yeni şifreyle YENİDEN şifreleme, HEM ActivityLogger HEM SecurityLogger\'ın çağrıldığının doğrulanması, VE (kod denetimi sonrası eklendi) kayıt yokken "***" gönderilirse SmtpPasswordRequiredException fırlatıldığının doğrulanması.' },
+          { terim: 'TestSmtpSettingsCommandHandlerTests (2 test)', tanim: 'Ayar yokken SmtpSettingsNotConfiguredException, ayar varken şifrenin ÇÖZÜLÜP ISmtpTestService\'e (mock) doğru parametrelerle iletildiğinin doğrulanması.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Sayılarla A-09',
+        maddeler: [
+          '1 entity (`SmtpSettings`, `Domain/Entities/System`) + 1 migration (`AddSmtpSettings`).',
+          '1 yeni servis çifti: `IEncryptionService`/`AesEncryptionService` (AES-256-CBC, 32 bayt anahtar doğrulaması) + `ISmtpTestService`/`MailKitSmtpTestService` (MailKit, projedeki İLK gerçek SMTP bağlantısı).',
+          '1 yeni domain klasörü: `Features/Smtp/` — `GetSmtpSettingsQuery`, `UpdateSmtpSettingsCommand` (upsert + maskeleme sözleşmesi + çift loglama), `TestSmtpSettingsCommand`.',
+          '1 yeni controller: `SmtpSettingsController` (`api/v1/admin/smtp-settings`, 3 endpoint) — WordsController/CategoriesController/MediaController ile AYNI "ayrı domain controller\'ı" deseni.',
+          '3 yeni exception (`SmtpSettingsNotConfiguredException` 400, `SmtpTestFailedException` 502, `SmtpPasswordRequiredException` 400 — sonuncusu kod denetiminde) + `ErrorMessages.cs`\'e 9 yeni kod, `SuccessMessages.cs`\'e 1 yeni kod, `LogMessages.cs`\'e 1 yeni kod (tr/de).',
+          '**Kod denetimi (2 bağımsız subagent — kod + Backend Akademi), 5 gerçek düzeltme:** (1) ENV.md/launchSettings.json\'daki örnek `AES_ENCRYPTION_KEY` Base64 çözüldüğünde 29 bayt üretiyordu (32 DEĞİL) — `openssl rand -base64 32` ile GERÇEKTEN 32 baytlık yeni bir anahtarla düzeltildi; (2) hiç ayar kaydedilmemişken "***" gönderilirse bu literal SESSİZCE gerçek şifre olarak şifrelenebiliyordu — `SmtpPasswordRequiredException` ile kapatıldı (bkz. Bölüm 2); (3) `GetCurrentAsync`\'e `OrderBy(s => s.Id)` eklendi — eşzamanlı iki PUT\'un DB\'de birden fazla satır oluşturabileceği (bilinçli kabul edilmiş, düşük öncelikli bir risk) senaryoda okuma artık deterministik; (4) MailKit\'in bilinen orta önem dereceli bir CVE\'si olan 4.3.0 sürümü 4.17.0\'a yükseltildi; (5) Backend Akademi\'de "Tam Dosya" etiketli 5 slayt gerçek dosyalardan eksik satırlar (using/yorum) içeriyordu, programatik diff ile birebir eşitlendi.',
+          'Toplam 252 (A-08 sonu) → **265 birim testi** — 13 yeni test (4 Aes + 2 Get + 5 Update + 2 Test).',
+          'Sıradaki task: **A-10 — E-posta Servisi + Hesap Temizleme Görevi** (`TASK/A_admin_panel_backend.md`).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -25,7 +25,7 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
-<PackageReference Include="MailKit" Version="4.3.0" />                     <!-- SMTP e-posta -->
+<PackageReference Include="MailKit" Version="4.17.0" />                    <!-- SMTP e-posta (A-09 kod denetiminde 4.3.0'ın bilinen bir CVE'si nedeniyle güncellendi) -->
 <PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- C-10 bildirim scheduler'ı -->
 <PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist -->
 
