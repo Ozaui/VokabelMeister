@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetApplicationLogsQuery.cs
-//
-// AMAÇ: GET /admin/logs/application — level/tarih aralığı/serbest metin arama
-//       filtreli sayfalı teknik log listesi (Serilog'un yazdığı satırlar).
-// NEDEN Language YOK: ApplicationLog Serilog'un ürettiği, geliştirici odaklı teknik
-//        loglar — CLAUDE.md "DB/log/geliştirici İngilizce görür" kuralı, çevrilecek
-//        bir şey YOK (Message zaten İngilizce sabit şablonlarla üretiliyor).
-// BAĞIMLILIKLAR: IApplicationLogRepository, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Admin;

@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ResendVerificationCommandHandlerTests.cs
-//
-// AMAÇ: ResendVerificationCommandHandler'ın var olan/olmayan kullanıcı
-//       senaryolarını (e-posta numaralandırma önlemi dahil) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Localization;
@@ -25,11 +17,6 @@ public class ResendVerificationCommandHandlerTests
     private ResendVerificationCommandHandler CreateHandler() =>
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
-    /// <summary>
-    /// ResendVerification_UnverifiedUserExists_SendsNewOtp
-    ///
-    /// AMAÇ: Doğrulanmamış bir kullanıcı için yeni OTP üretilip e-posta gönderildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ResendVerification_UnverifiedUserExists_SendsNewOtp()
     {
@@ -46,14 +33,6 @@ public class ResendVerificationCommandHandlerTests
         _emailService.Verify(e => e.SendEmailVerificationOtpAsync("test@example.com", "123456", default), Times.Once);
     }
 
-    /// <summary>
-    /// ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage
-    ///
-    /// AMAÇ: Kayıtlı olmayan bir e-posta için de aynı mesajın döndüğünü ama e-posta
-    ///       GÖNDERİLMEDİĞİNİ doğrulamak.
-    /// NEDEN: E-posta numaralandırma (enumeration) saldırısını önlemek için — yanıt
-    ///        farklı olsaydı bir saldırgan hangi e-postaların kayıtlı olduğunu anlayabilirdi.
-    /// </summary>
     [Fact]
     public async Task ResendVerification_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
@@ -72,12 +51,6 @@ public class ResendVerificationCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ResendVerification_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task ResendVerification_GermanLanguage_ReturnsGermanMessage()
     {

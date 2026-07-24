@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginWithAppleCommandHandlerTests.cs
-//
-// AMAÇ: LoginWithAppleCommandHandler'ın hesap bulma/oluşturma/AppleId eşleştirme
-//       mantığını (özellikle e-postasız sonraki girişleri) doğrulamak. Giriş
-//       tamamlama (ILoginCompletionService) mock'lanır — bkz. LoginCompletionServiceTests.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -32,11 +23,6 @@ public class LoginWithAppleCommandHandlerTests
             .Setup(l => l.CompleteLoginAsync(It.IsAny<User>(), null, default))
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1", "System"), false));
 
-    /// <summary>
-    /// LoginWithApple_ExistingAppleUser_ReturnsTokens
-    ///
-    /// AMAÇ: AppleId ile eşleşen mevcut bir kullanıcı için token döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithApple_ExistingAppleUser_ReturnsTokens()
     {
@@ -56,12 +42,6 @@ public class LoginWithAppleCommandHandlerTests
         sonuc.AccessToken.Should().Be("access-token");
     }
 
-    /// <summary>
-    /// LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount
-    ///
-    /// AMAÇ: İlk yetkilendirmede (e-posta dolu) ne AppleId ne de e-posta eşleşmesi
-    ///       olmadığında yeni hesap açıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithApple_FirstAuthorizationWithEmail_CreatesNewAccount()
     {
@@ -87,15 +67,6 @@ public class LoginWithAppleCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly
-    ///
-    /// AMAÇ: Apple'ın yalnızca İLK yetkilendirmede e-posta verdiği, sonraki girişlerde
-    ///       payload.Email'in null geldiği senaryoda AppleId ile hâlâ doğru kullanıcının
-    ///       bulunduğunu ve mevcut e-postanın ÜZERİNE YAZILMADIĞINI doğrulamak.
-    /// NEDEN: AppleTokenValidator.cs'in NEDEN açıklamasındaki kritik kısıt — email
-    ///        yoksa DB'deki mevcut e-posta korunmalı.
-    /// </summary>
     [Fact]
     public async Task LoginWithApple_SubsequentLoginWithoutEmail_MatchesByAppleIdOnly()
     {
@@ -116,13 +87,6 @@ public class LoginWithAppleCommandHandlerTests
         _userRepo.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), default), Times.Never);
     }
 
-    /// <summary>
-    /// LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException
-    ///
-    /// AMAÇ: Ne AppleId ile eşleşme ne de e-posta (savunmacı/teorik olarak beklenmeyen
-    ///       bir durum) varken yeni hesap açılamayacağını, InvalidSocialTokenException
-    ///       fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithApple_NoEmailAndNoExistingAccount_ThrowsInvalidSocialTokenException()
     {

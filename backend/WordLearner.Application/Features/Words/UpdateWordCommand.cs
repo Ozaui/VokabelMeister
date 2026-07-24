@@ -1,25 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateWordCommand.cs
-//
-// AMAÇ: PUT /words/{id} — mevcut çevirileri günceller veya kavrama eksik olan
-//       dili ekler (eşleşmemiş bir kavramı eşleştirebilir).
-// NEDEN: `Translations` listesindeki her dil, kavramda zaten VARSA güncellenir,
-//        YOKSA yeni bir Word olarak eklenir (WordEntityBuilder ile CreateWord'le
-//        aynı kurma mantığı) — bu da Icerik.md "Eşleştirme"deki "translations[]
-//        ile tek istekte iki dil de girilebilir" akışının bir parçası.
-// NEDEN PartOfSpeech/DifficultyLevel ZORUNLU (nullable DEĞİL, CreateWordCommand'la
-//        birebir aynı): WordGrammarValidator, translation'ları PartOfSpeech'e göre
-//        doğrular — bu alan opsiyonel olsaydı (PATCH-tarzı kısmi güncelleme),
-//        validator "hangi türe göre doğrulayayım" sorusuna DB'ye gitmeden CEVAP
-//        VEREMEZDİ. PUT bu yüzden concept-seviyesi alanlarda TAM YER DEĞİŞTİRME
-//        semantiğine sahip (admin formu zaten mevcut değerleri önceden DOLDURUR).
-// NASIL: 1) Kavramı tüm dilleriyle yükle  2) Concept-seviyesi alanları güncelle
-//        3) Her translation için: dil zaten varsa alanlarını güncelle, yoksa
-//        duplikat kontrolüyle yeni Word ekle  4) UPDATE_WORD ActivityLog'u yaz.
-// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
-//                IActivityLogger, WordEntityBuilder, WordConceptDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Words;
@@ -30,22 +8,20 @@ using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
 
+// PartOfSpeech/DifficultyLevel zorunlu (nullable değil) — WordGrammarValidator translation'ları
+// PartOfSpeech'e göre doğrular, opsiyonel olsaydı validator hangi türe göre doğrulayacağını bilemezdi.
+// PUT bu yüzden concept-seviyesi alanlarda tam yer değiştirme semantiğine sahiptir.
 public record UpdateWordCommand(
     int Id,
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
     IReadOnlyList<WordTranslationInput> Translations,
-    // NEDEN NULL = "dokunma", boş liste = "tümünü kaldır" (A-06 eklemesi): CreateWordCommand.
-    //        CategoryIds ile AYNI trailing+default kararı — ayrıca PUT'un ImageUrl'deki
-    //        "null ise dokunma" davranışıyla TUTARLI, tam yer değiştirme yalnızca alan
-    //        GERÇEKTEN gönderildiğinde uygulanır.
+    // Null = dokunma, boş liste = tümünü kaldır.
     IReadOnlyList<int>? CategoryIds = null
 ) : IRequest<WordConceptDetailDto>
 {
-    // NEDEN init-property: CreateWordCommand.Force ile aynı gerekçe — query string'ten gelir.
     public bool Force { get; init; }
-
     public int? UserId { get; init; }
     public string? ActorRole { get; init; }
 }
@@ -76,13 +52,9 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
             await _wordConceptRepository.GetWithTranslationsAsync(request.Id, ct)
             ?? throw new EntityNotFoundException(typeof(WordConcept), request.Id);
 
-        // NEDEN .ToList() (A-06 denetiminde bulunan hata düzeltmesi): `Select(...)` tembel
-        //       (deferred) bir IEnumerable döner — aşağıdaki döngü `existingWord.Text`'i
-        //       DEĞİŞTİRİR ve bu AYNI Word nesnelerine işaret eder; .ToList() ile hemen
-        //       MATERYALİZE edilmezse, `_activityLogger.LogAsync` içindeki JsonSerializer
-        //       bu listeyi SONRADAN (mutasyonlardan SONRA) enumerate eder ve "eski" değer
-        //       olarak aslında YENİ değerleri yazardı — audit log'un "değişiklik yok" gibi
-        //       yanıltıcı görünmesine yol açardı.
+        // .ToList() — Select deferred'dır; aşağıdaki döngü aynı Word nesnelerini mutasyona uğratır.
+        // Materyalize edilmezse LogAsync'teki JsonSerializer bu listeyi mutasyonlardan SONRA
+        // enumerate eder ve "eski" değer olarak yeni değerleri yazardı.
         var oldValue = new
         {
             concept.PartOfSpeech,
@@ -105,9 +77,7 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
 
             if (existingWord is null)
             {
-                // NEDEN: Bu dil kavramda henüz yok — yeni ekleniyor (eşleşmemiş bir
-                //        kavramı eşleştirmenin bir yolu). Aynı duplikat kontrolü
-                //        CreateWordCommand ile birebir aynı (Force ile bypass edilebilir).
+                // Bu dil kavramda henüz yok — eşleşmemiş bir kavramı eşleştirmenin yolu.
                 if (
                     !request.Force
                     && await _wordConceptRepository.ExistsWordTextAsync(language.Id, translation.Text, ct)
@@ -137,11 +107,7 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
                 }
             }
 
-            // NEDEN yalnızca EKLEME: mevcut örnekleri silme/eşleştirme burada
-            // kapsam dışı bırakıldı (YAGNI) — hangi örneğin "aynı" sayılacağı
-            // (SentenceText tam eşleşmesi mi, id bazlı mı) API_ENDPOINTS.md §5'te
-            // netleşmemiş; admin yeni örnek eklemek istediğinde bu yeterli, mevcut
-            // örnekleri düzenlemek/silmek ayrı bir endpoint'e bırakılabilir.
+            // Yalnızca ekleme — mevcut örnekleri silme/eşleştirme kapsam dışı (YAGNI).
             if (translation.Examples is not null)
             {
                 var displayOrder = existingWord.WordExamples.Count;
@@ -162,16 +128,9 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordC
             }
         }
 
-        // NEDEN tam yer değiştirme (A-06 eklemesi): CategoryIds gönderildiyse (NULL değilse),
-        //       yeni listede OLMAYAN mevcut bağlar KALDIRILIR, listede olup henüz bağlı
-        //       OLMAYANLAR eklenir — translations[] listesinin "concept-seviyesi TAM YER
-        //       DEĞİŞTİRME" semantiğiyle aynı mantık (bkz. dosya başı NEDEN notu).
-        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): CreateWordCommand.cs'teki
-        //       AYNI gerekçe — tekrarlanan bir Id, UNIQUE index ihlaliyle yakalanmayan bir 500'e
-        //       yol açardı. Ayrıca `existingCategoryIds` döngüden ÖNCE bir kez hesaplandığı için
-        //       (kaldırma sonrası, ekleme başlamadan) Distinct() olmadan aynı Id iki kez "mevcut
-        //       değil" filtresinden geçip İKİ KEZ eklenmeye çalışılırdı — Distinct() bu ikinci
-        //       riski de aynı anda ortadan kaldırır.
+        // Tam yer değiştirme — yeni listede olmayan mevcut bağlar kaldırılır, olmayanlar eklenir.
+        // .Distinct() — tekrarlanan bir Id iki kez eklenmeye çalışılmasını (ve UNIQUE index'ten
+        // yakalanmayan 500'ü) önler.
         if (request.CategoryIds is not null)
         {
             var newCategoryIds = request.CategoryIds.Distinct().ToList();

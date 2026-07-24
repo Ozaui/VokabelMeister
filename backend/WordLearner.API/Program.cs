@@ -1,21 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Program.cs
-//
-// AMAÇ: Uygulamanın giriş noktası (composition root). Servisleri DI konteynerine
-//       kaydeder ve HTTP istek hattını (middleware pipeline) kurar.
-// NEDEN: .NET 9 minimal hosting modelinde tüm başlangıç yapılandırması tek dosyada
-//        toplanır; her API/altyapı parçası buraya bağlanır.
-// BAĞIMLILIKLAR: ASP.NET Core, Swashbuckle (Swagger UI), Serilog, JWT Bearer,
-//                WordLearner.Infrastructure/Application service extension'ları,
-//                WordLearner.API.Middleware (SecurityHeaders/ExceptionHandling/RequestResponseLogging).
-//
-// NOT (A-02 — Ortak Altyapı, tamamlandı): DbContext, JWT auth, CORS, Serilog
-//   (konsol+dosya), FluentValidation, MediatR, AutoMapper kayıtları ve güvenlik
-//   başlıkları/global exception/istek-yanıt log middleware'leri burada kuruldu.
-// NOT (A-04 — Loglama Sistemi): Serilog'un MSSqlServer (ApplicationLog) sink'i eklendi
-//   (ActivityLog/SecurityLog Serilog ile DEĞİL, IActivityLogger/ISecurityLogger ile yazılır).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -35,17 +17,10 @@ using WordLearner.Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ADIM 1: Serilog — konsol + dosya + DB (ApplicationLog) sink.
-// NEDEN: _logger.LogInformation/.LogError çağrıları artık ASP.NET Core'un varsayılan
-//        konsol logger'ı yerine Serilog üzerinden akar.
-// NEDEN Override: appsettings.json'daki Logging:LogLevel:Microsoft.AspNetCore=Warning
-//        ayarı yalnızca ASP.NET Core'un kendi builtin logger'ı içindir; Serilog kod
-//        üzerinden yapılandırıldığı için aynı susturma burada elle tekrarlanır —
-//        aksi halde framework'ün "Request starting/finished" logları RequestResponseLoggingMiddleware
-//        ile çakışıp konsolu ikiye katlar.
-// NEDEN AutoCreateSqlTable=false: Tablo zaten AddLoggingTables migration'ıyla
-//        (ApplicationLogConfiguration'daki gerçek şemayla) oluşturuldu; sink'in kendi
-//        varsayılan şemasıyla tekrar oluşturmaya çalışması migration'la çakışır.
+// Override — appsettings.json'daki Logging:LogLevel ayarı yalnızca ASP.NET Core'un builtin
+// logger'ı içindir; Serilog kod üzerinden yapılandırıldığı için aynı susturma burada tekrarlanır,
+// aksi halde framework'ün "Request starting/finished" logları RequestResponseLoggingMiddleware ile çakışır.
+// AutoCreateSqlTable=false — tablo zaten AddLoggingTables migration'ıyla oluşturuldu.
 builder.Host.UseSerilog((context, configuration) => configuration
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
@@ -57,15 +32,8 @@ builder.Host.UseSerilog((context, configuration) => configuration
         sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },
         columnOptions: ApplicationLogColumnOptions.Build()));
 
-// ADIM 2: Controller'ları ekle — API uç noktaları controller sınıflarında tanımlanır.
-// NEDEN ValidationFilter: FluentValidation.AspNetCore paketi kullanılmıyor
-//       (TECHNICAL_SPECIFICATIONS.md §1'de yok) — bu global filter, DI'a kayıtlı
-//       IValidator<T>'leri action çalışmadan önce otomatik çalıştırır (A-03).
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>());
 
-// ADIM 3: Swagger/OpenAPI — yazılan endpoint'ler geliştirme ortamında otomatik
-// belgelenir ve http://localhost:5001/swagger adresinden test edilir.
-// NEDEN: Junior geliştirici ve manuel test için canlı API dokümantasyonu sağlar.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -80,16 +48,9 @@ builder.Services.AddSwaggerGen(c =>
     );
 });
 
-// ADIM 4: Infrastructure (DbContext + repository) ve Application (MediatR,
-// AutoMapper, FluentValidation) servislerini tek satırla kaydet.
-// NEDEN: Program.cs'i temiz tutar; yeni repository/handler/validator eklenince
-//        bu iki extension metodun içeriği değişir, burası değişmez.
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddApplicationServices();
 
-// ADIM 5: JWT Authentication — REFERENCE/SECURITY.md §1, TECHNICAL_SPECIFICATIONS.md §5.
-// NEDEN: Auth (A-03) henüz yazılmadı ama pipeline'ın doğru yerinde durması ve
-//        [Authorize] öznitelikli endpoint'lerin ileride çalışması için burada kurulur.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -102,37 +63,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            // NEDEN: Sunucu saatleri arasında tolerans tanımamak için sıfırlanır;
-            //        access token 15dk gibi kısa ömürlü olduğundan gevşek tolerans gerekmez.
             ClockSkew = TimeSpan.Zero
         };
     });
 builder.Services.AddAuthorization();
 
-// ADIM 6: CORS — yalnızca appsettings'teki tanımlı origin'lere izin verir, "*" yok.
-// NEDEN: REFERENCE/SECURITY.md §5 — tarayıcıdan yalnızca bilinen Web/Admin/Mobil
-//        (Expo) adresleri istek atabilir.
 builder.Services.AddCors(options => options.AddPolicy("Default", policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
           .AllowAnyMethod()
           .AllowAnyHeader()));
 
-// ADIM 7: Rate Limiting — REFERENCE/SECURITY.md §4: genel 100/dk (kimliği doğrulanmış
-// istekler), 10/dk (anonim istekler). Controller/action'lar [EnableRateLimiting("...")]
-// ile bu isimli policy'lerden birini seçer (A-03 — AuthController).
-// NEDEN sabit pencere (FixedWindow): basit ve öngörülebilir; "login 5/15dk" ve
-//       "OTP 3 yanlış" gibi BAŞARISIZ deneme sayaçları AYRI bir mekanizma (OtpService/
-//       LoginCommandHandler'ın kendi SecurityLog tabanlı sayaçları — henüz yazılmadı,
-//       bu bilinçli bir sonraki adım) — burada eklenen yalnızca genel RateLimitHit
-//       (429 döndüren HERHANGİ bir policy) A-04'te SecurityLog'a bağlandı.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // NEDEN OnRejected (A-04): Herhangi bir policy (anonymous/authenticated/qrGenerate/
-    //       qrStatus) 429 döndürdüğünde SecurityLog'a RateLimitHit yazılır — DI konteynerine
-    //       burada (middleware pipeline dışı bir yapılandırma callback'i) doğrudan erişim
-    //       olmadığı için RequestServices üzerinden scope içi ISecurityLogger çözülür.
+    // DI konteynerine burada (middleware pipeline dışı bir yapılandırma callback'i) doğrudan
+    // erişim olmadığı için RequestServices üzerinden scope içi ISecurityLogger çözülür.
     options.OnRejected = async (context, ct) =>
     {
         var securityLogger = context
@@ -162,10 +108,8 @@ builder.Services.AddRateLimiter(options =>
         limiterOptions.QueueLimit = 0;
     });
 
-    // NEDEN IP başına PARTITIONED (yukarıdaki ikisinin aksine): QR generate
-    // kötüye kullanılırsa (ör. toplu oturum açıp DB şişirme) tek bir saldırgan
-    // IP'si TÜM kullanıcıların anonim limitini tüketmemeli — her IP kendi
-    // 20/saat penceresine sahip olur (TASK/A_admin_panel_backend.md A-03.1).
+    // IP başına partitioned — QR generate kötüye kullanılırsa tek bir saldırgan IP tüm
+    // kullanıcıların anonim limitini tüketmemeli.
     options.AddPolicy(
         "qrGenerate",
         context =>
@@ -180,14 +124,8 @@ builder.Services.AddRateLimiter(options =>
             )
     );
 
-    // NEDEN IP başına PARTITIONED ("anonymous"ın aksine): GET /auth/qr/{token}/status
-    // web tarafından ~2sn'de bir çağrılan bir polling endpoint'i (~30 istek/dk).
-    // Paylaşımlı "anonymous" limitini (10/dk, TÜM anonim trafik ortak) kullanırsa
-    // tek bir açık QR ekranı ~20 saniye içinde bu bütçeyi tüketip sunucudaki TÜM
-    // anonim kullanıcıları (register/login/forgot-password dahil) kilitler — polling
-    // kendi kendini ve başkalarını kilitlemiş olurdu. IP başına ayrı pencere (qrGenerate
-    // ile aynı gerekçe) bu yan etkiyi önler; limit polling hızının (30/dk) üstünde
-    // bir tampon payıyla belirlendi.
+    // IP başına partitioned — paylaşımlı "anonymous" limitini kullansaydı, ~2sn'de bir
+    // çağrılan bu polling endpoint'i ~20 saniyede tüm anonim trafiği (register/login dahil) kilitlerdi.
     options.AddPolicy(
         "qrStatus",
         context =>
@@ -205,42 +143,30 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// ADIM 8: İstek hattı (pipeline) — yalnızca geliştirmede Swagger arayüzü açılır.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "VokabelMeister API v1"));
 }
 
-// NEDEN UseHttpsRedirection EN BAŞTA (2026-07-12'de düzeltildi — önceden loglama/güvenlik
-// başlıkları/exception middleware'lerinden SONRA çağrılıyordu): düz HTTP ile gelen bir
-// istek hiçbir iş yapılmadan (loglanmadan, başlık eklenmeden) doğrudan HTTPS'e yönlendirilmeli
-// — ASP.NET Core'un standart konvansiyonu budur. Bu proje geliştirme ortamında pratikte nadiren
-// tetiklenir (prod'da genelde ters proxy TLS'i sonlandırır) ama sıralama artık konvansiyona uygun.
+// UseHttpsRedirection en başta — düz HTTP ile gelen bir istek hiçbir iş yapılmadan
+// (loglanmadan, başlık eklenmeden) doğrudan HTTPS'e yönlendirilmeli.
 app.UseHttpsRedirection();
 
-// NEDEN SIRALAMA: Loglama en dışta durur ki exception fırlasa bile (ExceptionHandlingMiddleware
-// onu yakalayıp 500'e çevirse bile) gerçek süre ve nihai durum kodu loglanabilsin.
-// Güvenlik başlıkları, hata yanıtı da dahil her yanıta eklenmesi için exception
-// middleware'inden önce (dışında) durur.
+// Loglama en dışta durur ki exception fırlasa bile gerçek süre ve nihai durum kodu loglanabilsin.
+// Güvenlik başlıkları hata yanıtı dahil her yanıta eklensin diye exception middleware'inden önce durur.
 app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// NEDEN AUTH'TAN ÖNCE: /uploads altındaki dosyalar (kelime kartı görselleri) herkese
-// açık statik varlıklar — REFERENCE/ENV.md §7. `wwwroot/uploads` (LocalFileStorageService'in
-// yazdığı klasör) varsayılan `UseStaticFiles()` konvansiyonuyla `/uploads` yolunda servis
-// edilir; [Authorize] gerektiren API rotalarından TAMAMEN ayrı bir istek hattı (auth/rate
-// limiter bu isteklere hiç uğramaz — görsel görüntülemek için token gerekmemeli).
+// Auth'tan önce — /uploads altındaki görseller herkese açık, token gerekmemeli.
 app.UseStaticFiles();
 
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// NEDEN UseAuthorization'dan SONRA: Rate limiter, [EnableRateLimiting] öznitelikli
-// endpoint'e ulaşmadan hemen önce devreye girmeli — kimlik/yetki kontrolünden sonra,
-// controller'dan hemen önce (A-03).
+// UseAuthorization'dan sonra — rate limiter kimlik/yetki kontrolünden sonra, controller'dan hemen önce devreye girmeli.
 app.UseRateLimiter();
 
 app.MapControllers();

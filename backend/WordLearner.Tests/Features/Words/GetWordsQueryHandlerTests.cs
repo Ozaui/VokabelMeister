@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetWordsQueryHandlerTests.cs
-//
-// AMAÇ: GetWordsQueryHandler'ın filtre+sayfa parametrelerini repository'ye
-//       olduğu gibi ilettiğini ve sonucu liste DTO'suna (WordDetail/örnek
-//       TAŞIMADAN) çevirdiğini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -24,13 +15,6 @@ public class GetWordsQueryHandlerTests
 
     private static readonly Language German = new() { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
 
-    /// <summary>
-    /// GetWords_ForwardsFiltersAndReturnsMappedPage
-    ///
-    /// AMAÇ: Query'deki DifficultyLevel/PartOfSpeech/Search/Page/PageSize'ın
-    ///       repository.GetPagedAsync'e AYNEN iletildiğini ve dönen sayfanın
-    ///       liste DTO'larına (yalnızca dil+metin) çevrildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetWords_ForwardsFiltersAndReturnsMappedPage()
     {

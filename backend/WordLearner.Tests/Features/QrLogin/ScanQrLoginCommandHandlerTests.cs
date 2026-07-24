@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ScanQrLoginCommandHandlerTests.cs
-//
-// AMAÇ: ScanQrLoginCommandHandler'ın yalnızca Pending oturumları Scanned'e
-//       taşıdığını, süresi geçmiş/zaten taranmış oturumları reddettiğini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -24,12 +16,6 @@ public class ScanQrLoginCommandHandlerTests
 
     private ScanQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
 
-    /// <summary>
-    /// Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo
-    ///
-    /// AMAÇ: Pending bir oturum taranınca Scanned'e geçtiğini, UserId/ScannedAt
-    ///       yazıldığını ve yanıtta isteyen (web) tarafın IP/cihaz/pairingCode bilgisini döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Scan_PendingSession_TransitionsToScannedAndReturnsRequesterInfo()
     {
@@ -61,11 +47,6 @@ public class ScanQrLoginCommandHandlerTests
         _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
-    /// <summary>
-    /// Scan_TokenNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404) fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Scan_TokenNotFound_ThrowsEntityNotFoundException()
     {
@@ -87,12 +68,6 @@ public class ScanQrLoginCommandHandlerTests
         sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
-    /// <summary>
-    /// Scan_ExpiredSession_ThrowsQrSessionGoneException
-    ///
-    /// AMAÇ: ExpiresAt geçmiş bir oturum taranmaya çalışılırsa QrSessionGoneException
-    ///       (410) fırlatıldığını VE oturumun DB'de Expired'a çevrildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Scan_ExpiredSession_ThrowsQrSessionGoneException()
     {
@@ -115,12 +90,6 @@ public class ScanQrLoginCommandHandlerTests
         _qrRepo.Verify(r => r.UpdateAsync(session, null, default), Times.Once);
     }
 
-    /// <summary>
-    /// Scan_AlreadyScannedSession_ThrowsQrSessionGoneException
-    ///
-    /// AMAÇ: Pending dışındaki bir oturum (ör. zaten Scanned) tekrar taranmaya
-    ///       çalışılırsa QrSessionGoneException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Scan_AlreadyScannedSession_ThrowsQrSessionGoneException()
     {

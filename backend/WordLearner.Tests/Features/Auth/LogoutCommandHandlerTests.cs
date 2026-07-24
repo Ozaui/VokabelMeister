@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LogoutCommandHandlerTests.cs
-//
-// AMAÇ: LogoutCommandHandler'ın sahiplik kontrolünü (yalnızca kendi token'ını
-//       iptal edebilme) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -23,11 +15,6 @@ public class LogoutCommandHandlerTests
 
     private LogoutCommandHandler CreateHandler() => new(_refreshTokenRepo.Object, _passwordService.Object);
 
-    /// <summary>
-    /// Logout_OwnToken_RevokesToken
-    ///
-    /// AMAÇ: Kullanıcının kendi refresh token'ını iptal edebildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Logout_OwnToken_RevokesToken()
     {
@@ -44,13 +31,6 @@ public class LogoutCommandHandlerTests
         token.RevokedAt.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException
-    ///
-    /// AMAÇ: Başka bir kullanıcıya ait refresh token'ı iptal etmeye çalışıldığında
-    ///       reddedildiğini doğrulamak.
-    /// NEDEN: Sahiplik kontrolü olmazsa bir kullanıcı başka birinin oturumunu kapatabilirdi.
-    /// </summary>
     [Fact]
     public async Task Logout_TokenBelongsToDifferentUser_ThrowsInvalidRefreshTokenException()
     {

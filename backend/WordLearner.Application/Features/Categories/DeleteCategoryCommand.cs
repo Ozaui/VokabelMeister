@@ -1,19 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DeleteCategoryCommand.cs
-//
-// AMAÇ: DELETE /categories/{id} — bir Category'yi soft-delete eder.
-// NEDEN: API_ENDPOINTS.md §6 "alt kategori/aktif kelime varsa silme 409" kuralı —
-//        önce HasChildrenAsync (CategoryHasChildrenException), sonra HasActiveWordsAsync
-//        (CategoryHasActiveWordsException) kontrol edilir. Category/CategoryTranslation
-//        arasında WordConcept/Word'deki gibi CASCADE bir "birlikte soft-delete" YOK —
-//        CategoryTranslationConfiguration'daki FK zaten Cascade (DB seviyesinde), ama
-//        bu yalnızca gerçek DELETE'te devreye girer; soft-delete'te Category.IsDeleted
-//        yeterli, Translation'lar kategori zaten silinmiş sayıldığı için hiçbir sorguda
-//        AYRICA görünmez (WordCategory'nin aksine, CategoryTranslation'ın kendi başına
-//        bir "aktif mi" anlamı yok, her zaman sahibi Category'nin durumuna bağlı okunur).
-// BAĞIMLILIKLAR: ICategoryRepository, IActivityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;

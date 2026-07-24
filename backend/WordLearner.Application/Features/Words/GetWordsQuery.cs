@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetWordsQuery.cs
-//
-// AMAÇ: GET /words — filtre+sayfalı kelime kavramı listesi.
-// NEDEN `categoryId` artık VAR (A-06 eklemesi): A-05 döneminde Category/WordCategory
-//        tabloları mevcut olmadığı için BİLİNÇLİ olarak dışarıda bırakılmıştı — o borç
-//        burada kapatıldı. `search`, kelimenin HERHANGİ bir dildeki Text'inde arar.
-// BAĞIMLILIKLAR: IWordConceptRepository, WordConceptDtoBuilder, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Words;
@@ -21,9 +11,6 @@ public record GetWordsQuery(
     string? Search,
     int Page = 1,
     int PageSize = 20,
-    // NEDEN trailing + default null: A-05'te pozisyonel argümanla yazılmış mevcut
-    //        test/çağrı siteleri BOZULMASIN diye (CreateWordCommand.CategoryIds ile
-    //        AYNI karar).
     int? CategoryId = null
 ) : IRequest<PagedResult<WordConceptListItemDto>>;
 

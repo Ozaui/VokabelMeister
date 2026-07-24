@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordConceptConfiguration.cs
-//
-// AMAÇ: WordConcept entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: PartOfSpeech/DifficultyLevel C# tarafında enum değil string olduğu için
-//        (bkz. WordConcept.cs "NEDEN") DB seviyesinde CHECK constraint son savunma
-//        hattı — UserConfiguration.cs'teki Role/CurrentLevel deseniyle birebir aynı.
-// BAĞIMLILIKLAR: EF Core, WordConcept entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Words;

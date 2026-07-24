@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CategoryTranslationConfiguration.cs
-//
-// AMAÇ: CategoryTranslation entity'sinin EF Core tablo eşlemesi + 12 kategorinin
-//       de/tr adlarının seed verisi.
-// NEDEN: `UQ` niteliğinde `(CategoryId, LanguageId)` unique index — bir kategorinin
-//        aynı dilde iki adı olamaz (CategoryTranslations tablosunun DATABASE_SCHEMA/
-//        Icerik.md'deki UQ_CategoryTranslations_Category_Language kısıtı). Language'a
-//        FK Restrict — WordConfiguration'daki Language ilişkisiyle aynı gerekçe
-//        (Language sabit/seed, yanlışlıkla silinirse CASCADE yerine hata istenir).
-// BAĞIMLILIKLAR: EF Core, CategoryTranslation entity, Category entity, Language entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Categories;
@@ -21,8 +8,7 @@ public class CategoryTranslationConfiguration : IEntityTypeConfiguration<Categor
 {
     private static readonly DateTime SeedCreatedAt = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    // NEDEN 1='de', 2='tr': LanguageConfiguration.cs'teki HasData ile birebir aynı Id'ler
-    // (Languages tablosu A-05'te bu Id'lerle seed edildi).
+    // LanguageConfiguration.cs'teki HasData ile birebir aynı Id'ler.
     private const int GermanLanguageId = 1;
     private const int TurkishLanguageId = 2;
 
@@ -38,6 +24,7 @@ public class CategoryTranslationConfiguration : IEntityTypeConfiguration<Categor
             .HasForeignKey(t => t.CategoryId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Language sabit/seed veri — yanlışlıkla silinirse CASCADE yerine hata istenir.
         builder
             .HasOne(t => t.Language)
             .WithMany()

@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// VerifyEmailCommandHandlerTests.cs
-//
-// AMAÇ: VerifyEmailCommandHandler'ın OTP doğrulama + e-posta aktive etme akışını
-//       doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -28,14 +20,6 @@ public class VerifyEmailCommandHandlerTests
     private VerifyEmailCommandHandler CreateHandler() =>
         new(_userRepo.Object, _otpService.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp
-    ///
-    /// AMAÇ: Doğru OTP kodu girildiğinde IsEmailVerified'ın true'ya çekildiğini ve
-    ///       bekleyen OTP alanlarının temizlendiğini doğrulamak.
-    /// NEDEN: Bu adım tamamlanmadan hesap login akışında (IsActive kontrolü ayrı, ama
-    ///        onboarding vb. akışlarda) doğrulanmamış olarak kalır.
-    /// </summary>
     [Fact]
     public async Task VerifyEmail_ValidOtp_MarksEmailVerifiedAndClearsOtp()
     {
@@ -62,12 +46,6 @@ public class VerifyEmailCommandHandlerTests
         _userRepo.Verify(r => r.UpdateAsync(user, user.Id, default), Times.Once);
     }
 
-    /// <summary>
-    /// VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException
-    ///
-    /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
-    /// NEDEN: IOtpService.Validate'in hash karşılaştırması EmailVerification akışında da geçerli olmalı.
-    /// </summary>
     [Fact]
     public async Task VerifyEmail_WrongOtpCode_ThrowsInvalidOtpException()
     {
@@ -86,12 +64,6 @@ public class VerifyEmailCommandHandlerTests
         await act.Should().ThrowAsync<InvalidOtpException>();
     }
 
-    /// <summary>
-    /// VerifyEmail_WrongOtpCode_LogsOtpFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
-    ///       doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task VerifyEmail_WrongOtpCode_LogsOtpFailedSecurityEvent()
     {
@@ -126,12 +98,6 @@ public class VerifyEmailCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// VerifyEmail_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task VerifyEmail_GermanLanguage_ReturnsGermanMessage()
     {

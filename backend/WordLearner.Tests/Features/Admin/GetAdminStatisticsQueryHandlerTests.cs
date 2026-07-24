@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetAdminStatisticsQueryHandlerTests.cs
-//
-// AMAÇ: GetAdminStatisticsQueryHandler'ın üç repository'den gelen sayaçları doğru
-//       birleştirdiğini VE kayıt tarihlerini (ham liste) sıfır-kayıtlı günler dahil
-//       eksiksiz bir N-günlük seriye dönüştürdüğünü doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Features.Admin;
@@ -23,9 +14,6 @@ public class GetAdminStatisticsQueryHandlerTests
     private GetAdminStatisticsQueryHandler CreateHandler() =>
         new(_userRepo.Object, _wordConceptRepo.Object, _categoryRepo.Object);
 
-    /// <summary>
-    /// Handle_CombinesCountersFromThreeRepositories
-    /// </summary>
     [Fact]
     public async Task Handle_CombinesCountersFromThreeRepositories()
     {
@@ -49,13 +37,6 @@ public class GetAdminStatisticsQueryHandlerTests
         result.TotalCategories.Should().Be(12);
     }
 
-    /// <summary>
-    /// Handle_RegistrationDates_FillsZeroCountDaysAndGroupsCorrectly
-    ///
-    /// AMAÇ: Bazı günlerde hiç kayıt olmasa bile grafiğin `DaysForGraph` uzunluğunda,
-    ///       boşluksuz bir seri döndürdüğünü ve aynı güne düşen birden fazla kaydın
-    ///       doğru TOPLANDIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Handle_RegistrationDates_FillsZeroCountDaysAndGroupsCorrectly()
     {

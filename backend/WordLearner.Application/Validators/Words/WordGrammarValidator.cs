@@ -1,32 +1,13 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordGrammarValidator.cs
-//
-// AMAÇ: Bir Word'ün WordDetail.GrammarData (JSON) alanını, dile (`de`/`tr`) ve
-//       WordConcept.PartOfSpeech'e göre doğrular — GERMAN_LANGUAGE_FEATURES.md §10
-//       / TURKISH_LANGUAGE_FEATURES.md §9'daki Zorunlu/Koşullu/Yasak matrislerinin
-//       kod karşılığı.
-// NEDEN: Hem tekil `CreateWordCommand`/`UpdateWordCommand` (ileriki bölüm) hem A-07
-//        toplu import AYNI kuralları uygulamalı — bu yüzden FluentValidation
-//        `AbstractValidator<WordGrammarInput>` olarak, kendi başına bir tipe
-//        (`WordGrammarInput`) bağlı, DI'a otomatik kayıtlı (AddValidatorsFromAssembly)
-//        bağımsız bir validator yazıldı. Gelecekteki `CreateWordCommandValidator`
-//        bunu `IValidator<WordGrammarInput>` olarak enjekte edip her translation için
-//        çağıracak — kural burada TEK yerde tanımlanır.
-//        Yalnızca dokümanların "Zorunlu"/"Koşullu"/"Yasak" listelerindeki alanlar
-//        kontrol edilir — `TURKISH_LANGUAGE_FEATURES.md §9`'da tanımlı ama §9'un
-//        matrisine dahil edilmeyen alanlar (possessive, vowelHarmony, pluralForm,
-//        consonantMutation) zorunlu TUTULMAZ (dokümanın kendi sınırı).
-// BAĞIMLILIKLAR: FluentValidation, System.Text.Json.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using FluentValidation;
 using FluentValidation.Results;
 
 namespace WordLearner.Application.Validators.Words;
 
-// AMAÇ: WordGrammarValidator'ın doğrulayacağı ham girdi — bir Command/DTO değil,
-//       yalnızca bu validator'a özel, tekrar kullanılabilir bir değer nesnesi.
+// WordDetail.GrammarData (JSON) alanını dile (de/tr) ve PartOfSpeech'e göre doğrular —
+// GERMAN_LANGUAGE_FEATURES.md §10 / TURKISH_LANGUAGE_FEATURES.md §9'daki Zorunlu/Koşullu/Yasak
+// matrislerinin kod karşılığı. Bağımsız `IValidator<WordGrammarInput>` olarak DI'a kayıtlı —
+// Create/UpdateWordCommandValidator ve toplu import aynı kuralı buradan çağırır.
 public record WordGrammarInput(string LanguageCode, string PartOfSpeech, string? GrammarDataJson);
 
 public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
@@ -53,7 +34,6 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
     ];
     private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
 
-    // AMAÇ: Noun/Verb'de GrammarData'da HİÇ bulunmaması gereken üst düzey alanlar.
     private static readonly string[] VerbOnlyFields =
     [
         "isSeparableVerb",
@@ -76,16 +56,12 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             );
     }
 
-    // AMAÇ: Girdiyi dile ve türe göre dağıtıp ilgili kural setini uygular.
-    // NASIL: 1) LanguageCode'a göre de/tr dalına gir  2) PartOfSpeech Noun/Verb/Diğer'e
-    //        göre o dilin matrisini uygula  3) Her ihlal için ayrı bir ValidationFailure üret.
     private static IEnumerable<ValidationFailure> EnumerateFailures(WordGrammarInput input)
     {
         JsonElement? root = null;
         if (!string.IsNullOrWhiteSpace(input.GrammarDataJson))
         {
-            // NEDEN ayrı TryParseJson metodu: bir catch bloğunun gövdesinde yield return
-            // KULLANILAMAZ (CS1631) — parse denemesi bu yüzden bool dönen bir yardımcıya taşındı.
+            // catch bloğunun gövdesinde yield return kullanılamaz (CS1631) — parse denemesi bu yüzden ayrı bir yardımcıda.
             if (!TryParseJson(input.GrammarDataJson, out var parsed))
             {
                 yield return Failure("GRAMMAR_DATA_INVALID_JSON");
@@ -97,8 +73,7 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
 
         var isNounOrVerb = input.PartOfSpeech is "Noun" or "Verb";
 
-        // NEDEN: Diğer türlerde (Adjective/Adverb/Conjunction/Preposition/Pronoun/Other)
-        //        GrammarData tamamen NULL olmalı — iki dilde de ortak kural.
+        // Diğer türlerde (Adjective/Adverb/...) GrammarData tamamen NULL olmalı — iki dilde de ortak kural.
         if (!isNounOrVerb)
         {
             if (root is not null)

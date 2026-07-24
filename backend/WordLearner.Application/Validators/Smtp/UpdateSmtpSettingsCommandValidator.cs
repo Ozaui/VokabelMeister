@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateSmtpSettingsCommandValidator.cs
-//
-// AMAÇ: UpdateSmtpSettingsCommand'ın zorunlu alanlarını doğrular.
-// NEDEN Password'e NotEmpty (ama içeriği serbest — "***" da geçerli bir değer):
-//       PUT her zaman TAM bir form gönderir (kısmi güncelleme YOK) — admin panel
-//       şifre alanını hiç değiştirmese bile GET'ten aldığı "***" maskesini AYNEN
-//       geri gönderir; Handler bu sabit değeri "değiştirme" sinyali olarak okur
-//       (UpdateSmtpSettingsCommand.cs "NEDEN MaskedPassword"). Boş string ise ne
-//       "değiştirme" ne de geçerli bir yeni şifre anlamına gelir — reddedilir.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Smtp;
 
@@ -32,6 +19,7 @@ public class UpdateSmtpSettingsCommandValidator : AbstractValidator<UpdateSmtpSe
             .WithMessage("Username is required")
             .WithErrorCode("SMTP_USERNAME_REQUIRED");
 
+        // NotEmpty ama içeriği serbest — "***" maskesi de geçerli (Handler "değiştirme" sinyali olarak okur).
         RuleFor(x => x.Password)
             .NotEmpty()
             .WithMessage("Password is required")

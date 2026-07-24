@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RegisterRequestValidator.cs
-//
-// AMAÇ: POST /auth/register girdisinin doğrulama kuralları.
-// NEDEN: Sunucu tarafı doğrulama her zaman gerekir (CODING_STANDARDS.md §6);
-//        client doğrulamasına güvenilmez.
-// BAĞIMLILIKLAR: FluentValidation, EmailRuleExtensions, PasswordRuleExtensions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Auth;
 

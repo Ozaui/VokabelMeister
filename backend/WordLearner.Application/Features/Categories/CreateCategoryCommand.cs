@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateCategoryCommand.cs
-//
-// AMAÇ: POST /categories — bir Category'yi 1+ dilde (translations[]) tek
-//       işlemde oluşturur.
-// NEDEN: ParentCategoryId verilirse önce VAR OLUP OLMADIĞI kontrol edilir —
-//        var olmayan bir üst kategoriye bağlanmaya çalışmak (yazım hatası/silinmiş
-//        Id) 404 ile REDDEDİLİR, DB'de "hayalet" bir FK bırakılmaz.
-// BAĞIMLILIKLAR: ICategoryRepository, ILanguageRepository, IActivityLogger, CategoryDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Categories;
@@ -19,7 +8,6 @@ using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Categories;
 
-// AMAÇ: Bir dildeki kategori adı/kısa açıklama girdisi.
 public record CategoryTranslationInput(string LanguageCode, string Name, string? Description);
 
 public record CreateCategoryCommand(
@@ -32,8 +20,6 @@ public record CreateCategoryCommand(
     IReadOnlyList<CategoryTranslationInput> Translations
 ) : IRequest<CategoryDto>
 {
-    // NEDEN init-property: JWT'den (CurrentUserId/Role) gelir, gövdede yer almaz —
-    //        controller model binding'den SONRA `with` ile ekler (CreateWordCommand deseni).
     public int? UserId { get; init; }
     public string? ActorRole { get; init; }
 }

@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DeleteWordCommand.cs
-//
-// AMAÇ: DELETE /words/{id} — WordConcept'i ve ona bağlı TÜM Word satırlarını
-//       tek işlemde soft-delete eder.
-// NEDEN: Yalnızca WordConcept soft-delete edilseydi, Word satırları aktif kalır
-//        ve WordConcept'in global soft-delete filtresi Word'leri KAPSAMAZDI (ayrı
-//        tablo) — bu tutarsızlığı önlemek için A-05 planı karar #2'ye göre
-//        `IWordConceptRepository.SoftDeleteWithWordsAsync` kullanılır.
-// BAĞIMLILIKLAR: IWordConceptRepository, IActivityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;

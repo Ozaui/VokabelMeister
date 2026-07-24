@@ -1,22 +1,27 @@
 # Kodlama Standartları
 
-**Özet:** Proje junior eğitimi amaçlı yazılıyor — tüm kod yorumları Türkçe; log mesajları, exception `.Message`'ları ve hata `Code` sabitleri İngilizce (DB/geliştirici tarafı), method/class/property isimleri İngilizce; her dosya başında AMAÇ/NEDEN/BAĞIMLILIKLAR, her public metotta AMAÇ/NEDEN/NASIL bloğu zorunlu. İstemciye giden hata mesajı isteğin diline göre ayrı bir kanaldan ([[ErrorMessages]]) çözülür — bkz. [[AppException]]. Birim testler Faz F'ye bırakılmaz — her servis katmanı bitince aynı task içinde yazılır.
+**Özet:** Proje junior eğitimi amaçlı yazılıyor — tüm kod yorumları Türkçe; log mesajları, exception `.Message`'ları ve hata `Code` sabitleri İngilizce (DB/geliştirici tarafı), method/class/property isimleri İngilizce. **2026-07-24'te değişti:** zorunlu dosya-başı/method-başı AMAÇ/NEDEN/NASIL blokları kaldırıldı — yorum yalnızca kodun anlatamadığı non-obvious NEDEN'i, kısa (1-2 satır) anlatır; kod kendini isimlendirmeyle anlatır (bkz. `feedback_minimal_yorum_standardi`). İstemciye giden hata mesajı isteğin diline göre ayrı bir kanaldan ([[ErrorMessages]]) çözülür — bkz. [[AppException]]. Birim testler Faz F'ye bırakılmaz — her servis katmanı bitince aynı task içinde yazılır.
 **Kütüphaneler:** xUnit, Moq, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory (yalnızca Repository&lt;T&gt; testinde)
 **Bağlantılar:** [[Gelistirme_Yol_Haritasi]] · [[WordLearner_Tests]] · [[Repository]] · [[Backend_Katmanli_Mimari]]
 
 ## Dil Kuralı
-Türkçe: tüm kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, Backend Akademi.
+Türkçe: kod yorumları (kısa, NEDEN odaklı), MD dosyaları, Backend Akademi.
 İngilizce (convention): method/class/property isimleri (C#), test metodu adları, DB kolon adları (SQL),
 JS değişkenleri, **log mesajları (`_logger.Log*`), exception `.Message`'ları, hata `Code` sabitleri**
 (A-03'te değişti — DB'ye/geliştiriciye giden her şey tek bir gerçek dile kilitlenir).
 **İstisna:** istemciye giden hata mesajı isteğin `Accept-Language`'ına göre [[ErrorMessages]]
 sözlüğünden (tr+de) çözülür — kullanıcı ne dil seçtiyse onu görür, DB/log İngilizce görür.
 
-## Zorunlu Bloklar
-- **Dosya başı:** `AMAÇ / NEDEN / BAĞIMLILIKLAR` — mevcut kod dosyalarında ([[Program_cs]],
-  [[BaseEntity]], [[IRepository]] vb.) örnekleri var.
-- **Public metot:** `AMAÇ / NEDEN / NASIL` + param/return.
-- **Karmaşık bloklar:** `// ADIM N:` + `// NEDEN:` yorumları.
+## Yorum Satırları (2026-07-24'te AMAÇ/NEDEN/NASIL blok kuralının yerine geçti)
+- Zorunlu dosya-başı/method-başı blok **YOK** — dosya/sınıf/metot adı zaten ne yaptığını söylüyor.
+- Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, iki yer arasında senkron kalması
+  gereken bir sözleşme, bilerek alınmış bir karar, non-obvious bir edge case.
+- Kısa — genelde tek satır, nadiren iki. Paragraf hâlinde blok yorum yasak.
+- **Bu kural yalnızca kaynak kod için geçerli** — `BACKEND_AKADEMI/`'nin `aciklama`/`neden`/
+  `olmasaydi` öğretim formatı (aşağıdaki bölüm) etkilenmez, ayrıntılı kalmaya devam eder.
+- Gerçekten çok adımlı bir akış varsa (ör. SM-2 hesaplama) adım numaralama yorumu (`// ADIM N:`)
+  istisnai olarak eklenebilir — varsayılan değildir.
+- 2026-07-24'te backend genelinde (267 dosya) geriye dönük uygulandı — bkz. `feedback_minimal_yorum_standardi`.
 
 ## Katman Şablonları (özet)
 - **Entity** — `AMAÇ` + alan başına tek satır Türkçe doc.
@@ -48,7 +53,8 @@ domain varken (yalnızca Auth) flat yapı sorun değildi, ama yeni domain'ler ek
 - Konum: `Services/XxxServiceTests.cs`, `Helpers/`, `Repositories/RepositoryTests.cs`.
 - İsimlendirme: `{Metot}_{Senaryo}_{BeklenenSonuç}` — yapı sabit ama **metot adının kendisi İngilizce**
   (örn. `Register_EmailAlreadyRegistered_ThrowsDuplicateException`); test adı da method/property gibi
-  kod kimliği sayılır (§Dil Kuralı). Yalnızca AAA yorumları ve AMAÇ/NEDEN doc-comment'i Türkçe kalır.
+  kod kimliği sayılır (§Dil Kuralı). Yalnızca AAA yorumları Türkçe kalır — zorunlu XML doc/summary
+  bloğu yok (§Yorum Satırları).
 - AAA deseni (Arrange/Act/Assert), Türkçe yorumla bölünür.
 - Repository ve dış servisler (email, OneSignal, Google/Apple) **her zaman mock'lanır** — gerçek
   DB/HTTP unit testte yasak (F-02'nin işi). Yalnızca [[Repository]] taban sınıfı testinde

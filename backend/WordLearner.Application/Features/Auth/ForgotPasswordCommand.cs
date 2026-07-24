@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ForgotPasswordCommand.cs
-//
-// AMAÇ: POST /auth/forgot-password — şifre sıfırlama OTP'si gönderir.
-// NEDEN: Kullanıcı yoksa/anonimleştirilmişse bile AYNI yanıt döner — e-posta
-//        numaralandırma saldırısını önler (REFERENCE/SECURITY.md §7).
-// BAĞIMLILIKLAR: IUserRepository, IOtpService, IEmailService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
@@ -16,8 +7,7 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Kullanıcı yoksa bile aynı yanıt döner (e-posta numaralandırma önlemi).
-// NEDEN Language init-property: bkz. LoginCommand.
+// Kullanıcı yoksa/anonimleştirilmişse bile aynı yanıt döner (e-posta numaralandırma önlemi).
 public record ForgotPasswordCommand(string Email) : IRequest<MessageResponse>
 {
     public string? Language { get; init; }

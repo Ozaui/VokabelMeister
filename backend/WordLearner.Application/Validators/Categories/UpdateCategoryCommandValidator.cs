@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateCategoryCommandValidator.cs
-//
-// AMAÇ: UpdateCategoryCommand'ın alan doğrulaması — CreateCategoryCommandValidator
-//       ile birebir aynı temel kurallar, `CategoryTranslationRules`'ı PAYLAŞIR.
-// BAĞIMLILIKLAR: FluentValidation, CategoryTranslationRules.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Categories;
 

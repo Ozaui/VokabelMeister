@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordConfiguration.cs
-//
-// AMAÇ: Word entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: UQ_Words_Concept_Language — bir WordConcept'in aynı dilde birden fazla
-//        satırı olamaz (Icerik.md'nin "eşleşmemiş kavram" tanımı bu kısıtın
-//        varlığına dayanır: COUNT(DISTINCT LanguageId)=1 ⇒ eşleşmemiş).
-//        Language FK Restrict — Language satırları seed/sabit olduğu için silinmesi
-//        beklenmez, yanlışlıkla silinirse altındaki tüm kelimelerin CASCADE ile
-//        silinmesi yerine hata vermesi tercih edilir.
-// BAĞIMLILIKLAR: EF Core, Word entity, WordConcept entity, Language entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Words;
@@ -23,6 +10,7 @@ public class WordConfiguration : IEntityTypeConfiguration<Word>
     {
         builder.Property(w => w.Text).HasMaxLength(255).IsRequired();
 
+        // Bir WordConcept'in aynı dilde iki satırı olamaz — "eşleşmemiş kavram" tanımı buna dayanır.
         builder.HasIndex(w => new { w.WordConceptId, w.LanguageId }).IsUnique();
         builder.HasIndex(w => new { w.LanguageId, w.Text });
 
@@ -32,6 +20,7 @@ public class WordConfiguration : IEntityTypeConfiguration<Word>
             .HasForeignKey(w => w.WordConceptId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Restrict — Language sabit/seed veri, yanlışlıkla silinirse altındaki kelimeler CASCADE ile gitmemeli.
         builder
             .HasOne(w => w.Language)
             .WithMany()

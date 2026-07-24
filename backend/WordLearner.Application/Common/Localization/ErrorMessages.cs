@@ -1,25 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ErrorMessages.cs
-//
-// AMAÇ: AppException.Code değerlerinin her dildeki karşılığını tutan merkezi sözlük.
-// NEDEN: Exception'lar mesajı kendi içinde sabitlemez — aynı kod, isteğin diline
-//        göre farklı bir metne çevrilebilsin diye (REFERENCE/API_ENDPOINTS.md §1).
-//        Şu an yalnızca tr+de var — uygulamanın gerçek hedef kitlesi DE↔TR
-//        (bkz. DATABASE_SCHEMA/Icerik.md, Languages seed). İngilizce gibi henüz
-//        hiçbir gerçek istemcinin istemediği bir dil spekülatif olarak eklenmez
-//        (YAGNI — bkz. TASK.md "Spekülatif ortak tip yazılmaz" kuralı, aynı
-//        gerekçeyle ApiResponse<T>/PagedResult<T> A-02'de geri alınmıştı).
-//        Yeni bir dil eklemek yalnızca buraya bir sütun eklemekle olur, hiçbir
-//        exception sınıfına dokunulmaz.
-// BAĞIMLILIKLAR: Yok.
-// ─────────────────────────────────────────────────────────────────────────────
-
 namespace WordLearner.Application.Common.Localization;
 
+// AppException.Code değerlerinin her dildeki karşılığı — şu an yalnızca tr+de (hedef kitle DE↔TR,
+// YAGNI). Yeni bir dil eklemek yalnızca buraya bir sütun eklemekle olur, exception sınıflarına dokunulmaz.
 public static class ErrorMessages
 {
-    // NEDEN varsayılan "tr": İstekte Accept-Language yoksa veya bilinmeyen bir dilse,
-    //        proje Türkçe öncelikli olduğu için Türkçe'ye düşülür (00_INDEX.md kuralı).
+    // Accept-Language yoksa/bilinmeyen bir dilse Türkçe öncelikli proje olduğu için tr'ye düşülür.
     private const string DefaultLanguage = "tr";
 
     private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
@@ -105,8 +90,6 @@ public static class ErrorMessages
             ["de"] = "Ein Konzept kann nicht mit sich selbst verknüpft werden.",
         },
 
-        // NEDEN bu blok: CategoryHasChildrenException/CategoryHasActiveWordsException (A-06) —
-        //       DeleteCategoryCommand'ın 409 silme koruması (API_ENDPOINTS.md §6).
         ["CATEGORY_HAS_CHILDREN"] = new()
         {
             ["tr"] = "Bu kategorinin alt kategorileri var. Önce alt kategorileri silin veya taşıyın.",
@@ -133,11 +116,6 @@ public static class ErrorMessages
             ["de"] = "Eine Kategorie kann nicht sich selbst oder ihrer eigenen Unterkategorie untergeordnet werden.",
         },
 
-        // NEDEN bu blok: FluentValidation validator'ları (Application/Validators/Auth/)
-        //       WithMessage() ile yalnızca sabit İngilizce bir LOG mesajı taşır — istemciye
-        //       giden gerçek mesaj, her kuralın WithErrorCode() ile taşıdığı bu kodlar
-        //       üzerinden ValidationFilter tarafından buradan çözülür (AppException ile
-        //       birebir aynı ayrım: log=sabit İngilizce, API yanıtı=dile göre).
         ["EMAIL_REQUIRED"] = new()
         {
             ["tr"] = "E-posta adresi zorunludur.",
@@ -200,10 +178,7 @@ public static class ErrorMessages
             ["de"] = "Token ist erforderlich.",
         },
 
-        // NEDEN bu blok: WordGrammarValidator (Application/Validators/Words/) — WordDetail.
-        //       GrammarData JSON'unu dile (de/tr) ve PartOfSpeech'e göre doğrular; her kural
-        //       GERMAN_LANGUAGE_FEATURES.md §10 / TURKISH_LANGUAGE_FEATURES.md §9'daki
-        //       Zorunlu/Koşullu/Yasak matrisinin bir satırına karşılık gelir.
+        // WordGrammarValidator — GERMAN/TURKISH_LANGUAGE_FEATURES.md'deki Zorunlu/Koşullu/Yasak matrisi.
         ["GRAMMAR_DATA_INVALID_JSON"] = new()
         {
             ["tr"] = "Gramer verisi geçerli bir JSON olmalı.",
@@ -315,126 +290,92 @@ public static class ErrorMessages
             ["de"] = "Verben dürfen keine Substantivfelder (Plural, Fälle) enthalten.",
         },
 
-        // NEDEN bu kod (A-07): UpdateUserRoleCommandValidator — Role yalnızca User/Admin olabilir
-        //       (Users.Role CHECK constraint'iyle aynı küme, ama DB hatasına düşmeden önce
-        //       uygulama katmanında yakalanır).
         ["INVALID_USER_ROLE"] = new()
         {
             ["tr"] = "Rol yalnızca User veya Admin olabilir.",
             ["de"] = "Die Rolle kann nur User oder Admin sein.",
         },
 
-        // NEDEN bu kod (A-07): UpdateUserRoleCommandHandler/UpdateUserStatusCommandHandler —
-        //       bir admin kendi rolünü/hesap durumunu DEĞİŞTİREMEZ (kaza sonucu kilitlenme riski).
         ["CANNOT_MODIFY_OWN_ACCOUNT"] = new()
         {
             ["tr"] = "Kendi rolünüzü veya hesap durumunuzu değiştiremezsiniz.",
             ["de"] = "Sie können Ihre eigene Rolle oder Ihren Kontostatus nicht ändern.",
         },
 
-        // NEDEN bu kod (A-07): BulkImportWordsCommandValidator — Rows boşsa (hiç satır
-        //       gönderilmemişse) TÜM istek bu tek kod ile 400 alır; satır bazlı hatalar
-        //       BURADAN DEĞİL, BulkImportResultDto.Results'taki ErrorCode'lardan okunur
-        //       (200 yanıtın içinde, HTTP hata kanalını KULLANMAZ).
+        // Satır bazlı hatalar buradan DEĞİL, BulkImportResultDto.Results'taki ErrorCode'lardan okunur (200 içinde).
         ["BULK_IMPORT_ROWS_REQUIRED"] = new()
         {
             ["tr"] = "En az bir satır gereklidir.",
             ["de"] = "Mindestens eine Zeile ist erforderlich.",
         },
 
-        // NEDEN bu kod (A-08): LocalFileStorageService — yalnızca .jpg/.jpeg/.png/.webp
-        //       kabul edilir, diğer uzantılar diske yazılmadan ÖNCE reddedilir.
         ["UNSUPPORTED_FILE_TYPE"] = new()
         {
             ["tr"] = "Desteklenmeyen dosya türü. Yalnızca JPG, PNG veya WEBP yükleyebilirsiniz.",
             ["de"] = "Nicht unterstützter Dateityp. Sie können nur JPG, PNG oder WEBP hochladen.",
         },
 
-        // NEDEN bu kod (A-08): LocalFileStorageService — MaxFileSizeBytes (5 MB) sınırını
-        //       aşan dosyalar diske yazılmadan ÖNCE reddedilir.
         ["FILE_TOO_LARGE"] = new()
         {
             ["tr"] = "Dosya boyutu izin verilen üst sınırı (5 MB) aşıyor.",
             ["de"] = "Die Dateigröße überschreitet das zulässige Limit (5 MB).",
         },
 
-        // NEDEN bu kod (A-08, kod denetiminde bulundu): MediaController — hiç dosya
-        //       gönderilmeden (veya 0 baytlık bir dosyayla) istek atıldığında fırlatılır.
         ["FILE_REQUIRED"] = new()
         {
             ["tr"] = "Yüklenecek bir dosya seçmelisiniz.",
             ["de"] = "Sie müssen eine Datei zum Hochladen auswählen.",
         },
 
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Host boşsa.
         ["SMTP_HOST_REQUIRED"] = new()
         {
             ["tr"] = "SMTP sunucu adresi zorunludur.",
             ["de"] = "Die SMTP-Serveradresse ist erforderlich.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Port 1-65535 aralığı dışındaysa.
         ["SMTP_PORT_INVALID"] = new()
         {
             ["tr"] = "Port 1 ile 65535 arasında olmalıdır.",
             ["de"] = "Der Port muss zwischen 1 und 65535 liegen.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Username boşsa.
         ["SMTP_USERNAME_REQUIRED"] = new()
         {
             ["tr"] = "SMTP kullanıcı adı zorunludur.",
             ["de"] = "Der SMTP-Benutzername ist erforderlich.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — Password boşsa.
         ["SMTP_PASSWORD_REQUIRED"] = new()
         {
             ["tr"] = "SMTP şifresi zorunludur.",
             ["de"] = "Das SMTP-Passwort ist erforderlich.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromEmail boşsa.
         ["SMTP_FROM_EMAIL_REQUIRED"] = new()
         {
             ["tr"] = "Gönderen e-posta adresi zorunludur.",
             ["de"] = "Die Absender-E-Mail-Adresse ist erforderlich.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromEmail geçerli bir e-posta değilse.
         ["SMTP_FROM_EMAIL_INVALID"] = new()
         {
             ["tr"] = "Gönderen e-posta adresi geçerli değil.",
             ["de"] = "Die Absender-E-Mail-Adresse ist ungültig.",
         },
-
-        // NEDEN bu kod (A-09): UpdateSmtpSettingsCommandValidator — FromName boşsa.
         ["SMTP_FROM_NAME_REQUIRED"] = new()
         {
             ["tr"] = "Gönderen adı zorunludur.",
             ["de"] = "Der Absendername ist erforderlich.",
         },
-
-        // NEDEN bu kod (A-09): TestSmtpSettingsCommandHandler — SmtpSettingsRepository'de
-        //       henüz hiç kayıt yoksa (admin ilk kez PUT yapmadan Test'e basarsa) fırlatılır.
         ["SMTP_SETTINGS_NOT_CONFIGURED"] = new()
         {
             ["tr"] = "Önce SMTP ayarlarını kaydetmelisiniz.",
             ["de"] = "Sie müssen zuerst die SMTP-Einstellungen speichern.",
         },
 
-        // NEDEN bu kod (A-09): MailKitSmtpTestService — bağlantı/kimlik doğrulama/gönderim
-        //       denemesi başarısız olursa; gerçek MailKit hata metni istemciye SIZMAZ,
-        //       yalnızca ApplicationLog'a yazılır (SmtpTestFailedException.cs "NEDEN" notu).
+        // Gerçek MailKit hata metni istemciye sızmaz, yalnızca ApplicationLog'a yazılır.
         ["SMTP_TEST_FAILED"] = new()
         {
             ["tr"] = "Test e-postası gönderilemedi. SMTP ayarlarını kontrol edin.",
             ["de"] = "Test-E-Mail konnte nicht gesendet werden. Überprüfen Sie die SMTP-Einstellungen.",
         },
 
-        // NEDEN bu kod: ExceptionHandlingMiddleware, AppException'dan türemeyen (beklenmeyen)
-        //       her exception için bu kodu kullanır — gerçek exception mesajı istemciye asla
-        //       sızdırılmaz, sabit ve dile göre çözülen bir mesaj döner.
+        // AppException'dan türemeyen (beklenmeyen) her exception için — gerçek mesaj istemciye sızdırılmaz.
         ["INTERNAL_SERVER_ERROR"] = new()
         {
             ["tr"] = "Beklenmeyen bir hata oluştu.",
@@ -442,11 +383,6 @@ public static class ErrorMessages
         },
     };
 
-    // AMAÇ: Bir hata koduna, istenen dile (bulunamazsa Türkçe'ye) karşılık gelen mesajı döner.
-    // NEDEN: bkz. LocalizedMessageResolver.Resolve — sözlükte olmayan bir kod gelirse
-    //        (programlama hatası — yeni bir AppException eklenip buraya çevirisi
-    //        eklenmemişse) exception fırlatmak yerine kodun kendisi döner; API asla
-    //        yalnızca çeviri eksik diye 500'e düşmemeli.
     public static string Resolve(string code, string? language) =>
         LocalizedMessageResolver.Resolve(Messages, code, language, DefaultLanguage);
 }

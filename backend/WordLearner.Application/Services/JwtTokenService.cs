@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// JwtTokenService.cs
-//
-// AMAÇ: ITokenService'in JWT (HMAC-SHA256) tabanlı implementasyonu.
-// NEDEN: ASP.NET Identity kullanılmadığı için (SECURITY.md §1) JWT üretimi/doğrulaması
-//        manuel yazılır; Algorithm Confusion saldırısına karşı imzalanan algoritmanın
-//        gerçekten HS256 olduğu her seferinde elle doğrulanır.
-// BAĞIMLILIKLAR: System.IdentityModel.Tokens.Jwt, Microsoft.Extensions.Configuration,
-//                WordLearner.Domain.Entities.User.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -26,12 +15,6 @@ public class JwtTokenService : ITokenService
 
     public JwtTokenService(IConfiguration configuration) => _configuration = configuration;
 
-    // AMAÇ: Kullanıcı bilgilerinden imzalı bir JWT access token üretir.
-    // NEDEN: [Authorize] middleware'i her istekte bu claim'leri okuyup DB'ye gitmeden
-    //        kimlik/rol doğrular; süre appsettings.json Jwt:ExpirationMinutes'ten okunur
-    //        (Program.cs'teki JwtBearer doğrulama ayarlarıyla aynı anahtarı paylaşır).
-    // NASIL: 1) SecretKey'den simetrik imza anahtarı oluştur  2) NameIdentifier/Email/Role/
-    //        firstName claim'lerini ekle  3) HMAC-SHA256 ile imzala  4) string'e serileştir.
     public string GenerateAccessToken(User user)
     {
         var key = GetSigningKey();
@@ -54,10 +37,7 @@ public class JwtTokenService : ITokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    // AMAÇ: Rastgele, yüksek entropili (64 byte) bir refresh token üretir.
-    // NEDEN: 64 byte, brute-force ile tahmin edilemeyecek kadar büyük bir arama uzayı
-    //        sağlar; JWT değildir çünkü kendi başına hiçbir kimlik bilgisi taşımaz,
-    //        yalnızca DB'deki RefreshTokens kaydıyla (hash'i üzerinden) eşleştirilir.
+    // JWT değildir — kendi başına kimlik taşımaz, yalnızca DB'deki RefreshTokens kaydıyla eşleştirilir.
     public RefreshTokenResult GenerateRefreshToken()
     {
         var bytes = new byte[64];
@@ -66,13 +46,6 @@ public class JwtTokenService : ITokenService
         return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));
     }
 
-    // AMAÇ: Süresi dolmuş bir access token'dan, imzası hâlâ geçerliyse ClaimsPrincipal döner.
-    // NEDEN: /auth/refresh akışında yeni token üretmeden önce eski access token'ın gerçekten
-    //        bu sunucu tarafından üretildiği doğrulanır — ValidateLifetime=false bilerek
-    //        atlanır (zaten süresi dolmuş olması beklenir).
-    // NASIL: 1) Aynı SecretKey ile ValidateToken çağır (süre kontrolü kapalı)  2) Doğrulanan
-    //        token'ın header'ındaki algoritmanın gerçekten HS256 olduğunu kontrol et
-    //        (Algorithm Confusion önlemi — TECHNICAL_SPECIFICATIONS.md §5)  3) Geçersizse null dön.
     public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
     {
         var key = GetSigningKey();
@@ -93,10 +66,8 @@ public class JwtTokenService : ITokenService
                 out var validatedToken
             );
 
-            // NEDEN: Saldırgan "alg: none" veya asimetrik bir algoritmaya geçirilmiş bir token
-            //        sunarsa, ValidateToken bunu SecretKey ile doğrulamadan geçirebilir —
-            //        bu yüzden doğrulanan token'ın header'ında GERÇEKTEN HS256 kullanıldığı
-            //        elle teyit edilir (Algorithm Confusion Attack önlemi).
+            // Algorithm Confusion Attack önlemi — saldırgan "alg: none" veya asimetrik bir
+            // algoritmaya geçirilmiş bir token sunarsa ValidateToken bunu doğrulamadan geçirebilir.
             if (
                 validatedToken is not JwtSecurityToken jwtToken
                 || !jwtToken.Header.Alg.Equals(
@@ -114,10 +85,6 @@ public class JwtTokenService : ITokenService
         }
     }
 
-    // AMAÇ: appsettings'teki Jwt:SecretKey'den simetrik imza anahtarını üretir.
-    // NEDEN: GenerateAccessToken ve GetPrincipalFromExpiredToken AYNI anahtarı (aynı
-    //        SecretKey'den) kullanır — imzalayan ile doğrulayan taraf farklı bir anahtar
-    //        türetseydi hiçbir token doğrulanamazdı; tek yerde tutmak bu tutarlılığı garanti eder.
     private SymmetricSecurityKey GetSigningKey() =>
         new(Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]!));
 }

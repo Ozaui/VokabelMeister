@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DenyQrLoginCommand.cs
-//
-// AMAÇ: POST /auth/qr/{token}/deny — mobil, scan adımında gördüğü cihaz/IP
-//       eşleşmiyorsa veya kullanıcı isteği tanımıyorsa girişi reddeder.
-// NEDEN: REFERENCE/SECURITY.md §1.3 ADIM 3b — ConfirmQrLoginCommand ile birebir
-//        aynı ön koşullar (Scanned + sahiplik, ortak QrLoginSessionOwnershipHelper
-//        ile paylaşılıyor), yalnızca hedef durum Denied.
-// BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService (HashToken),
-//                QrLoginSessionOwnershipHelper.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -20,7 +8,6 @@ namespace WordLearner.Application.Features.QrLogin;
 
 public record DenyQrLoginCommand(string QrToken) : IRequest<Unit>
 {
-    // NEDEN UserId init-property: bkz. ScanQrLoginCommand.
     public int UserId { get; init; }
 }
 
@@ -54,7 +41,6 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
         session.Status = QrLoginStatus.Denied;
         await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
-        // NEDEN: bkz. ConfirmQrLoginCommandHandler'daki aynı NEDEN notu.
         await _securityLogger.LogAsync(
             LogEventType.QrLoginDenied,
             request.UserId,

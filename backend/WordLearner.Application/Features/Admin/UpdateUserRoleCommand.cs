@@ -1,19 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateUserRoleCommand.cs
-//
-// AMAÇ: PUT /admin/users/{id}/role — bir kullanıcının rolünü değiştirir (User↔Admin).
-// NEDEN: Rol değişimi CLAUDE.md "Kimlik & güvenlik"nin kapsadığı hassas bir admin
-//        işlemi — CLAUDE.md "İçerik değiştiren her CRUD..." kuralına göre HEM
-//        IActivityLogger (UPDATE_USER_ROLE, genel "kim ne yaptı" izi) HEM
-//        ISecurityLogger (LogEventType.AdminAction, güvenlik olayı izi) çağrılır.
-//        Hedef Id, isteği yapan adminin kendi Id'siyle (UserId) AYNIYSA reddedilir
-//        (SelfAdminActionNotAllowedException, 400) — kaza sonucu kendi rolünü
-//        düşürmek, tek admin'li bir sistemde geri dönüşü olmayan bir kilitlenmeye
-//        yol açabilir (kod denetiminde bulunan bir açık tasarım sorusu, kullanıcı
-//        onayıyla eklendi).
-// BAĞIMLILIKLAR: IUserRepository, IActivityLogger, ISecurityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;

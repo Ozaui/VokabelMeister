@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetUnmatchedWordConceptsQueryHandlerTests.cs
-//
-// AMAÇ: GetUnmatchedWordConceptsQueryHandler'ın filtre+sayfa parametrelerini
-//       repository'ye ilettiğini, çoklu Definition token'larına bölünerek
-//       öneri arandığını (İKİ yönde: Definition↔Text) ve öneri bulunamayınca
-//       null döndüğünü doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -44,12 +34,6 @@ public class GetUnmatchedWordConceptsQueryHandlerTests
             },
         };
 
-    /// <summary>
-    /// GetUnmatched_ForwardsFiltersToRepository
-    ///
-    /// AMAÇ: Query'deki LanguageId/Search/Page/PageSize'ın repository.GetUnmatchedPagedAsync'e
-    ///       AYNEN iletildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetUnmatched_ForwardsFiltersToRepository()
     {
@@ -74,13 +58,6 @@ public class GetUnmatchedWordConceptsQueryHandlerTests
         );
     }
 
-    /// <summary>
-    /// GetUnmatched_DefinitionMatchesPoolText_SetsSuggestedMatchConceptId
-    ///
-    /// AMAÇ: Adayın Definition'ı ("ama, fakat, ancak") virgülle token'lara bölünüp
-    ///       her biri karşı havuzun Text'ine karşı denendiğinde, ikinci token'ın
-    ///       (tek string olarak asla eşleşmeyecek "fakat") eşleştiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetUnmatched_DefinitionMatchesPoolText_SetsSuggestedMatchConceptId()
     {
@@ -102,12 +79,6 @@ public class GetUnmatchedWordConceptsQueryHandlerTests
         result.Items.Should().ContainSingle(i => i.WordConceptId == 10 && i.SuggestedMatchConceptId == 20);
     }
 
-    /// <summary>
-    /// GetUnmatched_PoolDefinitionMatchesCandidateText_SetsSuggestedMatchConceptId
-    ///
-    /// AMAÇ: Ters yönü doğrulamak — adayın Text'i, havuzdaki bir kavramın
-    ///       Definition token'larından biriyle eşleştiğinde de öneri bulunur.
-    /// </summary>
     [Fact]
     public async Task GetUnmatched_PoolDefinitionMatchesCandidateText_SetsSuggestedMatchConceptId()
     {
@@ -129,12 +100,6 @@ public class GetUnmatchedWordConceptsQueryHandlerTests
         result.Items.Should().ContainSingle(i => i.WordConceptId == 10 && i.SuggestedMatchConceptId == 20);
     }
 
-    /// <summary>
-    /// GetUnmatched_NoOverlap_SuggestedMatchConceptIdIsNull
-    ///
-    /// AMAÇ: Havuzda hiçbir Text/Definition örtüşmesi yoksa öneri null döner
-    ///       (liste manuel taranır, hata fırlatılmaz).
-    /// </summary>
     [Fact]
     public async Task GetUnmatched_NoOverlap_SuggestedMatchConceptIdIsNull()
     {

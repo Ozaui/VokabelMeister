@@ -1,18 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// PairWordConceptsCommand.cs
-//
-// AMAÇ: POST /words/pair — `otherConceptId`'nin tek Word'ünü `primaryId`'ye
-//       taşıyarak iki eşleşmemiş kavramı tek (2 dilli) kavrama birleştirir.
-// NEDEN: `primaryId` = admin'in eşleştirmeyi başlattığı taraf. **Bloklayıcı hata
-//        yok** — PartOfSpeech/Category/DifficultyLevel çakışsa bile primaryId'ninki
-//        sessizce kazanır (diller arası tür kayması dilin doğası, veri hatası
-//        değil — bkz. Icerik.md "Eşleştirme").
-// NASIL: 1) İki kavramı da tüm dilleriyle yükle (oldValue snapshot'ı için)
-//        2) IWordConceptRepository.PairAsync ile taşı+soft-delete  3) PAIR_WORD_CONCEPTS
-//        ActivityLog'u yaz  4) Birleşmiş kavramın detay DTO'sunu dön.
-// BAĞIMLILIKLAR: IWordConceptRepository, IActivityLogger, WordConceptDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Words;
@@ -22,6 +7,8 @@ using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
 
+// primaryId admin'in eşleştirmeyi başlattığı taraf — bloklayıcı hata yok, PartOfSpeech/Category/
+// DifficultyLevel çakışsa bile primaryId'ninki sessizce kazanır (diller arası tür kayması dilin doğası).
 public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId) : IRequest<WordConceptDetailDto>
 {
     public int? UserId { get; init; }

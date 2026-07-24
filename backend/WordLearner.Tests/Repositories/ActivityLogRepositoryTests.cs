@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ActivityLogRepositoryTests.cs
-//
-// AMAÇ: ActivityLogRepository'nin ekleme + filtreli/sayfalı sorgusunu gerçek bir
-//       in-memory EF Core bağlamına karşı doğrulamak.
-// NEDEN: bkz. UserRepositoryTests.cs dosya başı.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
-//                WordLearner.Infrastructure.Repositories.ActivityLogRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using WordLearner.Domain.Entities.Logging;
 using WordLearner.Infrastructure.Repositories;
@@ -17,11 +7,6 @@ namespace WordLearner.Tests.Repositories;
 
 public class ActivityLogRepositoryTests
 {
-    /// <summary>
-    /// AddAsync_ValidLog_PersistsRecord
-    ///
-    /// AMAÇ: Mutlu yol — bir audit kaydının eklendiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task AddAsync_ValidLog_PersistsRecord()
     {
@@ -36,12 +21,6 @@ public class ActivityLogRepositoryTests
         context.ActivityLogs.Should().ContainSingle(a => a.Action == "CREATE_WORD" && a.UserId == 1);
     }
 
-    /// <summary>
-    /// GetPagedAsync_FilterByUserId_ReturnsOnlyMatchingRecords
-    ///
-    /// AMAÇ: userId filtresi verildiğinde yalnızca o kullanıcıya ait kayıtların
-    ///       döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetPagedAsync_FilterByUserId_ReturnsOnlyMatchingRecords()
     {
@@ -59,13 +38,6 @@ public class ActivityLogRepositoryTests
         sonuc.Items.Should().ContainSingle(a => a.UserId == 1);
     }
 
-    /// <summary>
-    /// GetPagedAsync_MoreRecordsThanPageSize_ReturnsCorrectPageAndTotalCount
-    ///
-    /// AMAÇ: Sayfa boyutundan fazla kayıt varken doğru sayfanın döndüğünü ve
-    ///       TotalCount'un TÜM (filtrelenmiş) kayıt sayısını (sayfa boyutu değil)
-    ///       yansıttığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetPagedAsync_MoreRecordsThanPageSize_ReturnsCorrectPageAndTotalCount()
     {
@@ -83,12 +55,6 @@ public class ActivityLogRepositoryTests
         sonuc.Items.Should().HaveCount(2);
     }
 
-    /// <summary>
-    /// GetPagedAsync_NoFilters_OrdersByCreatedAtDescending
-    ///
-    /// AMAÇ: Filtre verilmediğinde kayıtların en yeniden en eskiye sıralı döndüğünü
-    ///       doğrulamak — admin panel her zaman "son olaylar" görmek ister.
-    /// </summary>
     [Fact]
     public async Task GetPagedAsync_NoFilters_OrdersByCreatedAtDescending()
     {

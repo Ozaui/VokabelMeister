@@ -1,15 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// QrSessionGoneException.cs
-//
-// AMAÇ: QR oturumu artık kullanılamaz durumdayken (süresi dolmuş, zaten
-//       tüketilmiş/reddedilmiş, ya da beklenen aşamada değilse) fırlatılır.
-// NEDEN: ExceptionHandlingMiddleware bu tipi 410 Gone'a çevirir — istemci bu
-//        durumda yeni bir QR oturumu (generate) başlatmalıdır (REFERENCE/SECURITY.md §1.3).
-// BAĞIMLILIKLAR: AppException.
-// ─────────────────────────────────────────────────────────────────────────────
-
 namespace WordLearner.Application.Common.Exceptions;
 
+// 410 Gone — istemci yeni bir QR oturumu başlatmalı.
 public class QrSessionGoneException : AppException
 {
     public QrSessionGoneException()

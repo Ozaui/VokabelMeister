@@ -1,24 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateSmtpSettingsCommand.cs
-//
-// AMAÇ: PUT /admin/smtp-settings — SMTP ayarlarını kaydeder (ilk kayıtsa oluşturur,
-//       varsa günceller — upsert, çünkü tabloda her zaman TEK satır olur).
-// NEDEN: SMTP ayarları CLAUDE.md "Kimlik & güvenlik"nin kapsadığı hassas bir admin
-//        işlemi (SMTP kimlik bilgisi değişimi) — CLAUDE.md "İçerik değiştiren her
-//        CRUD..." kuralına göre HEM IActivityLogger (UPDATE_SMTP_SETTINGS) HEM
-//        ISecurityLogger (LogEventType.AdminAction) çağrılır. PasswordEncrypted
-//        diff'ten (OldValue/NewValue) HARİÇ tutulur — CLAUDE.md "şifre/hash gibi
-//        hassas alanlar diff'ten hariç tutulur" kuralı.
-// NEDEN MaskedPassword ("***"): GET /admin/smtp-settings gerçek şifreyi ASLA
-//        döndürmez (GetSmtpSettingsQuery.cs), admin panel formu şifre alanını hiç
-//        değiştirmeden PUT'a geri gönderirse bu SABİT değer gelir — Handler bunu
-//        "şifreyi DEĞİŞTİRME, eskisini KORU" sinyali olarak okur. Bu sabit,
-//        GetSmtpSettingsQueryHandler'daki AYNI isimli sabitle DEĞER olarak
-//        BİREBİR eşleşmelidir (ikisi ayrı dosyada çünkü Query/Command ayrı
-//        dikey dilimler — CLAUDE.md §3, ama SÖZLEŞME olarak tek bir string).
-// BAĞIMLILIKLAR: ISmtpSettingsRepository, IEncryptionService, IActivityLogger, ISecurityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;
@@ -45,8 +24,7 @@ public record UpdateSmtpSettingsCommand(
 
 public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettingsCommand, Unit>
 {
-    // NEDEN: bkz. dosya başı "NEDEN MaskedPassword" — GetSmtpSettingsQueryHandler'daki
-    //        AYNI isimli sabitle değer olarak eşleşmek ZORUNDA.
+    // GetSmtpSettingsQueryHandler'daki aynı isimli sabitle değer olarak eşleşmek zorunda.
     private const string MaskedPassword = "***";
 
     private readonly ISmtpSettingsRepository _smtpSettingsRepository;
@@ -71,13 +49,8 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
     {
         var existing = await _smtpSettingsRepository.GetCurrentAsync(ct);
 
-        // NEDEN bu kontrol (kod denetiminde bulundu): ilk kayıtta (existing null)
-        //       "koru"nacak eski bir şifre YOK — maske literal'i ("***") bu durumda
-        //       BİR ANLAM TAŞIMAZ. Bu kontrol OLMASAYDI, aşağıdaki satır "***" stringinin
-        //       KENDİSİNİ şifreleyip DB'ye gerçek SMTP şifresi yerine yazardı (sessiz
-        //       bir yanlış-yapılandırma) — admin panel normalde bu durumu GET'in boş
-        //       Password dönmesi sayesinde önler, ama bu ikinci, sunucu-taraflı bir
-        //       savunma katmanıdır (istemciye güvenmemek).
+        // İlk kayıtta (existing null) korunacak eski şifre yok — maske literali burada anlamsız,
+        // bu kontrol olmasaydı "***" stringinin kendisi şifrelenip DB'ye yazılırdı.
         if (request.Password == MaskedPassword && existing is null)
             throw new SmtpPasswordRequiredException();
 
@@ -86,8 +59,7 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
                 ? existing.PasswordEncrypted
                 : _encryptionService.Encrypt(request.Password);
 
-        // NEDEN oldValue'da PasswordEncrypted/Password YOK: CLAUDE.md "şifre/hash gibi
-        //       hassas alanlar diff'ten hariç tutulur" kuralı.
+        // Şifre/hash gibi hassas alanlar diff'ten hariç tutulur.
         var oldValue =
             existing is null
                 ? null

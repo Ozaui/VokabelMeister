@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// VerifyLoginOtpCommandHandlerTests.cs
-//
-// AMAÇ: VerifyLoginOtpCommandHandler'ın OTP doğrulaması yapıp ILoginCompletionService'e
-//       doğru şekilde delege ettiğini doğrulamak.
-// NEDEN: Grace period kurtarma/giriş istatistikleri gibi CompleteLoginAsync'in
-//        kendi iç davranışı artık LoginCompletionServiceTests'te kapsanıyor —
-//        burada yalnızca handler'ın doğru kullanıcıyla/ip'yle delege ettiği
-//        ve OTP hatasını doğru fırlattığı test edilir (kod tekrarını önler).
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -33,12 +21,6 @@ public class VerifyLoginOtpCommandHandlerTests
     private VerifyLoginOtpCommandHandler CreateHandler() =>
         new(_userRepo.Object, _otpService.Object, _loginCompletionService.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService
-    ///
-    /// AMAÇ: Doğru OTP kodu girildiğinde ILoginCompletionService.CompleteLoginAsync'in
-    ///       doğru kullanıcı/ip ile çağrıldığını ve sonucunun aynen döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task VerifyLoginOtp_ValidOtp_DelegatesToLoginCompletionService()
     {
@@ -69,11 +51,6 @@ public class VerifyLoginOtpCommandHandlerTests
         _loginCompletionService.Verify(l => l.CompleteLoginAsync(user, "1.2.3.4", default), Times.Once);
     }
 
-    /// <summary>
-    /// VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException
-    ///
-    /// AMAÇ: Yanlış OTP kodu girildiğinde InvalidOtpException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task VerifyLoginOtp_WrongOtp_ThrowsInvalidOtpException()
     {
@@ -90,12 +67,6 @@ public class VerifyLoginOtpCommandHandlerTests
         await act.Should().ThrowAsync<InvalidOtpException>();
     }
 
-    /// <summary>
-    /// VerifyLoginOtp_WrongOtp_LogsOtpFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
-    ///       doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task VerifyLoginOtp_WrongOtp_LogsOtpFailedSecurityEvent()
     {

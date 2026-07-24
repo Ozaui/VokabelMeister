@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateCategoryCommandValidator.cs
-//
-// AMAÇ: CreateCategoryCommand ve UpdateCategoryCommand'ın alan doğrulaması —
-//       CreateWordCommandValidator/UpdateWordCommandValidator (A-05) ile BİREBİR
-//       aynı desen: her translation için LanguageCode + Name zorunlu, paylaşılan
-//       döngü `CategoryTranslationRules.ValidateTranslations` içinde.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using FluentValidation.Results;
 using WordLearner.Application.Features.Categories;
@@ -27,8 +17,7 @@ public class CreateCategoryCommandValidator : AbstractValidator<CreateCategoryCo
     }
 }
 
-// AMAÇ: CreateCategoryCommandValidator ve UpdateCategoryCommandValidator'ın
-//       PAYLAŞTIĞI translation doğrulama döngüsü.
+// CreateCategoryCommandValidator ve UpdateCategoryCommandValidator'ın paylaştığı doğrulama.
 internal static class CategoryTranslationRules
 {
     public static void ValidateTranslations<T>(

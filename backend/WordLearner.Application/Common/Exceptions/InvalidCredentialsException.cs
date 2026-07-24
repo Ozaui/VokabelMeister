@@ -1,17 +1,7 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InvalidCredentialsException.cs
-//
-// AMAÇ: Login sırasında e-posta bulunamadığında, şifre yanlış olduğunda veya
-//       şifresi olmayan (sosyal girişli) bir hesapla yerel login denendiğinde
-//       fırlatılır.
-// NEDEN: Üç durum için de AYNI koddan (INVALID_CREDENTIALS) çözülen AYNI mesaj kullanılır
-//        — hangi durumun gerçekleştiğini istemciye asla söylemeyiz, aksi hâlde bir
-//        saldırgan "hangi e-postalar kayıtlı" bilgisini deneme yanılmayla çıkarabilir.
-// BAĞIMLILIKLAR: AppException.
-// ─────────────────────────────────────────────────────────────────────────────
-
 namespace WordLearner.Application.Common.Exceptions;
 
+// E-posta yok/şifre yanlış/sosyal girişli hesapla yerel login — üçü de AYNI mesajı döner,
+// aksi hâlde bir saldırgan hangi e-postaların kayıtlı olduğunu deneme yanılmayla çıkarabilir.
 public class InvalidCredentialsException : AppException
 {
     public InvalidCredentialsException()

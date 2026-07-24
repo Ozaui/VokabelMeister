@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ForgotPasswordCommandHandlerTests.cs
-//
-// AMAÇ: ForgotPasswordCommandHandler'ın var olan/olmayan kullanıcı senaryolarını
-//       (e-posta numaralandırma önlemi dahil) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Localization;
@@ -25,11 +17,6 @@ public class ForgotPasswordCommandHandlerTests
     private ForgotPasswordCommandHandler CreateHandler() =>
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
-    /// <summary>
-    /// ForgotPassword_ExistingUser_SendsResetOtp
-    ///
-    /// AMAÇ: Kayıtlı bir kullanıcı için şifre sıfırlama OTP'sinin gönderildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ForgotPassword_ExistingUser_SendsResetOtp()
     {
@@ -46,12 +33,6 @@ public class ForgotPasswordCommandHandlerTests
         _emailService.Verify(e => e.SendPasswordResetOtpAsync(user.Email, "123456", default), Times.Once);
     }
 
-    /// <summary>
-    /// ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage
-    ///
-    /// AMAÇ: Kayıtlı olmayan bir e-posta için de e-posta GÖNDERİLMEDİĞİNİ ama aynı
-    ///       mesajın döndüğünü doğrulamak (e-posta numaralandırma önlemi).
-    /// </summary>
     [Fact]
     public async Task ForgotPassword_UserNotFound_DoesNotSendEmailButReturnsSameMessage()
     {
@@ -70,12 +51,6 @@ public class ForgotPasswordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ForgotPassword_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task ForgotPassword_GermanLanguage_ReturnsGermanMessage()
     {

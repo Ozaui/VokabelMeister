@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ResendVerificationCommand.cs
-//
-// AMAÇ: POST /auth/resend-verification — e-posta doğrulama kodunu tekrar gönderir.
-// NEDEN: Kullanıcı bulunamasa da aynı yanıt döner — e-posta numaralandırma
-//        saldırısını önlemek için (ForgotPasswordCommand ile aynı desen).
-// BAĞIMLILIKLAR: IUserRepository, IOtpService, IEmailService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Localization;
 using WordLearner.Application.DTOs.Auth;
@@ -16,8 +7,7 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Doğrulama kodunun süresi dolduysa/gelmediyse yenisini ister.
-// NEDEN Language init-property: bkz. LoginCommand.
+// Kullanıcı bulunamasa da aynı yanıt döner — e-posta numaralandırma saldırısını önler.
 public record ResendVerificationCommand(string Email) : IRequest<MessageResponse>
 {
     public string? Language { get; init; }

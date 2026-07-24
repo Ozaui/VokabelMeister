@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// QrLoginController.cs
-//
-// AMAÇ: REFERENCE/API_ENDPOINTS.md §3.1'deki 4 QR ile giriş endpoint'ini
-//       MediatR üzerinden ilgili Command'a bağlayan ince controller katmanı.
-// NEDEN: AuthController'dan AYRI bir controller — QR akışı Admin panelde yok
-//        (yalnızca Web/Mobil), rotası da `/auth/qr/*` altında toplu (CLAUDE.md §5
-//        — Command+Handler aynı dosyada, controller ince katman kuralı).
-// BAĞIMLILIKLAR: IMediator, ValidationFilter (global, Program.cs'de kayıtlı).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +9,7 @@ using WordLearner.Application.Features.QrLogin;
 
 namespace WordLearner.API.Controllers;
 
+// AuthController'dan AYRI — QR akışı Admin panelde yok (yalnızca Web/Mobil).
 [ApiController]
 [Route("api/v1/auth/qr")]
 public class QrLoginController : ControllerBase
@@ -28,15 +18,9 @@ public class QrLoginController : ControllerBase
 
     public QrLoginController(IMediator mediator) => _mediator = mediator;
 
-    // AMAÇ: İsteği atan tarafın IP adresi (bkz. AuthController.ClientIp).
     private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
-
-    // AMAÇ: JWT'deki NameIdentifier claim'inden mevcut kullanıcının Id'sini okur
-    //       (bkz. AuthController.CurrentUserId) — scan/confirm/deny kendi kimliğini
-    //       token'dan alır, body'den değil.
     private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    // AMAÇ: Web'in göstereceği yeni bir QR oturumu başlatır.
     [HttpPost("generate")]
     [EnableRateLimiting("qrGenerate")]
     [ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]
@@ -50,11 +34,8 @@ public class QrLoginController : ControllerBase
         return Ok(await _mediator.Send(command, ct));
     }
 
-    // AMAÇ: Web'in ~2sn'de bir sorguladığı polling endpoint'i — Confirmed'de tek
-    //       seferlik token döner, sonra oturum Consumed'e geçer.
-    // NEDEN "qrStatus" (paylaşımlı "anonymous" DEĞİL): bu polling sıklığı (~30
-    //       istek/dk) paylaşımlı 10/dk bütçesini saniyeler içinde tüketip TÜM
-    //       anonim trafiği kilitler — bkz. Program.cs "qrStatus" policy yorumu.
+    // "qrStatus" — paylaşımlı "anonymous" limitini kullansaydı bu polling sıklığı (~30 istek/dk)
+    // tüm anonim trafiği kilitlerdi (bkz. Program.cs "qrStatus" policy).
     [HttpGet("{token}/status")]
     [EnableRateLimiting("qrStatus")]
     [ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]
@@ -64,7 +45,6 @@ public class QrLoginController : ControllerBase
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
 
-    // AMAÇ: Mobil, zaten giriş yapmış olduğu JWT'siyle QR'ı taradığında çağırır.
     [HttpPost("{token}/scan")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
@@ -75,7 +55,6 @@ public class QrLoginController : ControllerBase
     public async Task<ActionResult<QrScanResponse>> Scan(string token, CancellationToken ct) =>
         Ok(await _mediator.Send(new ScanQrLoginCommand(token) { UserId = CurrentUserId }, ct));
 
-    // AMAÇ: Mobil kullanıcı, gördüğü cihaz/pairingCode'u doğrulayıp girişi onaylar.
     [HttpPost("{token}/confirm")]
     [Authorize]
     [EnableRateLimiting("authenticated")]
@@ -90,7 +69,6 @@ public class QrLoginController : ControllerBase
         return NoContent();
     }
 
-    // AMAÇ: Mobil kullanıcı girişi reddeder (cihaz/kod eşleşmiyor veya isteği tanımıyor).
     [HttpPost("{token}/deny")]
     [Authorize]
     [EnableRateLimiting("authenticated")]

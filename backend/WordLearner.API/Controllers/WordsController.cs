@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordsController.cs
-//
-// AMAÇ: REFERENCE/API_ENDPOINTS.md §5'teki sistem kelimesi (Words) endpoint'lerini
-//       MediatR üzerinden ilgili Command/Query'e bağlayan ince controller katmanı.
-// NEDEN: Liste/detay okuma herkese açık ([Authorize] — giriş yapmış herkes),
-//        CRUD yalnızca Admin ([Authorize(Roles="Admin")]) — CLAUDE.md "Roller ve
-//        sahiplik": sistem içeriği CRUD Admin, okuma [Authorize]. Bu, projedeki
-//        İLK `[Authorize(Roles="Admin")]` kullanımıdır (Auth/QrLogin'de emsal yoktu).
-// BAĞIMLILIKLAR: IMediator, ValidationFilter (global, Program.cs'de kayıtlı).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -28,18 +16,9 @@ public class WordsController : ControllerBase
 
     public WordsController(IMediator mediator) => _mediator = mediator;
 
-    // AMAÇ: JWT'deki NameIdentifier claim'inden mevcut kullanıcının Id'sini okur —
-    //       IActivityLogger'a "kim yaptı" bilgisini taşımak için (AuthController deseni).
     private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-    // AMAÇ: JWT'deki Role claim'i — ActivityLog.ActorRole'e yazılır (kaydın yazıldığı
-    //       andaki rolü dondurur, kullanıcının rolü sonradan değişse bile).
     private string? CurrentRole => User.FindFirstValue(ClaimTypes.Role);
 
-    // AMAÇ: Filtre+sayfalı kelime kavramı listesi.
-    // NEDEN categoryId parametresi (A-06 eklemesi): API_ENDPOINTS.md §5'in "level,
-    //        categoryId, partOfSpeech, search, page, pageSize" filtre listesinde
-    //        A-05 döneminden beri VARDI ama Category tabloları o zaman yoktu.
     [HttpGet]
     [Authorize]
     [ProducesResponseType(typeof(PagedResult<WordConceptListItemDto>), StatusCodes.Status200OK)]
@@ -57,7 +36,6 @@ public class WordsController : ControllerBase
         return Ok(await _mediator.Send(query, ct));
     }
 
-    // AMAÇ: Bir kelime kavramının tüm dilleriyle (WordDetail+örnekler dahil) tam detayı.
     [HttpGet("{id:int}")]
     [Authorize]
     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]
@@ -65,7 +43,6 @@ public class WordsController : ControllerBase
     public async Task<ActionResult<WordConceptDetailDto>> GetWordById(int id, CancellationToken ct) =>
         Ok(await _mediator.Send(new GetWordByIdQuery(id), ct));
 
-    // AMAÇ: Yeni bir WordConcept + 1 veya 2 dilde translations[] oluşturur.
     [HttpPost]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status201Created)]
@@ -89,7 +66,6 @@ public class WordsController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, response);
     }
 
-    // AMAÇ: Mevcut çevirileri günceller veya kavrama eksik olan dili ekler.
     [HttpPut("{id:int}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]
@@ -115,7 +91,6 @@ public class WordsController : ControllerBase
             )
         );
 
-    // AMAÇ: WordConcept'i + tüm dillerini soft-delete eder.
     [HttpDelete("{id:int}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -126,8 +101,6 @@ public class WordsController : ControllerBase
         return NoContent();
     }
 
-    // AMAÇ: `languageId`'de eşleşmemiş (tek dilli) kavramların filtre+sayfalı
-    //       listesi + karşı dilin havuzunda önerilen eşleşme adayı.
     [HttpGet("unmatched")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(PagedResult<UnmatchedWordConceptDto>), StatusCodes.Status200OK)]
@@ -143,8 +116,6 @@ public class WordsController : ControllerBase
         return Ok(await _mediator.Send(query, ct));
     }
 
-    // AMAÇ: `otherConceptId`'nin tek Word'ünü `primaryId`'ye taşıyarak iki
-    //       eşleşmemiş kavramı tek (2 dilli) kavrama birleştirir.
     [HttpPost("pair")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(WordConceptDetailDto), StatusCodes.Status200OK)]

@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetCategoriesQuery.cs
-//
-// AMAÇ: GET /categories — hiyerarşik (ağaç) kategori listesi.
-// NEDEN includeWordCount opsiyonel: `ICategoryRepository.GetWordCountsAsync` tüm
-//        WordCategories tablosunu GROUP BY ile tarar — bu ekstra bir sorgu, yalnızca
-//        istemci gerçekten `includeWordCount=true` gönderdiğinde (ör. B-04'ün admin
-//        listesi "bu kategoride N kelime var" göstermek istediğinde) çalıştırılır.
-// BAĞIMLILIKLAR: ICategoryRepository, CategoryDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.DTOs.Categories;
 using WordLearner.Application.Interfaces.Repositories;

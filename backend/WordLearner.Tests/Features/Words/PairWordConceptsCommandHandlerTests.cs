@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// PairWordConceptsCommandHandlerTests.cs
-//
-// AMAÇ: PairWordConceptsCommandHandler'ın mutlu yolu, primaryId/otherConceptId
-//       bulunamadığında 404'ü, PartOfSpeech/DifficultyLevel çakışmasında BİLE
-//       (bloklayıcı hata YOK) primaryId'ninki sessizce kazanarak birleştirdiğini
-//       ve PAIR_WORD_CONCEPTS audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -38,12 +28,6 @@ public class PairWordConceptsCommandHandlerTests
             Words = new List<Word> { new() { WordConceptId = id, LanguageId = language.Id, Language = language, Text = text } },
         };
 
-    /// <summary>
-    /// Pair_HappyPath_ReturnsMergedConceptFromRepository
-    ///
-    /// AMAÇ: primaryId/otherConceptId ikisi de bulunduğunda repository.PairAsync'in
-    ///       ÇAĞRILDIĞINI ve döndürdüğü birleşmiş kavramın DTO'ya çevrildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Pair_HappyPath_ReturnsMergedConceptFromRepository()
     {
@@ -69,13 +53,6 @@ public class PairWordConceptsCommandHandlerTests
         _wordConceptRepo.Verify(r => r.PairAsync(12, 87, 7, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>
-    /// Pair_ConflictingPartOfSpeech_MergesWithoutThrowing
-    ///
-    /// AMAÇ: primary ve other'ın PartOfSpeech'i farklı olsa bile (dil kayması,
-    ///       veri hatası DEĞİL) hiçbir exception fırlatılmadan birleştirmenin
-    ///       primaryId'nin PartOfSpeech'iyle döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Pair_ConflictingPartOfSpeech_MergesWithoutThrowing()
     {
@@ -101,12 +78,6 @@ public class PairWordConceptsCommandHandlerTests
         result.PartOfSpeech.Should().Be("Verb");
     }
 
-    /// <summary>
-    /// Pair_PrimaryNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: primaryId Words tablosunda yoksa 404'e denk gelen
-    ///       EntityNotFoundException fırlatıldığını VE PairAsync'in HİÇ ÇAĞRILMADIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Pair_PrimaryNotFound_ThrowsEntityNotFoundException()
     {
@@ -127,11 +98,6 @@ public class PairWordConceptsCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Pair_OtherConceptNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: otherConceptId Words tablosunda yoksa 404 fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Pair_OtherConceptNotFound_ThrowsEntityNotFoundException()
     {
@@ -150,13 +116,6 @@ public class PairWordConceptsCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Pair_Success_LogsPairWordConceptsActivity
-    ///
-    /// AMAÇ: Başarılı eşleştirmede IActivityLogger.LogAsync'in PAIR_WORD_CONCEPTS
-    ///       action'ı, EntityType=WordConcept ve birleşmiş kavramın Id'siyle
-    ///       ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Pair_Success_LogsPairWordConceptsActivity()
     {

@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// QrLoginSessionRepositoryTests.cs
-//
-// AMAÇ: QrLoginSessionRepository'nin QrTokenHash'e göre arama sorgusunu gerçek bir
-//       in-memory EF Core bağlamına karşı doğrulamak.
-// NEDEN: bkz. UserRepositoryTests.cs dosya başı.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
-//                WordLearner.Infrastructure.Repositories.QrLoginSessionRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Infrastructure.Repositories;
@@ -17,11 +7,6 @@ namespace WordLearner.Tests.Repositories;
 
 public class QrLoginSessionRepositoryTests
 {
-    /// <summary>
-    /// GetByTokenHashAsync_RecordExists_ReturnsSession
-    ///
-    /// AMAÇ: Mutlu yol — hash'e göre QR oturumunun bulunduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetByTokenHashAsync_RecordExists_ReturnsSession()
     {
@@ -45,11 +30,6 @@ public class QrLoginSessionRepositoryTests
         bulunan!.Id.Should().Be(eklenen.Id);
     }
 
-    /// <summary>
-    /// GetByTokenHashAsync_NotFound_ReturnsNull
-    ///
-    /// AMAÇ: Eşleşen bir hash yoksa null döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetByTokenHashAsync_NotFound_ReturnsNull()
     {

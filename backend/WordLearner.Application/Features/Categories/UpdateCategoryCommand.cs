@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateCategoryCommand.cs
-//
-// AMAÇ: PUT /categories/{id} — kategori alanlarını ve çevirilerini günceller.
-// NEDEN: `Translations` listesindeki her dil, kategoride ZATEN VARSA güncellenir,
-//        YOKSA yeni bir CategoryTranslation olarak eklenir — UpdateWordCommand
-//        (A-05) ile birebir aynı "PUT = tam yer değiştirme + eksik dili tamamlama"
-//        semantiği. ParentCategoryId değişiyorsa İKİ kontrol yapılır: (1) yeni üst
-//        kategori VAR MI (404), (2) bu değişiklik hiyerarşide bir DÖNGÜ yaratır mı
-//        (CategoryParentCycleException, 400) — bkz. CategoryRepository.WouldCreateCycleAsync.
-// BAĞIMLILIKLAR: ICategoryRepository, ILanguageRepository, IActivityLogger, CategoryDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Categories;
@@ -59,12 +46,7 @@ public class UpdateCategoryCommandHandler : IRequestHandler<UpdateCategoryComman
             await _categoryRepository.GetWithTranslationsAsync(request.Id, ct)
             ?? throw new EntityNotFoundException(typeof(Category), request.Id);
 
-        // NEDEN .ToList(): `Select(...)` tembel (deferred) bir IEnumerable döner — aşağıdaki
-        //       döngü `existing.Name`'i DEĞİŞTİRİR ve bu AYNI CategoryTranslation nesnelerine
-        //       işaret eder; .ToList() ile hemen MATERYALİZE edilmezse, LogAsync içindeki
-        //       JsonSerializer bu listeyi mutasyonlardan SONRA enumerate eder ve "eski" değer
-        //       olarak YENİ değerleri yazardı (UpdateWordCommand.cs'te A-06 denetiminde
-        //       bulunan AYNI hata — bkz. o dosyadaki NEDEN notu).
+        // .ToList() — bkz. UpdateWordCommand.cs'teki aynı NEDEN notu (deferred LINQ + mutasyon).
         var oldValue = new
         {
             category.ParentCategoryId,

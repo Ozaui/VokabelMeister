@@ -1,17 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetUsersQuery.cs
-//
-// AMAÇ: GET /admin/users — arama+role filtreli sayfalı kullanıcı listesi.
-// NEDEN: GetWordsQuery/GetCategoriesQuery (A-05/A-06) ile AYNI ince Query+Handler
-//        deseni — repository zaten filtrelenmiş sayfayı döner, Handler yalnızca
-//        User→AdminUserListItemDto dönüşümünü yapar (AutoMapper Profile YAZILMADI,
-//        alan sayısı azken elle inşa daha az dolaylılık — CLAUDE.md §3 "koşullu
-//        AutoMapper" kuralı: gerçek bir entity→DTO map'i olsa da bu kadar basit bir
-//        projeksiyonda Profile açmak gereksiz dolaylılık olurdu, WordConceptDtoBuilder
-//        kararındaki gerekçeyle aynı ölçüde değil ama aynı yönde bir tercih).
-// BAĞIMLILIKLAR: IUserRepository, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Admin;

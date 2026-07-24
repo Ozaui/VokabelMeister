@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RefreshTokenConfiguration.cs
-//
-// AMAÇ: RefreshToken entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: TokenHash/TokenFamily üzerinde arama sık yapılır (refresh/replay tespiti);
-//        User silindiğinde token'ların da silinmesi (CASCADE) veri bütünlüğünü korur.
-// BAĞIMLILIKLAR: EF Core, RefreshToken entity, User entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Auth;

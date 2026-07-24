@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateUserStatusCommandHandlerTests.cs
-//
-// AMAÇ: UpdateUserStatusCommandHandler'ın IsActive'i güncellediğini, hem
-//       IActivityLogger (UPDATE_USER_STATUS) hem ISecurityLogger (AdminAction —
-//       dondurma/aktifleştirmeye göre farklı Detail kodu) çağırdığını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -27,11 +18,6 @@ public class UpdateUserStatusCommandHandlerTests
     private UpdateUserStatusCommandHandler CreateHandler() =>
         new(_userRepo.Object, _activityLogger.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// Handle_TargetIsActor_ThrowsSelfAdminActionNotAllowedException
-    ///
-    /// AMAÇ: Bir admin kendi hesabını donduramaz — kaza sonucu kendini kilitlemesin diye.
-    /// </summary>
     [Fact]
     public async Task Handle_TargetIsActor_ThrowsSelfAdminActionNotAllowedException()
     {
@@ -47,9 +33,6 @@ public class UpdateUserStatusCommandHandlerTests
         _userRepo.Verify(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Handle_UserNotFound_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()
     {
@@ -64,9 +47,6 @@ public class UpdateUserStatusCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Handle_Freeze_UpdatesAndLogsFrozenDetail
-    /// </summary>
     [Fact]
     public async Task Handle_Freeze_UpdatesAndLogsFrozenDetail()
     {
@@ -87,9 +67,6 @@ public class UpdateUserStatusCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Handle_Reactivate_LogsReactivatedDetail
-    /// </summary>
     [Fact]
     public async Task Handle_Reactivate_LogsReactivatedDetail()
     {

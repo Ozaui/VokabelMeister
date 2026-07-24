@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CategoryRepository.cs
-//
-// AMAÇ: ICategoryRepository'nin EF Core implementasyonu.
-// NEDEN: Repository<Category>'yi miras alarak genel CRUD'u yeniden yazmadan
-//        yalnızca Category aggregate'ine özgü sorguları ekler (WordConceptRepository
-//        ile birebir aynı desen, A-05).
-// BAĞIMLILIKLAR: EF Core, Repository<Category>, WordLearnerDbContext, Category/
-//                CategoryTranslation/WordCategory entity'leri.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Domain.Entities.Categories;
@@ -23,11 +12,8 @@ public class CategoryRepository : Repository<Category>, ICategoryRepository
 
     public async Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default)
     {
-        // NEDEN önce ToListAsync sonra bellekte filtre: MinLevel/MaxLevel karşılaştırması
-        // (string.Compare) EF Core'un SQL Server sağlayıcısında GÜVENİLİR şekilde SQL'e
-        // çevrilmez (bkz. Repository ICategoryRepository.cs "NEDEN level filtresi burada"
-        // notu) — kategori sayısı küçük olduğu için (onlarca) bellekte filtrelemek
-        // hem daha güvenli (davranış C#'ın kendi string sıralamasıyla garanti) hem basit.
+        // Önce ToListAsync sonra bellekte filtre — string.Compare EF Core'un SQL Server
+        // sağlayıcısında güvenilir şekilde SQL'e çevrilmez; kategori sayısı küçük olduğu için sorun değil.
         var all = await _set
             .Include(c => c.Translations)
             .ThenInclude(t => t.Language)
@@ -70,8 +56,7 @@ public class CategoryRepository : Repository<Category>, ICategoryRepository
             if (current.Value == categoryId)
                 return true;
 
-            // NEDEN visited kontrolü: DB'de zaten bozuk (kendinden önceki bir kod hatasıyla
-            // oluşmuş) bir döngü varsa bu ÖNLEM olmadan while sonsuza kadar dönerdi.
+            // DB'de zaten bozuk bir döngü varsa bu önlem olmadan while sonsuza kadar dönerdi.
             if (!visited.Add(current.Value))
                 return false;
 
@@ -81,6 +66,5 @@ public class CategoryRepository : Repository<Category>, ICategoryRepository
         return false;
     }
 
-    // AMAÇ: Admin istatistik kartı — toplam (soft-delete edilmemiş) Category sayısı.
     public Task<int> GetTotalCountAsync(CancellationToken ct = default) => _set.CountAsync(ct);
 }

@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginWithAppleCommand.cs
-//
-// AMAÇ: POST /auth/apple — Apple identity token'ı ile giriş yapar; hesap yoksa
-//       oluşturur, e-posta eşleşen yerel hesap varsa AppleId'yi ona bağlar.
-// NEDEN: Apple e-postayı yalnızca İLK yetkilendirmede verir — sonraki girişlerde
-//        payload.Email null olabilir; bu durumda yalnızca AppleId ile aranır,
-//        DB'deki mevcut e-posta asla üzerine yazılmaz.
-// BAĞIMLILIKLAR: IUserRepository, IAppleTokenValidator, ILoginCompletionService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Auth;
@@ -18,8 +7,6 @@ using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Apple Sign-In'in istemcide ürettiği identity token'ı taşır (yalnızca iOS).
-// NEDEN ClientIp init-property: bkz. VerifyLoginOtpCommand.
 public record LoginWithAppleCommand(string IdentityToken) : IRequest<AuthTokenResponse>
 {
     public string? ClientIp { get; init; }
@@ -60,8 +47,7 @@ public class LoginWithAppleCommandHandler : IRequestHandler<LoginWithAppleComman
             }
             else
             {
-                // NEDEN: İlk yetkilendirmede email gelmemesi teorik olarak beklenmez;
-                //        savunmacı olarak ele alınır — email yoksa yeni kayıt açılamaz.
+                // İlk yetkilendirmede email gelmemesi beklenmez — savunmacı olarak ele alınır.
                 if (payload.Email is null)
                     throw new InvalidSocialTokenException();
 

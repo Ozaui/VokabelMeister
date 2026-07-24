@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetUsersQueryHandlerTests.cs
-//
-// AMAÇ: GetUsersQueryHandler'ın repository'den gelen sayfayı doğru DTO'ya
-//       dönüştürüp ilettiğini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -21,9 +13,6 @@ public class GetUsersQueryHandlerTests
 
     private GetUsersQueryHandler CreateHandler() => new(_userRepo.Object);
 
-    /// <summary>
-    /// Handle_ForwardsFilterAndMapsItems
-    /// </summary>
     [Fact]
     public async Task Handle_ForwardsFilterAndMapsItems()
     {

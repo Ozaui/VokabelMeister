@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// EmailVerificationValidators.cs
-//
-// AMAÇ: POST /auth/verify-email ve POST /auth/resend-verification girdilerinin
-//       doğrulama kuralları.
-// NEDEN: Her ikisi de e-posta doğrulama akışının parçası, tek dosyada toplandı
-//        (DTOs/Auth/EmailVerificationDtos.cs ile aynı gruplama).
-// BAĞIMLILIKLAR: FluentValidation, EmailRuleExtensions, OtpRuleExtensions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Auth;
 

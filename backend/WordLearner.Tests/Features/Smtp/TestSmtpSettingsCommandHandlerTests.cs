@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// TestSmtpSettingsCommandHandlerTests.cs
-//
-// AMAÇ: TestSmtpSettingsCommandHandler'ın (1) hiç ayar kaydedilmemişken
-//       SmtpSettingsNotConfiguredException fırlattığını, (2) kayıtlıysa şifreyi
-//       ÇÖZÜP ISmtpTestService'e ilettiğini ve başarı mesajı döndürdüğünü doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -26,12 +17,6 @@ public class TestSmtpSettingsCommandHandlerTests
     private TestSmtpSettingsCommandHandler CreateHandler() =>
         new(_smtpSettingsRepo.Object, _encryptionService.Object, _smtpTestService.Object);
 
-    /// <summary>
-    /// Handle_NoSettingsSaved_ThrowsSmtpSettingsNotConfiguredException
-    ///
-    /// AMAÇ: Test edilecek bir ayar yoksa MailKit'e bağlanmaya HİÇ ÇALIŞILMADIĞINI
-    ///       (ISmtpTestService'e hiç ulaşılmadığını) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Handle_NoSettingsSaved_ThrowsSmtpSettingsNotConfiguredException()
     {
@@ -50,9 +35,6 @@ public class TestSmtpSettingsCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Handle_SettingsSaved_DecryptsPasswordAndSendsTestEmail
-    /// </summary>
     [Fact]
     public async Task Handle_SettingsSaved_DecryptsPasswordAndSendsTestEmail()
     {

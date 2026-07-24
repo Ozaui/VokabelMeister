@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// OtpRuleExtensions.cs
-//
-// AMAÇ: 6 haneli OTP kodu doğrulama kuralını tek yerden paylaşan FluentValidation
-//       extension metodu.
-// NEDEN: VerifyEmail/VerifyOtp/ResetPassword/DeleteAccountConfirm validator'ları
-//        AYNI OTP format kuralını kullanıyor.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 
 namespace WordLearner.Application.Validators.Auth;

@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SocialLoginValidators.cs
-//
-// AMAÇ: POST /auth/google ve POST /auth/apple girdilerinin doğrulama kuralları.
-// NEDEN: İkisi de yalnızca bir token'ın doluluğunu kontrol eder — asıl doğrulama
-//        (imza/audience/süre) IGoogleTokenValidator/IAppleTokenValidator'da yapılır,
-//        burada yalnızca boş gönderilmediği garanti edilir.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Auth;
 

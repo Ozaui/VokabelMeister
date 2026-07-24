@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// JwtTokenServiceTests.cs
-//
-// AMAÇ: JwtTokenService'in access/refresh token üretimini ve Algorithm Confusion
-//       önlemli expired-token doğrulamasını test etmek.
-// NEDEN: Bu servis, tüm Auth API'nin kimlik doğrulama omurgasıdır — claim'ler yanlış
-//        üretilirse [Authorize] middleware'i kullanıcıyı hiç tanımaz; Algorithm
-//        Confusion kontrolü atlanırsa saldırgan sahte bir token ile kimlik doğrulayabilir.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.Extensions.Configuration,
-//                System.IdentityModel.Tokens.Jwt, WordLearner.Application.Services.JwtTokenService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using FluentAssertions;
@@ -50,14 +38,6 @@ public class JwtTokenServiceTests
             Role = "User",
         };
 
-    /// <summary>
-    /// GenerateAccessToken_ValidUser_ProducesTokenWithExpectedClaims
-    ///
-    /// AMAÇ: Üretilen JWT'nin kullanıcının Id/Email/Role/FirstName bilgilerini claim
-    ///       olarak doğru taşıdığını doğrulamak.
-    /// NEDEN: [Authorize] middleware'i DB'ye gitmeden bu claim'lerden kullanıcı kimliğini
-    ///        okur — yanlış/eksik claim, AuthController'daki CurrentUserId gibi alanların yanlış çalışmasına yol açar.
-    /// </summary>
     [Fact]
     public void GenerateAccessToken_ValidUser_ProducesTokenWithExpectedClaims()
     {
@@ -77,13 +57,6 @@ public class JwtTokenServiceTests
         jwt.Claims.Should().Contain(c => c.Type == "firstName" && c.Value == "Test");
     }
 
-    /// <summary>
-    /// GenerateAccessToken_ValidUser_SetsExpirationFromConfiguration
-    ///
-    /// AMAÇ: Token'ın geçerlilik süresinin Jwt:ExpirationMinutes ayarına göre üretildiğini doğrulamak.
-    /// NEDEN: Program.cs'teki JwtBearer doğrulaması ve bu üretim AYNI süreyi kullanmalı;
-    ///        biri değişip diğeri değişmezse token beklenenden erken/geç geçersiz olur.
-    /// </summary>
     [Fact]
     public void GenerateAccessToken_ValidUser_SetsExpirationFromConfiguration()
     {
@@ -99,13 +72,6 @@ public class JwtTokenServiceTests
         jwt.ValidTo.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(15), TimeSpan.FromSeconds(5));
     }
 
-    /// <summary>
-    /// GenerateRefreshToken_Called_ProducesHighEntropyUniqueTokens
-    ///
-    /// AMAÇ: Art arda üretilen iki refresh token'ın birbirinden farklı olduğunu doğrulamak.
-    /// NEDEN: Aynı token iki kez üretilirse iki farklı oturum aynı sırra sahip olur —
-    ///        biri iptal edildiğinde diğeri de etkilenir, oturum izolasyonu bozulur.
-    /// </summary>
     [Fact]
     public void GenerateRefreshToken_Called_ProducesHighEntropyUniqueTokens()
     {
@@ -121,13 +87,6 @@ public class JwtTokenServiceTests
         token1.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromSeconds(5));
     }
 
-    /// <summary>
-    /// GetPrincipalFromExpiredToken_ValidSignatureButExpired_ReturnsPrincipal
-    ///
-    /// AMAÇ: Süresi dolmuş ama imzası geçerli bir token'dan ClaimsPrincipal döndüğünü doğrulamak.
-    /// NEDEN: /auth/refresh akışı tam olarak bu senaryoya dayanır — access token süresi
-    ///        dolmuş olmasına rağmen kullanıcı kimliği hâlâ okunabilmeli.
-    /// </summary>
     [Fact]
     public void GetPrincipalFromExpiredToken_ValidSignatureButExpired_ReturnsPrincipal()
     {
@@ -144,14 +103,6 @@ public class JwtTokenServiceTests
         principal!.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be("1");
     }
 
-    /// <summary>
-    /// GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull
-    ///
-    /// AMAÇ: Farklı bir SecretKey ile imzalanmış (yani bu sunucu tarafından üretilmemiş)
-    ///       bir token'ın null döndüğünü doğrulamak.
-    /// NEDEN: Bir saldırganın kendi ürettiği sahte bir token ile /auth/refresh'i
-    ///        kandırabilmesinin önüne geçen tek kontrol budur.
-    /// </summary>
     [Fact]
     public void GetPrincipalFromExpiredToken_TamperedSignature_ReturnsNull()
     {
@@ -169,14 +120,6 @@ public class JwtTokenServiceTests
         principal.Should().BeNull();
     }
 
-    /// <summary>
-    /// GetPrincipalFromExpiredToken_MalformedToken_ReturnsNull
-    ///
-    /// AMAÇ: Geçersiz formatlı (JWT bile olmayan) bir string verildiğinde exception
-    ///       fırlamadan null döndüğünü doğrulamak.
-    /// NEDEN: /auth/refresh endpoint'ine rastgele bir string gönderilmesi 500'e değil,
-    ///        AuthService'in InvalidRefreshTokenException'ına (kontrollü 401'e) düşmeli.
-    /// </summary>
     [Fact]
     public void GetPrincipalFromExpiredToken_MalformedToken_ReturnsNull()
     {

@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InMemoryDbContextFactory.cs
-//
-// AMAÇ: Feature repository testlerinde (UserRepository, RefreshTokenRepository,
-//       QrLoginSessionRepository) kullanılan, izole bir in-memory WordLearnerDbContext üretir.
-// NEDEN: RepositoryTests.cs'teki CreateContext() yalnızca TestEntity için özel bir
-//        TestDbContext üretiyordu (Repository<T> taban sınıfını gerçek entity'ler
-//        olmadan test etmek için); feature repository'lerin gerçek sorguları
-//        (IgnoreQueryFilters dahil) doğrudan gerçek WordLearnerDbContext'e karşı
-//        çalıştırılmalı — bu üç test dosyasının paylaştığı ortak kurulum burada.
-// BAĞIMLILIKLAR: Microsoft.EntityFrameworkCore.InMemory, WordLearnerDbContext.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Infrastructure.Data;
 

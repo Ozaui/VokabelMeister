@@ -1,27 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetQrLoginStatusCommand.cs
-//
-// AMAÇ: GET /auth/qr/{token}/status — web'in ~2sn'de bir sorguladığı polling
-//       endpoint'i. Confirmed durumu İLK okunduğunda normal login'deki AYNI
-//       ITokenService/ILoginCompletionService akışıyla token üretir, sonra
-//       oturumu Consumed'e geçirir (token'lar yalnızca BİR kez döner).
-// NEDEN: REFERENCE/SECURITY.md §1.3 ADIM 4 — QR girişi ayrı bir kimlik doğrulama
-//        sistemi değildir, token üretimi A-03'te yazılan ortak servisten geçer.
-//        Consumed sonrası tekrar okuma 410 döner (token'ların ikinci kez
-//        sızdırılmasını/tekrar okunmasını önler). Expired durumu ise 410 DEĞİL,
-//        200 + {status:"Expired"} döner — web bunu "yeni QR üret" sinyali olarak
-//        kullanır, henüz hiçbir token üretilmediği için "gone" (kaybolan bir
-//        kaynak) anlamına gelmez.
-// NASIL: 1) Hash'e göre oturumu bul, yoksa 404  2) Süresi geçmişse Expired'a
-//        çevir + 200 döndür  3) Consumed ise 410  4) Confirmed ise kullanıcıyı
-//        (soft-delete filtresi YOK SAYILARAK — grace-period kurtarma normal
-//        login akışıyla aynı şekilde çalışabilsin diye) yükle, CompleteLoginAsync
-//        çağır, Consumed'e geçir, token'lı yanıt dön
-//        5) Diğer durumlarda (Pending/Scanned/Denied) yalnızca Status dön.
-// BAĞIMLILIKLAR: IQrLoginSessionRepository, IPasswordService, IUserRepository,
-//                ILoginCompletionService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Auth;
@@ -32,8 +8,7 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.QrLogin;
 
-// NEDEN ClientIp init-property: bkz. RefreshCommand — web'in bu isteği attığı
-//       IP, telefonun IP'si değil, token üretiminde User.LastLoginIP'ye yazılır.
+// ClientIp web'in bu isteği attığı IP'dir (telefonun IP'si değil) — token üretiminde User.LastLoginIP'ye yazılır.
 public record GetQrLoginStatusCommand(string QrToken) : IRequest<QrStatusResponse>
 {
     public string? ClientIp { get; init; }
@@ -68,6 +43,8 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
 
         if (session.IsExpired(DateTime.UtcNow))
         {
+            // 410 DEĞİL, 200 + {status:"Expired"} — web bunu "yeni QR üret" sinyali olarak
+            // kullanır, henüz hiçbir token üretilmediği için "gone" anlamına gelmez.
             await _qrLoginSessionRepository.UpdateAsync(session, ct: ct);
             return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
         }
@@ -78,20 +55,12 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         if (session.Status != QrLoginStatus.Confirmed)
             return new QrStatusResponse(session.Status.ToString(), null, null, null, null);
 
-        // NEDEN GetByIdIncludingDeletedAsync (GetByIdAsync DEĞİL): normal login
-        //       (LoginCommand/LoginWithGoogle/Apple) kullanıcıyı GetByEmailAsync ile
-        //       soft-delete filtresi YOK SAYILARAK bulur, böylece CompleteLoginAsync'in
-        //       grace-period kurtarma mantığı çalışabilir. GetByIdAsync (filtreli)
-        //       kullanılsaydı, hesabını yeni silmiş bir kullanıcı burada anlamsız bir
-        //       404 alırdı — diğer giriş yollarıyla tutarsız bir davranış.
+        // GetByIdIncludingDeletedAsync (soft-delete filtresi yok sayılır) — CompleteLoginAsync'in
+        // grace-period kurtarma mantığı diğer giriş yollarıyla (LoginCommand vb.) tutarlı çalışsın diye.
         var user =
             await _userRepository.GetByIdIncludingDeletedAsync(session.UserId!.Value, ct)
             ?? throw new EntityNotFoundException(typeof(User), session.UserId.Value);
 
-        // NEDEN: LoginCommand/LoginWithGoogleCommand/LoginWithAppleCommand'ın hepsi
-        //        CompleteLoginAsync'e girmeden önce IsActive kontrolü yapıyor (dondurulmuş
-        //        hesap giriş yapamaz) — QR akışının token üretimi de aynı ortak son
-        //        adımdan geçtiği için aynı kontrole tabi olmalı.
         if (!user.IsActive)
             throw new AccountNotActiveException();
 

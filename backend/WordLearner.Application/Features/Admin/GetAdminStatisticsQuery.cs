@@ -1,24 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetAdminStatisticsQuery.cs
-//
-// AMAÇ: GET /admin/statistics — toplam kullanıcı/kelime/kategori, aktif/dondurulmuş
-//       kullanıcı sayısı, son N günün kayıt grafiği için ham sayılar.
-// NEDEN: `AdminStatisticsDto`/`IUserRepository.GetStatisticsAsync` bu Handler'dan ÖNCE
-//        (A-07'nin Kullanıcı Yönetimi diliminde) bir kez yazılmış, tüketicisiz olduğu
-//        kod denetiminde bulunup geri alınmıştı (bkz. TASK/A_admin_panel_backend.md
-//        A-07 notu) — bu Handler o ikisinin GERÇEK, ilk tüketicisi.
-//        LoginsByDay BİLİNÇLİ OLARAK YOK: `Users.LastLoginAt` yalnızca en son girişin
-//        üzerine yazıldığı TEK bir alan, bir login-event geçmişi tablosu YOK — "son N
-//        günün HER GÜNÜ kaç login oldu" sorusu mevcut şemayla cevaplanamaz.
-// BAĞIMLILIKLAR: IUserRepository, IWordConceptRepository, ICategoryRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.DTOs.Admin;
 using WordLearner.Application.Interfaces.Repositories;
 
 namespace WordLearner.Application.Features.Admin;
 
+// LoginsByDay bilinçli olarak yok — Users.LastLoginAt yalnızca en son girişin üzerine yazılır,
+// bir login-event geçmişi tablosu olmadığı için "her gün kaç login oldu" mevcut şemayla cevaplanamaz.
 public record GetAdminStatisticsQuery(int DaysForGraph = 30) : IRequest<AdminStatisticsDto>;
 
 public class GetAdminStatisticsQueryHandler : IRequestHandler<GetAdminStatisticsQuery, AdminStatisticsDto>
@@ -47,11 +34,7 @@ public class GetAdminStatisticsQueryHandler : IRequestHandler<GetAdminStatistics
         var fromUtc = DateTime.UtcNow.Date.AddDays(-(request.DaysForGraph - 1));
         var registrationDates = await _userRepository.GetRegistrationDatesAsync(fromUtc, ct);
 
-        // NEDEN bellekte gruplama: Repository katmanı ham CreatedAt listesini döner
-        // (bkz. IUserRepository.GetRegistrationDatesAsync "NEDEN" notu) — burada
-        // DateOnly'e indirgenip GroupBy ile günlere toplanır, sıfır kayıtlı günler de
-        // (Count=0) listeye eklenir ki admin panelin grafiği boşluksuz, N gün uzunluğunda
-        // bir eksen çizebilsin.
+        // Sıfır kayıtlı günler de (Count=0) listeye eklenir ki grafik boşluksuz, N gün uzunluğunda çizilsin.
         var countsByDate = registrationDates
             .GroupBy(d => DateOnly.FromDateTime(d))
             .ToDictionary(g => g.Key, g => g.Count());

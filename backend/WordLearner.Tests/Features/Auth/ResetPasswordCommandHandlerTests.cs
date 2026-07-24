@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ResetPasswordCommandHandlerTests.cs
-//
-// AMAÇ: ResetPasswordCommandHandler'ın OTP + yeni şifre ile şifre güncelleme ve
-//       tüm cihazlardan çıkış yapma davranışını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -38,12 +30,6 @@ public class ResetPasswordCommandHandlerTests
             _securityLogger.Object
         );
 
-    /// <summary>
-    /// ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens
-    ///
-    /// AMAÇ: Doğru OTP ile şifrenin güncellendiğini ve kullanıcının TÜM refresh
-    ///       token'larının iptal edildiğini (tüm cihazlardan çıkış) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ResetPassword_ValidOtp_UpdatesPasswordAndRevokesAllRefreshTokens()
     {
@@ -62,12 +48,6 @@ public class ResetPasswordCommandHandlerTests
         _refreshTokenRepo.Verify(r => r.RevokeAllForUserAsync(user.Id, default), Times.Once);
     }
 
-    /// <summary>
-    /// ResetPassword_ValidOtp_LogsPasswordResetSecurityEvent
-    ///
-    /// AMAÇ: Başarılı şifre sıfırlamada ISecurityLogger.LogAsync'in PasswordReset (BAŞARI)
-    ///       olayıyla ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task ResetPassword_ValidOtp_LogsPasswordResetSecurityEvent()
     {
@@ -91,11 +71,6 @@ public class ResetPasswordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ResetPassword_WrongOtp_ThrowsInvalidOtpException
-    ///
-    /// AMAÇ: Yanlış OTP ile şifre sıfırlama denendiğinde InvalidOtpException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ResetPassword_WrongOtp_ThrowsInvalidOtpException()
     {
@@ -112,12 +87,6 @@ public class ResetPasswordCommandHandlerTests
         await act.Should().ThrowAsync<InvalidOtpException>();
     }
 
-    /// <summary>
-    /// ResetPassword_WrongOtp_LogsOtpFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
-    ///       doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task ResetPassword_WrongOtp_LogsOtpFailedSecurityEvent()
     {
@@ -150,12 +119,6 @@ public class ResetPasswordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ResetPassword_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task ResetPassword_GermanLanguage_ReturnsGermanMessage()
     {

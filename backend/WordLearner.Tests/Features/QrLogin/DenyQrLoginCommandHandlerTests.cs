@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DenyQrLoginCommandHandlerTests.cs
-//
-// AMAÇ: DenyQrLoginCommandHandler'ın ConfirmQrLoginCommandHandler ile birebir
-//       aynı ön koşulları (Scanned + sahiplik) uyguladığını, hedef durumun
-//       Denied olduğunu doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -28,11 +19,6 @@ public class DenyQrLoginCommandHandlerTests
     private DenyQrLoginCommandHandler CreateHandler() =>
         new(_qrRepo.Object, _passwordService.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// Deny_ScannedSessionOwnedByUser_TransitionsToDenied
-    ///
-    /// AMAÇ: Scanned bir oturumu, onu tarayan kullanıcı reddedince Denied'e geçtiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Deny_ScannedSessionOwnedByUser_TransitionsToDenied()
     {
@@ -57,12 +43,6 @@ public class DenyQrLoginCommandHandlerTests
         _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
-    /// <summary>
-    /// Deny_ScannedSessionOwnedByUser_LogsQrLoginDeniedSecurityEvent
-    ///
-    /// AMAÇ: Başarılı reddetmede ISecurityLogger.LogAsync'in QrLoginDenied olayıyla,
-    ///       session.RequesterIp ile ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Deny_ScannedSessionOwnedByUser_LogsQrLoginDeniedSecurityEvent()
     {
@@ -88,13 +68,6 @@ public class DenyQrLoginCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken
-    ///
-    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404)
-    ///       fırlatıldığını VE exception mesajının ham QR token'ını değil hash'ini
-    ///       taşıdığını doğrulamak (ham token bir secret'tir, log'a sızmamalı).
-    /// </summary>
     [Fact]
     public async Task Deny_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
     {
@@ -114,12 +87,6 @@ public class DenyQrLoginCommandHandlerTests
         sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
-    /// <summary>
-    /// Deny_WrongUser_ThrowsQrSessionForbiddenException
-    ///
-    /// AMAÇ: Oturumu TARAMAMIŞ bir kullanıcı deny etmeye çalışırsa
-    ///       QrSessionForbiddenException (403) fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Deny_WrongUser_ThrowsQrSessionForbiddenException()
     {
@@ -141,12 +108,6 @@ public class DenyQrLoginCommandHandlerTests
         await act.Should().ThrowAsync<QrSessionForbiddenException>();
     }
 
-    /// <summary>
-    /// Deny_NotScanned_ThrowsQrSessionGoneException
-    ///
-    /// AMAÇ: Henüz taranmamış bir oturum reddedilmeye çalışılırsa
-    ///       QrSessionGoneException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Deny_NotScanned_ThrowsQrSessionGoneException()
     {

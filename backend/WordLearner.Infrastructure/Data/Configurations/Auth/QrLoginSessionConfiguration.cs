@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// QrLoginSessionConfiguration.cs
-//
-// AMAÇ: QrLoginSession entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: QrTokenHash üzerinde her scan/status isteğinde arama yapılır; ExpiresAt
-//        üzerindeki index süresi dolmuş kayıtları ayrıştıran sorguları hızlandırır
-//        (temizlik job'ı yok — süre lazy olarak okuma anında yorumlanır, bkz. TASK).
-//        UserId nullable olduğu için (henüz taranmamış oturumlarda null) FK CASCADE
-//        yerine SET NULL kullanılır — kullanıcı silinse bile oturum kaydı audit için kalır.
-// BAĞIMLILIKLAR: EF Core, QrLoginSession entity, QrLoginStatus enum, User entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Auth;
@@ -40,14 +28,14 @@ public class QrLoginSessionConfiguration : IEntityTypeConfiguration<QrLoginSessi
         // NEDEN: Süresi dolmuş oturumları ayrıştıran sorgular bu index'i kullanır.
         builder.HasIndex(q => q.ExpiresAt);
 
+        // UserId nullable (taranmamış oturumlarda null) — kullanıcı silinse bile oturum audit için kalır.
         builder
             .HasOne(q => q.User)
             .WithMany()
             .HasForeignKey(q => q.UserId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // NEDEN: Status C# tarafında enum olsa da DB'de string tutulduğu için,
-        //        geçersiz bir değer yazılmasını DB seviyesinde engelleyen son savunma hattı.
+        // Status DB'de string tutulur; geçersiz değer yazılmasını engelleyen son savunma hattı.
         builder.ToTable(t =>
         {
             t.HasCheckConstraint(

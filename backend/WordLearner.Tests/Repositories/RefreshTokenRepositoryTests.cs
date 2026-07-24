@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RefreshTokenRepositoryTests.cs
-//
-// AMAÇ: RefreshTokenRepository'nin Token Family Pattern'i destekleyen sorgularını
-//       (hash arama, family/kullanıcı bazlı toplu iptal) gerçek bir in-memory EF Core
-//       bağlamına karşı doğrulamak.
-// NEDEN: bkz. UserRepositoryTests.cs dosya başı — daha önce bu sorgular yalnızca
-//        Handler testlerinde mock'lanıyordu, gerçek LINQ ifadelerinin (Where filtreleri)
-//        doğru kayıtları seçtiği hiç doğrulanmamıştı.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
-//                WordLearner.Infrastructure.Repositories.RefreshTokenRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Infrastructure.Repositories;
@@ -20,11 +7,6 @@ namespace WordLearner.Tests.Repositories;
 
 public class RefreshTokenRepositoryTests
 {
-    /// <summary>
-    /// GetByTokenHashAsync_RecordExists_ReturnsToken
-    ///
-    /// AMAÇ: Mutlu yol — hash'e göre token'ın bulunduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetByTokenHashAsync_RecordExists_ReturnsToken()
     {
@@ -49,11 +31,6 @@ public class RefreshTokenRepositoryTests
         bulunan!.Id.Should().Be(eklenen.Id);
     }
 
-    /// <summary>
-    /// GetByTokenHashAsync_NotFound_ReturnsNull
-    ///
-    /// AMAÇ: Eşleşen bir hash yoksa null döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetByTokenHashAsync_NotFound_ReturnsNull()
     {
@@ -68,16 +45,6 @@ public class RefreshTokenRepositoryTests
         sonuc.Should().BeNull();
     }
 
-    /// <summary>
-    /// RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily
-    ///
-    /// AMAÇ: Aynı TokenFamily'deki TÜM iptal edilmemiş token'ların RevokedAt'inin
-    ///       set edildiğini; BAŞKA bir family'deki token'ın VE zaten iptal edilmiş
-    ///       (RevokedAt dolu) bir token'ın üzerine yazılmadığını doğrulamak.
-    /// NEDEN kritik: Token Family Pattern'in replay savunmasının tam kalbi budur —
-    ///       yanlış family'yi iptal etmek ya sahte kullanıcıyı dışarıda bırakır ya da
-    ///       gerçek kullanıcıyı gereksiz yere tüm cihazlardan atar.
-    /// </summary>
     [Fact]
     public async Task RevokeFamilyAsync_MultipleTokensInFamily_RevokesOnlyUnrevokedOnesInThatFamily()
     {
@@ -125,14 +92,6 @@ public class RefreshTokenRepositoryTests
         (await repo.GetByIdAsync(farkliFamily.Id))!.RevokedAt.Should().BeNull();
     }
 
-    /// <summary>
-    /// RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens
-    ///
-    /// AMAÇ: Bir kullanıcının (hangi family'den olursa olsun) tüm token'larının iptal
-    ///       edildiğini; BAŞKA bir kullanıcının token'ına dokunulmadığını doğrulamak.
-    /// NEDEN kritik: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" — yanlış
-    ///       kullanıcının token'ları iptal edilirse bir kullanıcı diğerini oturumdan atabilir.
-    /// </summary>
     [Fact]
     public async Task RevokeAllForUserAsync_MultipleUsers_RevokesOnlyThatUsersTokens()
     {

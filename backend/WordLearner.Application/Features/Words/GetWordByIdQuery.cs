@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetWordByIdQuery.cs
-//
-// AMAÇ: GET /words/{id} — bir WordConcept'in tüm dilleriyle (WordDetail+
-//       WordExample dahil) tam detayı.
-// BAĞIMLILIKLAR: IWordConceptRepository, WordConceptDtoBuilder, EntityNotFoundException.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Words;

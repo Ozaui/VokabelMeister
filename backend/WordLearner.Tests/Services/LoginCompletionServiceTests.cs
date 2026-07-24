@@ -1,19 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginCompletionServiceTests.cs
-//
-// AMAÇ: LoginCompletionService'in OTP doğrulama/Google/Apple girişlerinin ORTAK
-//       son adımını (grace period kurtarma, anonimleştirme kontrolü, giriş
-//       istatistikleri, token üretimi) doğrulamak.
-// NEDEN: Bu mantık eskiden AuthServiceTests içinde VerifyLoginOtpAsync'in bir
-//        parçası olarak (yalnızca bir giriş yönteminden) test ediliyordu;
-//        MediatR CQRS'e geçişte üç ayrı handler'ın (OTP/Google/Apple) paylaştığı
-//        bir servise çıkarıldığı için artık TEK bir yerde test edilir — handler
-//        testleri (VerifyLoginOtpCommandHandlerTests vb.) yalnızca doğru
-//        delege edildiğini doğrular, bu davranışın kendisini tekrar test etmez.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions, Microsoft.Extensions.Configuration,
-//                AutoMapper (AuthProfile).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.Extensions.Configuration;
 using FluentAssertions;
 using Moq;
@@ -60,12 +44,6 @@ public class LoginCompletionServiceTests
         _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns("refresh-hash");
     }
 
-    /// <summary>
-    /// CompleteLoginAsync_ActiveUser_ReturnsAccessAndRefreshTokens
-    ///
-    /// AMAÇ: Normal (silinmemiş, anonimleştirilmemiş) bir kullanıcı için access+refresh
-    ///       token içeren yanıtın döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task CompleteLoginAsync_ActiveUser_ReturnsAccessAndRefreshTokens()
     {
@@ -85,12 +63,6 @@ public class LoginCompletionServiceTests
         user.LoginCount.Should().Be(1);
     }
 
-    /// <summary>
-    /// CompleteLoginAsync_AnonymizedUser_ThrowsAccountAnonymizedException
-    ///
-    /// AMAÇ: Anonimleştirilmiş (IsAnonymized=true) bir hesapla giriş tamamlanmaya
-    ///       çalışıldığında AccountAnonymizedException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task CompleteLoginAsync_AnonymizedUser_ThrowsAccountAnonymizedException()
     {
@@ -105,15 +77,6 @@ public class LoginCompletionServiceTests
         await act.Should().ThrowAsync<AccountAnonymizedException>();
     }
 
-    /// <summary>
-    /// CompleteLoginAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse
-    ///
-    /// AMAÇ: Soft-delete'li (IsDeleted=true) ama grace period içindeki bir hesabın
-    ///       giriş tamamlama sırasında otomatik kurtarıldığını ve yanıtta
-    ///       accountWasRecovered=true döndüğünü doğrulamak.
-    /// NEDEN: REFERENCE/SECURITY.md §1 — kullanıcı 30 gün içinde tekrar login olursa
-    ///        hesap silme işlemi geri alınır; bu davranış CompleteLoginAsync'in kritik dalı.
-    /// </summary>
     [Fact]
     public async Task CompleteLoginAsync_AccountWithinGracePeriod_RecoversAccountAndFlagsResponse()
     {
@@ -139,12 +102,6 @@ public class LoginCompletionServiceTests
         user.ScheduledDeletionAt.Should().BeNull();
     }
 
-    /// <summary>
-    /// CompleteLoginAsync_AlwaysClearsPendingOtp
-    ///
-    /// AMAÇ: Giriş tamamlandığında IOtpService.Clear'ın çağrıldığını doğrulamak —
-    ///       kullanılan OTP bir daha kullanılamaz hâle gelmeli.
-    /// </summary>
     [Fact]
     public async Task CompleteLoginAsync_AlwaysClearsPendingOtp()
     {
@@ -160,12 +117,6 @@ public class LoginCompletionServiceTests
         _otpService.Verify(o => o.Clear(user), Times.Once);
     }
 
-    /// <summary>
-    /// ExpiresInSeconds_ReadsFromConfiguration
-    ///
-    /// AMAÇ: appsettings.json'daki Jwt:ExpirationMinutes'in doğru şekilde saniyeye
-    ///       çevrildiğini doğrulamak (RefreshCommandHandler da bu metodu paylaşır).
-    /// </summary>
     [Fact]
     public void ExpiresInSeconds_ReadsFromConfiguration()
     {

@@ -13,15 +13,16 @@
 
 **Dil**
 - Kullanıcıyla **Türkçe** konuş.
-- **Türkçe:** kod yorumları (AMAÇ/NEDEN/NASIL), XML doc, MD dosyaları, roadmap.
+- **Türkçe:** kod yorumları (kısa, NEDEN odaklı — bkz. "Yorum satırları"), MD dosyaları, roadmap.
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
 - **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
 - **İkinci istisna — `ActivityLog`/`SecurityLog`'un admin'e görünen alanları:** `Action`/`EventType` sabit/dilden bağımsız kod kalır (`_logger.Log*` ile aynı kural) ama `Detail`/`OldValue`/`NewValue` **admin panelin kendisi bir istemci olduğu için** (admin de dil tercihine sahip) serbest metin yerine bir **Code** olarak yazılır — log satırı yazılırken (ör. anonim bir isteğin `Accept-Language`'ıyla) hangi admin'in ne zaman hangi dille okuyacağı bilinmediğinden, tr/de çözümü ancak admin `GET /admin/logs/*` (A-07) ile okurken KENDİ `Accept-Language`'ıyla yapılabilir — `ErrorMessages` ile birebir aynı Code-sonra-çöz deseni, yalnızca çözme anı farklı (istek anı değil, okuma anı).
 
-**Yorum blokları (zorunlu)**
-- Her dosya başı: `AMAÇ / NEDEN / BAĞIMLILIKLAR`.
-- Her public metot: `AMAÇ / NEDEN / NASIL` (+ param/return).
-- Karmaşık bloklar: `// ADIM N:` + `// NEDEN:`.
+**Yorum satırları**
+- Kod kendini anlatır (iyi isimlendirme). Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, non-obvious bir NEDEN, bilerek alınmış bir karar. NE yaptığını değil NEDEN öyle yaptığını anlat.
+- Zorunlu dosya-başı/method-başı AMAÇ/NEDEN/NASIL bloğu **YOK** — bu blok kaldırıldı (eski kod tabanında vardı, kaldırılıyor). Dosya/sınıf/metot adı zaten ne yaptığını söylüyor.
+- Yorum kısa ve Türkçe — genelde tek satır, gerekirse iki. Paragraf hâlinde uzun blok yorum **yasak**; anlatılacak şey birkaç satıra sığmıyorsa muhtemelen bir yardımcı metot/isimlendirme sorunu var, yorum onu telafi etmez.
+- Bu kural yalnızca **kaynak kod**(`.cs`/`.ts`/`.tsx`) yorumları için geçerli. `BACKEND_AKADEMI/` (§6) içindeki `aciklama`/`neden`/`olmasaydi` alanları öğretim materyali — bu kuralın dışında, ayrıntılı kalmaya devam eder.
 
 **Roller ve sahiplik**
 - **Yalnızca iki rol:** `User` (herkes kayıt olur) ve `Admin` (elle atanır). `Instructor`/`Teacher`/"öğretmen" **YOK**. Hiçbir public endpoint rol yükseltemez.

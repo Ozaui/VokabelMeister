@@ -1,20 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// TestSmtpSettingsCommand.cs
-//
-// AMAÇ: POST /admin/smtp-settings/test — kayıtlı (PUT ile ÖNCEDEN kaydedilmiş)
-//       SMTP ayarlarıyla gerçekten bağlanıp isteği yapan admin'in kendi e-posta
-//       adresine bir test e-postası gönderir.
-// NEDEN request body'de bir SmtpSettings şekli YOK (yalnızca ToEmail):
-//       API_ENDPOINTS.md §11 bu endpoint'i parametresiz listeler — test, ADMIN'İN
-//       O AN DB'DE KAYITLI ayarlarını doğrular (henüz kaydedilmemiş, formda yazılı
-//       ama PUT edilmemiş değerleri DEĞİL) — "önce kaydet, sonra test et" akışı.
-// NEDEN ActivityLog/SecurityLog YOK (UpdateSmtpSettingsCommand'ın AKSİNE): bu
-//        komut hiçbir veriyi DEĞİŞTİRMEZ, yalnızca OKUR ve dışarıya bir e-posta
-//        gönderir — CLAUDE.md'nin "İçerik değiştiren her CRUD" kuralı yalnızca
-//        create/update/delete için geçerli, salt-okunur bir doğrulama eylemi değil.
-// BAĞIMLILIKLAR: ISmtpSettingsRepository, IEncryptionService, ISmtpTestService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
@@ -24,6 +7,8 @@ using WordLearner.Application.Interfaces.Services;
 
 namespace WordLearner.Application.Features.Smtp;
 
+// Body'de bir SmtpSettings şekli yok (yalnızca ToEmail) — test, admin'in o an DB'de kayıtlı
+// ayarlarını doğrular, henüz PUT edilmemiş form değerlerini değil.
 public record TestSmtpSettingsCommand : IRequest<MessageResponse>
 {
     public string ToEmail { get; init; } = string.Empty;

@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetActivityLogsQueryHandlerTests.cs
-//
-// AMAÇ: GetActivityLogsQueryHandler'ın filtreleri repository'ye AYNEN ilettiğini
-//       VE Action/OldValue/NewValue'yu HİÇ ÇEVİRMEDEN (ham) DTO'ya taşıdığını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -21,9 +13,6 @@ public class GetActivityLogsQueryHandlerTests
 
     private GetActivityLogsQueryHandler CreateHandler() => new(_activityLogRepo.Object);
 
-    /// <summary>
-    /// Handle_ForwardsFiltersAndMapsRawActionAndValues
-    /// </summary>
     [Fact]
     public async Task Handle_ForwardsFiltersAndMapsRawActionAndValues()
     {

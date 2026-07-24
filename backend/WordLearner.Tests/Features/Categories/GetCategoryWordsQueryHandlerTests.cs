@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetCategoryWordsQueryHandlerTests.cs
-//
-// AMAÇ: GetCategoryWordsQueryHandler'ın kategori 404'ünü ve IWordConceptRepository.
-//       GetPagedAsync'e categoryId'yi doğru ilettiğini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -24,9 +16,6 @@ public class GetCategoryWordsQueryHandlerTests
 
     private GetCategoryWordsQueryHandler CreateHandler() => new(_categoryRepo.Object, _wordConceptRepo.Object);
 
-    /// <summary>
-    /// GetCategoryWords_CategoryNotFound_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task GetCategoryWords_CategoryNotFound_ThrowsEntityNotFoundException()
     {
@@ -41,9 +30,6 @@ public class GetCategoryWordsQueryHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// GetCategoryWords_CategoryExists_ForwardsCategoryIdAndReturnsMappedPage
-    /// </summary>
     [Fact]
     public async Task GetCategoryWords_CategoryExists_ForwardsCategoryIdAndReturnsMappedPage()
     {

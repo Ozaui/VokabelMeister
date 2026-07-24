@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateWordCommandValidator.cs
-//
-// AMAÇ: CreateWordCommand ve UpdateWordCommand'ın alan doğrulaması — temel
-//       zorunluluk kontrolleri + her translation için WordGrammarValidator'ın
-//       çağrılması.
-// NEDEN: WordGrammarValidator (Validators/Words/WordGrammarValidator.cs) DI'a
-//        `IValidator<WordGrammarInput>` olarak kayıtlı — bu iki validator onu
-//        constructor injection ile alıp her `translations[]` öğesi için çağırır,
-//        kural TEK yerde (WordGrammarValidator) tanımlı kalır.
-// BAĞIMLILIKLAR: FluentValidation, WordGrammarValidator.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using FluentValidation.Results;
 using WordLearner.Application.Features.Words;
@@ -49,9 +36,7 @@ public class CreateWordCommandValidator : AbstractValidator<CreateWordCommand>
     }
 }
 
-// AMAÇ: CreateWordCommandValidator ve UpdateWordCommandValidator'ın PAYLAŞTIĞI
-//       translation doğrulama döngüsü — ikisi de aynı WordTranslationInput
-//       listesini, aynı kurallarla doğruluyor.
+// CreateWordCommandValidator ve UpdateWordCommandValidator'ın paylaştığı translation doğrulaması.
 internal static class WordTranslationRules
 {
     public static void ValidateTranslations<T>(

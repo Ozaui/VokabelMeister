@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginWithGoogleCommand.cs
-//
-// AMAÇ: POST /auth/google — Google ID token'ı ile giriş yapar; hesap yoksa
-//       oluşturur, e-posta eşleşen yerel hesap varsa GoogleId'yi ona bağlar
-//       (account linking).
-// NEDEN: Google zaten kimliği doğruladığı için 2FA OTP adımı GEREKMEZ.
-// BAĞIMLILIKLAR: IUserRepository, IGoogleTokenValidator, ILoginCompletionService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Auth;
@@ -17,8 +7,6 @@ using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Google Sign-In SDK'sının istemcide ürettiği ID token'ı taşır.
-// NEDEN ClientIp init-property: bkz. VerifyLoginOtpCommand.
 public record LoginWithGoogleCommand(string IdToken) : IRequest<AuthTokenResponse>
 {
     public string? ClientIp { get; init; }
@@ -53,9 +41,7 @@ public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleComm
             user = await _userRepository.GetByEmailAsync(payload.Email, ct);
             if (user is not null)
             {
-                // NEDEN: Aynı e-postayla önceden yerel/başka sağlayıcı hesabı varsa,
-                //        yeni bir hesap açmak yerine GoogleId bu hesaba bağlanır —
-                //        aksi hâlde kullanıcı aynı e-posta için iki ayrı hesaba sahip olurdu.
+                // Aynı e-postayla önceden yerel hesap varsa yeni hesap açmak yerine GoogleId ona bağlanır.
                 user.GoogleId = payload.GoogleId;
             }
             else

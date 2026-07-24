@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ResetPasswordCommand.cs
-//
-// AMAÇ: POST /auth/reset-password — OTP + yeni şifre ile şifreyi değiştirir,
-//       tüm cihazlardan çıkış yapar.
-// BAĞIMLILIKLAR: IUserRepository, IRefreshTokenRepository, IPasswordService,
-//                IOtpService, IEmailService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
@@ -18,9 +9,6 @@ using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Adım 2 — OTP + yeni şifre. Başarılıysa tüm cihazlardan çıkış yapılır.
-// NEDEN Language/ClientIp init-property: bkz. LoginCommand — ClientIp A-04'te
-//       OtpFailed SecurityLog kaydı için eklendi.
 public record ResetPasswordCommand(string Email, string OtpCode, string NewPassword)
     : IRequest<MessageResponse>
 {
@@ -79,13 +67,10 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         _otpService.Clear(user);
         await _userRepository.UpdateAsync(user, user.Id, ct);
 
-        // NEDEN: Şifre değiştiğinde tüm cihazlardan çıkış yapılır (REFERENCE/SECURITY.md §7).
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
         await _emailService.SendPasswordChangedNotificationAsync(user.Email, ct);
 
-        // NEDEN: LogEventType.PasswordReset bir BAŞARI olayıdır (OtpFailed'in aksine) —
-        //        "şifre sıfırlama akışı tamamlandı" audit izi, ör. hesabın ele geçirilip
-        //        geçirilmediğini araştıran bir admin için.
+        // Başarı olayı (OtpFailed'in aksine) — hesabın ele geçirilip geçirilmediğini araştıran bir admin için audit izi.
         await _securityLogger.LogAsync(
             LogEventType.PasswordReset,
             user.Id,

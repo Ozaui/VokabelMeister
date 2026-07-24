@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ConfirmQrLoginCommandHandlerTests.cs
-//
-// AMAÇ: ConfirmQrLoginCommandHandler'ın yalnızca Scanned + sahibi eşleşen
-//       oturumları Confirmed'e taşıdığını; yanlış kullanıcı/durum/süre için
-//       doğru exception'ı fırlattığını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -28,12 +19,6 @@ public class ConfirmQrLoginCommandHandlerTests
     private ConfirmQrLoginCommandHandler CreateHandler() =>
         new(_qrRepo.Object, _passwordService.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed
-    ///
-    /// AMAÇ: Scanned bir oturumu, onu tarayan kullanıcı onaylayınca Confirmed'e
-    ///       geçtiğini ve ConfirmedAt'in yazıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Confirm_ScannedSessionOwnedByUser_TransitionsToConfirmed()
     {
@@ -59,12 +44,6 @@ public class ConfirmQrLoginCommandHandlerTests
         _qrRepo.Verify(r => r.UpdateAsync(session, 5, default), Times.Once);
     }
 
-    /// <summary>
-    /// Confirm_ScannedSessionOwnedByUser_LogsQrLoginConfirmedSecurityEvent
-    ///
-    /// AMAÇ: Başarılı onayda ISecurityLogger.LogAsync'in QrLoginConfirmed olayıyla,
-    ///       session.RequesterIp ile ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Confirm_ScannedSessionOwnedByUser_LogsQrLoginConfirmedSecurityEvent()
     {
@@ -90,13 +69,6 @@ public class ConfirmQrLoginCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken
-    ///
-    /// AMAÇ: Hash'e karşılık gelen bir oturum bulunamazsa EntityNotFoundException (404)
-    ///       fırlatıldığını VE exception mesajının ham QR token'ını değil hash'ini
-    ///       taşıdığını doğrulamak (ham token bir secret'tir, log'a sızmamalı).
-    /// </summary>
     [Fact]
     public async Task Confirm_TokenNotFound_ThrowsEntityNotFoundExceptionWithoutLeakingRawToken()
     {
@@ -116,12 +88,6 @@ public class ConfirmQrLoginCommandHandlerTests
         sonuc.Which.Message.Should().Contain("opaque-sha256-abc123");
     }
 
-    /// <summary>
-    /// Confirm_WrongUser_ThrowsQrSessionForbiddenException
-    ///
-    /// AMAÇ: Oturumu TARAMAMIŞ bir kullanıcı confirm etmeye çalışırsa
-    ///       QrSessionForbiddenException (403) fırlatıldığını doğrulamak (sahiplik kontrolü).
-    /// </summary>
     [Fact]
     public async Task Confirm_WrongUser_ThrowsQrSessionForbiddenException()
     {
@@ -144,12 +110,6 @@ public class ConfirmQrLoginCommandHandlerTests
         session.Status.Should().Be(QrLoginStatus.Scanned);
     }
 
-    /// <summary>
-    /// Confirm_NotScanned_ThrowsQrSessionGoneException
-    ///
-    /// AMAÇ: Henüz taranmamış (Pending) ya da zaten tüketilmiş bir oturum
-    ///       confirm edilmeye çalışılırsa QrSessionGoneException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Confirm_NotScanned_ThrowsQrSessionGoneException()
     {
@@ -166,12 +126,6 @@ public class ConfirmQrLoginCommandHandlerTests
         await act.Should().ThrowAsync<QrSessionGoneException>();
     }
 
-    /// <summary>
-    /// Confirm_ExpiredSession_ThrowsQrSessionGoneException
-    ///
-    /// AMAÇ: ExpiresAt geçmiş bir oturum confirm edilmeye çalışılırsa
-    ///       QrSessionGoneException fırlatıldığını VE oturumun Expired'a çevrildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Confirm_ExpiredSession_ThrowsQrSessionGoneException()
     {

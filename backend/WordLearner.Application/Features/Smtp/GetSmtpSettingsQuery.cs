@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetSmtpSettingsQuery.cs
-//
-// AMAÇ: GET /admin/smtp-settings — kayıtlı SMTP ayarlarını, şifre alanı maskelenmiş
-//       (`***`) hâlde döner.
-// NEDEN hiç kayıt yoksa (ilk kurulum) boş alanlarla bir DTO dönülür, 404 FIRLATILMAZ:
-//        admin panelin SMTP ayarları ekranı her zaman bir form gösterir — "ayarlar
-//        henüz yok" durumu boş bir form olarak temsil edilir, bir hata durumu değildir.
-// BAĞIMLILIKLAR: ISmtpSettingsRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.DTOs.Smtp;
 using WordLearner.Application.Interfaces.Repositories;
@@ -19,10 +8,9 @@ public record GetSmtpSettingsQuery : IRequest<SmtpSettingsDto>;
 
 public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery, SmtpSettingsDto>
 {
-    // AMAÇ: DB'de hiç ayar yokken PUT formunun varsayılan olarak göstereceği port.
     private const int DefaultPort = 587;
 
-    // AMAÇ: Şifre kayıtlıysa istemciye giden sabit maske — gerçek değer asla dönmez.
+    // UpdateSmtpSettingsCommandHandler'daki aynı isimli sabitle değer olarak eşleşmeli.
     private const string MaskedPassword = "***";
 
     private readonly ISmtpSettingsRepository _smtpSettingsRepository;
@@ -34,6 +22,7 @@ public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery,
     {
         var settings = await _smtpSettingsRepository.GetCurrentAsync(ct);
 
+        // Hiç kayıt yoksa (ilk kurulum) boş bir DTO döner, 404 fırlatılmaz — admin panel her zaman bir form gösterir.
         if (settings is null)
             return new SmtpSettingsDto(string.Empty, DefaultPort, true, string.Empty, string.Empty, string.Empty, string.Empty);
 

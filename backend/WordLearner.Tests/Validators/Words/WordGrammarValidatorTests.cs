@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordGrammarValidatorTests.cs
-//
-// AMAÇ: WordGrammarValidator'ın de/tr × Noun/Verb/Diğer matrisini (GERMAN_LANGUAGE_
-//       FEATURES.md §10 / TURKISH_LANGUAGE_FEATURES.md §9) doğru uyguladığını kanıtlar.
-// NEDEN: Proje FluentValidation.TestHelper paketi kullanmıyor (yeni bir bağımlılık
-//        eklemeden zaten yeterli) — WordGrammarValidator plain bir AbstractValidator
-//        olduğu için doğrudan `Validate(...)` çağrılıp `ValidationResult.Errors`
-//        üzerinden ErrorCode'lar kontrol edilir.
-// BAĞIMLILIKLAR: WordGrammarValidator, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using WordLearner.Application.Validators.Words;
 

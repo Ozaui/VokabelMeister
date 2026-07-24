@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateWordCommandHandlerTests.cs
-//
-// AMAÇ: UpdateWordCommandHandler'ın mevcut çevirileri güncellediğini, eksik
-//       dili "eşleştirme" olarak eklediğini, duplikat 409 + force bypass'ını,
-//       404'ü ve UPDATE_WORD audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
@@ -51,12 +42,6 @@ public class UpdateWordCommandHandlerTests
             },
         };
 
-    /// <summary>
-    /// Update_ExistingTranslation_UpdatesTextAndDefinition
-    ///
-    /// AMAÇ: Kavramda zaten var olan bir dilin Text/Definition alanlarının
-    ///       yerinde güncellendiğini (yeni Word EKLENMEDİĞİNİ) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_ExistingTranslation_UpdatesTextAndDefinition()
     {
@@ -83,12 +68,6 @@ public class UpdateWordCommandHandlerTests
         concept.Words.Should().HaveCount(1);
     }
 
-    /// <summary>
-    /// Update_NewLanguageAddedWithoutForce_ThrowsDuplicateWordExceptionOnCollision
-    ///
-    /// AMAÇ: Kavramda henüz olmayan bir dil eklenirken (eşleştirme) o dilde
-    ///       aynı Text zaten varsa ve force verilmediyse DuplicateWordException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_NewLanguageAddedWithoutForce_ThrowsDuplicateWordExceptionOnCollision()
     {
@@ -117,12 +96,6 @@ public class UpdateWordCommandHandlerTests
         await act.Should().ThrowAsync<DuplicateWordException>();
     }
 
-    /// <summary>
-    /// Update_NewLanguageAdded_MatchesConceptByAddingSecondWord
-    ///
-    /// AMAÇ: Tek dilli ("eşleşmemiş") bir kavrama ikinci dilin eklenmesinin
-    ///       (Icerik.md "Eşleştirme") kavramı 2 Word'lü hâle getirdiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_NewLanguageAdded_MatchesConceptByAddingSecondWord()
     {
@@ -152,12 +125,6 @@ public class UpdateWordCommandHandlerTests
         result.Translations.Should().Contain(t => t.LanguageCode == "tr" && t.Text == "masa");
     }
 
-    /// <summary>
-    /// Update_ConceptNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: Var olmayan bir WordConcept Id'si verilirse 404'e denk gelen
-    ///       EntityNotFoundException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_ConceptNotFound_ThrowsEntityNotFoundException()
     {
@@ -181,13 +148,6 @@ public class UpdateWordCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Update_WithCategoryIds_ReplacesExistingCategories
-    ///
-    /// AMAÇ: CategoryIds gönderildiğinde YENİ listede olmayan mevcut bağların
-    ///       kaldırıldığını, listede olup henüz bağlı olmayanların eklendiğini
-    ///       doğrulamak (A-06 eklemesi — tam yer değiştirme semantiği).
-    /// </summary>
     [Fact]
     public async Task Update_WithCategoryIds_ReplacesExistingCategories()
     {
@@ -215,12 +175,6 @@ public class UpdateWordCommandHandlerTests
         result.Categories.Should().ContainSingle(c => c.CategoryId == 5);
     }
 
-    /// <summary>
-    /// Update_CategoryIdsNull_DoesNotTouchExistingCategories
-    ///
-    /// AMAÇ: CategoryIds hiç gönderilmediğinde (NULL) mevcut kategori bağlarının
-    ///       DOKUNULMADAN kaldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_CategoryIdsNull_DoesNotTouchExistingCategories()
     {
@@ -245,12 +199,6 @@ public class UpdateWordCommandHandlerTests
         result.Categories.Should().ContainSingle(c => c.CategoryId == 3);
     }
 
-    /// <summary>
-    /// Update_Success_LogsUpdateWordActivity
-    ///
-    /// AMAÇ: Başarılı güncellemede IActivityLogger.LogAsync'in UPDATE_WORD action'ı,
-    ///       hem OldValue hem NewValue dolu olarak ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Update_Success_LogsUpdateWordActivity()
     {
@@ -295,17 +243,6 @@ public class UpdateWordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Update_Success_OldValueSnapshotReflectsPreUpdateText
-    ///
-    /// AMAÇ: Audit log'a yazılan `oldValue.Translations`'ın, güncellemeden ÖNCEKİ
-    ///       Text'i taşıdığını (SONRAKİ Text'i DEĞİL) doğrulamak — `concept.Words.
-    ///       Select(...)` tembel (deferred) bir IEnumerable olduğu için `.ToList()`
-    ///       ile materyalize edilmezse, LogAsync JSON'a serileştirirken bu listeyi
-    ///       mutasyonlardan SONRA okur ve "eski" değer olarak YENİ değeri yazardı
-    ///       (A-06 denetiminde bulunan regresyon — bu test o hatanın bir daha fark
-    ///       edilmeden geri gelmesini önler).
-    /// </summary>
     [Fact]
     public async Task Update_Success_OldValueSnapshotReflectsPreUpdateText()
     {

@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SecurityLoggerTests.cs
-//
-// AMAÇ: SecurityLogger'ın SecurityLog kaydını doğru alanlarla kurup
-//       ISecurityLogRepository.AddAsync'e geçirdiğini — özellikle e-postanın
-//       ham hâlde DEĞİL, IPasswordService.HashToken ile hash'lenerek yazıldığını
-//       (PII kuralı, SECURITY.md §6) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Interfaces.Repositories;
@@ -25,12 +15,6 @@ public class SecurityLoggerTests
 
     private SecurityLogger CreateLogger() => new(_repository.Object, _passwordService.Object);
 
-    /// <summary>
-    /// LogAsync_EmailGiven_HashesEmailBeforeStoring
-    ///
-    /// AMAÇ: email verildiğinde ham e-postanın DEĞİL, IPasswordService.HashToken'ın
-    ///       ürettiği hash'in EmailHash'e yazıldığını doğrulamak — PII kuralı gereği.
-    /// </summary>
     [Fact]
     public async Task LogAsync_EmailGiven_HashesEmailBeforeStoring()
     {
@@ -54,12 +38,6 @@ public class SecurityLoggerTests
         _passwordService.Verify(p => p.HashToken("test@example.com"), Times.Once);
     }
 
-    /// <summary>
-    /// LogAsync_NoEmailGiven_LeavesEmailHashNull
-    ///
-    /// AMAÇ: email verilmediğinde (ör. TokenReplay — yalnızca userId biliniyor)
-    ///       EmailHash'in null kaldığını ve HashToken'ın hiç ÇAĞRILMADIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LogAsync_NoEmailGiven_LeavesEmailHashNull()
     {
@@ -77,12 +55,6 @@ public class SecurityLoggerTests
         _passwordService.Verify(p => p.HashToken(It.IsAny<string>()), Times.Never);
     }
 
-    /// <summary>
-    /// LogAsync_AllFieldsGiven_PassesThemAllToSecurityLog
-    ///
-    /// AMAÇ: ipAddress/userAgent/detail verildiğinde SecurityLog'un ilgili alanlarına
-    ///       aynen yazıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LogAsync_AllFieldsGiven_PassesThemAllToSecurityLog()
     {

@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetCategoryWordsQuery.cs
-//
-// AMAÇ: GET /categories/{id}/words — bir kategorinin kelimelerinin sayfalı listesi.
-// NEDEN AYRI bir "kategoriye göre kelime" sorgu mantığı YAZILMADI: A-05'in
-//        `IWordConceptRepository.GetPagedAsync`'i A-06'da categoryId parametresi
-//        alacak şekilde genişletildi (bkz. GetWordsQuery.cs "NEDEN") — bu Query o
-//        AYNI metodu, diğer filtreler NULL, yalnızca categoryId dolu şekilde çağırır
-//        (YAGNI: tek metot iki tüketici, mantık tekrarlanmaz).
-// BAĞIMLILIKLAR: ICategoryRepository (kategori var mı kontrolü), IWordConceptRepository,
-//                WordConceptDtoBuilder, PagedResult<T>, EntityNotFoundException.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Models;

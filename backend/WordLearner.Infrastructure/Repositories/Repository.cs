@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Repository.cs
-//
-// AMAÇ: IRepository<T> arayüzünün EF Core tabanlı generic implementasyonu.
-// NEDEN: Tekrar eden CRUD kodunu tek sınıfta toplar; feature repository'ler
-//        yalnızca ek sorgular için bu sınıfı miras alır, temel işlemleri yeniden yazmaz.
-// BAĞIMLILIKLAR: EF Core, WordLearnerDbContext, IRepository<T>, BaseEntity,
-//                EntityNotFoundException (Application katmanından).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;
@@ -22,26 +12,18 @@ public class Repository<T> : IRepository<T>
     protected readonly WordLearnerDbContext _db;
     protected readonly DbSet<T> _set;
 
-    // AMAÇ: DbContext ve DbSet referanslarını DI aracılığıyla alır.
-    // NEDEN: _set kısayolu sayesinde alt sınıflar her seferinde _db.Set<T>() yazmak zorunda kalmaz.
     public Repository(WordLearnerDbContext db)
     {
         _db = db;
         _set = db.Set<T>();
     }
 
-    // AMAÇ: Soft delete filtresi aktifken Id'ye göre kayıt getirir.
-    // NEDEN: virtual — feature repository gerektiğinde Include() ekleyerek override edebilir.
     public virtual Task<T?> GetByIdAsync(int id, CancellationToken ct = default) =>
         _set.FirstOrDefaultAsync(e => e.Id == id, ct);
 
-    // AMAÇ: Filtresiz tüm (silinmemiş) kayıtları belleğe yükler.
-    // NEDEN: virtual — feature repository sayfalama veya projeksiyon için override edebilir.
     public virtual async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default) =>
         await _set.ToListAsync(ct);
 
-    // AMAÇ: Yeni entity'yi DB'ye ekler ve Id'si dolu hâliyle geri döner.
-    // NEDEN: userId verilirse CreatedByUserId/UpdatedByUserId set edilir (kim oluşturdu).
     public virtual async Task<T> AddAsync(
         T entity,
         int? userId = null,
@@ -55,18 +37,9 @@ public class Repository<T> : IRepository<T>
         return entity;
     }
 
-    // AMAÇ: Mevcut entity'yi günceller. UpdatedAt WordLearnerDbContext.SaveChangesAsync'te otomatik set edilir.
-    // NEDEN: userId verilirse UpdatedByUserId set edilir (kim güncelledi).
-    // NEDEN _set.Update() ÇAĞRILMAZ: entity, çağıranın elinde her zaman bu Repository
-    //       üzerinden önce GetByIdAsync/GetByXxxAsync ile alınmış (dolayısıyla DbContext
-    //       tarafından zaten TAKİP EDİLEN) bir örnektir — bu proje genelinde tek desen.
-    //       `_set.Update(entity)` çağırmak entity'nin TÜM property'lerini (değişmemiş
-    //       olanlar dahil) Modified işaretler ve UPDATE ifadesini gereksiz yere
-    //       genişletir; hâlbuki EF'in otomatik change tracking'i zaten yalnızca
-    //       GERÇEKTEN değişen kolonları SaveChangesAsync ile yazar. Bu metot DETACHED
-    //       (fetch edilmemiş, elle `new T{Id=...}` ile kurulmuş) bir entity ile
-    //       çağrılırsa değişiklikler SESSİZCE kaybolur — bu yüzden UpdateAsync'e
-    //       yalnızca bu Repository'den alınmış entity geçilmelidir.
+    // _set.Update() ÇAĞRILMAZ — entity her zaman bu Repository'den (GetByIdAsync vb.) alınmış,
+    // yani DbContext tarafından zaten takip edilen bir örnektir; Update() tüm alanları Modified
+    // işaretleyip UPDATE'i gereksiz genişletir. Detached bir entity ile çağrılırsa değişiklik sessizce kaybolur.
     public virtual async Task UpdateAsync(
         T entity,
         int? userId = null,
@@ -77,10 +50,6 @@ public class Repository<T> : IRepository<T>
         await _db.SaveChangesAsync(ct);
     }
 
-    // AMAÇ: Kaydı fiziksel silmek yerine IsDeleted ve DeletedAt alanlarını set eder.
-    // NEDEN: Fiziksel silme geri alınamaz; soft delete ile veri kaybı olmaz,
-    //        admin silinmiş kaydı görmek istediğinde IgnoreQueryFilters() kullanır.
-    //        userId verilirse DeletedByUserId set edilir (kim sildi).
     public virtual async Task SoftDeleteAsync(
         int id,
         int? userId = null,
@@ -95,6 +64,5 @@ public class Repository<T> : IRepository<T>
         await UpdateAsync(entity, userId, ct);
     }
 
-    // AMAÇ: Birden fazla değişikliği toplu olarak DB'ye yazar.
     public Task SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

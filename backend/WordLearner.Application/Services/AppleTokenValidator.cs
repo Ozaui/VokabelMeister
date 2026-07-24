@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// AppleTokenValidator.cs
-//
-// AMAÇ: IAppleTokenValidator'ın JWKS tabanlı implementasyonu.
-// NEDEN: Google'ın aksine Apple için resmi bir .NET doğrulama kütüphanesi yok —
-//        Apple'ın herkese açık anahtarlarını (JWKS) https://appleid.apple.com/auth/keys'ten
-//        çekip identity token'ın imzasını, issuer'ını ve audience'ını (Apple:BundleId,
-//        REFERENCE/ENV.md §4) elle doğrularız.
-// BAĞIMLILIKLAR: System.IdentityModel.Tokens.Jwt, Microsoft.IdentityModel.Tokens,
-//                System.Net.Http.Json, Microsoft.Extensions.Configuration.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
@@ -18,9 +6,10 @@ using WordLearner.Application.Interfaces.Services;
 
 namespace WordLearner.Application.Services;
 
+// Google'ın aksine Apple için resmi bir .NET doğrulama kütüphanesi yok — JWKS'ten anahtarları
+// çekip identity token'ın imzasını/issuer/audience'ını elle doğrularız.
 public class AppleTokenValidator : IAppleTokenValidator
 {
-    // NEDEN sabit: Apple'ın kimlik sağlayıcı adresi hiç değişmez, appsettings'e taşımaya gerek yok.
     private const string AppleIssuer = "https://appleid.apple.com";
     private const string AppleJwksUrl = "https://appleid.apple.com/auth/keys";
 
@@ -33,12 +22,6 @@ public class AppleTokenValidator : IAppleTokenValidator
         _configuration = configuration;
     }
 
-    // AMAÇ: Apple identity token'ını doğrular, geçerliyse kullanıcı bilgilerini döner.
-    // NEDEN: Apple e-postayı yalnızca İLK yetkilendirmede identity token'ın içine koyar;
-    //        sonraki girişlerde "email" claim'i olmayabilir — bu normaldir, AuthService
-    //        bu durumda DB'deki mevcut Users.Email'i korur, üzerine yazmaz.
-    // NASIL: 1) Apple'ın JWKS'sini çek  2) Token'ı bu anahtarlarla + issuer/audience'a
-    //        göre doğrula  3) "sub" (AppleId) ve varsa "email" claim'lerini çıkar.
     public async Task<AppleTokenPayload?> ValidateAsync(
         string identityToken,
         CancellationToken ct = default
@@ -67,9 +50,7 @@ public class AppleTokenValidator : IAppleTokenValidator
                 out var validatedToken
             );
 
-            // NEDEN: JwtTokenService.GetPrincipalFromExpiredToken'daki Algorithm Confusion
-            //        önlemiyle aynı gerekçe — imzalanan algoritmanın gerçekten Apple'ın
-            //        kullandığı RS256 olduğu elle teyit edilir.
+            // Algorithm Confusion önlemi — imzalayan algoritmanın gerçekten RS256 olduğu elle teyit edilir.
             if (
                 validatedToken is not JwtSecurityToken jwtToken
                 || !jwtToken.Header.Alg.Equals(
@@ -88,8 +69,6 @@ public class AppleTokenValidator : IAppleTokenValidator
         }
         catch
         {
-            // NEDEN: JWKS çekilemezse (ağ hatası) veya token doğrulama başarısız olursa
-            //        (imza/issuer/audience/süre) AuthService'e null dönüp karar verdiririz.
             return null;
         }
     }

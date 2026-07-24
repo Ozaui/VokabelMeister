@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetSecurityLogsQueryHandlerTests.cs
-//
-// AMAÇ: GetSecurityLogsQueryHandler'ın EventType'ı string'e çevirdiğini VE
-//       Detail'i istenen dile göre ÇÖZDÜĞÜNÜ (bilinen kod → çeviri, bilinmeyen
-//       kod → aynen, null → null) doğrulamak — CLAUDE.md "İkinci istisna".
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -23,9 +14,6 @@ public class GetSecurityLogsQueryHandlerTests
 
     private GetSecurityLogsQueryHandler CreateHandler() => new(_securityLogRepo.Object);
 
-    /// <summary>
-    /// Handle_KnownDetailCode_ResolvesToRequestedLanguage
-    /// </summary>
     [Fact]
     public async Task Handle_KnownDetailCode_ResolvesToRequestedLanguage()
     {
@@ -48,12 +36,6 @@ public class GetSecurityLogsQueryHandlerTests
         result.Items.Should().ContainSingle(i => i.EventType == "AdminAction" && i.Detail == "Benutzerrolle geändert");
     }
 
-    /// <summary>
-    /// Handle_UnknownDetailCode_PassesThroughUnchanged
-    ///
-    /// AMAÇ: RateLimitHit'in Detail'i (bir istek yolu, ör. "/api/v1/auth/login") sözlükte
-    ///       YOK — LocalizedMessageResolver bunu AYNEN döner, hata FIRLATMAZ.
-    /// </summary>
     [Fact]
     public async Task Handle_UnknownDetailCode_PassesThroughUnchanged()
     {
@@ -76,9 +58,6 @@ public class GetSecurityLogsQueryHandlerTests
         result.Items.Should().ContainSingle(i => i.Detail == "/api/v1/auth/login");
     }
 
-    /// <summary>
-    /// Handle_NullDetail_StaysNull
-    /// </summary>
     [Fact]
     public async Task Handle_NullDetail_StaysNull()
     {

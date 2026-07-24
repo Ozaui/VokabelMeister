@@ -1,17 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateSmtpSettingsCommandHandlerTests.cs
-//
-// AMAÇ: UpdateSmtpSettingsCommandHandler'ın (1) kayıt yokken yeni satır oluşturup
-//       şifreyi şifrelediğini, (2) kayıt varken "***" gönderildiğinde eski şifreli
-//       değeri KORUDUĞUNU, (3) gerçek yeni bir şifre gönderildiğinde YENİDEN
-//       şifrelediğini, (4) hem IActivityLogger hem ISecurityLogger'ı çağırdığını ve
-//       (5) kayıt YOKKEN maske literal'i gönderilirse SmtpPasswordRequiredException
-//       fırlattığını (kod denetiminde bulunan bir açık tasarım sorusu) doğrulamak —
-//       CLAUDE.md "admin'e özel hassas işlem" kuralı (UpdateUserRoleCommand ile aynı
-//       çift-loglama deseni).
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -41,9 +27,6 @@ public class UpdateSmtpSettingsCommandHandlerTests
             IpAddress = "1.2.3.4",
         };
 
-    /// <summary>
-    /// Handle_NoExistingSettings_CreatesNewRowWithEncryptedPassword
-    /// </summary>
     [Fact]
     public async Task Handle_NoExistingSettings_CreatesNewRowWithEncryptedPassword()
     {
@@ -70,12 +53,6 @@ public class UpdateSmtpSettingsCommandHandlerTests
         _smtpSettingsRepo.Verify(r => r.UpdateAsync(It.IsAny<SmtpSettings>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Handle_ExistingSettingsWithMaskedPassword_KeepsOldEncryptedPassword
-    ///
-    /// AMAÇ: Admin panel şifre alanını DEĞİŞTİRMEDEN geri gönderdiğinde ("***")
-    ///       eski PasswordEncrypted'in KORUNDUĞUNU, Encrypt'in HİÇ çağrılmadığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Handle_ExistingSettingsWithMaskedPassword_KeepsOldEncryptedPassword()
     {
@@ -93,13 +70,6 @@ public class UpdateSmtpSettingsCommandHandlerTests
         _smtpSettingsRepo.Verify(r => r.UpdateAsync(mevcut, 1, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    /// <summary>
-    /// Handle_NoExistingSettingsWithMaskedPassword_ThrowsSmtpPasswordRequiredException
-    ///
-    /// AMAÇ: Kod denetiminde bulunan gerçek bir hatayı regresyona karşı kilitler —
-    ///       hiç ayar kaydedilmemişken maske literal'i ("***") gönderilirse, bu literal
-    ///       SESSİZCE şifrelenip DB'ye "gerçek şifre" olarak YAZILMAMALI.
-    /// </summary>
     [Fact]
     public async Task Handle_NoExistingSettingsWithMaskedPassword_ThrowsSmtpPasswordRequiredException()
     {
@@ -116,9 +86,6 @@ public class UpdateSmtpSettingsCommandHandlerTests
         _smtpSettingsRepo.Verify(r => r.AddAsync(It.IsAny<SmtpSettings>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Handle_ExistingSettingsWithNewPassword_ReEncryptsPassword
-    /// </summary>
     [Fact]
     public async Task Handle_ExistingSettingsWithNewPassword_ReEncryptsPassword()
     {
@@ -135,12 +102,6 @@ public class UpdateSmtpSettingsCommandHandlerTests
         mevcut.PasswordEncrypted.Should().Be("yeni-sifreli-deger");
     }
 
-    /// <summary>
-    /// Handle_ValidCommand_LogsActivityAndSecurity
-    ///
-    /// AMAÇ: CLAUDE.md'nin admin'e özel hassas işlem kuralı gereği HEM IActivityLogger
-    ///       HEM ISecurityLogger'ın çağrıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Handle_ValidCommand_LogsActivityAndSecurity()
     {

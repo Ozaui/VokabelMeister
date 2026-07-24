@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ActivityLoggerTests.cs
-//
-// AMAÇ: ActivityLogger'ın ActivityLog kaydını doğru alanlarla kurup
-//       IActivityLogRepository.AddAsync'e geçirdiğini (özellikle OldValue/NewValue
-//       JSON serileştirmesini) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Interfaces.Repositories;
@@ -21,13 +12,6 @@ public class ActivityLoggerTests
 
     private ActivityLogger CreateLogger() => new(_repository.Object);
 
-    /// <summary>
-    /// LogAsync_MinimalFields_AddsActivityLogWithoutOldOrNewValue
-    ///
-    /// AMAÇ: yalnızca zorunlu alanlarla (userId/actorRole/action) çağrıldığında
-    ///       OldValue/NewValue'nun null kaldığını doğrulamak (ör. CREATE eylemi
-    ///       için yalnızca NewValue verilir, ikisi de opsiyoneldir).
-    /// </summary>
     [Fact]
     public async Task LogAsync_MinimalFields_AddsActivityLogWithoutOldOrNewValue()
     {
@@ -55,13 +39,6 @@ public class ActivityLoggerTests
         );
     }
 
-    /// <summary>
-    /// LogAsync_OldAndNewValueGiven_SerializesBothAsJson
-    ///
-    /// AMAÇ: oldValue/newValue nesneleri verildiğinde JSON'a serileştirilip
-    ///       OldValue/NewValue kolonlarına yazıldığını doğrulamak (ör. UPDATE eylemi
-    ///       için audit diff).
-    /// </summary>
     [Fact]
     public async Task LogAsync_OldAndNewValueGiven_SerializesBothAsJson()
     {
@@ -93,12 +70,6 @@ public class ActivityLoggerTests
         );
     }
 
-    /// <summary>
-    /// LogAsync_IpAndUserAgentGiven_PassesThemToActivityLog
-    ///
-    /// AMAÇ: ipAddress/userAgent verildiğinde ActivityLog'un ilgili alanlarına
-    ///       aynen yazıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LogAsync_IpAndUserAgentGiven_PassesThemToActivityLog()
     {

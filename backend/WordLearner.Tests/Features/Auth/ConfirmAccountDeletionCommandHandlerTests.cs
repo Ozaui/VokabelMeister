@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ConfirmAccountDeletionCommandHandlerTests.cs
-//
-// AMAÇ: ConfirmAccountDeletionCommandHandler'ın çift onay (OTP + şifre) ile soft
-//       delete + 30 gün grace period zamanlama davranışını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -45,12 +37,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
             IsActive = true,
         };
 
-    /// <summary>
-    /// ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization
-    ///
-    /// AMAÇ: Doğru OTP + doğru şifre ile hesabın soft-delete edildiğini ve 30 gün
-    ///       sonrasına anonimleştirme zamanlandığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_ValidOtpAndPassword_SoftDeletesAndSchedulesAnonymization()
     {
@@ -70,12 +56,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         _refreshTokenRepo.Verify(r => r.RevokeAllForUserAsync(user.Id, default), Times.Once);
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_ValidOtpAndPassword_LogsAccountDeletionSecurityEvent
-    ///
-    /// AMAÇ: Başarılı hesap silme onayında ISecurityLogger.LogAsync'in AccountDeletion
-    ///       (BAŞARI) olayıyla ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_ValidOtpAndPassword_LogsAccountDeletionSecurityEvent()
     {
@@ -99,12 +79,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException
-    ///
-    /// AMAÇ: OTP doğru olsa bile yanlış şifre ile hesap silmenin onaylanamadığını doğrulamak.
-    /// NEDEN: Geri alınamaz bir işlem olduğu için çift onay (OTP + şifre) zorunlu.
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_WrongPassword_ThrowsInvalidCredentialsException()
     {
@@ -123,12 +97,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         await act.Should().ThrowAsync<InvalidCredentialsException>();
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_WrongPassword_LogsLoginFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış şifrede ISecurityLogger.LogAsync'in LoginFailed olayıyla (Detail=
-    ///       "ACCOUNT_DELETION_PASSWORD_MISMATCH") ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_WrongPassword_LogsLoginFailedSecurityEvent()
     {
@@ -166,11 +134,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException
-    ///
-    /// AMAÇ: Yanlış OTP ile hesap silme onayının reddedildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_WrongOtp_ThrowsInvalidOtpException()
     {
@@ -188,12 +151,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         await act.Should().ThrowAsync<InvalidOtpException>();
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_WrongOtp_LogsOtpFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış OTP'de ISecurityLogger.LogAsync'in OtpFailed olayıyla ÇAĞRILDIĞINI
-    ///       doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_WrongOtp_LogsOtpFailedSecurityEvent()
     {
@@ -230,12 +187,6 @@ public class ConfirmAccountDeletionCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// ConfirmAccountDeletion_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task ConfirmAccountDeletion_GermanLanguage_ReturnsGermanMessage()
     {

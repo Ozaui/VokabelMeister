@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GenerateQrLoginCommandHandlerTests.cs
-//
-// AMAÇ: GenerateQrLoginCommandHandler'ın oturumu Pending olarak oluşturduğunu,
-//       ham token'ın URL-safe olduğunu ve 4 haneli PairingCode ürettiğini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Moq;
@@ -24,12 +16,6 @@ public class GenerateQrLoginCommandHandlerTests
 
     private GenerateQrLoginCommandHandler CreateHandler() => new(_qrRepo.Object, _passwordService.Object);
 
-    /// <summary>
-    /// Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode
-    ///
-    /// AMAÇ: Yeni oturumun Pending durumunda, isteği atan (web) tarafın IP/cihaz
-    ///       bilgisiyle DB'ye eklendiğini ve yanıtta ham token+4 haneli PairingCode+120sn döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Generate_HappyPath_CreatesPendingSessionAndReturnsTokenPlusPairingCode()
     {
@@ -59,13 +45,6 @@ public class GenerateQrLoginCommandHandlerTests
         savedSession.QrTokenHash.Should().Be("hash");
     }
 
-    /// <summary>
-    /// Generate_GeneratedToken_IsUrlSafeBase64
-    ///
-    /// AMAÇ: Ham token'ın route parametresi olarak kullanılacağı için standart
-    ///       Base64'teki '+'/'/' karakterlerini İÇERMEDİĞİNİ doğrulamak.
-    /// NEDEN: '+' ve '/' path segment'inde routing hatasına yol açar.
-    /// </summary>
     [Fact]
     public async Task Generate_GeneratedToken_IsUrlSafeBase64()
     {

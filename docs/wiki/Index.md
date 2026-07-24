@@ -1463,3 +1463,29 @@ test dosyası, `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm) + `BACKEND_
 03_testler-ozet-sozluk.html` (`sonrakiBolum` A-09'a bağlandı) + kök `BACKEND_AKADEMI/index.html`
 (kart eklendi), `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-09 ✅), bu dosya. **Sıradaki
 task: A-10 (E-posta Servisi + Hesap Temizleme Görevi).***
+
+*Kırkıncı INGEST (2026-07-24, aynı gün) — **kod yazılmadı, yalnızca yorum standardı değişikliği +
+geriye dönük temizlik:** Kullanıcı backend kodundaki (o güne dek biriken) AMAÇ/NEDEN/NASIL dosya-başı/
+method-başı yorum bloklarını "çok çok uzun" bulup standart bir senior yazılımcının yazacağı ölçüde
+kısaltılmasını istedi — üç seçenek arasından (minimal/kısa özet/yalnızca dosya-başı kısalt) **minimal**
+seçildi: zorunlu blok tamamen kaldırıldı, yorum yalnızca kodun anlatamadığı non-obvious NEDEN'i 1-2
+satırla anlatır. Kullanıcı AYRICA netleştirdi: bu kural yalnızca **kaynak kod** için — `BACKEND_AKADEMI/`
+`aciklama`/`neden`/`olmasaydi` öğretim formatı ve wiki/MD dosyaları (bu dosya dahil) etkilenmez, kendi
+ayrıntılı standardını korur (bkz. [[Kodlama_Standartlari]] "Yorum Satırları" bölümü, `feedback_minimal_yorum_standardi`
+hafıza notu). `CLAUDE.md` §1 ve `docs/REFERENCE/CODING_STANDARDS.md` güncellendi. Ardından backend'deki
+**267 kaynak dosyanın tamamı** (Domain/Enums→Entities, Infrastructure/Configurations→Repositories,
+Application/Common→Validators→Services→Features [Auth/Words/Categories/Admin/QrLogin/Smtp]→
+API/Controllers+Middleware+DTOs→Tests) sırayla, her grup sonrası `dotnet build`+`dotnet test` yeşil
+kalacak şekilde geriye dönük temizlendi (**265/265 birim testi hâlâ yeşil** — yalnızca yorumlar
+değişti, davranış değişmedi). Tests klasöründeki 61 dosyanın tekrarlayan file-header + per-method
+XML-doc `/// <summary>AMAÇ/NEDEN</summary>` blokları (test adı zaten `{Metot}_{Senaryo}_{Sonuç}`
+deseniyle kendini anlattığı için) bir Python betiğiyle toplu kaldırıldı, sonra build+test ile
+doğrulandı — 267 dosyalık elle-tekrar bir işi güvenilir/hızlı yapmanın tek yolu buydu. Ayrıca iki
+dosya ilk geçişte atlanmış olarak bulundu ve ayrıca düzeltildi: `UpdateSmtpSettingsCommand.cs`
+(kullanıcıya örnek göstermek için okunmuş ama gerçek Edit hiç uygulanmamıştı) ve
+`ApplicationServiceExtensions.cs` (`Application/Extensions/` hiçbir grup listesine dahil edilmemişti
+— `InfrastructureServiceExtensions.cs`'in eşleniği ama farklı klasörde olduğu için gözden kaçmıştı).
+**Etkilenen dosyalar:** `CLAUDE.md`, `docs/REFERENCE/CODING_STANDARDS.md`, `docs/wiki/Standartlar/
+Kodlama_Standartlari.md`, backend'deki 267 kaynak dosyanın tamamı, bu dosya. `BACKEND_AKADEMI/`e
+hiç dokunulmadı (kasıtlı — kullanıcı talebi). **Sıradaki task: A-10 (E-posta Servisi + Hesap
+Temizleme Görevi) — değişmedi.***

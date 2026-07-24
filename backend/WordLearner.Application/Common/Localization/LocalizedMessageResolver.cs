@@ -1,24 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LocalizedMessageResolver.cs
-//
-// AMAÇ: Kod→dil→metin sözlüğünden, istenen dile (bulunamazsa varsayılana) karşılık
-//       gelen metni çözen paylaşılan algoritma.
-// NEDEN: ErrorMessages.cs ve SuccessMessages.cs birebir aynı `Resolve` mantığını
-//        (yalnızca sözlük içerikleri farklı) bağımsız olarak taşıyordu (kod
-//        denetiminde bulunan DRY ihlali) — iki sözlük ayrı kalmaya devam ediyor
-//        (kodları anlamca farklı kümeler, bkz. SuccessMessages.cs dosya başı),
-//        yalnızca çözümleme algoritması burada birleşti.
-// BAĞIMLILIKLAR: Yok.
-// ─────────────────────────────────────────────────────────────────────────────
-
 namespace WordLearner.Application.Common.Localization;
 
+// ErrorMessages.cs ve SuccessMessages.cs aynı Resolve mantığını taşıyordu — sözlükler kodları
+// anlamca farklı kümeler olduğu için ayrı kalır, yalnızca çözümleme algoritması burada birleşti.
 internal static class LocalizedMessageResolver
 {
-    // AMAÇ: Bir koda, istenen dile (bulunamazsa varsayılan dile) karşılık gelen metni döner.
-    // NEDEN: Sözlükte olmayan bir kod gelirse (programlama hatası — yeni bir kod eklenip
-    //        çevirisi eklenmemişse) exception fırlatmak yerine kodun kendisi döner; API
-    //        asla yalnızca çeviri eksik diye 500'e düşmemeli.
+    // Sözlükte olmayan bir kod gelirse (çevirisi eklenmemiş yeni bir kod) exception fırlatmak
+    // yerine kodun kendisi döner; API yalnızca çeviri eksik diye 500'e düşmemeli.
     public static string Resolve(
         IReadOnlyDictionary<string, Dictionary<string, string>> messages,
         string code,

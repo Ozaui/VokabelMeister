@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RequestAccountDeletionCommand.cs
-//
-// AMAÇ: POST /auth/delete-account/request — hesap silme OTP'si gönderir (15dk geçerli).
-// NEDEN: Gövdesi yoktur — JWT'deki kullanıcı kimliği kullanılır; bu yüzden eskiden
-//        de ayrı bir Request DTO'su yoktu, controller doğrudan bu Command'ı üretir.
-// BAĞIMLILIKLAR: IUserRepository, IOtpService, IEmailService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
@@ -18,7 +9,6 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// NEDEN Language init-property: bkz. LoginCommand.
 public record RequestAccountDeletionCommand(int UserId) : IRequest<MessageResponse>
 {
     public string? Language { get; init; }

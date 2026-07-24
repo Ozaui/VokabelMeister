@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginCompletionService.cs
-//
-// AMAÇ: ILoginCompletionService'in implementasyonu — AuthService'in eski private
-//       CompleteLoginAsync/ExpiresInSeconds metotlarının birebir taşınmış hâli.
-// NEDEN: OTP doğrulama/Google/Apple giriş Handler'larının ortak son adımı; kod
-//        tekrarını önlemek için paylaşılan bir servise çıkarıldı.
-// BAĞIMLILIKLAR: IUserRepository, IRefreshTokenRepository, IPasswordService,
-//                ITokenService, IOtpService (Clear için), IConfiguration, IMapper (AuthProfile).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using AutoMapper;
 using Microsoft.Extensions.Configuration;
 using WordLearner.Application.Common.Exceptions;
@@ -48,10 +37,6 @@ public class LoginCompletionService : ILoginCompletionService
         _mapper = mapper;
     }
 
-    // AMAÇ: OTP doğrulama/Google/Apple girişlerinin ORTAK son adımı — grace period
-    //       kurtarma, anonimleştirme kontrolü, giriş istatistikleri ve token üretimi.
-    // NEDEN: Üç farklı giriş yönteminin (OTP, Google, Apple) hepsi aynı noktada
-    //        birleşir; kod tekrarını önler (SECURITY.md §1 — Adım 2 mantığı).
     public async Task<AuthTokenResponse> CompleteLoginAsync(
         User user,
         string? ipAddress,
@@ -64,8 +49,7 @@ public class LoginCompletionService : ILoginCompletionService
         var accountWasRecovered = false;
         if (user.IsDeleted)
         {
-            // NEDEN: 30 günlük grace period içinde soft-delete'li bir hesap otomatik
-            //        kurtarılır (REFERENCE/SECURITY.md §1).
+            // 30 günlük grace period içinde soft-delete'li bir hesap otomatik kurtarılır.
             user.IsDeleted = false;
             user.DeletedAt = null;
             user.ScheduledDeletionAt = null;
@@ -100,7 +84,5 @@ public class LoginCompletionService : ILoginCompletionService
         );
     }
 
-    // AMAÇ: appsettings.json'daki Jwt:ExpirationMinutes'i saniyeye çevirir.
-    // NEDEN: AuthTokenResponse.ExpiresIn saniye cinsinden döner (REFERENCE/API_ENDPOINTS.md §3 örneği).
     public int ExpiresInSeconds() => _configuration.GetValue("Jwt:ExpirationMinutes", 15) * 60;
 }

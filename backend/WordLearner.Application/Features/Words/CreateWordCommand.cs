@@ -1,20 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateWordCommand.cs
-//
-// AMAÇ: POST /words — bir WordConcept'i 1 veya 2 dilde (translations[]) tek
-//       işlemde oluşturur.
-// NEDEN: Tek dilse kavram "eşleşmemiş" kalır (bkz. Icerik.md "Eşleştirme") —
-//        ayrı bir IsMatched kolonu yok, bu durum COUNT(Words)'ten türetilir.
-//        Aynı dilde aynı Text zaten varsa (Force=false) DuplicateWordException
-//        (409); Force=true ise çakışmaya rağmen oluşturulur.
-// NASIL: 1) Her translation için Language'ı çöz  2) Force değilse duplikat kontrolü
-//        3) WordConcept + Word(+WordDetail+WordExample) ağacını kur  4) Tek
-//        AddAsync ile kaydet (EF child'ları da cascade insert eder)  5) CREATE_WORD
-//        ActivityLog'u yaz  6) Detay DTO'sunu dön.
-// BAĞIMLILIKLAR: IWordConceptRepository, ICategoryRepository, ILanguageRepository,
-//                IActivityLogger, WordConceptDtoBuilder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
@@ -26,11 +9,9 @@ using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
 
-// AMAÇ: Bir dildeki tek bir örnek cümle girdisi.
 public record WordExampleInput(string SentenceText, string Level, string ExampleType = "Normal");
 
-// AMAÇ: Bir dildeki gramer/telaffuz girdisi — GrammarData ham JSON olarak taşınır
-//       (WordGrammarValidator bunu dile/türe göre doğrular, bkz. Validators/Words/).
+// GrammarData ham JSON olarak taşınır — WordGrammarValidator dile/türe göre doğrular.
 public record WordDetailInput(
     string? Pronunciation,
     string? AudioUrl,
@@ -39,7 +20,6 @@ public record WordDetailInput(
     JsonElement? GrammarData
 );
 
-// AMAÇ: Bir WordConcept'in tek bir dildeki girdisi.
 public record WordTranslationInput(
     string LanguageCode,
     string Text,
@@ -53,21 +33,13 @@ public record CreateWordCommand(
     string DifficultyLevel,
     string? ImageUrl,
     IReadOnlyList<WordTranslationInput> Translations,
-    // NEDEN default null + trailing (A-06 eklemesi): API_ENDPOINTS.md §5 `POST /words`
-    //        örneğinde `categoryIds` gövdede opsiyonel bir alan — hiç gönderilmezse
-    //        kavram kategorisiz oluşturulur (B-04'ün "önce kelime, sonra kategorile"
-    //        akışını da desteklemesi için). Trailing + default sayesinde A-05'te
-    //        pozisyonel argümanla yazılmış mevcut test/çağrı siteleri BOZULMAZ.
+    // Null = kavram kategorisiz oluşturulur (B-04'ün "önce kelime, sonra kategorile" akışı için).
     IReadOnlyList<int>? CategoryIds = null
 ) : IRequest<WordConceptDetailDto>
 {
-    // NEDEN init-property (gövdede DEĞİL): API_ENDPOINTS.md §5 `?force=true`'yu bir
-    //        QUERY string parametresi olarak tanımlıyor, body alanı değil — controller
-    //        bunu `[FromQuery]`'den okuyup `with { Force = force }` ile ekler.
+    // Query string'ten gelir (?force=true) — controller `with { Force = force }` ile ekler.
     public bool Force { get; init; }
 
-    // NEDEN init-property: JWT'den (CurrentUserId/Role) gelir, gövdede yer almaz —
-    //        controller model binding'den SONRA `with` ile ekler (LogoutCommand deseni).
     public int? UserId { get; init; }
     public string? ActorRole { get; init; }
 }
@@ -113,15 +85,8 @@ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordC
             concept.Words.Add(WordEntityBuilder.Build(translation, language, request.UserId));
         }
 
-        // NEDEN Category.GetByIdAsync (var olma kontrolü) + doğrudan navigasyon
-        //       ekleme (A-06): concept henüz Id'siz olduğu için WordCategory.WordConceptId'yi
-        //       elle atamak yerine EF Core'un cascade-insert graph fixup'ına bırakılır —
-        //       WordEntityBuilder.Build'deki `concept.Words.Add(...)` ile AYNI desen.
-        // NEDEN .Distinct() (A-06 denetiminde bulunan hata düzeltmesi): İstemci `categoryIds`
-        //       içinde aynı Id'yi yanlışlıkla iki kez gönderirse, `WordCategoryConfiguration`'daki
-        //       `(WordConceptId, CategoryId)` UNIQUE index'i SaveChangesAsync sırasında bir SQL
-        //       istisnası fırlatırdı — bu, ExceptionHandlingMiddleware'de YAKALANMAYAN bir
-        //       exception olduğu için istemciye anlamsız bir 500 dönerdi (400 yerine).
+        // .Distinct() — istemci categoryIds içinde aynı Id'yi iki kez gönderirse UNIQUE index
+        // ihlali SaveChangesAsync'te yakalanmayan bir 500'e yol açardı.
         if (request.CategoryIds is not null)
             foreach (var categoryId in request.CategoryIds.Distinct())
             {

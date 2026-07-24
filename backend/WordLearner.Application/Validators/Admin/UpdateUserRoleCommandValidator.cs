@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateUserRoleCommandValidator.cs
-//
-// AMAÇ: UpdateUserRoleCommand.Role alanının yalnızca "User" veya "Admin" olmasını
-//       zorunlu kılar — `Users.Role` CHECK constraint'iyle aynı küme, DB hatasına
-//       düşmeden önce uygulama katmanında yakalanır.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Admin;
 

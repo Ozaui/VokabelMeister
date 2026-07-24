@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordDetailConfiguration.cs
-//
-// AMAÇ: WordDetail entity'sinin EF Core tablo eşlemesini tanımlar (1:1 ile Word).
-// NEDEN: WordId üzerinde UNIQUE index — bu ilişkinin gerçekten 1:1 olduğunu DB
-//        seviyesinde garanti eder (bir Word'ün iki WordDetail'i olamaz).
-// BAĞIMLILIKLAR: EF Core, WordDetail entity, Word entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Words;

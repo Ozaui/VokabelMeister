@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetUserByIdQuery.cs
-//
-// AMAÇ: GET /admin/users/{id} — bir kullanıcının detay+istatistik görünümü.
-// NEDEN: GetWordByIdQuery/GetCategoryWordsQuery ile AYNI desen — bulunamazsa
-//        EntityNotFoundException (404), soft-delete'li/anonimleştirilmiş bir hesap
-//        GetByIdAsync'in normal soft-delete filtresiyle zaten görünmez (admin bu
-//        ekrandan silinmiş bir hesabı YÖNETEMEZ — GetByIdIncludingDeletedAsync
-//        BİLEREK kullanılmadı, o yalnızca Auth/QrLogin'in kurtarma akışlarına özgü).
-// BAĞIMLILIKLAR: IUserRepository, EntityNotFoundException.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Admin;

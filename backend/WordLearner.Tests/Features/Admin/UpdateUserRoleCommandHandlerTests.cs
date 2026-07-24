@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateUserRoleCommandHandlerTests.cs
-//
-// AMAÇ: UpdateUserRoleCommandHandler'ın rolü güncellediğini, hem IActivityLogger
-//       (UPDATE_USER_ROLE) hem ISecurityLogger (AdminAction) çağırdığını
-//       doğrulamak — CLAUDE.md "admin'e özel hassas işlem" kuralı.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -27,12 +18,6 @@ public class UpdateUserRoleCommandHandlerTests
     private UpdateUserRoleCommandHandler CreateHandler() =>
         new(_userRepo.Object, _activityLogger.Object, _securityLogger.Object);
 
-    /// <summary>
-    /// Handle_TargetIsActor_ThrowsSelfAdminActionNotAllowedException
-    ///
-    /// AMAÇ: Bir admin kendi rolünü değiştiremez — kaza sonucu kendini User'a
-    ///       düşürüp kilitlenmesin diye. Repository'e hiç ULAŞILMADIĞI da doğrulanır.
-    /// </summary>
     [Fact]
     public async Task Handle_TargetIsActor_ThrowsSelfAdminActionNotAllowedException()
     {
@@ -48,9 +33,6 @@ public class UpdateUserRoleCommandHandlerTests
         _userRepo.Verify(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Handle_UserNotFound_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()
     {
@@ -65,9 +47,6 @@ public class UpdateUserRoleCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Handle_ValidRole_UpdatesAndLogsBoth
-    /// </summary>
     [Fact]
     public async Task Handle_ValidRole_UpdatesAndLogsBoth()
     {

@@ -1,22 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ApplicationLogConfiguration.cs
-//
-// AMAÇ: ApplicationLog entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: Bu tabloya satırları EF Core DEĞİL, Serilog'un MSSqlServer sink'i yazar
-//        (Program.cs, AutoCreateSqlTable=false) — bu yüzden migration'ın ürettiği
-//        şema Serilog'un ColumnOptions yapılandırmasıyla (ApplicationLogColumnOptions,
-//        A-04.2) BİREBİR eşleşmek zorunda, aksi halde sink INSERT'leri kolon
-//        uyuşmazlığından başarısız olur. FK yok (schema'da da yok) — Serilog sink'i
-//        User tablosuna join/kontrol yapmaz, yalnızca ham UserId int'i yazar.
-// BAĞIMLILIKLAR: EF Core, ApplicationLog entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Logging;
 
 namespace WordLearner.Infrastructure.Data.Configurations.Logging;
 
+// Bu tabloya EF Core DEĞİL Serilog'un MSSqlServer sink'i yazar (AutoCreateSqlTable=false) —
+// şema burada ApplicationLogColumnOptions'la BİREBİR eşleşmek zorunda, aksi halde sink INSERT'i kolon uyuşmazlığından patlar.
 public class ApplicationLogConfiguration : IEntityTypeConfiguration<ApplicationLog>
 {
     public void Configure(EntityTypeBuilder<ApplicationLog> builder)

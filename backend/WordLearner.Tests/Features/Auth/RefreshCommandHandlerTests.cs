@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RefreshCommandHandlerTests.cs
-//
-// AMAÇ: RefreshCommandHandler'ın Token Family Pattern'ini (rotation, replay
-//       tespiti, family iptali) doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions, AutoMapper (AuthProfile).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -47,13 +39,6 @@ public class RefreshCommandHandlerTests
         _loginCompletionService.Setup(l => l.ExpiresInSeconds()).Returns(900);
     }
 
-    /// <summary>
-    /// Refresh_ValidToken_RotatesTokenAndReturnsNewPair
-    ///
-    /// AMAÇ: Geçerli bir refresh token ile yeni bir access+refresh token çifti
-    ///       üretildiğini ve eski token'ın kullanıldı (IsUsed=true) olarak işaretlendiğini
-    ///       doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Refresh_ValidToken_RotatesTokenAndReturnsNewPair()
     {
@@ -88,11 +73,6 @@ public class RefreshCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException
-    ///
-    /// AMAÇ: DB'de bulunamayan bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Refresh_TokenNotFound_ThrowsInvalidRefreshTokenException()
     {
@@ -108,11 +88,6 @@ public class RefreshCommandHandlerTests
         await act.Should().ThrowAsync<InvalidRefreshTokenException>();
     }
 
-    /// <summary>
-    /// Refresh_TokenExpired_ThrowsInvalidRefreshTokenException
-    ///
-    /// AMAÇ: Süresi dolmuş bir refresh token için InvalidRefreshTokenException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Refresh_TokenExpired_ThrowsInvalidRefreshTokenException()
     {
@@ -129,16 +104,6 @@ public class RefreshCommandHandlerTests
         await act.Should().ThrowAsync<InvalidRefreshTokenException>();
     }
 
-    /// <summary>
-    /// Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows
-    ///
-    /// AMAÇ: Zaten kullanılmış (IsUsed=true) bir refresh token TEKRAR kullanıldığında
-    ///       (replay saldırısı) aynı TokenFamily'deki TÜM token'ların iptal edildiğini
-    ///       ve InvalidRefreshTokenException fırlatıldığını doğrulamak.
-    /// NEDEN: Token Family Pattern'in en kritik davranışı — bir token çalınıp kullanılmışsa
-    ///        gerçek kullanıcı bir sonraki refresh'te bunu (replay) tetikler ve tüm
-    ///        family (dolayısıyla saldırganın elindeki token da) iptal edilir.
-    /// </summary>
     [Fact]
     public async Task Refresh_TokenAlreadyUsed_RevokesEntireFamilyAndThrows()
     {
@@ -161,12 +126,6 @@ public class RefreshCommandHandlerTests
         _refreshTokenRepo.Verify(r => r.RevokeFamilyAsync("family-replay", default), Times.Once);
     }
 
-    /// <summary>
-    /// Refresh_TokenAlreadyUsed_LogsTokenReplaySecurityEvent
-    ///
-    /// AMAÇ: Replay tespit edildiğinde ISecurityLogger.LogAsync'in TokenReplay
-    ///       olayıyla ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Refresh_TokenAlreadyUsed_LogsTokenReplaySecurityEvent()
     {
@@ -202,12 +161,6 @@ public class RefreshCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException
-    ///
-    /// AMAÇ: Token geçerli olsa bile ait olduğu kullanıcı anonimleştirilmişse
-    ///       (IsAnonymized=true) refresh'in reddedildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Refresh_UserAnonymized_ThrowsInvalidRefreshTokenException()
     {

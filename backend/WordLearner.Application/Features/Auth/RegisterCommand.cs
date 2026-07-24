@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RegisterCommand.cs
-//
-// AMAÇ: POST /auth/register — yeni kullanıcı kaydı oluşturur, e-posta doğrulama
-//       OTP'si gönderir.
-// NEDEN: Şifre asla düz metin saklanmaz (Hash); e-posta hem aktif kullanıcılar
-//        hem de daha önce anonimleştirilmiş hesaplar arasında benzersiz olmalı.
-// NASIL: 1) E-posta çakışması kontrol et (aktif + anonimleştirilmiş)  2) Şifreyi
-//        hash'le  3) OTP üret  4) Kullanıcıyı kaydet  5) Doğrulama e-postası gönder.
-// BAĞIMLILIKLAR: IUserRepository, IPasswordService, IOtpService, IEmailService, IMapper (AuthProfile).
-// ─────────────────────────────────────────────────────────────────────────────
-
 using AutoMapper;
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
@@ -21,7 +9,6 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Kayıt formunun gönderdiği ham girdi.
 public record RegisterCommand(string Email, string Password, string FirstName, string LastName)
     : IRequest<RegisterResponse>;
 
@@ -54,8 +41,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
         if (existingUser is not null)
             throw new DuplicateEmailException();
 
-        // NEDEN: Anonimleştirilmiş bir hesabın orijinal e-postasıyla tekrar kayıt
-        //        açılmasını engeller (REFERENCE/SECURITY.md §9).
+        // Anonimleştirilmiş bir hesabın orijinal e-postasıyla tekrar kayıt açılmasını engeller.
         var emailHash = _passwordService.HashToken(request.Email);
         if (await _userRepository.OriginalEmailHashExistsAsync(emailHash, ct))
             throw new DuplicateEmailException();

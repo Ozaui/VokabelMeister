@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SecurityLogRepositoryTests.cs
-//
-// AMAÇ: SecurityLogRepository'nin ekleme + filtreli/sayfalı sorgusunu gerçek bir
-//       in-memory EF Core bağlamına karşı doğrulamak.
-// NEDEN: bkz. UserRepositoryTests.cs dosya başı.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.EntityFrameworkCore.InMemory,
-//                WordLearner.Infrastructure.Repositories.SecurityLogRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using WordLearner.Domain.Entities.Logging;
 using WordLearner.Domain.Enums.Logging;
@@ -18,11 +8,6 @@ namespace WordLearner.Tests.Repositories;
 
 public class SecurityLogRepositoryTests
 {
-    /// <summary>
-    /// AddAsync_ValidLog_PersistsRecord
-    ///
-    /// AMAÇ: Mutlu yol — bir güvenlik olayı kaydının eklendiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task AddAsync_ValidLog_PersistsRecord()
     {
@@ -37,12 +22,6 @@ public class SecurityLogRepositoryTests
         context.SecurityLogs.Should().ContainSingle(s => s.EventType == LogEventType.LoginFailed);
     }
 
-    /// <summary>
-    /// GetPagedAsync_FilterByEventType_ReturnsOnlyMatchingRecords
-    ///
-    /// AMAÇ: eventType filtresi verildiğinde yalnızca o türdeki kayıtların
-    ///       döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetPagedAsync_FilterByEventType_ReturnsOnlyMatchingRecords()
     {
@@ -60,12 +39,6 @@ public class SecurityLogRepositoryTests
         sonuc.Items.Should().ContainSingle(s => s.EventType == LogEventType.LoginFailed);
     }
 
-    /// <summary>
-    /// GetPagedAsync_FilterByIpAddress_ReturnsOnlyMatchingRecords
-    ///
-    /// AMAÇ: ipAddress filtresi verildiğinde yalnızca o IP'ye ait kayıtların
-    ///       döndüğünü doğrulamak — ör. bir admin belirli bir IP'nin geçmişini araştırırken.
-    /// </summary>
     [Fact]
     public async Task GetPagedAsync_FilterByIpAddress_ReturnsOnlyMatchingRecords()
     {

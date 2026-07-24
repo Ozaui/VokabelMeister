@@ -1,18 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateUserStatusCommand.cs
-//
-// AMAÇ: PUT /admin/users/{id}/status — bir hesabı dondurur/aktif eder (IsActive).
-// NEDEN: UpdateUserRoleCommand ile BİREBİR aynı gerekçeyle hem IActivityLogger
-//        (UPDATE_USER_STATUS) hem ISecurityLogger (AdminAction) çağrılır — hesap
-//        dondurma da CLAUDE.md'nin "admin'e özel hassas işlem" tanımına girer.
-//        `Reason` yalnızca ActivityLog.NewValue'a yazılır (serbest metin admin notu,
-//        kullanıcıya gösterilmez — API_ENDPOINTS.md §11 `{ isActive, reason }`).
-//        UpdateUserRoleCommand'daki AYNI gerekçeyle: hedef Id kendi Id'siyle
-//        (UserId) AYNIYSA reddedilir (SelfAdminActionNotAllowedException, 400) —
-//        bir admin kendi hesabını dondurup kilitlenmesin diye.
-// BAĞIMLILIKLAR: IUserRepository, IActivityLogger, ISecurityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;

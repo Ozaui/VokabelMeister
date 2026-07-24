@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// VerifyLoginOtpCommand.cs
-//
-// AMAÇ: POST /auth/login/verify-otp — Login adım 2: OTP'yi doğrular, başarılıysa
-//       access+refresh token üretir.
-// BAĞIMLILIKLAR: IUserRepository, IOtpService, ILoginCompletionService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs.Auth;
@@ -16,10 +8,7 @@ using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Login adım 2 (ve QR/sosyal giriş sonrası paylaşılan OTP şekli) — e-postaya
-//       gelen 6 haneli kodu doğrular, başarılıysa token üretilir.
-// NEDEN ClientIp init-property: İstek gövdesinde gelmez — controller,
-//       HttpContext'ten okuduğu değeri model binding'den SONRA `with` ile ekler.
+// ClientIp istek gövdesinde gelmez — controller HttpContext'ten okuduğu değeri `with` ile ekler.
 public record VerifyLoginOtpCommand(string Email, string OtpCode) : IRequest<AuthTokenResponse>
 {
     public string? ClientIp { get; init; }

@@ -1,22 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordEntityBuilder.cs
-//
-// AMAÇ: WordTranslationInput'tan (API girdisi) yeni bir Word (+WordDetail+
-//       WordExample) entity ağacı kurar.
-// NEDEN: CreateWordCommandHandler (yeni WordConcept) ve UpdateWordCommandHandler
-//        (mevcut kavrama yeni bir dil eklerken) AYNI kurma mantığını paylaşıyor —
-//        Handler'lar birbirini `_mediator.Send()` ile çağıramadığı için (CLAUDE.md
-//        §3) bu, IOtpService örneğindeki gibi küçük, paylaşılan bir yardımcıya çıkarıldı.
-// BAĞIMLILIKLAR: Word/WordDetail/WordExample entity'leri, CreateWordCommand.cs'teki input tipleri.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using WordLearner.Domain.Entities.Words;
 
 namespace WordLearner.Application.Features.Words;
 
+// CreateWordCommandHandler ve UpdateWordCommandHandler'ın paylaştığı entity kurma mantığı.
 public static class WordEntityBuilder
 {
-    // AMAÇ: Bir dil girdisinden tam bir Word entity ağacı (WordDetail+WordExample dahil) kurar.
     public static Word Build(WordTranslationInput translation, Language language, int? userId)
     {
         var word = new Word
@@ -53,8 +41,6 @@ public static class WordEntityBuilder
         return word;
     }
 
-    // AMAÇ: WordDetailInput'tan bir WordDetail entity'si kurar — GrammarData ham
-    //       JSON metnine (`GetRawText()`) çevrilip öyle saklanır (DB kolonu string).
     public static WordDetail BuildWordDetail(WordDetailInput input, int? userId) =>
         new()
         {

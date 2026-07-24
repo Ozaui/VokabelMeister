@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UpdateCategoryCommandHandlerTests.cs
-//
-// AMAÇ: UpdateCategoryCommandHandler'ın mevcut çevirileri güncellediğini, eksik
-//       dili eklediğini, üst kategori 404/döngü korumasını ve UPDATE_CATEGORY
-//       audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
@@ -49,12 +40,6 @@ public class UpdateCategoryCommandHandlerTests
             },
         };
 
-    /// <summary>
-    /// Update_ExistingTranslation_UpdatesName
-    ///
-    /// AMAÇ: Kategoride zaten var olan bir dilin Name'inin yerinde güncellendiğini
-    ///       (yeni CategoryTranslation EKLENMEDİĞİNİ) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_ExistingTranslation_UpdatesName()
     {
@@ -82,9 +67,6 @@ public class UpdateCategoryCommandHandlerTests
         category.Translations.Should().HaveCount(1);
     }
 
-    /// <summary>
-    /// Update_NewLanguageAdded_AddsSecondTranslation
-    /// </summary>
     [Fact]
     public async Task Update_NewLanguageAdded_AddsSecondTranslation()
     {
@@ -116,9 +98,6 @@ public class UpdateCategoryCommandHandlerTests
         result.Translations.Should().HaveCount(2);
     }
 
-    /// <summary>
-    /// Update_ParentNotFound_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Update_ParentNotFound_ThrowsEntityNotFoundException()
     {
@@ -145,12 +124,6 @@ public class UpdateCategoryCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Update_ParentIsSelf_ThrowsCategoryParentCycleException
-    ///
-    /// AMAÇ: Bir kategorinin kendisini üst kategori olarak göstermeye çalışması
-    ///       durumunda döngü korumasının devreye girdiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_ParentIsSelf_ThrowsCategoryParentCycleException()
     {
@@ -177,13 +150,6 @@ public class UpdateCategoryCommandHandlerTests
         await act.Should().ThrowAsync<CategoryParentCycleException>();
     }
 
-    /// <summary>
-    /// Update_ParentIsDescendant_ThrowsCategoryParentCycleException
-    ///
-    /// AMAÇ: Bir kategorinin kendi alt ağacındaki bir kategoriye taşınmaya
-    ///       çalışılması durumunda WouldCreateCycleAsync üzerinden döngü
-    ///       korumasının devreye girdiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Update_ParentIsDescendant_ThrowsCategoryParentCycleException()
     {
@@ -212,9 +178,6 @@ public class UpdateCategoryCommandHandlerTests
         await act.Should().ThrowAsync<CategoryParentCycleException>();
     }
 
-    /// <summary>
-    /// Update_Success_LogsUpdateCategoryActivity
-    /// </summary>
     [Fact]
     public async Task Update_Success_LogsUpdateCategoryActivity()
     {
@@ -260,17 +223,6 @@ public class UpdateCategoryCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Update_Success_OldValueSnapshotReflectsPreUpdateName
-    ///
-    /// AMAÇ: Audit log'a yazılan `oldValue.Translations`'ın, güncellemeden ÖNCEKİ
-    ///       adı taşıdığını (SONRAKİ adı DEĞİL) doğrulamak — `category.Translations.
-    ///       Select(...)` tembel (deferred) bir IEnumerable olduğu için `.ToList()`
-    ///       ile materyalize edilmezse, LogAsync JSON'a serileştirirken bu listeyi
-    ///       mutasyonlardan SONRA okur ve "eski" değer olarak YENİ değeri yazardı
-    ///       (A-06 denetiminde bulunan regresyon — bu test o hatayı bir daha
-    ///       fark edilmeden geri gelmesini önler).
-    /// </summary>
     [Fact]
     public async Task Update_Success_OldValueSnapshotReflectsPreUpdateName()
     {

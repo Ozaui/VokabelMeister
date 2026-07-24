@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetApplicationLogsQueryHandlerTests.cs
-//
-// AMAÇ: GetApplicationLogsQueryHandler'ın filtreleri repository'ye ilettiğini ve
-//       entity alanlarını doğru DTO'ya taşıdığını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Models;
@@ -21,9 +13,6 @@ public class GetApplicationLogsQueryHandlerTests
 
     private GetApplicationLogsQueryHandler CreateHandler() => new(_applicationLogRepo.Object);
 
-    /// <summary>
-    /// Handle_ForwardsFiltersAndMapsFields
-    /// </summary>
     [Fact]
     public async Task Handle_ForwardsFiltersAndMapsFields()
     {

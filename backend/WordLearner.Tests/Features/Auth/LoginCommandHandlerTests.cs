@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginCommandHandlerTests.cs
-//
-// AMAÇ: LoginCommandHandler'ın (2 adımlı OTP login'in 1. adımı) şifre doğrulama,
-//       timing-attack önlemi ve hesap durumu kontrollerini doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -45,11 +37,6 @@ public class LoginCommandHandlerTests
             IsEmailVerified = true,
         };
 
-    /// <summary>
-    /// Login_ValidCredentials_SendsLoginOtp
-    ///
-    /// AMAÇ: Doğru şifre ile login adım 1'in OTP gönderdiğini (token DÖNMEDİĞİNİ) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Login_ValidCredentials_SendsLoginOtp()
     {
@@ -67,11 +54,6 @@ public class LoginCommandHandlerTests
         _emailService.Verify(e => e.SendLoginOtpAsync(user.Email, "123456", default), Times.Once);
     }
 
-    /// <summary>
-    /// Login_WrongPassword_ThrowsInvalidCredentialsException
-    ///
-    /// AMAÇ: Yanlış şifre girildiğinde InvalidCredentialsException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Login_WrongPassword_ThrowsInvalidCredentialsException()
     {
@@ -88,12 +70,6 @@ public class LoginCommandHandlerTests
         await act.Should().ThrowAsync<InvalidCredentialsException>();
     }
 
-    /// <summary>
-    /// Login_WrongPassword_LogsLoginFailedSecurityEvent
-    ///
-    /// AMAÇ: Yanlış şifrede ISecurityLogger.LogAsync'in LoginFailed olayıyla, bulunan
-    ///       kullanıcının Id'siyle ve e-postayla ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Login_WrongPassword_LogsLoginFailedSecurityEvent()
     {
@@ -122,15 +98,6 @@ public class LoginCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety
-    ///
-    /// AMAÇ: Kullanıcı bulunamadığında bile PasswordService.Verify'ın (FakePasswordHashForTiming
-    ///       ile) ÇAĞRILDIĞINI ve InvalidCredentialsException fırlatıldığını doğrulamak.
-    /// NEDEN: Timing attack önlemi — kullanıcı var/yok fark etmeksizin aynı süre harcanmalı;
-    ///        Verify çağrılmazsa "kullanıcı yok" yanıtı ölçülebilir şekilde daha hızlı döner,
-    ///        bu da bir saldırganın e-posta numaralandırması yapmasına izin verir.
-    /// </summary>
     [Fact]
     public async Task Login_UserNotFound_StillCallsVerifyWithFakeHashForTimingSafety()
     {
@@ -147,12 +114,6 @@ public class LoginCommandHandlerTests
         _passwordService.Verify(p => p.Verify("HerhangiBirSifre123!", It.IsAny<string>()), Times.Once);
     }
 
-    /// <summary>
-    /// Login_AccountNotActive_ThrowsAccountNotActiveException
-    ///
-    /// AMAÇ: Şifre doğru olsa bile dondurulmuş (IsActive=false) bir hesapla login
-    ///       denendiğinde AccountNotActiveException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Login_AccountNotActive_ThrowsAccountNotActiveException()
     {
@@ -170,12 +131,6 @@ public class LoginCommandHandlerTests
         await act.Should().ThrowAsync<AccountNotActiveException>();
     }
 
-    /// <summary>
-    /// Login_GermanLanguage_ReturnsGermanOtpSentMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task Login_GermanLanguage_ReturnsGermanOtpSentMessage()
     {

@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetSmtpSettingsQueryHandlerTests.cs
-//
-// AMAÇ: GetSmtpSettingsQueryHandler'ın kayıt yokken boş varsayılanlar, kayıt
-//       varken şifreyi maskeleyerek döndürdüğünü doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Features.Smtp;
@@ -20,12 +12,6 @@ public class GetSmtpSettingsQueryHandlerTests
 
     private GetSmtpSettingsQueryHandler CreateHandler() => new(_smtpSettingsRepo.Object);
 
-    /// <summary>
-    /// Handle_NoSettingsSaved_ReturnsEmptyDefaults
-    ///
-    /// AMAÇ: Hiç ayar kaydedilmemişken 404 FIRLATILMADIĞINI, boş/varsayılan
-    ///       alanlarla bir DTO döndüğünü doğrulamak (admin panel boş bir form gösterir).
-    /// </summary>
     [Fact]
     public async Task Handle_NoSettingsSaved_ReturnsEmptyDefaults()
     {
@@ -43,12 +29,6 @@ public class GetSmtpSettingsQueryHandlerTests
         sonuc.Password.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Handle_SettingsSaved_MasksPassword
-    ///
-    /// AMAÇ: Kayıtlı ayarlar varsa gerçek şifrenin (PasswordEncrypted) İSTEMCİYE
-    ///       ASLA dönmediğini, sabit "***" maskesiyle değiştirildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Handle_SettingsSaved_MasksPassword()
     {

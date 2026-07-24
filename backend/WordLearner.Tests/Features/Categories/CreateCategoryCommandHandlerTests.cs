@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateCategoryCommandHandlerTests.cs
-//
-// AMAÇ: CreateCategoryCommandHandler'ın çeviri kurmayı, üst kategori 404'ünü ve
-//       CREATE_CATEGORY audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -34,12 +26,6 @@ public class CreateCategoryCommandHandlerTests
             .Setup(r => r.AddAsync(It.IsAny<Category>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Category c, int? _, CancellationToken _) => c);
 
-    /// <summary>
-    /// Create_TwoTranslations_ReturnsCategoryWithBothTranslations
-    ///
-    /// AMAÇ: translations[]'te iki dil verildiğinde kategorinin ikisiyle de
-    ///       oluşturulduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_TwoTranslations_ReturnsCategoryWithBothTranslations()
     {
@@ -73,12 +59,6 @@ public class CreateCategoryCommandHandlerTests
         result.Translations.Should().Contain(t => t.LanguageCode == "de" && t.Name == "Essen");
     }
 
-    /// <summary>
-    /// Create_ParentCategoryNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: var olmayan bir ParentCategoryId ile oluşturma denendiğinde 404
-    ///       fırlatıldığını ve kategorinin hiç EKLENMEDİĞİNİ doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_ParentCategoryNotFound_ThrowsEntityNotFoundException()
     {
@@ -106,9 +86,6 @@ public class CreateCategoryCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Create_UnknownLanguageCode_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Create_UnknownLanguageCode_ThrowsEntityNotFoundException()
     {
@@ -132,12 +109,6 @@ public class CreateCategoryCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Create_Success_LogsCreateCategoryActivity
-    ///
-    /// AMAÇ: Başarılı oluşturmada IActivityLogger.LogAsync'in CREATE_CATEGORY
-    ///       action'ı, EntityType=Category ile ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Create_Success_LogsCreateCategoryActivity()
     {

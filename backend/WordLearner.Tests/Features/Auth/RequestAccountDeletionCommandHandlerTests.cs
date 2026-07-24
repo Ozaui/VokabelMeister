@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// RequestAccountDeletionCommandHandlerTests.cs
-//
-// AMAÇ: RequestAccountDeletionCommandHandler'ın hesap silme OTP'si gönderme ve
-//       var olmayan kullanıcı senaryosunu doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -26,11 +18,6 @@ public class RequestAccountDeletionCommandHandlerTests
     private RequestAccountDeletionCommandHandler CreateHandler() =>
         new(_userRepo.Object, _otpService.Object, _emailService.Object);
 
-    /// <summary>
-    /// RequestAccountDeletion_ExistingUser_SendsDeletionOtp
-    ///
-    /// AMAÇ: Var olan bir kullanıcı için hesap silme onay OTP'sinin gönderildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task RequestAccountDeletion_ExistingUser_SendsDeletionOtp()
     {
@@ -47,14 +34,6 @@ public class RequestAccountDeletionCommandHandlerTests
         _emailService.Verify(e => e.SendAccountDeletionOtpAsync(user.Email, "123456", default), Times.Once);
     }
 
-    /// <summary>
-    /// RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: Var olmayan bir userId ile hesap silme talebi oluşturulduğunda
-    ///       EntityNotFoundException fırlatıldığını doğrulamak.
-    /// NEDEN: Bu userId [Authorize] token'ından geldiği için normalde her zaman var
-    ///        olmalı, ama hesap bu arada silinmiş olabilir — savunmacı kontrol.
-    /// </summary>
     [Fact]
     public async Task RequestAccountDeletion_UserNotFound_ThrowsEntityNotFoundException()
     {
@@ -69,12 +48,6 @@ public class RequestAccountDeletionCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// RequestAccountDeletion_GermanLanguage_ReturnsGermanMessage
-    ///
-    /// AMAÇ: Command'a Language="de" verildiğinde MessageResponse.Message'ın Almanca
-    ///       döndüğünü doğrulamak (A-03.2 — başarı mesajı lokalizasyonu).
-    /// </summary>
     [Fact]
     public async Task RequestAccountDeletion_GermanLanguage_ReturnsGermanMessage()
     {

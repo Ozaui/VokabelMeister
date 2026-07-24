@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ApplicationLogRepository.cs
-//
-// AMAÇ: IApplicationLogRepository'nin EF Core implementasyonu — yalnızca OKUMA.
-// NEDEN: Bu tabloya Serilog'un MSSqlServer sink'i yazar (bkz. arayüzdeki NEDEN notu);
-//        burada Add yoktur.
-// BAĞIMLILIKLAR: EF Core, WordLearnerDbContext, ApplicationLog entity, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.Interfaces.Repositories;
@@ -15,6 +6,7 @@ using WordLearner.Infrastructure.Data;
 
 namespace WordLearner.Infrastructure.Repositories;
 
+// Yalnızca okuma — bu tabloya Serilog'un MSSqlServer sink'i yazar, burada Add yok.
 public class ApplicationLogRepository : IApplicationLogRepository
 {
     private readonly WordLearnerDbContext _db;

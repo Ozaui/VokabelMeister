@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CreateWordCommandHandlerTests.cs
-//
-// AMAÇ: CreateWordCommandHandler'ın 1/2 dilli oluşturmayı, duplikat 409 + force
-//       bypass'ını, bilinmeyen dil kodunu ve CREATE_WORD audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -35,12 +27,6 @@ public class CreateWordCommandHandlerTests
             .Setup(r => r.AddAsync(It.IsAny<WordConcept>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((WordConcept c, int? _, CancellationToken _) => c);
 
-    /// <summary>
-    /// Create_SingleTranslation_ReturnsUnmatchedConceptWithOneTranslation
-    ///
-    /// AMAÇ: Tek dilde translation verildiğinde kavramın tek bir Word'le
-    ///       oluşturulduğunu (Icerik.md "eşleşmemiş" durumu) doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_SingleTranslation_ReturnsUnmatchedConceptWithOneTranslation()
     {
@@ -69,12 +55,6 @@ public class CreateWordCommandHandlerTests
         result.Translations.Should().ContainSingle(t => t.LanguageCode == "de" && t.Text == "Tisch");
     }
 
-    /// <summary>
-    /// Create_TwoTranslations_AddsBothWordsToConcept
-    ///
-    /// AMAÇ: translations[]'te iki dil verildiğinde kavramın tek işlemde
-    ///       eşleşmiş olarak (2 Word) kurulduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_TwoTranslations_AddsBothWordsToConcept()
     {
@@ -107,12 +87,6 @@ public class CreateWordCommandHandlerTests
         result.Translations.Should().HaveCount(2);
     }
 
-    /// <summary>
-    /// Create_DuplicateTextWithoutForce_ThrowsDuplicateWordException
-    ///
-    /// AMAÇ: Aynı dilde aynı Text zaten varsa ve force verilmediyse
-    ///       DuplicateWordException (409) fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_DuplicateTextWithoutForce_ThrowsDuplicateWordException()
     {
@@ -140,12 +114,6 @@ public class CreateWordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Create_DuplicateTextWithForce_CreatesAnyway
-    ///
-    /// AMAÇ: Force=true verildiğinde duplikat kontrolü bypass edilip kaydın
-    ///       yine de oluşturulduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_DuplicateTextWithForce_CreatesAnyway()
     {
@@ -174,12 +142,6 @@ public class CreateWordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Create_UnknownLanguageCode_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: translations[].languageCode Languages tablosunda yoksa
-    ///       EntityNotFoundException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Create_UnknownLanguageCode_ThrowsEntityNotFoundException()
     {
@@ -202,12 +164,6 @@ public class CreateWordCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Create_WithCategoryIds_LinksWordCategories
-    ///
-    /// AMAÇ: `categoryIds` verildiğinde her biri için WordCategory bağının
-    ///       kurulduğunu doğrulamak (A-06 eklemesi).
-    /// </summary>
     [Fact]
     public async Task Create_WithCategoryIds_LinksWordCategories()
     {
@@ -232,9 +188,6 @@ public class CreateWordCommandHandlerTests
         result.Categories.Should().ContainSingle(c => c.CategoryId == 3);
     }
 
-    /// <summary>
-    /// Create_UnknownCategoryId_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Create_UnknownCategoryId_ThrowsEntityNotFoundException()
     {
@@ -257,12 +210,6 @@ public class CreateWordCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Create_Success_LogsCreateWordActivity
-    ///
-    /// AMAÇ: Başarılı oluşturmada IActivityLogger.LogAsync'in CREATE_WORD action'ı,
-    ///       EntityType=WordConcept ve doğru UserId/ActorRole ile ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Create_Success_LogsCreateWordActivity()
     {

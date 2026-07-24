@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DeleteWordCommandHandlerTests.cs
-//
-// AMAÇ: DeleteWordCommandHandler'ın var olan bir kavramı SoftDeleteWithWordsAsync
-//       ile sildiğini, olmayan bir Id'de 404 fırlattığını ve DELETE_WORD audit
-//       kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -43,12 +34,6 @@ public class DeleteWordCommandHandlerTests
             },
         };
 
-    /// <summary>
-    /// Delete_ExistingConcept_CallsSoftDeleteWithWords
-    ///
-    /// AMAÇ: Var olan bir kavram silinirken repository'nin
-    ///       SoftDeleteWithWordsAsync'inin (WordConcept + tüm Word'ler) ÇAĞRILDIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Delete_ExistingConcept_CallsSoftDeleteWithWords()
     {
@@ -65,13 +50,6 @@ public class DeleteWordCommandHandlerTests
         _wordConceptRepo.Verify(r => r.SoftDeleteWithWordsAsync(10, 7, default), Times.Once);
     }
 
-    /// <summary>
-    /// Delete_ConceptNotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: Var olmayan bir WordConcept Id'si verilirse 404'e denk gelen
-    ///       EntityNotFoundException fırlatıldığını VE SoftDeleteWithWordsAsync'in
-    ///       HİÇ ÇAĞRILMADIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Delete_ConceptNotFound_ThrowsEntityNotFoundException()
     {
@@ -92,13 +70,6 @@ public class DeleteWordCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// Delete_Success_LogsDeleteWordActivity
-    ///
-    /// AMAÇ: Başarılı silmede IActivityLogger.LogAsync'in DELETE_WORD action'ı,
-    ///       EntityType=WordConcept ve silinen kavramın eski hâlini taşıyan
-    ///       OldValue ile ÇAĞRILDIĞINI doğrulamak (A-04).
-    /// </summary>
     [Fact]
     public async Task Delete_Success_LogsDeleteWordActivity()
     {

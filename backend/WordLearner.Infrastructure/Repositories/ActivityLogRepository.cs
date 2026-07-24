@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ActivityLogRepository.cs
-//
-// AMAÇ: IActivityLogRepository'nin EF Core implementasyonu.
-// NEDEN: Repository<T>'yi miras ALMAZ (ActivityLog BaseEntity'den türemiyor — bkz.
-//        IActivityLogRepository.cs'teki NEDEN notu); doğrudan WordLearnerDbContext
-//        enjekte edilir.
-// BAĞIMLILIKLAR: EF Core, WordLearnerDbContext, ActivityLog entity, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.Interfaces.Repositories;
@@ -16,6 +6,7 @@ using WordLearner.Infrastructure.Data;
 
 namespace WordLearner.Infrastructure.Repositories;
 
+// Repository<T>'yi miras ALMAZ — ActivityLog BaseEntity'den türemiyor (insert-only log tablosu).
 public class ActivityLogRepository : IActivityLogRepository
 {
     private readonly WordLearnerDbContext _db;

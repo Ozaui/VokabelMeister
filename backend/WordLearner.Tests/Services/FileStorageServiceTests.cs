@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// FileStorageServiceTests.cs
-//
-// AMAÇ: LocalFileStorageService'in uzantı/boyut doğrulamasını, benzersiz ad
-//       üretimini ve diske gerçekten yazdığını doğrulamak.
-// NEDEN gerçek diske yazma (Moq DEĞİL): LocalFileStorageService'in tek
-//       bağımlılığı IConfiguration (JwtTokenService ile aynı ham-indexer deseni)
-//       — mock'lanacak bir arayüz yok, davranışın kendisi disk I/O; her testte
-//       geçici bir klasör (temp directory) kullanılıp IDisposable ile temizlenir.
-// BAĞIMLILIKLAR: xUnit, FluentAssertions, Microsoft.Extensions.Configuration.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using WordLearner.Application.Common.Exceptions;
@@ -19,10 +7,8 @@ namespace WordLearner.Tests.Services;
 
 public class FileStorageServiceTests : IDisposable
 {
-    // NEDEN bu iki dizi: LocalFileStorageService artık yalnızca uzantıya değil, dosyanın
-    //       İLK baytlarına (magic bytes) da bakıyor — bu testlerin "geçerli" senaryoları
-    //       gerçek bir imzayla başlamalı, yoksa (kod denetiminde bulunan spoofing açığının
-    //       kapatıldığı değişiklik yüzünden) her "başarılı" test de artık İSTEMEDEN başarısız olur.
+    // LocalFileStorageService dosyanın ilk baytlarına (magic bytes) da bakıyor — "geçerli"
+    // senaryolar gerçek bir imzayla başlamalı, yoksa başarılı bir test istemeden başarısız olur.
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     private static readonly byte[] JpegSignature = [0xFF, 0xD8, 0xFF];
 
@@ -62,12 +48,6 @@ public class FileStorageServiceTests : IDisposable
         return new MemoryStream(bytes);
     }
 
-    /// <summary>
-    /// SaveImageAsync_ValidPngFile_ReturnsUrlWithBaseUrlPrefix
-    ///
-    /// AMAÇ: gerçek PNG imzasıyla başlayan bir .png yüklendiğinde dönen URL'in
-    ///       FileStorage:BaseUrl ile başladığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_ValidPngFile_ReturnsUrlWithBaseUrlPrefix()
     {
@@ -83,14 +63,6 @@ public class FileStorageServiceTests : IDisposable
         url.Should().EndWith(".png");
     }
 
-    /// <summary>
-    /// SaveImageAsync_ValidFile_WritesFileToUploadPath
-    ///
-    /// AMAÇ: dosyanın gerçekten UploadPath altına, gönderilen içerikle (imza + geri
-    ///       kalan baytlar birlikte) yazıldığını doğrulamak (yalnızca URL üretimi
-    ///       değil, gerçek G/Ç — header ayrıca yazılıp stream'in kalanının kopyalandığı
-    ///       iki parçalı yazma mantığının bütünlüğü de dolaylı olarak doğrulanır).
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_ValidFile_WritesFileToUploadPath()
     {
@@ -108,12 +80,6 @@ public class FileStorageServiceTests : IDisposable
         (await File.ReadAllBytesAsync(filePath)).Should().BeEquivalentTo(content);
     }
 
-    /// <summary>
-    /// SaveImageAsync_CalledTwiceWithSameOriginalName_GeneratesUniqueFileNames
-    ///
-    /// AMAÇ: aynı orijinal dosya adıyla iki ayrı yükleme yapıldığında iki FARKLI
-    ///       (birbirinin üzerine yazmayan) dosya adı üretildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_CalledTwiceWithSameOriginalName_GeneratesUniqueFileNames()
     {
@@ -128,12 +94,6 @@ public class FileStorageServiceTests : IDisposable
         firstUrl.Should().NotBe(secondUrl);
     }
 
-    /// <summary>
-    /// SaveImageAsync_UnsupportedExtension_ThrowsUnsupportedFileTypeException
-    ///
-    /// AMAÇ: izin verilen listede olmayan bir uzantının (ör. .exe) diske hiç
-    ///       yazılmadan (içerik hiç okunmadan) reddedildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_UnsupportedExtension_ThrowsUnsupportedFileTypeException()
     {
@@ -148,12 +108,6 @@ public class FileStorageServiceTests : IDisposable
         Directory.Exists(_tempUploadPath).Should().BeFalse();
     }
 
-    /// <summary>
-    /// SaveImageAsync_FileSizeExceedsLimit_ThrowsFileTooLargeException
-    ///
-    /// AMAÇ: 5 MB üst sınırını aşan bir dosyanın diske hiç yazılmadan
-    ///       reddedildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_FileSizeExceedsLimit_ThrowsFileTooLargeException()
     {
@@ -169,13 +123,6 @@ public class FileStorageServiceTests : IDisposable
         Directory.Exists(_tempUploadPath).Should().BeFalse();
     }
 
-    /// <summary>
-    /// SaveImageAsync_ExactlyAtSizeLimit_Succeeds
-    ///
-    /// AMAÇ: sınır kontrolünün `>` (üst sınırı AŞARSA reddet) olduğunu, tam olarak
-    ///       5 MB'ın kabul edildiğini (5 MB + 1 bayt DEĞİL) doğrulamak — yalnızca
-    ///       sınırın ÜSTÜNÜ test etmek bu sınır (boundary) davranışını KANITLAMAZ.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_ExactlyAtSizeLimit_Succeeds()
     {
@@ -191,12 +138,6 @@ public class FileStorageServiceTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
-    /// <summary>
-    /// SaveImageAsync_UppercaseExtension_IsAcceptedCaseInsensitively
-    ///
-    /// AMAÇ: uzantı karşılaştırmasının büyük/küçük harf duyarsız olduğunu
-    ///       doğrulamak (ör. iPhone'dan gelen "PHOTO.JPG").
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_UppercaseExtension_IsAcceptedCaseInsensitively()
     {
@@ -211,14 +152,6 @@ public class FileStorageServiceTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
-    /// <summary>
-    /// SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException
-    ///
-    /// AMAÇ: uzantı ".png" olsa bile dosyanın İLK baytları gerçek bir PNG imzası
-    ///       DEĞİLSE (ör. bir .exe'nin adı "logo.png" yapılmışsa) reddedildiğini
-    ///       doğrulamak — bu, kod denetiminde bulunan "yalnızca uzantı kontrolü,
-    ///       içerik doğrulanmıyor" açığını kapatan asıl regresyon testi.
-    /// </summary>
     [Fact]
     public async Task SaveImageAsync_ExtensionDoesNotMatchActualContent_ThrowsUnsupportedFileTypeException()
     {

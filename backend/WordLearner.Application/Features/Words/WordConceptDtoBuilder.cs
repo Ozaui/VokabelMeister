@@ -1,17 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordConceptDtoBuilder.cs
-//
-// AMAÇ: WordConcept (+ Words/WordDetail/WordExample) entity ağacını DTO'lara
-//       (WordConceptDetailDto/WordConceptListItemDto) çeviren paylaşılan yardımcı.
-// NEDEN: CLAUDE.md'nin koşullu AutoMapper kuralı — bu bir düz 1:1 Entity→DTO
-//        dönüşümü DEĞİL, WordConcept+Word+WordDetail+WordExample+Language'ı
-//        `translations[]` şeklinde BİRLEŞTİREN bir projeksiyon; AutoMapper Profile
-//        yerine elle inşa edilir (QrLogin DTO'larıyla aynı karar). CreateWordCommand/
-//        UpdateWordCommand/GetWordByIdQuery/GetWordsQuery handler'larının HEPSİ bu
-//        TEK noktayı kullanır, dönüşüm mantığı tekrarlanmaz.
-// BAĞIMLILIKLAR: WordConcept/Word entity'leri, WordDtos.cs.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using WordLearner.Application.DTOs.Categories;
 using WordLearner.Application.DTOs.Words;
@@ -22,7 +8,6 @@ namespace WordLearner.Application.Features.Words;
 
 public static class WordConceptDtoBuilder
 {
-    // AMAÇ: Tam detay DTO'su — her dilin WordDetail/örnekleriyle birlikte.
     public static WordConceptDetailDto BuildDetail(WordConcept concept) =>
         new(
             concept.Id,
@@ -33,7 +18,6 @@ public static class WordConceptDtoBuilder
             BuildCategories(concept)
         );
 
-    // AMAÇ: Liste satırı DTO'su — yalnızca dil+metin (WordDetail/örnekler taşınmaz).
     public static WordConceptListItemDto BuildListItem(WordConcept concept) =>
         new(
             concept.Id,
@@ -47,17 +31,8 @@ public static class WordConceptDtoBuilder
             BuildCategories(concept)
         );
 
-    // AMAÇ: Bir WordConcept'in bağlı olduğu kategorilerin HAFİF özetini kurar (A-06) —
-    //       CategoryDtoBuilder'daki tam `CategoryDto` DEĞİL, WordCategorySummaryDto
-    //       (bkz. CategoryDtos.cs "NEDEN" — bir kelime listesinde Children/WordCount
-    //       gereksiz).
-    // NEDEN wc.Category.Id (navigasyon), wc.CategoryId (skaler FK) DEĞİL: yeni eklenen
-    //       bir WordCategory'de (CreateWordCommand/UpdateWordCommand) yalnızca `Category`
-    //       navigasyonu set edilir — WordEntityBuilder'ın `Word.Language = language`
-    //       deseniyle AYNI karar (LanguageId DEĞİL). Skaler FK, EF Core'un fixup'ı
-    //       yalnızca gerçek bir DbContext SaveChangesAsync'i sırasında doldurur; bu
-    //       metot her zaman navigasyon üzerinden okuyarak hem SaveChanges ÖNCESİ
-    //       (bu metodun kendisi tam olarak bu anda çağrılıyor) hem SONRASI doğru sonuç verir.
+    // wc.Category.Id (navigasyon) — wc.CategoryId DEĞİL: yeni eklenen bir WordCategory'de yalnızca
+    // Category navigasyonu set edilir, skaler FK EF Core fixup'ı yalnızca SaveChangesAsync sırasında doldurur.
     private static IReadOnlyList<WordCategorySummaryDto> BuildCategories(WordConcept concept) =>
         concept
             .WordCategories.OrderBy(wc => wc.DisplayOrder)
@@ -91,12 +66,8 @@ public static class WordConceptDtoBuilder
             ParseGrammarData(detail.GrammarData)
         );
 
-    // AMAÇ: DB'de string olarak saklanan GrammarData JSON'unu, yanıtta gerçek bir
-    //       JSON nesnesi (string olarak KAÇIRILMIŞ/escaped değil) olarak döndürür.
-    // NEDEN: `.Clone()` — JsonDocument.Parse'ın ürettiği JsonDocument bu metottan
-    //        çıkışta implicit olarak GC'ye bırakılıyor; Clone() olmadan RootElement
-    //        yalnızca kendi JsonDocument'i YAŞADIĞI sürece güvenli sayılır, Clone()
-    //        ile JsonDocument'ten bağımsız, kalıcı bir kopya alınır.
+    // .Clone() — Clone() olmadan RootElement yalnızca kendi JsonDocument'i yaşadığı sürece
+    // güvenlidir, bu metottan çıkışta JsonDocument GC'ye bırakılır.
     private static JsonElement? ParseGrammarData(string? grammarDataJson) =>
         string.IsNullOrWhiteSpace(grammarDataJson) ? null : JsonDocument.Parse(grammarDataJson).RootElement.Clone();
 }

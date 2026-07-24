@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// WordExampleConfiguration.cs
-//
-// AMAÇ: WordExample entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: PairedExampleId kendi tablosuna (self) referans veren opsiyonel bir FK —
-//        SQL Server'da self-referencing bir FK'de CASCADE döngü riski taşıdığından
-//        Restrict kullanılır (bir örnek silinirken ona bağlı çeviri örneğini
-//        otomatik silmez, önce bağ elle kaldırılmalı).
-// BAĞIMLILIKLAR: EF Core, WordExample entity, Word entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Words;
@@ -30,6 +19,7 @@ public class WordExampleConfiguration : IEntityTypeConfiguration<WordExample>
             .HasForeignKey(e => e.WordId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Self-ref FK — Restrict, SQL Server'da CASCADE döngü riski taşır.
         builder
             .HasOne(e => e.PairedExample)
             .WithMany()

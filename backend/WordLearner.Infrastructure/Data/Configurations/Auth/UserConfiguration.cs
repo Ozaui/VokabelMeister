@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// UserConfiguration.cs
-//
-// AMAÇ: User entity'sinin EF Core tablo eşlemesini (kolon uzunlukları, index'ler,
-//       CHECK constraint'leri) tanımlar.
-// NEDEN: DATABASE_SCHEMA/Auth.md'deki Users şemasıyla birebir eşleşen kısıtları
-//        kod tarafında da uygulamak için — ör. Email UNIQUE, Role/CurrentLevel/
-//        AuthProvider yalnızca izinli değerleri alabilir.
-// BAĞIMLILIKLAR: EF Core, User entity, OtpPurpose enum.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Auth;

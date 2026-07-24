@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ActivityLogger.cs
-//
-// AMAÇ: IActivityLogger'ın implementasyonu.
-// NEDEN: OldValue/NewValue serileştirmesini (System.Text.Json) ve ActivityLog
-//        entity'sinin kurulmasını tek yerde toplar; Handler'lar JSON'la uğraşmaz.
-// BAĞIMLILIKLAR: IActivityLogRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using System.Text.Json;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;

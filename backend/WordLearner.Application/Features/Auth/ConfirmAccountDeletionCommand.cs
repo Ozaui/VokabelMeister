@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ConfirmAccountDeletionCommand.cs
-//
-// AMAÇ: POST /auth/delete-account/confirm — OTP + şifre ile hesap silmeyi onaylar;
-//       soft delete yapar, 30 gün sonra kalıcı anonimleştirme için zamanlar
-//       (AccountCleanupBackgroundService, A-10).
-// NEDEN: Geri alınamaz bir işlem olduğu için OTP'ye ek olarak şifre de istenir (çift onay).
-// BAĞIMLILIKLAR: IUserRepository, IRefreshTokenRepository, IPasswordService, IOtpService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
@@ -20,9 +10,6 @@ using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-// NEDEN UserId/Language/ClientIp init-property: bkz. LogoutCommand — JWT'den ve
-//       Accept-Language header'ından gelir, gövdede yer almaz. ClientIp A-04'te
-//       OtpFailed/AccountDeletion SecurityLog kayıtları için eklendi.
 public record ConfirmAccountDeletionCommand(string OtpCode, string Password)
     : IRequest<MessageResponse>
 {
@@ -34,11 +21,9 @@ public record ConfirmAccountDeletionCommand(string OtpCode, string Password)
 public class ConfirmAccountDeletionCommandHandler
     : IRequestHandler<ConfirmAccountDeletionCommand, MessageResponse>
 {
-    // NEDEN 30 gün: REFERENCE/SECURITY.md §9 — hesap silme grace period.
     private const int AccountDeletionGraceDays = 30;
 
-    // NEDEN static + doğrudan BCrypt.Net: bkz. LoginCommandHandler'daki aynı alanın notu —
-    //       bilinçli, küçük bir tekrar (2 bağımsız kullanım).
+    // bkz. LoginCommandHandler'daki aynı alanın notu — bilinçli, küçük bir tekrar.
     private static readonly string FakePasswordHashForTiming = BCrypt.Net.BCrypt.HashPassword(
         Guid.NewGuid().ToString(),
         workFactor: 12
@@ -97,9 +82,6 @@ public class ConfirmAccountDeletionCommandHandler
             )
         )
         {
-            // NEDEN Detail bir KOD: bkz. RefreshCommand.cs'teki aynı NEDEN notu — admin panel
-            //       kendi dil tercihine göre görüntüler (A-07'de tr/de sözlükten çözülür),
-            //       burada yalnızca sabit bir Code saklanır.
             await _securityLogger.LogAsync(
                 LogEventType.LoginFailed,
                 user.Id,

@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetActivityLogsQuery.cs
-//
-// AMAÇ: GET /admin/logs/activity — userId/action/entityType/tarih aralığı filtreli
-//       sayfalı audit log listesi.
-// NEDEN Language YOK: ActivityLog.Action sabit/dilden bağımsız kalır (CLAUDE.md
-//        "İkinci istisna"), OldValue/NewValue de HAM JSON diff — ikisi de çeviri
-//        GEREKTİRMEZ, bu yüzden GetSecurityLogsQuery'nin AKSİNE bu Query'de bir
-//        Language alanı YOK.
-// BAĞIMLILIKLAR: IActivityLogRepository, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Admin;

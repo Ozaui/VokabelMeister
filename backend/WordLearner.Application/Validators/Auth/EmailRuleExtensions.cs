@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// EmailRuleExtensions.cs
-//
-// AMAÇ: E-posta doğrulama kuralını (boş olamaz + geçerli format) tek yerden
-//       paylaşan FluentValidation extension metodu.
-// NEDEN: 7 farklı Auth validator'ı (Register, VerifyEmail, ResendVerification,
-//        Login, VerifyOtp, ForgotPassword, ResetPassword) AYNI e-posta kuralını
-//        kullanıyor — kural tekrarını önlemek için ortak metoda alındı.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 
 namespace WordLearner.Application.Validators.Auth;

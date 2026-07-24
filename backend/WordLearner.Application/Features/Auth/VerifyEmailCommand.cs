@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// VerifyEmailCommand.cs
-//
-// AMAÇ: POST /auth/verify-email — kayıt sonrası e-postaya gelen OTP kodunu
-//       doğrular, hesabı aktive eder.
-// BAĞIMLILIKLAR: IUserRepository, IOtpService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Common.Localization;
@@ -17,9 +9,6 @@ using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-// AMAÇ: Kayıt sonrası e-postaya gelen 6 haneli kodu doğrular.
-// NEDEN Language/ClientIp init-property: bkz. LoginCommand — ClientIp A-04'te
-//       OtpFailed SecurityLog kaydı için eklendi.
 public record VerifyEmailCommand(string Email, string OtpCode) : IRequest<MessageResponse>
 {
     public string? Language { get; init; }

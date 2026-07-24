@@ -1,12 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LoginWithGoogleCommandHandlerTests.cs
-//
-// AMAÇ: LoginWithGoogleCommandHandler'ın hesap bulma/oluşturma/bağlama (account
-//       linking) mantığını doğrulamak. Giriş tamamlama (ILoginCompletionService)
-//       mock'lanır — bkz. LoginCompletionServiceTests.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -32,12 +23,6 @@ public class LoginWithGoogleCommandHandlerTests
             .Setup(l => l.CompleteLoginAsync(It.IsAny<User>(), null, default))
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1", "System"), false));
 
-    /// <summary>
-    /// LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount
-    ///
-    /// AMAÇ: GoogleId ile eşleşen bir kullanıcı bulunduğunda yeni hesap açılmadan
-    ///       doğrudan token döndüğünü doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithGoogle_ExistingGoogleUser_ReturnsTokensWithoutCreatingNewAccount()
     {
@@ -58,12 +43,6 @@ public class LoginWithGoogleCommandHandlerTests
         _userRepo.Verify(r => r.AddAsync(It.IsAny<User>(), null, default), Times.Never);
     }
 
-    /// <summary>
-    /// LoginWithGoogle_NoExistingAccount_CreatesNewUser
-    ///
-    /// AMAÇ: Ne GoogleId ne de e-posta ile eşleşen bir kullanıcı bulunmadığında yeni
-    ///       hesap oluşturulduğunu doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithGoogle_NoExistingAccount_CreatesNewUser()
     {
@@ -89,15 +68,6 @@ public class LoginWithGoogleCommandHandlerTests
         );
     }
 
-    /// <summary>
-    /// LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount
-    ///
-    /// AMAÇ: Google'dan gelen e-posta, mevcut bir yerel (Local) hesapla eşleştiğinde
-    ///       yeni hesap açmak yerine GoogleId'nin o hesaba bağlandığını (account linking)
-    ///       doğrulamak.
-    /// NEDEN: Aksi hâlde aynı kişi aynı e-posta için iki ayrı hesaba sahip olur —
-    ///        "user register olurken hangi hesaba giriyor" tasarım kararının kalbi.
-    /// </summary>
     [Fact]
     public async Task LoginWithGoogle_EmailMatchesExistingLocalAccount_LinksGoogleIdToAccount()
     {
@@ -119,11 +89,6 @@ public class LoginWithGoogleCommandHandlerTests
         _userRepo.Verify(r => r.AddAsync(It.IsAny<User>(), null, default), Times.Never);
     }
 
-    /// <summary>
-    /// LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException
-    ///
-    /// AMAÇ: Google token doğrulaması null döndüğünde InvalidSocialTokenException fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithGoogle_InvalidToken_ThrowsInvalidSocialTokenException()
     {
@@ -138,11 +103,6 @@ public class LoginWithGoogleCommandHandlerTests
         await act.Should().ThrowAsync<InvalidSocialTokenException>();
     }
 
-    /// <summary>
-    /// LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException
-    ///
-    /// AMAÇ: Google ile eşleşen hesap dondurulmuşsa (IsActive=false) login'in reddedildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task LoginWithGoogle_AccountNotActive_ThrowsAccountNotActiveException()
     {

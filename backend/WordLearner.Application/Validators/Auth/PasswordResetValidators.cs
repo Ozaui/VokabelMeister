@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// PasswordResetValidators.cs
-//
-// AMAÇ: POST /auth/forgot-password ve POST /auth/reset-password girdilerinin
-//       doğrulama kuralları.
-// NEDEN: 2 adımlı OTP tabanlı şifre sıfırlama akışının iki adımı, tek dosyada
-//        toplandı (DTOs/Auth/PasswordResetDtos.cs ile aynı gruplama).
-// BAĞIMLILIKLAR: FluentValidation, EmailRuleExtensions, OtpRuleExtensions, PasswordRuleExtensions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentValidation;
 using WordLearner.Application.Features.Auth;
 

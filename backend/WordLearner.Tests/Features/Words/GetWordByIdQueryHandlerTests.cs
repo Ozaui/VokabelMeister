@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// GetWordByIdQueryHandlerTests.cs
-//
-// AMAÇ: GetWordByIdQueryHandler'ın bulunan kavramı tam detay DTO'suna
-//       çevirdiğini ve bulunamayan Id'de 404 fırlattığını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -23,12 +15,6 @@ public class GetWordByIdQueryHandlerTests
 
     private static readonly Language German = new() { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
 
-    /// <summary>
-    /// GetById_ExistingConcept_ReturnsDetailDtoWithTranslations
-    ///
-    /// AMAÇ: Var olan bir kavramın dillerinin (WordDetail/örnekler dahil)
-    ///       tam detay DTO'suna doğru şekilde projekte edildiğini doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetById_ExistingConcept_ReturnsDetailDtoWithTranslations()
     {
@@ -62,12 +48,6 @@ public class GetWordByIdQueryHandlerTests
         result.Translations.Should().ContainSingle(t => t.LanguageCode == "de" && t.Text == "Tisch");
     }
 
-    /// <summary>
-    /// GetById_NotFound_ThrowsEntityNotFoundException
-    ///
-    /// AMAÇ: Var olmayan bir WordConcept Id'si verilirse EntityNotFoundException
-    ///       (404) fırlatıldığını doğrulamak.
-    /// </summary>
     [Fact]
     public async Task GetById_NotFound_ThrowsEntityNotFoundException()
     {

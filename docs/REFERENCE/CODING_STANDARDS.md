@@ -1,13 +1,13 @@
 # KODLAMA STANDARTLARI
 
-> Dil kuralı özeti (Türkçe yorum / İngilizce kod-log-code) → `CLAUDE.md §1`. Bu dosya: yorum şablonları + birim test standardı.
-> **Felsefe:** Junior eğitimi. Kod kendini anlatır; Türkçe yorumlar *neden*i anlatır.
+> Dil kuralı özeti (Türkçe yorum / İngilizce kod-log-code) → `CLAUDE.md §1`. Bu dosya: yorum standardı + birim test standardı.
+> **Felsefe:** Kod kendini anlatır (isimlendirme); yorum yalnızca kodun anlatamadığı *neden*i, kısa ve gerektiğinde anlatır.
+> **Not:** Bu standart yalnızca kaynak kod (`.cs`/`.ts`/`.tsx`) için geçerli. `BACKEND_AKADEMI/` öğretim materyali kendi ayrıntılı `aciklama`/`neden`/`olmasaydi` formatını korur (`BACKEND_AKADEMI/STANDART.md`).
 
 ## 1. Dil Kuralı — Örnek
 
 ```csharp
 // ✅ DOĞRU — yorum Türkçe, log/exception mesajı İngilizce
-// AMAÇ: Kullanıcı girişini loglar.
 _logger.LogInformation("User {UserId} logged in. IP: {Ip}", userId, ip);
 throw new EntityNotFoundException($"User not found: Id={userId}");
 
@@ -16,37 +16,36 @@ throw new EntityNotFoundException($"User not found: Id={userId}");
 ```
 İstemciye giden mesaj `Accept-Language`'a göre `ErrorMessages` sözlüğünden çözülür (`SECURITY.md §1.4`); DB/log daima İngilizce.
 
-## 2. Dosya Başı Bloğu (zorunlu)
+## 2. Yorum Satırları — Ne Zaman, Nasıl
+
+- **Zorunlu dosya-başı/method-başı blok yok.** Dosya adı + sınıf/metot adı zaten AMAÇ'ı taşıyor; her dosyaya/metoda şablon yorum eklemek gürültü.
+- Yorum yalnızca kodun kendisinin anlatamadığı şeyi anlatır: gizli bir kısıt, iki yer arasında senkron kalması gereken bir sözleşme, "böyle değil de bilerek şöyle yaptım" kararı, non-obvious bir edge case.
+- **Kısa:** genelde tek satır, nadiren iki. Paragraf hâlinde blok yorum yazılmaz — anlatılacak şey birkaç satıra sığmıyorsa muhtemelen bir yardımcı metot veya daha iyi bir isim asıl çözüm.
+- Ne yaptığını değil (kod zaten gösteriyor), **neden** öyle yaptığını anlat.
 
 ```csharp
-/// <summary>
-/// UserProgressService.cs
-/// AMAÇ: Kullanıcının SRS ilerlemesini yönetmek.
-/// NEDEN: SRS olmadan kullanıcı unutur (Ebbinghaus). Her cevap sonrası kayıt + sonraki tekrar zamanı.
-/// BAĞIMLILIKLAR: IUserProgressRepository, ILogger, IMapper.
-/// </summary>
+// ✅ DOĞRU — kısa, NEDEN'e odaklı, sadece non-obvious kısım
+// GetSmtpSettingsQueryHandler'daki aynı isimli sabitle değer olarak eşleşmeli
+private const string MaskedPassword = "***";
+
+// ❌ YANLIŞ — paragraf, AMAÇ/NEDEN/NASIL şablonu, kodun zaten söylediğini tekrarlıyor
+// ─────────────────────────────────────────────
+// UpdateSmtpSettingsCommand.cs
+// AMAÇ: PUT /admin/smtp-settings — SMTP ayarlarını kaydeder...
+// NEDEN: SMTP ayarları CLAUDE.md "Kimlik & güvenlik"nin kapsadığı...
+// NASIL: 1) mevcut kaydı çek 2) şifre maskesi kontrolü 3) upsert 4) logla
+// ─────────────────────────────────────────────
 ```
 
-## 3. Public Metot Bloğu (zorunlu)
+## 3. Karmaşık Bloklar
 
-```csharp
-/// <summary>Kullanıcının bir kelime için ilerlemesini günceller.</summary>
-/// <param name="quality">Öz değerlendirme (0-5): 🔴0 🟠2 🟢4 🔵5</param>
-/// <returns>Güncel ilerleme + kazanılan XP</returns>
-/// NEDEN: Her aktiviteden sonra ilerleme zorunlu; SM-2 aralıkları doğruda uzar, yanlışta sıfırlanır.
-/// NASIL: 1) İlerlemeyi çek 2) İstatistik güncelle 3) SM-2 hesapla 4) LearningHistory ekle 5) XP/streak 6) Kaydet.
-public async Task<ProgressDto> UpdateProgressAsync(int userId, int wordId, int quality, CancellationToken ct = default) { }
-```
+Gerçekten çok adımlı bir akış varsa (ör. SM-2 hesaplama) kod kendi akışıyla anlatır; adım numaralama yorumu (`// ADIM N:`) yalnızca akış kodda göze çarpmıyorsa, istisnai olarak eklenir — varsayılan değildir.
 
-## 4. Karmaşık Bloklar
+## 4. Katman Şablonları (kısa)
 
-`// ADIM N:` + `// NEDEN:` ile adım adım açıkla (guard clause, mevcut durumu çekme, SM-2 çağrısı vb.).
-
-## 5. Katman Şablonları (kısa)
-
-- **Entity:** `AMAÇ` + alan başına tek satır Türkçe doc.
-- **DTO:** neden Entity değil — hassas alan gizleme + sözleşme + sadece gerekli alanlar.
-- **Validator:** her kuralın üstünde `// NEDEN:`. `WithMessage` İngilizce (log/DB'ye gider), `WithErrorCode` ile istemciye giden mesaj dile göre çözülür:
+- **Entity:** alan adı açıklayıcıysa yorum yok; yalnızca non-obvious bir alan varsa (ör. birimi/kısıtı isimden anlaşılmayan) tek satır.
+- **DTO:** neden Entity değil — hassas alan gizleme + sözleşme + sadece gerekli alanlar (bu, kod incelemesinde/PR'da konuşulur; dosyada uzun yorum gerekmez).
+- **Validator:** kural ismi genelde kendini anlatır; yalnızca eşik/regex'in NEDEN'i non-obvious ise kısa bir satır. `WithMessage` İngilizce (log/DB'ye gider), `WithErrorCode` ile istemciye giden mesaj dile göre çözülür:
   ```csharp
   RuleFor(x => x.Password)
       .MinimumLength(12).WithMessage("Password must be at least 12 characters").WithErrorCode("PASSWORD_TOO_SHORT")
@@ -71,7 +70,7 @@ public async Task<ProgressDto> UpdateProgressAsync(int userId, int wordId, int q
 ❌ Test1 · UpdateProgress_Test · (Türkçe ad)
 ```
 
-**7.3 AAA deseni** — her test ARRANGE/ACT/ASSERT (Türkçe yorumla bölünür); NEDEN yalnızca beklenti açık değilse Assert'te. XML doc'ta AMAÇ/NEDEN.
+**7.3 AAA deseni** — her test ARRANGE/ACT/ASSERT (Türkçe yorumla bölünür); NEDEN yalnızca beklenti açık değilse Assert'te.
 ```csharp
 [Fact]
 public async Task UpdateProgressAsync_QualityIsLow_ResetsLevel()
@@ -103,10 +102,9 @@ Neden Önemli  : Yanlışta mastery kaybı olmazsa kullanıcı öğrenmiş gör�
 ## 8. Dosya Kontrol Listesi
 
 ```
-[ ] Dosya başı: AMAÇ/NEDEN/BAĞIMLILIKLAR
-[ ] Her public metot: AMAÇ/NEDEN/NASIL
-[ ] Karmaşık bloklar: ADIM + NEDEN
-[ ] Yorum Türkçe; log/exception/Code + method/class/property/test adı İngilizce
+[ ] Şablon dosya-başı/method-başı yorum bloğu YOK
+[ ] Yorum yalnızca non-obvious NEDEN'i anlatıyor, kısa (1-2 satır), Türkçe
+[ ] log/exception/Code + method/class/property/test adı İngilizce
 [ ] Handler/servis birim testi yazıldı (§7)
 [ ] async/await + CancellationToken
 [ ] Yazıldıkça roadmap'e işlendi (kod + test alanı)

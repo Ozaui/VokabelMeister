@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SecurityLogRepository.cs
-//
-// AMAÇ: ISecurityLogRepository'nin EF Core implementasyonu.
-// NEDEN: ActivityLogRepository ile aynı gerekçeyle Repository<T>'yi miras almaz.
-// BAĞIMLILIKLAR: EF Core, WordLearnerDbContext, SecurityLog entity, LogEventType enum, PagedResult<T>.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.Interfaces.Repositories;

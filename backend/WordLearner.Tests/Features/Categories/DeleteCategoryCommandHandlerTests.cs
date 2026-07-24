@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// DeleteCategoryCommandHandlerTests.cs
-//
-// AMAÇ: DeleteCategoryCommandHandler'ın alt kategori/aktif kelime silme
-//       korumasını (409) ve DELETE_CATEGORY audit kaydını doğrulamak.
-// BAĞIMLILIKLAR: xUnit, Moq, FluentAssertions.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using FluentAssertions;
 using Moq;
 using WordLearner.Application.Common.Exceptions;
@@ -41,9 +33,6 @@ public class DeleteCategoryCommandHandlerTests
             },
         };
 
-    /// <summary>
-    /// Delete_CategoryNotFound_ThrowsEntityNotFoundException
-    /// </summary>
     [Fact]
     public async Task Delete_CategoryNotFound_ThrowsEntityNotFoundException()
     {
@@ -58,12 +47,6 @@ public class DeleteCategoryCommandHandlerTests
         await act.Should().ThrowAsync<EntityNotFoundException>();
     }
 
-    /// <summary>
-    /// Delete_HasChildren_ThrowsCategoryHasChildrenException
-    ///
-    /// AMAÇ: Alt kategorisi olan bir kategori silinmeye çalışıldığında 409
-    ///       fırlatıldığını ve SoftDeleteAsync'in HİÇ ÇAĞRILMADIĞINI doğrulamak.
-    /// </summary>
     [Fact]
     public async Task Delete_HasChildren_ThrowsCategoryHasChildrenException()
     {
@@ -82,9 +65,6 @@ public class DeleteCategoryCommandHandlerTests
         _categoryRepo.Verify(r => r.SoftDeleteAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Delete_HasActiveWords_ThrowsCategoryHasActiveWordsException
-    /// </summary>
     [Fact]
     public async Task Delete_HasActiveWords_ThrowsCategoryHasActiveWordsException()
     {
@@ -104,9 +84,6 @@ public class DeleteCategoryCommandHandlerTests
         _categoryRepo.Verify(r => r.SoftDeleteAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>
-    /// Delete_NoBlockers_SoftDeletesAndLogsActivity
-    /// </summary>
     [Fact]
     public async Task Delete_NoBlockers_SoftDeletesAndLogsActivity()
     {

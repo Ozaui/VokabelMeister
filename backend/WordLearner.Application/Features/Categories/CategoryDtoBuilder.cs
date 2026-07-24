@@ -1,21 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// CategoryDtoBuilder.cs
-//
-// AMAÇ: Düz bir Category listesini (ParentCategoryId ile bağlı) `CategoryDto`
-//       AĞACINA çeviren paylaşılan yardımcı — WordConceptDtoBuilder (A-05) ile
-//       BİREBİR aynı gerekçeyle AutoMapper Profile DEĞİL, elle yazılır: bu bir
-//       tek-entity→tek-DTO dönüşümü değil, DÜZ bir listeyi RECURSIVE bir ağaca
-//       (+ opsiyonel kelime sayısı birleştirmesi) dönüştüren bir projeksiyon —
-//       CLAUDE.md §3'ün koşullu AutoMapper kuralı bu senaryoyu kapsam DIŞI bırakır.
-// NEDEN "level filtresinden sonra kalan ORPHAN düğümler KÖK yapılır": GetCategoriesQuery
-//       `level` filtresi uygulandığında (ICategoryRepository.GetAllWithTranslationsAsync)
-//       bir üst kategori filtreye takılıp elenebilir ama alt kategorisi filtreyi
-//       GEÇEBİLİR — bu durumda alt kategori havada KALMAMALI (ağaçtan tamamen
-//       düşmemeli), bu yüzden ParentCategoryId'si artık flat listede YOK olan her
-//       düğüm kök seviyeye TERFİ ettirilir (bkz. GetCategoriesQuery.cs "NEDEN").
-// BAĞIMLILIKLAR: Category/CategoryTranslation entity'leri, CategoryDtos.cs.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using WordLearner.Application.DTOs.Categories;
 using WordLearner.Domain.Entities.Categories;
 
@@ -23,8 +5,8 @@ namespace WordLearner.Application.Features.Categories;
 
 public static class CategoryDtoBuilder
 {
-    // AMAÇ: Düz kategori listesini kök→yaprak ağaca çevirir; wordCounts NULL ise
-    //       (includeWordCount=false) her düğümün WordCount'u NULL kalır.
+    // Level filtresi bir üst kategoriyi eleyip alt kategoriyi geçebilir — bu durumda
+    // ParentCategoryId'si flat listede artık yok olan her düğüm kök seviyeye terfi ettirilir.
     public static IReadOnlyList<CategoryDto> BuildTree(
         IReadOnlyList<Category> flat,
         IReadOnlyDictionary<int, int>? wordCounts
@@ -38,9 +20,6 @@ public static class CategoryDtoBuilder
         return roots.OrderBy(c => c.DisplayOrder).Select(c => Build(c, byParent, wordCounts)).ToList();
     }
 
-    // AMAÇ: Tek bir kategoriyi (Children'ı OLMADAN) DTO'ya çevirir — POST/PUT
-    //       yanıtında yeni/güncellenmiş kategorinin kendisini döndürmek için,
-    //       ağacın tamamını yeniden kurmaya gerek yoktur.
     public static CategoryDto BuildSingle(Category category) =>
         new(
             category.Id,

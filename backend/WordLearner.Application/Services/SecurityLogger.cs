@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SecurityLogger.cs
-//
-// AMAÇ: ISecurityLogger'ın implementasyonu.
-// NEDEN: E-posta hash'lemesini (IPasswordService.HashToken — RefreshTokens.TokenHash/
-//        Users.OriginalEmailHash ile AYNI SHA-256→Base64 fonksiyonu, PII kuralı gereği
-//        ham e-posta hiçbir log satırına yazılmaz) ve SecurityLog entity'sinin
-//        kurulmasını tek yerde toplar.
-// BAĞIMLILIKLAR: ISecurityLogRepository, IPasswordService.
-// ─────────────────────────────────────────────────────────────────────────────
-
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Logging;
