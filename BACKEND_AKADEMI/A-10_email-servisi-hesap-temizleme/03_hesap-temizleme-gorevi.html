@@ -274,12 +274,12 @@ public class AccountCleanupBackgroundService : BackgroundService
                 return;
             }
 
-            // Hosted service singleton, repository/DbContext scoped — her çalışma kendi scope'unu açar.
-            using var scope = _scopeFactory.CreateScope();
-            var cleanupService = scope.ServiceProvider.GetRequiredService<IAccountCleanupService>();
-
             try
             {
+                // Hosted service singleton, repository/DbContext scoped — her çalışma kendi scope'unu açar.
+                // GetRequiredService de try içinde: DI çözümü bir gün başarısız olursa bile döngü ölmemeli.
+                using var scope = _scopeFactory.CreateScope();
+                var cleanupService = scope.ServiceProvider.GetRequiredService<IAccountCleanupService>();
                 await cleanupService.AnonymizeExpiredAccountsAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -301,13 +301,13 @@ public class AccountCleanupBackgroundService : BackgroundService
         satirlar: [
           {
             satir: 'using var scope = _scopeFactory.CreateScope();',
-            aciklama: 'Her çalışma kendi DI scope\'unu açar.',
-            neden: '`IHostedService` SINGLETON\'dır (uygulama boyunca tek örnek), `IAccountCleanupService` ve altındaki `DbContext` ise SCOPED\'tur. Bir scoped servisi doğrudan bir singleton\'a enjekte etmek ASP.NET Core\'da çalışma zamanı hatasıdır — ve engellenmeseydi, aynı `DbContext` aylarca yaşayan, izlediği (tracked) her entity\'yi bellekte biriktiren bir nesneye dönüşürdü.',
-            olmasaydi: 'Scope açılmasaydı ya uygulama başlangıçta "Cannot consume scoped service from singleton" ile açılmazdı, ya da (elle çözülseydi) `DbContext` günlerce yaşar, bellek sızıntısı ve bayat (stale) veri üretirdi.'
+            aciklama: 'Her çalışma kendi DI scope\'unu açar — VE bu satır artık try bloğunun İÇİNDE.',
+            neden: '`IHostedService` SINGLETON\'dır (uygulama boyunca tek örnek), `IAccountCleanupService` ve altındaki `DbContext` ise SCOPED\'tur — scope bu yüzden gerekli. `GetRequiredService` çağrısının try\'ın içinde olması ayrı bir karardır (bir kod denetiminde bulundu): scope açma/servis çözme adımı da başarısız olabilir, o an döngünün dışına sızarsa görev kalıcı olarak durur — try/catch\'in koruma alanı "iş" ile SINIRLI kalmamalı, "işe ulaşmak" da kapsanmalı.',
+            olmasaydi: 'Scope açılmasaydı ya uygulama başlangıçta "Cannot consume scoped service from singleton" ile açılmazdı, ya da (elle çözülseydi) `DbContext` günlerce yaşardı. `GetRequiredService` try DIŞINDA kalsaydı (ilk yazılan hâliydi): servise ileride yeni bir bağımlılık eklenip o bağımlılığın constructor\'ı bir gün çökerse, bu hata hiçbir catch\'e girmeden döngüyü kırar — tam olarak alttaki catch\'in önlemeye çalıştığı senaryo, bir satır yukarıda tekrar açık kalmış olurdu.'
           },
           {
             satir: 'catch (Exception ex) when (ex is not OperationCanceledException)',
-            aciklama: 'Bir çalışmadaki hata yakalanır ve döngü DEVAM EDER.',
+            aciklama: 'Bir çalışmadaki hata yakalanır ve döngü DEVAM EDER — artık scope açma/servis çözme dahil TÜM çalışma bu catch\'in koruması altında.',
             neden: '`ExecuteAsync`\'ten dışarı sızan bir exception, o hosted service\'i kalıcı olarak sonlandırır — uygulama çalışmaya devam eder ama görev bir daha ASLA tetiklenmez. Bir günlük başarısızlık (ör. DB anlık erişilemez), kalıcı olarak durmaktan çok daha iyidir.',
             olmasaydi: 'Yakalanmasaydı, tek bir geçici DB kesintisi görevi sessizce öldürürdü; hiçbir uyarı çıkmaz, aylar sonra "hesaplar neden anonimleştirilmemiş" diye bakıldığında fark edilirdi.'
           },

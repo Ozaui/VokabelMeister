@@ -34,12 +34,12 @@ public class AccountCleanupBackgroundService : BackgroundService
                 return;
             }
 
-            // Hosted service singleton, repository/DbContext scoped — her çalışma kendi scope'unu açar.
-            using var scope = _scopeFactory.CreateScope();
-            var cleanupService = scope.ServiceProvider.GetRequiredService<IAccountCleanupService>();
-
             try
             {
+                // Hosted service singleton, repository/DbContext scoped — her çalışma kendi scope'unu açar.
+                // GetRequiredService de try içinde: DI çözümü bir gün başarısız olursa bile döngü ölmemeli.
+                using var scope = _scopeFactory.CreateScope();
+                var cleanupService = scope.ServiceProvider.GetRequiredService<IAccountCleanupService>();
                 await cleanupService.AnonymizeExpiredAccountsAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

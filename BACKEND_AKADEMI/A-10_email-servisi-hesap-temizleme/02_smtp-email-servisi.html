@@ -313,32 +313,117 @@ public class SmtpEmailService : IEmailService
       },
       {
         tur: 'kod',
-        baslik: 'ApplicationServiceExtensions.cs — Ortama Göre Implementasyon Seçimi',
-        dosyaYolu: 'backend/WordLearner.Application/Extensions/ApplicationServiceExtensions.cs',
-        kod: `    // isDevelopment, IHostEnvironment yerine bool olarak geçilir — Application katmanı
-    // Microsoft.Extensions.Hosting'e bağımlı olmamalı, tek ihtiyacı bu ikili karar.
-    public static IServiceCollection AddApplicationServices(
-        this IServiceCollection services,
-        bool isDevelopment
+        baslik: 'MailKitSender.cs — Tam Dosya (Yeni Paylaşılan Yardımcı)',
+        dosyaYolu: 'backend/WordLearner.Application/Services/MailKitSender.cs',
+        nedenBuKlasor: 'Application/Services/ — bir önceki slaytta MailKitSmtpTestService\'in bu dosyayı NASIL çağırdığı gösterildi; bu slayt o çağrının GİTTİĞİ yeri, yani gerçek SMTP konuşmasının kendisini gösteriyor.',
+        kod: `using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
+using WordLearner.Domain.Entities.System;
+
+namespace WordLearner.Application.Services;
+
+// MailKitSmtpTestService (admin'in denediği ayarlarla) ve SmtpEmailService (kayıtlı ayarlarla)
+// aynı gönderim adımlarını paylaşır; hatayı nasıl karşılayacakları farklı olduğu için burada
+// yakalanmaz, çağırana bırakılır.
+internal static class MailKitSender
+{
+    public static async Task SendAsync(
+        SmtpSettings settings,
+        string decryptedPassword,
+        string toEmail,
+        string subject,
+        MimeEntity body,
+        CancellationToken ct
     )
     {
-        var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(settings.FromName, settings.FromEmail));
+        message.To.Add(MailboxAddress.Parse(toEmail));
+        message.Subject = subject;
+        message.Body = body;
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
-        services.AddAutoMapper(applicationAssembly);
-        services.AddValidatorsFromAssembly(applicationAssembly);
+        using var client = new SmtpClient();
+        var secureOption = settings.EnableSsl
+            ? SecureSocketOptions.StartTls
+            : SecureSocketOptions.None;
+        await client.ConnectAsync(settings.Host, settings.Port, secureOption, ct);
+        await client.AuthenticateAsync(settings.Username, decryptedPassword, ct);
+        await client.SendAsync(message, ct);
+        await client.DisconnectAsync(true, ct);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'internal static class MailKitSender',
+            aciklama: '`internal` — bu sınıf yalnızca `WordLearner.Application` derlemesinin içinden görünür, `public` DEĞİL.',
+            neden: 'MailKitSender bir uygulama detayı: yalnızca `MailKitSmtpTestService` ve `SmtpEmailService`\'in paylaştığı bir gönderim mekaniği, kendi başına bir sözleşme (arayüz) değil. Dışarıdan (ör. API katmanından) doğrudan çağrılması beklenmiyor.',
+            olmasaydi: '`public` olsaydı, ileride biri onu bir Controller\'dan veya başka bir katmandan doğrudan çağırabilirdi — bu da SMTP gönderiminin `IEmailService`/`ISmtpTestService` sözleşmelerini atlayarak dağınık bir şekilde yapılmasına kapı açardı.'
+          },
+          {
+            satir: 'MimeEntity body,',
+            aciklama: 'Gövde tipi somut `TextPart` değil, onun temel sınıfı `MimeEntity`.',
+            neden: '`MailKitSmtpTestService` düz metin (`TextPart("plain")`), `SmtpEmailService` ise HTML (`TextPart("html")`) gönderiyor — ikisi de `MimeEntity`\'den türer. Parametre tipi somut tutulsaydı bu iki farklı çağıranın ortak bir metodu paylaşması mümkün olmazdı.',
+            olmasaydi: 'Parametre `TextPart` olarak sabitlenseydi, `MimeEntity`\'nin başka bir alt sınıfına (ör. `Multipart`, ekli bir dosya göndermek gerektiğinde) ihtiyaç duyulduğunda bu paylaşılan metot yeniden yazılmak zorunda kalırdı.'
+          },
+          {
+            satir: 'await client.ConnectAsync(settings.Host, settings.Port, secureOption, ct);',
+            aciklama: 'SMTP\'nin 4 adımı (connect/authenticate/send/disconnect) burada, TEK bir yerde durur.',
+            neden: 'Bu adımların sırası ve `secureOption` hesabı (STARTTLS mı düz mü) A-09\'da `MailKitSmtpTestService`\'in içinde yazılmıştı; A-10\'da `SmtpEmailService` de AYNI adımlara ihtiyaç duyunca kopyalamak yerine buraya taşındı (CLAUDE.md §3: paylaşılan mantık küçük bir yardımcıya çıkarılır).',
+            olmasaydi: 'Kopyalanmış olsaydı, ileride bir sağlayıcı `SecureSocketOptions.SslOnConnect` gerektirdiğinde iki dosyanın da güncellenmesi gerekirdi — biri unutulursa "Test Et" çalışır ama gerçek e-postalar gitmez (ya da tam tersi) gibi teşhisi zor bir sürüm sapması ortaya çıkardı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ApplicationServiceExtensions.cs — İmza Değişikliği + İki Yeni Kayıt',
+        dosyaYolu: 'backend/WordLearner.Application/Extensions/ApplicationServiceExtensions.cs',
+        neden: 'A-02\'de yazılan `AddApplicationServices()` parametresiz bir composition-root metoduydu. A-10 onu İKİ yönden değiştirdi: (1) imzaya `bool isDevelopment` eklendi — bu bir SAF EKLEME değil, var olan bir imzanın DEĞİŞMESİ (STANDART.md §3.1); (2) `IEmailService` kaydı sabit bir satırdan bir `if/else`\'e dönüştürüldü — var olan bir SATIRIN değişmesi. Üçüncü değişiklik (`IAccountCleanupService` kaydının eklenmesi) tek başına bir SAF EKLEME olurdu, ama aynı metodun içinde olduğu için hepsi tek bir `kod-degisiklik` slaydında, metodun TAMAMIYLA gösteriliyor (§3.2).',
+        diff: ` public static class ApplicationServiceExtensions
+ {
+-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
++    // isDevelopment, IHostEnvironment yerine bool olarak geçilir — Application katmanı
++    // Microsoft.Extensions.Hosting'e bağımlı olmamalı, tek ihtiyacı bu ikili karar.
++    public static IServiceCollection AddApplicationServices(
++        this IServiceCollection services,
++        bool isDevelopment
++    )
+     {
+         var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
 
-        services.AddScoped<IPasswordService, PasswordService>();
-        services.AddScoped<ITokenService, JwtTokenService>();
+         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(applicationAssembly));
+         services.AddAutoMapper(applicationAssembly);
+         services.AddValidatorsFromAssembly(applicationAssembly);
 
-        // Geliştirmede OTP konsola yazılır (SMTP kurulumu gerekmez); üretimde DB'deki şifreli
-        // ayarlarla gerçek gönderim yapılır.
-        if (isDevelopment)
-            services.AddScoped<IEmailService, DevEmailService>();
-        else
-            services.AddScoped<IEmailService, SmtpEmailService>();
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
+-        services.AddScoped<IEmailService, DevEmailService>();
++
++        // Geliştirmede OTP konsola yazılır (SMTP kurulumu gerekmez); üretimde DB'deki şifreli
++        // ayarlarla gerçek gönderim yapılır.
++        if (isDevelopment)
++            services.AddScoped<IEmailService, DevEmailService>();
++        else
++            services.AddScoped<IEmailService, SmtpEmailService>();
++
+         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
 
-        services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();`,
+         // AddHttpClient<T> — AppleTokenValidator her doğrulamada Apple'ın JWKS'sini HTTP ile çeker;
+         // IHttpClientFactory kullanmak soket tükenmesi riskini önler.
+         services.AddHttpClient<IAppleTokenValidator, AppleTokenValidator>();
+
+         services.AddScoped<IOtpService, OtpService>();
+         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+         services.AddScoped<IActivityLogger, ActivityLogger>();
+         services.AddScoped<ISecurityLogger, SecurityLogger>();
+         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+         services.AddScoped<IEncryptionService, AesEncryptionService>();
+         services.AddScoped<ISmtpTestService, MailKitSmtpTestService>();
++        services.AddScoped<IAccountCleanupService, AccountCleanupService>();
+
+         return services;
+     }
+ }`,
         satirlar: [
           {
             satir: 'bool isDevelopment',
@@ -351,6 +436,122 @@ public class SmtpEmailService : IEmailService
             aciklama: 'DI kaydı ortama göre dallanır — aynı arayüz, iki implementasyon.',
             neden: 'Handler\'ların hiçbiri hangi ortamda çalıştığını bilmez; hepsi `IEmailService` görür. Ortam bilgisi tek bir yerde, composition root\'ta tüketilir.',
             olmasaydi: 'Seçim Handler\'ların içinde yapılsaydı (`if (env.IsDevelopment())`), 7 Handler ortam bilgisini de enjekte etmek zorunda kalırdı — ve testlerde her biri için ortam sahtelemek gerekirdi.'
+          },
+          {
+            satir: 'services.AddScoped<IAccountCleanupService, AccountCleanupService>();',
+            aciklama: 'Bölüm 3\'te yazılacak hesap temizleme servisi burada kaydedilir.',
+            neden: 'Bu satır yukarıdaki ikisinden BAĞIMSIZ bir eklemedir (kendi başına bir SAF EKLEME olurdu) — ama aynı metodun gövdesi zaten değiştiği için ayrı bir slaytta tekrar gösterilmek yerine burada, metodun geri kalanıyla birlikte görülüyor.',
+            olmasaydi: 'Kayıt eklenmeseydi `AccountCleanupBackgroundService` scope açtığında `GetRequiredService<IAccountCleanupService>()` bir `InvalidOperationException` fırlatırdı — uygulama çalışır görünür ama her gece 03:00\'te arka planda sessizce patlardı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LoginCompletionService — Kurtarma Bildirimi Gerçekte Nerede Tetikleniyor',
+        dosyaYolu: 'backend/WordLearner.Application/Services/LoginCompletionService.cs',
+        neden: 'Bölüm 1\'de IEmailService\'e SendAccountRecoveredNotificationAsync eklendiği anlatıldı, ama onu KİMİN çağırdığı orada gösterilmedi. Bu dosya A-03\'te öğretilmiş, güvenlik açısından hassas bir metodu (CompleteLoginAsync — token üretimi, grace period kurtarma) taşıyor; A-10 onun GÖVDESİNE yeni bir satır ekledi. STANDART.md §3.2: var olan bir metodun içine ekleme yapıldığında o metodun TAMAMI gösterilir, yalnızca eklenen satır değil — okuyucu "accountWasRecovered nereden geliyor, ne zaman true oluyor" sorusunu bu slaytın dışında sormamalı.',
+        diff: ` public class LoginCompletionService : ILoginCompletionService
+ {
+     private readonly IUserRepository _userRepository;
+     private readonly IRefreshTokenRepository _refreshTokenRepository;
+     private readonly IPasswordService _passwordService;
+     private readonly ITokenService _tokenService;
+     private readonly IOtpService _otpService;
++    private readonly IEmailService _emailService;
+     private readonly IConfiguration _configuration;
+     private readonly IMapper _mapper;
+
+     public LoginCompletionService(
+         IUserRepository userRepository,
+         IRefreshTokenRepository refreshTokenRepository,
+         IPasswordService passwordService,
+         ITokenService tokenService,
+         IOtpService otpService,
++        IEmailService emailService,
+         IConfiguration configuration,
+         IMapper mapper
+     )
+     {
+         _userRepository = userRepository;
+         _refreshTokenRepository = refreshTokenRepository;
+         _passwordService = passwordService;
+         _tokenService = tokenService;
+         _otpService = otpService;
++        _emailService = emailService;
+         _configuration = configuration;
+         _mapper = mapper;
+     }
+
+     public async Task<AuthTokenResponse> CompleteLoginAsync(
+         User user,
+         string? ipAddress,
++        string? language,
+         CancellationToken ct = default
+     )
+     {
+         if (user.IsAnonymized)
+             throw new AccountAnonymizedException();
+
+         var accountWasRecovered = false;
+         if (user.IsDeleted)
+         {
+             // 30 günlük grace period içinde soft-delete'li bir hesap otomatik kurtarılır.
+             user.IsDeleted = false;
+             user.DeletedAt = null;
+             user.ScheduledDeletionAt = null;
+             accountWasRecovered = true;
+         }
+
+         _otpService.Clear(user);
+         user.LastLoginAt = DateTime.UtcNow;
+         user.LastLoginIP = ipAddress;
+         user.LoginCount += 1;
+         await _userRepository.UpdateAsync(user, user.Id, ct);
+
+         var accessToken = _tokenService.GenerateAccessToken(user);
+         var refreshTokenResult = _tokenService.GenerateRefreshToken();
+
+         var refreshToken = new RefreshToken
+         {
+             UserId = user.Id,
+             TokenHash = _passwordService.HashToken(refreshTokenResult.Token),
+             TokenFamily = Guid.NewGuid().ToString(),
+             ExpiresAt = refreshTokenResult.ExpiresAt,
+             IpAddress = ipAddress,
+         };
+         await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);
+
++        // Token üretildikten SONRA — silinmek üzere olan bir hesaba giriş, hesap ele geçirilmişse
++        // sahibinin fark etmesi gereken bir olaydır; gönderim hatası girişi engellemez.
++        if (accountWasRecovered)
++            await _emailService.SendAccountRecoveredNotificationAsync(user.Email, language, ct);
++
+         return new AuthTokenResponse(
+             accessToken,
+             refreshTokenResult.Token,
+             ExpiresInSeconds(),
+             _mapper.Map<AuthUserDto>(user),
+             accountWasRecovered
+         );
+     }`,
+        satirlar: [
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Yeni bir bağımlılık eklendi.',
+            neden: 'CompleteLoginAsync artık bir e-posta gönderebildiği için servisin buna erişmesi gerekiyor. IEmailService zaten Application katmanında tanımlı bir arayüz — LoginCompletionService de aynı katmanda, yeni bir bağımlılık yönü ihlali yok.',
+            olmasaydi: 'Bağımlılık eklenmeseydi, bildirim ya Handler seviyesinde (VerifyLoginOtpCommand, LoginWithGoogleCommand, LoginWithAppleCommand, GetQrLoginStatusCommand — 4 ayrı yer) tekrar tekrar yazılırdı, ya da accountWasRecovered bilgisi bu servisten dışarı sızdırılıp çağırana bırakılırdı; ikisi de CompleteLoginAsync\'in "girişi TAMAMLA" sorumluluğunu bölerdi.'
+          },
+          {
+            satir: 'if (accountWasRecovered)',
+            aciklama: 'Bildirim yalnızca hesap GERÇEKTEN kurtarıldıysa gönderilir — her girişte değil.',
+            neden: 'accountWasRecovered bu metodun birkaç satır yukarısında zaten hesaplanıyor (user.IsDeleted kontrolü). Yeni kod bu değişkeni YENİDEN hesaplamaz, olduğu gibi kullanır — aynı "hesap kurtarıldı mı" sorusunun cevabı, hem token yanıtındaki AccountWasRecovered alanını hem de bu e-postayı besliyor.',
+            olmasaydi: 'Koşul olmasaydı HER girişte bir "hesabınız geri alındı" e-postası giderdi — normal bir kullanıcı her gün giriş yaptığında yanlış bir bildirim almaya başlardı.'
+          },
+          {
+            satir: 'await _emailService.SendAccountRecoveredNotificationAsync(user.Email, language, ct);',
+            aciklama: 'Çağrı, refresh token DB\'ye yazıldıktan SONRA yapılır.',
+            neden: 'Sıra bilinçli: token üretimi/kayıt işlemi bu bildirime bağımlı DEĞİL. Bildirim gönderiminde bir sorun çıksa bile (SmtpEmailService bu senaryoda hatayı YUTAR, bkz. yukarısı) kullanıcının girişi etkilenmemeli — hesap zaten kurtarıldı, bu artık geri alınamaz bir gerçek.',
+            olmasaydi: 'Çağrı token üretiminden ÖNCE olsaydı ve SendCriticalAsync gibi hata fırlatan bir yol izleseydi, SMTP\'nin o an geçici olarak erişilemez olması, meşru bir kullanıcının kendi hesabına girişini engellerdi.'
           }
         ]
       },
@@ -372,6 +573,7 @@ public class SmtpEmailService : IEmailService
         maddeler: [
           '`SmtpEmailService` — A-09\'un DB\'deki şifreli ayarlarını her gönderimde okur (önbellek YOK: admin panelden değiştirilebilsin diye).',
           '**Kritik/bilgilendirme ayrımı:** OTP e-postaları hata fırlatır (503 + `EMAIL_SEND_FAILED`), bildirim e-postaları hatayı yutup loglar.',
+          '`LoginCompletionService.CompleteLoginAsync` (A-03\'te öğretilmiş) yeni `language` parametresi + `IEmailService` bağımlılığı aldı; `accountWasRecovered` true olduğunda, refresh token DB\'ye yazıldıktan SONRA `SendAccountRecoveredNotificationAsync` çağrılır.',
           '`SmtpSettingsNotConfiguredException` dahil TÜM hatalar sarılır — admin\'e yazılmış bir yönerge son kullanıcıya gösterilmez.',
           '`MailKitSender` — gönderim adımları `MailKitSmtpTestService` ile paylaşıldı; try/catch bilinçli olarak paylaşılmadı (mekanizma ortak, politika ayrı).',
           'DI seçimi ortama göre: dev → `DevEmailService` (konsol), prod → `SmtpEmailService`. Ortam bilgisi Application\'a `bool` olarak geçer (`IHostEnvironment` DEĞİL — bağımlılık yönü).',
