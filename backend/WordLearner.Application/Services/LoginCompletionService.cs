@@ -15,6 +15,7 @@ public class LoginCompletionService : ILoginCompletionService
     private readonly IPasswordService _passwordService;
     private readonly ITokenService _tokenService;
     private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
     private readonly IConfiguration _configuration;
     private readonly IMapper _mapper;
 
@@ -24,6 +25,7 @@ public class LoginCompletionService : ILoginCompletionService
         IPasswordService passwordService,
         ITokenService tokenService,
         IOtpService otpService,
+        IEmailService emailService,
         IConfiguration configuration,
         IMapper mapper
     )
@@ -33,6 +35,7 @@ public class LoginCompletionService : ILoginCompletionService
         _passwordService = passwordService;
         _tokenService = tokenService;
         _otpService = otpService;
+        _emailService = emailService;
         _configuration = configuration;
         _mapper = mapper;
     }
@@ -40,6 +43,7 @@ public class LoginCompletionService : ILoginCompletionService
     public async Task<AuthTokenResponse> CompleteLoginAsync(
         User user,
         string? ipAddress,
+        string? language,
         CancellationToken ct = default
     )
     {
@@ -74,6 +78,11 @@ public class LoginCompletionService : ILoginCompletionService
             IpAddress = ipAddress,
         };
         await _refreshTokenRepository.AddAsync(refreshToken, user.Id, ct);
+
+        // Token üretildikten SONRA — silinmek üzere olan bir hesaba giriş, hesap ele geçirilmişse
+        // sahibinin fark etmesi gereken bir olaydır; gönderim hatası girişi engellemez.
+        if (accountWasRecovered)
+            await _emailService.SendAccountRecoveredNotificationAsync(user.Email, language, ct);
 
         return new AuthTokenResponse(
             accessToken,

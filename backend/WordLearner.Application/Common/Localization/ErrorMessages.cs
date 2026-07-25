@@ -375,6 +375,14 @@ public static class ErrorMessages
             ["de"] = "Test-E-Mail konnte nicht gesendet werden. Überprüfen Sie die SMTP-Einstellungen.",
         },
 
+        // Kullanıcı akışının ortasında (OTP e-postası) gönderim başarısız oldu — sebebi (SMTP hiç
+        // yapılandırılmamış, kimlik doğrulama reddedildi vb.) sunucu tarafı bir sorundur, sızdırılmaz.
+        ["EMAIL_SEND_FAILED"] = new()
+        {
+            ["tr"] = "E-posta gönderilemedi. Lütfen daha sonra tekrar deneyin.",
+            ["de"] = "Die E-Mail konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.",
+        },
+
         // AppException'dan türemeyen (beklenmeyen) her exception için — gerçek mesaj istemciye sızdırılmaz.
         ["INTERNAL_SERVER_ERROR"] = new()
         {

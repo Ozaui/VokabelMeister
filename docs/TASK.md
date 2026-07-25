@@ -26,14 +26,41 @@
 
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 |
+| A | A-01…A-10 | Admin Panel Backend | ✅ |
 | B | B-01…B-09 | Admin Panel | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-10 — E-posta Servisi + Hesap Temizleme Görevi` ⬜ → `TASK/A_admin_panel_backend.md`
+**Sıradaki task:** `B-01` ⬜ → `TASK/B_admin_panel.md` (Faz A tamamlandı)
+(`A-10 — E-posta Servisi + Hesap Temizleme Görevi` ✅ tamamlandı 2026-07-25: `EmailTemplates.cs`
+(6 şablon × tr/de, `ErrorMessages`/`SuccessMessages`'ın kardeşi, ortak `Layout` + inline stil —
+`string.Format` ve e-posta istemcisi uyumluluğu aynı çözümü gerektiriyor), `IEmailService`'in 6
+metoduna **zorunlu** `string? language` (opsiyonel DEĞİL: derleyici 7 çağrı noktasını zorlasın diye)
++ yeni `SendAccountRecoveredNotificationAsync` (`LoginCompletionService`'in grace period kurtarma
+akışına bağlandı), `RegisterCommand`/`VerifyLoginOtpCommand`/`LoginWithGoogleCommand`/
+`LoginWithAppleCommand`/`GetQrLoginStatusCommand`'a `Language` alanı (`QrLoginController`
+`RequestLanguageResolver`'ı kullanan İKİNCİ controller oldu), `SmtpEmailService` (A-09'un DB'deki
+şifreli ayarlarını HER gönderimde okur — admin panelden değiştirilebilsin diye önbellek YOK),
+`MailKitSender` (gönderim adımları `MailKitSmtpTestService` ile paylaşıldı, try/catch bilinçli
+olarak paylaşılmadı: mekanizma ortak, politika ayrı), `EmailSendFailedException` (503),
+`IAccountCleanupService`/`AccountCleanupService` + `AccountCleanupBackgroundService` (projedeki
+İLK `IHostedService`, günde 1 03:00 UTC), `IUserRepository.GetPendingAnonymizationAsync`.
+**A-10'un merkezî tasarım kararı — kritik/bilgilendirme ayrımı:** OTP e-postaları gönderilemezse
+hata fırlatılır (kod eline geçmeyen kullanıcı akışı tamamlayamaz), bildirim e-postaları
+gönderilemezse hata yutulup loglanır (şifre zaten değişti, hesap zaten kurtarıldı — e-posta hatası
+onları geri almaz). **İki kapsam genişlemesi:** (1) şablonlar çok dilli yazıldı (kullanıcı kararı;
+CLAUDE.md §1 "istemciye giden mesaj" kuralı e-postaları da kapsıyor), bu da yukarıdaki imza
+değişikliklerini gerektirdi; (2) anonimleştirme SECURITY.md §9'un ilk listesinden GENİŞ —
+`DisplayName`/`AvatarUrl`/`LastLoginIP`/`OneSignalPlayerId`/bekleyen OTP alanları + `IsActive=false`
+de temizlenir (avatar bir fotoğraf, IP ve cihaz kimliği de kişisel veri; `/uploads` A-08'de public
+yapılmıştı), SECURITY.md §9 bu kapsamla güncellendi. `OriginalEmailHash` GERÇEK adresten, `Email`
+üzerine yazılmadan ÖNCE üretilir — bu satır sırası tekrar kayıt engelinin tamamıdır, ters olsaydı
+kod derlenir/testler yeşil kalır ama engel sessizce çalışmazdı. **296/296 birim testi yeşil**
+(265'ten +31), Backend Akademi'ye işlendi (4 bölüm), kök karta eklendi. **Faz A tamamlandı** —
+A-07.1 (`UserCard` moderasyonu) bilinçli olarak C-02'yi bekliyor, kendi notundaki karar gereği
+Faz A'nın "bitti" sayılmasını engellemez.)
 (`A-09 — SMTP Ayarları API` ✅ tamamlandı 2026-07-24: `SmtpSettings` (BaseEntity, tekil/singleton
 satır — DATABASE_SCHEMA.md'nin "ad-hoc `UpdatedByUserId` → BaseEntity" birleştirme notu burada
 uygulandı, ayrı bir `UpdatedBy` alanı EKLENMEDİ), `IEncryptionService`/`AesEncryptionService`

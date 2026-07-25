@@ -32,7 +32,7 @@ public class AuthController : ControllerBase
         CancellationToken ct
     )
     {
-        var response = await _mediator.Send(command, ct);
+        var response = await _mediator.Send(command with { Language = Language }, ct);
         return StatusCode(StatusCodes.Status201Created, response);
     }
 
@@ -73,7 +73,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthTokenResponse>> VerifyLoginOtp(
         VerifyLoginOtpCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { ClientIp = ClientIp }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     [HttpPost("google")]
     [EnableRateLimiting("anonymous")]
@@ -84,7 +84,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthTokenResponse>> LoginWithGoogle(
         LoginWithGoogleCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { ClientIp = ClientIp }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     [HttpPost("apple")]
     [EnableRateLimiting("anonymous")]
@@ -95,7 +95,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthTokenResponse>> LoginWithApple(
         LoginWithAppleCommand command,
         CancellationToken ct
-    ) => Ok(await _mediator.Send(command with { ClientIp = ClientIp }, ct));
+    ) => Ok(await _mediator.Send(command with { Language = Language, ClientIp = ClientIp }, ct));
 
     [HttpPost("refresh")]
     [EnableRateLimiting("anonymous")]

@@ -22,7 +22,7 @@ launchSettings.json'daki 29 baytlık hatalı örnek AES anahtarı, "***" maske l
 gerçek şifre olarak şifrelenebilmesi (`SmtpPasswordRequiredException` ile kapatıldı), eşzamanlı PUT
 determinizmi (`OrderBy(Id)`), MailKit'in CVE'li 4.3.0 sürümü (4.17.0'a yükseltildi), Backend
 Akademi'de 5 "Tam Dosya" slaytının gerçek koddan eksik satırlar içermesi; detay → Otuz dokuzuncu
-INGEST. Sırada **A-10 (E-posta Servisi + Hesap Temizleme Görevi)** var.
+INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, sırada **Faz B (Admin Panel — frontend)** var.
 Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
@@ -232,7 +232,7 @@ Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`
 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
-| A | A-01…A-10 | Admin Panel Backend | 🔄 (A-01 ✅, A-02 ✅, A-03 ✅, A-03.1 ✅, A-03.2 ✅, A-03.3 ✅, A-04 ✅, A-05 ✅, A-06 ✅, A-07 ✅, A-08 ✅, sıradaki A-09) |
+| A | A-01…A-10 | Admin Panel Backend | ✅ (A-01…A-10 tamamlandı; A-07.1 bilinçli olarak C-02'yi bekliyor — Faz A'nın "bitti" sayılmasını engellemez) |
 | B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
@@ -1489,3 +1489,93 @@ dosya ilk geçişte atlanmış olarak bulundu ve ayrıca düzeltildi: `UpdateSmt
 Kodlama_Standartlari.md`, backend'deki 267 kaynak dosyanın tamamı, bu dosya. `BACKEND_AKADEMI/`e
 hiç dokunulmadı (kasıtlı — kullanıcı talebi). **Sıradaki task: A-10 (E-posta Servisi + Hesap
 Temizleme Görevi) — değişmedi.***
+
+*Kırk birinci INGEST (2026-07-25) — **A-10 (E-posta Servisi + Hesap Temizleme Görevi)
+tamamlandı ✅, böylece Faz A bitti:**
+
+**(1) E-posta şablonları çok dilli yazıldı (kullanıcı kararı, kapsam genişlemesi).** TASK maddesi
+yalnızca "e-posta şablonları" diyordu; başlamadan önce sorulan iki karar noktasında kullanıcı
+"çok dilli (tr/de)" ve "C# sabit sınıf + HTML gövde" seçeneklerini onayladı. Gerekçe: CLAUDE.md §1'in
+"istemciye giden mesaj" istisnası e-postaları da kapsar — e-postayı okuyan geliştirici değil
+kullanıcıdır. Sonuç: [[EmailTemplates]] (`Application/Common/Localization/`, [[ErrorMessages]]/
+[[SuccessMessages]]'ın kardeşi) — 6 şablon (`EMAIL_VERIFICATION`, `LOGIN_OTP`, `PASSWORD_RESET`,
+`ACCOUNT_DELETION`, `PASSWORD_CHANGED`, `ACCOUNT_RECOVERED`) × 2 dil, `EmailContent(Subject, HtmlBody)`
+record'u (konu ve gövdenin farklı dilden olması TİP düzeyinde imkânsız), ortak `Layout` metodu.
+`Resolve` bilinmeyen bir kodda [[ErrorMessages]]'ın AKSİNE `ArgumentException` fırlatır — bir e-posta
+gövdesinin yerine kodun kendisini göndermek, kullanıcıya bozuk bir e-posta yollamaktır. HTML'de hiç
+süslü parantez yok: gövde `string.Format`'tan geçiyor (kaçış gerekirdi) VE e-posta istemcileri
+`<style>` bloklarını zaten kırpıyor — iki bağımsız kısıt aynı çözümü (inline stil) gerektirdi.
+
+**(2) Bu karar `IEmailService`'in imzasını değiştirdi (5 Command'a `Language` alanı eklendi).**
+6 metot `string? language` aldı — **opsiyonel DEĞİL**, çünkü varsayılan değer verilseydi mevcut 7
+çağrı noktası hiç değişmeden derlenir, üretimdeki her e-posta sessizce Türkçe giderdi. Zorunlu
+parametre bunu 7 derleme hatasına dönüştürdü. Yeni `SendAccountRecoveredNotificationAsync`
+(TASK'ın şablon listesinde vardı, arayüzde karşılığı yoktu) `LoginCompletionService`'in grace
+period kurtarma akışına bağlandı — dolayısıyla `ILoginCompletionService.CompleteLoginAsync` da
+`language` parametresi aldı ve `RegisterCommand`, `VerifyLoginOtpCommand`, `LoginWithGoogleCommand`,
+`LoginWithAppleCommand`, `GetQrLoginStatusCommand`'a `Language` init-only alanı eklendi.
+`QrLoginController`, `RequestLanguageResolver`'ı kullanan İKİNCİ controller oldu.
+
+**(3) `SmtpEmailService` + A-10'un merkezî tasarım kararı: kritik/bilgilendirme ayrımı.** Servis
+A-09'un DB'deki şifreli ayarlarını HER gönderimde okur (önbellek YOK — A-09'un tüm amacı admin'in
+ayarları yeniden başlatmadan değiştirebilmesiydi). Gönderim hatasına İKİ farklı cevap verilir:
+**kritik (OTP)** e-postalarında `EmailSendFailedException` (503, `EMAIL_SEND_FAILED`) fırlatılır
+çünkü kod eline geçmeyen kullanıcı akışı tamamlayamaz; **bilgilendirme** e-postalarında ("şifreniz
+değişti", "hesabınız geri alındı") hata yutulup `_logger.LogError` ile ApplicationLog'a yazılır
+çünkü asıl işlem zaten bitti ve e-posta hatası onu geri almaz. `SmtpSettingsNotConfiguredException`
+dahil TÜM hatalar sarılır — "önce SMTP ayarlarını kaydedin" admin'e yazılmış bir yönergedir, kayıt
+olmaya çalışan kullanıcıya gösterilmez (hem anlamsız hem de sistemin yarım kurulu olduğunu ifşa eder).
+Yeni `MailKitSender` (internal static) gönderim adımlarını `MailKitSmtpTestService` ile paylaşır ama
+**try/catch bilinçli olarak paylaşılmadı**: mekanizma ortak, politika ayrı (admin'e 502 "ayarları
+kontrol edin", kullanıcıya 503 "sonra deneyin"). DI seçimi `AddApplicationServices(bool isDevelopment)`
+ile — `IHostEnvironment` DEĞİL `bool`, çünkü Application katmanı `Microsoft.Extensions.Hosting`'e
+bağımlı olmamalı (CLAUDE.md §5 bağımlılık yönü).
+
+**(4) Hesap temizleme — projedeki İLK zamanlanmış görev.** Mantık `IAccountCleanupService`/
+`AccountCleanupService`'te (`Application/Services/`, Moq ile 7 birim testi), zamanlama
+`AccountCleanupBackgroundService`'te (`API/BackgroundServices/`, `BackgroundService`, günde 1
+03:00 UTC). Bu ayrım kasıtlı: `WordLearner.Tests` API projesine referans VERMEZ, dolayısıyla
+mantık BackgroundService'in içinde kalsaydı hiç test edilemezdi. Yeni
+`IUserRepository.GetPendingAnonymizationAsync` — `IgnoreQueryFilters()` (aranan hesapların tamamı
+zaten `IsDeleted=1`, filtre kapatılmasa sorgu HER ZAMAN boş dönerdi) + `!IsAnonymized` (anonimleştirme
+`IsDeleted`/`ScheduledDeletionAt`'i değiştirmez, bu bayrak olmasa aynı hesap her gece yeniden
+işlenir ve `OriginalEmailHash` bu kez sahte adresten üretilip tekrar kayıt engeli kaybolurdu).
+Her hesap için `IActivityLogger` → **`ANONYMIZE_ACCOUNT`** (`ActorRole=null` — işlemi kişi değil
+sistem yaptı; `OldValue` YAZILMAZ — anonimleştirdiğimiz PII'yi insert-only bir log tablosuna
+kopyalamak olurdu). `UpdateAsync(user, userId: null, ct)` aynı gerekçeyle (denetim izi "kullanıcı
+kendi kendini anonimleştirdi" diye yalan söylememeli).
+
+**(5) Anonimleştirme kapsamı SECURITY.md §9'un ilk listesinden GENİŞ tutuldu.** Doküman
+`Email`/ad/`PasswordHash`/`GoogleId`/`AppleId`/`OriginalEmailHash`/`IsAnonymized` diyordu; koda
+ayrıca `DisplayName`, `AvatarUrl`, `LastLoginIP`, `OneSignalPlayerId`, bekleyen OTP alanları ve
+`IsActive=false` eklendi. Gerekçe: avatar bir kişinin FOTOĞRAFIDIR ve A-08'de `/uploads` herkese
+açık servis edilmeye başlandı — temizlenmeseydi "silinmiş" bir kullanıcının fotoğrafı internetten
+erişilebilir kalırdı; IP ve cihaz kimliği ise GDPR/KVKK tanımında kişisel veridir.
+`docs/REFERENCE/SECURITY.md §9` bu kapsamla güncellendi. **Kritik ayrıntı:** `OriginalEmailHash`
+GERÇEK adresten ve `Email` üzerine yazılmadan ÖNCE üretilir — sıra ters olsaydı kod derlenir,
+testler yeşil kalır, günlük akışta hiçbir belirti vermez, ama hesabını kalıcı sildiren kullanıcı
+aynı e-postayla yeniden kayıt olabilirdi. Bu tam olarak
+`AnonymizeExpiredAccountsAsync_ExpiredAccount_StoresOriginalEmailHashBeforeOverwritingEmail`
+testinin koruduğu şeydir (mock YALNIZCA gerçek adres için kurulur, böylece mock kurulumunun
+kendisi sıra hatasını yakalayan bir tuzağa dönüşür).
+
+**(6) Testler:** `EmailTemplatesTests` (13 — dil çözümü, fallback, yer tutucu değişimi, bilinmeyen
+kod, ve bir `[Theory]` ile 6 şablonun HEPSİNİN tr+de çevirisi olduğu), `SmtpEmailServiceTests` (5 —
+gerçek SMTP'ye HİÇ bağlanmadan: aynı arızaya [hiç ayar yok] iki farklı beklenti kuran test çifti
+kritik/bilgilendirme ayrımını bir spesifikasyon gibi belgeler), `AccountCleanupServiceTests` (7),
+`UserRepositoryTests` (+4, InMemory `DbContext`), `LoginCompletionServiceTests` (+2). Toplam
+265 → **296/296 yeşil**.
+
+**Etkilenen dosyalar:** yeni — `EmailTemplates.cs`, `SmtpEmailService.cs`, `MailKitSender.cs`,
+`AccountCleanupService.cs`, `IAccountCleanupService.cs`, `EmailSendFailedException.cs`,
+`AccountCleanupBackgroundService.cs`, 3 yeni test dosyası, `BACKEND_AKADEMI/A-10_email-servisi-hesap-temizleme/`
+(4 bölüm); değişen — `IEmailService.cs`, `DevEmailService.cs`, `MailKitSmtpTestService.cs`,
+`ILoginCompletionService.cs`/`LoginCompletionService.cs`, `IUserRepository.cs`/`UserRepository.cs`,
+`ErrorMessages.cs`, `ExceptionHandlingMiddleware.cs`, `ApplicationServiceExtensions.cs`, `Program.cs`,
+`AuthController.cs`, `QrLoginController.cs`, 6 Auth Command, 4 login Command, 9 test dosyası,
+`docs/REFERENCE/SECURITY.md`, `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md`,
+`BACKEND_AKADEMI/index.html`, `A-09_smtp-ayarlari-api/04_...html` (zincir), bu dosya.
+
+**Faz A (Admin Panel Backend) TAMAMLANDI.** Sıradaki faz: **B — Admin Panel (frontend)**
+(`TASK/B_admin_panel.md`). `A-07.1` (`UserCard` moderasyonu) `C-02`'yi bekliyor; kendi notundaki
+karar gereği Faz A'nın "bitti" sayılmasını ve B/C'ye geçişi engellemez.*

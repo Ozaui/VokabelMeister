@@ -68,7 +68,7 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         await _userRepository.UpdateAsync(user, user.Id, ct);
 
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, ct);
-        await _emailService.SendPasswordChangedNotificationAsync(user.Email, ct);
+        await _emailService.SendPasswordChangedNotificationAsync(user.Email, request.Language, ct);
 
         // Başarı olayı (OtpFailed'in aksine) — hesabın ele geçirilip geçirilmediğini araştıran bir admin için audit izi.
         await _securityLogger.LogAsync(

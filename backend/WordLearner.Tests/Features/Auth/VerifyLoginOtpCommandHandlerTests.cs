@@ -36,7 +36,7 @@ public class VerifyLoginOtpCommandHandlerTests
             false
         );
         _loginCompletionService
-            .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", default))
+            .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", null, default))
             .ReturnsAsync(beklenenYanit);
         var handler = CreateHandler();
 
@@ -48,7 +48,7 @@ public class VerifyLoginOtpCommandHandlerTests
 
         // ASSERT
         sonuc.Should().Be(beklenenYanit);
-        _loginCompletionService.Verify(l => l.CompleteLoginAsync(user, "1.2.3.4", default), Times.Once);
+        _loginCompletionService.Verify(l => l.CompleteLoginAsync(user, "1.2.3.4", null, default), Times.Once);
     }
 
     [Fact]

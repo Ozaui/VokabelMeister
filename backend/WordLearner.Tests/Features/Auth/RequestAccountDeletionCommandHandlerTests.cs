@@ -31,7 +31,7 @@ public class RequestAccountDeletionCommandHandlerTests
         await handler.Handle(new RequestAccountDeletionCommand(user.Id), default);
 
         // ASSERT
-        _emailService.Verify(e => e.SendAccountDeletionOtpAsync(user.Email, "123456", default), Times.Once);
+        _emailService.Verify(e => e.SendAccountDeletionOtpAsync(user.Email, "123456", null, default), Times.Once);
     }
 
     [Fact]

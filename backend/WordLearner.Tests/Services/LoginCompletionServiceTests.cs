@@ -17,6 +17,7 @@ public class LoginCompletionServiceTests
     private readonly Mock<IPasswordService> _passwordService = new();
     private readonly Mock<ITokenService> _tokenService = new();
     private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
 
     // AMAÇ: Testlerde gerçek appsettings.json okumadan sabit bir Jwt:ExpirationMinutes sağlar.
     private static IConfiguration CreateConfiguration() =>
@@ -31,6 +32,7 @@ public class LoginCompletionServiceTests
             _passwordService.Object,
             _tokenService.Object,
             _otpService.Object,
+            _emailService.Object,
             CreateConfiguration(),
             AuthTestMapper.Create()
         );
@@ -53,7 +55,7 @@ public class LoginCompletionServiceTests
         var service = CreateService();
 
         // ACT
-        var sonuc = await service.CompleteLoginAsync(user, "1.2.3.4");
+        var sonuc = await service.CompleteLoginAsync(user, "1.2.3.4", null);
 
         // ASSERT
         sonuc.AccessToken.Should().Be("access-token");
@@ -71,7 +73,7 @@ public class LoginCompletionServiceTests
         var service = CreateService();
 
         // ACT
-        var act = () => service.CompleteLoginAsync(user, null);
+        var act = () => service.CompleteLoginAsync(user, null, null);
 
         // ASSERT
         await act.Should().ThrowAsync<AccountAnonymizedException>();
@@ -94,12 +96,59 @@ public class LoginCompletionServiceTests
         var service = CreateService();
 
         // ACT
-        var sonuc = await service.CompleteLoginAsync(user, null);
+        var sonuc = await service.CompleteLoginAsync(user, null, null);
 
         // ASSERT
         sonuc.AccountWasRecovered.Should().BeTrue();
         user.IsDeleted.Should().BeFalse();
         user.ScheduledDeletionAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CompleteLoginAsync_AccountWithinGracePeriod_SendsRecoveryNotification()
+    {
+        // ARRANGE
+        var user = new User
+        {
+            Id = 1,
+            Email = "test@example.com",
+            IsActive = true,
+            IsDeleted = true,
+            ScheduledDeletionAt = DateTime.UtcNow.AddDays(20),
+        };
+        SetupTokenService();
+        var service = CreateService();
+
+        // ACT
+        await service.CompleteLoginAsync(user, null, "de");
+
+        // ASSERT
+        _emailService.Verify(
+            e => e.SendAccountRecoveredNotificationAsync(user.Email, "de", default),
+            Times.Once
+        );
+    }
+
+    [Fact]
+    public async Task CompleteLoginAsync_NormalLogin_DoesNotSendRecoveryNotification()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "test@example.com", IsActive = true };
+        SetupTokenService();
+        var service = CreateService();
+
+        // ACT
+        await service.CompleteLoginAsync(user, null, null);
+
+        // ASSERT
+        _emailService.Verify(
+            e => e.SendAccountRecoveredNotificationAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                default
+            ),
+            Times.Never
+        );
     }
 
     [Fact]
@@ -111,7 +160,7 @@ public class LoginCompletionServiceTests
         var service = CreateService();
 
         // ACT
-        await service.CompleteLoginAsync(user, null);
+        await service.CompleteLoginAsync(user, null, null);
 
         // ASSERT
         _otpService.Verify(o => o.Clear(user), Times.Once);

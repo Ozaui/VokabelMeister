@@ -9,8 +9,12 @@ using WordLearner.Domain.Enums.Auth;
 
 namespace WordLearner.Application.Features.Auth;
 
+// Language, doğrulama e-postasının dilini belirler (Accept-Language'tan gelir, gövdede yer almaz).
 public record RegisterCommand(string Email, string Password, string FirstName, string LastName)
-    : IRequest<RegisterResponse>;
+    : IRequest<RegisterResponse>
+{
+    public string? Language { get; init; }
+}
 
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterResponse>
 {
@@ -61,7 +65,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, RegisterR
         };
 
         await _userRepository.AddAsync(user, ct: ct);
-        await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
+        await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, request.Language, ct);
 
         return _mapper.Map<RegisterResponse>(user);
     }

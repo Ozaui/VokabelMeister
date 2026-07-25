@@ -8,7 +8,12 @@ namespace WordLearner.Application.Extensions;
 
 public static class ApplicationServiceExtensions
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    // isDevelopment, IHostEnvironment yerine bool olarak geçilir — Application katmanı
+    // Microsoft.Extensions.Hosting'e bağımlı olmamalı, tek ihtiyacı bu ikili karar.
+    public static IServiceCollection AddApplicationServices(
+        this IServiceCollection services,
+        bool isDevelopment
+    )
     {
         var applicationAssembly = typeof(ApplicationServiceExtensions).Assembly;
 
@@ -18,7 +23,14 @@ public static class ApplicationServiceExtensions
 
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<ITokenService, JwtTokenService>();
-        services.AddScoped<IEmailService, DevEmailService>();
+
+        // Geliştirmede OTP konsola yazılır (SMTP kurulumu gerekmez); üretimde DB'deki şifreli
+        // ayarlarla gerçek gönderim yapılır.
+        if (isDevelopment)
+            services.AddScoped<IEmailService, DevEmailService>();
+        else
+            services.AddScoped<IEmailService, SmtpEmailService>();
+
         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
 
         // AddHttpClient<T> — AppleTokenValidator her doğrulamada Apple'ın JWKS'sini HTTP ile çeker;
@@ -32,6 +44,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IEncryptionService, AesEncryptionService>();
         services.AddScoped<ISmtpTestService, MailKitSmtpTestService>();
+        services.AddScoped<IAccountCleanupService, AccountCleanupService>();
 
         return services;
     }

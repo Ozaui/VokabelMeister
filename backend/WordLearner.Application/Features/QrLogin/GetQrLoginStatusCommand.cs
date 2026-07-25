@@ -12,6 +12,9 @@ namespace WordLearner.Application.Features.QrLogin;
 public record GetQrLoginStatusCommand(string QrToken) : IRequest<QrStatusResponse>
 {
     public string? ClientIp { get; init; }
+
+    // Yalnızca grace period'daki bir hesap kurtarıldığında gidecek bilgilendirme e-postasının dili için.
+    public string? Language { get; init; }
 }
 
 public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCommand, QrStatusResponse>
@@ -64,7 +67,7 @@ public class GetQrLoginStatusCommandHandler : IRequestHandler<GetQrLoginStatusCo
         if (!user.IsActive)
             throw new AccountNotActiveException();
 
-        var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
+        var authResponse = await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, request.Language, ct);
 
         session.Status = QrLoginStatus.Consumed;
         await _qrLoginSessionRepository.UpdateAsync(session, user.Id, ct);

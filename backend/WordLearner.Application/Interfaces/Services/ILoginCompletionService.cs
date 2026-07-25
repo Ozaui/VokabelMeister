@@ -7,7 +7,13 @@ namespace WordLearner.Application.Interfaces.Services;
 // çağıramadığı için üçünün paylaştığı mantık buraya çıkarıldı.
 public interface ILoginCompletionService
 {
-    Task<AuthTokenResponse> CompleteLoginAsync(User user, string? ipAddress, CancellationToken ct = default);
+    // language yalnızca "hesabınız geri alındı" bilgilendirme e-postasının dili için gerekir.
+    Task<AuthTokenResponse> CompleteLoginAsync(
+        User user,
+        string? ipAddress,
+        string? language,
+        CancellationToken ct = default
+    );
 
     // RefreshCommandHandler de aynı hesaplamaya (CompleteLoginAsync çağırmadan) ihtiyaç duyar.
     int ExpiresInSeconds();

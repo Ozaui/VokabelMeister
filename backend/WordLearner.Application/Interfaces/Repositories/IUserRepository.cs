@@ -28,4 +28,11 @@ public interface IUserRepository : IRepository<User>
 
     // Anonimleştirilmiş bir hesabın e-postasıyla tekrar kayıt açılmasını engellemek için.
     Task<bool> OriginalEmailHashExistsAsync(string emailHash, CancellationToken ct = default);
+
+    // Grace period'ı dolmuş, henüz anonimleştirilmemiş hesaplar — soft delete filtresini YOK SAYAR
+    // (hepsi tanımı gereği silinmiş durumda).
+    Task<IReadOnlyList<User>> GetPendingAnonymizationAsync(
+        DateTime utcNow,
+        CancellationToken ct = default
+    );
 }

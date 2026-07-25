@@ -20,7 +20,7 @@ public class LoginWithAppleCommandHandlerTests
 
     private void SetupLoginCompletion() =>
         _loginCompletionService
-            .Setup(l => l.CompleteLoginAsync(It.IsAny<User>(), null, default))
+            .Setup(l => l.CompleteLoginAsync(It.IsAny<User>(), null, null, default))
             .ReturnsAsync(new AuthTokenResponse("access-token", "refresh-token", 900, new AuthUserDto(1, "A1", "System"), false));
 
     [Fact]

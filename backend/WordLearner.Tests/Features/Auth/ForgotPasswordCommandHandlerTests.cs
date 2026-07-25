@@ -30,7 +30,7 @@ public class ForgotPasswordCommandHandlerTests
         await handler.Handle(new ForgotPasswordCommand(user.Email), default);
 
         // ASSERT
-        _emailService.Verify(e => e.SendPasswordResetOtpAsync(user.Email, "123456", default), Times.Once);
+        _emailService.Verify(e => e.SendPasswordResetOtpAsync(user.Email, "123456", null, default), Times.Once);
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class ForgotPasswordCommandHandlerTests
         // ASSERT
         sonuc.Message.Should().NotBeNullOrEmpty();
         _emailService.Verify(
-            e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default),
+            e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), default),
             Times.Never
         );
     }

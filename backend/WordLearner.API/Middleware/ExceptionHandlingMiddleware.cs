@@ -92,6 +92,7 @@ public class ExceptionHandlingMiddleware
             SmtpSettingsNotConfiguredException => HttpStatusCode.BadRequest,
             SmtpPasswordRequiredException => HttpStatusCode.BadRequest,
             SmtpTestFailedException => HttpStatusCode.BadGateway,
+            EmailSendFailedException => HttpStatusCode.ServiceUnavailable,
             _ => HttpStatusCode.BadRequest,
         };
 }

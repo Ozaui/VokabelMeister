@@ -122,7 +122,7 @@ Token: `expo-secure-store` (Keychain/Keystore). Web: `localStorage` (CSP ile XSS
 
 ## 9. Hesap Silme (GDPR/KVKK)
 
-Genel soft delete (kelime/kart/kategori) sorunsuz — PII yok. **Hesap silme:** soft delete + 30 gün grace → `AccountCleanupBackgroundService` anonimleştirir: `Email→deleted_{id}@deleted.invalid`, ad→"Silindi", `PasswordHash/GoogleId/AppleId→null`, `OriginalEmailHash=SHA-256(email)` (tekrar kaydı blokla), `IsAnonymized=true`.
+Genel soft delete (kelime/kart/kategori) sorunsuz — PII yok. **Hesap silme:** soft delete + 30 gün grace → `AccountCleanupBackgroundService` (günde 1, 03:00 UTC; asıl mantık test edilebilir olsun diye `IAccountCleanupService`/`AccountCleanupService`'te) anonimleştirir: `OriginalEmailHash=SHA-256(email)` (**önce** — Email üzerine yazılmadan; tekrar kaydı blokla), `Email→deleted_{id}@deleted.invalid`, ad→"Silindi", `DisplayName/PasswordHash/GoogleId/AppleId→null`, `AvatarUrl/LastLoginIP/OneSignalPlayerId→null` (fotoğraf, IP ve cihaz kimliği de kişisel veri), bekleyen OTP alanları→null, `IsActive=false`, `IsAnonymized=true`. Her hesap için `IActivityLogger`'a `ANONYMIZE_ACCOUNT` yazılır (`ActorRole=NULL` — işlemi kişi değil sistem yaptı; `OldValue` yazılmaz, anonimleştirilen PII'yi log tablosuna kopyalamak olurdu).
 
 ## 10. Deployment Checklist
 

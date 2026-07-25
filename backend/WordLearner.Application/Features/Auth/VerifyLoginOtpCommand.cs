@@ -12,6 +12,9 @@ namespace WordLearner.Application.Features.Auth;
 public record VerifyLoginOtpCommand(string Email, string OtpCode) : IRequest<AuthTokenResponse>
 {
     public string? ClientIp { get; init; }
+
+    // Yalnızca grace period'daki bir hesap kurtarıldığında gidecek bilgilendirme e-postasının dili için.
+    public string? Language { get; init; }
 }
 
 public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpCommand, AuthTokenResponse>
@@ -55,6 +58,6 @@ public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpComman
             throw;
         }
 
-        return await _loginCompletionService.CompleteLoginAsync(user!, request.ClientIp, ct);
+        return await _loginCompletionService.CompleteLoginAsync(user!, request.ClientIp, request.Language, ct);
     }
 }

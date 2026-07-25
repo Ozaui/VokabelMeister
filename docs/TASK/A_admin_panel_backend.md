@@ -528,15 +528,53 @@ kabul edilmiş, düşük öncelikli bir risk) durumda okuma artık deterministik
 **265/265 birim testi yeşil** (252'den +13). `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm)
 işlendi, kök karta eklendi.
 
-### A-10 — E-posta Servisi + Hesap Temizleme Görevi ⬜
-**Referans:** REFERENCE/SECURITY.md §7
-- [ ] `SmtpEmailService` (MailKit; SMTP'yi repo'dan alır, `Decrypt` ile çözer) + DI (dev→Dev, prod→Smtp)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] E-posta şablonları (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı, şifre değişti, hesap kurtarıldı)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] `AccountCleanupBackgroundService : IHostedService` (PII anonimleştirme, günde 1, 03:00 UTC —
-      her anonimleştirilen hesap için `IActivityLogger`'a **`ANONYMIZE_ACCOUNT`** [`UserId` dolu,
-      `ActorRole=NULL` çünkü sistem/background job yaptı, kişi değil] — A-04)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
-- [ ] **Birim testleri:** `AccountCleanupServiceTests` (30 gün grace sonrası anonimleştirme, blok hash'i)
-- [ ] ➜ **BACKEND_AKADEMI'ye işle**
+### A-10 — E-posta Servisi + Hesap Temizleme Görevi ✅
+**Referans:** REFERENCE/SECURITY.md §7, §9
+- [x] E-posta şablonları (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı, şifre değişti,
+      hesap kurtarıldı) — `EmailTemplates.cs` (`Common/Localization/`, `ErrorMessages`/
+      `SuccessMessages`'ın kardeşi), **6 şablon × tr/de**, ortak `Layout` + inline stil.
+      **Kapsam genişlemesi (kullanıcı kararı):** şablonlar çok dilli yazıldı → `IEmailService`'in
+      6 metodu zorunlu `string? language` aldı (opsiyonel DEĞİL: derleyici 7 çağrı noktasını
+      zorlasın diye) + yeni `SendAccountRecoveredNotificationAsync`; `RegisterCommand`,
+      `VerifyLoginOtpCommand`, `LoginWithGoogleCommand`, `LoginWithAppleCommand`,
+      `GetQrLoginStatusCommand`'a `Language` alanı eklendi, `QrLoginController`
+      `RequestLanguageResolver`'ı kullanan İKİNCİ controller oldu.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`A-10_email-servisi-hesap-temizleme/01_email-sablonlari.html`)
+- [x] `SmtpEmailService` (MailKit; SMTP'yi repo'dan alır, `Decrypt` ile çözer) + DI (dev→Dev, prod→Smtp
+      — `AddApplicationServices(bool isDevelopment)`, `IHostEnvironment` DEĞİL: Application katmanı
+      Hosting'e bağımlı olmamalı). `MailKitSender` (gönderim adımları `MailKitSmtpTestService` ile
+      paylaşıldı; try/catch bilinçli olarak paylaşılmadı — mekanizma ortak, politika ayrı).
+      **Kritik/bilgilendirme ayrımı:** OTP e-postaları `EmailSendFailedException` (503,
+      `EMAIL_SEND_FAILED`) fırlatır, bildirim e-postaları hatayı yutup loglar.
+      `SmtpSettingsNotConfiguredException` dahil TÜM hatalar sarılır (admin'e yazılmış yönerge
+      son kullanıcıya gösterilmez).
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`02_smtp-email-servisi.html`)
+- [x] `AccountCleanupBackgroundService : BackgroundService` (günde 1, 03:00 UTC, `API/BackgroundServices/`,
+      projedeki İLK `IHostedService`) — mantık test edilebilir olsun diye `IAccountCleanupService`/
+      `AccountCleanupService`'te (`Application/Services/`), `IUserRepository.GetPendingAnonymizationAsync`
+      (`IgnoreQueryFilters` + `!IsAnonymized`). Her anonimleştirilen hesap için `IActivityLogger`'a
+      **`ANONYMIZE_ACCOUNT`** (`UserId` dolu, `ActorRole=NULL` çünkü sistem/background job yaptı,
+      kişi değil; `OldValue` YAZILMAZ — anonimleştirilen PII'yi log tablosuna kopyalamak olurdu).
+      **Kapsam genişlemesi:** SECURITY.md §9'un ilk listesine ek olarak `DisplayName`/`AvatarUrl`/
+      `LastLoginIP`/`OneSignalPlayerId`/bekleyen OTP alanları da temizlenir + `IsActive=false`
+      (avatar bir fotoğraf, IP ve cihaz kimliği de kişisel veri; ayrıca `/uploads` A-08'de public
+      yapılmıştı). SECURITY.md §9 bu kapsamla güncellendi.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`03_hesap-temizleme-gorevi.html`)
+- [x] **Birim testleri:** `AccountCleanupServiceTests` (7 — 30 gün grace sonrası anonimleştirme,
+      blok hash'inin GERÇEK adresten ve `Email` üzerine yazılmadan ÖNCE üretilmesi, tüm PII
+      alanlarının temizlenmesi, `ActorRole=null` audit, `UpdateAsync(user, null, ct)`, çoklu kayıt,
+      boş liste), `EmailTemplatesTests` (13), `SmtpEmailServiceTests` (5 — gerçek SMTP'ye
+      bağlanmadan kritik/bilgilendirme ayrımı), `UserRepositoryTests` (+4), `LoginCompletionServiceTests`
+      (+2). Toplam 265 → **296/296 yeşil**.
+- [x] ➜ **BACKEND_AKADEMI'ye işle** (`04_testler-ozet-sozluk.html`, kök `index.html`'e kart eklendi)
+
+**A-10 TAMAMLANDI (2026-07-25).** 6 e-posta şablonu (tr/de) + `IEmailService`'in dil kazanması,
+`SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService`
+(projedeki ilk zamanlanmış görev), **296/296 birim testi yeşil**,
+`BACKEND_AKADEMI/A-10_email-servisi-hesap-temizleme/` (4 bölüm) işlendi, kök karta eklendi.
+**Faz A tamamlandı** (A-07.1 bilinçli olarak C-02'yi bekliyor — kendi notundaki karar gereği
+Faz A'nın "bitti" sayılmasını engellemez).
+
+**Test edilmeyen tek parça:** `AccountCleanupBackgroundService`'in zamanlama hesabı — `WordLearner.Tests`
+API projesine referans vermez (Controller'lar/Middleware'ler de aynı sebeple birim testi almaz).
+İş mantığının o sınıfın DIŞINDA durması tam da bu yüzden kritikti.

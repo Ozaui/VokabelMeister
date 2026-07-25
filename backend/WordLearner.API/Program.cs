@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Sinks.MSSqlServer;
+using WordLearner.API.BackgroundServices;
 using WordLearner.API.Filters;
 using WordLearner.API.Logging;
 using WordLearner.API.Middleware;
@@ -49,7 +50,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddApplicationServices();
+builder.Services.AddApplicationServices(builder.Environment.IsDevelopment());
+builder.Services.AddHostedService<AccountCleanupBackgroundService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using WordLearner.API.Common;
 using WordLearner.Application.Common.Models;
 using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Features.QrLogin;
@@ -19,6 +20,7 @@ public class QrLoginController : ControllerBase
     public QrLoginController(IMediator mediator) => _mediator = mediator;
 
     private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
+    private string? Language => RequestLanguageResolver.Resolve(HttpContext);
     private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpPost("generate")]
@@ -43,7 +45,7 @@ public class QrLoginController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status410Gone)]
     public async Task<ActionResult<QrStatusResponse>> GetStatus(string token, CancellationToken ct) =>
-        Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { ClientIp = ClientIp }, ct));
+        Ok(await _mediator.Send(new GetQrLoginStatusCommand(token) { Language = Language, ClientIp = ClientIp }, ct));
 
     [HttpPost("{token}/scan")]
     [Authorize]

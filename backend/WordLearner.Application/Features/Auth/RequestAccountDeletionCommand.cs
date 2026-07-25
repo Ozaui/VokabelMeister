@@ -44,7 +44,7 @@ public class RequestAccountDeletionCommandHandler
         user.PendingOtpCodePurpose = OtpPurpose.AccountDeletion;
         await _userRepository.UpdateAsync(user, user.Id, ct);
 
-        await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, ct);
+        await _emailService.SendAccountDeletionOtpAsync(user.Email, otpCode, request.Language, ct);
         return new MessageResponse(
             "ACCOUNT_DELETION_OTP_SENT",
             SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", request.Language)

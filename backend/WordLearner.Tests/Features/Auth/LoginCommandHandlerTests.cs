@@ -51,7 +51,7 @@ public class LoginCommandHandlerTests
         await handler.Handle(new LoginCommand(user.Email, "Deneme123!@#"), default);
 
         // ASSERT
-        _emailService.Verify(e => e.SendLoginOtpAsync(user.Email, "123456", default), Times.Once);
+        _emailService.Verify(e => e.SendLoginOtpAsync(user.Email, "123456", null, default), Times.Once);
     }
 
     [Fact]

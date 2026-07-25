@@ -30,7 +30,7 @@ public class ResendVerificationCommandHandlerTests
         await handler.Handle(new ResendVerificationCommand("test@example.com"), default);
 
         // ASSERT
-        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("test@example.com", "123456", default), Times.Once);
+        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("test@example.com", "123456", null, default), Times.Once);
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class ResendVerificationCommandHandlerTests
         // ASSERT
         sonuc.Message.Should().NotBeNullOrEmpty();
         _emailService.Verify(
-            e => e.SendEmailVerificationOtpAsync(It.IsAny<string>(), It.IsAny<string>(), default),
+            e => e.SendEmailVerificationOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), default),
             Times.Never
         );
     }

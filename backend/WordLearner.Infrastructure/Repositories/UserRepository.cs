@@ -70,4 +70,18 @@ public class UserRepository : Repository<User>, IUserRepository
         string emailHash,
         CancellationToken ct = default
     ) => _set.IgnoreQueryFilters().AnyAsync(u => u.OriginalEmailHash == emailHash, ct);
+
+    public async Task<IReadOnlyList<User>> GetPendingAnonymizationAsync(
+        DateTime utcNow,
+        CancellationToken ct = default
+    ) =>
+        await _set.IgnoreQueryFilters()
+            .Where(u =>
+                u.IsDeleted
+                && !u.IsAnonymized
+                && u.ScheduledDeletionAt != null
+                && u.ScheduledDeletionAt <= utcNow
+            )
+            .OrderBy(u => u.Id)
+            .ToListAsync(ct);
 }

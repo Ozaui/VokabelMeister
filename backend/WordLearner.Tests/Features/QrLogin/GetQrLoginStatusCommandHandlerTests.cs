@@ -36,7 +36,7 @@ public class GetQrLoginStatusCommandHandlerTests
         _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
         var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1", "System"), false);
         _loginCompletionService
-            .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", default))
+            .Setup(l => l.CompleteLoginAsync(user, "1.2.3.4", null, default))
             .ReturnsAsync(authResponse);
         var handler = CreateHandler();
 
@@ -75,7 +75,7 @@ public class GetQrLoginStatusCommandHandlerTests
         _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
         var authResponse = new AuthTokenResponse("access", "refresh", 900, new AuthUserDto(5, "A1", "System"), true);
         _loginCompletionService
-            .Setup(l => l.CompleteLoginAsync(user, null, default))
+            .Setup(l => l.CompleteLoginAsync(user, null, null, default))
             .ReturnsAsync(authResponse);
         var handler = CreateHandler();
 
@@ -110,7 +110,7 @@ public class GetQrLoginStatusCommandHandlerTests
         await act.Should().ThrowAsync<AccountNotActiveException>();
         session.Status.Should().Be(QrLoginStatus.Confirmed);
         _loginCompletionService.Verify(
-            l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), default),
+            l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), It.IsAny<string?>(), default),
             Times.Never
         );
     }
@@ -130,7 +130,7 @@ public class GetQrLoginStatusCommandHandlerTests
         _qrRepo.Setup(r => r.GetByTokenHashAsync("hash", default)).ReturnsAsync(session);
         _userRepo.Setup(r => r.GetByIdIncludingDeletedAsync(5, default)).ReturnsAsync(user);
         _loginCompletionService
-            .Setup(l => l.CompleteLoginAsync(user, null, default))
+            .Setup(l => l.CompleteLoginAsync(user, null, null, default))
             .ThrowsAsync(new AccountAnonymizedException());
         var handler = CreateHandler();
 
@@ -162,7 +162,7 @@ public class GetQrLoginStatusCommandHandlerTests
         // ASSERT
         await act.Should().ThrowAsync<QrSessionGoneException>();
         _loginCompletionService.Verify(
-            l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), default),
+            l => l.CompleteLoginAsync(It.IsAny<User>(), It.IsAny<string?>(), It.IsAny<string?>(), default),
             Times.Never
         );
     }

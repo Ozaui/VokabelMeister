@@ -10,6 +10,9 @@ namespace WordLearner.Application.Features.Auth;
 public record LoginWithGoogleCommand(string IdToken) : IRequest<AuthTokenResponse>
 {
     public string? ClientIp { get; init; }
+
+    // Yalnızca grace period'daki bir hesap kurtarıldığında gidecek bilgilendirme e-postasının dili için.
+    public string? Language { get; init; }
 }
 
 public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleCommand, AuthTokenResponse>
@@ -62,6 +65,6 @@ public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleComm
         if (!user.IsActive)
             throw new AccountNotActiveException();
 
-        return await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, ct);
+        return await _loginCompletionService.CompleteLoginAsync(user, request.ClientIp, request.Language, ct);
     }
 }

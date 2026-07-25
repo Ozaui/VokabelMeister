@@ -251,4 +251,80 @@ public class UserRepositoryTests
         // ASSERT
         sonuc.Should().HaveCount(1);
     }
+
+    [Fact]
+    public async Task GetPendingAnonymizationAsync_GracePeriodExpired_ReturnsUser()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var kullanici = await repo.AddAsync(
+            new User { Email = "suresi-dolan@example.com", FirstName = "A", LastName = "B" }
+        );
+        kullanici.IsDeleted = true;
+        kullanici.ScheduledDeletionAt = DateTime.UtcNow.AddDays(-1);
+        await repo.UpdateAsync(kullanici);
+
+        // ACT
+        var sonuc = await repo.GetPendingAnonymizationAsync(DateTime.UtcNow);
+
+        // ASSERT — soft delete filtresi yok sayılmazsa silinmiş hesap hiç bulunamazdı.
+        sonuc.Should().ContainSingle().Which.Id.Should().Be(kullanici.Id);
+    }
+
+    [Fact]
+    public async Task GetPendingAnonymizationAsync_GracePeriodStillRunning_ReturnsEmpty()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var kullanici = await repo.AddAsync(
+            new User { Email = "grace@example.com", FirstName = "A", LastName = "B" }
+        );
+        kullanici.IsDeleted = true;
+        kullanici.ScheduledDeletionAt = DateTime.UtcNow.AddDays(20);
+        await repo.UpdateAsync(kullanici);
+
+        // ACT
+        var sonuc = await repo.GetPendingAnonymizationAsync(DateTime.UtcNow);
+
+        // ASSERT
+        sonuc.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetPendingAnonymizationAsync_AlreadyAnonymized_ReturnsEmpty()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        var kullanici = await repo.AddAsync(
+            new User { Email = "anonim@example.com", FirstName = "A", LastName = "B" }
+        );
+        kullanici.IsDeleted = true;
+        kullanici.IsAnonymized = true;
+        kullanici.ScheduledDeletionAt = DateTime.UtcNow.AddDays(-40);
+        await repo.UpdateAsync(kullanici);
+
+        // ACT — aksi hâlde aynı hesap her gece tekrar tekrar anonimleştirilir, her seferinde log yazılırdı.
+        var sonuc = await repo.GetPendingAnonymizationAsync(DateTime.UtcNow);
+
+        // ASSERT
+        sonuc.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetPendingAnonymizationAsync_ActiveUser_ReturnsEmpty()
+    {
+        // ARRANGE
+        await using var context = InMemoryDbContextFactory.CreateContext();
+        var repo = new UserRepository(context);
+        await repo.AddAsync(new User { Email = "aktif2@example.com", FirstName = "A", LastName = "B" });
+
+        // ACT
+        var sonuc = await repo.GetPendingAnonymizationAsync(DateTime.UtcNow);
+
+        // ASSERT
+        sonuc.Should().BeEmpty();
+    }
 }

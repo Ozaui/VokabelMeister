@@ -40,7 +40,7 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
             user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
             user.PendingOtpCodePurpose = OtpPurpose.PasswordReset;
             await _userRepository.UpdateAsync(user, user.Id, ct);
-            await _emailService.SendPasswordResetOtpAsync(user.Email, otpCode, ct);
+            await _emailService.SendPasswordResetOtpAsync(user.Email, otpCode, request.Language, ct);
         }
 
         return new MessageResponse(

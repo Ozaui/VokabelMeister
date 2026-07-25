@@ -40,7 +40,7 @@ public class ResendVerificationCommandHandler : IRequestHandler<ResendVerificati
             user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(IOtpService.OtpExpiryMinutes);
             user.PendingOtpCodePurpose = OtpPurpose.EmailVerification;
             await _userRepository.UpdateAsync(user, user.Id, ct);
-            await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, ct);
+            await _emailService.SendEmailVerificationOtpAsync(user.Email, otpCode, request.Language, ct);
         }
 
         return new MessageResponse(

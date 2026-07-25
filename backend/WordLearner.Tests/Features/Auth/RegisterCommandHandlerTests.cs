@@ -45,7 +45,7 @@ public class RegisterCommandHandlerTests
         // ASSERT
         sonuc.Email.Should().Be("new@example.com");
         _userRepo.Verify(r => r.AddAsync(It.Is<User>(u => u.PasswordHash == "hashed-password"), null, default), Times.Once);
-        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("new@example.com", "123456", default), Times.Once);
+        _emailService.Verify(e => e.SendEmailVerificationOtpAsync("new@example.com", "123456", null, default), Times.Once);
     }
 
     [Fact]
