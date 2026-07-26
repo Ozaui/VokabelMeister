@@ -49,10 +49,6 @@
         nedenBuKlasor: 'Interfaces/Repositories/ — ICategoryRepository/IWordConceptRepository ile AYNI klasör, flat. NOT: Bu bir SAF EKLEME (STANDART.md §3.2) — var olan GetByEmailAsync/GetByGoogleIdAsync gibi metotların gövdesi DEĞİŞMEDİ, yalnızca iki YENİ, bağımsız metot eklendi; bu yüzden dosyanın TAMAMI değil, eklenen kısım + öncesi/sonrasından birer metot gösteriliyor.',
         kod: `public interface IUserRepository : IRepository<User>
 {
-    // AMAÇ: \`GET /admin/users\` — arama (Email/FirstName/LastName) + role filtresiyle
-    //       sayfalı kullanıcı listesi. Soft-delete filtresi NORMAL uygulanır
-    //       (GetByEmailAsync'in aksine) — admin panel silinmiş/anonimleştirilmiş
-    //       hesapları bu genel listede GÖRMEZ, yalnızca aktif hesap tabanını yönetir.
     Task<PagedResult<User>> GetPagedAsync(
         string? search,
         string? role,
@@ -61,11 +57,8 @@
         CancellationToken ct = default
     );
 
-    // AMAÇ: E-postaya göre kullanıcı bulur — soft delete filtresini YOK SAYAR.
-    // NEDEN: Grace period (30 gün) içindeki soft-delete'li bir hesap login/register
-    //        akışlarında hâlâ görülebilmeli (hesap kurtarma, tekrar kayıt engeli için) —
-    //        global soft delete filtresi bu senaryoda bilerek bypass edilir; IsDeleted/
-    //        IsAnonymized kontrolü çağıran (AuthService) tarafında yapılır.
+    // Soft delete filtresini YOK SAYAR — grace period içindeki bir hesap login/register'da
+    // görünmelidir (hesap kurtarma, tekrar kayıt engeli); IsDeleted/IsAnonymized kontrolü çağıranda yapılır.
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
 
     // ... (GetByIdIncludingDeletedAsync, GetByGoogleIdAsync, GetByAppleIdAsync,
@@ -77,12 +70,6 @@
             aciklama: 'Dönüş tipi `PagedResult<User>` — Entity\'nin KENDİSİ, henüz bir DTO değil. `GetUsersQueryHandler` (bir sonraki bölüm) bu sayfayı `AdminUserListItemDto`\'ya ÇEVİRİR.',
             neden: 'GetWordsQuery/GetCategoryWordsQuery (A-05/A-06) ile AYNI katman ayrımı: Repository katmanı DB\'den ne geldiğini bilir (Entity), Handler bunu API sözleşmesine (DTO) çevirir — Repository\'nin DTO\'yu BİLMESİ, Application→Infrastructure bağımlılık yönünü (CLAUDE.md §5) TERSİNE çevirirdi (DTOs Application katmanında yaşıyor, Repository interface\'i de Application\'da ama implementasyonu Infrastructure\'da).',
             olmasaydi: '`GetPagedAsync` doğrudan `PagedResult<AdminUserListItemDto>` dönseydi, Infrastructure katmanındaki `UserRepository`\'nin `WordLearner.Application.DTOs.Admin` namespace\'ine bağımlı olması GEREKİRDİ — bu, "hangi katman DTO şeklini belirler" sorusunu BULANIKLAŞTIRır, ileride DTO şekli değiştiğinde (ör. yeni bir alan eklendiğinde) Repository katmanına da DOKUNMAK gerekirdi.'
-          },
-          {
-            satir: '// AMAÇ: `GET /admin/users` — arama (Email/FirstName/LastName) + role filtresiyle',
-            aciklama: 'Bu satırın hemen altındaki "Soft-delete filtresi NORMAL uygulanır" notu, bu bölümün EN ÖNEMLİ mimari kararı — `_set` (Repository<T>\'nin taban queryable\'ı) hiçbir `IgnoreQueryFilters()` ÇAĞIRMAZ.',
-            neden: 'GetByEmailAsync/GetByGoogleIdAsync/GetByAppleIdAsync/OriginalEmailHashExistsAsync (hepsi A-03/A-03.1\'den) BİLEREK `IgnoreQueryFilters()` kullanıyor çünkü grace-period kurtarma akışlarının soft-delete\'li bir kaydı GÖRMESİ gerekiyor — admin genel listesi ise TAM TERSİ bir ihtiyaca hizmet ediyor: "şu an sistemde aktif olarak var olan hesapları YÖNET", silinmiş/anonimleştirilmiş bir hesabı YÖNETİLECEK bir kayıt olarak GÖSTERMEMELİ.',
-            olmasaydi: '`GetPagedAsync` de `IgnoreQueryFilters()` kullansaydı, admin panelin kullanıcı listesinde 30 gün önce hesabını silmiş, e-postası anonimleştirilmiş ("deleted_42@deleted.invalid") bir kayıt GÖRÜNÜRDÜ — admin bu "hayalet" kaydı YANLIŞLIKLA gerçek bir kullanıcı sanıp rolünü değiştirmeye/dondurmaya ÇALIŞABİLİRDİ, anlamsız bir işlem.'
           }
         ]
       },
@@ -96,8 +83,6 @@
     public UserRepository(WordLearnerDbContext db)
         : base(db) { }
 
-    // AMAÇ: Admin panel kullanıcı listesi — arama Email/FirstName/LastName'de,
-    //       \`_set\` zaten Repository<T>'nin soft-delete global filtresini taşır.
     public async Task<PagedResult<User>> GetPagedAsync(
         string? search,
         string? role,
@@ -125,7 +110,8 @@
         return new PagedResult<User>(items, totalCount, page, pageSize);
     }
 
-    // AMAÇ: E-postaya göre kullanıcı bulur, soft delete filtresini bilerek yok sayar.
+    // IgnoreQueryFilters — grace period içindeki (soft-delete'li) hesap login/register'da
+    // görünmezse hesap kurtarma ve "e-posta zaten kullanımda" kontrolü çalışamaz.
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct = default) =>
         _set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
 

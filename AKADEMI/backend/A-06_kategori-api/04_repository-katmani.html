@@ -29,38 +29,17 @@
         nedenBuKlasor: 'Interfaces/Repositories/ — IWordConceptRepository/ILanguageRepository ile AYNI klasör, flat (feature alt klasörü açılmadı).',
         kod: `public interface ICategoryRepository : IRepository<Category>
 {
-    // AMAÇ: \`GET /categories\` için TÜM (silinmemiş) kategorilerin düz listesi —
-    //       Translations+Language dahil. Ağaç, bu düz listeden BELLEKTE (CategoryDtoBuilder)
-    //       kurulur; sınırsız derinlikte bir hiyerarşiyi tek sorguda Include zinciriyle
-    //       çekmenin EF Core'da doğrudan bir yolu olmadığı için (ParentCategory'yi N kez
-    //       zincirlemek gerekirdi) bu, kategori sayısı küçük olduğu sürece (onlarca,
-    //       binlerce değil) en basit ve doğru yaklaşım.
-    // NEDEN level filtresi burada: MinLevel/MaxLevel düz alan karşılaştırması, join
-    //       gerektirmiyor — DB'ye WHERE olarak gönderilmesi ekstra bir sorgu maliyeti
-    //       YARATMAZ. Bir kategori, \`level\` NULL ise ya da (MinLevel NULL VEYA
-    //       MinLevel<=level) VE (MaxLevel NULL VEYA level<=MaxLevel) ise eşleşir.
+    // Ağaç, düz listeden BELLEKTE (CategoryDtoBuilder) kurulur — sınırsız derinlikli bir
+    // hiyerarşiyi tek sorguda Include zinciriyle çekmenin EF Core'da doğrudan yolu yok.
+    // level filtresi de SQL'de DEĞİL bellekte uygulanır — string.Compare SQL Server'a güvenilir çevrilmez.
     Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default);
 
-    // AMAÇ: Detay/güncelleme — tek bir kategoriyi Translations'ıyla birlikte yükler.
     Task<Category?> GetWithTranslationsAsync(int id, CancellationToken ct = default);
-
-    // AMAÇ: \`includeWordCount=true\` olduğunda her kategorinin bağlı AKTİF (soft-delete
-    //       edilmemiş WordConcept'e ait) WordCategory sayısını döner — yalnızca
-    //       istendiğinde hesaplanır, her \`GET /categories\`'de gereksiz JOIN yapılmaz.
     Task<IReadOnlyDictionary<int, int>> GetWordCountsAsync(CancellationToken ct = default);
-
-    // AMAÇ: \`categoryId\`'nin en az bir alt kategorisi (soft-delete edilmemiş) var mı —
-    //       DeleteCategoryCommand'ın 409 koruması (CategoryHasChildrenException).
     Task<bool> HasChildrenAsync(int categoryId, CancellationToken ct = default);
-
-    // AMAÇ: \`categoryId\`'ye bağlı en az bir aktif WordConcept var mı — DeleteCategoryCommand'ın
-    //       409 koruması (CategoryHasActiveWordsException).
     Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken ct = default);
-
-    // AMAÇ: \`categoryId\`'nin ParentCategoryId'sini \`newParentId\` yapmak bir DÖNGÜ yaratır mı —
-    //       yani newParentId, categoryId'nin KENDİSİ veya alt ağacındaki bir kategori mi?
-    //       UpdateCategoryCommandHandler'ın CategoryParentCycleException koruması.
     Task<bool> WouldCreateCycleAsync(int categoryId, int newParentId, CancellationToken ct = default);
+    Task<int> GetTotalCountAsync(CancellationToken ct = default);
 }`,
         satirlar: [
           {
@@ -90,11 +69,8 @@
         nedenBuKlasor: 'Infrastructure/Repositories/ — WordConceptRepository/LanguageRepository ile AYNI seviyede, flat.',
         kod: `public async Task<IReadOnlyList<Category>> GetAllWithTranslationsAsync(string? level, CancellationToken ct = default)
 {
-    // NEDEN önce ToListAsync sonra bellekte filtre: MinLevel/MaxLevel karşılaştırması
-    // (string.Compare) EF Core'un SQL Server sağlayıcısında GÜVENİLİR şekilde SQL'e
-    // çevrilmez (bkz. Repository ICategoryRepository.cs "NEDEN level filtresi burada"
-    // notu) — kategori sayısı küçük olduğu için (onlarca) bellekte filtrelemek
-    // hem daha güvenli (davranış C#'ın kendi string sıralamasıyla garanti) hem basit.
+    // Önce ToListAsync sonra bellekte filtre — string.Compare EF Core'un SQL Server
+    // sağlayıcısında güvenilir şekilde SQL'e çevrilmez; kategori sayısı küçük olduğu için sorun değil.
     var all = await _set
         .Include(c => c.Translations)
         .ThenInclude(t => t.Language)
@@ -171,8 +147,7 @@ public Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken ct = def
         if (current.Value == categoryId)
             return true;
 
-        // NEDEN visited kontrolü: DB'de zaten bozuk (kendinden önceki bir kod hatasıyla
-        // oluşmuş) bir döngü varsa bu ÖNLEM olmadan while sonsuza kadar dönerdi.
+        // DB'de zaten bozuk bir döngü varsa bu önlem olmadan while sonsuza kadar dönerdi.
         if (!visited.Add(current.Value))
             return false;
 
@@ -220,7 +195,9 @@ public Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken ct = def
         baslik: 'CategoryDtoBuilder.cs — BuildTree (Düz Liste → Recursive Ağaç)',
         dosyaYolu: 'backend/WordLearner.Application/Features/Categories/CategoryDtoBuilder.cs',
         nedenBuKlasor: 'Features/Categories/ — WordConceptDtoBuilder (A-05) ile AYNI konum kararı: Command+Handler\'lar birbirini çağıramadığı için (CLAUDE.md §3) paylaşılan dönüşüm mantığı static bir yardımcıya çıkarılır, ama DI\'a kayıtlı bir "servis" DEĞİL. NOT: gerçek dosyada BuildTree ile private Build arasında public BuildSingle metodu da var — bu slaytta ATLANDI, hemen SIRADAKİ slaytta ayrı ve TAM olarak gösteriliyor (iki ayrı sorumluluk, iki ayrı slayt).',
-        kod: `public static IReadOnlyList<CategoryDto> BuildTree(
+        kod: `// Level filtresi bir üst kategoriyi eleyip alt kategoriyi geçebilir — bu durumda
+// ParentCategoryId'si flat listede artık yok olan her düğüm kök seviyeye terfi ettirilir.
+public static IReadOnlyList<CategoryDto> BuildTree(
     IReadOnlyList<Category> flat,
     IReadOnlyDictionary<int, int>? wordCounts
 )

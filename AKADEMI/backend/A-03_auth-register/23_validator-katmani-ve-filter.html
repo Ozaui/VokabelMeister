@@ -32,26 +32,12 @@
         tur: 'kod',
         baslik: 'PasswordRuleExtensions.cs — Paylaşılan Parola Kuralı',
         dosyaYolu: 'backend/WordLearner.Application/Validators/Auth/PasswordRuleExtensions.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// PasswordRuleExtensions.cs
-//
-// AMAÇ: Şifre gücü kurallarını (REFERENCE/SECURITY.md §1) tek bir yerden
-//       paylaşan FluentValidation extension metodu.
-// NEDEN: RegisterRequestValidator ve ResetPasswordRequestValidator AYNI şifre
-//        kurallarını uyguluyor — kural tekrarını önlemek için ortak metoda alındı.
-//        Her kural hem WithMessage (sabit İngilizce, yalnızca log/DB içindir)
-//        hem WithErrorCode (ValidationFilter'ın ErrorMessages'ten dile göre
-//        çözeceği kod) taşır — AppException ile birebir aynı ayrım.
-// BAĞIMLILIKLAR: FluentValidation.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using FluentValidation;
+        kod: `using FluentValidation;
 
 namespace WordLearner.Application.Validators.Auth;
 
 public static class PasswordRuleExtensions
 {
-    // AMAÇ: Min 12 karakter + büyük/küçük harf + rakam + özel karakter kuralını uygular.
     public static IRuleBuilderOptions<T, string> ValidPassword<T>(
         this IRuleBuilder<T, string> ruleBuilder
     ) =>
@@ -59,7 +45,7 @@ public static class PasswordRuleExtensions
             .NotEmpty()
             .WithMessage("Password must not be empty.")
             .WithErrorCode("PASSWORD_REQUIRED")
-            .MinimumLength(12) // NEDEN: brute-force direnci
+            .MinimumLength(12) // brute-force direnci
             .WithMessage("Password must be at least 12 characters long.")
             .WithErrorCode("PASSWORD_TOO_SHORT")
             .Matches(@"[A-Z]")
@@ -83,7 +69,7 @@ public static class PasswordRuleExtensions
             olmasaydi: 'Extension metot OLMASAYDI, PAYLAŞILAN kural bir NORMAL statik metot (`PasswordRules.Apply(ruleBuilder)`) OLARAK yazılırdı — ÇAĞRI sözdizimi (`RuleFor(x => x.Password).ValidPassword()` YERİNE `PasswordRules.Apply(RuleFor(x => x.Password))`) DAHA AZ OKUNABİLİR, FluentValidation\'ın KENDİ akıcı (fluent) API TARZIYLA TUTARSIZ OLURDU.'
           },
           {
-            satir: '.MinimumLength(12) // NEDEN: brute-force direnci',
+            satir: '.MinimumLength(12) // brute-force direnci',
             aciklama: 'Şifrenin en AZ 12 karakter OLMASINI ZORUNLU kılar — bu SAYI (Bölüm 27\'deki `WorkFactor = 12` gibi) REFERENCE/SECURITY.md\'de PİNLENMİŞ bir DEĞERDİR, KEYFİ SEÇİLMEMİŞTİR.',
             neden: 'Uzun bir şifre, brute-force (deneme-yanılma) SALDIRILARINA karşı ÜSTEL olarak DAHA DİRENÇLİDİR — 8 karaktere GÖRE 12 karakter, OLASI kombinasyon SAYISINI ÇARPICI biçimde ARTIRIR, BCrypt\'in (Bölüm 27) YAVAŞLIĞIYLA BİRLEŞİNCE brute-force MALİYETİNİ PRATİKTE İMKANSIZ hâle GETİRİR.',
             olmasaydi: 'Minimum uzunluk KURALI OLMASAYDI (ya da ÇOK KISA bir sınır OLSAYDI), kullanıcılar "1234" gibi KOLAY tahmin EDİLEBİLİR şifreler SEÇEBİLİRDİ — BCrypt\'in yavaşlığı bile KISA/ZAYIF bir şifre uzayını KORUMAYA YETMEZDİ.'
@@ -100,16 +86,7 @@ public static class PasswordRuleExtensions
         tur: 'kod',
         baslik: 'RegisterCommandValidator.cs — PasswordRuleExtensions\'ı Kullanımı',
         dosyaYolu: 'backend/WordLearner.Application/Validators/Auth/RegisterRequestValidator.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// RegisterRequestValidator.cs
-//
-// AMAÇ: POST /auth/register girdisinin doğrulama kuralları.
-// NEDEN: Sunucu tarafı doğrulama her zaman gerekir (CODING_STANDARDS.md §6);
-//        client doğrulamasına güvenilmez.
-// BAĞIMLILIKLAR: FluentValidation, EmailRuleExtensions, PasswordRuleExtensions.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using FluentValidation;
+        kod: `using FluentValidation;
 using WordLearner.Application.Features.Auth;
 
 namespace WordLearner.Application.Validators.Auth;
@@ -153,28 +130,7 @@ public class RegisterCommandValidator : AbstractValidator<RegisterCommand>
         tur: 'kod',
         baslik: 'ValidationFilter.cs — MediatR\'a Gitmeden ÖNCE Kesen Global Filter',
         dosyaYolu: 'backend/WordLearner.API/Filters/ValidationFilter.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// ValidationFilter.cs
-//
-// AMAÇ: Controller action'lara gelen istek gövdesini (body), varsa DI'a kayıtlı
-//       bir FluentValidation validator'ı ile doğrulayan, tüm controller'larda
-//       ortak kullanılan global action filter.
-// NEDEN: FluentValidation.AspNetCore paketi (otomatik ModelState entegrasyonu)
-//        kullanılmıyor (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1'de yok) — bu
-//        filter aynı işi, DI'a kayıtlı IValidator<T>'leri reflection ile bulup
-//        manuel çalıştırarak yapar; her controller action'ının validasyon
-//        çağrısını elle yazmasına gerek kalmaz (ince katman kuralı, CODING_STANDARDS.md §5).
-//        KRİTİK: İstemciye giden mesaj her validation hatasının ErrorMessage'ı
-//        DEĞİL, ErrorCode'udur — ErrorMessage yalnızca validator'ın WithMessage()
-//        ile verdiği sabit İNGİLİZCE log/DB açıklamasıdır (AppException.Message
-//        ile birebir aynı ayrım). ErrorCode, ErrorMessages sözlüğünden isteğin
-//        Accept-Language'ına göre çözülür — aksi hâlde hata mesajları hep tek dile
-//        kilitli kalırdı.
-// BAĞIMLILIKLAR: FluentValidation, WordLearner.Application.Common.Localization.ErrorMessages,
-//                WordLearner.Application.Common.Models.ApiErrorResponse.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using FluentValidation;
+        kod: `using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using WordLearner.API.Common;
@@ -183,22 +139,14 @@ using WordLearner.Application.Common.Models;
 
 namespace WordLearner.API.Filters;
 
+// FluentValidation.AspNetCore paketi (otomatik ModelState entegrasyonu) kullanılmıyor —
+// bu filter DI'a kayıtlı IValidator<T>'leri reflection ile bulup manuel çalıştırır.
 public class ValidationFilter : IAsyncActionFilter
 {
     private readonly IServiceProvider _serviceProvider;
 
     public ValidationFilter(IServiceProvider serviceProvider) => _serviceProvider = serviceProvider;
 
-    // AMAÇ: Action çalışmadan önce, argümanlardan biri için DI'da kayıtlı bir
-    //       IValidator<T> varsa çalıştırır; başarısızsa 400 döner ve action'ı
-    //       hiç çalıştırmaz.
-    // NEDEN: Tek bir yerden tüm controller'lar için doğrulama sağlanır — yeni bir
-    //        controller/endpoint eklenince yalnızca ilgili Validator yazılır,
-    //        bu filter'a dokunulmaz.
-    // NASIL: 1) Her action argümanı için tipine uygun IValidator<T> ara
-    //        2) Bulunursa ValidateAsync çağır  3) Geçersizse her hatanın
-    //        ErrorCode'unu isteğin diline göre ErrorMessages'ten çözüp birleştir,
-    //        400 + ApiErrorResponse dön  4) Geçerliyse bir sonraki argümana geç.
     public async Task OnActionExecutionAsync(
         ActionExecutingContext context,
         ActionExecutionDelegate next
@@ -220,8 +168,8 @@ public class ValidationFilter : IAsyncActionFilter
 
             if (!result.IsValid)
             {
-                // NEDEN: e.ErrorMessage KULLANILMAZ (sabit İngilizce log metni) — e.ErrorCode
-                //        üzerinden ErrorMessages.Resolve ile isteğin diline göre çözülür.
+                // e.ErrorMessage kullanılmaz (sabit İngilizce log metni) — e.ErrorCode üzerinden
+                // ErrorMessages.Resolve ile isteğin diline göre çözülür.
                 var messages = result
                     .Errors.Select(e => ErrorMessages.Resolve(e.ErrorCode, language))
                     .Distinct();

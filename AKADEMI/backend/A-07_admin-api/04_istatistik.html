@@ -40,12 +40,10 @@
         baslik: 'AdminUserDtos.cs — AdminStatisticsDto (Yeniden)',
         dosyaYolu: 'backend/WordLearner.Application/DTOs/Admin/AdminUserDtos.cs',
         nedenBuKlasor: 'Bölüm 1\'deki AYNI dosya, AYNI konum — yalnızca bu sefer gerçek bir Handler\'la BİRLİKTE ekleniyor.',
-        kod: `// AMAÇ: \`GET /admin/statistics\` yanıtındaki tek bir günün kaydı sayısı — yalnızca
-//       kayıt (registration) grafiği için, bkz. AdminStatisticsDto NEDEN notu.
-public record AdminDailyCountDto(DateOnly Date, int Count);
+        kod: `public record AdminDailyCountDto(DateOnly Date, int Count);
 
-// AMAÇ: \`GET /admin/statistics\` yanıtı (GetAdminStatisticsQuery'nin gerçek tüketicisi).
-// NEDEN LoginsByDay YOK: ... (bkz. Bölüm 4 kavram slaytı)
+// LoginsByDay yok — Users.LastLoginAt yalnızca en son girişin üzerine yazılan tek bir alan,
+// bir login-event geçmişi tablosu olmadığı için "her gün kaç login oldu" hesaplanamaz.
 public record AdminStatisticsDto(
     int TotalUsers,
     int ActiveUsers,
@@ -69,10 +67,6 @@ public record AdminStatisticsDto(
         dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IUserRepository.cs',
         nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — `GetStatisticsAsync` Bölüm 1\'de YAZILIP GERİ ALINMIŞTI, burada AYNI imzayla, ama bu sefer GetAdminStatisticsQueryHandler\'ın gerçek çağrısıyla birlikte geri geliyor. `GetRegistrationDatesAsync` TAMAMEN yeni.',
         kod: `Task<(int TotalUsers, int ActiveUsers, int FrozenUsers)> GetStatisticsAsync(CancellationToken ct = default);
-
-// AMAÇ: \`GET /admin/statistics\`'in kayıt grafiği — \`fromUtc\` (dahil) ve sonrasındaki
-//       her User.CreatedAt değerini HAM olarak döner; günlere GRUPLAMA Handler'da
-//       (bellekte) yapılır.
 Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, CancellationToken ct = default);`,
         satirlar: [
           {
@@ -97,6 +91,7 @@ Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, Cancel
     var fromUtc = DateTime.UtcNow.Date.AddDays(-(request.DaysForGraph - 1));
     var registrationDates = await _userRepository.GetRegistrationDatesAsync(fromUtc, ct);
 
+    // Sıfır kayıtlı günler de (Count=0) listeye eklenir ki grafik boşluksuz, N gün uzunluğunda çizilsin.
     var countsByDate = registrationDates
         .GroupBy(d => DateOnly.FromDateTime(d))
         .ToDictionary(g => g.Key, g => g.Count());
@@ -111,8 +106,11 @@ Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, Cancel
         .ToList();
 
     return new AdminStatisticsDto(
-        totalUsers, activeUsers, frozenUsers,
-        totalWordConcepts, totalCategories,
+        totalUsers,
+        activeUsers,
+        frozenUsers,
+        totalWordConcepts,
+        totalCategories,
         registrationsByDay
     );
 }`,
@@ -142,9 +140,7 @@ Task<IReadOnlyList<DateTime>> GetRegistrationDatesAsync(DateTime fromUtc, Cancel
         baslik: 'AdminController.cs — GET /admin/statistics',
         dosyaYolu: 'backend/WordLearner.API/Controllers/AdminController.cs',
         nedenBuKlasor: 'SAF EKLEME (STANDART.md §3.2) — Bölüm 3\'teki 4 endpoint\'in ARDINA, 5\'inci endpoint olarak eklendi. Sınıfın kendisi (constructor, CurrentUserId/CurrentRole/ClientIp) DEĞİŞMEDİ.',
-        kod: `// AMAÇ: Genel istatistik — toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori,
-//       son \`daysForGraph\` günün kayıt grafiği için ham sayılar.
-[HttpGet("statistics")]
+        kod: `[HttpGet("statistics")]
 [ProducesResponseType(typeof(AdminStatisticsDto), StatusCodes.Status200OK)]
 public async Task<ActionResult<AdminStatisticsDto>> GetStatistics(
     [FromQuery] int daysForGraph = 30,

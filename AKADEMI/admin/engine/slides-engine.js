@@ -319,12 +319,23 @@
   };
 
   // AMAÇ: Geçerli slaytı sahneye basar, üst çubuğu (sayaç/progress) ve nav butonlarını günceller.
+  // NEDEN: Bir satır açıklaması tıklandığında (activeAnnotationIdx dolu) aynı slayt yeniden
+  //        basılır; `.kod-pre` içeriği baştan yaratıldığından scrollTop sıfırlanırdı — kullanıcı
+  //        kodun altlarında bir satıra tıklayınca sayfa en başa atardı. Eski scroll konumunu
+  //        (yeni slayta geçişte DEĞİL, yalnızca aynı slaytta satır seçiminde) geri yükleyerek önleriz.
   function renderCurrent(activeAnnotationIdx) {
     const stage = document.getElementById('stage');
+    const prevPre = stage.querySelector('.kod-pre');
+    const prevScrollTop = prevPre ? prevPre.scrollTop : 0;
     const s = slides[current];
     const renderer = RENDERERS[s.tur] || renderKavram;
     stage.innerHTML = renderer(s, activeAnnotationIdx);
     stage.className = `stage stage-${s.tur}`;
+
+    if (activeAnnotationIdx != null) {
+      const newPre = stage.querySelector('.kod-pre');
+      if (newPre) newPre.scrollTop = prevScrollTop;
+    }
 
     document.getElementById('counter').textContent = `${current + 1} / ${total}`;
     document.getElementById('progressFill').style.width = `${((current + 1) / total) * 100}%`;

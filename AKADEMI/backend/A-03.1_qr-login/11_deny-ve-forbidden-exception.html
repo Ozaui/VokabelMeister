@@ -35,7 +35,6 @@
         nedenBuKlasor: null,
         kod: `public record DenyQrLoginCommand(string QrToken) : IRequest<Unit>
 {
-    // NEDEN UserId init-property: bkz. ScanQrLoginCommand.
     public int UserId { get; init; }
 }
 
@@ -43,14 +42,17 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
 {
     private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
     private readonly IPasswordService _passwordService;
+    private readonly ISecurityLogger _securityLogger;
 
     public DenyQrLoginCommandHandler(
         IQrLoginSessionRepository qrLoginSessionRepository,
-        IPasswordService passwordService
+        IPasswordService passwordService,
+        ISecurityLogger securityLogger
     )
     {
         _qrLoginSessionRepository = qrLoginSessionRepository;
         _passwordService = passwordService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<Unit> Handle(DenyQrLoginCommand request, CancellationToken ct)
@@ -66,6 +68,13 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
         session.Status = QrLoginStatus.Denied;
         await _qrLoginSessionRepository.UpdateAsync(session, request.UserId, ct);
 
+        await _securityLogger.LogAsync(
+            LogEventType.QrLoginDenied,
+            request.UserId,
+            ipAddress: session.RequesterIp,
+            ct: ct
+        );
+
         return Unit.Value;
     }
 }`,
@@ -75,12 +84,6 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
             aciklama: "Bölüm 6'daki ConfirmQrLoginCommand İLE BİREBİR AYNI imza — tek pozisyonel parametre (QrToken), dönüş tipi Unit.",
             neden: "Deny, Confirm İLE AYNI ÖN KOŞULU (Scanned + sahiplik) TAŞIDIĞI İÇİN, Command'ın GİRDİ ŞEKLİ de AYNI kalır — YALNIZCA HANGİ hedef duruma GEÇİLECEĞİ (Handler İÇİNDE) farklıdır.",
             olmasaydi: "Command'lar FARKLI bir şekilde tasarlansaydı (ör. Deny EK bir 'sebep' alanı TAŞISAYDI), İKİ Handler ARASINDAKİ simetri BOZULUR, karşılaştırması ZORLAŞIRDI."
-          },
-          {
-            satir: '// NEDEN UserId init-property: bkz. ScanQrLoginCommand.',
-            aciklama: "Kaynak koddaki yorum, AÇIKLAMAYI TEKRAR ETMEK yerine Bölüm 5'teki ScanQrLoginCommand'a İŞARET eder.",
-            neden: "Bu, CLAUDE.md'nin \"tekrar yazma\" ilkesinin KAYNAK KOD SEVİYESİNDEKİ karşılığıdır — AYNI gerekçe (UserId JWT'den gelir, gövdeden DEĞİL) DÖRT farklı Command'da (Scan, Confirm, Deny, Status) TEKRAR yazılmak yerine BİR yere BAĞLANIR.",
-            olmasaydi: "Her Command dosyasında AYNI paragraf TEKRAR yazılsaydı, bir gün bu gerekçe DEĞİŞTİĞİNDE (ör. YENİ bir güvenlik notu eklendiğinde) DÖRT yerin de GÜNCELLENMESİ gerekirdi."
           },
           {
             satir: 'public int UserId { get; init; }',
@@ -119,8 +122,8 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
             olmasaydi: "Bu parametre olmasaydı, `_qrLoginSessionRepository = qrLoginSessionRepository;` ataması YAZILAMAZDI."
           },
           {
-            satir: 'IPasswordService passwordService',
-            aciklama: "İKİNCİ ve SON parametre — sonunda virgül YOK.",
+            satir: 'IPasswordService passwordService,',
+            aciklama: "İKİNCİ parametre — ÜÇÜNCÜ bir parametre (ISecurityLogger securityLogger) onu İZLEDİĞİ için sonunda virgül VAR.",
             neden: "Parametrelerin sırası, alanların class İÇİNDE TANIMLANDIĞI sırayla AYNIDIR.",
             olmasaydi: "Bu parametre olmasaydı, Handler HAM token'ı ASLA hash'leyemezdi."
           },
@@ -138,8 +141,8 @@ public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Uni
           },
           {
             satir: '_passwordService = passwordService;',
-            aciklama: "SON atama.",
-            neden: "İki atamanın AYNI kalıpta yazılması BİLİNÇLİDİR.",
+            aciklama: "İKİNCİ atama — bir ÜÇÜNCÜSÜ (`_securityLogger = securityLogger;`) onu İZLER.",
+            neden: "Atamaların AYNI kalıpta yazılması BİLİNÇLİDİR.",
             olmasaydi: "Bu atama yapılmasaydı, `_passwordService` null kalırdı."
           },
           {

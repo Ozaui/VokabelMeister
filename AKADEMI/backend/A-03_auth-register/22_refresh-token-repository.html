@@ -32,16 +32,7 @@
         tur: 'kod',
         baslik: 'RefreshTokenConfiguration.cs — EF Core Tablo Eşlemesi',
         dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/RefreshTokenConfiguration.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// RefreshTokenConfiguration.cs
-//
-// AMAÇ: RefreshToken entity'sinin EF Core tablo eşlemesini tanımlar.
-// NEDEN: TokenHash/TokenFamily üzerinde arama sık yapılır (refresh/replay tespiti);
-//        User silindiğinde token'ların da silinmesi (CASCADE) veri bütünlüğünü korur.
-// BAĞIMLILIKLAR: EF Core, RefreshToken entity, User entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using Microsoft.EntityFrameworkCore;
+        kod: `using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.Auth;
 
@@ -100,36 +91,14 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
         tur: 'kod',
         baslik: 'IRefreshTokenRepository.cs — Sözleşme',
         dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IRefreshTokenRepository.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// IRefreshTokenRepository.cs
-//
-// AMAÇ: RefreshToken'a özel sorguları (hash ile arama, family iptali) IRepository<T>'nin
-//       genel CRUD'una ekler.
-// NEDEN: Token Family Pattern (REFERENCE/SECURITY.md §1) — refresh/replay tespiti ve
-//        "tüm cihazlardan çıkış" (şifre sıfırlama, hesap silme) bu metotları gerektirir.
-// BAĞIMLILIKLAR: IRepository<T>, WordLearner.Domain.Entities.RefreshToken.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using WordLearner.Domain.Entities.Auth;
+        kod: `using WordLearner.Domain.Entities.Auth;
 
 namespace WordLearner.Application.Interfaces.Repositories;
 
 public interface IRefreshTokenRepository : IRepository<RefreshToken>
 {
-    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
-    // NEDEN: İstemciden gelen ham token asla saklanmadığı için, doğrulama her zaman
-    //        hash üzerinden yapılır (IPasswordService.HashToken).
     Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default);
-
-    // AMAÇ: Aynı TokenFamily'e ait tüm refresh token'ları iptal eder (RevokedAt=UtcNow).
-    // NEDEN: Replay tespit edildiğinde (kullanılmış bir token tekrar geldiğinde) o
-    //        family'nin tamamı güvenli kabul edilmez, hepsi iptal edilir.
     Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default);
-
-    // AMAÇ: Bir kullanıcının TÜM refresh token'larını iptal eder (family'den bağımsız).
-    // NEDEN: Şifre sıfırlama ve hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi
-    //        (REFERENCE/SECURITY.md §7) — o kullanıcıya ait her token, hangi family'den
-    //        olursa olsun geçersiz kılınır.
     Task RevokeAllForUserAsync(int userId, CancellationToken ct = default);
 }`,
         satirlar: [
@@ -157,16 +126,7 @@ public interface IRefreshTokenRepository : IRepository<RefreshToken>
         tur: 'kod',
         baslik: 'RefreshTokenRepository.cs — İmplementasyon',
         dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/RefreshTokenRepository.cs',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// RefreshTokenRepository.cs
-//
-// AMAÇ: IRefreshTokenRepository'nin EF Core implementasyonu.
-// NEDEN: Repository<T>'yi miras alarak genel CRUD'u yeniden yazmadan yalnızca
-//        RefreshToken'a özgü sorguları (hash arama, family/kullanıcı iptali) ekler.
-// BAĞIMLILIKLAR: EF Core, Repository<T>, WordLearnerDbContext, RefreshToken entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using Microsoft.EntityFrameworkCore;
+        kod: `using Microsoft.EntityFrameworkCore;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Infrastructure.Data;
@@ -178,14 +138,12 @@ public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRep
     public RefreshTokenRepository(WordLearnerDbContext db)
         : base(db) { }
 
-    // AMAÇ: SHA-256 hash'ine göre refresh token kaydını bulur.
     public Task<RefreshToken?> GetByTokenHashAsync(
         string tokenHash,
         CancellationToken ct = default
     ) => _set.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
 
-    // AMAÇ: Aynı TokenFamily'e ait, henüz iptal edilmemiş tüm token'ları RevokedAt=UtcNow yapar.
-    // NEDEN: Replay tespitinde tüm family güvensiz sayılır — tek bir token değil, hepsi iptal edilir.
+    // Replay tespitinde tüm family güvensiz sayılır — tek token değil, hepsi iptal edilir.
     public async Task RevokeFamilyAsync(string tokenFamily, CancellationToken ct = default)
     {
         var tokens = await _set.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
@@ -197,9 +155,6 @@ public class RefreshTokenRepository : Repository<RefreshToken>, IRefreshTokenRep
         await _db.SaveChangesAsync(ct);
     }
 
-    // AMAÇ: Bir kullanıcının, hangi family'den olursa olsun, henüz iptal edilmemiş
-    //       tüm refresh token'larını RevokedAt=UtcNow yapar.
-    // NEDEN: Şifre sıfırlama/hesap silme sonrası "tüm cihazlardan çıkış" gereksinimi.
     public async Task RevokeAllForUserAsync(int userId, CancellationToken ct = default)
     {
         var tokens = await _set.Where(t => t.UserId == userId && t.RevokedAt == null)

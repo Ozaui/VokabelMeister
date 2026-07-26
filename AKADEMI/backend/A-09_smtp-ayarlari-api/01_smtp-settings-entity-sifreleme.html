@@ -33,46 +33,20 @@
         baslik: 'SmtpSettings.cs — Tam Dosya',
         dosyaYolu: 'backend/WordLearner.Domain/Entities/System/SmtpSettings.cs',
         nedenBuKlasor: 'Entities/System/ — Category/WordConcept ile AYNI desen (CLAUDE.md §5: her entity kendi domain alt klasöründe). "System" domain adı DATABASE_SCHEMA.md\'nin "Sistem ayarı" satırıyla birebir eşleşir.',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// SmtpSettings.cs
-//
-// AMAÇ: Uygulamanın e-posta gönderiminde kullandığı SMTP bağlantı bilgileri —
-//       admin panelden yönetilir, tek satırlık (singleton) bir yapılandırma kaydı
-//       (bkz. DATABASE_SCHEMA/Sistem.md).
-// NEDEN BaseEntity'den türer: CLAUDE.md "Veri katmanı" kuralı — log tabloları
-//       hariç her tablo BaseEntity taşır. DATABASE_SCHEMA.md'nin genel notu bu
-//       tabloda ad-hoc tanımlı \`UpdatedByUserId\` kolonunu (ilk taslak) BaseEntity
-//       standardıyla birleştirilecek şekilde işaretlemişti — burada o birleştirme
-//       yapıldı, ayrı bir \`UpdatedBy\` alanı EKLENMEDİ (BaseEntity.UpdatedByUserId
-//       zaten aynı amacı karşılıyor).
-// NEDEN Password DEĞİL PasswordEncrypted: ham şifre asla DB'ye yazılmaz — AES-256-CBC
-//       ile şifrelenmiş Base64(IV + cipher) burada durur (REFERENCE/SECURITY.md §3.2).
-// BAĞIMLILIKLAR: BaseEntity.
-// ─────────────────────────────────────────────────────────────────────────────
+        kod: `namespace WordLearner.Domain.Entities.System;
 
-namespace WordLearner.Domain.Entities.System;
-
+// Admin panelden yönetilen, tek satırlık (singleton) SMTP yapılandırma kaydı.
 public class SmtpSettings : BaseEntity
 {
-    // AMAÇ: SMTP sunucu adresi (ör. "smtp.sendgrid.net").
     public string Host { get; set; } = string.Empty;
-
-    // AMAÇ: SMTP portu — varsayılan 587 (STARTTLS).
     public int Port { get; set; } = 587;
-
-    // AMAÇ: Bağlantının SSL/TLS (STARTTLS) ile kurulup kurulmayacağı.
     public bool EnableSsl { get; set; } = true;
-
-    // AMAÇ: SMTP kimlik doğrulama kullanıcı adı.
     public string Username { get; set; } = string.Empty;
 
-    // AMAÇ: AES-256-CBC ile şifrelenmiş SMTP şifresi — Base64(IV + cipher).
+    // AES-256-CBC ile şifrelenmiş — Base64(IV + cipher); ham şifre asla DB'ye yazılmaz.
     public string PasswordEncrypted { get; set; } = string.Empty;
 
-    // AMAÇ: Gönderilen e-postalarda "From" adresi.
     public string FromEmail { get; set; } = string.Empty;
-
-    // AMAÇ: Gönderilen e-postalarda görünen gönderici adı.
     public string FromName { get; set; } = string.Empty;
 }`,
         satirlar: [
@@ -95,18 +69,7 @@ public class SmtpSettings : BaseEntity
         baslik: 'SmtpSettingsConfiguration.cs — Tam Dosya',
         dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/System/SmtpSettingsConfiguration.cs',
         nedenBuKlasor: 'Configurations/System/ — entity\'nin Entities/System/ klasörüyle BİREBİR eşleşen konfigürasyon klasörü (CategoryConfiguration ile aynı desen).',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// SmtpSettingsConfiguration.cs
-//
-// AMAÇ: SmtpSettings entity'sinin EF Core tablo eşlemesi.
-// NEDEN MaxLength'ler DATABASE_SCHEMA/Sistem.md'deki NVARCHAR uzunluklarıyla
-//       birebir: Host/Username 255, FromEmail 254 (RFC 5321 üst sınırı), FromName 100.
-//       PasswordEncrypted'e MaxLength verilmez — NVARCHAR(MAX) (Base64 IV+cipher
-//       şifreli metnin uzunluğu sabit değil).
-// BAĞIMLILIKLAR: EF Core, SmtpSettings entity.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using Microsoft.EntityFrameworkCore;
+        kod: `using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using WordLearner.Domain.Entities.System;
 
@@ -118,6 +81,8 @@ public class SmtpSettingsConfiguration : IEntityTypeConfiguration<SmtpSettings>
     {
         builder.Property(s => s.Host).IsRequired().HasMaxLength(255);
         builder.Property(s => s.Username).IsRequired().HasMaxLength(255);
+
+        // MaxLength yok — NVARCHAR(MAX); Base64(IV+cipher) uzunluğu sabit değil.
         builder.Property(s => s.PasswordEncrypted).IsRequired();
         builder.Property(s => s.FromEmail).IsRequired().HasMaxLength(254);
         builder.Property(s => s.FromName).IsRequired().HasMaxLength(100);
@@ -144,30 +109,13 @@ public class SmtpSettingsConfiguration : IEntityTypeConfiguration<SmtpSettings>
         baslik: 'IEncryptionService.cs — Tam Dosya',
         dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IEncryptionService.cs',
         nedenBuKlasor: 'Interfaces/Services/ — IEmailService/IFileStorageService ile AYNI klasör, flat (CLAUDE.md §5).',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// IEncryptionService.cs
-//
-// AMAÇ: Hassas bir değeri (SMTP şifresi) DB'ye yazmadan önce şifrelemek/okurken
-//       çözmek için sözleşme (REFERENCE/SECURITY.md §3.2).
-// NEDEN: Handler'lar somut AES implementasyonuna değil bu arayüze bağımlı olmalı —
-//        testlerde gerçek algoritma kullanılabilir (kripto saf/deterministik değil
-//        ama dış bir I/O da değil, bu yüzden PasswordService gibi doğrudan
-//        örneklenip test edilir — CODING_STANDARDS.md §7.4'ün "dış servisler mock'lanır"
-//        kuralı ağ/SMTP/OAuth gibi GERÇEK dış çağrılar içindir, yerel kriptografi için değil).
-// BAĞIMLILIKLAR: Yok — saf sözleşme.
-// ─────────────────────────────────────────────────────────────────────────────
-
-namespace WordLearner.Application.Interfaces.Services;
+        kod: `namespace WordLearner.Application.Interfaces.Services;
 
 public interface IEncryptionService
 {
-    // AMAÇ: Düz metni şifreler.
-    // NASIL: Sonuç Base64(rastgele IV + AES-256-CBC cipher) — her çağrıda farklı bir IV
-    //        üretilir, aynı düz metin iki kez şifrelense bile FARKLI bir sonuç üretir.
+    // Base64(rastgele IV + AES-256-CBC cipher) — aynı düz metin iki kez şifrelense bile farklı sonuç üretir.
     string Encrypt(string plainText);
 
-    // AMAÇ: Encrypt ile üretilmiş bir şifreli metni çözer.
-    // NASIL: Base64 çözülür, ilk 16 bayt IV olarak ayrılır, kalanı AES-256-CBC ile çözülür.
     string Decrypt(string cipherText);
 }`,
         satirlar: []
@@ -177,24 +125,7 @@ public interface IEncryptionService
         baslik: 'AesEncryptionService.cs — Tam Dosya',
         dosyaYolu: 'backend/WordLearner.Application/Services/AesEncryptionService.cs',
         nedenBuKlasor: 'Services/ — DevEmailService/JwtTokenService ile AYNI klasör, flat.',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// AesEncryptionService.cs
-//
-// AMAÇ: IEncryptionService'in AES-256-CBC implementasyonu — SMTP şifresini DB'ye
-//       yazmadan önce şifreler (REFERENCE/SECURITY.md §3.2, ENV.md §5).
-// NEDEN IConfiguration doğrudan enjekte edilir (IOptions<T> DEĞİL): JwtTokenService/
-//       LocalFileStorageService ile AYNI proje geneli desen — \`AES_ENCRYPTION_KEY\`
-//       düz bir ortam değişkeni (Jwt:SecretKey gibi iç içe bir bölüm DEĞİL), ASP.NET
-//       Core'un configuration sağlayıcıları ortam değişkenlerini otomatik okur.
-// NEDEN anahtar constructor'da doğrulanır (ilk kullanımda DEĞİL): yanlış yapılandırılmış
-//       bir anahtarla (32 bayt değil) uygulamanın SESSİZCE ayakta kalıp yalnızca SMTP
-//       ayarları kaydedilmeye ÇALIŞILDIĞINDA patlaması yerine, DI konteyneri bu servisi
-//       İLK çözdüğü anda (uygulama başlarken, AddApplicationServices Scoped kaydı ilk
-//       HTTP isteğinde) hatanın hemen görünür olması tercih edilir.
-// BAĞIMLILIKLAR: System.Security.Cryptography, Microsoft.Extensions.Configuration.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using System.Security.Cryptography;
+        kod: `using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using WordLearner.Application.Interfaces.Services;
@@ -203,7 +134,6 @@ namespace WordLearner.Application.Services;
 
 public class AesEncryptionService : IEncryptionService
 {
-    // AMAÇ: AES-256 için zorunlu anahtar uzunluğu.
     private const int KeySizeBytes = 32;
 
     private readonly byte[] _key;
@@ -218,10 +148,9 @@ public class AesEncryptionService : IEncryptionService
 
         _key = Convert.FromBase64String(keyBase64);
 
-        // NEDEN: Yanlış boyutta bir anahtar (ör. rastgele bir metin, 16/24 baytlık bir
-        //        AES-128/192 anahtarı) AES-256-CBC ile UYUMSUZ — sessizce yanlış bir
-        //        boyutla devam etmek yerine (Aes.Key setter'ının kendi exception'ı
-        //        belirsiz olabilir) burada net bir hata mesajıyla erken durdurulur.
+        // Anahtar burada (ilk kullanımda değil) doğrulanır — yanlış boyutlu bir anahtarla
+        // uygulama sessizce ayakta kalıp yalnızca SMTP kaydedilirken patlamak yerine, DI bu
+        // servisi ilk çözdüğü anda hata görünür olsun diye.
         if (_key.Length != KeySizeBytes)
             throw new InvalidOperationException(
                 $"AES_ENCRYPTION_KEY must decode to exactly {KeySizeBytes} bytes, got {_key.Length}."
@@ -234,18 +163,14 @@ public class AesEncryptionService : IEncryptionService
         aes.Key = _key;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
-        // NEDEN GenerateIV: her şifreleme rastgele bir IV üretir — aynı düz metin iki
-        //       kez şifrelense bile aynı sonucu ÜRETMEZ (IV tekrarı desen sızdırır).
         aes.GenerateIV();
 
         using var encryptor = aes.CreateEncryptor();
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
         var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
 
-        // NEDEN IV + cipher TEK Base64 dizide: IV gizli değildir (şifreleme anahtarı
-        //       gizlidir), yalnızca çözme sırasında AYNI IV'ye ihtiyaç duyulur — ayrı
-        //       bir kolonda tutmak yerine cipher'ın BAŞINA eklemek, DB şemasında tek
-        //       bir NVARCHAR(MAX) kolonu (PasswordEncrypted) yeterli kılar.
+        // IV + cipher tek Base64 dizide — IV gizli değildir, yalnızca çözerken aynı IV
+        // gerekir; ayrı kolon yerine cipher'ın başına eklemek tek NVARCHAR(MAX) yeterli kılar.
         var combined = new byte[aes.IV.Length + cipherBytes.Length];
         Buffer.BlockCopy(aes.IV, 0, combined, 0, aes.IV.Length);
         Buffer.BlockCopy(cipherBytes, 0, combined, aes.IV.Length, cipherBytes.Length);
@@ -262,8 +187,7 @@ public class AesEncryptionService : IEncryptionService
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
-        // NEDEN BlockSize/8: AES'in blok boyutu (ve dolayısıyla IV uzunluğu) her zaman
-        //       16 bayttır (128 bit) — anahtar boyutundan (256 bit) BAĞIMSIZDIR.
+        // AES blok boyutu (ve IV uzunluğu) her zaman 16 bayt — anahtar boyutundan bağımsız.
         var ivLength = aes.BlockSize / 8;
         var iv = new byte[ivLength];
         Buffer.BlockCopy(combined, 0, iv, 0, ivLength);

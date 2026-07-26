@@ -26,35 +26,18 @@
         baslik: 'ISmtpSettingsRepository.cs + SmtpSettingsRepository.cs — Tam Dosyalar',
         dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/ISmtpSettingsRepository.cs + backend/WordLearner.Infrastructure/Repositories/SmtpSettingsRepository.cs',
         nedenBuKlasor: 'Interfaces/Repositories/ ve Infrastructure/Repositories/ — CategoryRepository ile AYNI iki dosyalı desen (arayüz Application\'da, implementasyon Infrastructure\'da).',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// ISmtpSettingsRepository.cs
-//
-// AMAÇ: SmtpSettings'e özel sorgu — tek satırlık (singleton) yapılandırma kaydını okuma.
-// NEDEN IRepository<SmtpSettings>'i GENİŞLETİR (Language ile AYNI istisna DEĞİL):
-//       SmtpSettings BaseEntity'den türüyor (Category/WordConcept ile aynı sınıf),
-//       bu yüzden AddAsync/UpdateAsync gibi genel CRUD'u Repository<T>'den miras alır —
-//       yalnızca "TEK satırı getir" sorgusu bu arayüze özeldir (Id parametresiz).
-// BAĞIMLILIKLAR: IRepository<SmtpSettings>.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using WordLearner.Domain.Entities.System;
+        kod: `using WordLearner.Domain.Entities.System;
 
 namespace WordLearner.Application.Interfaces.Repositories;
 
 public interface ISmtpSettingsRepository : IRepository<SmtpSettings>
 {
-    // AMAÇ: Kayıtlı tek SMTP ayarı satırını döner — hiç kaydedilmemişse null.
+    // Kayıtlı tek SMTP ayarı satırını döner — hiç kaydedilmemişse null.
     Task<SmtpSettings?> GetCurrentAsync(CancellationToken ct = default);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SmtpSettingsRepository.cs
-//
-// AMAÇ: ISmtpSettingsRepository'nin EF Core implementasyonu.
-// NEDEN: Repository<SmtpSettings>'i miras alarak genel CRUD'u yeniden yazmadan
-//        yalnızca "tekil satırı getir" sorgusunu ekler (CategoryRepository ile
-//        aynı desen, A-06).
-// BAĞIMLILIKLAR: EF Core, Repository<SmtpSettings>, WordLearnerDbContext.
 // ─────────────────────────────────────────────────────────────────────────────
 
 using Microsoft.EntityFrameworkCore;
@@ -69,19 +52,9 @@ public class SmtpSettingsRepository : Repository<SmtpSettings>, ISmtpSettingsRep
     public SmtpSettingsRepository(WordLearnerDbContext db)
         : base(db) { }
 
-    // NEDEN FirstOrDefaultAsync (WHERE'sız): tabloda hiçbir zaman birden fazla
-    //       satır oluşmaz — UpdateSmtpSettingsCommandHandler yalnızca ilk kayıt
-    //       yoksa AddAsync, varsa UpdateAsync çağırır (aşağıdaki NEDEN notuna bkz.
-    //       ISmtpSettingsRepository.cs).
-    // NEDEN OrderBy(Id) (kod denetiminde bulundu): tabloda "en fazla bir satır"
-    //       yalnızca UYGULAMA seviyesinde garanti edilir (DB'de UNIQUE/CHECK
-    //       constraint YOK) — iki eşzamanlı PUT (iki ayrı DbContext scope'u)
-    //       ikisi de "kayıt yok" görüp ikisi de AddAsync çağırabilir, tabloda
-    //       BİRDEN FAZLA satır oluşabilir. Bu senaryo admin-only, düşük trafikli
-    //       bir ayar ekranı için kabul edilebilir bir risk olarak bilinçli
-    //       BIRAKILDI (DB seviyesinde bir engelleme eklenmedi) — ama en azından
-    //       OrderBy ile "birden fazla satır oluşursa HANGİSİ döner" sorusunun
-    //       cevabı DETERMİNİSTİK kalır (her zaman en küçük Id).
+    // "En fazla bir satır" yalnızca uygulama seviyesinde garanti — DB'de UNIQUE/CHECK yok, iki
+    // eşzamanlı PUT teorik olarak iki satır oluşturabilir (bilinçli kabul edilen düşük risk).
+    // OrderBy(Id) bu durumda hangi satırın döneceğini en azından deterministik tutar.
     public Task<SmtpSettings?> GetCurrentAsync(CancellationToken ct = default) =>
         _set.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);
 }`,
@@ -93,7 +66,7 @@ public class SmtpSettingsRepository : Repository<SmtpSettings>, ISmtpSettingsRep
             olmasaydi: 'ISmtpSettingsRepository sıfırdan (IRepository<T>\'yi genişletmeden) yazılsaydı, AddAsync/UpdateAsync\'in CreatedByUserId/UpdatedByUserId set etme mantığını (Repository<T>\'de zaten var) BU dosyada TEKRAR yazmak gerekirdi — DRY ihlali.'
           },
           {
-            satir: 'public Task<SmtpSettings?> GetCurrentAsync(CancellationToken ct = default) =>\n        _set.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);',
+            satir: '_set.OrderBy(s => s.Id).FirstOrDefaultAsync(ct);',
             aciklama: 'Hiçbir WHERE koşulu YOK — tablo yapısı gereği (bir tek satır) ilk kaydı almak yeterli. `OrderBy(s => s.Id)` bir kod denetiminde EKLENDİ (bir SONRAKİ slaytta ayrıntısıyla anlatılıyor).',
             neden: 'SmtpSettings hiçbir zaman ID parametresiyle sorgulanmaz (LanguageRepository.GetByCodeAsync/ WordConceptRepository.GetByIdAsync gibi) — admin panelin "SMTP ayarları" ekranı zaten ID bilmez, tek bir küresel ayar seti ister.',
             olmasaydi: 'Bir `GetByIdAsync(1)` gibi sabit bir ID varsayılsaydı, ilk PUT\'ta hangi ID\'nin oluşturulacağını Handler\'ın BİLMESİ gerekirdi (`AddAsync` yeni bir IDENTITY üretir, sabit 1 GARANTİ değildir) — FirstOrDefaultAsync bu varsayımı hiç gerektirmez.'
@@ -112,18 +85,7 @@ public class SmtpSettingsRepository : Repository<SmtpSettings>, ISmtpSettingsRep
         baslik: 'GetSmtpSettingsQuery.cs — Tam Dosya (DTO Dahil)',
         dosyaYolu: 'backend/WordLearner.Application/Features/Smtp/GetSmtpSettingsQuery.cs',
         nedenBuKlasor: 'Features/Smtp/ — yeni bir domain klasörü (Admin/Words/Categories ile AYNI seviyede) — CLAUDE.md §3 adım 4: Command/Query kendi feature klasöründe.',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// GetSmtpSettingsQuery.cs
-//
-// AMAÇ: GET /admin/smtp-settings — kayıtlı SMTP ayarlarını, şifre alanı maskelenmiş
-//       (\`***\`) hâlde döner.
-// NEDEN hiç kayıt yoksa (ilk kurulum) boş alanlarla bir DTO dönülür, 404 FIRLATILMAZ:
-//        admin panelin SMTP ayarları ekranı her zaman bir form gösterir — "ayarlar
-//        henüz yok" durumu boş bir form olarak temsil edilir, bir hata durumu değildir.
-// BAĞIMLILIKLAR: ISmtpSettingsRepository.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using MediatR;
+        kod: `using MediatR;
 using WordLearner.Application.DTOs.Smtp;
 using WordLearner.Application.Interfaces.Repositories;
 
@@ -133,10 +95,9 @@ public record GetSmtpSettingsQuery : IRequest<SmtpSettingsDto>;
 
 public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery, SmtpSettingsDto>
 {
-    // AMAÇ: DB'de hiç ayar yokken PUT formunun varsayılan olarak göstereceği port.
     private const int DefaultPort = 587;
 
-    // AMAÇ: Şifre kayıtlıysa istemciye giden sabit maske — gerçek değer asla dönmez.
+    // UpdateSmtpSettingsCommandHandler'daki aynı isimli sabitle değer olarak eşleşmeli.
     private const string MaskedPassword = "***";
 
     private readonly ISmtpSettingsRepository _smtpSettingsRepository;
@@ -148,6 +109,7 @@ public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery,
     {
         var settings = await _smtpSettingsRepository.GetCurrentAsync(ct);
 
+        // Hiç kayıt yoksa (ilk kurulum) boş bir DTO döner, 404 fırlatılmaz — admin panel her zaman bir form gösterir.
         if (settings is null)
             return new SmtpSettingsDto(string.Empty, DefaultPort, true, string.Empty, string.Empty, string.Empty, string.Empty);
 
@@ -170,7 +132,7 @@ public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery,
             olmasaydi: '`GetSmtpSettingsQuery(int Id)` gibi kullanılmayan bir parametre eklenseydi, controller bu parametreyi NEREDEN bulacağını (URL\'de yok, tek satırlık bir kaynak) bilemezdi — YAGNI ihlali.'
           },
           {
-            satir: 'if (settings is null)\n            return new SmtpSettingsDto(string.Empty, DefaultPort, true, string.Empty, string.Empty, string.Empty, string.Empty);',
+            satir: 'if (settings is null)',
             aciklama: 'Hiç kayıt yoksa EntityNotFoundException FIRLATILMAZ — boş alanlarla dolu bir DTO döner.',
             neden: 'GetWordByIdQuery/GetUserByIdQuery gibi Sorgular ID\'ye göre TEK bir kaydı ARAR ve bulamazsa 404 döner çünkü kullanıcı BELİRLİ bir kaydı istemiştir. Burada admin "belirli bir SMTP ayarı" istemiyor, "SMTP ayarları EKRANINI" açıyor — ilk kurulumda bu ekranın boş bir form olması DOĞAL bir durumdur, hata değil.',
             olmasaydi: '404 dönseydi, admin panelin SMTP ayarları sayfası İLK AÇILIŞTA (henüz hiç PUT yapılmamışken) bir hata ekranı gösterirdi — kullanıcı deneyimi açısından yanlış, çünkü bu tam olarak "şimdi doldur" demesi gereken an.'
@@ -189,28 +151,7 @@ public class GetSmtpSettingsQueryHandler : IRequestHandler<GetSmtpSettingsQuery,
         baslik: 'UpdateSmtpSettingsCommand.cs — Tam Dosya (Kod Denetimi SONRASI Nihai Hâli)',
         dosyaYolu: 'backend/WordLearner.Application/Features/Smtp/UpdateSmtpSettingsCommand.cs',
         nedenBuKlasor: 'Features/Smtp/ — GetSmtpSettingsQuery ile AYNI klasör, ayrı Commands/Handlers alt klasörüne BÖLÜNMEZ (CLAUDE.md §5).',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// UpdateSmtpSettingsCommand.cs
-//
-// AMAÇ: PUT /admin/smtp-settings — SMTP ayarlarını kaydeder (ilk kayıtsa oluşturur,
-//       varsa günceller — upsert, çünkü tabloda her zaman TEK satır olur).
-// NEDEN: SMTP ayarları CLAUDE.md "Kimlik & güvenlik"nin kapsadığı hassas bir admin
-//        işlemi (SMTP kimlik bilgisi değişimi) — CLAUDE.md "İçerik değiştiren her
-//        CRUD..." kuralına göre HEM IActivityLogger (UPDATE_SMTP_SETTINGS) HEM
-//        ISecurityLogger (LogEventType.AdminAction) çağrılır. PasswordEncrypted
-//        diff'ten (OldValue/NewValue) HARİÇ tutulur — CLAUDE.md "şifre/hash gibi
-//        hassas alanlar diff'ten hariç tutulur" kuralı.
-// NEDEN MaskedPassword ("***"): GET /admin/smtp-settings gerçek şifreyi ASLA
-//        döndürmez (GetSmtpSettingsQuery.cs), admin panel formu şifre alanını hiç
-//        değiştirmeden PUT'a geri gönderirse bu SABİT değer gelir — Handler bunu
-//        "şifreyi DEĞİŞTİRME, eskisini KORU" sinyali olarak okur. Bu sabit,
-//        GetSmtpSettingsQueryHandler'daki AYNI isimli sabitle DEĞER olarak
-//        BİREBİR eşleşmelidir (ikisi ayrı dosyada çünkü Query/Command ayrı
-//        dikey dilimler — CLAUDE.md §3, ama SÖZLEŞME olarak tek bir string).
-// BAĞIMLILIKLAR: ISmtpSettingsRepository, IEncryptionService, IActivityLogger, ISecurityLogger.
-// ─────────────────────────────────────────────────────────────────────────────
-
-using MediatR;
+        kod: `using MediatR;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
@@ -236,8 +177,7 @@ public record UpdateSmtpSettingsCommand(
 
 public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettingsCommand, Unit>
 {
-    // NEDEN: bkz. dosya başı "NEDEN MaskedPassword" — GetSmtpSettingsQueryHandler'daki
-    //        AYNI isimli sabitle değer olarak eşleşmek ZORUNDA.
+    // GetSmtpSettingsQueryHandler'daki aynı isimli sabitle değer olarak eşleşmek zorunda.
     private const string MaskedPassword = "***";
 
     private readonly ISmtpSettingsRepository _smtpSettingsRepository;
@@ -262,13 +202,8 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
     {
         var existing = await _smtpSettingsRepository.GetCurrentAsync(ct);
 
-        // NEDEN bu kontrol (kod denetiminde bulundu): ilk kayıtta (existing null)
-        //       "koru"nacak eski bir şifre YOK — maske literal'i ("***") bu durumda
-        //       BİR ANLAM TAŞIMAZ. Bu kontrol OLMASAYDI, aşağıdaki satır "***" stringinin
-        //       KENDİSİNİ şifreleyip DB'ye gerçek SMTP şifresi yerine yazardı (sessiz
-        //       bir yanlış-yapılandırma) — admin panel normalde bu durumu GET'in boş
-        //       Password dönmesi sayesinde önler, ama bu ikinci, sunucu-taraflı bir
-        //       savunma katmanıdır (istemciye güvenmemek).
+        // İlk kayıtta (existing null) korunacak eski şifre yok — maske literali burada anlamsız,
+        // bu kontrol olmasaydı "***" stringinin kendisi şifrelenip DB'ye yazılırdı.
         if (request.Password == MaskedPassword && existing is null)
             throw new SmtpPasswordRequiredException();
 
@@ -277,8 +212,7 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
                 ? existing.PasswordEncrypted
                 : _encryptionService.Encrypt(request.Password);
 
-        // NEDEN oldValue'da PasswordEncrypted/Password YOK: CLAUDE.md "şifre/hash gibi
-        //       hassas alanlar diff'ten hariç tutulur" kuralı.
+        // Şifre/hash gibi hassas alanlar diff'ten hariç tutulur.
         var oldValue =
             existing is null
                 ? null
@@ -354,19 +288,19 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
 }`,
         satirlar: [
           {
-            satir: 'if (request.Password == MaskedPassword && existing is null)\n            throw new SmtpPasswordRequiredException();',
+            satir: 'if (request.Password == MaskedPassword && existing is null)',
             aciklama: 'Bir kod denetiminde bulunan GERÇEK bir hatayı kapatan satır — bir SONRAKİ slaytta ayrıntısıyla anlatılıyor.',
             neden: 'Maske literal\'i ("***") yalnızca VAR OLAN bir şifreyi KORUMAK için anlamlıdır — hiç ayar kaydedilmemişken bu literal\'in KENDİSİNİN şifrelenmesi, DB\'ye gerçek SMTP şifresi yerine "***" yazılması demektir.',
             olmasaydi: 'Bu kontrol OLMASAYDI, bir sonraki satır (`_encryptionService.Encrypt(request.Password)`) "***" stringini ŞİFRELERDİ — sessiz bir yanlış-yapılandırma, admin "ayarları kaydettim" sanır ama SMTP asla ÇALIŞMAZDI (gerçek şifre hiçbir zaman DB\'ye yazılmamış olurdu).'
           },
           {
-            satir: 'var passwordEncrypted =\n            request.Password == MaskedPassword && existing is not null\n                ? existing.PasswordEncrypted\n                : _encryptionService.Encrypt(request.Password);',
+            satir: 'var passwordEncrypted =',
             aciklama: 'Bir önceki slaytta anlatılan maskeleme sözleşmesinin UYGULANDIĞI tek satır — `existing is not null` koşulu (bir üstteki satırın kapsadığı `existing is null` durumu ARTIK burada asla oluşmaz, çünkü o dal zaten exception fırlatıp METODU SONLANDIRDI).',
             neden: 'Var olan bir satırı güncellerken YENİ bir şifre şifrelemek yerine ESKİSİNİ korumak, `_encryptionService.Decrypt` ile eski şifreyi ÇÖZÜP tekrar `Encrypt` ile şifrelemekten (anlamsız bir round-trip, hem de yeni bir rastgele IV üretirdi ama İÇERİK aynı kalırdı) daha basit VE doğrudan.',
             olmasaydi: 'Bir üstteki kontrol OLMASAYDI, bu satır `request.Password` ne olursa olsun HER ZAMAN `Encrypt` çağırırdı — admin panel "***" gönderdiğinde, Handler literalin KENDİSİNİ şifreler, DB\'deki GERÇEK SMTP şifresi SESSİZCE "***" ile DEĞİŞTİRİLMİŞ (yani BOZULMUŞ) olurdu.'
           },
           {
-            satir: 'int entityId;\n        if (existing is null)\n        {',
+            satir: 'int entityId;',
             aciklama: 'Upsert (var olmayan bir kaydı OLUŞTUR, var olanı GÜNCELLE) mantığı — WordConcept/Category\'nin AKSİNE ayrı bir CreateXxxCommand/UpdateXxxCommand YOK, TEK bir Command bu ayrımı KENDİSİ yapar.',
             neden: 'SmtpSettings tek satırlık bir yapılandırma kaydı — Create/Update ayrımı Word/Category gibi ÇOKLU kayıtlar için anlamlı (hangi kaydın güncelleneceği bir ID gerektirir), ama tek satırda "oluştur mu güncelle mi" sorusunun cevabı BASİTÇE "satır var mı yok mu" sorusuna indirgenir.',
             olmasaydi: 'Ayrı CreateSmtpSettingsCommand/UpdateSmtpSettingsCommand yazılsaydı, admin panelin PUT/POST\'tan HANGİSİNİ çağıracağını "daha önce ayar var mıydı" bilgisine göre SEÇMESİ gerekirdi — bu bilgi zaten GET\'ten geliyor, ama iki ayrı endpoint arasında GEREKSİZ bir dallanma admin paneline TAŞINMIŞ olurdu.'
@@ -385,26 +319,11 @@ public class UpdateSmtpSettingsCommandHandler : IRequestHandler<UpdateSmtpSettin
         baslik: 'SmtpPasswordRequiredException.cs — Tam Dosya',
         dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/SmtpPasswordRequiredException.cs',
         nedenBuKlasor: 'Common/Exceptions/ — SmtpSettingsNotConfiguredException/DuplicateWordException ile AYNI klasör, AYNI şablon.',
-        kod: `// ─────────────────────────────────────────────────────────────────────────────
-// SmtpPasswordRequiredException.cs
-//
-// AMAÇ: UpdateSmtpSettingsCommand'a, hiç SMTP ayarı KAYDEDİLMEMİŞKEN (ilk kayıt)
-//       maske literal'i ("***") Password olarak gönderildiğinde fırlatılır.
-// NEDEN: Maske literal'i yalnızca VAR OLAN bir şifreyi KORUMAK için bir sinyaldir
-//        (UpdateSmtpSettingsCommand.cs "NEDEN MaskedPassword") — korunacak bir
-//        "eski" şifre yokken bu literal'i şifrelemek (kod denetiminde bulunan bir
-//        açık tasarım sorusu), DB'ye gerçek SMTP şifresi yerine "***" stringinin
-//        AES ile şifrelenmiş hâlinin yazılmasına yol açardı — sessiz bir
-//        yanlış-yapılandırma. FluentValidation bu kontrolü YAPAMAZ (DB'ye
-//        erişimi yok, "ayar var mı" bilgisini bilemez), bu yüzden Handler
-//        seviyesinde bir iş kuralı istisnasıdır. Aynı "SMTP_PASSWORD_REQUIRED"
-//        kodunu (UpdateSmtpSettingsCommandValidator ile PAYLAŞIR) kullanır —
-//        istemci için ikisi de anlamca AYNI şey: "geçerli bir şifre girmelisiniz".
-// BAĞIMLILIKLAR: AppException.
-// ─────────────────────────────────────────────────────────────────────────────
+        kod: `namespace WordLearner.Application.Common.Exceptions;
 
-namespace WordLearner.Application.Common.Exceptions;
-
+// Maske literali ("***") yalnızca VAR OLAN bir şifreyi korumak için bir sinyaldir; ilk kayıtta
+// korunacak eski şifre yokken bu literali şifrelemek DB'ye gerçek şifre yerine "***" yazardı.
+// FluentValidation bu kontrolü yapamaz (DB'ye erişimi yok) — Handler seviyesinde iş kuralı.
 public class SmtpPasswordRequiredException : AppException
 {
     public SmtpPasswordRequiredException()
@@ -413,7 +332,7 @@ public class SmtpPasswordRequiredException : AppException
 }`,
         satirlar: [
           {
-            satir: '"SMTP_PASSWORD_REQUIRED", "SMTP settings update attempt: masked password literal cannot be used when no settings exist yet."',
+            satir: ': base("SMTP_PASSWORD_REQUIRED", "SMTP settings update attempt: masked password literal cannot be used when no settings exist yet.")',
             aciklama: 'Code ("SMTP_PASSWORD_REQUIRED"), `UpdateSmtpSettingsCommandValidator`\'ın boş şifre kuralıyla AYNI kodu paylaşır.',
             neden: 'İstemci açısından ikisi de anlamca AYNI şey ifade eder: "geçerli bir SMTP şifresi girmelisiniz" — biri (validator) alan tamamen BOŞSA, diğeri (bu exception) alan maske literal\'iyle DOLUYSA ama koruyacak bir şey YOKSA tetiklenir. Aynı mesajı iki kez (iki farklı kodla) tr/de sözlüğüne yazmak gereksiz bir tekrar olurdu.',
             olmasaydi: 'Yeni, AYRI bir Code (ör. "SMTP_MASK_WITHOUT_EXISTING_SETTINGS") yazılsaydı, `ErrorMessages.cs`\'e YENİ bir tr/de çifti eklemek gerekirdi — anlamca neredeyse BİREBİR aynı bir mesajın gereksiz bir kopyası.'
