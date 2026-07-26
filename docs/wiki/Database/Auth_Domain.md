@@ -1,13 +1,13 @@
 # Auth Domain (Users, RefreshTokens)
 
-**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder; `QrLoginSessions` (A-03.1) aynı token akışını QR ile tetikler; `ThemePreference` (A-03.3) `CurrentLevel` ile aynı "register'da toplanmaz, onboarding'de set edilir" desenini takip eder. **A-03 ✅, A-03.1 ✅ ve A-03.3 ✅ tamamlandı** — bu domain artık gerçek kodda mevcut.
+**Özet:** Kimlik doğrulama şemasının çekirdeği — `Users` tablosu hem profil hem öğrenme istatistikleri hem OTP durumunu tek satırda tutar; `RefreshTokens` Token Family Pattern ile replay saldırılarını tespit eder; `QrLoginSessions` (A-03.1) aynı token akışını QR ile tetikler; `ThemePreference` (A-03.3) ve `LanguagePreference` (A-03.4) `CurrentLevel` ile aynı "register'da toplanmaz, onboarding'de set edilir" desenini takip eder. **A-03 ✅, A-03.1 ✅, A-03.3 ✅ ve A-03.4 ✅ tamamlandı** — bu domain artık gerçek kodda mevcut.
 **Kütüphaneler:** BCrypt.Net-Next 4.0.3 (şifre hash, aktif), Microsoft.AspNetCore.Authentication.JwtBearer 9.0.0 (aktif), System.IdentityModel.Tokens.Jwt 7.1.0 (aktif), Google.Apis.Auth 1.67.0 (aktif)
 **Bağlantılar:** [[Veritabani_Semasi]] · [[Guvenlik_Politikalari]] · [[Roller_ve_Erisim]] · [[BaseEntity]] · [[Loglama_Domain]] · [[Teknik_Ozellikler]] · [[Gelistirme_Kurulumu]]
 
 ## Users
 Tek satırda: kimlik (Email/PasswordHash/GoogleId/AppleId/AuthProvider), profil (FirstName/LastName/
 DisplayName/AvatarUrl), öğrenme hedefleri (DailyWordGoal/DailyNewWordLimit), istatistikler
-(CurrentLevel A1-C2/**ThemePreference** Light|Dark|System/TotalXP/LifetimeXP/StreakDays), tek-set OTP alanları
+(CurrentLevel A1-C2/**ThemePreference** Light|Dark|System/**LanguagePreference** tr|de/TotalXP/LifetimeXP/StreakDays), tek-set OTP alanları
 (PendingOtpCodeHash/ExpiresAt/Purpose — `EmailVerification|LoginOtp|PasswordReset|AccountDeletion`),
 hesap durumu (IsActive/IsEmailVerified/LastLoginAt/LoginCount), hesap silme
 (ScheduledDeletionAt/IsAnonymized/OriginalEmailHash — bkz. [[Guvenlik_Politikalari]] §9), push
@@ -23,6 +23,22 @@ anında, gelecekteki `PUT /users/me` (C-01, henüz yazılmadı) ile yapılacak. 
 (`JwtTokenService` yalnızca yetki bilgisi taşır — NameIdentifier/Email/Role/firstName). İki-katmanlı
 savunma: `CK_Users_ThemePreference` (DB, `CK_Users_Level` ile aynı desen) + gelecekteki C-01
 validator'ü (FluentValidation, henüz yok — girdi olmadığı için bugün valide edilecek bir şey yok).
+
+## LanguagePreference (A-03.4 ✅ tamamlandı)
+Admin panelin (ileride web/mobilin) arayüz dili (`tr|de`, varsayılan `tr`) — `ThemePreference` ile
+**birebir aynı desen**, tek fark "neden fark edildi" hikâyesi: B-01 (Admin Panel Kurulumu) sırasında
+admin panelin kendi dil tercihinin `localStorage`'da değil DB'de kalıcı olması gerektiği ortaya
+çıktı. **Languages tablosundaki kelime içeriği diliyle (WordConcept'e bağlı) KARIŞTIRILMAMALI** —
+bu alan kullanıcıya bağlı, o kelimeye. `RegisterCommand`'a girdi olarak eklenmedi, yalnızca
+`RegisterResponse`/`AuthUserDto` DB varsayılanını (`tr`) döner. Gerçek seçim (adminin dili
+GERÇEKTEN değiştirmesi) `ThemePreference` ile birlikte gelecekteki `PUT /users/me` (C-01, henüz
+yazılmadı) ile yapılacak — **AMA bu sefer `C_kullanici_backend.md` C-01 notu backend'in yanında
+admin panelin kendi kodunu da (`admin/src/store/slices/languageSlice.ts`, B-01'de yazıldı, şu an
+yalnızca `localStorage`'a yazıyor) işaret ediyor**, C-01 bittiğinde ikisi birden bağlanmalı.
+İki-katmanlı savunma: `CK_Users_LanguagePreference` (DB) + gelecekteki C-01 validator'ü. Ayrıca
+admin panelin KENDİ statik arayüz metinleri (backend'den gelmeyen buton/etiket) `react-i18next`
+ile ayrı bir kanaldan (`admin/src/i18n/locales/{tr,de}.json`) çevrilir — bu, backend `ErrorMessages`/
+`SuccessMessages`'tan bağımsız saf frontend kopyası (bkz. [[Admin_Akademi_Sistemi]], `CLAUDE.md` §1).
 
 ## RefreshTokens
 `TokenHash` (SHA-256), `TokenFamily` (GUID — replay tespiti), `ExpiresAt`, `IsUsed`, `RevokedAt`,
@@ -52,7 +68,7 @@ Expired'a çevrilmesi) `null` kalıyor. Detay → `IRepository.cs` NEDEN yorumu.
 Command+Handler'ı (MediatR CQRS, `Application/Features/Auth/`: register/verify-email/login
 2-adım OTP/google/apple/refresh/logout/forgot-reset-password/delete-account) → `AuthController`
 (13 endpoint, `IMediator.Send(command)` ile) — detay [[API_Sozlesmesi]] ve
-`docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `BACKEND_AKADEMI/A-03_auth-register/`.
+`docs/REFERENCE/API_ENDPOINTS.md §3`, bkz. `AKADEMI/backend/A-03_auth-register/`.
 
 ## QrLoginSessions (A-03.1 ✅ tamamlandı)
 Steam benzeri "QR kod ile giriş": mobilde zaten giriş yapmış kullanıcı, web/masaüstünde gösterilen
@@ -71,7 +87,7 @@ ekranındakiyle gözle karşılaştırılır), `Status` (`Pending→Scanned→Co
 yalnızca `generate` adımında (web'in isteğinden) yazılır, `scan`'de değil — mobil ekranda "seni
 İSTEYEN taraf" gösterilip kullanıcı gözle doğrular (relay/phishing önlemi). 23 birim test (18
 orijinal + 2026-07-11 bugfix turunda 5 yeni). Detay →
-`DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `BACKEND_AKADEMI/A-03.1_qr-login/`.
+`DATABASE_SCHEMA/Auth.md`, [[Guvenlik_Politikalari]], `AKADEMI/backend/A-03.1_qr-login/`.
 
 **Bugfix turu (2026-07-11, kod denetimi sonrası):** Dört gerçek sorun düzeltildi — (1)
 `GET /auth/qr/{token}/status` (web'in ~2sn'de bir sorguladığı polling endpoint'i) paylaşımlı

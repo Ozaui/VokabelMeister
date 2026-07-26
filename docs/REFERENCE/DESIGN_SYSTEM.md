@@ -1,14 +1,22 @@
 # TASARIM SİSTEMİ (Admin Panel)
 
 > Kapsam: yalnızca **Admin Panel** (`/admin`, Faz B). Web (`/web`, Faz D) ve Mobil (Faz E) kendi
-> tasarım kararlarını ayrı alacak — bu doküman onlara otomatik uygulanmaz. B-01 (kurulum) henüz
-> yapılmadığı için bu yalnızca bir **tasarım kararı**, henüz hiçbir Tailwind config'ine işlenmedi.
+> tasarım kararlarını ayrı alacak — bu doküman onlara otomatik uygulanmaz. B-01'de (Kurulum, ✅
+> tamamlandı) `admin/src/index.css`'teki Tailwind v4 `@theme`'e işlendi — burada yazılı her değer
+> artık gerçek kodda karşılığı olan bir karar, salt tasarım niyeti değil.
 
-## 1. Renk Paleti — "Menekşe + Mercan"
+## 1. Renk Paleti — "Turkuaz + Mercan"
+
+> **Not (B-01, 2026-07-26):** Primary ilk tasarım kararında `#6D5DFC` ("Menekşe") idi — B-01
+> uygulamasında admin panel gerçek tarayıcıda görülünce kullanıcı bu rengin fazla mavi kaçtığını
+> belirtti. Bir dizi soft/mavi-olmayan aday (Dut Moru, Toz Gülü, Toprak Kiremidi, Adaçayı, Hardal)
+> ve ardından tam bir HSL tayfı taranarak `hsl(202, 45%, 52%)` ("Turkuaz") seçildi — palet adı da
+> buna göre güncellendi. Diğer renkler (Accent/Background/Surface/Text/Muted/Border/Success/
+> Warning/Destructive) değişmedi, yalnızca Primary.
 
 | Rol | Hex | Kullanım |
 |-----|-----|----------|
-| Primary | `#6D5DFC` | Ana marka rengi, aktif nav linki, primary buton |
+| Primary | `#4E93BC` (`hsl(202, 45%, 52%)`) | Ana marka rengi, aktif nav linki, primary buton |
 | Accent | `#FB923C` | Vurgular, rozet, ikincil CTA |
 | Background | `#F8F7FC` | Sayfa arka planı (saf beyaz değil — hafif lavanta-beyaz) |
 | Surface/Card | `#FFFFFF` | Kart/panel yüzeyi |
@@ -19,9 +27,34 @@
 | Warning | `#F59E0B` | Uyarı durumu |
 | Destructive | `#DC2626` | Silme/tehlikeli aksiyon |
 
-Light mode odaklı — dark mode şu an kapsam dışı (`Users.ThemePreference` özelliği eklendiğinde,
-bkz. `wiki/Database/Auth_Domain.md`, admin panel de bu tercihi okuyabilir hale gelecek, ama bugün
-admin panelin kendisi light-only tasarlanıyor).
+## 1b. Koyu Tema Paleti (Dark Mode)
+
+> **Not (B-01, 2026-07-26):** İlk kararda dark mode "kapsam dışı" bırakılmıştı; kullanıcı B-01
+> sırasında fikrini değiştirdi — `Users.ThemePreference` (A-03.3) zaten DB'de olduğu için backend'e
+> hiç dokunmadan eklendi (yazma ucu hâlâ C-01'de, `themeSlice` şimdilik yalnızca `localStorage`).
+> Aşağıdaki değerler yukarıdaki light paletin DOĞRUDAN tersi (invert) DEĞİL — her token, koyu
+> zeminde okunabilirlik/kontrast gözetilerek AYRI ayarlandı (bkz. `AKADEMI/admin/B-01_kurulum/
+> 06_dark-mode.html`).
+
+| Rol | Hex | Light Karşılığı |
+|-----|-----|-----------------|
+| Primary | `#5FA3C9` | `#4E93BC` (koyu zeminde kontrast için biraz açıldı) |
+| Accent | `#FDA65D` | `#FB923C` |
+| Background | `#13161B` | `#F8F7FC` (saf siyah DEĞİL — hafif mavi-gri) |
+| Surface/Card | `#1C2027` | `#FFFFFF` |
+| Text | `#EDEFF3` | `#1E1B2E` (saf beyaz DEĞİL) |
+| Muted text | `#8A93A3` | `#6B7280` |
+| Border | `#2B303A` | `#E9E5F5` |
+| Success | `#34D399` | `#10B981` |
+| Warning | `#FBBF24` | `#F59E0B` |
+| Destructive | `#F87171` | `#DC2626` |
+
+Uygulama: Tailwind v4 `@custom-variant dark (&:where(.dark, .dark *));` + `.dark { --color-*: ... }`
+token override'ı (`admin/src/index.css`) — utility class'ların kendisi (`bg-primary` vb.) hiç
+değişmez, yalnızca çözümledikleri değer `.dark` kapsamında değişir. Tercih üç seçenekli
+(Light/Dark/System, `Users.ThemePreference` ile aynı), `System` seçiliyken OS tercihi CANLI takip
+edilir (`useThemeSync.ts`). FOUC önlemi: `index.html`'de React yüklenmeden önce çalışan senkron
+bir script.
 
 ## 2. Tipografi
 
@@ -40,6 +73,10 @@ admin panelin kendisi light-only tasarlanıyor).
   kalan boşluk ikonla doldurulmaz.
   Not: veriye gerçekten karşılık gelen bir ikon/renk alanı olduğu, `docs/DATABASE_SCHEMA/Icerik.md`
   → `Categories.Icon`/`Categories.Color` ile doğrulandı (uydurma alan değil).
+- **İkon kütüphanesi:** `lucide-react` (B-01, `ThemeSwitcher` — Sun/Moon/Monitor — ilk kullanım).
+  İkonlar **elle SVG olarak çizilmez**, bu kütüphaneden import edilir — yukarıdaki "ikon türetme/
+  elle çizme yok" kuralının somut karşılığı. Admin panelde ihtiyaç duyulan TÜM ikonlar (B-03'ten
+  B-09'a) bu kütüphaneden seçilir, farklı bir ikon paketi eklenmez.
 - **Durum/rol bilgisi** (aktif/donduran, admin/user, log seviyesi) renkle birlikte etiket metniyle
   de gösterilir — yalnızca renge güvenilmez.
 - **Mobil uyumlu / responsive:** masaüstünde sidebar + geniş tablo; tablet/mobilde alt navigasyon

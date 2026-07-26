@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Redux Store + authSlice + api.ts</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'store-authslice-api',
+    bolumBaslik: 'B-01 — Kurulum',
+    oncekiBolum: '02_tasarim-sistemi.html',
+    sonrakiBolum: '04_dil-tercihi-i18n.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Redux Store + authSlice + api.ts',
+        altBaslik: 'Bu bölümde HENÜZ hiçbir gerçek API endpoint\'i çağrılmıyor — yalnızca ALTYAPI kuruluyor (JWT\'nin nerede tutulacağı, her isteğe otomatik eklenecek header\'lar). İlk gerçek istek B-02\'de (LoginPage, POST /auth/login) atılacak.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'authSlice.ts — JWT\'yi localStorage\'da Tutan Slice',
+        dosyaYolu: 'admin/src/store/slices/authSlice.ts',
+        nedenBuKlasor: 'CLAUDE.md §4 adım 3 "Redux Slice — yalnızca ek local/UI state gerekirse" kuralına göre `store/slices/` altında yaşar — auth durumu (token var mı/yok mu) sunucudan gelen bir veri DEĞİL, istemcinin kendi durumu.',
+        kod: `interface AuthState {
+  accessToken: string | null
+  isAuthenticated: boolean
+}
+
+const initialState: AuthState = {
+  accessToken: localStorage.getItem('accessToken'),
+  isAuthenticated: localStorage.getItem('accessToken') !== null,
+}`,
+        satirlar: [
+          {
+            satir: 'accessToken: localStorage.getItem(\'accessToken\'),',
+            aciklama: 'Sayfa yenilendiğinde (F5) Redux store SIFIRDAN kurulur — eğer başlangıç durumu her zaman `null` olsaydı, GİRİŞ YAPMIŞ bir admin sayfayı yenilediğinde `ProtectedRoute` onu `/login`\'e atardı. `localStorage` okuması, tarayıcı kapatılıp açılsa bile JWT\'nin hayatta kalmasını sağlar.',
+            neden: 'Access token 15 dakika yaşıyor (backend, JWT §5) — bu süre içinde admin sayfayı kaç kez yenilerse yenilesin, tekrar login OLMAMALI. localStorage, `sessionStorage`\'ın aksine sekme kapatılsa bile kalıcıdır.',
+            olmasaydi: 'State her zaman `null` ile başlasaydı, her F5\'te (ya da yeni sekme açmada) admin yeniden login akışından geçmek zorunda kalırdı — 15 dakikalık bir access token için son derece can sıkıcı bir kullanıcı deneyimi.'
+          },
+          {
+            satir: 'isAuthenticated: localStorage.getItem(\'accessToken\') !== null,',
+            aciklama: 'Ayrı bir boolean alan — `accessToken`\'ın kendisini kontrol etmek yerine `ProtectedRoute`\'un (Bölüm 5) okuyacağı, anlamı AÇIK bir bayrak.',
+            neden: '`state.auth.accessToken` yerine `state.auth.isAuthenticated` okumak, `ProtectedRoute` kodunu "token string\'i boş mu" gibi bir detaydan SOYUTLAR — B-02\'de token yenileme (refresh) eklendiğinde bu alanın NASIL hesaplandığı değişebilir, ama `isAuthenticated`\'ı OKUYAN kod hiç değişmez.',
+            olmasaydi: 'Her yerde `!!state.auth.accessToken` gibi bir ifade tekrarlanırdı — "boş string de mi authenticated sayılır" gibi kenar durumlarının her kullanım yerinde AYRI AYRI doğru yazılması gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'api.ts — Authorization + Accept-Language Header\'ları',
+        dosyaYolu: 'admin/src/store/api.ts',
+        nedenBuKlasor: 'CLAUDE.md §4 adım 2 "RTK Query Endpoint → store/api/xxxApi.ts (backend\'e istek — cross-link noktası)" kuralına göre — ama bu dosya `xxxApi.ts` değil, TÜM diğer API dosyalarının (B-02\'deki `authApi.ts` gibi) `injectEndpoints` ile üzerine inşa edeceği TEMEL `api.ts`.',
+        kod: `export const api = createApi({
+  reducerPath: 'api',
+  baseQuery: fetchBaseQuery({
+    baseUrl: import.meta.env.VITE_API_URL,
+    prepareHeaders: (headers, { getState }) => {
+      const state = getState() as RootState
+      if (state.auth.accessToken) {
+        headers.set('Authorization', \`Bearer \${state.auth.accessToken}\`)
+      }
+      // Backend ErrorMessages/SuccessMessages ve admin log okuma bu header'a göre tr/de çözer
+      // (CLAUDE.md §1 "İstisna"/"İkinci istisna") — admin panelin kendi dil tercihi tek kaynak.
+      headers.set('Accept-Language', state.language.language)
+      return headers
+    },
+  }),
+  endpoints: () => ({}),
+})`,
+        satirlar: [
+          {
+            satir: 'if (state.auth.accessToken) {',
+            aciklama: 'Authorization header\'ı YALNIZCA token varsa eklenir — `POST /auth/login` gibi anonim endpoint\'ler için hiç header gönderilmez.',
+            neden: 'Boş/geçersiz bir Authorization header\'ı göndermek, backend\'de gereksiz bir JWT doğrulama denemesine yol açar (ve bazı senaryolarda 401 yerine YANLIŞ bir hata koduna) — koşul, yalnızca GERÇEKTEN bir token varken header eklenmesini garanti eder.',
+            olmasaydi: 'Koşulsuz `headers.set(\'Authorization\', \`Bearer \${state.auth.accessToken}\`)` yazılsaydı, token `null` iken `"Bearer null"` gibi anlamsız bir header gönderilirdi — backend bunu geçersiz bir token olarak REDDEDER, anonim bir istek olarak değil.'
+          },
+          {
+            satir: 'headers.set(\'Accept-Language\', state.language.language)',
+            aciklama: 'Backend\'in `RequestLanguageResolver`\'ının (A-03, `AKADEMI/backend/A-03_auth-register/`) okuduğu AYNI header — admin panelin `languageSlice`\'ından (Bölüm 4) gelen tr/de değeri, HER isteğe koşulsuz eklenir.',
+            neden: 'CLAUDE.md §1 "İkinci istisna": admin panel de bir istemci, `ErrorMessages`/`SuccessMessages` VE `SecurityLog.Detail` çözümü bu header\'a göre yapılıyor — admin panel bu header\'ı GÖNDERMEZSE, backend\'in dil kararı hep varsayılana (tr) düşer, admin `de` seçse bile hata mesajları tr gelirdi.',
+            olmasaydi: 'Bu satır olmasaydı, dil seçici (Bölüm 4) yalnızca admin panelin KENDİ statik metinlerini (react-i18next) çevirirdi — backend\'den gelen HER mesaj (ör. "e-posta zaten kayıtlı" gibi bir validasyon hatası) admin `de` seçmiş olsa bile hep Türkçe gelirdi, tutarsız bir deneyim.'
+          },
+          {
+            satir: 'endpoints: () => ({}),',
+            aciklama: 'B-01\'de bu API\'ye HİÇBİR endpoint eklenmedi — `injectEndpoints` API\'si (RTK Query\'nin "code splitting" özelliği) sayesinde B-02\'de yazılacak `authApi.ts`, bu TEMEL `api`\'yi import edip `.injectEndpoints({...})` ile `login`/`verifyOtp` mutation\'larını EKLEYECEK, bu dosyaya hiç dokunmadan.',
+            neden: 'Authorization/Accept-Language header mantığı TEK bir yerde (bu dosyada) tanımlanır, her yeni endpoint dosyası (B-03\'teki `wordsApi.ts`, B-04\'teki `categoriesApi.ts`...) bu mantığı OTOMATİK miras alır — tekrar yazılmaz.',
+            olmasaydi: 'Her feature kendi `createApi` çağrısını yapsaydı (B-02 için ayrı, B-03 için ayrı store), her birinde AYNI `prepareHeaders` mantığı kopyalanırdı — Bölüm 2\'deki renk kararı gibi, header mantığında bir değişiklik gerektiğinde (ör. gelecekte refresh token eklenince) düzinelerce dosyada arama-değiştirme gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'store.ts — Tek Store, Üç Reducer',
+        dosyaYolu: 'admin/src/store/store.ts',
+        nedenBuKlasor: 'CLAUDE.md §4 adım 2\'nin "cross-link noktası" notuyla aynı yerde — `api.reducerPath` ve `api.middleware`, RTK Query\'nin cache/loading state\'ini Redux DevTools\'ta görünür kılan bağlantı.',
+        kod: `export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+    language: languageReducer,
+    [api.reducerPath]: api.reducer,
+  },
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
+})
+
+export type RootState = ReturnType<typeof store.getState>`,
+        satirlar: [
+          {
+            satir: 'middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),',
+            aciklama: 'RTK Query\'nin `api.middleware`\'i, cache invalidation/otomatik yeniden çağırma/polling gibi ÖZELLİKLERİ çalıştıran motor — eklenmezse `createApi` ile tanımlanan endpoint\'ler (B-02\'den itibaren) sessizce ÇALIŞMAZ.',
+            neden: 'RTK Query resmi dokümantasyonunun ZORUNLU kurulum adımı — Redux\'un kendisi bu middleware\'i bilmez, `api.ts`\'nin (bir önceki slayt) ürettiği tüm cache/refetch mantığı bu satıra bağlıdır.',
+            olmasaydi: 'Bu satır unutulsaydı, B-02\'de yazılacak `authApi.login` mutation\'ı çağrıldığında hiçbir şey OLMAZDI (ne istek atılır ne hata verilir) — RTK Query\'nin en sık karşılaşılan, tanısı zor kurulum hatalarından biri.'
+          },
+          {
+            satir: 'export type RootState = ReturnType<typeof store.getState>',
+            aciklama: '`api.ts`\'teki `getState() as RootState` cast\'inin (bir önceki slayt) tipini SAĞLAYAN satır — store\'un KENDİSİNDEN türetilir, elle yazılmaz.',
+            neden: '`ReturnType<typeof store.getState>` deseni, `store.ts`\'e yeni bir reducer eklendiğinde (ör. gelecekte bir `themeSlice`) `RootState` tipinin OTOMATİK güncellenmesini sağlar — elle yazılan bir interface, yeni reducer eklenince ELLE senkronize edilmesi gerekirdi.',
+            olmasaydi: '`RootState` elle (`interface RootState { auth: AuthState, language: LanguageState }`) yazılsaydı, yeni bir slice eklendiğinde bu interface\'in GÜNCELLENMESİ unutulabilirdi — `api.ts`\'teki `state.language.language` gibi bir okuma, gerçekte var olan ama TİPTE eksik bir alanı derleme hatası vermeden "bulamazdı".'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'authSlice, JWT\'yi localStorage\'da tutar — sayfa yenilendiğinde admin\'in login durumunun KORUNMASI için',
+          'api.ts, Authorization VE Accept-Language header\'larını TEK bir yerde, TÜM gelecekteki endpoint\'ler için otomatik ekler',
+          '`endpoints: () => ({})` bilinçli bir BOŞLUK — B-02\'den itibaren `injectEndpoints` ile doldurulacak, bu dosyaya bir daha hiç dokunulmayacak',
+          'store.ts, `api.middleware`\'i eklemeyi UNUTMAMALI — RTK Query\'nin en sık atlanan kurulum adımı',
+          'Bu bölümde HENÜZ hiçbir gerçek HTTP isteği atılmadı — ilk `onizleme` slaytındaki gerçek `apiCagrisi` (backend\'e giden istek), B-02\'de LoginPage yazıldığında görünecek'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

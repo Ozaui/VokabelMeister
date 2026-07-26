@@ -25,7 +25,7 @@ Proje referansları (`.csproj`):
 
 Bir API'ın tüm parçaları (Entity → EF Config → Migration → Command/Query → Validator → Repository →
 Handler → Birim Test → Controller → DI kaydı) **tek task içinde** tamamlanır, ardından
-`BACKEND_AKADEMI/`'ye işlenir. Katman katman ilerleme (önce tüm entity'ler, sonra tüm
+`AKADEMI/backend/`'ye işlenir. Katman katman ilerleme (önce tüm entity'ler, sonra tüm
 DTO'lar) yasaktır. Handler'lar birbirini `_mediator.Send()` ile ASLA çağırmaz (döngüsel bağımlılık) —
 paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve gerekçe → `CLAUDE.md §3`,
 [[Gelistirme_Yol_Haritasi]].
@@ -45,7 +45,7 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - Application: 13 (Auth) + 5 (QrLogin) Command+Handler (`Features/Auth/`, `Features/QrLogin/`), `AuthProfile` (AutoMapper), paylaşılan servisler (`OtpService`, `LoginCompletionService`, `PasswordService`, `JwtTokenService`, `GoogleTokenValidator`, `AppleTokenValidator`), FluentValidation validator'ları (`Validators/Auth/`), **A-03.2:** [[ErrorMessages]]'ın başarı-mesajı kardeşi `SuccessMessages` (`Common/Localization/`) — 7 `MessageResponse` döndüren Handler'ın tamamı artık `SuccessMessages.Resolve(code, language)` kullanıyor, hardcode Türkçe metin kalmadı
 - API: `AuthController` (13 endpoint) + `QrLoginController` (5 endpoint), ikisi de yalnızca `IMediator.Send(command)` çağırır
 - Test: 117 birim test (79 Auth [A-03.2'de +7 dil senaryosu] + 23 QrLogin [2026-07-11 bugfix turunda +5 regresyon testi] + 15 yeni `Repositories/` testi [2026-07-12, User/RefreshToken/QrLoginSession repository'lerinin IgnoreQueryFilters kullanan sorguları]), hepsi yeşil
-- Detay → [[Auth_Domain]], `BACKEND_AKADEMI/A-03_auth-register/`, `A-03.1_qr-login/`, `A-03.2_mesaj-lokalizasyonu/`
+- Detay → [[Auth_Domain]], `AKADEMI/backend/A-03_auth-register/`, `A-03.1_qr-login/`, `A-03.2_mesaj-lokalizasyonu/`
 
 **A-04 ✅ (Loglama Sistemi, 2026-07-19):**
 - Domain: `ActivityLog`/`ApplicationLog`/`SecurityLog` (`Entities/Logging/`, hiçbiri `BaseEntity`den türemiyor — insert-only) + `LogEventType` enum
@@ -53,7 +53,7 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - Application: `IActivityLogger`/`ActivityLogger`, `ISecurityLogger`/`SecurityLogger` (`Services/`, flat) — 8 mevcut Auth/QrLogin Handler'a entegre edildi (A-03/A-03.1'den beri bekleyen borç kapandı)
 - API: `HealthController` (`GET /health`, MediatR dışı bilinçli sapma) + `RateLimiterOptions.OnRejected`→SecurityLog
 - **Mimari karar:** `SecurityLog.Detail`/`ActivityLog.OldValue`/`NewValue` serbest metin değil bir **Code** — admin panel de bir istemci, tr/de çözümü A-07'de `GET /admin/logs/*` OKUNURKEN yapılır (`CLAUDE.md` "İkinci istisna")
-- Test: 144/144 yeşil. Detay → [[Loglama_Domain]], `BACKEND_AKADEMI/A-04_loglama-sistemi/`
+- Test: 144/144 yeşil. Detay → [[Loglama_Domain]], `AKADEMI/backend/A-04_loglama-sistemi/`
 
 **A-05 ✅ (Sistem Kelimesi API — Words, 2026-07-21, ilk içerik domain'i):**
 - Domain: `Language` (`BaseEntity`siz istisna, statik seed), `WordConcept`/`Word`/`WordDetail`/`WordExample` (`Entities/Words/`)
@@ -61,7 +61,7 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - Application: `WordGrammarValidator` (Command'dan bağımsız, `LanguageId`→dil, `PartOfSpeech`→tür dallanması), 7 Command/Query (`Features/Words/`) — CRUD + Eşleştirme (`GetUnmatchedWordConceptsQuery`/`PairWordConceptsCommand`), `DuplicateWordException`
 - API: `WordsController` — projedeki **İLK** `[Authorize(Roles="Admin")]` kullanımı, 7 endpoint
 - `IActivityLogger`: `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`
-- Test: 193/193 yeşil. Detay → [[Icerik_Domain]], `BACKEND_AKADEMI/A-05_sistem-kelimesi-api/`
+- Test: 193/193 yeşil. Detay → [[Icerik_Domain]], `AKADEMI/backend/A-05_sistem-kelimesi-api/`
 
 **A-06 ✅ (Kategori API — Categories, 2026-07-23):**
 - Domain: `Category` (self-ref hiyerarşi), `CategoryTranslation`, `WordCategory` (M:N, `Entities/Categories/`)
@@ -69,7 +69,7 @@ paylaşılan mantık gerekiyorsa küçük bir servise çıkarılır. Detay ve ge
 - Application: 5 Command/Query (`Features/Categories/`), silme koruması (alt kategori/aktif kelime/döngü → 3 yeni exception), `GetWordsQuery`'ye retrofit (`categoryId` filtresi + `categories[]` alanı)
 - API: `CategoriesController`
 - `IActivityLogger` entegrasyonu + kod denetiminde bulunan 2 hatanın düzeltilmesi (deferred LINQ audit log, duplikat categoryId→500 riski)
-- Test: 219/219 yeşil. Detay → [[Icerik_Domain]], `BACKEND_AKADEMI/A-06_kategori-api/`
+- Test: 219/219 yeşil. Detay → [[Icerik_Domain]], `AKADEMI/backend/A-06_kategori-api/`
 
 Sırada **A-07 (Admin API — Kullanıcı Yönetimi + İstatistik + Log Görüntüleme)** var, yeni entity
 eklemiyor (mevcut `User`'ı genişletiyor). Detay → [[Gelistirme_Yol_Haritasi]].

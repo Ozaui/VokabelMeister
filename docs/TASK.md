@@ -27,13 +27,30 @@
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
 | A | A-01…A-10 | Admin Panel Backend | ✅ |
-| B | B-01…B-09 | Admin Panel | ⬜ |
+| B | B-01…B-09 | Admin Panel | 🔄 |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-01` ⬜ → `TASK/B_admin_panel.md` (Faz A tamamlandı)
+**Sıradaki task:** `B-02` ⬜ (Auth Sayfaları) → `TASK/B_admin_panel.md` (B-01 tamamlandı)
+(`B-01 — Kurulum` ✅ tamamlandı 2026-07-26: `/admin` React 19 + Vite 8 + TS + Tailwind v4 iskeleti,
+tasarım sistemi (`DESIGN_SYSTEM.md`'nin `@theme`'e işlenmesi — Primary rengi gerçek tarayıcıda
+görülünce `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi, karar dokümana kalıcı not edildi),
+`store.ts` + `authSlice` (accessToken/isAuthenticated, localStorage) + RTK Query `api.ts`
+(Authorization + Accept-Language header'ları, henüz endpoint yok), **dil tercihi altyapısı**
+(`languageSlice` tr/de + `react-i18next` — admin panelin İKİ bağımsız dil kanalı: backend
+mesajları Accept-Language'la, admin'in kendi statik metinleri react-i18next'le), `ProtectedRoute`
+(JWT yoksa `/login`, `state`'te nereden geldiğini taşır) + `AppLayout` (Sidebar/Topbar) + routing —
+hepsi tarayıcıda uçtan uca (JWT yok→login, JWT var→layout→dil değiştir→çıkış) doğrulandı, 2
+subagent kod denetimi (redirect state eksikliği, `aria-pressed`/`<html lang>` senkronu eklendi),
+Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 6 bölüm). **Backend'e sıçrayan bir
+retrofit:** admin panelin kendi dil tercihinin DB'ye bağlı olması gerektiği (localStorage yetmez)
+netleşince **A-03.4 — Admin Dil Tercihi (`LanguagePreference`)** doğdu, `ThemePreference` (A-03.3)
+ile birebir aynı desen, yazma ucu C-01'e bırakıldı, **297/297 backend testi yeşil** (296'dan +1),
+Backend Akademi'ye de işlendi. Dark mode (`ThemePreference`) admin panelde bilinçli olarak
+ERTELENDİ — henüz B-0X numarası yok, B_admin_panel.md B-01 notunda ve C_kullanici_backend.md
+C-01 notunda çapraz işaretlendi, unutulmaması için.)
 (`A-10 — E-posta Servisi + Hesap Temizleme Görevi` ✅ tamamlandı 2026-07-25: `EmailTemplates.cs`
 (6 şablon × tr/de, `ErrorMessages`/`SuccessMessages`'ın kardeşi, ortak `Layout` + inline stil —
 `string.Format` ve e-posta istemcisi uyumluluğu aynı çözümü gerektiriyor), `IEmailService`'in 6

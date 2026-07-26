@@ -1,6 +1,6 @@
 namespace WordLearner.Application.DTOs.Auth;
 
-public record AuthUserDto(int Id, string CurrentLevel, string ThemePreference);
+public record AuthUserDto(int Id, string CurrentLevel, string ThemePreference, string LanguagePreference);
 
 public record AuthTokenResponse(
     string AccessToken,

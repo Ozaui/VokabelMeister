@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ProtectedRoute + Layout + Routing</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'protected-route-layout-routing',
+    bolumBaslik: 'B-01 — Kurulum',
+    oncekiBolum: '04_dil-tercihi-i18n.html',
+    sonrakiBolum: '06_dark-mode.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'ProtectedRoute + Layout + Routing',
+        altBaslik: 'Bölüm 3-4\'te kurulan store/authSlice/languageSlice, burada GERÇEK bir davranışa dönüşüyor: JWT yoksa hiçbir ekran açılmıyor, açıksa Sidebar+Topbar+dil değiştirici her yerde hazır.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ProtectedRoute.tsx — JWT Yoksa /login\'e Yönlendirme',
+        dosyaYolu: 'admin/src/components/ProtectedRoute.tsx',
+        nedenBuKlasor: '`components/` altında, doğrudan bir sayfa değil — `App.tsx`\'te (bu bölümün devamı) bir route SARMALAYICISI olarak kullanılır.',
+        kod: `export function ProtectedRoute() {
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated)
+  const location = useLocation()
+
+  if (!isAuthenticated) {
+    // B-02'de LoginPage bu state'i okuyup girişten sonra buraya geri döner.
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <Outlet />
+}`,
+        satirlar: [
+          {
+            satir: 'const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated)',
+            aciklama: 'Bölüm 3\'teki `authSlice`\'ın `isAuthenticated` alanını okur — `accessToken` string\'inin kendisini DEĞİL, o alandan türetilmiş anlamı AÇIK bayrağı.',
+            neden: '`ProtectedRoute`, token\'ın NASIL saklandığı/hesaplandığı detayından SOYUTLANMIŞ olmalı — Bölüm 3\'te tartışıldığı gibi, gelecekte token yenileme (refresh) eklendiğinde bu satırın DEĞİŞMESİ gerekmez.',
+            olmasaydi: '`state.auth.accessToken !== null` gibi bir ifade doğrudan buraya yazılsaydı, `authSlice`\'ın iç yapısı değiştiğinde (ör. token bir nesneye dönüşse) BU dosyanın da güncellenmesi gerekirdi.'
+          },
+          {
+            satir: 'return <Navigate to="/login" state={{ from: location }} replace />',
+            aciklama: 'Yalnızca `/login`\'e yönlendirmekle KALMAZ — admin\'in NEREYE gitmeye çalıştığını (`location`) React Router\'ın `state` mekanizmasıyla TAŞIR.',
+            neden: 'B-02\'de yazılacak `LoginPage`, başarılı girişten sonra `location.state?.from`\'u okuyup admin\'i "/" yerine TAM OLARAK gitmeye çalıştığı sayfaya (ör. `/words/42`) geri gönderebilecek — bu bilgi TAŞINMASAYDI, her giriş sonrası admin hep ana sayfadan başlardı.',
+            olmasaydi: 'Bu `state` parametresi olmasaydı (kod denetiminde eklendiği not edildi), B-02\'de "girişten sonra nereye dönülecek" sorusu ya hiç çözülemez ya da URL query string\'i gibi daha kırılgan bir yöntemle (`?redirect=/words/42`) çözülmek zorunda kalırdı.'
+          },
+          {
+            satir: 'replace',
+            aciklama: '`Navigate`\'in `replace` prop\'u — yönlendirme, tarayıcı geçmişine YENİ bir kayıt eklemek yerine mevcut kaydın ÜZERİNE yazar.',
+            neden: '`replace` olmadan, admin `/login`\'e yönlendirildikten sonra tarayıcının "geri" tuşuna bassa, onu tekrar (yetkisiz erişimin denendiği) korumalı sayfaya götürüp ANINDA tekrar `/login`\'e atardı — döngüsel, kafa karıştırıcı bir geçmiş.',
+            olmasaydi: 'Tarayıcı geçmişinde `/words → /login → (geri) /words → (anında) /login` gibi anlamsız bir zincir oluşurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AppLayout.tsx — Sidebar + Topbar + Outlet',
+        dosyaYolu: 'admin/src/components/layout/AppLayout.tsx',
+        nedenBuKlasor: 'DESIGN_SYSTEM.md §4 "Genel Layout" kuralının karşılığı — sol sabit sidebar + üst topbar, `components/layout/` altında (feature\'a özel değil, TÜM korumalı sayfaların ortak çerçevesi).',
+        kod: `export function AppLayout() {
+  return (
+    <div className="flex h-screen">
+      <Sidebar />
+      <div className="flex flex-1 flex-col">
+        <Topbar />
+        <main className="flex-1 overflow-y-auto bg-background p-6">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}`,
+        satirlar: [
+          {
+            satir: '<Outlet />',
+            aciklama: 'React Router\'ın "burada bir alt route render edilecek" işaretçisi — B-02\'deki `DashboardPage`, B-03\'teki `WordListPage` gibi TÜM gelecekteki sayfalar bu noktada, Sidebar/Topbar hiç değişmeden görünecek.',
+            neden: 'Layout (Sidebar/Topbar) ile İÇERİK (o anki sayfa) birbirinden AYRILMALI — `Outlet`, React Router\'ın nested route\'lar için sağladığı standart mekanizma, her sayfa kendi Sidebar/Topbar\'ını YENİDEN yazmaz.',
+            olmasaydi: 'Her yeni sayfa (B-02\'den B-09\'a) kendi component\'i içinde Sidebar+Topbar\'ı TEKRAR import edip render etseydi, DESIGN_SYSTEM.md\'deki layout kuralında bir değişiklik (ör. Bölüm 2\'deki Primary renk kararı gibi) DOKUZ ayrı dosyada tekrarlanması gerekirdi.'
+          },
+          {
+            satir: 'className="flex-1 overflow-y-auto bg-background p-6"',
+            aciklama: '`overflow-y-auto`, içerik alanı taştığında YALNIZCA o alanın kaydırılmasını sağlar — Sidebar/Topbar sabit kalır.',
+            neden: 'DESIGN_SYSTEM.md §3 "responsive" kuralı, admin panelin veri-yoğun tablolarla (B-03\'ten itibaren) çalışacağını varsayıyor — uzun bir tablo sayfanın TAMAMINI değil, yalnızca içerik alanını kaydırmalı, Sidebar navigasyonu her zaman erişilebilir kalmalı.',
+            olmasaydi: '`overflow-y-auto` olmasaydı, B-03\'te uzun bir kelime listesi tüm sayfayı (Sidebar dahil) aşağı kaydırırdı — admin, listenin ortasındayken navigasyona erişmek için sayfanın EN BAŞINA dönmek zorunda kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'App.tsx — Route Ağacı',
+        dosyaYolu: 'admin/src/App.tsx',
+        nedenBuKlasor: 'CLAUDE.md §4 adım 6 "Route/Import → App.tsx" kuralına göre — bu dosya, `ProtectedRoute`+`AppLayout`\'ı BİRLEŞTİREN, tüm gelecekteki sayfaların (B-02\'den B-09\'a) route\'larının EKLENECEĞİ tek merkez.',
+        kod: `function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPlaceholder />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<DashboardPlaceholder />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+}`,
+        satirlar: [
+          {
+            satir: '<Route path="/login" element={<LoginPlaceholder />} />',
+            aciklama: '`/login`, `ProtectedRoute`\'un DIŞINDA tanımlanır — mantıksal olarak zorunlu: eğer `/login` de korumalı olsaydı, JWT olmayan bir admin `/login`\'e bile ERİŞEMEZDİ, sonsuz bir yönlendirme döngüsü oluşurdu.',
+            neden: '`LoginPlaceholder`, B-02\'de gerçek `LoginPage` ile değiştirilecek yer tutucu — ama route\'un KENDİSİ (path, konum, ProtectedRoute\'un dışında olması) B-02\'de DEĞİŞMEYECEK, yalnızca `element` prop\'u değişecek.',
+            olmasaydi: '`/login` da `<Route element={<ProtectedRoute />}>` içine yazılsaydı, JWT\'si olmayan bir admin `/login`\'e giderken `ProtectedRoute` onu TEKRAR `/login`\'e (kendisine) yönlendirmeye çalışırdı — sonsuz döngü.'
+          },
+          {
+            satir: '<Route element={<ProtectedRoute />}>',
+            aciklama: 'React Router\'ın "layout route" deseni — `element` prop\'u olan ama `path`\'i OLMAYAN bir `<Route>`, doğrudan bir sayfa render etmez, yalnızca İÇİNDEKİ route\'ları sarmalar (Bölüm\'ün ilk slaytındaki `ProtectedRoute` component\'i, `<Outlet/>` ile İÇ route\'u render eder).',
+            neden: 'Bu iç içe yapı (`ProtectedRoute` → `AppLayout` → gerçek sayfa), İKİ ayrı sorumluluğu (1: yetkilendirme kontrolü, 2: görsel çerçeve) BİRBİRİNDEN bağımsız, ayrı ayrı test edilebilir katmanlar olarak tutar.',
+            olmasaydi: 'Yetkilendirme kontrolü VE layout render\'ı TEK bir component\'te birleştirilseydi (ör. `AppLayout` içinde `if (!isAuthenticated) return <Navigate/>`), her yeni sayfa için bu kontrolün AppLayout\'un içinde doğru çalıştığını varsaymak gerekirdi — ayrı katmanlar, ikisini de bağımsız doğrulamayı kolaylaştırır.'
+          },
+          {
+            satir: '<Route path="/" element={<DashboardPlaceholder />} />',
+            aciklama: 'B-01\'in TEK gerçek (yer tutucu olsa da) korumalı route\'u — `AppLayout`\'un `<Outlet/>`\'ine karşılık gelen ilk içerik.',
+            neden: 'B-07\'de gerçek `DashboardPage` yazıldığında, DEĞİŞECEK olan yalnızca `element` prop\'udur — `path="/"`, `ProtectedRoute`/`AppLayout` sarmalaması hiç değişmeyecek, B-01\'in kurduğu iskelet aynen kalacak.',
+            olmasaydi: 'Bu route hiç olmasaydı, `ProtectedRoute`+`AppLayout`\'un GERÇEKTEN uçtan uca çalıştığını (Bölüm\'ün son slaytındaki `onizleme`\'de görüldüğü gibi) kanıtlayacak hiçbir sayfa olmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'onizleme',
+        baslik: 'Tarayıcıda Dene — JWT Olmadan / JWT ile',
+        rota: '/',
+        aciklama: 'B-01\'in TÜM parçalarının (store, authSlice, languageSlice, api.ts, ProtectedRoute, layout, routing) uçtan uca birlikte çalıştığını gösteren tek akış — henüz hiçbir backend endpoint\'i çağrılmıyor (B-02\'ye kadar), yalnızca istemci tarafı davranışı.',
+        akis: [
+          { eylem: 'Admin, `localStorage`\'da `accessToken` OLMADAN "/" adresine gider', sonuc: '`ProtectedRoute` anında `/login`\'e yönlendirir (`LoginPlaceholder` görünür) — hiçbir korumalı içerik bir an bile ekrana ÇIKMAZ' },
+          { eylem: 'Admin, tarayıcı konsolundan `localStorage.setItem(\'accessToken\', ...)` ile bir token EKLER (B-02\'de bu adım gerçek login formuyla olacak) ve "/" adresine gider', sonuc: '`ProtectedRoute` geçiş izni verir, `AppLayout` render olur: solda Sidebar ("Panel" linki, Turkuaz aktif renk), üstte Topbar (dil değiştirici + Çıkış Yap)' },
+          { eylem: 'Admin, Topbar\'daki "DE" düğmesine tıklar', sonuc: 'Sidebar\'daki "Panel" anında "Übersicht"e döner, Topbar\'daki "Çıkış Yap" "Abmelden"e döner — sayfa YENİDEN YÜKLENMEDEN (react-i18next\'in Context güncellemesi)' },
+          { eylem: 'Admin, "Abmelden" (Çıkış Yap) düğmesine tıklar', sonuc: '`authSlice`\'ın `logout` action\'ı `accessToken`\'ı hem Redux state\'ten hem `localStorage`\'dan siler, `/login`\'e yönlendirilir' }
+        ],
+        durumlar: [
+          { durum: 'JWT yok', gorunum: '/login\'e yönlendirilir, hiçbir korumalı içerik render edilmez' },
+          { durum: 'JWT var', gorunum: 'AppLayout + Sidebar + Topbar + DashboardPlaceholder render edilir' },
+          { durum: 'Dil değişikliği', gorunum: 'Tüm çevrilmiş metinler (Sidebar/Topbar) anında güncellenir, sayfa yenilenmez' }
+        ],
+        notlar: [
+          'Bu akış B-01\'de manuel test edildi (tarayıcı konsolundan `localStorage.setItem` ile) — B-02\'de gerçek `POST /auth/login` isteği bu adımı OTOMATİKLEŞTİRECEK, `apiCagrisi` alanı olan ilk `onizleme` slaytı orada görünecek.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Layout Route', tanim: 'React Router\'da `path` prop\'u olmayan, yalnızca `element` ile iç route\'ları sarmalayan bir `<Route>` — `ProtectedRoute` ve `AppLayout` burada bu desenle kullanıldı.' },
+          { terim: '<Outlet/>', tanim: 'React Router\'ın, bir üst-seviye component (layout) içinde alt route\'un NEREDE render edileceğini belirten yer tutucu bileşeni.' },
+          { terim: 'Navigate state', tanim: '`<Navigate>` component\'inin `state` prop\'u — bir yönlendirmeyle birlikte, hedef sayfanın okuyabileceği ek veri (burada: admin\'in nereden geldiği) taşımayı sağlar.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

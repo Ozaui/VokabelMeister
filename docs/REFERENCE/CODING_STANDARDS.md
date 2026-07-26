@@ -2,7 +2,7 @@
 
 > Dil kuralı özeti (Türkçe yorum / İngilizce kod-log-code) → `CLAUDE.md §1`. Bu dosya: yorum standardı + birim test standardı.
 > **Felsefe:** Kod kendini anlatır (isimlendirme); yorum yalnızca kodun anlatamadığı *neden*i, kısa ve gerektiğinde anlatır.
-> **Not:** Bu standart yalnızca kaynak kod (`.cs`/`.ts`/`.tsx`) için geçerli. `BACKEND_AKADEMI/` öğretim materyali kendi ayrıntılı `aciklama`/`neden`/`olmasaydi` formatını korur (`BACKEND_AKADEMI/STANDART.md`).
+> **Not:** Bu standart yalnızca kaynak kod (`.cs`/`.ts`/`.tsx`) için geçerli. `AKADEMI/backend/` öğretim materyali kendi ayrıntılı `aciklama`/`neden`/`olmasaydi` formatını korur (`AKADEMI/backend/STANDART.md`).
 
 ## 1. Dil Kuralı — Örnek
 

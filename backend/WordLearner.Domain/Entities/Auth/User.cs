@@ -28,6 +28,11 @@ public class User : BaseEntity
     // Light/Dark/System — kayıt sonrası onboarding'de set edilir (C-01), JWT claim'ine girmez.
     public string ThemePreference { get; set; } = "System";
 
+    // tr/de — istemcinin (admin panel, ileride web/mobil) arayüz dili; Languages tablosundaki
+    // kelime içeriği diliyle KARIŞTIRILMAMALI (o WordConcept'e bağlı, bu kullanıcıya). ThemePreference
+    // ile aynı desen: yazma ucu C-01'de (PUT /users/me), şimdilik yalnızca login yanıtından okunur.
+    public string LanguagePreference { get; set; } = "tr";
+
     public int TotalXP { get; set; }
     public int LifetimeXP { get; set; }
     public int StreakDays { get; set; }

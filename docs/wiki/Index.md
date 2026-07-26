@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. **A-08 ✅
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-03.4 ✅ tamamlandı** (2026-07-26) — Admin Dil Tercihi (`LanguagePreference`), `ThemePreference` ile birebir aynı retrofit deseni, B-01 (Admin Panel Kurulumu) sırasında ortaya çıktı, **297/297 birim testi yeşil**; detay → Kırk üçüncü INGEST. **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. **A-08 ✅
 tamamlandı** (2026-07-24) — Medya/Dosya Yükleme API: `IFileStorageService`/`LocalFileStorageService`
 (Application/Services, uzantı+boyut+İÇERİK [magic bytes] doğrulama, `Guid` tabanlı benzersiz ad
 üretimi), `MediaController` (projedeki İLK `multipart/form-data`/`IFormFile` uç noktası,
@@ -22,11 +22,140 @@ launchSettings.json'daki 29 baytlık hatalı örnek AES anahtarı, "***" maske l
 gerçek şifre olarak şifrelenebilmesi (`SmtpPasswordRequiredException` ile kapatıldı), eşzamanlı PUT
 determinizmi (`OrderBy(Id)`), MailKit'in CVE'li 4.3.0 sürümü (4.17.0'a yükseltildi), Backend
 Akademi'de 5 "Tam Dosya" slaytının gerçek koddan eksik satırlar içermesi; detay → Otuz dokuzuncu
-INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, sırada **Faz B (Admin Panel — frontend)** var.
+INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, **Faz B (Admin Panel — frontend) başladı** — **B-01 ✅ tamamlandı** (2026-07-26): `/admin` React+Vite+TS+Tailwind v4 iskeleti, tasarım sistemi (Primary rengi `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi), store+authSlice+api.ts, **dil tercihi altyapısı** (`languageSlice`+react-i18next+Accept-Language — bu ihtiyaç backend'de **A-03.4** `LanguagePreference` retrofit'ini doğurdu, **297/297**), ProtectedRoute+layout+routing, **dark mode** (`themeSlice`, Tailwind v4 `.dark` token override, `lucide-react` — admin panelin İLK ikon kütüphanesi — backend'e HİÇ dokunmadı, `ThemePreference` A-03.3'te zaten vardı); Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 7 bölüm); detay → Kırk dördüncü ve Kırk beşinci INGEST.
 Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
 **Bağlantılar:** [[Sistem_Mimarisi]] · [[Backend_Katmanli_Mimari]] · [[Gelistirme_Yol_Haritasi]] · [[Veritabani_Semasi]]
+
+*Kırk ikinci INGEST (2026-07-26) — Faz A tamamlanıp Faz B (Admin Panel frontend, B-01 Kurulum)
+başlamadan hemen önce, kullanıcı backend'de kurulan "her kod parçası neden yazıldığıyla anlatılır"
+öğretim disiplininin (bkz. [[Backend_Akademi_Sistemi]]) admin frontend'inde de aynı şekilde
+sürmesini istedi. Yeni **[[Admin_Akademi_Sistemi]]** (kök `AKADEMI/admin/`) iskeleti kuruldu:
+`AKADEMI/backend/engine/`'in birebir kopyası (`slides-engine.js`/`slides.css`, akademiler arası
+PAYLAŞILMIYOR — bilinçli tercih, ayrı hızda değişebilsinler diye), yeni bir slayt türü
+**`onizleme`** (backend'deki `postman`'in frontend karşılığı — bir component'in tarayıcıda
+gerçekte nasıl davrandığı: `rota`, `akis[]` [kullanıcı adım adım ne yapar→ne olur],
+`apiCagrisi` [RTK Query'nin gittiği gerçek backend endpoint'i, component saf UI ise hiç
+yazılmaz], `durumlar[]`), `AKADEMI/admin/STANDART.md` (ortak kurallarda `AKADEMI/backend/
+STANDART.md`'ye referans verir, yalnızca `onizleme` şemasını tekrar yazar), `_TASLAK/` (React/TS
+örnek görev, her slayt türünün bir örneği), boş `index.html` (hub). `CLAUDE.md` §6 "Backend
+Akademi Kuralı" → **"Kod Akademisi Kuralı"**ya genelleştirildi: faz→akademi klasörü→task
+kodu→"nasıl denerim" slaytı eşlemesini veren bir tablo (A→`AKADEMI/backend`/`postman`,
+B→`AKADEMI/admin`/`onizleme`, D/E fazları başlayınca `AKADEMI/web`/`AKADEMI/mobile` aynı
+desende açılacak), "nasıl denerim" slaytının tetikleyicisi backend'de CLAUDE.md §3 adım 13
+("controller'a bağlandığında"), frontend'de §4 adım 6 ("Route/Import" tamamlandığında). §1
+"Yorum satırları" istisnası ve §7 "Bir API/Feature Tamamlandığında" (git commit örneği,
+kullanılmayan paket taraması artık `package.json`'ı da kapsıyor) da bu genellemeye göre
+güncellendi. `docs/wiki/Frontend/` yeni bir wiki klasörü olarak açıldı (ilk içeriği
+[[Admin_Akademi_Sistemi]]). Aynı oturumda iki ek karar geldi: **(1)** kullanıcı kök dizindeki
+`BACKEND_AKADEMI/`/`ADMIN_AKADEMI/` iki ayrı klasörünün dağınık olduğunu belirtti — ikisi tek bir
+`AKADEMI/` altında (`AKADEMI/backend/`, `AKADEMI/admin/`) toplandı (git rename, geçmiş korundu),
+kök `AKADEMI/index.html` ikisine tek giriş noktası oldu, alt hub'lar (`AKADEMI/backend/index.html`,
+`AKADEMI/admin/index.html`) birbirine geri dönüş linki aldı; CLAUDE.md/STANDART.md/wiki/docs
+içindeki TÜM `BACKEND_AKADEMI`/`ADMIN_AKADEMI` path referansları (hrefler dahil) `AKADEMI/backend`/
+`AKADEMI/admin`'e güncellendi. **(2)** Kullanıcı Admin için roadmap yazımının tamamen bırakılıp
+her şeyin bu yeni slayt sistemine işleneceğini netleştirdi — eski `docs/ADMIN_YOL_HARITASI/` (hiç
+gerçek içerik yazılmamış, yalnızca boş şablondu, `API_YOL_HARITASI`'nın silinme emsaliyle aynı
+durum) **silindi**; `docs/TASK/B_admin_panel.md`'deki 43 "➜ Frontend Yol Haritası'na işle" satırı
+"➜ Admin Akademi'ye işle"ye çevrildi, `CLAUDE.md` §4 adım 8 (Faz B için) `AKADEMI/admin/`'e işaret
+edecek şekilde güncellendi, `docs/index.html`'deki ayrı "Admin Panel" kartı kaldırıldı (zaten
+"Kod Akademisi" kartı admin'i kapsıyor), Web/Mobil roadmap sayfalarındaki (`WEB_YOL_HARITASI/`,
+`MOBILE_YOL_HARITASI/`) topbar'daki ölü "Admin" linkleri temizlendi. Web/Mobil (D/E fazları)
+kendi roadmap sistemini KORUYOR — bu karar yalnızca Admin'i etkiledi, aynı geçişin D/E'de de
+yapılıp yapılmayacağı o fazlar başladığında ayrıca kullanıcıyla netleştirilecek. **Düzeltme:**
+kullanıcı hemen ardından B-01'in de (A-02/Ortak Altyapı emsaliyle) akademiye işlenmesi gerektiğini
+AÇIKÇA belirtti — "B-01 akademiye işlenmez" notu geri alındı, B-01 tamamlanınca
+`AKADEMI/admin/B-01_kurulum/` yazılacak (bkz. Kırk üçüncü INGEST).*
+
+*Kırk üçüncü INGEST (2026-07-26, aynı gün) — B-01 (Admin Panel Kurulumu) uygulaması sırasında
+kullanıcı iki eksiği fark etti ve düzeltti: **(1)** `REFERENCE/DESIGN_SYSTEM.md` (Menekşe+Mercan
+paleti, Nunito/DM Sans, 16px/12px radius, ikon kısıtı) hiç okunmadan generic Tailwind renkleriyle
+kodlanmaya başlanmıştı — DESIGN_SYSTEM.md okunup Tailwind v4 `@theme` (CSS-first config) ile
+palet/font/radius admin projesine işlendi. **(2)** Admin panelin kendi arayüz dilinin (tr/de)
+olması gerektiği, hem backend'den gelen mesajların hem frontend statik metinlerinin buna göre
+şekillenmesi gerektiği hatırlandı — ilk planda bu saf bir frontend `localStorage` tercihi olarak
+tasarlanmıştı, ama kullanıcı "bu bilginin database'den/backend'den geleceğini unutmamalıyız,
+bunun API'ı yazılmış olmalı" diyerek durdurdu. Kullanıcıya seçenek soruldu (bkz. AskUserQuestion):
+**ThemePreference'la birebir aynı yol** seçildi — DB kolonu + login yanıtından okuma ŞİMDİ, yazma
+ucu (`PUT /users/me`) `ThemePreference` ile birlikte **C-01**'e bırakıldı. Bu, yeni bir backend
+retrofit görevi doğurdu: **A-03.4 — Admin Dil Tercihi (LanguagePreference)**, `A-03.3`'ün (Tema
+Tercihi) birebir aynı deseniyle: `User.LanguagePreference` (`tr|de`, varsayılan `tr`) +
+`CK_Users_LanguagePreference` + `AddUserLanguagePreference` migration, `RegisterResponse`/
+`AuthUserDto`'ya alan eklendi (AutoMapper konvansiyonla otomatik taşıdı, `AuthProfile.cs`
+değişmedi), 5 test dosyası senkronize edildi (+1 yeni test), **297/297 birim testi yeşil**.
+`docs/DATABASE_SCHEMA/Auth.md`, `docs/REFERENCE/API_ENDPOINTS.md`, [[Auth_Domain]] güncellendi;
+`docs/TASK/A_admin_panel_backend.md`'ye A-03.4 eklendi; `docs/TASK/C_kullanici_backend.md` C-01
+notuna **kullanıcının özellikle istediği bir çapraz-hatırlatma** eklendi — C-01 bittiğinde
+backend'in yanında admin panelin kendi `languageSlice.ts`'inin de gerçek `PUT /users/me` çağrısına
+bağlanması gerektiği (aksi halde tercih yalnızca tarayıcıda kalır, hesabı takip etmez). Kullanıcı
+ayrıca AÇIKÇA "bu backend değişikliklerini de Backend Akademi'ye işlemeyi unutmayalım" dedi —
+`AKADEMI/backend/A-03.4_dil-tercihi/` (3 bölüm, `A-03.3`'ün üçüncü bölümünün `sonrakiBolum`'u
+buraya, `A-04`'ün ilk bölümünün `oncekiBolum`'u buradan güncellendi — zincir bütünlüğü korundu),
+kök `AKADEMI/backend/index.html`'e kart eklendi, `A-03.3`'ün kapanış slaytındaki "A-03 ailesi
+TAMAMLANDI" iddiası (artık doğru değil) "sırada A-03.4 var"a düzeltildi (STANDART.md §4 "eski
+bölümler TAMLIK iddiası içeriyorsa düzeltilir" istisnası). Admin panel tarafı (Tailwind theme +
+languageSlice + react-i18next kurulumu) B-01'in geri kalanıyla birlikte devam ediyor, henüz
+tamamlanmadı.*
+
+*Kırk dördüncü INGEST (2026-07-26, aynı gün) — B-01 (Admin Panel Kurulumu) tamamlandı. **Renk
+kararı:** DESIGN_SYSTEM.md'nin Primary'si (`#6D5DFC`, "Menekşe") gerçek tarayıcıda görülünce
+kullanıcı tarafından reddedildi ("çok mavi") — beş isimli alternatif (Dut Moru/Toz Gülü/Toprak
+Kiremidi/Adaçayı/Hardal) de tutmadı; bir Artifact ile TÜM renk çemberi aynı yumuşaklıkta
+(doygunluk %45, parlaklık %52) 16 adımda tarandı, kullanıcı "Turkuaz"ı (~202°) seçti ama ilk
+gösterimde mavi-bölge dimlemesi (kasıtlı %40 opaklık) yüzünden "çok karanlık" görünüyordu — bu
+Artifact hatası (rengin kendisi değil) açıklanıp gerçek tonu + açıklık/doygunluk/komşu-ton
+varyasyonlarıyla yeniden gösterildi, kullanıcı "orijinal Turkuaz" (`hsl(202,45%,52%)`=`#4E93BC`)
+dedi. DESIGN_SYSTEM.md §1 ("Turkuaz + Mercan") ve `admin/src/index.css`'teki `--color-primary`
+buna göre güncellendi, diğer 9 renk hiç değişmedi. **Dark mode sorusu:** kullanıcı backend'de
+zaten var olan `ThemePreference`'ın admin panelde neden kullanılmadığını sordu — DESIGN_SYSTEM.md
+zaten baştan beri "light-only" diyordu, bu B-01'in bir eksikliği değildi; AskUserQuestion ile
+soruldu, **ertelenmesi** seçildi, `B_admin_panel.md`'ye "⚠️ ERTELENDİ — Dark Mode" notu (henüz
+B-0X numarası yok, C-01 sonrası gündeme gelecek) + `C_kullanici_backend.md` C-01'e çapraz not
+eklendi — kullanıcının AÇIKÇA "kural olarak ekleyelim, tasklar arasında unutmayalım" demesi
+üzerine. **2 arka plan subagent denetimi** (kullanıcının isteğiyle, akademi yazımıyla PARALEL
+çalıştı): (1) admin kod denetimi — `authSlice`'ın B-01/B-02 sınırını hafif aştığı (fonksiyonel
+gereklilikti, `user` alanı eklenmedi), `ProtectedRoute`'ta girişten-sonra-geri-dönüş `state`'i
+eksikliği, `LanguageSwitcher`'da `aria-pressed`/`<html lang>` senkronu eksikliği bulundu — hepsi
+düzeltildi (`ProtectedRoute.tsx` artık `state={{from: location}}` taşıyor, `main.tsx` sayfa
+AÇILIŞINDA da `<html lang>`'i senkronluyor). (2) Admin Akademi içerik denetimi — STANDART.md'nin
+"kod slaytları birebir" kuralına aykırı 2 GERÇEK motor-hatası bulundu (`languageSlice.ts`
+slaydında fazladan `;`, `i18n.ts` slaydında tek satıra yanlış birleştirilmiş `interpolation`
+satırı — ikisi de motor tarafından sessizce tıklanamaz kalırdı), React Hook Form'a B-01'in
+metninde hiç değinilmediği (kurulu ama hiç kullanılmıyor) bulundu — 01. bölüme yeni bir `kavram`
+slaytı eklenerek kapatıldı. **Admin Akademi:** `AKADEMI/admin/B-01_kurulum/` (6 bölüm — Neden Bu
+Yığın, Tasarım Sistemi [renk düzeltme hikâyesi dahil], Store+authSlice+api.ts, Dil Tercihi+i18n,
+ProtectedRoute+Layout+Routing [`onizleme` slaytıyla], Özet+Sözlük), zincir `AKADEMI/backend/
+A-10.../04_testler-ozet-sozluk.html`'e çift yönlü bağlandı, kök `AKADEMI/admin/index.html`'e kart
+eklendi. `docs/TASK/B_admin_panel.md` B-01 tamamen `[x]`, `docs/TASK.md` Faz B durumu 🔄'ye,
+"Sıradaki task" `B-02`'ye güncellendi. Admin projesi `npm run build` ile ve Chrome DevTools
+üzerinden (ProtectedRoute→AppLayout→dil değiştir→çıkış akışı) uçtan uca doğrulandı, backend
+297/297 yeşil.*
+
+*Kırk beşinci INGEST (2026-07-26, aynı gün) — Kırk dördüncü INGEST'te "ertelenmesi" seçilen dark
+mode, kullanıcının HEMEN ardından fikir değiştirmesiyle yine aynı oturumda eklendi ("tamam admin
+panele dark mode ekliyoruz"). Kullanıcı önce "ilk önce task güncelle sonra başlayalım" dedi —
+`B_admin_panel.md`'deki "⚠️ ERTELENDİ" notu aktif bir checklist maddesine çevrildikten SONRA koda
+geçildi (task-önce-kod disiplini). Kullanıcının kendi sorusu ("dark mode eklesek backend'de
+değişiklik gerekir mi") cevaplandı: HAYIR — `Users.ThemePreference` (A-03.3) zaten DB'de, yalnızca
+yazma ucu (`PUT /users/me`) eksik ve o zaten C-01'de; `themeSlice` bu yüzden `languageSlice` ile
+BİREBİR aynı desende (localStorage-only) yazıldı, backend'e HİÇ dokunulmadı. Teknik: Tailwind v4
+`@custom-variant dark` + `.dark { --color-*: ... }` token override'ı (utility class'ların kendisi
+değişmeden tüm palet koyu temaya geçer), `useThemeSync` hook (canlı değişiklik + `System` modunda
+`matchMedia` dinleyicisi), `index.html`'e FOUC-önleyici senkron script. **İkon kararı:** ilk
+taslakta Sun/Moon/Monitor ikonları ELLE SVG olarak çizilmeye başlanmıştı — kullanıcı DURDURDU
+("iconları kendin çizmeyeceksin ikon kütüphanesi kullanacaksın"), üç seçenek (lucide-react/
+@heroicons/react/@tabler/icons-react) sunuldu, **lucide-react** seçildi — admin panelin İLK ikon
+kütüphanesi kararı olarak `DESIGN_SYSTEM.md` §3'e işlendi (gelecekte B-03'ten B-09'a TÜM ikonlar
+bu kütüphaneden). `DESIGN_SYSTEM.md`'ye yeni bir §1b (Koyu Tema Paleti) eklendi — her token light
+karşılığının DOĞRUDAN tersi değil, koyu zeminde ayrıca ayarlandı (ör. Primary `#4E93BC`→`#5FA3C9`,
+Background saf siyah değil `#13161B`). **Admin Akademi genişletildi:** `06_dark-mode.html` yeni
+bölüm olarak eklendi, eski `06_ozet-sozluk.html` → `07_ozet-sozluk.html`'e taşındı (STANDART.md §4
+"araya yeni bölüm girince kapanış bir üst numaraya taşınır" kuralı), zincir (`05`↔`06`↔`07`)
+uçtan uca güncellendi, kök `AKADEMI/admin/index.html` kartı "7 bölüm"e güncellendi.
+`docs/TASK/B_admin_panel.md` B-01 tamamen `[x]` (Dark Mode dahil), `C_kullanici_backend.md` C-01
+notu `themeSlice`'ı da işaret edecek şekilde güncellendi. `npm run build` temiz, kullanıcı
+Light/Dark/System geçişini bizzat tarayıcıda test etti.*
 
 ---
 
@@ -56,16 +185,17 @@ Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`
 - [[ApiErrorResponse]] — hata yanıtı zarfı (`ApiResponse<T>`/`PagedResult<T>` YAGNI kuralıyla ertelendi)
 - [[Middleware]] — `ExceptionHandlingMiddleware` / `SecurityHeadersMiddleware` / `RequestResponseLoggingMiddleware`
 - [[RepositoryTests]] — `Repository<T>` + soft delete filtresi + `userId` audit alanları için 10 birim test (hepsi yeşil, İngilizce isimlendirme)
-- [[Backend_Akademi_Sistemi]] — kök `BACKEND_AKADEMI/` HTML slayt rehberi (junior eğitimi, 2026-07-13'te [[API_Yol_Haritasi_Sistemi]]'nin yerini aldı)
+- [[Backend_Akademi_Sistemi]] — kök `AKADEMI/backend/` HTML slayt rehberi (junior eğitimi, 2026-07-13'te [[API_Yol_Haritasi_Sistemi]]'nin yerini aldı)
+- [[Admin_Akademi_Sistemi]] — kök `AKADEMI/admin/` HTML slayt rehberi (Backend Akademi'nin Faz B karşılığı, 2026-07-26'da kuruldu — Admin'in TEK dokümantasyon kanalı, eski `docs/ADMIN_YOL_HARITASI/` roadmap sistemi aynı gün silindi)
 
 ### Yazılmış Kod Düğümleri (A-03 — tamamlandı)
 - `User`/`RefreshToken` entity + `OtpPurpose` enum, `UserConfiguration`/`RefreshTokenConfiguration`
   (Fluent API), `AddUserAndRefreshToken` migration (VokabelMeisterDB'ye uygulandı) — detay bir kod
   sayfası yerine [[Auth_Domain]]'de (şema açıklaması zaten birebir bu koda karşılık geliyor) ve
-  `BACKEND_AKADEMI/A-03_auth-register/`'de (birebir kod + junior açıklaması).
+  `AKADEMI/backend/A-03_auth-register/`'de (birebir kod + junior açıklaması).
 - `IPasswordService`/`PasswordService` ve `ITokenService`/`JwtTokenService` yazıldı — ayrı wiki
   sayfası yok (kod zaten [[Auth_Domain]]'in "Referans Kod" bölümünde özetlenmişti), tam hâli
-  `BACKEND_AKADEMI/A-03_auth-register/21_destek-servisleri.html` ve `11_jwt-refresh-token.html`'de.
+  `AKADEMI/backend/A-03_auth-register/21_destek-servisleri.html` ve `11_jwt-refresh-token.html`'de.
 - [[AppException]] + [[ErrorMessages]] — Auth exception'ları (`DuplicateEmailException` vb.) için
   yeni taban sınıf + dil sözlüğü (şu an **tr+de** — DE↔TR gerçek hedef kitlesi, İngilizce YAGNI
   gerekçesiyle eklenmedi); [[EntityNotFoundException]] ve [[ApiErrorResponse]] güncellendi,
@@ -75,7 +205,7 @@ Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`
 - `IUserRepository`/`UserRepository`, `IRefreshTokenRepository`/`RefreshTokenRepository`,
   `IEmailService`/`DevEmailService`, `IGoogleTokenValidator`/`GoogleTokenValidator`,
   `IAppleTokenValidator`/`AppleTokenValidator` (JWKS tabanlı, elle RS256 doğrulama) — hepsi Auth
-  Command Handler'larının bağımlılıkları, ayrı wiki sayfası yok, tam hâli `BACKEND_AKADEMI/A-03_auth-register/`'de.
+  Command Handler'larının bağımlılıkları, ayrı wiki sayfası yok, tam hâli `AKADEMI/backend/A-03_auth-register/`'de.
 - **`IOtpService`/`OtpService`** (OTP üretimi/doğrulanması/temizlenmesi) ve
   **`ILoginCompletionService`/`LoginCompletionService`** (OTP/Google/Apple girişlerinin ortak son
   adımı — grace period kurtarma, giriş istatistikleri, token üretimi) — birden fazla Command
@@ -160,7 +290,7 @@ Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`
   timestampUtc}`; başarısız bir login denemesi → `SecurityLogs` tablosunda doğru `EventType`/
   `EmailHash`/`IpAddress` ile satır; Serilog sink → `ApplicationLogs` tablosuna doğru `Message`/
   `SourceContext`/`RequestPath`/`UserId` ile satır düştüğü SQL sorgusuyla teyit edildi.
-- `BACKEND_AKADEMI/A-04_loglama-sistemi/` (12 bölüm) — zincir A-03.3'ün son bölümüne bağlandı, kök
+- `AKADEMI/backend/A-04_loglama-sistemi/` (12 bölüm) — zincir A-03.3'ün son bölümüne bağlandı, kök
   `index.html`'e kart eklendi.
 
 ### Yazılmış Kod Düğümleri (A-05 — Sistem Kelimesi API, tamamlandı)
@@ -200,7 +330,7 @@ Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`
 - **Birim testleri:** 5 CRUD Handler test dosyası (17 test) + `GetUnmatchedWordConceptsQueryHandlerTests`
   (4) + `PairWordConceptsCommandHandlerTests` (5) — **toplam 193/193 birim testi yeşil**
   (167 grammar-öncesi + 17 CRUD + 9 eşleştirme).
-- `BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` (10 bölüm, ilk kez bir `ozet-sozluk` kapanışı aldı) —
+- `AKADEMI/backend/A-05_sistem-kelimesi-api/` (10 bölüm, ilk kez bir `ozet-sozluk` kapanışı aldı) —
   zincir A-04'ün son bölümüne bağlı, kök `index.html`'e kart eklendi.
 
 ## 3. Veritabanı (planlanan şema — `DATABASE_SCHEMA.md` index + `DATABASE_SCHEMA/` domain dosyaları, henüz migration yok)
@@ -360,8 +490,10 @@ artık bu kuralları tekrarlamak yerine `CLAUDE.md`'ye referans verir (bkz. Yirm
   B_admin_panel, C_kullanici_backend, D_web_app, E_mobil, F_test_yayin)
 - `docs/DATABASE_SCHEMA.md` (index: ERD/seed/genel kurallar) + `docs/DATABASE_SCHEMA/` (domain başına
   1 dosya: Auth, Icerik, Kisisel_Icerik, SRS, Sosyal, Loglama, Sistem)
-- `docs/API_YOL_HARITASI/*` (backend) + `docs/ADMIN_YOL_HARITASI/*` / `docs/WEB_YOL_HARITASI/*` /
-  `docs/MOBILE_YOL_HARITASI/*` (aynı sistemin frontend kardeşleri — Admin/Web/Mobil ayrı proje
+- Kod Akademisi artık `docs/` dışında, kök `AKADEMI/` altında (`AKADEMI/backend/`,
+  `AKADEMI/admin/` — eski `docs/API_YOL_HARITASI/` ve `docs/ADMIN_YOL_HARITASI/` bu ikisiyle
+  değişip silindi). `docs/WEB_YOL_HARITASI/*` / `docs/MOBILE_YOL_HARITASI/*` hâlâ `docs/`
+  altında kendi roadmap sistemini sürdürüyor (Web/Mobil ayrı proje
   oldukları için ayrı klasör, henüz hiçbir feature sayfası yazılmadı)
 
 Ayrıca gerçek kaynak kodun (`backend/`, `.csproj`'lar, `.sln`, `.gitignore`, `launchSettings.json`)
@@ -1083,7 +1215,7 @@ göre düzeltildi.
 
 **Toplam 144/144 birim testi yeşil** (117'den +27: 26 A-04'e özgü + numaralandırma farkı). Gerçek
 bir sunucu çalıştırılıp doğrulandı (`GET /health` → 200, başarısız login → `SecurityLogs`'a doğru
-satır, Serilog → `ApplicationLogs`'a doğru satır — SQL sorgusuyla teyit edildi). `BACKEND_AKADEMI/
+satır, Serilog → `ApplicationLogs`'a doğru satır — SQL sorgusuyla teyit edildi). `AKADEMI/backend/
 A-04_loglama-sistemi/` (12 bölüm) yazıldı, zincir A-03.3'e bağlandı. **Etkilenen dosyalar:**
 `docs/DATABASE_SCHEMA/Loglama.md`, `docs/REFERENCE/API_ENDPOINTS.md` (§2 Sistem/health eklendi),
 `docs/TASK.md`, `docs/TASK/{A_admin_panel_backend,C_kullanici_backend}.md`, `docs/wiki/Database/
@@ -1115,9 +1247,9 @@ değil body'de) netleştirmişti. Gerçek kod TASK.md'ye göre yazıldı (ayrı 
 "Planlanan Kod" bölümündeki eski `IWordService`/`WordService` deseni de (A-03 retrofit'inden sonra
 geçersiz kalmıştı) gerçek MediatR Command/Query listesiyle değiştirildi.
 
-`BACKEND_AKADEMI/A-05_sistem-kelimesi-api/` 7→10 bölüme çıktı (`08_esleztirme-repository-query-
+`AKADEMI/backend/A-05_sistem-kelimesi-api/` 7→10 bölüme çıktı (`08_esleztirme-repository-query-
 command.html`, `09_esleztirme-controller-postman-testler.html`, `10_ozet-sozluk.html` — görev artık
-tamamlandığı için İLK kez bir kapanış dosyası eklendi), kök `BACKEND_AKADEMI/index.html`'e A-05 kartı
+tamamlandığı için İLK kez bir kapanış dosyası eklendi), kök `AKADEMI/backend/index.html`'e A-05 kartı
 eklendi. **Etkilenen dosyalar:** `docs/REFERENCE/API_ENDPOINTS.md` §5, `docs/DATABASE_SCHEMA/
 Icerik.md` "Eşleştirme" bölümü, `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-05 ✅), bu
 dosya, `docs/wiki/Database/Icerik_Domain.md`. **Sıradaki task: A-06 (Kategori API — Categories).***
@@ -1155,8 +1287,8 @@ yazılmadı" olarak gösteriyordu hem de terk edilmiş `ICategoryService`/`Categ
 oturumda `API_ENDPOINTS.md`/`Icerik.md`'ye işlenmiş ama bu wiki sayfasına hiç yansımamıştı) — üçü de
 bu INGEST'te gerçek koda göre düzeltildi.
 
-**Toplam 219/219 birim testi yeşil** (193+26). `BACKEND_AKADEMI/A-06_kategori-api/` (8 bölüm) yazıldı,
-zincir A-05'in son bölümüyle bağlandı, kök `BACKEND_AKADEMI/index.html`'e A-06 kartı eklendi.
+**Toplam 219/219 birim testi yeşil** (193+26). `AKADEMI/backend/A-06_kategori-api/` (8 bölüm) yazıldı,
+zincir A-05'in son bölümüyle bağlandı, kök `AKADEMI/backend/index.html`'e A-06 kartı eklendi.
 **Etkilenen dosyalar:** `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-06 ✅), bu dosya,
 `docs/wiki/Database/Icerik_Domain.md`. **Sıradaki task: A-07 (Admin API — Kullanıcı Yönetimi +
 İstatistik + Log Görüntüleme).***
@@ -1223,7 +1355,7 @@ YANLIŞ bulundu: `WordCategorySummaryDto`'nun A-06'da GERÇEK bir tüketicisi va
 (`WordConceptDtoBuilder.BuildCategories`, aynı dilimde), `GetStatisticsAsync`/`AdminStatisticsDto`'yu
 ise hiçbir Handler/Controller üretmiyordu — yalnızca kendi birim testi çağırıyordu, bu "gerçek
 tüketici" SAYILMAZ. CLAUDE.md §3'ün "spekülatif tip yazılmaz" kuralına GERÇEK bir aykırılıktı, ikisi
-de bu oturumda geri alındı (kod + test + `BACKEND_AKADEMI/A-07_admin-api/` slaytları + TASK notları
+de bu oturumda geri alındı (kod + test + `AKADEMI/backend/A-07_admin-api/` slaytları + TASK notları
 senkronize edildi). İstatistik dilimi yazılırken `GetAdminStatisticsQuery` ile BİRLİKTE, gerçek
 tüketicisiyle yeniden eklenecek.
 
@@ -1257,7 +1389,7 @@ dışında AYRI bir mimari karar, burada spekülatif olarak açılmadı. `AdminC
 yeni test — **toplam 235/235 birim testi yeşil** (231+4).
 
 **Etkilenen dosyalar:** bu dosya (`Index.md` — Özet paragrafı + Proje Durumu Özeti tablosu + bu
-INGEST). `BACKEND_AKADEMI/A-07_admin-api/04_istatistik.html` yazıldı, zincir 03. bölümün son
+INGEST). `AKADEMI/backend/A-07_admin-api/04_istatistik.html` yazıldı, zincir 03. bölümün son
 slaydına bağlandı.
 
 **Aynı oturumun devamı — Toplu kelime import dilimi de tamamlandı:** `BulkImportWordsCommand`
@@ -1275,7 +1407,7 @@ SESSİZCE atlanır (795 satırda tek tek `?force=true` kararı vermek pratik de�
 işlendikten SONRA TEK bir `BULK_IMPORT_WORDS` ActivityLog kaydı (795 ayrı `CREATE_WORD` DEĞİL —
 B-08'in aktivite akışını boğmamak için, TASK dosyasının açıkça belirttiği karar). `AdminController`'a
 `POST /admin/words/import` eklendi (6. endpoint). 4 yeni Handler testi — **toplam 239/239 birim
-testi yeşil** (235+4). `BACKEND_AKADEMI/A-07_admin-api/05_toplu-import.html` yazıldı (6. bölüm),
+testi yeşil** (235+4). `AKADEMI/backend/A-07_admin-api/05_toplu-import.html` yazıldı (6. bölüm),
 zincir 04. bölümün son slaydına bağlandı; `docs/REFERENCE/API_ENDPOINTS.md` §11'in "Toplu kelime
 (JSON array)" taslak notu gerçek gövde şekliyle (`{ rows: [...] }`) güncellendi.
 
@@ -1298,8 +1430,8 @@ AÇIKÇA belirttiği gibi sabit kalmalıydı). Bu, dokümanın lafzıyla pratik 
 farkı — CLAUDE.md metnine DOKUNULMADI (kapsamı aşan, ayrı bir karar), yalnızca `TASK/
 A_admin_panel_backend.md`'ye ve buraya not düşüldü. `AdminController`'a 3 endpoint eklendi (TOPLAM
 9'a ulaştı). 5 yeni Handler testi — **A-07'nin nihai toplamı: 244/244 birim testi yeşil**
-(219 A-06 sonu + 25 A-07). `BACKEND_AKADEMI/A-07_admin-api/06_log-goruntuleme.html` + kapanış
-`07_ozet-sozluk.html` yazıldı (7 bölüme çıktı), kök `BACKEND_AKADEMI/index.html`'e A-07 kartı
+(219 A-06 sonu + 25 A-07). `AKADEMI/backend/A-07_admin-api/06_log-goruntuleme.html` + kapanış
+`07_ozet-sozluk.html` yazıldı (7 bölüme çıktı), kök `AKADEMI/backend/index.html`'e A-07 kartı
 eklendi (A-06'nın SONRASINA, mevcut kartlara dokunulmadan).
 
 **A-07 (Admin API) artık TAMAMLANDI ✅** — dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime
@@ -1341,7 +1473,7 @@ koda ait değil. **Birim testleri:** `FileStorageServiceTests` (6 test) — `Act
 Moq desenini DEĞİL, gerçek geçici (`Path.GetTempPath()`) klasörü kullanır çünkü servisin tek
 bağımlılığı `IConfiguration`, mock'lanacak bir repository/arayüz yok; her test `IDisposable` ile
 kendi klasörünü temizler. **Toplam 250/250 birim testi yeşil** (244 A-07 sonu + 6 yeni).
-`BACKEND_AKADEMI/A-08_medya-api/` (3 bölüm: Dosya Depolama Servisi, MediaController+UseStaticFiles,
+`AKADEMI/backend/A-08_medya-api/` (3 bölüm: Dosya Depolama Servisi, MediaController+UseStaticFiles,
 Testler+Özet) yazıldı, zincir A-07'nin son bölümüne bağlandı, kök `index.html`'e kart eklendi.
 `docs/REFERENCE/API_ENDPOINTS.md`'ye yeni §5.1 (Medya) eklendi. **Etkilenen dosyalar:** bu dosya
 (Özet paragrafı + Proje Durumu Özeti tablosu + bu INGEST), `docs/TASK.md`, `docs/TASK/
@@ -1349,7 +1481,7 @@ A_admin_panel_backend.md` (A-08 ✅), `docs/REFERENCE/API_ENDPOINTS.md`, `.gitig
 task: A-09 (SMTP Ayarları API).***
 
 *Otuz sekizinci INGEST (2026-07-24, aynı gün) — **A-08 kod denetimi: iki bağımsız subagent
-(biri backend kodunu, biri `BACKEND_AKADEMI/A-08_medya-api/` içeriğini inceledi), 2 gerçek hata
+(biri backend kodunu, biri `AKADEMI/backend/A-08_medya-api/` içeriğini inceledi), 2 gerçek hata
 bulunup ikisi de düzeltildi.** **(1) Backend — güvenlik:** `LocalFileStorageService` yalnızca dosya
 ADININ uzantısına bakıyordu (`Path.GetExtension`), gerçek İÇERİĞE hiç bakmıyordu — bir `.exe`, adı
 `foto.png` yapılarak yüklenip `/uploads` altında herkese açık servis edilebilirdi (content
@@ -1388,7 +1520,7 @@ A-07'nin kendi kod denetimi bulgularını anlattığı desenin AYNISI). **Etkile
 `backend/WordLearner.Application/Common/Localization/ErrorMessages.cs`,
 `backend/WordLearner.API/Middleware/ExceptionHandlingMiddleware.cs`,
 `backend/WordLearner.Tests/Services/FileStorageServiceTests.cs` (6→8 test),
-`BACKEND_AKADEMI/A-08_medya-api/` (3 bölümün tamamı), `docs/TASK/A_admin_panel_backend.md` (A-08
+`AKADEMI/backend/A-08_medya-api/` (3 bölümün tamamı), `docs/TASK/A_admin_panel_backend.md` (A-08
 notuna kod denetimi eklendi), `docs/TASK.md`, bu dosya. **252/252 birim testi yeşil.***
 
 *Otuz dokuzuncu INGEST (2026-07-24, aynı gün) — **A-09 (SMTP Ayarları API) tamamlandı ✅:**
@@ -1410,7 +1542,7 @@ KENDİ e-postasına test gönderir — request body'de `toEmail` YOK, açık bir
 exception çeşitliliği TEK bir `SmtpTestFailedException`e (502) sarılır, gerçek hata metni yalnızca
 loga gider. `SmtpSettingsController` (`api/v1/admin/smtp-settings`, WordsController/
 CategoriesController/MediaController ile AYNI "ayrı domain controller'ı" deseni, AdminController'a
-EKLENMEDİ, 3 endpoint). `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm) yazıldı, zincir A-08'in
+EKLENMEDİ, 3 endpoint). `AKADEMI/backend/A-09_smtp-ayarlari-api/` (4 bölüm) yazıldı, zincir A-08'in
 son bölümüne bağlandı, kök `index.html`'e kart eklendi.
 
 **Kod denetimi (2 bağımsız subagent — biri backend kodunu, biri Backend Akademi içeriğini
@@ -1459,8 +1591,8 @@ Denetimi: ..." başlıklı, A-07/A-08'in kendi kod denetimi bulgularını anlatt
 `ErrorMessages.cs`/`SuccessMessages.cs`/`LogMessages.cs` (yeni kodlar), `WordLearner.Application.csproj`
 (MailKit 4.17.0), `docs/REFERENCE/ENV.md`/`backend/WordLearner.API/Properties/launchSettings.json`
 (AES anahtarı düzeltildi), `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md` (MailKit sürümü), 4 yeni
-test dosyası, `BACKEND_AKADEMI/A-09_smtp-ayarlari-api/` (4 bölüm) + `BACKEND_AKADEMI/A-08_medya-api/
-03_testler-ozet-sozluk.html` (`sonrakiBolum` A-09'a bağlandı) + kök `BACKEND_AKADEMI/index.html`
+test dosyası, `AKADEMI/backend/A-09_smtp-ayarlari-api/` (4 bölüm) + `AKADEMI/backend/A-08_medya-api/
+03_testler-ozet-sozluk.html` (`sonrakiBolum` A-09'a bağlandı) + kök `AKADEMI/backend/index.html`
 (kart eklendi), `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md` (A-09 ✅), bu dosya. **Sıradaki
 task: A-10 (E-posta Servisi + Hesap Temizleme Görevi).***
 
@@ -1469,7 +1601,7 @@ geriye dönük temizlik:** Kullanıcı backend kodundaki (o güne dek biriken) A
 method-başı yorum bloklarını "çok çok uzun" bulup standart bir senior yazılımcının yazacağı ölçüde
 kısaltılmasını istedi — üç seçenek arasından (minimal/kısa özet/yalnızca dosya-başı kısalt) **minimal**
 seçildi: zorunlu blok tamamen kaldırıldı, yorum yalnızca kodun anlatamadığı non-obvious NEDEN'i 1-2
-satırla anlatır. Kullanıcı AYRICA netleştirdi: bu kural yalnızca **kaynak kod** için — `BACKEND_AKADEMI/`
+satırla anlatır. Kullanıcı AYRICA netleştirdi: bu kural yalnızca **kaynak kod** için — `AKADEMI/backend/`
 `aciklama`/`neden`/`olmasaydi` öğretim formatı ve wiki/MD dosyaları (bu dosya dahil) etkilenmez, kendi
 ayrıntılı standardını korur (bkz. [[Kodlama_Standartlari]] "Yorum Satırları" bölümü, `feedback_minimal_yorum_standardi`
 hafıza notu). `CLAUDE.md` §1 ve `docs/REFERENCE/CODING_STANDARDS.md` güncellendi. Ardından backend'deki
@@ -1486,7 +1618,7 @@ dosya ilk geçişte atlanmış olarak bulundu ve ayrıca düzeltildi: `UpdateSmt
 `ApplicationServiceExtensions.cs` (`Application/Extensions/` hiçbir grup listesine dahil edilmemişti
 — `InfrastructureServiceExtensions.cs`'in eşleniği ama farklı klasörde olduğu için gözden kaçmıştı).
 **Etkilenen dosyalar:** `CLAUDE.md`, `docs/REFERENCE/CODING_STANDARDS.md`, `docs/wiki/Standartlar/
-Kodlama_Standartlari.md`, backend'deki 267 kaynak dosyanın tamamı, bu dosya. `BACKEND_AKADEMI/`e
+Kodlama_Standartlari.md`, backend'deki 267 kaynak dosyanın tamamı, bu dosya. `AKADEMI/backend/`e
 hiç dokunulmadı (kasıtlı — kullanıcı talebi). **Sıradaki task: A-10 (E-posta Servisi + Hesap
 Temizleme Görevi) — değişmedi.***
 
@@ -1568,13 +1700,13 @@ kritik/bilgilendirme ayrımını bir spesifikasyon gibi belgeler), `AccountClean
 
 **Etkilenen dosyalar:** yeni — `EmailTemplates.cs`, `SmtpEmailService.cs`, `MailKitSender.cs`,
 `AccountCleanupService.cs`, `IAccountCleanupService.cs`, `EmailSendFailedException.cs`,
-`AccountCleanupBackgroundService.cs`, 3 yeni test dosyası, `BACKEND_AKADEMI/A-10_email-servisi-hesap-temizleme/`
+`AccountCleanupBackgroundService.cs`, 3 yeni test dosyası, `AKADEMI/backend/A-10_email-servisi-hesap-temizleme/`
 (4 bölüm); değişen — `IEmailService.cs`, `DevEmailService.cs`, `MailKitSmtpTestService.cs`,
 `ILoginCompletionService.cs`/`LoginCompletionService.cs`, `IUserRepository.cs`/`UserRepository.cs`,
 `ErrorMessages.cs`, `ExceptionHandlingMiddleware.cs`, `ApplicationServiceExtensions.cs`, `Program.cs`,
 `AuthController.cs`, `QrLoginController.cs`, 6 Auth Command, 4 login Command, 9 test dosyası,
 `docs/REFERENCE/SECURITY.md`, `docs/TASK.md`, `docs/TASK/A_admin_panel_backend.md`,
-`BACKEND_AKADEMI/index.html`, `A-09_smtp-ayarlari-api/04_...html` (zincir), bu dosya.
+`AKADEMI/backend/index.html`, `A-09_smtp-ayarlari-api/04_...html` (zincir), bu dosya.
 
 **Faz A (Admin Panel Backend) TAMAMLANDI.** Sıradaki faz: **B — Admin Panel (frontend)**
 (`TASK/B_admin_panel.md`). `A-07.1` (`UserCard` moderasyonu) `C-02`'yi bekliyor; kendi notundaki

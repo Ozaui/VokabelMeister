@@ -262,6 +262,13 @@ namespace WordLearner.Infrastructure.Data.Migrations
                     b.Property<bool>("IsOnboardingCompleted")
                         .HasColumnType("bit");
 
+                    b.Property<string>("LanguagePreference")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasDefaultValue("tr");
+
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
@@ -349,6 +356,8 @@ namespace WordLearner.Infrastructure.Data.Migrations
                     b.ToTable("Users", t =>
                         {
                             t.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+
+                            t.HasCheckConstraint("CK_Users_LanguagePreference", "LanguagePreference IN ('tr','de')");
 
                             t.HasCheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
 

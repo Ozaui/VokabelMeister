@@ -36,6 +36,6 @@ Admin önce (içerik girilir, kullanıcı tarafı gerçek veriyle test edilir); 
 | `REFERENCE/ENV.md` | Ortam değişkenleri |
 | `REFERENCE/DEVELOPMENT_SETUP.md` | Kurulum, çalıştırma, yayınlama |
 | `REFERENCE/{GERMAN,TURKISH,ENGLISH}_LANGUAGE_FEATURES.md` | `WordDetail.GrammarData` gramer şemaları (de aktif, tr öncelikli, en hazır ama kullanılmıyor) |
-| `../BACKEND_AKADEMI/` | Backend junior eğitim akademisi (HTML slayt); `STANDART.md` + `_TASLAK/` = şablon |
-| `ADMIN/WEB/MOBILE_YOL_HARITASI/` | Frontend junior eğitim roadmap'i (HTML); `_TASLAK.html` = şablon |
+| `../AKADEMI/` | Kod Akademisi (HTML slayt) — `backend/` + `admin/` (gelecekte `web/`/`mobile/`), her biri kendi `STANDART.md`/`_TASLAK/` şablonuyla, kök `AKADEMI/index.html` hepsine tek giriş |
+| `WEB/MOBILE_YOL_HARITASI/` | Web/Mobil junior eğitim roadmap'i (HTML); `_TASLAK.html` = şablon (Admin artık `../AKADEMI/admin/` kullanıyor, kendi roadmap'i silindi) |
 | `wiki/` | Obsidian mimari hafıza; `wiki/Index.md` ana harita, kurallar `wiki_schema.md` |

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Testler + Özet + Sözlük</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'a10-testler-ozet-sozluk',
+    bolumBaslik: 'A-10 — E-posta Servisi + Hesap Temizleme',
+    oncekiBolum: '03_hesap-temizleme-gorevi.html',
+    sonrakiBolum: '../../admin/B-01_kurulum/01_neden-bu-kurulum.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'Testler + Özet + Sözlük',
+        altBaslik: 'A-10\'un 31 yeni birim testi, hiçbiri gerçek bir SMTP sunucusuna bağlanmadan e-posta davranışını doğruluyor. Kapanışta A-10\'un tamamı ve Faz A\'nın sonu.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Gerçek SMTP\'ye Bağlanmadan E-posta Nasıl Test Edilir',
+        aciklama: '`SmtpEmailServiceTests`\'in hiçbir testi ağa çıkmaz. Bunun yerine `ISmtpSettingsRepository` mock\'u `null` (hiç ayar yok) veya `IEncryptionService` mock\'u bir exception döndürecek şekilde kurulur — böylece kod, MailKit\'e HİÇ ULAŞMADAN hata yoluna girer ve test edilmek istenen şey (kritik/bilgilendirme ayrımı) tam olarak orada görünür.',
+        neden: 'Gerçek bir SMTP sunucusuna bağlanan test, testin kendisini ağa, kimlik bilgilerine ve üçüncü taraf bir servisin çalışır olmasına bağımlı kılar. Böyle bir test kırmızı olduğunda "kod mu bozuldu, ağ mı gitti" sorusuna cevap vermez — yani hata bulmak yerine gürültü üretir.',
+        olmasaydi: 'Testler gerçek SMTP kullansaydı, CI ortamında (dış ağ erişimi kısıtlı) her koşuda kırmızı olurlardı; ekip kısa sürede o testleri devre dışı bırakır ve kritik/bilgilendirme ayrımı fiilen test edilmemiş hâle gelirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'SmtpEmailServiceTests — Kritik/Bilgilendirme Ayrımının İki Yüzü (temsili)',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/SmtpEmailServiceTests.cs',
+        kod: `    [Fact]
+    public async Task SendEmailVerificationOtpAsync_NoSmtpSettings_ThrowsEmailSendFailedException()
+    {
+        // ARRANGE
+        _smtpSettingsRepository
+            .Setup(r => r.GetCurrentAsync(default))
+            .ReturnsAsync((SmtpSettings?)null);
+        var service = CreateService();
+
+        // ACT
+        var act = () => service.SendEmailVerificationOtpAsync("test@example.com", "123456", "tr");
+
+        // ASSERT — "önce SMTP ayarlarını kaydedin" admin'e ait bir cümle, kayıt olan kullanıcıya değil.
+        var exception = await act.Should().ThrowAsync<EmailSendFailedException>();
+        exception.Which.Code.Should().Be("EMAIL_SEND_FAILED");
+    }
+
+    // ... SendLoginOtpAsync_NoSmtpSettings_... aynı deseni izler (bkz. gerçek dosya) ...
+
+    [Fact]
+    public async Task SendPasswordChangedNotificationAsync_NoSmtpSettings_DoesNotThrow()
+    {
+        // ARRANGE
+        _smtpSettingsRepository
+            .Setup(r => r.GetCurrentAsync(default))
+            .ReturnsAsync((SmtpSettings?)null);
+        var service = CreateService();
+
+        // ACT
+        var act = () => service.SendPasswordChangedNotificationAsync("test@example.com", "tr");
+
+        // ASSERT — şifre zaten değişti; e-posta gönderilemedi diye o işlem geri alınamaz.
+        await act.Should().NotThrowAsync();
+    }`,
+        satirlar: [
+          {
+            satir: '.ReturnsAsync((SmtpSettings?)null);',
+            aciklama: 'İKİ testte de AYNI arıza kurulur: hiç SMTP ayarı yok.',
+            neden: 'Aynı girdiye iki farklı çıktı bekleyen bu test çifti, kritik/bilgilendirme ayrımını tek başına belgeler — testler bir spesifikasyon gibi okunur: "aynı hata, farklı sonuç, çünkü işlemin niteliği farklı".',
+            olmasaydi: 'Ayrı arızalar kullanılsaydı (birinde ayar yok, diğerinde bağlantı hatası) davranış farkının SEBEBİNİN arıza tipi mi yoksa metodun niteliği mi olduğu testten anlaşılmazdı.'
+          },
+          {
+            satir: 'exception.Which.Code.Should().Be("EMAIL_SEND_FAILED");',
+            aciklama: 'Yalnızca tip değil, `Code` de doğrulanır.',
+            neden: '`Code`, `ExceptionHandlingMiddleware`\'in istemciye döndürdüğü sözleşmenin ta kendisidir (`ErrorMessages`\'tan dile göre çözülür). Tip doğru ama kod yanlışsa istemci çevirisi olmayan bir metin görürdü.',
+            olmasaydi: 'Yalnızca tip kontrol edilseydi, `Code` bir yeniden düzenlemede (refactor) değiştiğinde test yeşil kalır, ama istemci sözlükte olmayan bir kod alıp ham kodun kendisini ekranda görürdü.'
+          },
+          {
+            satir: 'await act.Should().NotThrowAsync();',
+            aciklama: '"Hiçbir şey olmaması" da bir davranıştır ve açıkça test edilir.',
+            neden: 'Bir hatanın YUTULDUĞUNU doğrulayan test olmazsa, ileride biri "burada hata yutuluyor, düzeltelim" diye `throw` eklediğinde hiçbir test kırılmaz — ve şifresini sıfırlayan kullanıcılar 503 almaya başlar.',
+            olmasaydi: 'Test yazılmasaydı bu davranış yalnızca bir yorum satırıyla korunurdu; yorumlar derlenmez ve CI\'da çalışmaz.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AccountCleanupServiceTests — Sıraya Bağlı Hatayı Yakalayan Test (temsili)',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/AccountCleanupServiceTests.cs',
+        kod: `    [Fact]
+    public async Task AnonymizeExpiredAccountsAsync_ExpiredAccount_StoresOriginalEmailHashBeforeOverwritingEmail()
+    {
+        // ARRANGE
+        var user = CreateDeletedUser();
+        SetupExpiredUsers(user);
+        _passwordService.Setup(p => p.HashToken("silinen@example.com")).Returns("email-hash");
+        var service = CreateService();
+
+        // ACT
+        await service.AnonymizeExpiredAccountsAsync();
+
+        // ASSERT — hash gerçek adresten üretilmezse tekrar kayıt engeli hiçbir zaman eşleşmezdi.
+        user.OriginalEmailHash.Should().Be("email-hash");
+        _passwordService.Verify(p => p.HashToken("silinen@example.com"), Times.Once);
+    }`,
+        satirlar: [
+          {
+            satir: '_passwordService.Setup(p => p.HashToken("silinen@example.com")).Returns("email-hash");',
+            aciklama: 'Mock YALNIZCA gerçek e-posta adresi için kurulur.',
+            neden: 'Moq\'ta kurulmamış bir çağrı varsayılan değeri (`null`) döndürür. Yani kod yanlışlıkla `deleted_1@deleted.invalid` ile çağırırsa `OriginalEmailHash` `null` kalır ve test kırılır. Böylece mock kurulumunun kendisi, satır sırasını doğrulayan bir tuzağa dönüşür.',
+            olmasaydi: '`It.IsAny<string>()` ile kurulsaydı hangi adresten hash üretildiği fark etmezdi — test, koruması gereken tam da o hatayı (sıranın ters çevrilmesi) kaçırırdı.'
+          },
+          {
+            satir: '_passwordService.Verify(p => p.HashToken("silinen@example.com"), Times.Once);',
+            aciklama: 'Doğru argümanla ve tam bir kez çağrıldığı ayrıca doğrulanır.',
+            neden: 'Değer kontrolü (`Should().Be`) ile çağrı kontrolü (`Verify`) farklı şeyleri korur: ilki sonucu, ikincisi yolu. Sıraya bağlı bir hatada asıl kanıt yoldur.',
+            olmasaydi: 'Yalnızca sonuç kontrol edilseydi, hash\'in tesadüfen doğru çıktığı (ör. iki çağrının aynı mock\'a düştüğü) bir kurgu testi yanıltabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'A-10\'un Diğer Test Dosyaları — Hepsi Aynı Pattern\'i İzler',
+        terimler: [
+          { terim: 'EmailTemplatesTests (13)', tanim: 'tr/de çözümü, desteklenmeyen dilde tr\'ye düşme, null dilde tr\'ye düşme, `{0}`/`{1}` yer tutucularının GERÇEKTEN değiştiği, bilinmeyen kodda `ArgumentException`, ve bir `[Theory]` ile 6 şablonun HEPSİNİN hem tr hem de çevirisi olduğu (eksik çeviri sessizce tr\'ye düşerdi — bu test o sessizliği bozar).' },
+          { terim: 'SmtpEmailServiceTests (5)', tanim: 'Yukarıdaki temsili çiftin yanı sıra: `SendLoginOtpAsync` fırlatır, `SendAccountRecoveredNotificationAsync` fırlatmaz, ve şifre çözme hatası (`FormatException`) da `EmailSendFailedException`\'a sarılır (ham hâlde 500\'e düşerdi).' },
+          { terim: 'AccountCleanupServiceTests (7)', tanim: 'E-posta/ad değişimi, hash sırası (temsili slayt), tüm kimlik bilgisi + PII alanlarının temizlenmesi, `ActivityLog`\'un `ActorRole=null` ile yazılması, `UpdateAsync(user, null, ct)` (denetim izi yalan söylemesin), çok kayıtlı işleme, ve boş listede hiçbir şey yapmama.' },
+          { terim: 'UserRepositoryTests (+4)', tanim: '`GetPendingAnonymizationAsync` — grace period dolmuş (bulunur), hâlâ sürüyor (bulunmaz), zaten anonimleştirilmiş (bulunmaz), hiç silinmemiş aktif kullanıcı (bulunmaz). InMemory `DbContext` ile, `IgnoreQueryFilters` davranışı dahil.' },
+          { terim: 'LoginCompletionServiceTests (+2)', tanim: 'Grace period\'daki hesap kurtarıldığında `SendAccountRecoveredNotificationAsync`\'in DOĞRU dille çağrıldığı; normal girişte HİÇ çağrılmadığı.' },
+          { terim: 'Test edilmeyen tek parça', tanim: '`AccountCleanupBackgroundService`\'in zamanlama hesabı — `WordLearner.Tests` API projesine referans vermez (Controller\'lar ve Middleware\'ler de aynı sebeple birim testi almaz). Bu yüzden iş mantığının o sınıfın DIŞINDA, `AccountCleanupService`\'te durması kritikti.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Sayılarla A-10',
+        maddeler: [
+          '**6 e-posta şablonu × 2 dil (tr/de)** — `EmailTemplates.cs` (`Common/Localization/`, `ErrorMessages`/`SuccessMessages`\'ın kardeşi), ortak `Layout` + inline stil (hem `string.Format` hem e-posta istemcisi uyumluluğu).',
+          '**`IEmailService` imza değişikliği:** 6 metoda zorunlu `string? language` (opsiyonel DEĞİL — derleyici 7 çağrı noktasını zorlasın diye) + yeni `SendAccountRecoveredNotificationAsync`.',
+          '**`RegisterCommand` + 4 login Command\'ına `Language` alanı eklendi** (`VerifyLoginOtpCommand`, `LoginWithGoogleCommand`, `LoginWithAppleCommand`, `GetQrLoginStatusCommand`); `QrLoginController` `RequestLanguageResolver`\'ı kullanan İKİNCİ controller oldu.',
+          '**`SmtpEmailService`** (A-09\'un şifreli ayarlarını her gönderimde okur) + **`MailKitSender`** (gönderim adımları `MailKitSmtpTestService` ile paylaşıldı, try/catch bilinçli olarak paylaşılmadı) + **`EmailSendFailedException`** (503, `EMAIL_SEND_FAILED`).',
+          '**Kritik/bilgilendirme ayrımı:** OTP e-postaları fırlatır, bildirim e-postaları yutup loglar — A-10\'un merkezî tasarım kararı.',
+          '**DI ortam seçimi:** `AddApplicationServices(bool isDevelopment)` → dev `DevEmailService`, prod `SmtpEmailService`. `IHostEnvironment` DEĞİL `bool` (Application katmanı Hosting\'e bağımlı olmamalı).',
+          '**Hesap temizleme:** `IAccountCleanupService`/`AccountCleanupService` (mantık) + `AccountCleanupBackgroundService` (zamanlama, günde 1, 03:00 UTC, projedeki İLK `IHostedService`) + `IUserRepository.GetPendingAnonymizationAsync`.',
+          '**Anonimleştirme kapsamı SECURITY.md\'nin ilk listesinden GENİŞ:** `AvatarUrl`/`LastLoginIP`/`OneSignalPlayerId`/`DisplayName`/bekleyen OTP alanları + `IsActive=false` de temizlenir; `OriginalEmailHash` GERÇEK adresten, `Email` üzerine yazılmadan ÖNCE. Doküman bu kapsamla güncellendi.',
+          '`IActivityLogger`: **`ANONYMIZE_ACCOUNT`** (`ActorRole=null` — işlemi sistem yaptı; `OldValue` YAZILMAZ — sildiğimiz PII\'yi log tablosuna kopyalamak olurdu).',
+          'Toplam 265 (A-09 sonu) → **296 birim testi** — 31 yeni test (13 EmailTemplates + 5 SmtpEmailService + 7 AccountCleanup + 4 UserRepository + 2 LoginCompletion).',
+          '**Faz A (Admin Panel Backend) TAMAMLANDI.** Sıradaki faz: **B — Admin Panel (frontend)** (`TASK/B_admin_panel.md`).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

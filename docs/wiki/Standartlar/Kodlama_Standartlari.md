@@ -17,7 +17,7 @@ sözlüğünden (tr+de) çözülür — kullanıcı ne dil seçtiyse onu görür
 - Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, iki yer arasında senkron kalması
   gereken bir sözleşme, bilerek alınmış bir karar, non-obvious bir edge case.
 - Kısa — genelde tek satır, nadiren iki. Paragraf hâlinde blok yorum yasak.
-- **Bu kural yalnızca kaynak kod için geçerli** — `BACKEND_AKADEMI/`'nin `aciklama`/`neden`/
+- **Bu kural yalnızca kaynak kod için geçerli** — `AKADEMI/backend/`'nin `aciklama`/`neden`/
   `olmasaydi` öğretim formatı (aşağıdaki bölüm) etkilenmez, ayrıntılı kalmaya devam eder.
 - Gerçekten çok adımlı bir akış varsa (ör. SM-2 hesaplama) adım numaralama yorumu (`// ADIM N:`)
   istisnai olarak eklenebilir — varsayılan değildir.
@@ -61,7 +61,7 @@ domain varken (yalnızca Auth) flat yapı sorun değildi, ama yeni domain'ler ek
   in-memory EF Core kullanılır.
 - Minimum kapsam her public servis metodu için: mutlu yol, bulunamadı ([[EntityNotFoundException]]),
   yetki/sahiplik ihlali, sınır/uç durum (duplikat 409 vb.).
-- Her API için en az bir TEMSİLİ test, `BACKEND_AKADEMI`'nin ilgili bölümüne `kod` slaytı
+- Her API için en az bir TEMSİLİ test, `AKADEMI/backend`'nin ilgili bölümüne `kod` slaytı
   olarak birebir kopyalanır (Test Adı bağlamı + Ne Test Edildi + Neden Önemli açıklamasıyla);
   tekrarlayan pattern'ler (ör. 13 handler testi) hepsi ayrı işlenmez, `sozluk` slaytında "aynı
   pattern'i izler" notuyla listelenir (bkz. [[Backend_Akademi_Sistemi]], YAGNI).
@@ -71,7 +71,7 @@ domain varken (yalnızca Auth) flat yapı sorun değildi, ama yeni domain'ler ek
 · parametreli sorgular (SQL injection yok, EF Core LINQ tercih).
 
 ## Backend Akademi — `aciklama`/`neden`/`olmasaydi` Standardı (zorunlu, 2026-07-07)
-`BACKEND_AKADEMI/`'deki her `kod`/`kavram` slaytının `aciklama`/`neden`/`olmasaydi` alanları bir
+`AKADEMI/backend/`'deki her `kod`/`kavram` slaytının `aciklama`/`neden`/`olmasaydi` alanları bir
 junior'a öğretmek için var — sadece "ne yapıldığını" anlatmak yetmez, şunları da içermeli:
 1. **Kavram tanımı** — junior'ın henüz bilmeyebileceği terimler ("enum nedir", "entity nedir",
    "DI/Scoped-Singleton-Transient nedir", "DbContext/DbSet nedir", "migration nedir", "Fluent

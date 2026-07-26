@@ -17,12 +17,13 @@
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
 - **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
 - **İkinci istisna — `ActivityLog`/`SecurityLog`'un admin'e görünen alanları:** `Action`/`EventType` sabit/dilden bağımsız kod kalır (`_logger.Log*` ile aynı kural) ama `Detail`/`OldValue`/`NewValue` **admin panelin kendisi bir istemci olduğu için** (admin de dil tercihine sahip) serbest metin yerine bir **Code** olarak yazılır — log satırı yazılırken (ör. anonim bir isteğin `Accept-Language`'ıyla) hangi admin'in ne zaman hangi dille okuyacağı bilinmediğinden, tr/de çözümü ancak admin `GET /admin/logs/*` (A-07) ile okurken KENDİ `Accept-Language`'ıyla yapılabilir — `ErrorMessages` ile birebir aynı Code-sonra-çöz deseni, yalnızca çözme anı farklı (istek anı değil, okuma anı).
+- **Admin panelin kendi dil tercihi (B-01'den itibaren):** `admin/src/store/slices/languageSlice.ts` (tr/de, `localStorage` persist, varsayılan **tr** — `ErrorMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `admin/src/store/api.ts` her istekte bu tercihi `Accept-Language` header'ı olarak backend'e yollar (yukarıdaki iki istisnanın frontend tarafı budur — backend mesajları VE log okuma bu sayede admin'in seçtiği dilde döner). Admin panelin KENDİ statik arayüz metinleri (buton/etiket, backend'den gelmeyen) `react-i18next` ile ayrıca tr/de çevrilir — bu backend `ErrorMessages`'tan bağımsız, saf frontend kopyası (`admin/src/i18n/locales/{tr,de}.json`). Web/Mobil (Faz D/E) aynı deseni kendi fazları başladığında kurar.
 
 **Yorum satırları**
 - Kod kendini anlatır (iyi isimlendirme). Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, non-obvious bir NEDEN, bilerek alınmış bir karar. NE yaptığını değil NEDEN öyle yaptığını anlat.
 - Zorunlu dosya-başı/method-başı AMAÇ/NEDEN/NASIL bloğu **YOK** — bu blok kaldırıldı (eski kod tabanında vardı, kaldırılıyor). Dosya/sınıf/metot adı zaten ne yaptığını söylüyor.
 - Yorum kısa ve Türkçe — genelde tek satır, gerekirse iki. Paragraf hâlinde uzun blok yorum **yasak**; anlatılacak şey birkaç satıra sığmıyorsa muhtemelen bir yardımcı metot/isimlendirme sorunu var, yorum onu telafi etmez.
-- Bu kural yalnızca **kaynak kod**(`.cs`/`.ts`/`.tsx`) yorumları için geçerli. `BACKEND_AKADEMI/` (§6) içindeki `aciklama`/`neden`/`olmasaydi` alanları öğretim materyali — bu kuralın dışında, ayrıntılı kalmaya devam eder.
+- Bu kural yalnızca **kaynak kod**(`.cs`/`.ts`/`.tsx`) yorumları için geçerli. Akademi klasörlerinin (§6 — kök `AKADEMI/` altında `backend/`, `admin/`, gelecekte `web/`/`mobile/`) içindeki `aciklama`/`neden`/`olmasaydi` alanları öğretim materyali — bu kuralın dışında, ayrıntılı kalmaya devam eder.
 
 **Roller ve sahiplik**
 - **Yalnızca iki rol:** `User` (herkes kayıt olur) ve `Admin` (elle atanır). `Instructor`/`Teacher`/"öğretmen" **YOK**. Hiçbir public endpoint rol yükseltemez.
@@ -104,7 +105,7 @@ Kanonik desen MediatR Command+Handler; "Servis Arayüzü/Servis" deseni **terk e
 12. Birim Test        → Tests/Features/Xxx/XxxCommandHandlerTests (repo/dış servis mock; Handler bitince hemen)
 13. Controller        → API/Controllers/XxxController (ince: yalnızca _mediator.Send(command, ct))
 14. DI kaydı          → GENELLİKLE gerekmez (assembly-scan). İstisna: paylaşılan yardımcı servis.
-15. Backend Akademi   → BACKEND_AKADEMI/<faz>/ HTML bölümü, controller `kod` slaytının HEMEN
+15. Backend Akademi   → AKADEMI/backend/<faz>/ HTML bölümü, controller `kod` slaytının HEMEN
                         ARDINDAN o endpoint'in `postman` slaytı dahil (bkz. §6)
 ```
 
@@ -127,7 +128,9 @@ Backend'le aynı disiplin: bir feature'ı tüm katmanlarıyla bitir, sonra diğe
 5. Component          → components/Xxx.tsx
 6. Route/Import       → App.tsx / (mobil) navigation/*Navigator.tsx
 7. Birim Test         → Xxx.test.tsx             (RTL; hemen)
-8. Yol Haritası        → ilgili roadmap: B→ADMIN_YOL_HARITASI/, D→WEB_YOL_HARITASI/, E→MOBILE_YOL_HARITASI/
+8. İşleme              → B: AKADEMI/admin/<faz>/ HTML bölümü (Admin Akademi, §6 — component
+                        `kod` slaytından hemen sonra `onizleme` slaytı dahil); D/E: ilgili roadmap
+                        (WEB_YOL_HARITASI/, MOBILE_YOL_HARITASI/)
 ```
 
 Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 React Navigation; state katmanı web'le paylaşılabilir.
@@ -143,26 +146,38 @@ Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 R
 
 ---
 
-## 6. Backend Akademi Kuralı — her parça yazılınca HEMEN
+## 6. Kod Akademisi Kuralı — her parça yazılınca HEMEN
 
-Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı `BACKEND_AKADEMI/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı: `BACKEND_AKADEMI/STANDART.md` — burada tekrar edilmez.
+Her katman (backend, admin, gelecekte web/mobil) kendi **akademi klasörüne** ve kendi
+`STANDART.md`'sine sahiptir — aynı slayt motoru (`engine/`), aynı disiplin, tek somut fark
+"bunu gerçekte nasıl denerim" slaytının türü (backend'de `postman`, frontend'de `onizleme`):
 
-- **Slayt tabanlı, tek görev = tek klasör:** Yeni bir görev (`A-0X`) `_TASLAK/` klasöründen kopyalanır; her bölüm dosyası `01_...html`, `02_...html`… numaralanır ve `window.MODULE` objesiyle çalışır (`slaytlar[]` türleri: `kapak/kavram/kod/karsilastirma/sozluk/ozet/postman`).
+| Faz | Akademi klasörü | Task kodu | "Nasıl denerim" slaytı |
+|---|---|---|---|
+| A (backend) | `AKADEMI/backend/` | `A-0X` | `postman` |
+| B (admin) | `AKADEMI/admin/` | `B-0X` | `onizleme` |
+| D (web) | `AKADEMI/web/` (D fazı başlayınca açılır) | `D-0X` | `onizleme` |
+| E (mobil) | `AKADEMI/mobile/` (E fazı başlayınca açılır) | `E-0X` | `onizleme` |
+
+Tüm akademiler kök `AKADEMI/` klasörü altında yaşar (kök dizin kalabalıklaşmasın diye), `AKADEMI/index.html` hepsine tek giriş noktasıdır. Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı ilgili `AKADEMI/<katman>/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı — backend için `AKADEMI/backend/STANDART.md`, admin için `AKADEMI/admin/STANDART.md` (ikincisi ortak kurallarda birinciye referans verir, tekrar etmez) — burada tekrar edilmez.
+
+- **Slayt tabanlı, tek görev = tek klasör:** Yeni bir görev (`A-0X`/`B-0X`/...) ilgili akademinin `_TASLAK/` klasöründen kopyalanır; her bölüm dosyası `01_...html`, `02_...html`… numaralanır ve `window.MODULE` objesiyle çalışır (`slaytlar[]` türleri: `kapak/kavram/kod/karsilastirma/sozluk/ozet/kod-degisiklik` + katmana özel "nasıl denerim" türü).
 - **Birebir kopya:** `kod` slaytları gerçek dosyanın aynısı, kırpılmaz, uydurulmaz.
 - **Zorunlu üçlü:** her `kod`/`kavram` slaytında ne (`aciklama`) → neden (`neden`) → böyle olmasaydı ne olurdu (`olmasaydi`) — "kural böyle" yetersiz, somut mühendislik gerekçesi şart.
-- **Postman slaytı zorunlu:** Bir endpoint controller'a bağlandığında (§3 adım 13), o endpoint'i akademiye işlerken (§3 adım 15) controller'ın `kod` slaytından HEMEN SONRA bir `postman` slaytı eklenir — yöntem, tam URL, gerekiyorsa `Authorization` header'ı, gerçek Command alan adlarıyla örnek `govde`, gerçek DTO şekliyle örnek `yanit`. Alan şeması ve örnek: `BACKEND_AKADEMI/STANDART.md` §3. İstisna yok — 204/boş gövdeli endpoint'lerde bile en azından yöntem+URL+ön koşul notu yazılır.
-- **Temsili öğretim (YAGNI):** Tekrarlayan kod aileleri (ör. 13 handler testinden yalnızca biri) TEK bir temsili `kod` slaytıyla öğretilir + `sozluk` slaytında geri kalanlar "aynı pattern'i izler" notuyla listelenir. Her tekil dosya için ayrı slayt açılmaz.
-- **Zincir bütünlüğü:** Yeni bölüm eklenince `oncekiBolum`/`sonrakiBolum` hem kendi klasöründe hem (varsa) komşu görevin ilk/son dosyasında güncellenir — akademi baştan sona kesintisiz gezilebilir kalmalı. Kapanış (`ozet-sozluk`) her zaman klasörün SON numarası olmalı; araya yeni bölüm girince kapanış bir üst numaraya taşınır.
-- Klasörün `index.html`'ine yeni bölüm için bir liste satırı eklenir; kök `BACKEND_AKADEMI/index.html`'e yeni GÖREV (`A-0X`) tamamlanınca bir kart eklenir. Mevcut kartlara/satırlara dokunulmaz.
+- **"Nasıl denerim" slaytı zorunlu:** Backend'de bir endpoint controller'a bağlandığında (§3 adım 13), o endpoint'i akademiye işlerken (§3 adım 15) controller'ın `kod` slaytından HEMEN SONRA bir `postman` slaytı eklenir. Admin'de (ve gelecekte web/mobilde) bir component bir route'a bağlandığında (§4 adım 6), o component'i akademiye işlerken component'in `kod` slaytından HEMEN SONRA bir `onizleme` slaytı eklenir — gerçek route, kullanıcı akışı (`akis[]`), varsa gerçek backend endpoint çağrısı (`apiCagrisi`), durumlar. Alan şeması ve örnek: ilgili akademinin `STANDART.md` §3. İstisna yok.
+- **Temsili öğretim (YAGNI):** Tekrarlayan kod aileleri (ör. 13 handler testinden yalnızca biri, veya birbirine çok benzeyen birden fazla form component'i) TEK bir temsili `kod` slaytıyla öğretilir + `sozluk` slaytında geri kalanlar "aynı pattern'i izler" notuyla listelenir. Her tekil dosya için ayrı slayt açılmaz.
+- **Zincir bütünlüğü:** Yeni bölüm eklenince `oncekiBolum`/`sonrakiBolum` hem kendi klasöründe hem (varsa) komşu görevin ilk/son dosyasında güncellenir — akademi baştan sona kesintisiz gezilebilir kalmalı. Faz geçişinde (ör. Faz A'nın son bölümünden Faz B'nin ilk bölümüne) `oncekiBolum`/`sonrakiBolum` KLASÖRLER ARASI göreli yolla da bağlanır (ör. `../../admin/B-01_.../01_....html` — `AKADEMI/` altında kardeş klasöre) — iki ayrı akademi klasörü olması, okuyucunun tek bir doğrusal akışta gezinmesini engellemez. Kapanış (`ozet-sozluk`) her zaman klasörün SON numarası olmalı; araya yeni bölüm girince kapanış bir üst numaraya taşınır.
+- Klasörün `index.html`'ine yeni bölüm için bir liste satırı eklenir; ilgili akademinin kök `index.html`'ine yeni GÖREV tamamlanınca bir kart eklenir. Mevcut kartlara/satırlara dokunulmaz.
+- **Motor değişikliği:** `engine/` klasörleri akademiler arası PAYLAŞILMAZ (her akademi kendi kopyasını taşır — ayrı hızda değişebilirler). Genel bir motor iyileştirmesi (yeni slayt türü DEĞİL, ör. bir render bug fix) yapılırsa, ilgili TÜM akademilerin `engine/` kopyasına uygulanır — tek bir akademide sessizce farklı davranış bırakılmaz.
 
 ---
 
 ## 7. Bir API/Feature Tamamlandığında
 
-Tüm alt-adımlar `[x]`, `BACKEND_AKADEMI`'ye işlendi, testler yeşilse:
+Tüm alt-adımlar `[x]`, ilgili akademiye (§6) işlendi, testler yeşilse:
 
-1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`). API/feature başına, alt-parça başına değil. **Commit mesajına asla `Co-Authored-By: Claude` (veya başka bir AI/asistan) satırı eklenmez** — yazarlık tek kullanıcıya (`Ozaui`) aittir, GitHub'da ek bir "contributor" görünmemeli.
+1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`, `B-02: Auth Sayfaları`). API/feature başına, alt-parça başına değil. **Commit mesajına asla `Co-Authored-By: Claude` (veya başka bir AI/asistan) satırı eklenmez** — yazarlık tek kullanıcıya (`Ozaui`) aittir, GitHub'da ek bir "contributor" görünmemeli.
 2. **Git push** — her zaman kullanıcı onayıyla (otomatik push yok). Onayı **sormak** akışın parçası.
 3. **`TASK.md` güncelle** — faz durumu (⬜→🔄→✅) + "Sıradaki task".
 4. **`wiki/Index.md`'ye INGEST** (varsa).
-5. **Kullanılmayan paket taraması** — her `.csproj` paketi için `grep` ile gerçek çağrı noktası doğrula ("muhtemelen kullanılıyordur" varsayma). Sıfır kullanım → (a) kaldır (YAGNI) veya (b) bilinçli hazırlıksa `Teknik_Ozellikler.md`'ye "⚠️ kurulu, henüz bağlı — hedef: A-0X" notu.
+5. **Kullanılmayan paket taraması** — backend'de her `.csproj` paketi, frontend'de her `package.json` bağımlılığı için `grep` ile gerçek çağrı noktası doğrula ("muhtemelen kullanılıyordur" varsayma). Sıfır kullanım → (a) kaldır (YAGNI) veya (b) bilinçli hazırlıksa `Teknik_Ozellikler.md`'ye "⚠️ kurulu, henüz bağlı — hedef: A-0X/B-0X" notu.

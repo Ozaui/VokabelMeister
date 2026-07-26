@@ -70,6 +70,27 @@ public class RegisterCommandHandlerTests
     }
 
     [Fact]
+    public async Task Register_NewEmail_ReturnsDefaultTrLanguagePreference()
+    {
+        // ARRANGE
+        _userRepo.Setup(r => r.GetByEmailAsync("dil@example.com", default)).ReturnsAsync((User?)null);
+        _userRepo.Setup(r => r.OriginalEmailHashExistsAsync(It.IsAny<string>(), default)).ReturnsAsync(false);
+        _passwordService.Setup(p => p.Hash("Deneme123!@#")).Returns("hashed-password");
+        _otpService.Setup(o => o.Generate()).Returns(("123456", "otp-hash"));
+        _userRepo
+            .Setup(r => r.AddAsync(It.IsAny<User>(), null, default))
+            .ReturnsAsync((User u, int? _, CancellationToken _) => u);
+        var handler = CreateHandler();
+        var command = new RegisterCommand("dil@example.com", "Deneme123!@#", "Test", "Kullanici");
+
+        // ACT
+        var sonuc = await handler.Handle(command, default);
+
+        // ASSERT
+        sonuc.LanguagePreference.Should().Be("tr");
+    }
+
+    [Fact]
     public async Task Register_EmailAlreadyRegistered_ThrowsDuplicateEmailException()
     {
         // ARRANGE

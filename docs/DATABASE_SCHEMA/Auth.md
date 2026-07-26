@@ -21,6 +21,7 @@ CREATE TABLE Users (
     -- İstatistikler
     CurrentLevel NVARCHAR(2) NOT NULL DEFAULT 'A1',
     ThemePreference NVARCHAR(10) NOT NULL DEFAULT 'System',  -- Light|Dark|System — CurrentLevel ile aynı desen: register'da toplanmaz, kayıt sonrası onboarding'de (PUT /users/me, C-01) set edilir
+    LanguagePreference NVARCHAR(2) NOT NULL DEFAULT 'tr',  -- tr|de — istemcinin (admin panel, ileride web/mobil) arayüz dili; Languages tablosundaki kelime içeriği diliyle KARIŞTIRILMAMALI. ThemePreference ile birebir aynı desen: yazma ucu C-01'de (PUT /users/me), A-03.4'te eklendiğinde yalnızca login yanıtından (AuthUserDto) okunabiliyordu
     TotalXP INT NOT NULL DEFAULT 0,
     LifetimeXP INT NOT NULL DEFAULT 0,
     StreakDays INT NOT NULL DEFAULT 0,
@@ -49,6 +50,7 @@ CREATE TABLE Users (
     UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     CONSTRAINT CK_Users_Level CHECK (CurrentLevel IN ('A1','A2','B1','B2','C1','C2')),
     CONSTRAINT CK_Users_ThemePreference CHECK (ThemePreference IN ('Light','Dark','System')),
+    CONSTRAINT CK_Users_LanguagePreference CHECK (LanguagePreference IN ('tr','de')),
     CONSTRAINT CK_Users_Role CHECK (Role IN ('User','Admin')),
     CONSTRAINT CK_Users_AuthProvider CHECK (AuthProvider IN ('Local','Google','Apple')),
     INDEX IX_Users_Email (Email), INDEX IX_Users_Role (Role),

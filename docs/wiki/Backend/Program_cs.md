@@ -61,4 +61,4 @@ Build()` (`WordLearner.API/Logging/`) sink'in kolon şemasını `ApplicationLogs
 ## Henüz Eksik (sonraki fazlarda gelecek)
 - `UseStaticFiles()` (avatar/görsel) → **A-08**
 
-Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `BACKEND_AKADEMI/A-02_ortak-altyapi/05_program-cs-di.html`, ayrıca [[Teknik_Ozellikler]] §10.
+Tam kod (JWT `TokenValidationParameters`, Serilog `WriteTo` zinciri dahil) → `AKADEMI/backend/A-02_ortak-altyapi/05_program-cs-di.html`, ayrıca [[Teknik_Ozellikler]] §10.

@@ -39,13 +39,14 @@ JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (
 | POST | `/auth/delete-account/request` · `/confirm` | [Authorize] | Hesap silme OTP → soft delete + 30 gün |
 
 ```json
-// POST /auth/register → 201 { "id": 1, "email": "...", "firstName": "Ayşe", "currentLevel": "A1", "themePreference": "System" }
+// POST /auth/register → 201 { "id": 1, "email": "...", "firstName": "Ayşe", "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" }
 // POST /auth/login → 200 { "message": "OTP gönderildi" }   (token YOK)
 // POST /auth/login/verify-otp → 200
 { "accessToken": "eyJ...", "refreshToken": "eyJ...", "expiresIn": 900,
-  "user": { "id": 1, "currentLevel": "A1", "themePreference": "System" }, "accountWasRecovered": false }
+  "user": { "id": 1, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" }, "accountWasRecovered": false }
 ```
-`themePreference` (`Light|Dark|System`) `RegisterCommand`'da girdi olarak alınmaz — `CurrentLevel`
+`themePreference` (`Light|Dark|System`) ve `languagePreference` (`tr|de` — admin panelin/ileride
+web-mobilin arayüz dili, `A-03.4`) `RegisterCommand`'da girdi olarak alınmaz — `CurrentLevel`
 ile aynı desen, DB varsayılanı döner; gerçek seçim kayıt sonrası onboarding'de (`PUT /users/me`,
 §4) yapılır. JWT claim'ine hiç girmez (A-03.3, `wiki/Database/Auth_Domain.md`).
 
@@ -70,7 +71,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 
 | Metot | Yol | Açıklama |
 |-------|-----|----------|
-| GET/PUT | `/users/me` | Profil / güncelle (firstName, displayName, dailyWordGoal, **currentLevel**, **themePreference**) |
+| GET/PUT | `/users/me` | Profil / güncelle (firstName, displayName, dailyWordGoal, **currentLevel**, **themePreference**, **languagePreference**) |
 | GET | `/users/me/statistics` | period=week\|month\|year |
 | POST | `/users/me/avatar` | Avatar (multipart, max 5MB) |
 | PUT | `/users/me/device-token` | OneSignal player id |

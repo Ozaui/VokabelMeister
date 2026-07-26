@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dil Tercihi — languageSlice + react-i18next</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dil-tercihi-i18n',
+    bolumBaslik: 'B-01 — Kurulum',
+    oncekiBolum: '03_store-authslice-api.html',
+    sonrakiBolum: '05_protected-route-layout-routing.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'Dil Tercihi — languageSlice + react-i18next',
+        altBaslik: 'Backend zaten Accept-Language\'a göre tr/de çözüyordu (CLAUDE.md §1) — admin panel bu bölümde ilk kez "hangi dili seçtim" bilgisini KENDİSİ üretip hem backend\'e hem kendi arayüzüne yansıtıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'İki Ayrı Dil Kanalı — Birbirine Karıştırılmamalı',
+        aciklama: 'Admin panelde "dil" iki BAĞIMSIZ kanaldan yönetilir. (1) Backend\'den gelen mesajlar (ErrorMessages/SuccessMessages, log Detail) — `Accept-Language` header\'ıyla (Bölüm 3) taşınır, backend çözer. (2) Admin panelin KENDİ statik arayüz metinleri (buton/etiket, "Çıkış Yap" gibi backend\'den HİÇ gelmeyen kelimeler) — `react-i18next` ile, tamamen frontend tarafında çevrilir. İkisi de AYNI `languageSlice`\'tan (bu bölüm) beslenir ama birbirinden BAĞIMSIZ çalışır.',
+        neden: 'Backend\'in `ErrorMessages.cs`\'i "e-posta zaten kayıtlı" gibi İŞ KURALI mesajlarını taşır — admin panelin "Çıkış Yap" gibi SAF ARAYÜZ metinleri backend\'in hiç bilmediği, hiç API\'den dönmeyen kelimelerdir. Tek bir kanal olsaydı (ör. her buton etiketi için backend\'e bir istek atmak), en basit bir sayfa render\'ı bile gereksiz bir API çağrısına bağımlı olurdu.',
+        olmasaydi: 'Yalnızca Accept-Language kullanılsaydı (react-i18next hiç eklenmeseydi), "Çıkış Yap" gibi metinler ya HARDCODE Türkçe kalırdı (admin `de` seçse bile buton hep Türkçe) ya da her statik metin için uydurma bir backend endpoint\'i gerekirdi — CLAUDE.md §1\'in "istemciye giden mesaj / DB-log-geliştirici mesajı" ayrımının frontend\'e taşınmamış hâli.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'languageSlice.ts — Tek Gerçek Kaynak',
+        dosyaYolu: 'admin/src/store/slices/languageSlice.ts',
+        nedenBuKlasor: '`authSlice.ts` ile AYNI klasörde, AYNI desende — istemci-yerel bir tercih, sunucudan gelen bir veri DEĞİL.',
+        kod: `// CLAUDE.md §1: "desteklenmiyorsa tr'ye düşer" — ErrorMessages/SuccessMessages ile aynı kural.
+function readStoredLanguage(): Language {
+  const stored = localStorage.getItem('language')
+  return stored === 'de' ? 'de' : 'tr'
+}
+
+const initialState: LanguageState = {
+  language: readStoredLanguage(),
+}`,
+        satirlar: [
+          {
+            satir: 'return stored === \'de\' ? \'de\' : \'tr\'',
+            aciklama: 'CLAUDE.md §1\'in "desteklenmiyorsa tr\'ye düşer" kuralının BİREBİR frontend karşılığı — `localStorage`\'da `"de"` DIŞINDA HER ŞEY (boş, bozuk bir değer, ya da hiç yoksa) `tr`\'ye düşer.',
+            neden: 'localStorage, tarayıcı geliştirici konsolundan elle DEĞİŞTİRİLEBİLİR bir depoydu — orada `"fr"` gibi desteklenmeyen bir değer bulunursa, uygulamanın çökmek yerine güvenli bir varsayılana (backend\'in ErrorMessages sözlüğünün DE HAZIR olduğu `tr`) düşmesi gerekir.',
+            olmasaydi: 'Ternary yerine doğrudan `localStorage.getItem(\'language\') as Language` yazılsaydı, TypeScript bu değeri `Language` (`\'tr\'|\'de\'`) olarak GÜVENİLİR sayardı ama çalışma zamanında `"fr"` gibi bir değer `i18n.ts`\'e (Bölüm devamı) geçip react-i18next\'in `fallbackLng`\'ine güvenmek zorunda kalınırdı — iki ayrı sistemin (Redux + i18next) AYNI kenar durumunu iki kez, farklı şekillerde ele alması riski.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'i18n.ts — react-i18next Kurulumu, AYNI localStorage Anahtarı',
+        dosyaYolu: 'admin/src/i18n/i18n.ts',
+        nedenBuKlasor: '`store/slices/` DEĞİL, ayrı bir `i18n/` klasöründe — react-i18next, Redux\'un bir parçası değil, KENDİ state\'ini (mevcut dil) kendi içinde tutan bağımsız bir kütüphane.',
+        kod: `const storedLanguage = localStorage.getItem('language') === 'de' ? 'de' : 'tr'
+
+i18n.use(initReactI18next).init({
+  resources: {
+    tr: { translation: tr },
+    de: { translation: de },
+  },
+  lng: storedLanguage,
+  fallbackLng: 'tr',
+  interpolation: {
+    escapeValue: false,
+  },
+})`,
+        satirlar: [
+          {
+            satir: 'const storedLanguage = localStorage.getItem(\'language\') === \'de\' ? \'de\' : \'tr\'',
+            aciklama: '`languageSlice.ts`\'teki `readStoredLanguage()` ile KARAKTER KARAKTER aynı mantık, AYNI `\'language\'` anahtarıyla — iki bağımsız sistem (Redux state + i18next\'in kendi iç state\'i) sayfa ilk açıldığında AYNI değeri okur.',
+            neden: 'Redux ve react-i18next birbirinden HABERSİZ iki kütüphane — eğer ikisi FARKLI anahtarlar ya da farklı varsayılan mantığı kullansaydı, sayfa ilk açıldığında Sidebar\'ın dili (Redux\'tan) ile buton metinlerinin dili (i18next\'ten) TUTARSIZ olabilirdi.',
+            olmasaydi: 'i18n.ts kendi `fallbackLng: \'tr\'`\'sine güvenip localStorage\'ı HİÇ okumasaydı, tarayıcı `de` tercihiyle kapatılıp yeniden açıldığında Sidebar (Redux, localStorage\'dan doğru okur) `de` gösterirken buton metinleri (i18next, hep tr\'den başlar) YANLIŞLIKLA tr kalırdı — LanguageSwitcher\'a tıklanana kadar fark edilmeyen, kafa karıştırıcı bir bug.'
+          },
+          {
+            satir: 'escapeValue: false,',
+            aciklama: 'react-i18next\'e, çeviri metinlerindeki değişkenleri (ör. gelecekte `{{userName}}` gibi) HTML-escape ETMEMESİNİ söyler.',
+            neden: 'React zaten JSX render ederken TÜM metni otomatik escape eder (XSS koruması React\'in kendisinde var) — react-i18next\'in AYRICA escape etmesi, çift-escape\'e (ör. `&amp;amp;`) yol açardı.',
+            olmasaydi: 'Bu ayar yapılmasaydı (react-i18next\'in varsayılanı `true`), gelecekte bir çeviri metninde `&` gibi bir karakter kullanılsa ekranda `&amp;` olarak GÖRÜNÜRDÜ — React\'in kendi escape\'iyle çakışan, gereksiz bir çifte koruma.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LanguageSwitcher.tsx — Üç Sistemi Aynı Anda Senkronlamak',
+        dosyaYolu: 'admin/src/components/LanguageSwitcher.tsx',
+        nedenBuKlasor: '`components/` altında (feature\'a özel değil, layout\'un her yerinden kullanılabilir bir parça) — Topbar\'a (Bölüm 5) gömülür.',
+        kod: `const handleChange = (code: Language) => {
+  dispatch(setLanguage(code))
+  i18n.changeLanguage(code)
+  document.documentElement.lang = code
+}`,
+        satirlar: [
+          {
+            satir: 'dispatch(setLanguage(code))',
+            aciklama: 'Redux state\'i (Sidebar/Topbar\'ın hangi rengin AKTİF olduğunu göstermesi İÇİN) VE `localStorage`\'ı (bir sonraki ziyarette hatırlamak İÇİN) günceller — `languageSlice.ts`\'in reducer\'ı içinde.',
+            neden: 'RTK Query\'nin `prepareHeaders`\'ı (Bölüm 3) `getState().language.language`\'ı okuyor — bu satır olmadan bir sonraki API isteği HÂLÂ eski dili gönderirdi.',
+            olmasaydi: 'Yalnızca `i18n.changeLanguage` çağrılsaydı, admin panelin KENDİ metinleri (buton/etiket) değişirdi ama bir sonraki backend isteğinin `Accept-Language`\'ı ESKİ dilde kalırdı — arayüz `de` görünürken hata mesajları tr gelen tutarsız bir durum.'
+          },
+          {
+            satir: 'i18n.changeLanguage(code)',
+            aciklama: 'react-i18next\'in kendi iç state\'ini günceller — `useTranslation()` kullanan HER component (Sidebar, Topbar, DashboardPlaceholder) anında yeniden render olur, sayfa yenilemeye GEREK kalmaz.',
+            neden: 'react-i18next, React\'in Context API\'sini kullanır — `changeLanguage` çağrıldığında, `t()` fonksiyonunu kullanan TÜM component\'ler otomatik olarak güncellenir.',
+            olmasaydi: 'Bu satır olmasaydı, Redux state (`current` değişkeni, düğmenin rengi) güncellenirdi AMA `t(\'nav.dashboard\')` gibi çağrılar HÂLÂ eski dildeki metni döndürürdü — düğme "seçili" görünür ama metinler değişmezdi.'
+          },
+          {
+            satir: 'document.documentElement.lang = code',
+            aciklama: '`<html>` etiketinin `lang` özniteliğini günceller — ekran okuyucuların (screen reader) doğru telaffuz/dilbilgisi kuralını KULLANMASI için tarayıcıya bir sinyal.',
+            neden: 'HTML5 erişilebilirlik standardı, sayfanın GERÇEK dilinin `<html lang>`\'de doğru yansıtılmasını bekler — bu satır olmadan, admin `de` seçse bile ekran okuyucu sayfayı hâlâ Türkçe telaffuz kurallarıyla okumaya çalışırdı.',
+            olmasaydi: '`index.html`\'in sabit `lang="tr"` değeri hiç güncellenmezdi — görsel olarak her şey `de`\'ye dönerken, ekran okuyucu kullanan bir admin için sayfa hâlâ "Türkçe" olarak İŞARETLİ kalırdı (kod denetiminde bulunan gerçek bir a11y eksikliğiydi, bu satırla kapatıldı — `main.tsx`\'te de sayfa İLK açıldığında aynı senkron yapılır).'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'A-03.4 ile Bağlantı — Bu Tercih Şimdilik Yalnızca localStorage\'da',
+        aciklama: 'Backend tarafında (`AKADEMI/backend/A-03.4_dil-tercihi/`) `Users.LanguagePreference` (tr/de) alanı zaten var — ama YAZMA ucu (`PUT /users/me`) henüz yok, C-01\'e bırakıldı. Bu yüzden `languageSlice`\'ın `setLanguage` action\'ı ŞİMDİLİK yalnızca `localStorage`\'a yazıyor, hiçbir API çağrısı yapmıyor — dil tercihi bu cihaza/tarayıcıya ÖZEL kalıyor, hesabı TAKİP ETMİYOR.',
+        neden: 'ThemePreference (A-03.3) ile BİREBİR aynı karar — bir alanın DB\'de var olması, onu YAZAN bir API\'nin de var olduğu anlamına gelmez; bu ikisini birbirinden ayırmak, "API hazır olmadan sahte bir entegrasyon yazmak" yerine dürüst bir sınır çizer.',
+        olmasaydi: 'setLanguage\'e var olmayan bir `PUT /users/me` çağrısı EKLENSEYDİ, her dil değişiminde 404 hatası alınır ya da (daha kötüsü) sessizce YUTULURDU — kullanıcıya "kaydedildi" izlenimi verip aslında hiçbir şey KAYDETMEYEN, yanıltıcı bir davranış olurdu.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'react-i18next', tanim: 'React component\'lerinde `useTranslation()` hook\'uyla çeviri metinlerine erişim sağlayan, i18next\'in React entegrasyonu.' },
+          { terim: 'İki Kanal (Backend mesajı vs Frontend metni)', tanim: 'CLAUDE.md §1\'in "istemciye giden mesaj / DB-log-geliştirici mesajı" ayrımının frontend\'deki genişlemesi — backend\'den gelen mesajlar Accept-Language ile, admin panelin KENDİ statik metinleri react-i18next ile, iki bağımsız kanaldan çevrilir.' },
+          { terim: '<html lang>', tanim: 'Bir HTML sayfasının hangi dilde olduğunu ekran okuyuculara ve arama motorlarına bildiren kök öznitelik — sayfanın görünen dili değiştiğinde senkron güncellenmelidir.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

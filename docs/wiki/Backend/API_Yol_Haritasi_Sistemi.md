@@ -1,6 +1,6 @@
 # API Yol Haritası Sistemi (`docs/API_YOL_HARITASI/`) — ⚠️ ARŞİV, YERİNE [[Backend_Akademi_Sistemi]] GEÇTİ
 
-> **2026-07-13:** Bu sistem `BACKEND_AKADEMI/` (bkz. [[Backend_Akademi_Sistemi]]) ile değiştirildi,
+> **2026-07-13:** Bu sistem `AKADEMI/backend/` (bkz. [[Backend_Akademi_Sistemi]]) ile değiştirildi,
 > `docs/API_YOL_HARITASI/` klasörü silindi. Bu sayfa yalnızca tarihsel referans olarak kalır —
 > aşağıdaki dosya yolları/örnekler artık diskte yok, geçmiş INGEST kayıtlarının bağlamını
 > anlamak için tutuluyor. Yeni çalışma için → [[Backend_Akademi_Sistemi]].
