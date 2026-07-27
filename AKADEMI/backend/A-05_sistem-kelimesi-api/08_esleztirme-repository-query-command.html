@@ -68,7 +68,7 @@
             olmasaydi: 'Ordinal (case-sensitive) karşılaştırma kullanılsaydı, admin Definition\'a "Mann" yerine "mann" yazdığında öneri HİÇ bulunmazdı — algoritma teknik olarak ÇALIŞIR ama pratikte çoğu satırda SESSİZCE başarısız OLURDU.'
           },
           {
-            satir: 'var poolTokens = SplitDefinition(poolWord.Definition);\n            if (poolTokens.Contains(candidate.Text, StringComparer.OrdinalIgnoreCase))',
+            satir: 'var poolTokens = SplitDefinition(poolWord.Definition);',
             aciklama: 'Yön B (ters yön): adayın Text\'i, havuzdaki bir kavramın Definition token\'larından biriyle eşleşiyor mu — hangi tarafın önce Definition yazıldığı BELLİ DEĞİL, iki dilden hangisi önce import edildiyse Definition o tarafta olabilir.',
             neden: 'Icerik.md "Eşleştirme" bölümünün "karşı adayın Text\'i (veya tersi)" notu tam olarak bu — tek yönlü arama, Definition\'ı SONRADAN girilen dilde yazılmış kelimeleri KAÇIRIRDI.',
             olmasaydi: 'Yalnızca Yön A olsaydı, yalnızca "adayın KENDİ Definition\'ı dolu" durumlarda öneri bulunurdu — Definition\'ı BOŞ ama havuzdaki karşı taraf Definition\'ında bu kelimeyi anan satırlar hiç ÖNERİLMEZDİ.'
@@ -90,7 +90,7 @@ Task<WordConcept> PairAsync(
     int primaryId, int otherConceptId, int? userId, CancellationToken ct = default);`,
         satirlar: [
           {
-            satir: 'Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(\n    int excludeLanguageId, CancellationToken ct = default);',
+            satir: 'Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync(',
             aciklama: 'GetUnmatchedPagedAsync SAYFALI döner (liste ekranı), bu metot SAYFALANMAZ — WordMatchSuggestionResolver öneri üretmek için karşı dilin TÜM eşleşmemiş havuzunu taramak ZORUNDA, yalnızca görünen sayfayı değil.',
             neden: 'Öneri hesaplaması "şu an ekranda görünen 20 satır" ile SINIRLI olsaydı, doğru eşleşme havuzun 21. satırında olduğunda ASLA bulunamazdı — öneri kalitesi sayfalama sınırına BAĞIMLI olurdu.',
             olmasaydi: 'Bu metot olmadan GetUnmatchedPagedAsync\'i "diğer dil" için TEKRAR çağırmak gerekirdi ama o metot search/sayfa parametreleri TAŞIR — öneri havuzu için anlamsız bir arayüz KÖTÜYE kullanılmış olurdu.'
@@ -126,10 +126,22 @@ public async Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync
         .ToListAsync(ct);`,
         satirlar: [
           {
+            satir: '.Include(c => c.Words).ThenInclude(w => w.Language)',
+            aciklama: 'Bölüm 6\'daki GetPagedAsync ile AYNI seviyede hafif bir Include — yalnızca Words+Language, WordDetail/WordExample YOK.',
+            neden: 'GetUnmatchedPagedAsync bir "eşleştirme listesi" ekranı besliyor (dil+metin+öneri), gramer/örnek cümle GÖSTERMİYOR — Bölüm 6\'daki "liste ekranı ağır Include TAŞIMAZ" kararıyla AYNI gerekçe burada da geçerli.',
+            olmasaydi: 'WordDetail/WordExample de Include edilseydi, eşleştirme ekranının her sayfa isteği kullanılmayacak gramer JSON\'unu DB\'den TAŞIRDI — bu ekranın amacı (hızlıca "hangi kavramlar eşleşmemiş" göstermek) gereksiz yere YAVAŞLARDI.'
+          },
+          {
             satir: '.Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId == languageId));',
             aciklama: '"Eşleşmemiş" durumu ayrı bir IsMatched kolonuyla TUTULMUYOR (Icerik.md kararı) — burada `Words.Count == 1` ile CANLI olarak türetiliyor; global soft-delete filtresi zaten silinmiş Word\'leri bu sayıma KATMIYOR.',
             neden: 'Bir durumu hem bir kolonda SAKLAYIP hem her Word ekleme/silmede o kolonu SENKRON tutmak, WordConcept.Words koleksiyonundan HER SEFERİNDE türetmekten daha KIRILGAN — senkron unutulursa kolon YALAN söyler.',
             olmasaydi: 'IsMatched gibi bir kolon olsaydı, PairAsync (bir sonraki slayt) hem Word taşımayı hem bu kolonu iki kavramda da GÜNCELLEMEYİ unutmamak ZORUNDA kalırdı — CreateWordCommand/UpdateWordCommand da AYNI şekilde.'
+          },
+          {
+            satir: '.Where(c => c.Words.Count == 1 && c.Words.Any(w => w.LanguageId != excludeLanguageId))',
+            aciklama: '`GetUnmatchedOtherLanguagePoolAsync`\'in filtresi, `GetUnmatchedPagedAsync`\'in AYNASI — `== languageId` yerine `!= excludeLanguageId`: "bu dilde eşleşmemiş olanlar" DEĞİL, "BAŞKA bir dilde eşleşmemiş olanlar".',
+            neden: 'Havuzun amacı adayın KENDİ dilini DEĞİL, KARŞI dili taraması — admin "de" dilinde eşleşmemiş bir kavrama bakarken, öneri havuzu "tr" (ya da "de" DIŞINDAKİ herhangi bir dil, ileride 3. dil eklenirse) tarafındaki eşleşmemişleri KAPSAMALI.',
+            olmasaydi: '`!= excludeLanguageId` yerine sabit bir dil (ör. hep "tr") yazılsaydı, bu metot yalnızca iki dilli (de/tr) sistemde ÇALIŞIRDI — üçüncü bir dil (`en`) eklendiğinde İÇİNDE sessizce YANLIŞ (eksik) bir havuz dönerdi.'
           }
         ]
       },
@@ -170,13 +182,13 @@ public async Task<IReadOnlyList<WordConcept>> GetUnmatchedOtherLanguagePoolAsync
             olmasaydi: 'Yalnızca `Include(c => c.Words)` (Language\'sız) yapan hafif bir sorgu kullanılsaydı, dönen `primary.Words[i].Language.Code` NullReferenceException fırlatırdı — WordConceptDtoBuilder Language\'a HER ZAMAN erişir.'
           },
           {
-            satir: 'other.Words.Remove(otherWord);\n    otherWord.WordConceptId = primary.Id;\n    otherWord.UpdatedByUserId = userId;\n    primary.Words.Add(otherWord);',
+            satir: 'other.Words.Remove(otherWord);',
             aciklama: 'Word\'ün WordConceptId\'si (yabancı anahtar) değiştirilip navigation koleksiyonları (other.Words / primary.Words) EL İLE senkronlanıyor — EF Core\'un "relationship fixup"ına GÜVENİLMİYOR.',
             neden: 'SaveChangesAsync\'ten HEMEN sonra `primary` (Words koleksiyonuyla) doğrudan WordConceptDtoBuilder\'a dönüyor — fixup\'ın SaveChanges içindeki DetectChanges\'te NE ZAMAN çalıştığına güvenmek yerine, koleksiyonu EL İLE doğru bırakmak, junior bir okuyucu için de "veri nerede" sorusunu BELİRSİZ bırakmaz.',
             olmasaydi: 'Yalnızca `otherWord.WordConceptId = primary.Id;` yazılıp koleksiyonlar el ile güncellenmeseydi, kod YİNE ÇALIŞABİLİRDİ (EF fixup\'a bağlı) ama bu davranış OKUYUCUYA görünmeyen, "neden çalışıyor" sorusuna dokümansız bir CEVABI olurdu.'
           },
           {
-            satir: 'other.IsDeleted = true;\n    other.DeletedAt = now;\n    other.DeletedByUserId = userId;\n    other.UpdatedByUserId = userId;',
+            satir: 'other.IsDeleted = true;',
             aciklama: 'Word\'ü BOŞALAN `other` kavramı, SoftDeleteWithWordsAsync (Bölüm 5) ile AYNI dört alan elle set edilerek soft-delete edilir — artık 0 Word\'ü olan bir WordConcept sistemde ANLAMSIZ.',
             neden: 'Word taşındıktan sonra `other` kavramı GetWords/GetWordById listelerinde "boş" bir satır olarak KALSAYDI, admin panelinde açıklanamaz bir 0-çevirili kayıt GÖRÜNÜRDÜ.',
             olmasaydi: '`other` silinmeseydi, aynı iki dilin ayrı ayrı import edildiği HER eşleştirmede sistemde kalıcı, boş, hiçbir öğrenme oturumuna GİRMEYEN "hayalet" WordConcept satırları BİRİKİRDİ.'
@@ -212,10 +224,28 @@ public async Task<PagedResult<UnmatchedWordConceptDto>> Handle(
 }`,
         satirlar: [
           {
-            satir: 'var otherLanguagePool = await _wordConceptRepository.GetUnmatchedOtherLanguagePoolAsync(\n        request.LanguageId, ct);',
+            satir: 'public record GetUnmatchedWordConceptsQuery(int LanguageId, string? Search, int Page = 1, int PageSize = 20)',
+            aciklama: 'GetWordsQuery (Bölüm 6) ile AYNI sayfalama şekli (Page/PageSize varsayılanları) ama farklı filtre: `DifficultyLevel`/`PartOfSpeech` YOK, yalnızca `LanguageId` (hangi dilde eşleşmemişleri listeliyoruz) + serbest `Search`.',
+            neden: 'Eşleştirme ekranının kullanım senaryosu GetWords\'ten farklı — admin "Almanca tarafında eşleşmemiş ne kaldı" diye SORUYOR, seviyeye/türe göre filtrelemeye (henüz) ihtiyaç YOK; YAGNI gereği yalnızca GERÇEKTEN kullanılan filtre parametresi eklendi.',
+            olmasaydi: 'DifficultyLevel/PartOfSpeech de eklenseydi, bu Query hiç KULLANILMAYAN iki opsiyonel parametre TAŞIRDI — gelecekte gerçekten gerekirse (bir kullanım senaryosu doğduğunda) o zaman eklenmesi YAGNI\'ye daha uygun.'
+          },
+          {
+            satir: 'var word = concept.Words.Single();',
+            aciklama: '`GetUnmatchedPagedAsync`\'in filtresi zaten `Words.Count == 1` garantisi VERDİĞİ için, burada `.Single()` GÜVENLE çağrılabilir — 0 ya da 2+ Word\'ü olan bir kavram bu listeye hiç GİRMEZ.',
+            neden: '`.FirstOrDefault()` yerine `.Single()` seçilmesi BİLİNÇLİ — eğer bir gün repository filtresi bozulur da 2 Word\'lü bir kavram buraya SIZARSA, `.Single()` sessizce YANLIŞ bir Word seçmek yerine hemen bir exception fırlatır (fail-fast).',
+            olmasaydi: '`.FirstOrDefault()` kullanılsaydı ve filtre bir gün bozulsaydı, kod sessizce (yanlışlıkla) yalnızca İLK Word\'ü alır, hangi çevirinin "eşleşmemiş" sayıldığı BELİRSİZLEŞİRDİ — hata görünmeden yanlış veri DÖNERDİ.'
+          },
+          {
+            satir: 'var otherLanguagePool = await _wordConceptRepository.GetUnmatchedOtherLanguagePoolAsync(',
             aciklama: 'Havuz TEK sefer, sayfa döngüsünün DIŞINDA çekilir — sayfadaki 20 satırın HER biri için ayrı ayrı sorgu ATILMAZ.',
             neden: 'N+1 sorgu problemi klasik bir performans hatası — 20 satırlık bir sayfa için 20 ayrı "havuzu getir" sorgusu ATILSAYDI, bu Query gereksiz yere YAVAŞLARDI; tek sorgu + in-memory eşleştirme (WordMatchSuggestionResolver) bu maliyeti ÖNLER.',
             olmasaydi: 'Havuz her `Select` iterasyonunda TEKRAR çekilseydi, sayfa boyutu (pageSize) arttıkça sorgu sayısı DOĞRUSAL olarak artardı — 795+ satırlık gerçek veri ölçeğinde bu FARK EDİLİR bir yavaşlık yaratırdı.'
+          },
+          {
+            satir: 'WordMatchSuggestionResolver.FindSuggestion(word, otherLanguagePool));',
+            aciklama: 'Her satır için öneri, önceden çekilmiş `otherLanguagePool` üzerinde BELLEK İÇİNDE (LINQ-to-Objects) hesaplanır — `WordMatchSuggestionResolver` (bir önceki slayt) burada ÇAĞRILAN yer.',
+            neden: 'Bu statik yardımcı DB\'ye hiç erişmiyor (yalnızca `Word`/`IReadOnlyList<WordConcept>` alıyor) — bu sayede Handler seviyesinde bir DB çağrısı olmadan, saf bir string karşılaştırma işlemi olarak çalışır ve birim testte DB mock\'lamadan test edilebilir.',
+            olmasaydi: 'Öneri hesaplaması Repository katmanına (SQL sorgusu olarak) taşınmaya çalışılsaydı, `SplitDefinition`\'ın virgülle bölme/OrdinalIgnoreCase karşılaştırma mantığı SQL\'e çevrilmesi GEREKİRDİ — EF Core\'un LINQ-to-SQL çevirisi bu tarz string işleme için ya ÇOK KARMAŞIK ya da hiç MÜMKÜN olmayan bir sorgu üretirdi.'
           }
         ]
       },
@@ -285,10 +315,40 @@ public async Task<WordConceptDetailDto> Handle(PairWordConceptsCommand request, 
 }`,
         satirlar: [
           {
-            satir: 'var primaryBefore = await _wordConceptRepository.GetWithTranslationsAsync(request.PrimaryId, ct)\n        ?? throw new EntityNotFoundException(typeof(WordConcept), request.PrimaryId);',
+            satir: 'public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId) : IRequest<WordConceptDetailDto>',
+            aciklama: '`PrimaryId` HANGİ kavramın hayatta KALACAĞI (Word\'lerin taşınacağı hedef), `OtherConceptId` ise HANGİ kavramın Word\'ünü kaybedip soft-delete OLACAĞI — sıralama rastgele DEĞİL, admin\'in "bunu ana kavram YAP" seçimini taşır.',
+            neden: 'İki Id\'nin de aynı tipte (int) olması, admin panelin hangisini "primary" seçtiğini AÇIKÇA belirtmesini GEREKTİRİR — PairAsync (bir önceki slayt) `primary`\'nin ID\'sinin SABİT kalacağını, `other`\'ın Id\'sinin silineceğini bu isimlendirmeden anlar.',
+            olmasaydi: 'Parametre adları `ConceptAId`/`ConceptBId` gibi nötr olsaydı, hangisinin hayatta kalacağı KOD İÇİNDE bir kural (ör. "küçük Id kazanır") gerektirirdi — admin\'in GERÇEK niyetini (hangi kavramı ana kavram olarak seçtiğini) taşımazdı.'
+          },
+          {
+            satir: 'public int? UserId { get; init; }',
+            aciklama: 'CreateWordCommand\'daki `Force`/`UserId`/`ActorRole` ile AYNI desen (Bölüm 6) — controller `command with { UserId = ..., ActorRole = ... }` ile bu init-only property\'leri JWT claim\'lerinden DOLDURUR, istemci bunları body\'de GÖNDERMEZ.',
+            neden: 'ActivityLog\'un "kim yaptı" bilgisi HER zaman sunucu tarafında (JWT\'den) belirlenir, istemciden GELEN bir alan DEĞİLDİR — aksi hâlde bir istemci başka bir admin adına log kaydı ÜRETEBİLİRDİ (sahte audit trail).',
+            olmasaydi: 'UserId Command\'ın ana constructor\'ına (istemciden gelen bir alan olarak) eklenseydi, kötü niyetli bir istemci body\'de farklı bir UserId GÖNDEREREK "başka bir admin bunu yaptı" gibi YANLIŞ bir audit kaydı OLUŞTURABİLİRDİ.'
+          },
+          {
+            satir: 'var primaryBefore =',
             aciklama: 'Handler, PairAsync\'in KENDİSİ de ikisini yükleyeceği hâlde primary/other\'ı ÖNCEDEN bir kez daha yükler — amaç mutasyon ÖNCESİ hâli ActivityLog\'un OldValue\'suna yazmak.',
-            neden: 'DeleteWordCommandHandler (Bölüm 5) AYNI çift-yükleme desenini kullanıyordu (silmeden önce OldValue için bir GetWithTranslationsAsync, SONRA repository kendi içinde tekrar yüklüyor) — burada AYNI kod stiline sadık kalındı, admin işlemi (nadir, DB\'ye pahalı değil) için tutarlılık HIZDAN daha DEĞERLİ.',
+            neden: 'DeleteWordCommandHandler (Bölüm 6) AYNI çift-yükleme desenini kullanıyordu (silmeden önce OldValue için bir GetWithTranslationsAsync, SONRA repository kendi içinde tekrar yüklüyor) — burada AYNI kod stiline sadık kalındı, admin işlemi (nadir, DB\'ye pahalı değil) için tutarlılık HIZDAN daha DEĞERLİ.',
             olmasaydi: 'Bu ön-yükleme olmasaydı, OldValue snapshot\'ı ALINAMAZDI — PairAsync geriye yalnızca BİRLEŞMİŞ (yani "after") hâli döner, "birleşmeden ÖNCE primary/other ne durumdaydı" sorusu ActivityLog\'da CEVAPSIZ kalırdı.'
+          },
+          {
+            satir: 'var oldValue = new',
+            aciklama: 'UpdateWordCommand\'daki (Bölüm 6) tek `oldValue`\'nun AKSİNE, burada İKİ kavramın (Primary+Other) eski hâli TEK bir nesnenin `Primary`/`Other` alt-alanlarında toplanır.',
+            neden: 'PAIR_WORD_CONCEPTS bir "iki nesneyi birleştirme" olayı — tek bir OldValue\'da yalnızca bir kavramın hâlini tutmak, admin log\'u okurken "hangi İKİ kavram birleşti, her biri neydi" sorusuna CEVAP veremezdi.',
+            olmasaydi: 'Yalnızca primary\'nin eski hâli kaydedilseydi, other\'ın (silinen kavramın) hangi çeviriye sahip olduğu ActivityLog\'dan hiç ÖĞRENİLEMEZDİ — bir admin "hangi kavram bu kavrama birleştirildi" diye sorduğunda log CEVAPSIZ kalırdı.'
+          },
+          {
+            satir: 'var merged = await _wordConceptRepository.PairAsync(',
+            aciklama: 'Asıl birleştirme İŞİ (Word taşıma + other\'ı soft-delete) tamamen `PairAsync`\'e (bir önceki slayt) DELEGE edilir — Handler burada yalnızca SONUCU (`merged`) alır.',
+            neden: 'WordConcept aggregate root deseni (Bölüm 5) burada da GEÇERLİ — birleştirmenin DB detayları (Word.WordConceptId değişimi, cascade soft-delete) Repository\'nin sorumluluğunda, Handler yalnızca ORKESTRASYON (ön-yükleme + log + DTO) yapar.',
+            olmasaydi: 'Birleştirme mantığı doğrudan Handler\'ın İÇİNE yazılsaydı, Application katmanı EF Core\'un change-tracking detaylarına (navigation fixup, SaveChangesAsync) DOĞRUDAN bağımlı olurdu — katmanlar arası sorumluluk sınırı (CLAUDE.md §5 Domain←Application←Infrastructure) BULANIKLAŞIRDI.'
+          },
+          {
+            satir: 'MergedConceptId = request.OtherConceptId,',
+            aciklama: 'NewValue\'ya EK olarak, SİLİNEN kavramın Id\'si de yazılır — `merged` (primary) artık `OtherConceptId`\'yi hiç TAŞIMADIĞI için, bu bilgi başka HİÇBİR yerden elde EDİLEMEZ.',
+            neden: 'Bir admin ileride "1 numaralı kavram nereye gitti" diye SORDUĞUNDA, PAIR_WORD_CONCEPTS log kaydının NewValue\'sundaki bu alan olmadan hangi kavramın HANGİSİNE birleştiği İZLENEMEZDİ.',
+            olmasaydi: 'MergedConceptId yazılmasaydı, silinen kavramın Id\'si yalnızca OldValue.Other.ConceptId\'de kalırdı — bu iki bilginin (OldValue ve NewValue) AYRI ayrı okunup elle EŞLEŞTİRİLMESİ gerekirdi, log okuma deneyimini ZORLAŞTIRIRDI.'
           }
         ]
       },

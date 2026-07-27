@@ -62,10 +62,40 @@
     });`,
         satirlar: [
           {
+            satir: 'CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),',
+            aciklama: 'A-05\'teki `Language` tablosunun AKSİNE, Categories\'in TÜM BaseEntity kolonları (CreatedAt/UpdatedAt/IsDeleted/DeletedAt/CreatedByUserId/UpdatedByUserId/DeletedByUserId) burada VAR — Category `BaseEntity`\'den TÜREYEN gerçek bir içerik varlığı.',
+            neden: 'Category, admin panelin CRUD ettiği (oluşturma/silme/yeniden adlandırma) bir içerik — Language\'ın AKSİNE (statik referans, kimse "kim dil ekledi" diye sormaz), bir kategorinin "kim ekledi/sildi" bilgisi ANLAMLI ve audit trail\'in bir parçası.',
+            olmasaydi: 'Category, Language gibi BaseEntity\'siz tasarlansaydı, admin panelin (A-07) kategori CRUD işlemlerinde ActivityLog\'a yazdığı OldValue/NewValue diff\'i soft-delete durumunu (IsDeleted) YAKALAYAMAZDI — silinen bir kategori DB\'den GERÇEKTEN silinmiş gibi davranılırdı.'
+          },
+          {
+            satir: 'ParentCategoryId = table.Column<int>(type: "int", nullable: true),',
+            aciklama: 'Nullable (`int?`) — `NULL` "bu bir KÖK kategori" anlamına gelir, hiçbir kategori zorunlu olarak bir üst kategoriye BAĞLI değildir.',
+            neden: 'Category.cs\'teki `// Null = kök seviye.` yorumunun DB\'ye yansıması — sınırsız derinlikte bir ağaç kurmanın (self-referencing hiyerarşi) ön şartı, en ÜST seviyenin hiçbir parent\'a işaret ETMEMESİDİR.',
+            olmasaydi: 'ParentCategoryId NOT NULL olsaydı, HER kategori zorunlu olarak bir üst kategoriye BAĞLANMAK zorunda kalırdı — kök seviyeyi temsil etmek için "kendi kendine referans" gibi anlamsız bir workaround GEREKİRDİ.'
+          },
+          {
+            satir: 'MinLevel = table.Column<string>(type: "nvarchar(2)", maxLength: 2, nullable: true),',
+            aciklama: 'A-05\'teki `WordConcept.DifficultyLevel`\'in AKSİNE nullable — bir kategori seviyeden BAĞIMSIZ olabilir (ör. "Renkler" kategorisi her seviyede kelime içerebilir, tek bir MinLevel\'a sabitlenmez).',
+            neden: 'MinLevel/MaxLevel bir ARALIK tanımlıyor ("bu kategori yalnızca A1-A2 arası kelimeler için anlamlı") — bu aralık bazı kategoriler için hiç TANIMLI olmayabilir, bu yüzden WordConcept\'in ZORUNLU DifficultyLevel\'ından FARKLI bir nullable tasarım gerekti.',
+            olmasaydi: 'MinLevel/MaxLevel zorunlu (NOT NULL) olsaydı, seviyeden bağımsız bir kategori için ANLAMSIZ bir varsayılan değer (ör. "A1"/"C2") uydurmak GEREKİRDİ — bu değer hiçbir gerçek kısıtlamayı YANSITMAZDI, yanıltıcı olurdu.'
+          },
+          {
+            satir: 'table.CheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: 'A-05\'teki `CK_WordConcepts_Level`\'den FARKLI olarak `IS NULL OR` ile BAŞLAR — nullable bir alanın CHECK constraint\'i, NULL değeri ayrıca İZİN VERMEK zorunda (SQL\'de NULL zaten CHECK\'i "bilinmiyor" sayıp geçer ama açıkça yazmak niyeti BELLİ eder).',
+            neden: 'MinLevel/MaxLevel nullable olduğu için bu CHECK, "ya NULL ya da geçerli bir CEFR seviyesi" ikilisini garanti eder — yalnızca `MaxLevel IN (...)` yazılsaydı bu teknik olarak NULL\'u zaten GEÇİRİRDİ ama okuyan bir geliştiriciye niyet AÇIKÇA görünmezdi.',
+            olmasaydi: '`IS NULL OR` yazılmasaydı bile SQL Server NULL için CHECK\'i geçirir (üç değerli mantık) — ama bu satır olmadan bir sonraki geliştirici "NULL izin verilir mi" sorusuna kod okuyarak DEĞİL, davranışı TEST ederek cevap bulmak zorunda kalırdı.'
+          },
+          {
             satir: 'name: "FK_Categories_Categories_ParentCategoryId",',
             aciklama: 'FK\'nin kaynak VE hedef tablosu AYNI ("Categories" → "Categories") — bu, EF Core\'un ürettiği self-referencing foreign key.',
             neden: 'Bir önceki bölümdeki CategoryConfiguration.cs\'te tanımlanan `HasOne(c => c.ParentCategory).WithMany(c => c.Children)` ilişkisinin ham SQL karşılığı — migration, C# tarafındaki ilişkiyi OLDUĞU GİBİ DB\'ye yansıtır.',
             olmasaydi: 'Bu FK olmasaydı, DB seviyesinde var OLMAYAN bir ParentCategoryId (ör. yanlışlıkla 9999) yazılabilir, sessizce "hayalet" bir referans oluşurdu — foreign key, bu tür veri bütünlüğü hatalarını INSERT anında REDDEDER.'
+          },
+          {
+            satir: 'onDelete: ReferentialAction.Restrict);',
+            aciklama: 'Bir kategori, ALT kategorileri VARKEN silinemez — SQL Server bu silmeyi REDDEDER (Cascade DEĞİL).',
+            neden: 'A-05\'teki Word→WordConcept Cascade\'inin AKSİNE burada Restrict seçildi çünkü bir kategori ağacının bir dalını "sessizce" silmek (tüm alt kategorileri de BERABERİNDE götürmek) admin\'in FARKINDA olmadığı büyük bir veri kaybına yol AÇABİLİRDİ — CategoryHasChildrenException (ileriki bölüm) bu durumu uygulama katmanında AÇIKÇA ele alır.',
+            olmasaydi: 'Cascade seçilseydi, bir üst kategori silindiğinde TÜM alt ağacı (ve dolaylı olarak o kategorilere bağlı WordCategory ilişkileri) SESSİZCE silinirdi — admin "Aile" kategorisini silerken "Anne/Baba/Kardeş" alt kategorilerinin de gittiğini FARK ETMEYEBİLİRDİ.'
           }
         ]
       },
@@ -94,10 +124,34 @@
     });`,
         satirlar: [
           {
+            satir: 'migrationBuilder.InsertData(',
+            aciklama: 'A-05\'teki Languages seed\'iyle (Bölüm 3) AYNI mekanizma (`InsertData`) — CategoryConfiguration.cs\'teki `HasData(...)` çağrısının migration\'a dönüşmüş hâli.',
+            neden: 'Seed veriyi migration içine GÖMMEK, DB\'nin "şu ana kadar tam olarak şu adımlardan geçti" garantisinin İÇİNDE kalır — 12 kategori, ayrı bir elle çalıştırılan SQL script yerine `dotnet ef database update` ile OTOMATİK olarak DB\'ye yazılır.',
+            olmasaydi: 'Bu 12 satır elle bir SQL script\'le eklenmeye çalışılsaydı, dev/test/prod ortamları arasında "script çalıştırıldı mı" belirsizliği doğardı — migration geçmişinin dışına çıkan bir veri, ortamlar arası TUTARSIZLIK riski YARATIRDI.'
+          },
+          {
+            satir: 'columns: new[] { "Id", "Color", "CreatedAt", "CreatedByUserId", "DeletedAt", "DeletedByUserId", "DisplayOrder", "Icon", "IsActive", "IsDeleted", "MaxLevel", "MinLevel", "ParentCategoryId", "UpdatedAt", "UpdatedByUserId" },',
+            aciklama: 'Kolon adları ALFABETİK sırada — EF Core\'un `HasData` çağrısını migration\'a çevirirken ürettiği OTOMATİK bir sıralama, elle YAZILMADI.',
+            neden: 'Bu sıralama insan tarafından SEÇİLMEDİĞİ için (Id/PartOfSpeech gibi "mantıklı" bir sıra yerine alfabetik), doğrudan bunun EF Core\'un scaffolding çıktısı olduğu ANLAŞILIR — elle yazılan kodun DEĞİL, otomatik üretimin izidir.',
+            olmasaydi: 'Bu bilgi olmasaydı bir okuyucu neden "Color" ikinci sırada (Id\'den hemen sonra, mantıksal olarak beklenmeyen bir yerde) diye SORABİLİRDİ — alfabetik sıralama olduğunu bilmek bu soruyu HEMEN cevaplar.'
+          },
+          {
             satir: '{ 1, "#FF6B6B", new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), null, null, null, 1, "people", true, false, null, "A1", null, null, null },',
             aciklama: 'CategoryConfiguration.cs\'teki `SeedCreatedAt` sabitinin migration\'a GÖMÜLMÜŞ hâli.',
             neden: 'HasData, C# tarafındaki static readonly alanı OKUYAMAZ — migration üretilirken bu değer, o ANDAKİ değeriyle SABİT bir literal olarak migration dosyasına YAZILIR (bir daha migration dosyası elle değiştirilmedikçe değişmez).',
             olmasaydi: 'CategoryConfiguration.cs\'teki SeedCreatedAt DEĞİŞTİRİLİP yeniden migrations add çalıştırılmadıkça, bu migration dosyasındaki tarih SONSUZA kadar 2026-01-01 kalır — bu YANLIŞ değil, migration\'ların "o an alınmış bir fotoğraf" olma doğasının BEKLENEN sonucu.'
+          },
+          {
+            satir: '{ 11, "#F38181", new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), null, null, null, 11, "work", true, false, null, "A2", null, null, null },',
+            aciklama: 'İlk 10 kategori MinLevel="A1" iken, "İş" ve "Seyahat" (Id 11-12) MinLevel="A2" — 12 kategori HEPSİ AYNI seviyede seed edilmedi.',
+            neden: 'Icerik.md\'nin kategori listesi, temel günlük kavramları (insanlar/aile/yiyecek/ev/okul/sayılar/renkler/zaman/vücut/hayvan) A1\'e, daha soyut/ileri kavramları (iş/seyahat) A2\'ye yerleştiriyor — bu ayrım rastgele DEĞİL, gerçek CEFR müfredat sıralamasını YANSITIYOR.',
+            olmasaydi: '12 kategorinin HEPSİ A1 ile seed edilseydi, A2 seviyesindeki bir öğrenciye kategori bazlı filtreleme (ör. "bana A2 kategorilerini göster") hiçbir zaman "İş"/"Seyahat"i GETİRMEZDİ, hepsi yanlışlıkla A1 filtresine TAKILIRDI.'
+          },
+          {
+            satir: '{ 12, "#C7CEEA", new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), null, null, null, 12, "travel", true, false, null, "A2", null, null, null }',
+            aciklama: 'Kolon sırasına göre (Id/Color/CreatedAt/CreatedByUserId/DeletedAt/DeletedByUserId/DisplayOrder/Icon/IsActive/IsDeleted/MaxLevel/MinLevel/ParentCategoryId/UpdatedAt/UpdatedByUserId) bu son satırdaki `ParentCategoryId` alanı da `null` — seed edilen 12 kategorinin HER birinde bu sütunun değeri `null`, ilk sürümde TÜMÜ kök (top-level) kategori olarak eklendi, hiçbir alt-kategori seed EDİLMEDİ.',
+            neden: 'Icerik.md\'nin başlangıç kategori listesi düz bir liste (hiyerarşi henüz kullanılmıyor) — self-ref yapı (bir önceki slayt) İLERİDE alt kategoriler eklenebilsin diye VAR, ama başlangıç seed\'i bunu henüz KULLANMIYOR (YAGNI: henüz gerekmeyen bir hiyerarşi seed edilmedi).',
+            olmasaydi: 'Seed veri zorla bir hiyerarşi İÇERSEYDİ (ör. rastgele bazı kategorileri başka kategorilerin altına YERLEŞTİRSEYDİ), Icerik.md\'nin GERÇEK kategori listesiyle örtüşmeyen, uydurma bir ağaç yapısı ortaya ÇIKARDI.'
           }
         ]
       },

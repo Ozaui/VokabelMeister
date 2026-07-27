@@ -105,7 +105,25 @@
 }`,
         satirlar: [
           {
-            satir: 't.HasCheckConstraint(\n                "CK_WordConcepts_PartOfSpeech",',
+            satir: 'builder.Property(w => w.PartOfSpeech).HasMaxLength(20).IsRequired();',
+            aciklama: '`PartOfSpeech` en uzun değeri ("Preposition"/"Conjunction" — 12 karakter) rahatça karşılayacak 20 karakterle sınırlandı, `IsRequired()` ile DB kolonu `NOT NULL` olur.',
+            neden: 'Enum olmayan bir string kolonun sınırsız (`nvarchar(max)`) bırakılması, hem gereksiz yer kaplar hem de "buraya her uzunlukta bir şey yazılabilir" YANLIŞ izlenimini verir — 20 karakter, tanımlı 8 değerin (Noun/Verb/.../Other) hepsini kapsayan en dar sınır.',
+            olmasaydi: 'HasMaxLength çağrılmasaydı EF Core varsayılan olarak `nvarchar(max)` üretirdi — CHECK constraint yine geçersiz DEĞERLERİ engellerdi ama kolon boyutu, gerçek veriyle hiç orantılı olmayan, gereksiz büyük bir alan AYIRIRDI.'
+          },
+          {
+            satir: 'builder.HasIndex(w => w.DifficultyLevel);',
+            aciklama: '`DifficultyLevel` (A1-C2) üzerinde bir index — admin panelin/uygulamanın "bana B1 seviyesindeki kelimeleri getir" gibi seviyeye göre FİLTRELEME sorguları bu index\'i kullanır.',
+            neden: 'Seviyeye göre filtreleme, kelime öğrenme akışının EN sık kullanılan sorgu deseni (SRS bir seviyeden ilerler) — index olmadan bu sorgu her seferinde TÜM `WordConcepts` tablosunu tarardı (table scan).',
+            olmasaydi: 'Index olmasaydı, kelime sayısı arttıkça (binlerce satır) seviyeye göre filtreleme sorguları YAVAŞLARDI — küçük veri setinde fark edilmez ama üretimde performans sorunu OLURDU.'
+          },
+          {
+            satir: '"CK_WordConcepts_Level",',
+            aciklama: '`DifficultyLevel`\'ın yalnızca CEFR seviyelerinden (A1/A2/B1/B2/C1/C2) biri olabileceğini DB seviyesinde garanti eden CHECK constraint.',
+            neden: '`HasMaxLength(2)` yalnızca UZUNLUĞU sınırlar, İÇERİĞİ değil — "A1" geçerliyken "A9" veya "zz" gibi 2 karakterlik ama anlamsız bir değer de aynı kolona SIĞARDI, bu CHECK olmadan hiçbir şey onu ENGELLEMEZDİ.',
+            olmasaydi: 'Bu constraint olmasaydı, bir toplu import ya da elle yazılmış bir SQL script "D1" gibi CEFR\'de hiç OLMAYAN bir seviye değerini sessizce DB\'ye yazabilirdi — uygulama tarafında bu değeri seviyeye göre gruplayan/filtreleyen hiçbir kod bunu ANLAMLANDIRAMAZDI.'
+          },
+          {
+            satir: '"CK_WordConcepts_PartOfSpeech",',
             aciklama: 'PartOfSpeech\'in C# tarafında enum OLMAMASININ bedeli/telafisi — geçersiz bir değer (ör. "noun" küçük harf, ya da yazım hatası "Nuon") buraya asla YAZILAMAZ, DB reddeder.',
             neden: 'UserConfiguration.cs\'teki CK_Users_Role/CK_Users_ThemePreference ile BİREBİR aynı "iki katmanlı savunma" deseni — uygulama katmanı (WordGrammarValidator, ileriki bölüm) ve veri katmanı (bu CHECK) birbirinden BAĞIMSIZ olarak doğru değeri garanti eder.',
             olmasaydi: 'Bu constraint olmasaydı, A-07\'nin toplu import akışında bir satırda yazım hatası olan bir PartOfSpeech değeri sessizce DB\'ye yazılabilirdi — WordGrammarValidator\'ı BYPASS eden herhangi bir yol (ör. elle bir SQL script) DB\'de kirli veri BIRAKIRDI, hiçbir uygulama kodu bunu YAKALAYAMAZDI.'

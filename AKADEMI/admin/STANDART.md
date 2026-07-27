@@ -89,6 +89,20 @@ için geçerli — burada tekrar edilmez.
   STANDART.md` §4 ile aynı istisna kuralı geçerli).
 - **Var olan bir kodun SATIRI/İMZASI DEĞİŞTİĞİNDE** eski bölüm dokunulmadan bırakılır,
   değişikliği yapan görevin bölümüne bir `kod-degisiklik` slaytı eklenir.
+- **Akademinin KENDİ yazdığı öğretici metinlerinde (`aciklama`/`neden`/`olmasaydi`/
+  `nedenBuKlasor`/`altBaslik`/`notlar` gibi alanlar) okuyucuya proje kural dosyası (CLAUDE.md,
+  DESIGN_SYSTEM.md, REFERENCE/*.md, TASK.md, wiki_schema.md vb.) İSİMLE gösterilmez/atıf
+  yapılmaz.** Akademiyi okuyan kişi bu dosyaları hiç görmemiştir, "CLAUDE.md §1 kuralına göre"
+  gibi bir gerekçe onun için bir OTORİTEYE atıftan ibarettir, mühendislik gerekçesi DEĞİLDİR.
+  `neden`/`olmasaydi` her zaman dosya adı geçmeden, KENDİ başına ayakta duran somut bir
+  mühendislik gerekçesiyle yazılır (ör. "CLAUDE.md §1'e göre" yerine değişikliğin GERÇEK
+  sonucunu — hangi senaryoda ne bozulur — anlat). İstisna 1: akademinin KENDİ İÇİNDEKİ diğer
+  bölümlere/slaytlara ("Bölüm 3'teki authSlice", "bir önceki slayt") ve gerçek kaynak dosya
+  yollarına (`admin/src/...`) atıf serbest — bunlar okuyucunun akademi İÇİNDE zaten
+  gezdiği/göreceği şeyler. İstisna 2: `kod` slaytının `kod` alanı GERÇEK dosyanın birebir
+  kopyasıdır (§4'ün ilk maddesi) — o dosyada GERÇEKTEN böyle bir yorum satırı varsa (ör.
+  `// CLAUDE.md §1: ...`), birebir kopya kuralı gereği DOKUNULMAZ; bu kural yalnızca
+  akademinin KENDİ ürettiği açıklama metinlerine uygulanır.
 
 ## 5. Kök `index.html`'e kart ekleme
 

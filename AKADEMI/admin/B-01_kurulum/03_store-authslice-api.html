@@ -25,7 +25,7 @@
         tur: 'kod',
         baslik: 'authSlice.ts — JWT\'yi localStorage\'da Tutan Slice',
         dosyaYolu: 'admin/src/store/slices/authSlice.ts',
-        nedenBuKlasor: 'CLAUDE.md §4 adım 3 "Redux Slice — yalnızca ek local/UI state gerekirse" kuralına göre `store/slices/` altında yaşar — auth durumu (token var mı/yok mu) sunucudan gelen bir veri DEĞİL, istemcinin kendi durumu.',
+        nedenBuKlasor: '`store/slices/` altında yaşar, çünkü auth durumu (token var mı/yok mu) sunucudan GELEN bir veri değil — istemcinin kendi, yerel durumu; bu tür yerel/UI state\'lerin doğal yeri bir Redux slice\'ıdır.',
         kod: `interface AuthState {
   accessToken: string | null
   isAuthenticated: boolean
@@ -36,6 +36,30 @@ const initialState: AuthState = {
   isAuthenticated: localStorage.getItem('accessToken') !== null,
 }`,
         satirlar: [
+          {
+            satir: 'interface AuthState {',
+            aciklama: 'Redux slice\'ının state şeklini bir TypeScript `interface`\'i olarak tanımlar — `initialState` VE her reducer, bu şekle UYMAK zorunda kalır.',
+            neden: 'Bu tip tanımlanmasaydı bile kod ÇALIŞIRDI (JavaScript type olmadan da çalışır) — ama `state.auth.acessToken` gibi bir YAZIM HATASI (doğrusu `accessToken`) derleme anında değil, ancak admin tarayıcıda "undefined" bir değerle karşılaşınca fark edilirdi.',
+            olmasaydi: 'Tip olmasaydı, `ProtectedRoute` (Bölüm 5) veya `api.ts` (bu bölümün bir sonraki slaytı) `state.auth`\'tan yanlış bir alan adı okursa, TypeScript derleyicisi SUSAR — hata yalnızca çalışma zamanında, admin panelde gerçek bir kullanıcı bunu tetiklediğinde ortaya çıkardı.'
+          },
+          {
+            satir: 'accessToken: string | null',
+            aciklama: '`string | null` — token ya GERÇEK bir JWT string\'idir ya da hiç yoktur (`undefined` değil, açıkça `null`).',
+            neden: '`localStorage.getItem()` bulamadığı anahtar için `null` döner (`undefined` değil) — tip, bu gerçek API davranışıyla BİREBİR eşleşir; `string | undefined` yazılsaydı `initialState`\'teki atama tip hatası verirdi.',
+            olmasaydi: 'Tip yalnızca `string` olsaydı, TypeScript `accessToken`\'ın HER ZAMAN bir değer taşıdığını varsayardı — `api.ts`\'deki `if (state.auth.accessToken)` kontrolü (bir sonraki slayt) "gereksiz" görünür, biri onu "sadeleştirmek" için silebilirdi; sonuç, token yokken `"Bearer null"` gibi bozuk bir header.'
+          },
+          {
+            satir: 'isAuthenticated: boolean',
+            aciklama: 'Tip düzeyinde, `accessToken`\'dan tamamen BAĞIMSIZ bir alan olarak tanımlanır — aralarındaki ilişkiyi (biri diğerinden türetilir) tip SİSTEMİ değil, `initialState`\'in kendisi (bir alttaki satırlar) kurar.',
+            neden: 'İki alanı ayrı tutmak, gelecekte (B-02 refresh token akışında) `isAuthenticated`\'ın HESAPLANMA biçiminin `accessToken`\'dan bağımsız değişebilmesini (ör. refresh token da geçerliyse `true` sayılması) tip düzeyinde ENGELLEMEZ.',
+            olmasaydi: '`isAuthenticated` yerine her yerde `accessToken !== null` yazılsaydı, bu iki bilginin AYNI ŞEY olduğu varsayımı koda GÖMÜLÜRDÜ — B-02\'de bu varsayım bozulduğunda (örn. süresi dolmuş ama HÂLÂ localStorage\'da duran bir token), her kullanım yerinin TEK TEK bulunup düzeltilmesi gerekirdi.'
+          },
+          {
+            satir: 'const initialState: AuthState = {',
+            aciklama: '`: AuthState` — nesne değişmezinin (object literal) `AuthState` şekline UYDUĞUNU açıkça belirtir; TypeScript bunu zaten çıkarabilirdi (inference), ama açık yazmak niyeti netleştirir.',
+            neden: 'Redux Toolkit\'in `createSlice`\'ı `initialState`\'in tipini reducer\'ların `state` parametresine YAYAR — bu satırdaki tip açık olmasaydı bile teknik olarak çalışırdı, ama gelecekte bir alan eksik/fazla yazılırsa (ör. `isAuthenticated` unutulursa) hatayı BURADA, tanım anında yakalar.',
+            olmasaydi: 'Açık tip olmasaydı, `initialState`\'e yanlışlıkla `AuthState`\'te olmayan bir alan (ör. bir yazım hatasıyla `accesToken`) eklenirse, TypeScript bunu `AuthState`\'e UYMAYAN bir hata olarak DEĞİL, "yeni bir alan" olarak kabul edip SESSİZCE geçerdi.'
+          },
           {
             satir: 'accessToken: localStorage.getItem(\'accessToken\'),',
             aciklama: 'Sayfa yenilendiğinde (F5) Redux store SIFIRDAN kurulur — eğer başlangıç durumu her zaman `null` olsaydı, GİRİŞ YAPMIŞ bir admin sayfayı yenilediğinde `ProtectedRoute` onu `/login`\'e atardı. `localStorage` okuması, tarayıcı kapatılıp açılsa bile JWT\'nin hayatta kalmasını sağlar.',
@@ -54,7 +78,7 @@ const initialState: AuthState = {
         tur: 'kod',
         baslik: 'api.ts — Authorization + Accept-Language Header\'ları',
         dosyaYolu: 'admin/src/store/api.ts',
-        nedenBuKlasor: 'CLAUDE.md §4 adım 2 "RTK Query Endpoint → store/api/xxxApi.ts (backend\'e istek — cross-link noktası)" kuralına göre — ama bu dosya `xxxApi.ts` değil, TÜM diğer API dosyalarının (B-02\'deki `authApi.ts` gibi) `injectEndpoints` ile üzerine inşa edeceği TEMEL `api.ts`.',
+        nedenBuKlasor: 'RTK Query endpoint dosyaları normalde backend\'e istek atan `store/api/xxxApi.ts` deseninde yaşar — ama bu dosya bir `xxxApi.ts` DEĞİL, TÜM diğer API dosyalarının (B-02\'deki `authApi.ts` gibi) `injectEndpoints` ile üzerine inşa edeceği TEMEL `api.ts`.',
         kod: `export const api = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({
@@ -74,16 +98,64 @@ const initialState: AuthState = {
 })`,
         satirlar: [
           {
+            satir: 'export const api = createApi({',
+            aciklama: 'RTK Query\'nin (Redux Toolkit\'in resmi veri-getirme katmanı) TEK giriş noktası — düz `fetch`/`axios` çağrıları YERİNE, cache/loading/hata state\'ini OTOMATİK yöneten bu API tanımlanır.',
+            neden: 'B-02\'den itibaren yazılacak her endpoint (`login`, `getWords`, `getCategories`...) elle bir `useState`+`useEffect` yazmak yerine, RTK Query\'nin ürettiği bir `useXxxQuery()` hook\'unu kullanacak — loading/error state\'i HER seferinde elle yönetmek yerine kütüphaneden GELİR.',
+            olmasaydi: 'Düz `fetch` kullanılsaydı, B-03\'teki kelime listesi gibi her ekran kendi loading/error/cache mantığını elle yazardı — aynı veri iki farklı sayfada istenince (ör. kategori listesi hem dropdown\'da hem tabloda), RTK Query\'nin otomatik cache\'i OLMADAN aynı isteği İKİ KEZ atardı.'
+          },
+          {
+            satir: 'reducerPath: \'api\',',
+            aciklama: 'Bu API\'nin Redux store\'daki (Bölüm 3\'ün son slaytı, `store.ts`) hangi anahtar altında yaşayacağını belirler — `state.api`.',
+            neden: 'RTK Query\'nin cache\'i, normal reducer\'lardan (`auth`, `language`) AYRI bir dilimde tutulur — `reducerPath` bu dilimi store\'a bağlayan isim, `store.ts`\'teki `[api.reducerPath]: api.reducer` satırı bu isme GÖRE eşleşir.',
+            olmasaydi: 'Bu satır olmasaydı RTK Query varsayılan olarak yine `\'api\'` kullanırdı (aynı sonuç) — ama birden fazla `createApi` çağrısı olsaydı (ki B-01\'in tasarımı BUNU bilerek engelliyor, bkz. `endpoints: () => ({})` açıklaması), her biri KENDİ `reducerPath`\'ini elle belirtmek ZORUNDA kalırdı, aksi halde ikisi de `state.api`\'yi kullanıp BİRBİRİNİN cache\'ini EZERDİ.'
+          },
+          {
+            satir: 'baseQuery: fetchBaseQuery({',
+            aciklama: 'RTK Query\'nin, tarayıcının yerleşik `fetch` API\'sini SARMALAYAN hazır yardımcı fonksiyonu — her istekte tekrarlanacak ortak mantığı (base URL, header\'lar) TEK yerde tanımlamayı sağlar.',
+            neden: 'Alternatifi `axios`\'tur, ama RTK Query resmi olarak `fetchBaseQuery`\'i önerir — ekstra bir bağımlılık (axios) eklemeden, tarayıcının zaten sahip olduğu `fetch`\'in üzerine ince bir katman kurar.',
+            olmasaydi: '`fetchBaseQuery` kullanılmasaydı, her endpoint kendi `fetch(...)` çağrısını, kendi Authorization/Accept-Language header ekleme mantığıyla YENİDEN yazardı — bu dosyanın VAR OLMA amacı (ortak mantığı TEK yerde toplamak) tamamen boşa çıkardı.'
+          },
+          {
+            satir: 'baseUrl: import.meta.env.VITE_API_URL,',
+            aciklama: 'Backend\'in adresi (ör. `http://localhost:5000/api`) koda GÖMÜLMEZ — Vite\'ın `.env` dosyasından okunan bir ortam değişkeni.',
+            neden: 'Backend\'in adresi geliştirme (localhost), test ve production\'da FARKLIDIR — ortama göre değişen böyle bir değer koda GÖMÜLMEZ, bir ortam değişkeninden okunur; aynı derlenmiş kod, çalıştığı ortama göre FARKLI bir backend\'e konuşabilir.',
+            olmasaydi: 'URL doğrudan `\'http://localhost:5000/api\'` olarak yazılsaydı, admin panel production\'a deploy edildiğinde HÂLÂ localhost\'a istek atmaya çalışırdı — kodun KENDİSİNİN her ortam için ayrı ayrı DEĞİŞTİRİLİP yeniden derlenmesi gerekirdi.'
+          },
+          {
+            satir: 'prepareHeaders: (headers, { getState }) => {',
+            aciklama: 'RTK Query\'nin, GİDEN her isteğin header\'larını değiştirmesine izin veren callback — Redux store\'un GÜNCEL durumuna (`getState`) bu fonksiyon İÇİNDEN erişilebilir.',
+            neden: '`getState` parametre olarak GEÇİLİR (bir üst kapsamdan import edilmez) çünkü RTK Query bu fonksiyonu HER istekte YENİDEN çağırır — token yenilendiğinde (B-02) bir sonraki istek OTOMATİK olarak GÜNCEL token\'ı okur, eski/önbelleğe alınmış bir değeri DEĞİL.',
+            olmasaydi: '`getState` yerine store\'a modül seviyesinde bir `import { store }` ile erişilseydi de teknik olarak çalışırdı, ama RTK Query\'nin ÖNERDİĞİ desen bu değil — `prepareHeaders`\'ın kendi parametresini kullanmak, bu fonksiyonun test edilirken SAHTE bir state ile çağrılabilmesini de sağlar.'
+          },
+          {
+            satir: 'const state = getState() as RootState',
+            aciklama: '`getState()`\'in dönüş tipi RTK Query\'nin kendi iç tipiyle GENELLEŞTİRİLMİŞTİR (`unknown`\'a yakın) — `as RootState` cast\'i, `store.ts`\'te (bir sonraki slayt) tanımlanan GERÇEK state şeklini geri KAZANDIRIR.',
+            neden: 'Bu cast olmadan `state.auth.accessToken` yazmak TypeScript hatası verirdi — RTK Query, `api.ts`\'i `store.ts`\'ten ÖNCE tanımlamaya izin verir (aksi halde döngüsel import oluşurdu), bu yüzden gerçek `RootState` tipini BURADA elle iddia etmek gerekir.',
+            olmasaydi: 'Cast olmasaydı, `state.auth`/`state.language` gibi okumalar DERLENMEZDİ — geliştirici ya `// @ts-ignore` gibi daha KÖTÜ bir kaçış yoluna başvururdu ya da `api.ts`\'i `store.ts`\'ten SONRA tanımlamaya çalışıp döngüsel bir import hatasıyla karşılaşırdı.'
+          },
+          {
             satir: 'if (state.auth.accessToken) {',
             aciklama: 'Authorization header\'ı YALNIZCA token varsa eklenir — `POST /auth/login` gibi anonim endpoint\'ler için hiç header gönderilmez.',
             neden: 'Boş/geçersiz bir Authorization header\'ı göndermek, backend\'de gereksiz bir JWT doğrulama denemesine yol açar (ve bazı senaryolarda 401 yerine YANLIŞ bir hata koduna) — koşul, yalnızca GERÇEKTEN bir token varken header eklenmesini garanti eder.',
             olmasaydi: 'Koşulsuz `headers.set(\'Authorization\', \`Bearer \${state.auth.accessToken}\`)` yazılsaydı, token `null` iken `"Bearer null"` gibi anlamsız bir header gönderilirdi — backend bunu geçersiz bir token olarak REDDEDER, anonim bir istek olarak değil.'
           },
           {
+            satir: 'headers.set(\'Authorization\', `Bearer ${state.auth.accessToken}`)',
+            aciklama: '`Bearer ` ön eki, JWT taşıyan bir Authorization header\'ının HTTP standardıdır — backend\'in `[Authorize]` middleware\'i bu formatı BEKLER.',
+            neden: 'Bu formatın DIŞINDA bir şey gönderilirse (ör. yalnızca token, `Bearer ` öneki OLMADAN) backend\'in JWT doğrulama middleware\'i isteği tanımaz, geçersiz/anonim sayar.',
+            olmasaydi: '`Bearer ` öneki unutulup yalnızca `headers.set(\'Authorization\', state.auth.accessToken)` yazılsaydı, token TEKNİK olarak doğru olsa bile backend HER isteği 401 (Unauthorized) ile REDDEDERDİ — "token var ama format yanlış" hatası, kod okurken FARK EDİLMESİ zor bir hata sınıfıdır.'
+          },
+          {
             satir: 'headers.set(\'Accept-Language\', state.language.language)',
             aciklama: 'Backend\'in `RequestLanguageResolver`\'ının (A-03, `AKADEMI/backend/A-03_auth-register/`) okuduğu AYNI header — admin panelin `languageSlice`\'ından (Bölüm 4) gelen tr/de değeri, HER isteğe koşulsuz eklenir.',
-            neden: 'CLAUDE.md §1 "İkinci istisna": admin panel de bir istemci, `ErrorMessages`/`SuccessMessages` VE `SecurityLog.Detail` çözümü bu header\'a göre yapılıyor — admin panel bu header\'ı GÖNDERMEZSE, backend\'in dil kararı hep varsayılana (tr) düşer, admin `de` seçse bile hata mesajları tr gelirdi.',
+            neden: 'Admin panel de backend için bir istemci — backend, hata mesajlarını ve log kayıtlarını hangi dilde göstereceğine bu header\'a bakarak karar veriyor. Admin panel bu header\'ı GÖNDERMEZSE, backend\'in dil kararı hep varsayılana (tr) düşer, admin `de` seçse bile hata mesajları tr gelirdi.',
             olmasaydi: 'Bu satır olmasaydı, dil seçici (Bölüm 4) yalnızca admin panelin KENDİ statik metinlerini (react-i18next) çevirirdi — backend\'den gelen HER mesaj (ör. "e-posta zaten kayıtlı" gibi bir validasyon hatası) admin `de` seçmiş olsa bile hep Türkçe gelirdi, tutarsız bir deneyim.'
+          },
+          {
+            satir: 'return headers',
+            aciklama: 'RTK Query\'nin `prepareHeaders` sözleşmesi (contract) — bu callback\'in GÜNCELLENMİŞ `headers` nesnesini GERİ döndürmesi zorunludur, aksi halde RTK Query hangi header\'ların isteğe EKLENECEĞİNİ bilemez.',
+            neden: '`headers` parametre olarak GELEN, mutasyona UĞRAYAN (yukarıdaki `.set()` çağrılarıyla değiştirilen) bir `Headers` nesnesi — RTK Query, dönüş değerini KULLANARAK gerçek `fetch` isteğini oluşturur.',
+            olmasaydi: 'Bu satır unutulsaydı, fonksiyon `undefined` döndürürdü — RTK Query, `headers` değişikliklerinin hiçbirini (Authorization VE Accept-Language) isteğe EKLEMEZ, tüm istekler anonim/varsayılan dille giderdi, HİÇBİR hata mesajı vermeden.'
           },
           {
             satir: 'endpoints: () => ({}),',
@@ -97,7 +169,7 @@ const initialState: AuthState = {
         tur: 'kod',
         baslik: 'store.ts — Tek Store, Üç Reducer',
         dosyaYolu: 'admin/src/store/store.ts',
-        nedenBuKlasor: 'CLAUDE.md §4 adım 2\'nin "cross-link noktası" notuyla aynı yerde — `api.reducerPath` ve `api.middleware`, RTK Query\'nin cache/loading state\'ini Redux DevTools\'ta görünür kılan bağlantı.',
+        nedenBuKlasor: '`api.ts` ile AYNI `store/` klasöründe yaşar — `api.reducerPath` ve `api.middleware`, RTK Query\'nin cache/loading state\'ini Redux DevTools\'ta görünür kılan bağlantı, ikisi birbirinden AYRI düşünülemez.',
         kod: `export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -109,6 +181,36 @@ const initialState: AuthState = {
 
 export type RootState = ReturnType<typeof store.getState>`,
         satirlar: [
+          {
+            satir: 'export const store = configureStore({',
+            aciklama: 'Redux Toolkit\'in `configureStore`\'u — eski (ham) Redux\'un elle `combineReducers`+`createStore`+middleware zinciri kurmasının YERİNE geçen, tek çağrılı kurulum.',
+            neden: '`configureStore`, geliştirme modunda Redux DevTools\'u ve bazı hata-yakalayan middleware\'leri (ör. state\'e mutasyon yapılırsa uyarı) OTOMATİK ekler — Redux Toolkit\'in resmi ve önerilen kurulum deseni, ham `createStore`\'u değil bunu esas alır.',
+            olmasaydi: 'Ham `createStore` kullanılsaydı, DevTools entegrasyonu ve `api.middleware` gibi eklentiler HER BİRİ elle bağlanmak zorunda kalırdı — bu bölümdeki üç satırlık kurulum onlarca satıra çıkardı.'
+          },
+          {
+            satir: 'reducer: {',
+            aciklama: '`configureStore`\'un `reducer` alanı, store\'un TÜM dilimlerinin (slice) TEK bir haritasıdır — her anahtar (`auth`, `language`, `[api.reducerPath]`) `state`\'in o alt-ağacını YÖNETEN fonksiyonu gösterir.',
+            neden: 'Redux\'un temel prensibi "tek store, çok reducer" — her slice KENDİ alanından SORUMLUDUR, biri diğerinin state\'ine DOKUNAMAZ; bu izolasyon, B-02\'den B-09\'a eklenecek her yeni slice\'ın MEVCUT olanları BOZMADAN eklenebilmesini sağlar.',
+            olmasaydi: 'Tek bir dev reducer\'da TÜM state (auth+language+api) elle yönetilseydi, her yeni özellik (ör. Bölüm 6\'daki `themeSlice`) bu TEK fonksiyonun İÇİNE eklenir, zamanla yüzlerce satırlık, test edilmesi ZOR bir dosyaya dönüşürdü.'
+          },
+          {
+            satir: 'auth: authReducer,',
+            aciklama: 'Bölüm 3\'ün ilk slaytındaki `authSlice`\'ın reducer\'ı, store\'a `auth` anahtarı ALTINDA bağlanır — `state.auth.accessToken` gibi okumalar bu anahtara GÖRE çalışır.',
+            neden: 'Anahtar ismi (`auth`) rastgele değil — `ProtectedRoute` (Bölüm 5) ve `api.ts` (bu slaytın üstü) `state.auth.xxx` şeklinde okuyor; bu satırdaki `auth:` ile o okumalardaki `auth` AYNI olmak ZORUNDA.',
+            olmasaydi: 'Anahtar `authentication` gibi farklı bir isimle yazılsaydı, `state.auth.accessToken` okuyan HER yer (`ProtectedRoute`, `api.ts`) `undefined` bir nesneden alan okumaya çalışır, TypeScript bunu (RootState türü bu anahtardan türediği için) derleme hatası olarak YAKALARDI — ama isim `state` (herhangi bir string) olarak elle yazılan bir yerde olsaydı bu hata çalışma zamanına kadar GİZLİ kalabilirdi.'
+          },
+          {
+            satir: 'language: languageReducer,',
+            aciklama: 'Bölüm 4\'te yazılacak `languageSlice`\'ın reducer\'ı — `state.language.language` (`api.ts`\'teki Accept-Language header\'ının kaynağı) bu anahtara bağlıdır.',
+            neden: 'B-01\'in üç slice\'ı (`auth`, `language`, ileride `theme`) store\'a AYNI şekilde, düz bir nesne olarak eklenir — yerel/UI state tutan her yeni slice, yazıldığı anda bu listeye KATILIR.',
+            olmasaydi: 'Bu satır olmasaydı, Bölüm 4\'teki `languageSlice` YAZILMIŞ olsa bile store\'a hiç BAĞLANMAMIŞ olurdu — `useSelector((state) => state.language)` çağıran hiçbir component GERÇEK veriye ulaşamaz, sürekli `undefined` alırdı.'
+          },
+          {
+            satir: '[api.reducerPath]: api.reducer,',
+            aciklama: 'Köşeli parantez, JavaScript\'in "hesaplanmış özellik adı" (computed property name) sözdizimi — anahtar, `api.ts`\'teki `reducerPath: \'api\'` değerinden (bu slaytın üstü) OKUNUR, elle `\'api\':` yazılmaz.',
+            neden: 'RTK Query\'nin KENDİ ürettiği `reducerPath` değerini kullanmak, bu iki dosyanın (`api.ts` ve `store.ts`) birbirinden BAĞIMSIZ olarak "api" string\'ini yanlış yazma (typo) riskini ORTADAN kaldırır.',
+            olmasaydi: '`[api.reducerPath]` yerine elle `api: api.reducer` yazılsaydı da bugün AYNI sonucu verirdi (`reducerPath` zaten `\'api\'`) — ama `api.ts`\'teki `reducerPath` değeri yarın değişirse (ör. birden fazla API dosyası gerekirse), bu satırın da ELLE güncellenmesi gerekirdi; hesaplanmış anahtar, bu senkronizasyonu OTOMATİK yapar.'
+          },
           {
             satir: 'middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),',
             aciklama: 'RTK Query\'nin `api.middleware`\'i, cache invalidation/otomatik yeniden çağırma/polling gibi ÖZELLİKLERİ çalıştıran motor — eklenmezse `createApi` ile tanımlanan endpoint\'ler (B-02\'den itibaren) sessizce ÇALIŞMAZ.',

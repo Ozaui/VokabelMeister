@@ -108,13 +108,13 @@ internal static class WordTranslationRules
             olmasaydi: 'Bu yardımcı olmasaydı, UpdateWordCommandValidator kendi translations[] döngüsünü AYRI yazardı — WORD_TEXT_REQUIRED gibi bir kontrol birinde güncellenip diğerinde UNUTULABİLİRDİ.'
           },
           {
-            satir: 'if (string.IsNullOrWhiteSpace(translation.LanguageCode))\n            {\n                context.AddFailure(Failure("LANGUAGE_CODE_REQUIRED"));\n                continue;\n            }',
+            satir: 'if (string.IsNullOrWhiteSpace(translation.LanguageCode))',
             aciklama: 'Her translation için EN ÖNCE kontrol edilen alan — `LanguageCode` boşsa, `Text`/GrammarData kontrolüne HİÇ geçilmeden `continue` ile bir sonraki translation\'a atlanır.',
             neden: 'Bir sonraki satırdaki `grammarValidator.Validate(new WordGrammarInput(translation.LanguageCode, ...))` çağrısı `LanguageCode`\'un "de"/"tr" olmasını BEKLİYOR — boş bir LanguageCode ile çağrılırsa WordGrammarValidator\'ın `EnumerateFailures`\'ı `GRAMMAR_LANGUAGE_UNSUPPORTED` gibi ALAKASIZ bir hata üretir, asıl sorunun (dil kodu hiç GİRİLMEMİŞ) kendisi GİZLENİRDİ.',
             olmasaydi: 'Bu kontrol olmasaydı, boş bir `LanguageCode` doğrudan WordGrammarValidator\'a GEÇERDİ ve admin "GRAMMAR_LANGUAGE_UNSUPPORTED" gibi YANILTICI bir hata görürdü — gerçek sorun ("dil kodu alanını hiç doldurmadınız") çok daha AÇIK bir mesajla (LANGUAGE_CODE_REQUIRED) anlatılabilecekken KARMAŞIKLAŞTIRILIRDI.'
           },
           {
-            satir: 'private static ValidationFailure Failure(string code) =>\n        new("Translations", $"Translation validation failed: {code}.") { ErrorCode = code };',
+            satir: 'private static ValidationFailure Failure(string code) =>',
             aciklama: 'WordGrammarValidator.cs\'teki (Bölüm 4) `Failure` yardımcısının BİREBİR aynı deseni — tüm `Translations` alanı hatalarının TEK kurulma noktası, `PropertyName` sabit "Translations", gerçek istemci mesajı `ErrorCode`\'dan ÇÖZÜLÜR.',
             neden: 'LANGUAGE_CODE_REQUIRED/WORD_TEXT_REQUIRED gibi birden fazla kod AYNI şekilde (`ValidationFailure` kurma biçimi) üretilmeli — Bölüm 4\'teki `Failure` metoduyla AYNI mühendislik kararı (bir gün `ValidationFailure`\'ın kurulma şekli değişirse TEK yer güncellenir), burada `Application/Validators/Words/` içinde farklı bir sınıfta olduğu için AYRI bir kopyaya ihtiyaç var.',
             olmasaydi: 'Her `context.AddFailure(...)` çağrısında `new ValidationFailure("Translations", "...") { ErrorCode = "..." }` TEKRAR yazılsaydı, LANGUAGE_CODE_REQUIRED ve WORD_TEXT_REQUIRED\'ın HER İKİSİNDE de neredeyse ÖZDEŞ bir kod bloğu tekrarlanırdı.'
@@ -216,7 +216,25 @@ public class WordsController : ControllerBase
 }`,
         satirlar: [
           {
-            satir: '_wordConceptRepo.Verify(\n            r => r.AddAsync(It.IsAny<WordConcept>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()),\n            Times.Never);',
+            satir: 'private readonly Mock<IWordConceptRepository> _wordConceptRepo = new();',
+            aciklama: 'Handler\'ın enjekte ettiği HER bağımlılık için ayrı bir Moq `Mock<T>` alanı — gerçek bir `WordConceptRepository`/DbContext hiç KURULMAZ.',
+            neden: 'Testin amacı Handler\'ın KENDİ karar mantığını (force/duplikat/hangi metot ne zaman çağrılıyor) doğrulamak — repository\'nin GERÇEKTEN SQL üretip DB\'ye yazması ayrı bir katmanın (RepositoryTests, A-02) sorumluluğu, burada TEKRARLANMASINA gerek yok.',
+            olmasaydi: 'Gerçek bir repository kullanılsaydı test bir DB bağlantısına (ya da in-memory provider kurulumuna) BAĞIMLI olurdu — yavaşlardı ve Handler\'ın mantığı ile repository\'nin SQL\'i AYNI testte KARIŞIRDI, bir hata ikisinden hangisinden kaynaklandığı belirsizleşirdi.'
+          },
+          {
+            satir: '.Setup(r => r.ExistsWordTextAsync(German.Id, "Tisch", It.IsAny<CancellationToken>()))',
+            aciklama: 'ARRANGE adımı — mock\'a "bu dilde bu metin ZATEN var" senaryosunu ÖNCEDEN kurar, gerçek bir DB sorgusu OLMADAN duplikat durumunu SİMÜLE eder.',
+            neden: 'CreateWordCommand.cs\'teki (Bölüm 6) `if (!request.Force && await _wordConceptRepository.ExistsWordTextAsync(...))` dalının GERÇEKTEN test edilebilmesi için, bu metodun `true` DÖNMESİ gerekir — mock\'lamadan bu dalı TETİKLEMENİN başka bir yolu yok.',
+            olmasaydi: 'Bu Setup olmasaydı, Moq varsayılan olarak `ExistsWordTextAsync` için `false` (bool\'un default değeri) DÖNERDİ — duplikat dalı hiç ÇALIŞMAZ, test aslında "duplikat YOKKEN" senaryosunu test ETMİŞ olurdu, adı YANILTICI kalırdı.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<DuplicateWordException>();',
+            aciklama: 'FluentAssertions\'ın async exception sözdizimi — `act` bir `Func<Task>` (yukarıdaki `() => handler.Handle(...)`), bu satır o Task\'ın GERÇEKTEN `DuplicateWordException` fırlatarak reddedildiğini (rejected) doğrular.',
+            neden: '`Assert.ThrowsAsync` yerine FluentAssertions kullanılması, projedeki DİĞER Handler testleriyle (Auth, QrLogin) AYNI okunabilirlik stilini KORUR — `Should().ThrowAsync<T>()` zincirlemesi assertion\'ı cümle gibi OKUNAKLI kılar.',
+            olmasaydi: 'Bu satır olmadan yalnızca `Times.Never` kontrolü kalsaydı, Handler\'ın GERÇEKTEN bir exception fırlatıp fırlatmadığı (belki sessizce `null` döndü) hiç DOĞRULANMAZDI — test adının vaat ettiği "ThrowsDuplicateWordException" davranışı EKSİK test edilirdi.'
+          },
+          {
+            satir: '_wordConceptRepo.Verify(',
             aciklama: 'Yalnızca "exception fırlatıldı mı" DEĞİL, "yan etki hiç GERÇEKLEŞMEDİ mi" de doğrulanıyor — duplikat tespit edilince AddAsync\'in HİÇ ÇAĞRILMADIĞI ayrıca Verify edilir.',
             neden: 'Bir Handler\'ın exception fırlatması TEK BAŞINA yeterli değil — eğer AddAsync yine de çağrılıp SONRA exception atılsaydı (yanlış sıralama), DB\'ye YARIM/hatalı bir kayıt YAZILABİLİRDİ; Times.Never bu sıralama hatasını da YAKALAR.',
             olmasaydi: 'Yalnızca `ThrowAsync<DuplicateWordException>()` kontrol edilseydi, `AddAsync` çağrıldıktan SONRA exception fırlatan hatalı bir Handler de bu testi GEÇERDİ — gerçek bir DB\'de kirli veri OLUŞURDU, test bunu hiç YAKALAMAZDI.'
