@@ -39,21 +39,48 @@ kararı: kurulum adımları da atlanmadan `AKADEMI/admin/B-01_kurulum/`'a yazıl
 > gerekmiyor, çünkü DB alanı zaten oradaydı). C-01 tamamlandığında `themeSlice` de `languageSlice`
 > ile AYNI anda gerçek API'ye bağlanmalı (bkz. `C_kullanici_backend.md` C-01 notu, güncellenecek).
 
-### B-02 — Auth Sayfaları ⬜
+### B-02 — Auth Sayfaları ✅
 **Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 > Yalnızca e-posta + şifre + OTP (2FA); Google/Apple **yok** (Admin panelde asla).
-- [ ] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `authApi` — `login`, `verifyOtp` mutation'ları (`store/api/authApi.ts`)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `LoginPage` (e-posta+şifre formu), `OtpVerifyPage` (6 haneli kod)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Route:** `/login`, `/verify-otp` (`App.tsx`), başarılı girişte `/` yönlendirme
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Birim testleri:** `LoginPage.test.tsx` (mutlu yol + hatalı şifre), `authSlice.test.ts`
-- [ ] ➜ **Admin Akademi'ye işle**
+- [x] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **RTK Query:** `authApi` — `login`, `verifyOtp` mutation'ları (`store/api/authApi.ts`)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Component:** `LoginPage` (e-posta+şifre formu), `OtpVerifyPage` (6 haneli kod)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Route:** `/login`, `/verify-otp` (`App.tsx`), başarılı girişte `/` yönlendirme
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Birim testleri:** `LoginPage.test.tsx` (mutlu yol + hatalı şifre), `authSlice.test.ts`
+- [x] ➜ **Admin Akademi'ye işle**
+
+**Tamamlandı 2026-07-27:** `lib/apiError.ts` (backend'in `{error:{code,message}}` gövdesini okuyan
+paylaşılan yardımcı, planlanmamış ama `getApiErrorMessage` her iki sayfada da gerekli çıktı) da
+yazıldı. Admin panelde **ilk kez** test altyapısı kuruldu (Vitest + React Testing Library +
+jsdom — `vite.config.ts`'e `test` bloğu, `src/test/setup.ts`); Node.js 22+'nin kendi deneysel
+`localStorage`'ının jsdom'unkiyle çakışması `"test": "NODE_OPTIONS=--no-experimental-webstorage
+vitest run"` ile çözüldü. **Bağımsız bir kod denetiminde** 2 gerçek düzeltme yapıldı: (1) login
+sonrası yönlendirme yalnızca `pathname` taşıyordu, `/words?page=3` gibi bir sorgu dizesinden
+atılan bir admin girişten sonra filtrelerini kaybediyordu — `from` artık `search`/`hash`'i de
+taşıyor; (2) `authSlice`'ın `readStoredUser()`'ı `try/catch` olmadan `JSON.parse` yapıyordu, bozuk
+bir `authUser` değeri (DevTools'tan elle değiştirme vb.) modül yüklenirken (React mount olmadan
+ÖNCE) tüm admin panelini beyaz ekranda çökertebilirdi — artık kendi kendini onarıyor (bozuk değeri
+silip `null` dönüyor). **İki bilinçli kapsam kararı** (denetimde bulunup ERTELENDİ, unutularak
+değil): (1) backend `VerifyOtpResponse`'ta bir `refreshToken` döndürüyor ama `authSlice` bunu
+SAKLAMIYOR — 15 dakikalık access token süresi dolunca otomatik yenileme (silent refresh) henüz
+yok, ileride ayrı bir görevde ele alınacak; (2) `AdminUser` tipinde `role` alanı yok (backend
+gövdede döndürmüyor, yalnızca JWT'nin içinde) — LoginPage/OtpVerifyPage giriş yapanın gerçekten
+Admin olup olmadığını client tarafında KONTROL ETMİYOR, sıradan bir `User` de bu iki sayfayı
+geçebilir (güvenlik açığı değil — B-03'ten itibaren yazılacak gerçek admin endpoint'lerinin hepsi
+backend'de `[Authorize(Roles="Admin")]` ile zaten korunuyor — ama erken bir "bu hesapla admin
+paneline giremezsin" uyarısı YOK). Gerçek backend'e (dotnet run) karşı Chrome'da uçtan uca
+doğrulandı (yanlış şifre → 401 + doğru hata mesajı, doğru şifre+OTP → gerçek JWT). Bu test
+sırasında DB'nin A-09/A-03.4 migration'larının henüz UYGULANMAMIŞ olduğu ortaya çıktı (`dotnet ef
+database update` ile düzeltildi — bu B-02'ye özel değil, herhangi bir geliştirici ortamının ilk
+kurulumunda atlanabilecek standart bir adım, not olarak düşülüyor). `AKADEMI/admin/
+B-02_auth-sayfalari/` (7 bölüm), kök `AKADEMI/admin/index.html`'e kart eklendi, B-01'in kapanışı
+buraya zincirlendi.
 
 ### B-03 — Kelime Yönetimi ⬜
 **Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5

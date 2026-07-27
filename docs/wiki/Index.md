@@ -22,7 +22,7 @@ launchSettings.json'daki 29 baytlık hatalı örnek AES anahtarı, "***" maske l
 gerçek şifre olarak şifrelenebilmesi (`SmtpPasswordRequiredException` ile kapatıldı), eşzamanlı PUT
 determinizmi (`OrderBy(Id)`), MailKit'in CVE'li 4.3.0 sürümü (4.17.0'a yükseltildi), Backend
 Akademi'de 5 "Tam Dosya" slaytının gerçek koddan eksik satırlar içermesi; detay → Otuz dokuzuncu
-INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, **Faz B (Admin Panel — frontend) başladı** — **B-01 ✅ tamamlandı** (2026-07-26): `/admin` React+Vite+TS+Tailwind v4 iskeleti, tasarım sistemi (Primary rengi `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi), store+authSlice+api.ts, **dil tercihi altyapısı** (`languageSlice`+react-i18next+Accept-Language — bu ihtiyaç backend'de **A-03.4** `LanguagePreference` retrofit'ini doğurdu, **297/297**), ProtectedRoute+layout+routing, **dark mode** (`themeSlice`, Tailwind v4 `.dark` token override, `lucide-react` — admin panelin İLK ikon kütüphanesi — backend'e HİÇ dokunmadı, `ThemePreference` A-03.3'te zaten vardı); Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 7 bölüm); detay → Kırk dördüncü ve Kırk beşinci INGEST.
+INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, **Faz B (Admin Panel — frontend) başladı** — **B-01 ✅ tamamlandı** (2026-07-26): `/admin` React+Vite+TS+Tailwind v4 iskeleti, tasarım sistemi (Primary rengi `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi), store+authSlice+api.ts, **dil tercihi altyapısı** (`languageSlice`+react-i18next+Accept-Language — bu ihtiyaç backend'de **A-03.4** `LanguagePreference` retrofit'ini doğurdu, **297/297**), ProtectedRoute+layout+routing, **dark mode** (`themeSlice`, Tailwind v4 `.dark` token override, `lucide-react` — admin panelin İLK ikon kütüphanesi — backend'e HİÇ dokunmadı, `ThemePreference` A-03.3'te zaten vardı); Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 7 bölüm); detay → Kırk dördüncü ve Kırk beşinci INGEST. **B-02 ✅ tamamlandı** (2026-07-27) — Auth Sayfaları: `auth.types.ts`+`lib/apiError.ts`+`authApi.ts` (`login`/`verifyOtp` — admin panelin backend'e attığı İLK gerçek istekler), `authSlice`'a `user` alanı eklendi, `LoginPage`/`OtpVerifyPage` (react-hook-form'un İLK gerçek kullanımı, iki adımlı giriş), admin panelde **İLK KEZ** test altyapısı (Vitest+RTL+jsdom, Node 22+'nin deneysel `localStorage`'ıyla çakışma `--no-experimental-webstorage` ile çözüldü); bağımsız kod denetiminde 2 gerçek düzeltme (login-sonrası yönlendirmede kaybolan query string, `readStoredUser`'ın çökme riski) + 2 bilinçli kapsam kararı (refreshToken/silent-refresh ve client-side rol kontrolü ERTELENDİ, belgelendi); Admin Akademi'ye işlendi (`AKADEMI/admin/B-02_auth-sayfalari/`, 7 bölüm); detay → Kırk altıncı INGEST.
 Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
@@ -156,6 +156,55 @@ uçtan uca güncellendi, kök `AKADEMI/admin/index.html` kartı "7 bölüm"e gü
 `docs/TASK/B_admin_panel.md` B-01 tamamen `[x]` (Dark Mode dahil), `C_kullanici_backend.md` C-01
 notu `themeSlice`'ı da işaret edecek şekilde güncellendi. `npm run build` temiz, kullanıcı
 Light/Dark/System geçişini bizzat tarayıcıda test etti.*
+
+*Kırk altıncı INGEST (2026-07-27) — B-02 (Auth Sayfaları) tamamlandı: admin panelin İLK gerçek
+ekranları. CLAUDE.md §4 dikey dilim sırasıyla (tip→api→slice→component→route→test) `auth.types.ts`
+(backend'in `LoginCommand`/`VerifyLoginOtpCommand`/`AuthTokenResponse`/`AuthUserDto`'sunu birebir
+yansıtan `LoginRequest`/`LoginResponse`/`VerifyOtpRequest`/`AdminUser`/`VerifyOtpResponse`),
+`lib/apiError.ts` (planlanmamış ama gerekli çıkan paylaşılan yardımcı — backend'in TEK tip
+`{error:{code,message}}` hata gövdesini okur, B-03'ten itibaren TÜM feature'ların paylaşacağı),
+`authApi.ts` (B-01'in `endpoints: () => ({})` boşluğunu `injectEndpoints` ile dolduran İLK gerçek
+RTK Query endpoint'leri — admin panelin backend'e attığı İLK gerçek HTTP isteği), `authSlice`'a
+`user: AdminUser | null` eklendi (B-01'in bilerek bıraktığı not kapandı), `LoginPage`/
+`OtpVerifyPage` (react-hook-form'un B-01'de kurulup HİÇ kullanılmadığı İLK gerçek kullanımı, iki
+adımlı giriş — şifre doğrulama→OTP→JWT, backend'in A-03'te ZATEN tasarladığı akışa admin panel
+UYUYOR), `App.tsx`'teki yer tutucular gerçek sayfalarla değişti + yeni `/verify-otp` route'u. Admin
+panelde **İLK KEZ** test altyapısı kuruldu (Vitest+React Testing Library+jsdom, `vite.config.ts`'e
+`test` bloğu) — kurulum sırasında Node.js 22+'nin kendi deneysel `localStorage`'ının jsdom'unkiyle
+ÇAKIŞTIĞI keşfedildi (`i18n.ts`'teki `localStorage.getItem` çağrısı "Cannot read properties of
+undefined" ile çöküyordu), `"test": "NODE_OPTIONS=--no-experimental-webstorage vitest run"` ile
+çözüldü; `authSlice.test.ts` (3) + `LoginPage.test.tsx` (mutlu yol + hatalı şifre, mock'lanmış
+`authApi`/`useNavigate` ile, 2) — **5/5 yeşil**. Kullanıcının isteğiyle **arka planda bir subagent**
+kodu bağımsız denetledi (akademi yazımıyla PARALEL çalıştı) — **2 gerçek düzeltme**: (1) login
+sonrası yönlendirme yalnızca `pathname` taşıyordu, `/words?page=3` gibi bir sorgu dizesinden atılan
+bir admin girişten SONRA filtrelerini kaybediyordu (`ProtectedRoute`'un TAŞIDIĞI `location`
+nesnesinin `search`/`hash`'i BUDANIYORDU) — `from` tipi `search`/`hash`'i de taşıyacak, `navigate`
+üçünü BİRLEŞTİRECEK şekilde düzeltildi; (2) `authSlice`'ın `readStoredUser()`'ı `JSON.parse`'ı
+`try/catch` OLMADAN çağırıyordu, bu fonksiyon MODÜL YÜKLENİRKEN (React mount OLMADAN ÖNCE) çalıştığı
+için bozuk bir `authUser` değeri (DevTools'tan elle değiştirme vb.) TÜM admin panelini beyaz ekranda
+çökertebilirdi — `try/catch` eklenip bozuk değer kendiliğinden temizlenecek şekilde düzeltildi. **2
+bilinçli kapsam kararı** (denetimde bulunup ERTELENDİ, unutularak DEĞİL — `themeSlice`/
+`languageSlice`'ın localStorage-only kalma kararlarıyla AYNI disiplin): (1) backend
+`VerifyOtpResponse`'ta bir `refreshToken` döndürüyor ama B-02'nin görev listesi `authSlice`'a
+yalnızca `user`/`accessToken`/`isAuthenticated` istediği için SAKLANMIYOR — 15 dakikalık access
+token süresi dolunca otomatik yenileme (silent refresh) HENÜZ yok, ayrı bir görevde ele alınacak;
+(2) `AdminUser` tipinde `role` YOK (backend gövdede döndürmüyor, yalnızca JWT claim'inde) — client
+tarafında "girişi yapan GERÇEKTEN Admin mi" kontrolü YAPILMIYOR, sıradan bir `User` de bu iki sayfayı
+geçebilir (güvenlik açığı DEĞİL — B-03'ten itibaren yazılacak gerçek admin endpoint'lerinin HEPSİ
+backend'de `[Authorize(Roles="Admin")]` ile ZATEN korunuyor, yalnızca erken bir kullanıcı deneyimi
+uyarısı EKSİK). Gerçek bir backend'e (`dotnet run`, `localhost:5001`) karşı Chrome'da UÇTAN UCA
+doğrulandı — yanlış şifre (401, gerçek `INVALID_CREDENTIALS` mesajı) VE doğru şifre+OTP (200, gerçek
+JWT, `Role: Admin` claim'i) senaryoları. Bu doğrulama SIRASINDA DB'nin A-09/A-03.4 migration'larının
+(`AddSmtpSettings`, `AddUserLanguagePreference`) henüz UYGULANMAMIŞ olduğu ortaya çıktı (`RegisterCommand`
+"Invalid column name 'LanguagePreference'" ile 500 dönüyordu) — `dotnet ef database update` ile
+düzeltildi; bu B-02'ye özel bir hata DEĞİL, herhangi bir geliştirici ortamının migration'ları
+ATLAMASI durumunda karşılaşacağı standart bir adım. `AKADEMI/admin/B-02_auth-sayfalari/` (7 bölüm,
+her `kod`/`kod-degisiklik` slaydı denetimde bulunan düzeltmelere göre GÜNCEL koda göre yazıldı, `test/
+setup.ts`'teki bir kaynak kod yorumundaki gerçek dışı ifade — "RTK Query'nin globals:true
+kullanmaması" — fark edilip "vite.config.ts'te globals:true kullanılmaması" olarak düzeltildi),
+zincir B-01'in kapanışına bağlandı, kök `AKADEMI/admin/index.html`'e kart eklendi. `docs/TASK/
+B_admin_panel.md` B-02 tamamen `[x]`, `docs/TASK.md` Faz B durumu güncellendi, "Sıradaki task"
+`B-03`'e geçti.*
 
 ---
 
@@ -363,7 +412,7 @@ Light/Dark/System geçişini bizzat tarayıcıda test etti.*
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
 | A | A-01…A-10 | Admin Panel Backend | ✅ (A-01…A-10 tamamlandı; A-07.1 bilinçli olarak C-02'yi bekliyor — Faz A'nın "bitti" sayılmasını engellemez) |
-| B | B-01…B-09 | Admin Panel (frontend) | ⬜ |
+| B | B-01…B-09 | Admin Panel (frontend) | 🔄 (B-01, B-02 tamamlandı) |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |

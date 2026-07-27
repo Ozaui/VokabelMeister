@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tipler + RTK Query authApi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'tipler-ve-rtk-query',
+    bolumBaslik: 'B-02 — Auth Sayfaları',
+    oncekiBolum: '../B-01_kurulum/07_ozet-sozluk.html',
+    sonrakiBolum: '02_authslice-guncelleme.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Tipler + RTK Query authApi',
+        altBaslik: 'B-01\'de kurulan store/api.ts, ilk gerçek endpoint\'lerini burada alıyor — admin panelin backend\'e attığı İLK gerçek HTTP isteği bu bölümde.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden İki Adımlı Bir Giriş?',
+        aciklama: 'Admin, e-posta+şifresini girip "Giriş Yap"a bastığında token HEMEN dönmez — backend önce şifreyi doğrular, sonra admin\'in e-postasına 6 haneli bir kod gönderir (`POST /auth/login`). Token, ancak bu kod da doğrulanınca (`POST /auth/login/verify-otp`) verilir. Bu yüzden iki AYRI sayfa (LoginPage, OtpVerifyPage) ve iki AYRI RTK Query mutation\'ı var.',
+        neden: 'Bu iki adımlı akış backend\'de (A-03 görevinde) zaten TASARLANMIŞ ve ÇALIŞIR durumda — admin panel yalnızca var olan bir sözleşmeye uyar. Tek adımlı bir "şifre yeterli" giriş, çalınmış/tahmin edilmiş bir şifreyle admin paneline erişimi TEK bir bilgiye (şifre) bağlı bırakırdı; ikinci faktör (e-postaya erişim) bunu zorlaştırır.',
+        olmasaydi: 'Admin panel yalnızca `POST /auth/login`\'i çağırıp cevaptan token BEKLESEYDİ, kod hiç çalışmazdı — backend bu endpoint\'ten ASLA token döndürmez (yalnızca "OTP gönderildi" mesajı), token yalnızca ikinci adımdan gelir.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'auth.types.ts — İstek/Yanıt Şekilleri',
+        dosyaYolu: 'admin/src/types/auth.types.ts',
+        nedenBuKlasor: 'Admin panelin İLK `types/` klasörü — B-01\'de yalnızca store/component vardı, TypeScript arayüzleri (backend\'e giden/gelen JSON\'un şekli) için ayrı bir yer yoktu. B-03\'ten B-09\'a her feature kendi `xxx.types.ts`\'ini buraya ekleyecek.',
+        kod: `export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface LoginResponse {
+  code: string
+  message: string
+}
+
+export interface VerifyOtpRequest {
+  email: string
+  otpCode: string
+}
+
+export interface AdminUser {
+  id: number
+  currentLevel: string
+  themePreference: string
+  languagePreference: string
+}
+
+export interface VerifyOtpResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  user: AdminUser
+  accountWasRecovered: boolean
+}`,
+        satirlar: [
+          {
+            satir: 'export interface LoginRequest {',
+            aciklama: 'Backend\'in `POST /auth/login` gövdesinde BEKLEDİĞİ tam şekil — `LoginCommand(string Email, string Password)` (backend\'deki C# record) ile alan alan BİREBİR eşleşir.',
+            neden: 'Bu tip, `authApi.ts`\'teki (bir alttaki kod slaydı) `login` mutation\'ının GİRDİ tipi olacak — LoginPage bir gövde YAZDIĞINDA (ör. `password` yerine yanlışlıkla `pass` yazsa), TypeScript bunu DERLEME anında yakalar, backend\'in 400 dönmesini BEKLEMEDEN.',
+            olmasaydi: 'İstek gövdesi `{ email, password }` yerine düz bir `Record<string, string>` gibi gevşek bir tip olsaydı, LoginPage\'de bir alan adı YANLIŞ yazılsa (`emial` gibi) kod GENE derlenirdi — hata yalnızca çalışma zamanında, backend\'in 400 Bad Request\'iyle ORTAYA çıkardı.'
+          },
+          {
+            satir: 'export interface LoginResponse {',
+            aciklama: 'Backend\'in `MessageResponse(string Code, string Message)` record\'una karşılık gelir — `POST /auth/login` BAŞARILI olduğunda (şifre doğru) döner, İÇİNDE token YOKTUR (bkz. bir önceki `kavram` slaydı).',
+            neden: '`code` alanı ("OTP_SENT") makine tarafından okunabilir, `message` ("OTP gönderildi.") admin\'e GÖSTERİLECEK, `Accept-Language`\'a göre ZATEN Türkçe/Almanca çözülmüş insan-okunur metin.',
+            olmasaydi: 'Yalnızca `message: string` tanımlansaydı (code\'suz), gelecekte "OTP_SENT" koduna göre ÖZEL bir davranış (ör. farklı bir yönlendirme) gerekirse, bu bilgi hiç TAŞINMAMIŞ olurdu — code, backend\'in ZATEN gönderdiği ama LoginPage\'in henüz KULLANMADIĞI bir alan.'
+          },
+          {
+            satir: 'export interface VerifyOtpRequest {',
+            aciklama: 'Backend\'in `POST /auth/login/verify-otp` gövdesi — `email` (hangi hesap) + `otpCode` (6 haneli kod).',
+            neden: '`email` ayrıca gönderilir çünkü backend bu isteği YALNIZ BAŞINA alır — bir önceki `/auth/login` isteğiyle bu istek arasında sunucu tarafında OTURUM/session YOKTUR (JWT tabanlı, stateless bir API); backend hangi kullanıcının OTP\'sini doğrulayacağını yalnızca bu gövdeden ÖĞRENİR.',
+            olmasaydi: '`email` gönderilmeseydi, backend "hangi kullanıcının OTP\'sini kontrol edeceğim" sorusuna cevap veremezdi — bu yüzden OtpVerifyPage (Bölüm 4) LoginPage\'den (Bölüm 3) e-postayı route state\'iyle TAŞIMAK zorunda.'
+          },
+          {
+            satir: 'export interface AdminUser {',
+            aciklama: 'Backend\'in `AuthUserDto(int Id, string CurrentLevel, string ThemePreference, string LanguagePreference)` record\'unun admin panel tarafındaki karşılığı — dört alan da backend\'in GERÇEKTEN döndürdüğü alanlarla birebir.',
+            neden: 'Backend bu yanıtta `Email`/`FirstName`/`Role` GÖNDERMEZ (yalnızca JWT\'nin İÇİNDE, kodlanmış claim olarak var) — `AdminUser` tipi UYDURMA bir alan eklemez, yalnızca backend\'in GERÇEKTEN verdiği veriyi tanımlar.',
+            olmasaydi: 'Tipe backend\'in GÖNDERMEDİĞİ bir alan (ör. `email: string`) eklenseydi, TypeScript "bu alan var" derdi ama çalışma zamanında `user.email` HER ZAMAN `undefined` olurdu — derleme zamanı güvenliği, çalışma zamanı gerçeğiyle ÇELİŞEN sahte bir tip.'
+          },
+          {
+            satir: 'export interface VerifyOtpResponse {',
+            aciklama: 'Backend\'in `AuthTokenResponse` record\'u — `accessToken`/`refreshToken`/`expiresIn`/`user`/`accountWasRecovered` beş alanın TAMAMI.',
+            neden: '`refreshToken` burada tanımlı olsa da authSlice (Bölüm 2) onu SAKLAMAZ — B-02\'nin görev listesi yalnızca `accessToken`/`user`/`isAuthenticated` istiyor; tip backend\'in GERÇEKTEN döndürdüğünü yansıtır, admin panelin BUGÜN neyi KULLANDIĞINI değil.',
+            olmasaydi: '`refreshToken` tipten ÇIKARILSAYDI, backend yanıtı hâlâ o alanı gönderirdi ama TypeScript "böyle bir alan yok" derdi — RTK Query\'nin `unwrap()`\'ından dönen nesnede `result.refreshToken`\'a erişmeye çalışan gelecekteki bir kod (ör. B-0X\'te silent refresh eklenirken) DERLEME hatası alırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'apiError.ts — Backend Hata Gövdesini Okuma',
+        dosyaYolu: 'admin/src/lib/apiError.ts',
+        nedenBuKlasor: 'Admin panelin İLK `lib/` klasörü — `components/`/`store/` gibi bir "katman" değil, birden fazla component\'in paylaştığı KÜÇÜK, saf bir yardımcı fonksiyon. Bu kadar küçük bir şey için ayrı bir Redux slice ya da RTK Query endpoint\'i GEREKMEZ.',
+        kod: `import type { SerializedError } from '@reduxjs/toolkit'
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query'
+
+interface ApiErrorBody {
+  error: { code: string; message: string }
+}
+
+function hasErrorBody(data: unknown): data is ApiErrorBody {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'error' in data &&
+    typeof (data as ApiErrorBody).error?.message === 'string'
+  )
+}
+
+// Backend ApiErrorResponse'un { error: { code, message } } şekli ile birebir eşleşir
+// (backend/WordLearner.Application/Common/Models/ApiErrorResponse.cs) — message zaten
+// Accept-Language'a göre çözülmüş, admin panelin ek bir çeviri yapmasına gerek yok.
+export function getApiErrorMessage(error: FetchBaseQueryError | SerializedError | unknown): string | null {
+  if (error && typeof error === 'object' && 'data' in error && hasErrorBody((error as { data: unknown }).data)) {
+    return (error as { data: ApiErrorBody }).data.error.message
+  }
+  return null
+}`,
+        satirlar: [
+          {
+            satir: 'import type { FetchBaseQueryError } from \'@reduxjs/toolkit/query\'',
+            aciklama: 'RTK Query\'nin, başarısız bir isteğin hata şeklini tanımlayan tipi — HTTP durumunu (`status`) VE sunucudan dönen ham gövdeyi (`data: unknown`) taşır.',
+            neden: '`data` bilerek `unknown` tipindedir (RTK Query, sunucunun NE döneceğini bilemez) — bu dosyanın TEK işi, bu bilinmeyen veriyi backend\'in GERÇEK şekliyle (`ApiErrorBody`) eşleştirip eşleşmediğini KONTROL etmek.',
+            olmasaydi: 'Bu tip import edilmeseydi, fonksiyonun parametre tipi tanımlanamazdı — `error` parametresi ya `any` (TypeScript\'in TÜM güvenliğini kapatan kaçış tipi) ya da elle YAZILMIŞ, RTK Query\'nin GERÇEK tipiyle SENKRONSUZ kalma riski taşıyan bir tip olurdu.'
+          },
+          {
+            satir: 'interface ApiErrorBody {',
+            aciklama: 'Backend\'in HATA yanıtlarının (400/401/409...) gövde şekli — `ApiErrorResponse(ApiErrorDetail Error)` C# record\'unun (`{ error: { code, message } }`) TypeScript karşılığı.',
+            neden: 'Backend\'in HER hata yanıtı bu ŞEKLİ kullanır (`ApiErrorResponse`, backend genelinde TEK bir hata sözleşmesi) — bu yüzden BU dosya yalnızca auth\'a özel değil, B-03\'ten B-09\'a HER RTK Query mutation\'ının hatasını okumak için tekrar KULLANILABİLİR.',
+            olmasaydi: 'Bu ortak tip/fonksiyon olmasaydı, her form component\'i kendi `error.data.error.message` okuma mantığını (ve bunun TypeScript\'i MEMNUN edecek cast\'lerini) kendi içinde TEKRARLARDI.'
+          },
+          {
+            satir: 'function hasErrorBody(data: unknown): data is ApiErrorBody {',
+            aciklama: 'Bir TypeScript "type guard" — `data is ApiErrorBody` dönüş tipi, bu fonksiyon `true` döndürdüğünde TypeScript\'e "bundan sonra `data`\'yı `ApiErrorBody` gibi davran" der.',
+            neden: 'RTK Query\'nin hata gövdesi (`FetchBaseQueryError.data`) tipi `unknown` — backend GERÇEKTEN `{error:{code,message}}` şeklinde bir gövde mi döndürdü, yoksa ağ hatası/boş gövde gibi BAŞKA bir durum mu, bunu ÇALIŞMA ZAMANINDA kontrol etmeden `data.error.message` yazmak TypeScript\'i (ve olası bir çalışma zamanı hatasını) tetikler.',
+            olmasaydi: 'Bu kontrol olmadan doğrudan `(error.data as ApiErrorBody).error.message` yazılsaydı, backend\'in gövdesi BEKLENEN şekilde OLMADIĞI bir durumda (ör. bir ağ zaman aşımı, `data` hiç yok) kod `Cannot read properties of undefined` ile ÇÖKERDİ — hatayı göstermeye çalışırken YENİ bir hata üretmiş olurdu.'
+          },
+          {
+            satir: '\'error\' in data &&',
+            aciklama: '`in` operatörü, `data` nesnesinin GERÇEKTEN bir `error` alanı taşıyıp taşımadığını kontrol eder — `data.error` yazıp `undefined` almaktan farklı, nesnenin ŞEKLİNİ doğrular.',
+            neden: 'Bir önceki satırdaki `typeof data === \'object\' && data !== null` kontrolüyle BİRLİKTE çalışır — `in` operatörü yalnızca gerçek bir nesne üzerinde güvenlidir, `data` bir string/number/null olsaydı `in` kendisi HATA fırlatırdı.',
+            olmasaydi: 'Yalnızca `(data as ApiErrorBody).error?.message` yazılıp `in` kontrolü ATLANSAYDI da teknik olarak ÇALIŞIRDI (optional chaining zaten güvenli) — ama `in` kontrolü, "bu nesnenin BEKLENEN şekli var mı" niyetini kodun OKUYUCUSUNA daha AÇIK anlatır.'
+          },
+          {
+            satir: 'export function getApiErrorMessage(error: FetchBaseQueryError | SerializedError | unknown): string | null {',
+            aciklama: 'RTK Query\'nin bir mutation başarısız olduğunda ÜRETEBİLECEĞİ İKİ tip (`FetchBaseQueryError` — HTTP/ağ hatası, `SerializedError` — JavaScript\'in kendi fırlattığı hata) VE bilinmeyen her şeyi (`unknown`) kabul eder.',
+            neden: 'LoginPage/OtpVerifyPage\'in `catch (err)` bloğunda yakaladığı `err`\'in TAM tipini RTK Query\'nin kendisi bile HER durumda KESİN bilmez (union tip) — `unknown` seçeneği, bu fonksiyonun HİÇBİR durumda kendisi bir TypeScript hatasına yol AÇMAYACAĞINI garanti eder.',
+            olmasaydi: 'Yalnızca `FetchBaseQueryError` kabul edilseydi, `err`\'in GERÇEKTEN bir `SerializedError` (ör. mutation\'ın KENDİSİ bir JS hatası fırlattıysa) olduğu bir durumda TypeScript bu çağrıyı DERLEME hatası olarak İŞARETLERDİ.'
+          },
+          {
+            satir: 'return null',
+            aciklama: 'Backend\'in beklenen `{error:{code,message}}` şeklinde bir gövde DÖNMEDİĞİ her durumda (ağ hatası, zaman aşımı, sunucunun hiç cevap VEREMEDİĞİ durumlar) `null` döner.',
+            neden: 'Çağıran taraf (LoginPage/OtpVerifyPage), `null` döndüğünde kendi GENEL hata mesajını (`t(\'auth.genericError\')`) gösterir — bu fonksiyon "hata mesajı YOKSA sessiz kal" değil, "backend\'den GELEN spesifik bir mesaj yoksa, BUNU açıkça bildir" sözleşmesi taşır.',
+            olmasaydi: '`null` yerine boş bir string (`\'\'`) döndürülseydi, çağıran taraf `formError` state\'ini boş bir string\'e AYARLAR, `{formError && <p>...}` kontrolü (LoginPage, Bölüm 3) boş string\'i "falsy" kabul ettiği için hata KUTUSUNU hiç GÖSTERMEZDİ — admin, bir hata OLDUĞUNU bile fark ETMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'authApi.ts — login + verifyOtp Mutation\'ları',
+        dosyaYolu: 'admin/src/store/api/authApi.ts',
+        nedenBuKlasor: '`store/api/` — B-01\'in `store/api.ts`\'inden (tekil dosya) FARKLI, `store/api/` (klasör) B-02\'den itibaren HER feature\'ın kendi RTK Query dosyasını (`authApi.ts`, B-03\'te `wordsApi.ts`...) topladığı yer.',
+        kod: `import { api } from '../api'
+import type {
+  LoginRequest,
+  LoginResponse,
+  VerifyOtpRequest,
+  VerifyOtpResponse,
+} from '../../types/auth.types'
+
+export const authApi = api.injectEndpoints({
+  endpoints: (builder) => ({
+    login: builder.mutation<LoginResponse, LoginRequest>({
+      query: (body) => ({ url: '/auth/login', method: 'POST', body }),
+    }),
+    verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpRequest>({
+      query: (body) => ({ url: '/auth/login/verify-otp', method: 'POST', body }),
+    }),
+  }),
+})
+
+export const { useLoginMutation, useVerifyOtpMutation } = authApi`,
+        satirlar: [
+          {
+            satir: 'import { api } from \'../api\'',
+            aciklama: 'B-01\'de yazılan TEMEL `api` nesnesi (`store/api.ts`, Authorization+Accept-Language header\'larını zaten ekliyor) — bu dosya YENİ bir `createApi` çağırmaz, VAR OLANI genişletir.',
+            neden: 'B-01\'in `endpoints: () => ({})` bilinçli boşluğu (bkz. `AKADEMI/admin/B-01_kurulum/03_....html`) TAM OLARAK bunun için vardı — header mantığı TEK yerde kalır, bu dosya yalnızca "hangi URL\'ler var" sorusuna cevap verir.',
+            olmasaydi: '`authApi.ts` kendi `createApi({...})`\'sini çağırsaydı, Authorization/Accept-Language header ekleme mantığı BURADA TEKRAR yazılırdı (B-01\'deki `prepareHeaders`\'ın birebir kopyası) — iki AYRI RTK Query örneği, iki AYRI cache, birbirinden HABERSİZ.'
+          },
+          {
+            satir: 'export const authApi = api.injectEndpoints({',
+            aciklama: 'RTK Query\'nin "code splitting" özelliği — B-01\'deki TEMEL `api`\'ye, BAŞKA bir dosyadan, YENİ endpoint\'ler EKLER.',
+            neden: 'Her feature (B-03\'ün `wordsApi.ts`\'i gibi) KENDİ dosyasında `injectEndpoints` çağırır — TEK bir dev `api.ts` dosyasında TÜM endpoint\'lerin toplanması yerine, her biri kendi feature klasörüne AİT kalır.',
+            olmasaydi: 'B-01\'deki `api.ts`\'in İÇİNE doğrudan `login`/`verifyOtp` eklenseydi, o dosya B-03/B-04/B-09\'a kadar HER endpoint\'i biriktiren, yüzlerce satırlık, hangi feature\'ın NEREDE olduğu takip edilemeyen TEK bir dosyaya dönüşürdü.'
+          },
+          {
+            satir: 'login: builder.mutation<LoginResponse, LoginRequest>({',
+            aciklama: 'RTK Query\'nin `mutation` (veriyi DEĞİŞTİREN/tetikleyen istek — `query`\'nin aksine, sunucu tarafında bir YAN ETKİ oluşturur) tipi — jenerik parametreler `<DönenTip, GöndeirlenTip>` sırasıyla.',
+            neden: 'Login bir "veri OKUMA" değil, bir "eylem TETİKLEME" (şifre doğrulama + OTP gönderme) isteği — RTK Query bu ayrımı (`query` vs `mutation`) ÖNEMSER: `mutation`\'lar varsayılan olarak CACHE\'LENMEZ, her çağrıda GERÇEKTEN yeniden isteğe gider.',
+            olmasaydi: '`mutation` yerine `query` kullanılsaydı, RTK Query bu isteği CACHE\'LEMEYE çalışırdı — ikinci bir "Giriş Yap" tıklamasında (ör. yanlış şifreden sonra düzeltilip TEKRAR denenince), önbellekteki ESKİ (başarısız) sonucu dönme RİSKİ oluşurdu.'
+          },
+          {
+            satir: 'query: (body) => ({ url: \'/auth/login\', method: \'POST\', body }),',
+            aciklama: 'Component\'in `login({email, password})` çağırdığında GERÇEKTEN gidecek isteği tanımlar — `url` GÖRECELİ (`/auth/login`), TAM adres B-01\'deki `baseUrl` (`VITE_API_URL`, ör. `http://localhost:5001/api/v1`) ile BİRLEŞTİRİLİR.',
+            neden: 'Backend\'in gerçek endpoint\'i (`AuthController`, `[HttpPost("login")]`, `[Route("api/v1/auth")]`) TAM OLARAK bu yola karşılık gelir — göreli yol, admin panel FARKLI bir ortamda (staging/production) FARKLI bir `baseUrl`\'e deploy edilse bile DEĞİŞMEZ.',
+            olmasaydi: '`url` TAM adres (`http://localhost:5001/api/v1/auth/login`) olarak YAZILSAYDI, B-01\'deki `baseUrl`/`Accept-Language`/`Authorization` header mantığının SAĞLADIĞI ortam-bağımsızlık BOŞA çıkardı — bu satır production\'da HÂLÂ localhost\'a giden bir isteğe DÖNÜŞÜRDÜ.'
+          },
+          {
+            satir: 'verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpRequest>({',
+            aciklama: 'İkinci mutation — `login`\'in HEMEN altında, AYNI dosyada tanımlanır çünkü ikisi TEK bir akışın (iki adımlı giriş) iki PARÇASI.',
+            neden: 'Bir tek dosyada (`authApi.ts`) BİRDEN FAZLA endpoint tanımlamak RTK Query\'de NORMAL bir desen — endpoint\'ler AYRI dosyalara değil, İLGİLİ OLDUKLARI feature\'a göre GRUPLANIR.',
+            olmasaydi: '`verifyOtp` ayrı bir `otpApi.ts` dosyasına konsaydı, "auth ile ilgili TÜM isteklerin nerede olduğu" sorusunun cevabı İKİ dosyaya YAYILIRDI — tek bir akışın iki adımı, tek bir dosyada okunması daha KOLAY.'
+          },
+          {
+            satir: 'export const { useLoginMutation, useVerifyOtpMutation } = authApi',
+            aciklama: 'RTK Query\'nin OTOMATİK ürettiği React hook\'ları — `builder.mutation`\'daki `login`/`verifyOtp` isimlerinden TÜRETİLİR (`use` + isim + `Mutation`), ELLE yazılmaz.',
+            neden: 'LoginPage/OtpVerifyPage (Bölüm 3-4) bu hook\'ları ÇAĞIRARAK `[trigger, {isLoading, error}]` şeklinde bir SONUÇ alır — loading/error state\'i component\'in KENDİSİNİN elle `useState` ile YÖNETMESİ GEREKMEZ, RTK Query bunu OTOMATİK sağlar.',
+            olmasaydi: 'Bu satır (ya da `injectEndpoints`\'in KENDİSİ) olmasaydı, `login`/`verifyOtp` isteklerini ATMANIN tek yolu ELLE bir `fetch()` çağrısı yazıp, isLoading/error state\'ini KENDİ `useState`\'leriyle YÖNETMEK olurdu — B-01\'in TÜM RTK Query kurulumunun VAR OLMA sebebi bu TEKRARI önlemek.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'auth.types.ts, backend\'in GERÇEKTEN gönderdiği/beklediği alanları birebir yansıtır — ne eksik ne fazla',
+          'authApi.ts, B-01\'deki TEMEL `api`\'yi `injectEndpoints` ile genişletir — header mantığı HİÇ tekrarlanmadı',
+          'apiError.ts, backend\'in TEK tip hata gövdesini (`{error:{code,message}}`) okuyan, B-03\'ten itibaren TÜM feature\'ların paylaşacağı bir yardımcı',
+          'İki adımlı giriş (login → OTP) backend\'in ZATEN var olan bir kararı — admin panel yalnızca ona UYUYOR, kendi tasarımını dayatmıyor'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

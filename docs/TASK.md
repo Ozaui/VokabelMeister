@@ -33,7 +33,29 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-02` ⬜ (Auth Sayfaları) → `TASK/B_admin_panel.md` (B-01 tamamlandı)
+**Sıradaki task:** `B-03` ⬜ (Kelime Yönetimi) → `TASK/B_admin_panel.md` (B-02 tamamlandı)
+(`B-02 — Auth Sayfaları` ✅ tamamlandı 2026-07-27: `auth.types.ts` (backend'in gerçek DTO'larını
+birebir yansıtan LoginRequest/LoginResponse/VerifyOtpRequest/AdminUser/VerifyOtpResponse),
+`lib/apiError.ts` (backend'in `{error:{code,message}}` hata gövdesini okuyan, planlanmamış ama
+gerekli çıkan paylaşılan yardımcı), `authApi.ts` (B-01'in temel `api`'sine `injectEndpoints` ile
+eklenen İLK gerçek endpoint'ler — `login`/`verifyOtp`, admin panelin backend'e attığı İLK gerçek
+HTTP istekleri), `authSlice`'a `user: AdminUser | null` eklendi (bozuk `localStorage` verisine karşı
+`try/catch` ile kendi kendini onarıyor), `LoginPage`/`OtpVerifyPage` (react-hook-form'un İLK gerçek
+kullanımı, iki adımlı giriş — şifre doğrulama → OTP → JWT), `App.tsx`'teki yer tutucular gerçek
+sayfalarla değişti + yeni `/verify-otp` route'u. Admin panelde **İLK KEZ** test altyapısı kuruldu
+(Vitest+React Testing Library+jsdom — Node 22+'nin kendi deneysel `localStorage`'ının jsdom'unkiyle
+çakışması `NODE_OPTIONS=--no-experimental-webstorage` ile çözüldü), `authSlice.test.ts` (3) +
+`LoginPage.test.tsx` (mutlu yol + hatalı şifre, 2) yeşil. **Bağımsız bir kod denetiminde** 2 gerçek
+düzeltme: login sonrası yönlendirme yalnızca `pathname` taşıyordu (`?page=3` gibi sorgu dizeleri
+kayboluyordu) — `search`/`hash` de taşınacak şekilde düzeltildi; `readStoredUser()`'ın `JSON.parse`'ı
+`try/catch`'siz modül yükleme anında (React mount OLMADAN ÖNCE) tüm admin panelini çökertebilirdi —
+düzeltildi. **İki bilinçli kapsam kararı** (ertelendi, unutulmadı — detay `B_admin_panel.md` B-02
+notunda): (1) `refreshToken` backend'den dönüyor ama `authSlice` SAKLAMIYOR, silent refresh henüz
+YOK; (2) `AdminUser`'da `role` yok, client tarafında admin rolü KONTROLÜ yapılmıyor (backend zaten
+`[Authorize(Roles="Admin")]` ile koruyor, güvenlik açığı değil). Gerçek backend'e karşı Chrome'da
+uçtan uca doğrulandı — bu sırada DB'nin A-09/A-03.4 migration'larının UYGULANMAMIŞ olduğu ortaya
+çıktı (`dotnet ef database update` ile düzeltildi, ortam kurulumuna özel bir not). Admin Akademi'ye
+işlendi (`AKADEMI/admin/B-02_auth-sayfalari/`, 7 bölüm).)
 (`B-01 — Kurulum` ✅ tamamlandı 2026-07-26: `/admin` React 19 + Vite 8 + TS + Tailwind v4 iskeleti,
 tasarım sistemi (`DESIGN_SYSTEM.md`'nin `@theme`'e işlenmesi — Primary rengi gerçek tarayıcıda
 görülünce `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi, karar dokümana kalıcı not edildi),

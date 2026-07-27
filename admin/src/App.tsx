@@ -2,17 +2,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppLayout } from './components/layout/AppLayout'
+import { LoginPage } from './components/LoginPage'
+import { OtpVerifyPage } from './components/OtpVerifyPage'
 import { useThemeSync } from './hooks/useThemeSync'
-
-// NOT: /login sayfası B-02'de LoginPage ile değişecek — B-01 kapsamı yalnızca
-// ProtectedRoute + layout iskeletinin uçtan uca çalıştığını kanıtlayan yer tutucu.
-function LoginPlaceholder() {
-  return (
-    <div className="flex h-screen items-center justify-center bg-background font-body text-text">
-      Giriş sayfası — B-02'de gelecek
-    </div>
-  )
-}
 
 function DashboardPlaceholder() {
   const { t } = useTranslation()
@@ -25,7 +17,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginPlaceholder />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/verify-otp" element={<OtpVerifyPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPlaceholder />} />

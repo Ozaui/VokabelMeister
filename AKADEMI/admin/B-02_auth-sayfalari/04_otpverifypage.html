@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OtpVerifyPage.tsx</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'otpverifypage',
+    bolumBaslik: 'B-02 — Auth Sayfaları',
+    oncekiBolum: '03_loginpage.html',
+    sonrakiBolum: '05_route-app-tsx.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'OtpVerifyPage.tsx',
+        altBaslik: 'İki adımlı girişin İKİNCİ ve SON adımı — bu sayfa BAŞARIYLA bitince admin panelin GERÇEK bir JWT\'si olur, B-01\'in ProtectedRoute\'u ARTIK gerçek anlamda devreye girer.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpVerifyPage.tsx — 6 Haneli Kod Formu',
+        dosyaYolu: 'admin/src/components/OtpVerifyPage.tsx',
+        nedenBuKlasor: 'LoginPage.tsx ile AYNI `components/` klasörü — iki sayfa BİRBİRİNE komşu, TEK bir akışın iki YARISI.',
+        kod: `import { useEffect, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useDispatch } from 'react-redux'
+import { useVerifyOtpMutation } from '../store/api/authApi'
+import { setCredentials } from '../store/slices/authSlice'
+import { getApiErrorMessage } from '../lib/apiError'
+
+interface OtpFormValues {
+  otpCode: string
+}
+
+interface OtpLocationState {
+  email?: string
+  from?: { pathname: string; search?: string; hash?: string }
+}
+
+export function OtpVerifyPage() {
+  const { t } = useTranslation()
+  const dispatch = useDispatch()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const state = location.state as OtpLocationState | null
+  const [verifyOtp, { isLoading }] = useVerifyOtpMutation()
+  const [formError, setFormError] = useState<string | null>(null)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<OtpFormValues>()
+
+  useEffect(() => {
+    // E-posta olmadan bu sayfaya doğrudan gelinmişse (ör. sayfa yenilendi) hangi hesabın
+    // doğrulanacağı bilinmiyor demektir — LoginPage'e geri gönder.
+    if (!state?.email) {
+      navigate('/login', { replace: true })
+    }
+  }, [state, navigate])
+
+  if (!state?.email) return null
+
+  const onSubmit = async (values: OtpFormValues) => {
+    setFormError(null)
+    try {
+      const result = await verifyOtp({ email: state.email!, otpCode: values.otpCode }).unwrap()
+      dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))
+      // pathname TEK BAŞINA yeterli değil — ör. /words?page=3'ten atılmış bir admin,
+      // search/hash de geri taşınmazsa filtrelerini/sayfa numarasını KAYBEDER.
+      const destination = state.from
+        ? \`\${state.from.pathname}\${state.from.search ?? ''}\${state.from.hash ?? ''}\`
+        : '/'
+      navigate(destination, { replace: true })
+    } catch (err) {
+      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+    }
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-background font-body text-text">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
+      >
+        <h1 className="mb-2 font-heading text-xl font-bold text-text">{t('auth.otp.title')}</h1>
+        <p className="mb-6 text-sm text-muted">{t('auth.otp.subtitle', { email: state.email })}</p>
+
+        {formError && (
+          <p role="alert" className="mb-4 rounded-control bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {formError}
+          </p>
+        )}
+
+        <label htmlFor="otpCode" className="mb-1 block text-sm font-medium text-text">
+          {t('auth.otp.code')}
+        </label>
+        <input
+          id="otpCode"
+          type="text"
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="one-time-code"
+          className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-center text-lg tracking-[0.5em] text-text"
+          {...register('otpCode', {
+            required: t('auth.otp.codeRequired'),
+            pattern: { value: /^\\d{6}$/, message: t('auth.otp.codeInvalid') },
+          })}
+        />
+        {errors.otpCode && <p className="mb-3 text-xs text-destructive">{errors.otpCode.message}</p>}
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="mt-3 w-full rounded-control bg-primary py-2 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {isLoading ? t('auth.otp.submitting') : t('auth.otp.submit')}
+        </button>
+      </form>
+    </div>
+  )
+}`,
+        satirlar: [
+          {
+            satir: 'const state = location.state as OtpLocationState | null',
+            aciklama: 'LoginPage\'in (Bölüm 3) `navigate(\'/verify-otp\', {state: {email, from}})` ile GÖNDERDİĞİ veriyi OKUR — bu sayfaya ULAŞMANIN TEK yolu bu route state\'i, URL\'de HİÇBİR parametre YOKTUR (`/verify-otp` sabit bir yol).',
+            neden: '`email`, backend\'in `POST /auth/login/verify-otp` isteğinde HANGİ hesabın OTP\'sinin doğrulanacağını bilmesi için ZORUNLU (Bölüm 1) — bu bilgi BAŞKA hiçbir yerden (URL, localStorage) OKUNAMAZ, yalnızca LoginPage\'DEN GELİR.',
+            olmasaydi: 'Route state OKUNMASAYDI, bu sayfanın `verifyOtp` isteğini ATMASI için "hangi e-posta" sorusuna CEVAP verecek hiçbir veri OLMAZDI.'
+          },
+          {
+            satir: 'useEffect(() => {',
+            aciklama: 'Admin bu sayfaYA (`/verify-otp`) LoginPage\'den GEÇMEDEN, DOĞRUDAN URL yazarak ya da sayfayı YENİLEYEREK (F5) geldiyse, `location.state` KAYBOLUR (route state TARAYICI geçmişinde KALICI DEĞİLDİR) — bu `useEffect` bu durumu YAKALAR.',
+            neden: 'Render SIRASINDA (component\'in GÖVDESİNDE) doğrudan `navigate(...)` ÇAĞIRMAK React\'te YASAKTIR ("render sırasında yan etki" hatası) — bir yönlendirme gibi bir YAN ETKİ, `useEffect`\'in İÇİNE, render TAMAMLANDIKTAN SONRA çalışacak şekilde YAZILMALI.',
+            olmasaydi: '`useEffect` OLMADAN, `if (!state?.email) navigate(...)` DOĞRUDAN component GÖVDESİNE yazılsaydı, React "Cannot update a component while rendering a different component" UYARISI verirdi — bazı React sürümlerinde bu GERÇEK bir HATAYA (sonsuz render döngüsü) bile DÖNÜŞEBİLİR.'
+          },
+          {
+            satir: 'if (!state?.email) return null',
+            aciklama: '`useEffect` İÇİNDEKİ yönlendirme ASENKRON çalışır (render TAMAMLANDIKTAN sonra) — bu satır, o yönlendirme GERÇEKLEŞENE KADAR geçen KISA an için formun HİÇ görünmemesini SAĞLAR.',
+            neden: 'Bu satır OLMASAYDI, `state.email` YOKKEN bile `<h1>{t(\'auth.otp.subtitle\', {email: state.email})}</h1>` GİBİ satırlar ÇALIŞMAYA çalışır, `state` `null` olduğu için `state.email` OKUMASI (aşağıdaki JSX\'te) bir ÇÖKMEYE (TypeError) yol AÇARDI.',
+            olmasaydi: 'Bu erken çıkış OLMASAYDI: doğrudan `/verify-otp`\'a giden bir admin, YÖNLENDİRME gerçekleşmeden ÖNCE bir an için `state.email` okumaya çalışan JSX\'in ÇÖKMESİYLE karşılaşırdı — beyaz ekran/React hata sayfası.'
+          },
+          {
+            satir: 'const result = await verifyOtp({ email: state.email!, otpCode: values.otpCode }).unwrap()',
+            aciklama: '`state.email!` — `!` (non-null assertion), TypeScript\'e "BURAYA kadar geldiysem `state.email` KESİNLİKLE dolu" der; bir ÜST satırdaki `if (!state?.email) return null` bunu ZATEN GARANTİ eder ama TypeScript bu İKİ satır arasındaki BAĞLANTIYI kendisi ÇIKARAMAZ.',
+            neden: 'TypeScript\'in "akış analizi" (control flow analysis) bir FONKSİYONUN GÖVDESİNDE bu kadar İLERİ gitmez — `state.email`\'in tipi HÂLÂ `string | undefined`\'dır, `!` bu ikisi arasındaki BOŞLUĞU (biz İNSAN olarak biliyoruz ama derleyici BİLEMEZ) KAPATIR.',
+            olmasaydi: '`!` OLMASAYDI, TypeScript "`state.email` `undefined` OLABİLİR, bu fonksiyon `string` BEKLİYOR" diye DERLEME hatası verirdi — kod GÜVENLİ olduğu HALDE (üstteki erken çıkış SAYESİNDE) derleyici bunu BİLEMEZ.'
+          },
+          {
+            satir: 'dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))',
+            aciklama: 'Bölüm 2\'de GÜNCELLENEN `authSlice` action\'ı — backend\'in `VerifyOtpResponse`\'undan GELEN `accessToken` VE `user`\'ı Redux state\'e VE `localStorage`\'a YAZAR.',
+            neden: 'Bu satır ÇALIŞTIKTAN SONRA `state.auth.isAuthenticated` `true` OLUR — B-01\'in `ProtectedRoute`\'u (Bölüm 5, App.tsx) ARTIK admin\'i korumalı sayfalara BIRAKIR, bu B-02\'nin BAŞINDAN BERİ hedeflediği AN.',
+            olmasaydi: 'Bu satır ÇAĞRILMASAYDI, backend GERÇEKTEN bir token ÜRETMİŞ olurdu ama admin panel bunu HİÇ KULLANMAZDI — admin, DOĞRU kodu girmesine RAĞMEN sonsuza kadar "giriş yapmamış" GÖRÜNÜRDÜ.'
+          },
+          {
+            satir: 'const destination = state.from',
+            aciklama: 'LoginPage\'in TAŞIDIĞI `from` bilgisi VARSA (admin BAŞKA bir korumalı sayfadan atılıp BURAYA geldiyse), oraya; YOKSA (admin doğrudan `/login`\'e gidip giriş YAPTIYSA) ana sayfaya (`/`) YÖNLENDİRME hedefini HESAPLAR.',
+            neden: '`pathname`+`search`+`hash` AYRI AYRI birleştirilir (tek bir satır ŞABLONU) çünkü React Router\'ın `navigate()`\'i TEK bir STRING URL bekler — üçünü AYRI AYRI taşımak state\'te ANLAMLI ama navigate\'e VERİRKEN TEK bir yola BİRLEŞTİRİLMELİ.',
+            olmasaydi: 'Yalnızca `state.from?.pathname ?? \'/\'` yazılsaydı (İLK taslakta OLDUĞU gibi), `/words?page=3&level=A2`\'DEN atılan bir admin girişten SONRA `/words`\'e (BOŞ, 1. sayfaya) düşer, `page=3` sorgu PARAMETRESİ SESSİZCE kaybolurdu — bağımsız bir kod DENETİMİNDE bulunup DÜZELTİLDİ.'
+          },
+          {
+            satir: 'navigate(destination, { replace: true })',
+            aciklama: '`replace: true` — bu YÖNLENDİRME tarayıcı GEÇMİŞİNE YENİ bir kayıt EKLEMEZ, `/verify-otp`\'in YERİNE geçer.',
+            neden: '`replace` OLMASAYDI, admin giriş YAPTIKTAN SONRA tarayıcının "geri" tuşuna BASSA `/verify-otp`\'a (ARTIK anlamsız, tekrar OTP istenen bir sayfaya) GERİ DÖNERDİ — ProtectedRoute (B-01) bu sayfada zaten JWT VAR olduğu için bir sorun ÇIKARMAZ ama kullanıcı deneyimi AÇISINDAN kafa KARIŞTIRICI olurdu.',
+            olmasaydi: '`replace` YERİNE varsayılan (`push`) davranış KULLANILSAYDI, tarayıcı geçmişi `/login → /verify-otp → /words` şeklinde BİRİKİRDİ — "geri" tuşu admin\'i `/verify-otp`\'a, TEKRAR "geri" tuşu `/login`\'e GÖTÜRÜRDÜ, oysa GERÇEKTEN "bir önceki SAYFAYA" dönmek İSTİYORDU.'
+          },
+          {
+            satir: 'maxLength={6}',
+            aciklama: 'Tarayıcının KENDİSİ, kullanıcı 6 haneden FAZLA karakter YAZAMAYACAK şekilde alanı SINIRLAR — backend zaten TAM 6 haneli bir kod ÜRETİYOR (A-03, `IOtpService`).',
+            neden: '`pattern: /^\\d{6}$/` (aşağıdaki satır) YİNE de GEREKLİ çünkü `maxLength` yalnızca "6\'DAN FAZLA YAZAMA"yı ENGELLER — 3 haneli bir kod GİRİP submit ETMEYE (`maxLength` bunu ENGELLEMEZ) karşı `pattern` KORUMA sağlar.',
+            olmasaydi: '`maxLength` OLMASAYDI, admin YANLIŞLIKLA çok uzun bir metin YAPIŞTIRABİLİRDİ (ör. panodan) — `pattern` yine de bunu REDDEDERDİ ama `maxLength`, HATAYI submit\'TEN ÖNCE, YAZARKEN engelleyerek daha İYİ bir kullanıcı deneyimi SAĞLAR.'
+          },
+          {
+            satir: 'autoComplete="one-time-code"',
+            aciklama: 'Tarayıcılara/işletim sistemlerine (iOS/Android/masaüstü) "bu alan bir SMS/e-posta OTP kodu" OLDUĞUNU söyleyen standart bir `autocomplete` DEĞERİ — bazı platformlar bunu GÖRÜNCE panoya kopyalanan/algılanan kodu OTOMATİK ÖNERİR.',
+            neden: 'Bu, W3C\'nin standart bir `autocomplete` token\'ı — HERHANGİ bir ek JavaScript KODU gerektirmeden, tarayıcı/işletim sisteminin KENDİ OTP algılama özelliğinden (ör. SMS\'ten OTOMATİK doldurma) YARARLANMAYI sağlar.',
+            olmasaydi: 'Bu öznitelik OLMASAYDI form YİNE çalışırdı ama bazı platformlarda (ör. bir admin telefonundan giriş yapıyorsa) OTOMATİK kod DOLDURMA/ÖNERME özelliği DEVREYE GİRMEZDİ — admin kodu HER zaman ELLE yazmak ZORUNDA kalırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'onizleme',
+        baslik: 'Tarayıcıda Dene — /verify-otp',
+        rota: '/verify-otp',
+        aciklama: 'ProtectedRoute\'un DIŞINDAki İKİNCİ route — ama LoginPage\'in AKSİNE, e-posta bilgisi OLMADAN (route state\'siz) buraya gelen bir admin ANINDA /login\'e geri gönderilir.',
+        akis: [
+          { eylem: 'Admin LoginPage\'den BAŞARIYLA geçip buraya ULAŞIR, doğru 6 haneli kodu GİRER', sonuc: 'Backend token döner, authSlice GÜNCELLENİR, admin AppLayout\'a (ya da nereden geldiyse ORAYA) yönlendirilir' },
+          { eylem: 'Admin YANLIŞ bir kod girer', sonuc: 'Backend 400 döner, form ÜSTÜNDE kırmızı hata KUTUSU görünür, admin AYNI sayfada kalır, TEKRAR deneyebilir' },
+          { eylem: 'Admin sayfayı YENİLER (F5) ya da URL\'e doğrudan /verify-otp YAZAR', sonuc: 'Route state KAYBOLDUĞU için ANINDA /login\'e yönlendirilir — hangi hesabın doğrulanacağı BİLİNMİYOR' }
+        ],
+        apiCagrisi: { yontem: 'POST', url: 'http://localhost:5001/api/v1/auth/login/verify-otp' },
+        durumlar: [
+          { durum: 'Yükleniyor', gorunum: 'Buton disabled, metin "Doğrulanıyor..."ya döner' },
+          { durum: 'Yanlış/süresi dolmuş kod', gorunum: 'Kırmızı alert kutusu, backend\'in gerçek hata mesajı' },
+          { durum: 'Başarılı', gorunum: 'authSlice güncellenir (accessToken+user), ProtectedRoute artık admin\'i içeri bırakır' }
+        ],
+        notlar: [
+          'Gerçek istek gövdesi: {"email":"admin.b02@wordlearner.test","otpCode":"775378"}',
+          'Gerçek başarılı yanıt (200) — kısaltılmadan: {"accessToken":"eyJhbGci...","refreshToken":"BDshAM9i...","expiresIn":900,"user":{"id":3,"currentLevel":"A1","themePreference":"System","languagePreference":"tr"},"accountWasRecovered":false}',
+          '`refreshToken` yanıtta VARDIR ama B-02 kapsamında authSlice bunu SAKLAMAZ (görev listesi yalnızca accessToken/user/isAuthenticated istiyor) — 15 dakikalık access token süresi dolduğunda OTOMATİK yenileme (silent refresh) HENÜZ YOK, bu bilinçli bir kapsam sınırı, gelecekte ayrı bir görevde ele alınacak.',
+          'OTP kodu backend\'in konsol logundan okunur (geliştirme ortamı) — "[DEV EMAIL] To: ... | Subject: VokabelMeister — Giriş Kodu | Args: 775378, 5" satırındaki İLK sayı 6 haneli koddur, ikincisi (5) dakika cinsinden geçerlilik süresidir.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Non-null assertion (!)', tanim: 'TypeScript\'e "bu değer BURADA kesinlikle null/undefined DEĞİL" diyen, derleyicinin KENDİSİ çıkaramadığı bir garantiyi geliştiricinin ELLE verdiği işaret — yanlış kullanılırsa çalışma zamanı hatasına yol açabileceği için DİKKATLİ kullanılır.' },
+          { terim: 'Route state vs URL parametresi', tanim: 'Bir sonraki sayfaya veri taşımanın iki yolu — `?email=...` (URL\'de AÇIKÇA görünür, geçmişte KALICI) veya `state` (React Router\'ın bellekte tuttuğu, sayfa yenilenince KAYBOLAN veri).' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

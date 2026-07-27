@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LoginPage.tsx</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'loginpage',
+    bolumBaslik: 'B-02 — Auth Sayfaları',
+    oncekiBolum: '02_authslice-guncelleme.html',
+    sonrakiBolum: '04_otpverifypage.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'LoginPage.tsx',
+        altBaslik: 'B-01\'in yer tutucusunun (LoginPlaceholder) yerini alan İLK gerçek admin sayfası — react-hook-form\'un B-01\'de kurulup HİÇ kullanılmadığı ilk yer.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginPage.tsx — E-posta+Şifre Formu',
+        dosyaYolu: 'admin/src/components/LoginPage.tsx',
+        nedenBuKlasor: 'ProtectedRoute.tsx/ThemeSwitcher.tsx gibi diğer B-01 component\'leriyle AYNI, düz `components/` klasöründe — admin panelde ayrı bir `pages/` klasörü YOK, "sayfa" da bir component.',
+        kod: `import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useLoginMutation } from '../store/api/authApi'
+import { getApiErrorMessage } from '../lib/apiError'
+import type { LoginRequest } from '../types/auth.types'
+
+interface LoginLocationState {
+  // ProtectedRoute (B-01) state'e TÜM location nesnesini koyar — search/hash burada da
+  // taşınmazsa, ör. /words?page=3'ten atılan bir admin giriş sonrası filtreleri KAYBEDERDİ.
+  from?: { pathname: string; search?: string; hash?: string }
+}
+
+export function LoginPage() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const locationState = location.state as LoginLocationState | null
+  const [login, { isLoading }] = useLoginMutation()
+  const [formError, setFormError] = useState<string | null>(null)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginRequest>()
+
+  const onSubmit = async (values: LoginRequest) => {
+    setFormError(null)
+    try {
+      await login(values).unwrap()
+      // Token burada henüz yok — backend şifreyi doğrulayıp OTP gönderdi (adım 1).
+      // email + "nereden geldiği" bilgisi OtpVerifyPage'e route state ile taşınır.
+      navigate('/verify-otp', { state: { email: values.email, from: locationState?.from } })
+    } catch (err) {
+      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+    }
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-background font-body text-text">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
+        className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
+      >
+        <h1 className="mb-6 font-heading text-xl font-bold text-text">{t('auth.login.title')}</h1>
+
+        {formError && (
+          <p role="alert" className="mb-4 rounded-control bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {formError}
+          </p>
+        )}
+
+        <label htmlFor="email" className="mb-1 block text-sm font-medium text-text">
+          {t('auth.login.email')}
+        </label>
+        <input
+          id="email"
+          type="email"
+          className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+          {...register('email', {
+            required: t('auth.login.emailRequired'),
+            pattern: { value: /^\\S+@\\S+\\.\\S+$/, message: t('auth.login.emailInvalid') },
+          })}
+        />
+        {errors.email && <p className="mb-3 text-xs text-destructive">{errors.email.message}</p>}
+
+        <label htmlFor="password" className="mb-1 block text-sm font-medium text-text">
+          {t('auth.login.password')}
+        </label>
+        <input
+          id="password"
+          type="password"
+          className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+          {...register('password', { required: t('auth.login.passwordRequired') })}
+        />
+        {errors.password && <p className="mb-3 text-xs text-destructive">{errors.password.message}</p>}
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="mt-3 w-full rounded-control bg-primary py-2 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {isLoading ? t('auth.login.submitting') : t('auth.login.submit')}
+        </button>
+      </form>
+    </div>
+  )
+}`,
+        satirlar: [
+          {
+            satir: 'const locationState = location.state as LoginLocationState | null',
+            aciklama: 'React Router\'ın `location.state`\'i TİPİ (`unknown`\'a yakın, HERHANGİ bir veri taşıyabilir) — burada `ProtectedRoute`\'un (B-01) `Navigate`\'e verdiği `{from: location}` şeklini BEKLEDİĞİMİZİ elle belirtiyoruz.',
+            neden: 'Admin, `/words/42` gibi KORUMALI bir sayfaya gitmeye çalışıp JWT\'si OLMADIĞI için BURAYA (LoginPage) düştüyse, `ProtectedRoute` bu bilgiyi `state.from`\'a KOYMUŞTU (B-01, Bölüm 5) — giriş BAŞARILI olunca admin\'i "/" yerine TAM OLARAK gitmek İSTEDİĞİ sayfaya geri GÖNDEREBİLMEK için bu bilgi OKUNUR.',
+            olmasaydi: '`locationState` okunmasaydı, `ProtectedRoute`\'un TAŞIDIĞI "nereden geldi" bilgisi burada KAYBOLURDU — B-02\'nin sonundaki `onizleme` akışında görüleceği gibi, OtpVerifyPage bu bilgiyi giriş SONRASI hangi sayfaya döneceğine karar vermek için KULLANIYOR.'
+          },
+          {
+            satir: 'from?: { pathname: string; search?: string; hash?: string }',
+            aciklama: '`ProtectedRoute`\'un TAŞIDIĞI `location` nesnesi yalnızca `pathname` (ör. `/words`) DEĞİL, `search` (`?page=3&level=A2` gibi filtre/sayfalama bilgisi) VE `hash` da TAŞIR — üçü BİRLİKTE "admin TAM OLARAK nerede DURUYORDU" sorusunun cevabı.',
+            neden: 'B-03\'ten itibaren `WordListPage` gibi sayfalar filtre/sayfa numarasını URL `search`\'ünde TUTACAK (ör. `/words?page=3`) — yalnızca `pathname` TAŞINSAYDI, oturumu DÜŞEN bir admin giriş SONRASI doğru SAYFAYA (`/words`) döner ama filtrelerini/sayfa NUMARASINI KAYBEDERDİ.',
+            olmasaydi: 'İlk taslakta TAM OLARAK bu YAPILMIŞTI (yalnızca `{pathname: string}`) — bağımsız bir kod DENETİMİNDE bu eksik BULUNDU: `/words?page=3`\'ten atılan bir admin, giriş TAMAMLANINCA `/words`\'e (BOŞ sayfa 1\'e) DÜŞÜYORDU, `page=3` SESSİZCE KAYBOLUYORDU.'
+          },
+          {
+            satir: 'const [login, { isLoading }] = useLoginMutation()',
+            aciklama: 'Bölüm 1\'de yazılan `authApi.ts`\'in OTOMATİK ürettiği hook — `login` bir FONKSİYON (isteği TETİKLER), `isLoading` RTK Query\'nin KENDİ yönettiği bir boolean (istek SÜRERKEN `true`).',
+            neden: '`isLoading`\'i component KENDİSİ bir `useState` ile YÖNETMEK ZORUNDA DEĞİL — RTK Query, isteğin BAŞLADIĞI/BİTTİĞİ anı otomatik TAKİP eder; bu değer aşağıda "Giriş Yap" butonunun `disabled` ve metin durumuna DOĞRUDAN bağlanır.',
+            olmasaydi: 'RTK Query\'nin `isLoading`\'i KULLANILMASAYDI, component KENDİ `const [submitting, setSubmitting] = useState(false)`\'ini YAZAR, `onSubmit` İÇİNDE elle `true`/`false` ayarlardı — B-01\'in TÜM RTK Query kurulumunun ÖNLEMEYE çalıştığı TAM OLARAK bu tekrar.'
+          },
+          {
+            satir: 'const onSubmit = async (values: LoginRequest) => {',
+            aciklama: 'React Hook Form\'un `handleSubmit`\'in (JSX\'teki `onSubmit={handleSubmit(onSubmit)}`) SARDIĞI fonksiyon — YALNIZCA form\'un KENDİ validasyon kuralları (`required`/`pattern`, aşağıdaki `register` çağrıları) GEÇTİĞİNDE ÇAĞRILIR.',
+            neden: 'RHF, `handleSubmit`\'in İÇİNE verilen fonksiyonu form GEÇERSİZSE (ör. e-posta boş) HİÇ ÇAĞIRMAZ — bu yüzden `onSubmit`\'in İÇİNDE e-posta/şifre BOŞ mu diye AYRICA kontrol etmeye GEREK yok, backend\'e SADECE geçerli veri GİDER.',
+            olmasaydi: 'RHF\'in bu garantisi olmasaydı (ör. düz bir `<form onSubmit={...}>` kullanılsaydı), her ALAN için "boş mu" kontrolünü `onSubmit`\'in İÇİNDE ELLE yazmak GEREKİRDİ — backend\'e boş bir şifreyle GEREKSİZ bir istek GİDER, sonra 400 ile GERİ dönerdi.'
+          },
+          {
+            satir: 'await login(values).unwrap()',
+            aciklama: '`login(values)`, Bölüm 1\'deki `authApi`\'nin `login` mutation\'ını TETİKLER — `.unwrap()`, RTK Query\'nin KENDİ zarfını (`{data}` ya da `{error}`) SOYAR, BAŞARILIYSA `data`\'yı DÖNDÜRÜR, HATALIYSA gerçek bir JavaScript `Promise` reddi (`throw`) ÜRETİR.',
+            neden: '`.unwrap()` OLMADAN RTK Query bir istek HİÇBİR ZAMAN `throw` ETMEZ (hatayı `{error: ...}` şeklinde bir NESNE olarak DÖNER) — bu component `try/catch` ile YAZILDIĞI için `.unwrap()`, RTK Query\'nin sonucunu NORMAL bir `async/await` hata AKIŞINA ÇEVİRİR.',
+            olmasaydi: '`.unwrap()` UNUTULSAYDI, `catch (err)` bloğu ASLA ÇALIŞMAZDI — yanlış şifre girildiğinde `login(values)` yine de "BAŞARIYLA" tamamlanmış GİBİ görünür (Promise REJECT olmaz), `formError` HİÇ ayarlanmaz, admin HİÇBİR hata mesajı GÖRMEZDİ.'
+          },
+          {
+            satir: 'navigate(\'/verify-otp\', { state: { email: values.email, from: locationState?.from } })',
+            aciklama: 'Backend\'in `POST /auth/login` yanıtında token YOKTUR (bkz. Bölüm 1) — bu satır, "şifre DOĞRUYDU, şimdi OTP gir" adımına GEÇER, e-posta ADRESİNİ VE varsa "nereden geldi" bilgisini bir sonraki sayfaya route `state`\'i İLE taşır.',
+            neden: 'OtpVerifyPage (Bölüm 4) hangi e-postanın OTP\'sini DOĞRULAYACAĞINI BİLMEK ZORUNDA — bu bilgi bir URL PARAMETRESİ (`?email=...`) OLARAK DEĞİL, route `state` İLE taşınır; e-posta adresi böylece tarayıcı GEÇMİŞİNDE/URL\'de AÇIKÇA GÖRÜNMEZ.',
+            olmasaydi: 'E-posta route `state`\'iyle TAŞINMASAYDI, OtpVerifyPage bu bilgiyi ALAMAZDI — ya admin\'e OTP ekranında E-POSTASINI TEKRAR YAZDIRMAK (kötü kullanıcı deneyimi) ya da e-postayı URL\'e KOYMAK (tarayıcı geçmişinde AÇIKÇA görünen bir PII sızıntısı) gerekirdi.'
+          },
+          {
+            satir: 'setFormError(getApiErrorMessage(err) ?? t(\'auth.genericError\'))',
+            aciklama: 'Bölüm 1\'deki `getApiErrorMessage` backend\'in GERÇEK mesajını (ör. "E-posta veya şifre hatalı.") ÇIKARIRSA onu, ÇIKARAMAZSA (ağ hatası vb.) genel bir mesajı GÖSTERİR.',
+            neden: '`??` (nullish coalescing) yalnızca `null`/`undefined` durumunda İKİNCİ değere DÜŞER — `getApiErrorMessage` boş bir STRING döndürseydi (backend GERÇEKTEN boş bir mesaj GÖNDERSEYDİ), `??` onu GEÇERLİ bir değer SAYARDI, `||` kullanılsaydı boş string de "yok" SAYILIP genel mesaja DÜŞÜLÜRDÜ.',
+            olmasaydi: '`?? t(\'auth.genericError\')` OLMASAYDI, ağ HATASI gibi backend\'in HİÇ cevap VEREMEDİĞİ durumlarda `formError` `null` KALIRDI — form SESSİZCE "Giriş Yap" durumuna DÖNERDİ, admin NEYİN yanlış GİTTİĞİNİ hiç ANLAMAZDI.'
+          },
+          {
+            satir: '{formError && (',
+            aciklama: '`role="alert"` (aşağıdaki satır), bu KUTUYU ekran okuyuculara "İÇERİĞİ DEĞİŞTİĞİNDE hemen DUYUR" olarak İŞARETLER — görme engelli bir admin, formu TEKRAR OKUMADAN hatayı DUYAR.',
+            neden: 'Form BAŞARISIZ olunca sayfa YENİDEN YÜKLENMEZ (SPA) — `role="alert"` OLMADAN, ekran okuyucu kullanan bir admin sayfanın NERESİNDE yeni bir hata METNİ BELİRDİĞİNİ fark ETMEZDİ.',
+            olmasaydi: 'Düz bir `<p>` (role OLMADAN) kullanılsaydı, hata mesajı GÖRSEL olarak DOĞRU görünürdü ama ekran okuyucu KULLANAN bir admin için TAMAMEN SESSİZ kalırdı.'
+          },
+          {
+            satir: '{...register(\'email\', {',
+            aciklama: 'React Hook Form\'un `register`\'ı — `input`\'u RHF\'in DAHİLİ state\'ine BAĞLAR (`name`/`onChange`/`onBlur`/`ref` gibi PROP\'ları OTOMATİK ekler) VE bu ALAN için VALİDASYON kurallarını TANIMLAR.',
+            neden: '`required`/`pattern` mesajları `t(...)` İLE ÇEVRİLİR (react-i18next) — hata TÜRKÇE/ALMANCA arasında admin\'in seçtiği dile göre DEĞİŞİR, backend\'in `Accept-Language`\'ından BAĞIMSIZ olarak (bu SAF frontend validasyonu, backend\'e HİÇ istek GİTMEDEN çalışır).',
+            olmasaydi: '`register` KULLANILMASAYDI, `input`\'un DEĞERİNİ okumak İÇİN elle `useState` + `onChange` YAZMAK gerekirdi — RHF\'in TEK satırlık `register` çağrısı, bu BOILERPLATE\'i (her ALAN için TEKRARLANAN state/onChange KODU) ORTADAN KALDIRIR.'
+          },
+          {
+            satir: 'pattern: { value: /^\\S+@\\S+\\.\\S+$/, message: t(\'auth.login.emailInvalid\') },',
+            aciklama: 'Basit bir e-posta ŞEKLİ kontrolü (boşluk YOK + @ + boşluk YOK + nokta + boşluk YOK) — GERÇEK e-posta doğrulaması (var mı, DOĞRULANMIŞ mı) backend\'de zaten YAPILIYOR, bu yalnızca "AÇIKÇA yanlış YAZILMIŞ" bir girdiyi backend\'e GÖNDERMEDEN yakalar.',
+            neden: 'Tam RFC 5322 uyumlu bir e-posta regex\'i YAZMAK GEREKSİZ karmaşıklık OLURDU (YAGNI) — bu form yalnızca "@ ve nokta VAR MI" gibi BARİZ yazım hatalarını (ör. "admin" tek başına) YAKALAMak İÇİN var, GERÇEK doğrulama backend\'in İŞİ.',
+            olmasaydi: 'Bu `pattern` HİÇ olmasaydı, "asdf" gibi e-posta OLMAYAN bir metin bile backend\'E GÖNDERİLİR, backend 400 İLE REDDEDERDİ — teknik olarak GÜVENLİ ama admin YANLIŞINI backend\'İN cevabını BEKLEYEREK, bir AĞ isteği SONRASINDA öğrenirdi.'
+          },
+          {
+            satir: '{...register(\'password\', { required: t(\'auth.login.passwordRequired\') })}',
+            aciklama: 'Şifre alanı e-posta İLE AYNI `register` DESENİNİ izler — TEK fark: `type="password"` (tarayıcı karakterleri GİZLER) ve `pattern` YOK (şifrenin ŞEKLİ değil, backend\'İN onu DOĞRULAYIP DOĞRULAMADIĞI ÖNEMLİ).',
+            neden: 'Şifreye bir UZUNLUK/KARMAŞIKLIK `pattern`\'i EKLENMEDİ çünkü bu KURAL zaten backend\'in KAYIT (register) AKIŞINDA UYGULANIYOR — LoginPage bir şifre OLUŞTURMUYOR, VAR OLANI DOĞRULUYOR; "en az 8 karakter" gibi bir kural BURADA yanlış hesap İÇİN yanlış YERDE olurdu.',
+            olmasaydi: 'Buraya bir `pattern` EKLENSEYDİ (ör. "en az 8 karakter"), ESKİ bir hesabın (kayıt sırasında FARKLI kurallarla oluşturulmuş) GERÇEK şifresi bu YENİ kuralı GEÇEMEYEBİLİRDİ — admin, DOĞRU şifresini yazdığı HALDE, formun KENDİSİ tarafından ENGELLENİRDİ.'
+          },
+          {
+            satir: 'disabled={isLoading}',
+            aciklama: 'İstek SÜRERKEN (backend\'den CEVAP BEKLENİRKEN) buton TIKLANAMAZ hale GELİR.',
+            neden: 'Bu OLMADAN, admin "Giriş Yap"a birkaç KEZ ÜST ÜSTE tıklarsa, HER tıklama AYRI bir `POST /auth/login` isteği TETİKLERDİ — backend\'in rate limiting\'i (A-03, anonim istekler İÇİN dakikada SINIRLI) bu GEREKSİZ tekrarlarla GEREĞİNDEN ERKEN DOLARDI.',
+            olmasaydi: 'Buton HER ZAMAN tıklanabilir OLSAYDI, YAVAŞ bir ağ bağlantısında admin "hiçbir şey OLMUYOR" SANIP tekrar tekrar TIKLAR, AYNI şifre İÇİN BİRDEN FAZLA OTP e-postası GÖNDERİLİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'onizleme',
+        baslik: 'Tarayıcıda Dene — /login',
+        rota: '/login',
+        aciklama: 'Admin panelin JWT olmadan HER ZAMAN erişebildiği İKİ route\'tan biri (diğeri /verify-otp) — ProtectedRoute\'un DIŞINDA tanımlıdır (B-01, App.tsx).',
+        akis: [
+          { eylem: 'Admin var olmayan/yanlış bir şifreyle "Giriş Yap"a tıklar', sonuc: 'Backend 401 döner, formun ÜSTÜNDE kırmızı "E-posta veya şifre hatalı." kutusu (role="alert") görünür — YÖNLENDİRME olmaz, admin AYNI sayfada kalır' },
+          { eylem: 'Admin doğru e-posta+şifreyle "Giriş Yap"a tıklar', sonuc: 'Backend OTP\'yi e-postaya gönderir (200, HENÜZ token yok), admin OTOMATİK olarak /verify-otp\'a yönlendirilir' },
+          { eylem: 'Admin hiçbir alanı doldurmadan "Giriş Yap"a tıklar', sonuc: 'İstek HİÇ gitmez — react-hook-form alan altlarında "E-posta zorunludur"/"Şifre zorunludur" gösterir' }
+        ],
+        apiCagrisi: { yontem: 'POST', url: 'http://localhost:5001/api/v1/auth/login' },
+        durumlar: [
+          { durum: 'Yükleniyor', gorunum: 'Buton disabled, metin "Giriş yapılıyor..."ya döner' },
+          { durum: 'Hatalı şifre (401)', gorunum: 'Kırmızı alert kutusu: "E-posta veya şifre hatalı."' },
+          { durum: 'Başarılı (200)', gorunum: 'Anında /verify-otp\'a yönlendirme, hiçbir başarı mesajı BU sayfada gösterilmez (mesaj bir sonraki sayfada işlenir)' }
+        ],
+        notlar: [
+          'Gerçek istek gövdesi: {"email":"admin.b02@wordlearner.test","password":"AdminPass123!"}',
+          'Başarılı gerçek yanıt (200): {"code":"OTP_SENT","message":"OTP gönderildi."} — token bu adımda YOK.',
+          'Yanlış şifreyle gerçek yanıt (401): {"error":{"code":"INVALID_CREDENTIALS","message":"E-posta veya şifre hatalı."},"success":false}',
+          'OTP kodunun kendisi bu yanıtta YOKTUR — backend geliştirme ortamında konsola (DevEmailService, "[DEV EMAIL] ... Args: 6-haneli-kod") yazar, admin gerçek hayatta e-postasından okur.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
