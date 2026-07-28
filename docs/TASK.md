@@ -33,7 +33,7 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-03` ⬜ (Kelime Yönetimi) → `TASK/B_admin_panel.md` (B-02 tamamlandı)
+**Sıradaki task:** `B-04` ⬜ (Kategori Yönetimi) → `TASK/B_admin_panel.md` (B-03 tamamlandı)
 (`B-02 — Auth Sayfaları` ✅ tamamlandı 2026-07-27: `auth.types.ts` (backend'in gerçek DTO'larını
 birebir yansıtan LoginRequest/LoginResponse/VerifyOtpRequest/AdminUser/VerifyOtpResponse),
 `lib/apiError.ts` (backend'in `{error:{code,message}}` hata gövdesini okuyan, planlanmamış ama

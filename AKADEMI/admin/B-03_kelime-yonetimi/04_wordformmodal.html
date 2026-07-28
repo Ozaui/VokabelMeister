@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WordFormModal.tsx — Merkez Component</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'b03-wordformmodal',
+    bolumBaslik: 'B-03 — Kelime Yönetimi',
+    oncekiBolum: '03_wordfilterslice-store.html',
+    sonrakiBolum: '05_alman-gramer-alanlari.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'WordFormModal.tsx',
+        altBaslik: 'B-03\'ün merkezi — hem yeni kelime EKLEME hem var olanı DÜZENLEME, hem gramer bölümünün koşullu render\'ı hem 409 çakışmasının "yine de ekle" akışı TEK bir component\'te, Formik + Yup ile.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Tek Component, İki Mod — Neden Ayrı AddWordModal/EditWordModal Yok',
+        aciklama: '`WordFormModal` bir `initialData?: WordConceptDetail` prop\'u alır — VERİLMEZSE ekleme modunda (yeni kavram, admin ÖNCE tek bir dil seçer), VERİLİRSE düzenleme modunda (kavramın VAR OLAN çevirileri gösterilir, dil SEÇİLEMEZ) çalışır.',
+        neden: 'İki modun render ettiği alanların BÜYÜK çoğunluğu (tür/seviye/görsel/kategori/metin/tanım/telaffuz/gramer/örnek) birebir AYNI — yalnızca "dil seçilebilir mi" ve "hangi API çağrılır" (create vs update) farklı. Bu FARKI iki ayrı component\'e BÖLMEK, aynı 300\'den fazla satırlık JSX\'i İKİ KERE (ve zamanla BİRBİRİNDEN sapan iki kopya olarak) yazmak anlamına gelirdi.',
+        olmasaydi: 'İki ayrı component olsaydı, `WordExamplesFields`/`CategoryPicker`/gramer alt component\'lerinin HER İKİSİNE de AYRI AYRI bağlanması gerekirdi — bir gün yalnızca `EditWordModal`\'a yeni bir alan eklenip `AddWordModal`\'a EKLENMESİ unutulsaydı, "ekle" ve "düzenle" formları SESSİZCE farklı davranırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Sabit Listeler: Tür ve Seviye Seçenekleri',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Dosyanın en üstü, import\'ların hemen altı — bu iki dizi component\'in İÇİNDE değil modül seviyesinde tanımlı, çünkü her render\'da YENİDEN oluşturulmalarına gerek yok.',
+        kod: `const PARTS_OF_SPEECH: PartOfSpeech[] = [
+  'Noun',
+  'Verb',
+  'Adjective',
+  'Adverb',
+  'Conjunction',
+  'Preposition',
+  'Pronoun',
+  'Other',
+]
+const LEVELS: DifficultyLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']`,
+        satirlar: [
+          {
+            satir: "const PARTS_OF_SPEECH: PartOfSpeech[] = [",
+            aciklama: 'Tür seçim kutusunda (aşağıda görülecek `<select>`) gösterilecek TÜM değerlerin sabit ve sıralı listesi — dropdown\'daki sıra burada YAZILDIĞI sırayla belirleniyor.',
+            neden: 'Bu liste backend\'in `PartOfSpeech` enum\'ının üye adlarıyla BİREBİR eşleşmek ZORUNDA — yeni bir tür backend\'e eklenip bu diziye eklenmezse, admin panelinde o türden bir kelime YARATMANIN/DÜZENLEMENİN hiçbir yolu OLMAZ (dropdown\'da hiç görünmez).',
+            olmasaydi: 'Bu sabit dizi olmadan seçenekler JSX içine tek tek elle yazılsaydı (8 ayrı `<option>` satırı), yeni bir tür eklendiğinde HEM bu listenin HEM JSX\'in güncellenmesi gerekirdi — iki yerden biri unutulsa dropdown ile form\'un gerçekte kabul ettiği değerler birbirinden SAPARDI.'
+          },
+          {
+            satir: "const LEVELS: DifficultyLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']",
+            aciklama: 'CEFR seviyeleri (A1\'den C2\'ye) tek satırlık sabit bir dizi — seviye dropdown\'ının veri kaynağı.',
+            neden: 'CEFR sıralaması (kolaydan zora) PEDAGOJİK bir anlam taşıyor — bu diziyi elle, doğru sırada yazmak, dropdown\'ın admin\'e HER ZAMAN kolaydan zora doğru bir liste sunmasını garanti ediyor.',
+            olmasaydi: 'Seçenekler bir enum\'dan otomatik türetilseydi (ör. `Object.keys`), sıralama enum\'un TANIMLANMA sırasına bağlı kalırdı — biri enum\'a alfabetik ya da rastgele sırayla üye eklerse, dropdown admin\'e A1→C2 yerine karman çorman bir seviye listesi GÖSTERİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — wordFormSchema: Yup ile Merkezi Doğrulama',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Sabit listelerin HEMEN altında, modül seviyesinde — `useFormik`\'in `validationSchema` alanına aşağıda (Bölüm 4 devamı) VERİLECEK tek bir nesne.',
+        kod: `const wordFormSchema = Yup.object({
+  partOfSpeech: Yup.string().required(),
+  difficultyLevel: Yup.string().required(),
+  imageUrl: Yup.string(),
+  categoryIds: Yup.array().of(Yup.number().required()).required(),
+  translations: Yup.array()
+    .of(
+      Yup.object({
+        languageCode: Yup.string().required(),
+        text: Yup.string().required(),
+        definition: Yup.string(),
+      }),
+    )
+    .required(),
+})`,
+        satirlar: [
+          {
+            satir: "partOfSpeech: Yup.string().required(),",
+            aciklama: 'Zorunlu alanların (tür, seviye, kategori/çeviri dizileri) MERKEZİ bir yerde toplandığı tek bir şema — react-hook-form\'un her `register` çağrısına DAĞILMIŞ `{required: true}` argümanlarının aksine.',
+            neden: 'Formik\'in `validationSchema`\'sı formun TÜM geçerlilik kurallarını TEK bir objede topluyor — hangi alanın zorunlu olduğunu anlamak için JSX\'in İÇİNDE her input\'u tek tek TARAMAK gerekmiyor, şema TEK bakışta okunabiliyor.',
+            olmasaydi: 'Doğrulama JSX\'e dağılsaydı, yeni bir zorunlu alan eklenirken kuralın SADECE ilgili input\'a eklenip formun GENEL doğrulama akışından bağımsız kalması riski doğardı — TEK bir şema tüm kuralları BİR yerde tutmayı garanti ediyor.'
+          },
+          {
+            satir: "translations: Yup.array()\n    .of(\n      Yup.object({\n        languageCode: Yup.string().required(),\n        text: Yup.string().required(),\n        definition: Yup.string(),\n      }),\n    )\n    .required(),",
+            aciklama: 'İç içe bir dizi doğrulaması — HER çeviri elemanının KENDİ zorunlu alanları (`languageCode`, `text`) var, `definition` ise OPSİYONEL (`.required()` yok).',
+            neden: 'Form dinamik bir `translations` dizisi taşıyor (Bölüm 1) — Yup\'ın `array().of(object({...}))` deseni, dizinin KAÇ elemanı olursa olsun HER birine AYNI iç şemayı uyguluyor.',
+            olmasaydi: 'İç içe doğrulama olmasaydı yalnızca dizinin VAR OLUP olmadığı kontrol edilir, boş bir `text`\'le dolu bir çeviri satırı Yup tarafından hiç YAKALANMAZDI — hata ancak backend\'in 400 yanıtıyla fark edilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — toFormValues: Ekle vs Düzenle Varsayılanları',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: '`components/words/` — bu görevin TÜM component\'lerinin yaşadığı, B-03\'e özel yeni bir klasör (B-02\'nin `components/` kökünün AKSİNE, artık feature başına ALT klasör açılıyor çünkü kelime yönetiminin kendi başına 8 component\'i var).',
+        kod: `interface WordFormModalProps {
+  // Verilmezse "ekle" modu (yeni WordConcept, tek dil seçilerek başlar) — verilirse "düzenle"
+  // modu (concept'in var olan çevirileri düzenlenir, yeni dil EKLENMEZ — o WordPairingPage'in işi).
+  initialData?: WordConceptDetail
+  onClose: () => void
+}
+
+function toFormValues(initialData: WordConceptDetail | undefined): WordFormValues {
+  if (!initialData) {
+    return {
+      partOfSpeech: 'Noun',
+      difficultyLevel: 'A1',
+      imageUrl: '',
+      categoryIds: [],
+      translations: [{ languageCode: 'de', text: '', definition: '', wordDetail: undefined, examples: [] }],
+    }
+  }
+
+  return {
+    partOfSpeech: initialData.partOfSpeech,
+    difficultyLevel: initialData.difficultyLevel,
+    imageUrl: initialData.imageUrl ?? '',
+    categoryIds: initialData.categories.map((c) => c.categoryId),
+    translations: initialData.translations.map((translation) => ({
+      languageCode: translation.languageCode,
+      text: translation.text,
+      definition: translation.definition ?? '',
+      wordDetail: translation.wordDetail
+        ? {
+            pronunciation: translation.wordDetail.pronunciation ?? '',
+            audioUrl: translation.wordDetail.audioUrl ?? '',
+            notes: translation.wordDetail.notes ?? '',
+            commonMistakes: translation.wordDetail.commonMistakes ?? '',
+            grammarData: translation.wordDetail.grammarData ?? undefined,
+          }
+        : undefined,
+      // UpdateWordCommand yalnızca EKLEME yapar (bkz. WordExamplesFields yorumu) — var olan
+      // örnekler burada tekrar gönderilmez, liste boş başlar.
+      examples: [],
+    })),
+  }
+}`,
+        satirlar: [
+          {
+            satir: "translations: [{ languageCode: 'de', text: '', definition: '', wordDetail: undefined, examples: [] }],",
+            aciklama: 'Ekleme modunda TEK bir çeviri satırıyla başlar, varsayılan dil `de` — admin isterse aşağıdaki dil seçiciyle `tr`\'ye çevirebilir.',
+            neden: 'Gerçek içerik girişi HER ZAMAN tek-dilli başlar (bir admin aynı anda hem Almanca hem Türkçe METNİ yazmaz, önce birini girer) — ikinci dil YA aynı oturumda ikinci bir kayıt olarak eklenir YA DA `WordPairingPage`\'de (Bölüm 9) SONRADAN eşleştirilir.',
+            olmasaydi: 'Form baştan İKİ dil satırıyla açılsaydı, admin BOŞ bir Türkçe alanı da doldurmaya ZORLANIRDI (ya da boş göndermesi gerekirdi) — bu, backend\'in "her çeviri metni zorunlu" kuralıyla ÇAKIŞIRDI, tek dil girip SONRA eşleştirmek çok daha DOĞAL bir iş akışı.'
+          },
+          {
+            satir: 'examples: [],',
+            aciklama: 'Düzenleme modunda bile örnek cümle listesi HER ZAMAN boş başlar — var olan örnekler bu diziye KOPYALANMAZ.',
+            neden: 'Backend\'in `UpdateWordCommand`\'ı örnek cümleleri yalnızca EKLER, var olanı SİLMEZ/DEĞİŞTİRMEZ (Bölüm 7\'de `WordExamplesFields`\'da detaylı) — form var olan örnekleri BU diziye koysaydı ve admin "kaydet"e bassaydı, backend onları YİNE EKLERDİ (aynı cümle İKİ KERE, üç kere... her kaydette bir fazla).',
+            olmasaydi: 'Var olan örnekler bu diziye ÖNCEDEN doldurulsaydı, "hiçbir şeyi değiştirmeden kaydet" bile YAN ETKİLİ olurdu — admin sadece telaffuzu düzeltip kaydettiğinde, o kelimenin ÖRNEK CÜMLELERİ SESSİZCE ÇOĞALIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Component Gövdesi: Başlangıç Hook\'ları',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Component fonksiyonunun İLK satırları — `toFormValues`\'un hemen ALTINDA, henüz hiçbir JSX yok, yalnızca mutation hook\'ları ve yerel state.',
+        kod: `export function WordFormModal({ initialData, onClose }: WordFormModalProps) {
+  const { t } = useTranslation()
+  const isEdit = !!initialData
+  const [createWord, { isLoading: isCreating }] = useCreateWordMutation()
+  const [updateWord, { isLoading: isUpdating }] = useUpdateWordMutation()
+  const [formError, setFormError] = useState<string | null>(null)
+  const [duplicatePending, setDuplicatePending] = useState<WordFormValues | null>(null)
+  const isSubmitting = isCreating || isUpdating`,
+        satirlar: [
+          {
+            satir: 'const [createWord, { isLoading: isCreating }] = useCreateWordMutation()',
+            aciklama: 'Bölüm 2\'deki `useApiMutation`\'ın döndürdüğü `[trigger, {isLoading}]` tuple\'ı — `createWord` artık DÜZ bir `async` fonksiyon, RTK Query\'nin özel "thunk" nesnesi DEĞİL.',
+            neden: 'Bu değişikliğin component koduna YANSIMASI minimal tutuldu — `useApiMutation`\'ın tuple şeklini RTK Query\'ninkine BENZER tutmak (Bölüm 2), bu satırın hiç DEĞİŞMEDEN kalabilmesini sağladı; aşağıdaki `submit`\'te DEĞİŞEN tek şey `.unwrap()`\'ın kalkması.',
+            olmasaydi: '`useApiMutation` farklı bir şekilde (ör. yalnızca `{trigger, isLoading}` bir NESNE) tasarlansaydı, bu satırın destructuring\'i de DEĞİŞTİRİLMEK zorunda kalırdı.'
+          },
+          {
+            satir: 'const isSubmitting = isCreating || isUpdating',
+            aciklama: 'İki AYRI mutation hook\'unun (`createWord`, `updateWord`) loading bayrakları TEK bir türetilmiş değişkende birleştiriliyor.',
+            neden: 'Kaydet butonu hangi modda olursa olsun (ekle/düzenle) AYNI şekilde devre dışı kalmalı — iki bayrağı her kullanım yerinde ayrı ayrı `isCreating || isUpdating` yazmak yerine BİR kez hesaplayıp isimlendirmek, ileride üçüncü bir mutation eklenirse tek bir satırın güncellenmesini yeterli kılıyor.',
+            olmasaydi: 'Bu türetilmiş değer olmasaydı ve buton yalnızca `isCreating` kontrol etseydi, düzenleme modunda `updateWord` isteği SÜRERKEN kaydet butonu aktif KALIRDI — admin isteği bitmeden tekrar tıklayıp aynı güncellemeyi İKİNCİ kez tetikleyebilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — submit: grammarData\'nın Koşullu İnşası',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Aynı dosya, component gövdesinin İÇİNDE — `useFormik`\'ten ÖNCE tanımlanıyor, çünkü `useFormik`\'in `onSubmit` alanı (aşağıdaki slayt) bu fonksiyona bir REFERANS veriyor.',
+        kod: `const submit = async (values: WordFormValues, force: boolean) => {
+    setFormError(null)
+    const hasGrammar = values.partOfSpeech === 'Noun' || values.partOfSpeech === 'Verb'
+    const payload = {
+      partOfSpeech: values.partOfSpeech,
+      difficultyLevel: values.difficultyLevel,
+      imageUrl: values.imageUrl || null,
+      categoryIds: values.categoryIds,
+      translations: values.translations.map((translation) => ({
+        languageCode: translation.languageCode,
+        text: translation.text,
+        definition: translation.definition || null,
+        // Noun/Verb'de grammarData ZORUNLU (WordGrammarValidator GRAMMAR_DATA_REQUIRED), diğer
+        // türlerde tamamen NULL olmalı (GRAMMAR_DATA_MUST_BE_NULL_FOR_OTHER) — wordDetail'in
+        // diğer alanları (telaffuz/ses/not) türden bağımsız her zaman gönderilebilir.
+        wordDetail: translation.wordDetail
+          ? {
+              pronunciation: translation.wordDetail.pronunciation || null,
+              audioUrl: translation.wordDetail.audioUrl || null,
+              notes: translation.wordDetail.notes || null,
+              commonMistakes: translation.wordDetail.commonMistakes || null,
+              grammarData: hasGrammar ? (translation.wordDetail.grammarData ?? null) : null,
+            }
+          : hasGrammar
+            ? { pronunciation: null, audioUrl: null, notes: null, commonMistakes: null, grammarData: null }
+            : null,
+        examples: translation.examples && translation.examples.length > 0 ? translation.examples : undefined,
+      })),
+    }
+
+    try {
+      if (isEdit) {
+        await updateWord({ body: { id: initialData!.wordConceptId, ...payload }, force })
+      } else {
+        await createWord({ body: payload, force })
+      }
+      setDuplicatePending(null)
+      onClose()
+    } catch (err) {
+      if (!force && getApiErrorCode(err) === 'WORD_TEXT_ALREADY_EXISTS') {
+        setDuplicatePending(values)
+        return
+      }
+      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+    }
+  }`,
+        satirlar: [
+          {
+            satir: "const hasGrammar = values.partOfSpeech === 'Noun' || values.partOfSpeech === 'Verb'",
+            aciklama: '`submit`\'in KENDİ, yerel bir `hasGrammar` hesaplaması — aşağıdaki `useFormik` slaydında görülecek component-seviyesi `hasGrammar`\'dan (render\'ı kontrol eden) BAĞIMSIZ, ikinci bir hesaplama.',
+            neden: '`submit`, gönderdiği `payload`\'ı HER ZAMAN kendisine PARAMETRE olarak gelen `values`\'e göre inşa etmeli — "yine de ekle" akışında (Bölüm 4 devamı) `submit(duplicatePending, true)` GEÇMİŞTE saklanmış bir `values` anlık görüntüsüyle ÇAĞRILIYOR; bu görüntünün gramer kararı, o ANDA formun canlı state\'ine değil, GÖNDERİLEN değerin kendisine dayanmalı.',
+            olmasaydi: 'Yerine component-seviyesi `hasGrammar` kullanılsaydı, "yine de ekle" butonuna basıldığı ANDAKİ form durumu (ör. admin arada tür\'ü değiştirmiş olabilir) `duplicatePending`\'in SAKLADIĞI eski değerlerle ÇELİŞEBİLİRDİ — payload, gönderilen `values` ile TUTARSIZ bir gramer kararıyla inşa edilirdi.'
+          },
+          {
+            satir: "grammarData: hasGrammar ? (translation.wordDetail.grammarData ?? null) : null,",
+            aciklama: 'Tür Noun/Verb İSE forma girilen gramer verisi gönderilir, DEĞİLSE (Adjective/Adverb/...) `grammarData` HER ZAMAN `null` — kullanıcı ne yazmış olursa olsun.',
+            neden: 'Backend `WordGrammarValidator`\'ın "diğer türlerde GrammarData tamamen NULL olmalı" kuralına (`GRAMMAR_DATA_MUST_BE_NULL_FOR_OTHER`) MECBUR uyuyor — admin tür\'ü ÖNCE Noun/gramer doldurup SONRA "Diğer"e çevirse bile, form eski gramer verisini GÖNDERMEZ.',
+            olmasaydi: 'Admin türü Noun\'dan "Diğer"e çevirdiğinde eski `grammarData` state\'te KALSAYDI ve `hasGrammar` kontrolü OLMASAYDI, backend bu isteği 400 (`GRAMMAR_DATA_MUST_BE_NULL_FOR_OTHER`) ile REDDEDERDİ — admin "hiçbir şey yapmadım, neden hata alıyorum" diye ŞAŞIRIRDI, çünkü hatanın sebebi ARTIK ekranda GÖRÜNMEYEN bir alan.'
+          },
+          {
+            satir: "await updateWord({ body: { id: initialData!.wordConceptId, ...payload }, force })",
+            aciklama: 'RTK Query\'nin `.unwrap()`\'ı YOK — Bölüm 2\'deki `useApiMutation` zaten axios\'un native Promise reddini KULLANIYOR, `updateWord(...)` DOĞRUDAN `await`lenebilir düz bir `Promise<WordConceptDetail>` döndürüyor.',
+            neden: 'RTK Query\'nin `trigger(arg)` çağrısı HATA durumunda bile RESOLVE olan bir nesne döndürürdü (`.unwrap()` asıl hatayı FIRLATMAK için ZORUNLUYDU) — axios tabanlı `useApiMutation` bu ekstra adımı GEREKSİZ kılıyor, hata zaten native `catch` bloğuna DÜŞÜYOR.',
+            olmasaydi: '`.unwrap()` hâlâ çağrılsaydı, TypeScript bu metodun `useApiMutation`\'ın döndürdüğü düz `Promise<WordConceptDetail>` üzerinde YOK olduğunu söyleyip DERLEME hatası verirdi.'
+          },
+          {
+            satir: "if (!force && getApiErrorCode(err) === 'WORD_TEXT_ALREADY_EXISTS') {",
+            aciklama: '`force` ZATEN true İSE bu dal hiç ÇALIŞMAZ — yalnızca İLK denemede (force olmadan) 409 alındıysa "yine de ekle" uyarısı gösterilir.',
+            neden: '`force=true` ile TEKRAR gönderilen bir istek YİNE 409 dönerse (ör. ARADA başka bir admin AYNI metni GERÇEKTEN engellenmesi gereken bir şekilde eklediyse), bu artık "yine de ekle?" diye SORULACAK bir durum DEĞİL — sonsuz bir onay döngüsüne girmemek için `!force` şartı bu ihtimali KAPATIYOR.',
+            olmasaydi: '`!force` kontrolü olmasaydı, `force=true` ile gönderilen bir istek YİNE 409 alırsa `setDuplicatePending` TEKRAR tetiklenir, "yine de ekle" butonu TEKRAR görünür, admin TEKRAR tıklar — backend GERÇEKTEN reddetmek istediği bir durumda bile UI sonsuza kadar "belki bu sefer olur" diye ISRAR ederdi.'
+          },
+          {
+            satir: "await updateWord({ body: { id: initialData!.wordConceptId, ...payload }, force })",
+            aciklama: '`initialData!` — non-null assertion, çünkü bu satır YALNIZCA `isEdit` true iken (yani `initialData` KESİNLİKLE dolu iken) çalışır.',
+            neden: 'TypeScript kendi başına `isEdit = !!initialData` ifadesinden `initialData`\'nın bu `if` bloğunun İÇİNDE dolu olduğunu ÇIKARAMIYOR (bu bir ayrı DEĞİŞKENE atanmış bir bayrak, `initialData`\'nın kendisi değil) — `!` geliştiricinin bildiği ama derleyicinin GÖREMEDİĞİ bu garantiyi elle BELİRTİYOR.',
+            olmasaydi: '`!` yazılmasaydı, TypeScript `initialData.wordConceptId`\'yi `initialData` `undefined` OLABİLİR diye REDDEDERDİ — kod ya (gereksiz) bir `if (initialData)` sarmalayıcısıyla ya da bu assertion\'la YAZILABİLİRdi; assertion burada tercih edildi çünkü `isEdit` KONTROLÜ zaten yapılmış durumda.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — useFormik: initialValues + Yup Şeması + onSubmit',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: '`submit`\'in HEMEN altında — Formik\'in `onSubmit` alanı `submit`\'e bir REFERANS verdiği için, `submit` bu noktada zaten tanımlanmış olmalı.',
+        kod: `  const formik = useFormik<WordFormValues>({
+    initialValues: toFormValues(initialData),
+    validationSchema: wordFormSchema,
+    onSubmit: (values) => submit(values, false),
+  })
+
+  const partOfSpeech = formik.values.partOfSpeech
+  const hasGrammar = partOfSpeech === 'Noun' || partOfSpeech === 'Verb'`,
+        satirlar: [
+          {
+            satir: 'initialValues: toFormValues(initialData),',
+            aciklama: 'react-hook-form\'un `defaultValues`\'ının Formik karşılığı — AYNI `toFormValues` fonksiyonu, hiç değiştirilmeden yeniden kullanılıyor.',
+            neden: '`toFormValues` baştan beri react-hook-form/Formik\'e ÖZGÜ hiçbir şey BİLMEYEN, SAF bir dönüşüm fonksiyonu olarak yazılmıştı (yalnızca `WordConceptDetail | undefined` alıp `WordFormValues` döndürüyor) — form kütüphanesi DEĞİŞSE bile bu fonksiyonun KENDİSİNİN değişmesi GEREKMEDİ.',
+            olmasaydi: '`toFormValues` react-hook-form\'a özgü bir tip/yardımcı KULLANSAYDI, Formik\'e geçişte bu fonksiyonun da YENİDEN yazılması gerekirdi — SAF bir fonksiyon olması, ALTINDAKİ form kütüphanesi değişse bile onu OLDUĞU gibi KORUDU.'
+          },
+          {
+            satir: 'validationSchema: wordFormSchema,',
+            aciklama: 'Formik\'in kendi `handleSubmit`\'i, `submit` ÇAĞRILMADAN ÖNCE formu bu şemaya karşı OTOMATİK doğrular — geçersizse `onSubmit` hiç ÇALIŞTIRILMAZ.',
+            neden: 'react-hook-form\'daki `register(name, {required: true})` gibi ALAN BAZLI doğrulama yerine, Formik TEK bir merkezi şemaya (yukarıdaki `wordFormSchema`) devrediyor — formun GENELİNİN geçerli olup olmadığı TEK bir yerden kontrol ediliyor.',
+            olmasaydi: '`validationSchema` hiç verilmeseydi, boş bir `text` alanıyla form GÖNDERİLEBİLİRDİ — aşağıda görülecek `noValidate` zaten tarayıcının native doğrulamasını KAPATTIĞI için, hata ancak backend\'in 400 yanıtına kadar hiç YAKALANMAZDI.'
+          },
+          {
+            satir: 'onSubmit: (values) => submit(values, false),',
+            aciklama: 'Formik\'in KENDİ submit çağrısı HER ZAMAN `force=false` ile başlıyor — `force=true` YALNIZCA "yine de ekle" butonunun kendi `onClick`\'i üzerinden (aşağıda görülecek) tetikleniyor.',
+            neden: '`submit`\'in ikinci parametresi (`force`) formun kendisinden DEĞİL, kullanıcının 409 uyarısını görüp bilinçli bir onay vermesinden gelmeli — normal submit\'i `force=true` yapmak, admin\'in HİÇBİR uyarı görmeden aynı metni tekrar tekrar eklemesine izin verirdi.',
+            olmasaydi: '`onSubmit` doğrudan `submit(values, true)` OLSAYDI, `WORD_TEXT_ALREADY_EXISTS` kontrolü hiçbir zaman TETİKLENMEZ, aynı kelime metni sınırsız kez SESSİZCE eklenebilirdi.'
+          },
+          {
+            satir: 'const partOfSpeech = formik.values.partOfSpeech',
+            aciklama: 'react-hook-form\'un `watch(\'partOfSpeech\')`\'ının karşılığı — ama artık ayrı bir "izleme" çağrısı YOK, Formik\'in `values` nesnesi zaten HER değişiklikte component\'i yeniden render ETTİRİYOR.',
+            neden: 'react-hook-form `watch` gerektiriyordu çünkü `register` edilen alanlar VARSAYILAN olarak component\'i re-render ETTİRMEZ (bir performans optimizasyonu) — Formik\'in `useFormik`\'i ise `values`\'i HER değişiklikte state olarak TUTUYOR, bu yüzden `formik.values.partOfSpeech` okumak zaten CANLI bir değer.',
+            olmasaydi: '`formik.values.partOfSpeech` yerine component MOUNT olurken BİR KEZ kopyalanan bir değişken kullanılsaydı, admin tür\'ü DEĞİŞTİRDİĞİNDE gramer bölümü ANINDA tepki VERMEZDİ — tıpkı eski react-hook-form sürümünde `watch` KULLANILMASININ nedeni gibi, "kaydet"e basılıp backend 400 dönene kadar arayüz YANLIŞ bir bölüm göstermeye devam ederdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: '"Yine de Ekle" — 409\'un Görsel Karşılığı',
+        aciklama: 'Backend 409 döndüğünde form KAPANMAZ, silinen bir şey OLMAZ — bunun yerine `duplicatePending` state\'i o formun DEĞERLERİNİ saklar ve bir uyarı kutusu (`role="alert"`) gösterir: "Bu dilde aynı metinli bir kelime zaten var. Yine de eklemek istiyor musunuz?"',
+        neden: 'Admin\'in DOLDURDUĞU form verisi (bazen 20\'den fazla gramer hücresi) 409 üzerine KAYBOLSAYDI, admin TÜM formu BAŞTAN doldurmak zorunda kalırdı yalnızca "evet, biliyorum, yine de ekle" demek İÇİN — `duplicatePending` bu veriyi TUTARAK ikinci bir "kaydet" tıklamasını GEREKSİZ kılıyor.',
+        olmasaydi: '`duplicatePending` olmasaydı ve form basitçe bir hata mesajı gösterip KAPANSAYDI, 30 hücrelik bir Almanca fiil çekim tablosunu dolduran bir admin, "bu kelime zaten var" mesajını görüp TÜM o veriyi YENİDEN yazmak zorunda kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Return\'ün Başı: Başlık, formError, duplicatePending',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'JSX gövdesinin İLK satırları — dış sarmalayıcı, başlık ve bir önceki kavram slaydında anlatılan "yine de ekle" uyarısının GERÇEK karşılığı.',
+        kod: `  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form
+        onSubmit={formik.handleSubmit}
+        noValidate
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-card border border-border bg-surface p-6 shadow-sm"
+      >
+        <h2 className="mb-4 font-heading text-lg font-bold text-text">
+          {isEdit ? t('words.form.editTitle') : t('words.form.createTitle')}
+        </h2>
+
+        {formError && (
+          <p role="alert" className="mb-4 rounded-control bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {formError}
+          </p>
+        )}
+
+        {duplicatePending && (
+          <div role="alert" className="mb-4 rounded-control bg-warning/10 px-3 py-2 text-sm text-text">
+            <p className="mb-2">{t('words.form.duplicateWarning')}</p>
+            <button
+              type="button"
+              onClick={() => submit(duplicatePending, true)}
+              className="rounded-control bg-primary px-3 py-1 text-sm font-semibold text-white"
+            >
+              {t('words.form.duplicateConfirm')}
+            </button>
+          </div>
+        )}`,
+        satirlar: [
+          {
+            satir: 'onSubmit={formik.handleSubmit}',
+            aciklama: 'Formik\'in KENDİ ürettiği submit event handler\'ı — form `submit` DOM eventi tetiklendiğinde ÖNCE `wordFormSchema`\'ya karşı doğrular, GEÇERLİYSE `useFormik`\'e verilen `onSubmit: (values) => submit(values, false)`\'u çağırır.',
+            neden: '`formik.handleSubmit` DOM\'un native form submit davranışını (`e.preventDefault()` dahil) KENDİ İÇİNDE yönetiyor — component\'in kendisi ayrı bir submit fonksiyonu YAZMIYOR, yalnızca Formik\'in ÜRETTİĞİ bu handler\'ı bağlıyor.',
+            olmasaydi: '`formik.handleSubmit` yerine elle yazılmış bir `(e) => {e.preventDefault(); submit(formik.values, false)}` kullanılsaydı, Yup doğrulaması (`formik.errors`, hangi alanların geçersiz olduğu) hiç ÇALIŞTIRILMAZDI — doğrulama Formik\'in KENDİ akışının DIŞINA çıkardı.'
+          },
+          {
+            satir: "{isEdit ? t('words.form.editTitle') : t('words.form.createTitle')}",
+            aciklama: 'Modal başlığı `isEdit` bayrağına göre iki farklı i18n anahtarından okunuyor — "kelime düzenle" vs "kelime ekle".',
+            neden: 'Aynı component iki modda kullanıldığı için, admin\'in hangi işlemi yaptığını (yeni kayıt mı, var olanı mı değiştiriyor) başlıktan ANLAMASI gerekiyor — form alanlarının GÖRÜNÜMÜ iki modda neredeyse AYNI olduğu için tek ayırt edici işaret başlık.',
+            olmasaydi: 'Başlık sabit bir metin olsaydı, aynı görünümdeki iki modal arasında admin hangi işlemde olduğunu ayırt edemez, düzenleme modunda yanlışlıkla YENİ bir kayıt oluşturduğunu SANABİLİRDİ.'
+          },
+          {
+            satir: '{duplicatePending && (',
+            aciklama: 'Bu blok yalnızca `duplicatePending` state\'i DOLU iken (bir önceki denemeden 409 alınmışken) render ediliyor — normal akışta hiç DOM\'a EKLENMİYOR.',
+            neden: 'Koşullu VAROLUŞ burada önemli çünkü içindeki buton `submit(duplicatePending, true)` çağırıyor — `duplicatePending` `null` iken bu buton hiç var OLMAMALI, aksi halde tıklanabilir ama anlamsız bir "yine de ekle" görünürdü.',
+            olmasaydi: 'Koşul olmadan bu blok her zaman render edilseydi, admin HİÇ 409 almamış bir formda bile "yine de ekle" uyarısı görürdü ve tıklarsa `submit(null, true)` gibi anlamsız bir çağrı YAPILIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Render: Zorunlu Alan İşaretleri + Dil Seçimi',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Aynı dosya — JSX gövdesi, formun GÖRÜNEN kısmı.',
+        kod: `        <div className="mb-4 grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="partOfSpeech" className="mb-1 block text-sm font-medium text-text">
+              {t('words.form.partOfSpeech')} <span className="text-destructive">*</span>
+            </label>
+            <select
+              id="partOfSpeech"
+              name="partOfSpeech"
+              value={formik.values.partOfSpeech}
+              onChange={formik.handleChange}
+              className="w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+            >
+              {PARTS_OF_SPEECH.map((pos) => (
+                <option key={pos} value={pos}>
+                  {t(\`words.partOfSpeech.\${pos}\`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="difficultyLevel" className="mb-1 block text-sm font-medium text-text">
+              {t('words.form.difficultyLevel')} <span className="text-destructive">*</span>
+            </label>
+            <select
+              id="difficultyLevel"
+              name="difficultyLevel"
+              value={formik.values.difficultyLevel}
+              onChange={formik.handleChange}
+              className="w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+            >
+              {LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="imageUrl" className="mb-1 block text-sm font-medium text-text">
+            {t('words.form.imageUrl')}
+          </label>
+          <input
+            id="imageUrl"
+            name="imageUrl"
+            type="text"
+            value={formik.values.imageUrl}
+            onChange={formik.handleChange}
+            className="w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-medium text-text">{t('words.form.categories')}</label>
+          <CategoryPicker
+            selectedIds={formik.values.categoryIds}
+            onChange={(ids) => formik.setFieldValue('categoryIds', ids)}
+          />
+        </div>
+
+        {formik.values.translations.map((translation, index) => (
+          <fieldset key={index} className="mb-4 rounded-control border border-border p-3">
+            <legend className="px-1 text-sm font-semibold text-text">
+              {isEdit ? (
+                // Düzenleme modunda dil sabit — yeni dil eklemek WordPairingPage'in işi.
+                <span>{t(\`words.language.\${translation.languageCode}\`)}</span>
+              ) : (
+                <select
+                  aria-label={t('words.form.language') ?? undefined}
+                  name={\`translations.\${index}.languageCode\`}
+                  value={translation.languageCode}
+                  onChange={formik.handleChange}
+                  className="rounded-control border border-border bg-background px-2 py-1 text-sm text-text"
+                >
+                  <option value="de">{t('words.language.de')}</option>
+                  <option value="tr">{t('words.language.tr')}</option>
+                </select>
+              )}
+            </legend>
+
+            <div className="mt-2 mb-3">
+              <label htmlFor={\`text-\${index}\`} className="mb-1 block text-sm font-medium text-text">
+                {t('words.form.text')} <span className="text-destructive">*</span>
+              </label>
+              <input
+                id={\`text-\${index}\`}
+                name={\`translations.\${index}.text\`}
+                type="text"
+                value={translation.text}
+                onChange={formik.handleChange}
+                className="w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+              />
+            </div>`,
+        satirlar: [
+          {
+            satir: "{t('words.form.partOfSpeech')} <span className=\"text-destructive\">*</span>",
+            aciklama: 'Etiketin YANINA kırmızı bir yıldız — backend\'in VE `wordFormSchema`\'nın (Yup) doldurulmasını ZORUNLU tuttuğu her alanın (tür, seviye, metin, ve gramer bölümündeki her zorunlu hücre) yanında AYNI işaret tekrarlanır.',
+            neden: 'Admin hangi alanın BOŞ bırakılırsa reddedileceğini TAHMİN ETMEK zorunda kalmamalı — bu görsel işaret, `wordFormSchema`\'nın (ve backend\'in `WordGrammarValidator`\'ının) HANGİ alanları zorunlu tuttuğunu ekranda AÇIKÇA gösteriyor.',
+            olmasaydi: 'Bu işaret olmasaydı, admin bir alanı BOŞ bırakıp "kaydet"e basar, Yup\'ın (veya backend\'in) hata mesajını OKUYUP hangi alanın eksik olduğunu ÇÖZMEK zorunda kalırdı — otuz hücrelik bir çekim tablosunda hangi TEK hücrenin boş kaldığını bulmak, deneme-yanılma ile GEÇEN zaman demek.'
+          },
+          {
+            satir: "name=\"partOfSpeech\"\n              value={formik.values.partOfSpeech}\n              onChange={formik.handleChange}",
+            aciklama: 'react-hook-form\'un `{...register(\'partOfSpeech\')}` yayılımının (spread) yerini `name`/`value`/`onChange` ÜÇLÜSÜ aldı — Formik\'in `handleChange`\'i `name` attribute\'undaki STRING\'e bakarak HANGİ alanın güncelleneceğine karar veriyor.',
+            neden: 'Formik `register` gibi bir yardımcı SUNMUYOR — `handleChange` TEK bir fonksiyon, hangi alana yazacağını olayın (`event.target.name`) İÇİNDEN çözüyor; bu yüzden HER input\'un `name`\'i formik state\'indeki YOLUYLA (`translations.0.text` gibi) birebir eşleşmek ZORUNDA.',
+            olmasaydi: '`name` attribute\'u yanlış/eksik yazılsaydı (ör. `partOfSpeach` yazım hatası), `formik.handleChange` bu ismi formik state\'inde BULAMAZ, güncelleme SESSİZCE hiçbir yere yazılmazdı — react-hook-form\'un `register(\'partOfSpeech\')` çağrısı en azından TypeScript\'e bilinen bir alan adı VERMEYİ zorunlu kılardı, Formik\'in string tabanlı `name`\'i bu güvenceyi TAŞIMIYOR.'
+          },
+          {
+            satir: "<CategoryPicker\n            selectedIds={formik.values.categoryIds}\n            onChange={(ids) => formik.setFieldValue('categoryIds', ids)}\n          />",
+            aciklama: 'react-hook-form\'un `Controller`\'ının yerini DOĞRUDAN `formik.setFieldValue` çağrısı aldı — `CategoryPicker` native bir input olmadığı için `formik.handleChange` onunla ÇALIŞMAZ.',
+            neden: 'Formik\'te `Controller` gibi ayrı bir sarmalayıcı YOK — custom (native olmayan) bir component\'i forma bağlamanın standart yolu `setFieldValue(path, value)`\'yu doğrudan `onChange`\'e VERMEK; react-hook-form\'daki iki-adımlı `Controller`+`field.onChange` deseni burada TEK adıma İNDİ.',
+            olmasaydi: '`setFieldValue` yerine `formik.handleChange` verilmeye çalışılsaydı, `CategoryPicker`\'ın `onChange(ids: number[])` imzası bir DOM eventi DEĞİL düz bir DİZİ ilettiği için `handleChange` bunu bir `event.target` gibi okumaya çalışır, kategori seçimi hiç FORMA ULAŞMAZDI.'
+          },
+          {
+            satir: "{formik.values.translations.map((translation, index) => (",
+            aciklama: 'react-hook-form\'un `watch(\'translations\').map(...)`\'ının karşılığı — ayrı bir `watch` çağrısına gerek YOK, `formik.values.translations` zaten CANLI (her değişiklikte güncel) diziyi TUTUYOR.',
+            neden: 'Bir önceki slayttaki (`useFormik` slaydı) `formik.values.partOfSpeech` ile AYNI gerekçe — Formik `values`\'i state olarak TUTTUĞU için doğrudan okumak yeterli, RHF\'in performans amaçlı `watch` API\'sine gerek KALMADI.',
+            olmasaydi: 'Bu aynı gerekçe `useFormik` slaydında zaten ANLATILDI — burada tekrar EDİLMİYOR.'
+          },
+          {
+            satir: 'isEdit ? (',
+            aciklama: 'Düzenleme modunda dil SABİT bir `<span>`, ekleme modunda ise DEĞİŞTİRİLEBİLİR bir `<select>` — aynı `legend` alanı iki modda FARKLI render ediliyor.',
+            neden: 'Var olan bir çevirinin dilini DEĞİŞTİRMEK anlamsız (bir "Tisch" satırının dilini `tr`\'ye çevirmek, o satırı SİLİP yeni bir Türkçe kayıt YARATMAKLA aynı şey değil, veri BÜTÜNLÜĞÜNÜ bozar) — bu yüzden düzenleme modunda dil SEÇİLEMEZ; yeni bir dil eklemenin GERÇEK yolu `WordPairingPage`\'de (Bölüm 9) BAŞKA bir tek-dilli kaydı eşleştirmek.',
+            olmasaydi: 'Düzenleme modunda da dil değiştirilebilseydi, admin var olan bir Almanca çeviriyi "Türkçe" olarak İŞARETLEYİP kaydedebilirdi — backend bunu YENİ bir dil olarak mı yoksa VAR OLANI mı güncellediğini AYIRT EDEMEZDİ, `UpdateWordCommand`\'ın "bu dil yoksa ekle, varsa güncelle" mantığı BOZULURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — definition Alanı: text\'in Hemen Altında, Opsiyonel',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Aynı `fieldset` içinde, `text` alanının HEMEN altında — gramer bölümünden ÖNCE gelen son "düz metin" alanı.',
+        kod: `            <div className="mb-3">
+              <label htmlFor={\`definition-\${index}\`} className="mb-1 block text-sm font-medium text-text">
+                {t('words.form.definition')}
+              </label>
+              <input
+                id={\`definition-\${index}\`}
+                name={\`translations.\${index}.definition\`}
+                type="text"
+                value={translation.definition ?? ''}
+                onChange={formik.handleChange}
+                className="w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
+              />
+            </div>`,
+        satirlar: [
+          {
+            satir: "{t('words.form.definition')}",
+            aciklama: 'Definition etiketinin yanında, `text` alanının aksine, kırmızı zorunlu yıldızı (`*`) YOK.',
+            neden: '`wordFormSchema`\'da `definition: Yup.string()` (`.required()` YOK) — form seviyesinde bu alan doğrulanmıyor, backend\'in "definition opsiyonel" kuralıyla TUTARLI.',
+            olmasaydi: '`wordFormSchema`\'ya `definition: Yup.string().required()` yazılsaydı, `formik.handleSubmit`\'in doğrulaması bu alan BOŞKEN formu hiç GÖNDERMEZDİ — backend\'in izin verdiği geçerli bir senaryo (definition\'sız kelime) admin\'e hiç SUNULMAZDI.'
+          },
+          {
+            satir: "name={`translations.${index}.definition`}\n                type=\"text\"\n                value={translation.definition ?? ''}\n                onChange={formik.handleChange}",
+            aciklama: 'Definition da `text` gibi AYNI `formik.handleChange`\'i paylaşıyor — tek fark `value={translation.definition ?? \'\'}` (definition backend\'den `null` gelebilir, `text` HER ZAMAN dolu bir string).',
+            neden: '`??` burada gerekli çünkü `<input>`\'un `value`\'su React\'te `null`/`undefined` OLAMAZ (bu, bir "controlled" input\'un "uncontrolled"a dönmesine yol açar) — `text` alanının AKSİNE definition backend\'den boş gelebildiği için bu güvenlik ağı sadece burada GEREKLİ.',
+            olmasaydi: '`?? \'\'` olmasaydı ve `translation.definition` `null` gelseydi, React konsola "a component is changing an uncontrolled input to be controlled" UYARISI basardı — input\'un DAVRANIŞI (yazdıklarının kaybolması gibi) öngörülemez hâle GELİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Gramer Bölümünün Koşullu Yönlendirmesi',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Aynı dosya — her çeviri satırının İÇİNDE, `hasGrammar` true iken render edilen tek blok.',
+        kod: `            {hasGrammar && (
+              <div className="mb-3">
+                <p className="mb-1 text-sm font-semibold text-text">{t('words.form.grammar')}</p>
+                {translation.languageCode === 'de' ? (
+                  <GermanGrammarFields
+                    partOfSpeech={partOfSpeech}
+                    value={translation.wordDetail?.grammarData as GermanNounGrammarData | GermanVerbGrammarData | undefined}
+                    onChange={(value) => formik.setFieldValue(\`translations.\${index}.wordDetail.grammarData\`, value)}
+                  />
+                ) : (
+                  <TurkishGrammarFields
+                    partOfSpeech={partOfSpeech}
+                    value={translation.wordDetail?.grammarData as TurkishNounGrammarData | TurkishVerbGrammarData | undefined}
+                    onChange={(value) => formik.setFieldValue(\`translations.\${index}.wordDetail.grammarData\`, value)}
+                  />
+                )}
+              </div>
+            )}`,
+        satirlar: [
+          {
+            satir: '{hasGrammar && (',
+            aciklama: '`hasGrammar = partOfSpeech === \'Noun\' || partOfSpeech === \'Verb\'` — yalnızca bu iki türde gramer bölümü HİÇ render EDİLMEZ (koşullu STİL değil, koşullu VAROLUŞ).',
+            neden: 'Diğer altı tür (Adjective/Adverb/Conjunction/Preposition/Pronoun/Other) için backend\'in KENDİSİ `GrammarData`\'yı tamamen YASAKLIYOR (`GRAMMAR_DATA_MUST_BE_NULL_FOR_OTHER`) — bu türlerde bir gramer FORMU göstermek, admin\'e DOLDURULMASI backend TARAFINDAN reddedilecek bir alan SUNMAK olurdu.',
+            olmasaydi: 'Gramer bölümü HER türde render edilseydi (yalnızca disabled/gizli olsaydı bile), admin "Bağlaç" seçip gramer alanlarını GÖRÜP doldurabilir, backend bunu 400 ile REDDEDERDİ — hatanın kaynağı, ekranda GÖRÜNEN ama ASLA kullanılmaması gereken bir bölüm olurdu.'
+          },
+          {
+            satir: "translation.languageCode === 'de' ? (",
+            aciklama: 'react-hook-form\'un `watch(\`translations.${index}.languageCode\`)`\'ının yerini doğrudan `translation.languageCode` OKUMASI aldı — `translation` zaten `formik.values.translations.map(...)`\'ten (bir önceki slayt) gelen CANLI bir eleman.',
+            neden: 'Almanca ve Türkçe gramerin ŞEKLİ (hangi alanlar, kaç hâl, kaç zaman) KÖKTEN farklı (Bölüm 5-6\'da detaylı) — hangi alt component\'in render edileceğine bu satırın SATIR düzeyinde karar vermesi, TEK bir dev component içinde iki BAĞIMSIZ gramer sisteminin İÇ İÇE geçmesini ENGELLİYOR.',
+            olmasaydi: 'Tek bir gramer component\'i olsaydı, Almanca kısmına yapılan bir değişiklik (ör. yeni bir hâl EKLEMEK) yanlışlıkla Türkçe dalını da ETKİLEYEBİLİRDİ — iki AYRI dosya bu riski dosya SINIRIYLA fiziksel olarak ENGELLİYOR.'
+          },
+          {
+            satir: "onChange={(value) => formik.setFieldValue(`translations.${index}.wordDetail.grammarData`, value)}",
+            aciklama: 'react-hook-form\'un `Controller`+`field.onChange`\'inin yerini DOĞRUDAN `formik.setFieldValue(path, value)` çağrısı aldı — `GermanGrammarFields`/`TurkishGrammarFields` native bir input olmadığı için (Bölüm 5-6) yine `handleChange` DEĞİL, ELLE path belirtilen `setFieldValue` gerekiyor.',
+            neden: 'Bu component\'lerin KENDİ `onChange` imzası (`value: GermanNounGrammarData | ...`) bir DOM eventi değil düz bir gramer NESNESİ — `setFieldValue`\'nun ilk argümanı (path string\'i) TAM OLARAK hangi iç içe alana (`translations.0.wordDetail.grammarData`) yazılacağını BELİRTİYOR.',
+            olmasaydi: '`setFieldValue` yerine bu component\'lere DOĞRUDAN bir `formik.handleChange` VERİLMEYE çalışılsaydı, `handleChange` bir native `event.target` BEKLER — `GermanGrammarFields`\'ın ilettiği düz gramer nesnesi bu beklentiyle UYUŞMAZ, güncelleme hiç FORMA ULAŞMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Telaffuz/Ses/Not/Yaygın Hata Izgarası',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Gramer bölümünün (`{hasGrammar && (...)}`) HEMEN altında — örnek cümlelerden ÖNCE gelen son wordDetail alanları grubu.',
+        kod: `            <div className="mb-3 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs text-muted">{t('words.form.pronunciation')}</label>
+                <input
+                  type="text"
+                  name={\`translations.\${index}.wordDetail.pronunciation\`}
+                  value={translation.wordDetail?.pronunciation ?? ''}
+                  onChange={formik.handleChange}
+                  className="w-full rounded-control border border-border bg-background px-2 py-1 text-sm text-text"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted">{t('words.form.audioUrl')}</label>
+                <input
+                  type="text"
+                  name={\`translations.\${index}.wordDetail.audioUrl\`}
+                  value={translation.wordDetail?.audioUrl ?? ''}
+                  onChange={formik.handleChange}
+                  className="w-full rounded-control border border-border bg-background px-2 py-1 text-sm text-text"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted">{t('words.form.notes')}</label>
+                <input
+                  type="text"
+                  name={\`translations.\${index}.wordDetail.notes\`}
+                  value={translation.wordDetail?.notes ?? ''}
+                  onChange={formik.handleChange}
+                  className="w-full rounded-control border border-border bg-background px-2 py-1 text-sm text-text"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-muted">{t('words.form.commonMistakes')}</label>
+                <input
+                  type="text"
+                  name={\`translations.\${index}.wordDetail.commonMistakes\`}
+                  value={translation.wordDetail?.commonMistakes ?? ''}
+                  onChange={formik.handleChange}
+                  className="w-full rounded-control border border-border bg-background px-2 py-1 text-sm text-text"
+                />
+              </div>
+            </div>`,
+        satirlar: [
+          {
+            satir: '<div className="mb-3 grid grid-cols-2 gap-2">',
+            aciklama: 'Dört alan (telaffuz/ses linki/not/yaygın hata) 2 sütunlu bir grid\'e yerleşiyor — notes ve commonMistakes `col-span-2` ile TAM satır genişliği kaplıyor.',
+            neden: 'Telaffuz ve ses linki KISA, tek satırlık değerler (yan yana sığar) ama notes/commonMistakes SERBEST metin (birkaç cümle olabilir) — bu ikisine tam genişlik vermek, kısa alanlarda gereksiz boşluk bırakmadan uzun metinlere yeterli yer ayırıyor.',
+            olmasaydi: 'Dört alan da eşit yarım genişlikte kalsaydı, notes/commonMistakes gibi uzun metinler dar bir kutuya SIKIŞIR, admin sürekli yatay kaydırma veya satır kırılmasıyla UĞRAŞIRDI.'
+          },
+          {
+            satir: "name={`translations.${index}.wordDetail.pronunciation`}\n                  value={translation.wordDetail?.pronunciation ?? ''}\n                  onChange={formik.handleChange}",
+            aciklama: 'Bu dört alanın HİÇBİRİ `wordFormSchema`\'da (Yup) YER ALMIYOR — telaffuz/ses/not/yaygın hata form seviyesinde hiç DOĞRULANMIYOR, tıpkı backend\'in bunları opsiyonel kabul etmesi gibi.',
+            neden: 'wordDetail\'in bu dört alanı, gramer verisinin AKSİNE, kelimenin türünden BAĞIMSIZ her zaman opsiyonel — form seviyesinde bunları zorunlu kılmak, backend\'in izin verdiği "telaffuzsuz kelime" gibi geçerli senaryoları admin\'e hiç SUNMAZDI.',
+            olmasaydi: 'Bu alanlar `wordFormSchema`\'ya `.required()` ile eklenseydi, `formik.handleSubmit`\'in doğrulaması admin\'in elinde OLMAYAN bir ses dosyası linkini UYDURMASINI ya da formu hiç GÖNDEREMEMESİNİ dayatırdı.'
+          },
+          {
+            satir: '<div className="col-span-2">',
+            aciklama: 'Yalnızca notes ve commonMistakes div\'leri `col-span-2` alıyor, pronunciation/audioUrl almıyor.',
+            neden: 'Grid\'in ilk iki hücresi (pronunciation, audioUrl) yan yana KISA girişler olarak kalmalı — yalnızca UZUN metin bekleyen son iki alanın satırı tek başına kaplaması, hangi alanların kısa/hangilerinin uzun içerik beklediğini görsel olarak da işaret ediyor.',
+            olmasaydi: 'Tüm dört hücre eşit yarım genişlikte kalsaydı, uzun metin girmesi beklenen notes/commonMistakes alanları görsel olarak diğer iki kısa alandan AYIRT EDİLEMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Örnek Cümleler ve fieldset\'in Kapanışı',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Her çeviri satırının SON alanı — wordDetail ızgarasının hemen altında, ardından o çevirinin `fieldset`\'i ve `translations.map` döngüsü kapanıyor.',
+        kod: `            <div>
+              <p className="mb-1 text-sm font-semibold text-text">{t('words.form.examples')}</p>
+              <WordExamplesFields
+                value={translation.examples ?? []}
+                onChange={(value) => formik.setFieldValue(\`translations.\${index}.examples\`, value)}
+              />
+            </div>
+          </fieldset>
+        ))}`,
+        satirlar: [
+          {
+            satir: 'value={translation.examples ?? []}',
+            aciklama: '`translation.examples` `undefined`/`null` olduğunda `WordExamplesFields`\'a boş dizi geçiliyor, `undefined` DEĞİL.',
+            neden: '`WordExamplesFields` muhtemelen `value.map(...)` gibi bir dizi işlemi yapıyor — `undefined` bir değer bu component\'e geçseydi component İÇİNDE bir çalışma zamanı hatası (undefined üzerinde map çağrısı) fırlatırdı; `?? []` bu ihtimali form seviyesinde KAPATIYOR.',
+            olmasaydi: '`?? []` olmasaydı ve o çeviri elemanında `examples` teorik olarak `undefined` gelseydi, `WordExamplesFields`\'ın ilk render\'ında beyaz ekran (component çökmesi) riski DOĞARDI.'
+          },
+          {
+            satir: "onChange={(value) => formik.setFieldValue(`translations.${index}.examples`, value)}",
+            aciklama: 'Aynı desen — `WordExamplesFields` de native olmayan bir component, `Controller` yerine `formik.setFieldValue` ile bağlanıyor.',
+            neden: '`WordExamplesFields`\'ın `onChange(value: WordExampleInput[])` imzası bir DOM eventi DEĞİL düz bir DİZİ — `CategoryPicker`/`GermanGrammarFields` ile AYNI gerekçe: custom component + native olmayan bir `onChange` şekli, HER ZAMAN `setFieldValue`\'yu gerektiriyor.',
+            olmasaydi: '`setFieldValue` yerine `formik.handleChange` verilmeye çalışılsaydı, örnek cümle listesi güncellemeleri forma HİÇ ULAŞMAZDI (bkz. yukarıdaki `CategoryPicker` satırının gerekçesi — aynı sınıf hata).'
+          },
+          {
+            satir: '</fieldset>\n        ))}',
+            aciklama: 'Her dil çevirisi için açılan `fieldset` burada kapanıyor, ardından `formik.values.translations.map(...)` döngüsünün kendisi de kapanıyor.',
+            neden: '`fieldset`/`legend` kullanımı, ekranda birden fazla çeviri satırı varken (düzenleme modunda birden fazla dil) her birinin hangi alanların o dile ait olduğunu görsel VE erişilebilirlik (ekran okuyucu) açısından GRUPLUYOR.',
+            olmasaydi: '`fieldset` olmadan tüm çevirilerin alanları düz bir `div` içinde art arda dizilseydi, iki dilli bir düzenleme modunda hangi text/definition/gramer alanının HANGİ dile ait olduğunu ekran okuyucu kullanan bir admin için ayırt etmek TAMAMEN KAYBOLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordFormModal.tsx — Kapanış: İptal/Kaydet Butonları',
+        dosyaYolu: 'admin/src/components/words/WordFormModal.tsx',
+        nedenBuKlasor: 'Dosyanın SON bloğu — tüm çeviri fieldset\'lerinin altında, formun ve component\'in kapanış etiketleri.',
+        kod: `        <div className="mt-2 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-control border border-border px-4 py-2 text-sm text-text hover:bg-background"
+          >
+            {t('action.cancel')}
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {isSubmitting ? t('words.form.submitting') : t('action.save')}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}`,
+        satirlar: [
+          {
+            satir: 'onClick={onClose}',
+            aciklama: 'İptal butonu `type="button"` (submit DEĞİL) ve doğrudan `onClose` prop\'unu çağırıyor — formun kendi doğrulama/gönderme mantığını hiç TETİKLEMİYOR.',
+            neden: '`type="button"` belirtilmeseydi, tarayıcı bir form İÇİNDEKİ butonu varsayılan olarak SUBMIT sayardı — "iptal" tıklamak yanlışlıkla formu GÖNDERİRDİ.',
+            olmasaydi: '`type="button"` olmasaydı, admin "iptal" tıkladığında form yine `formik.handleSubmit` ile gönderilir, doldurulmamış zorunlu alanlar varsa Yup hatası gösterilirdi — admin iptal etmek isterken bir doğrulama hatasıyla KARŞILAŞIRDI.'
+          },
+          {
+            satir: 'disabled={isSubmitting}',
+            aciklama: 'Kaydet butonu yalnızca istek DEVAM ederken (create veya update) devre dışı, iptal butonu HER ZAMAN aktif kalıyor.',
+            neden: '`isSubmitting` (Bölüm 4\'ün başındaki hook tanımlamalarında `isCreating || isUpdating` olarak türetilmişti) kaydet\'e uygulanınca, admin\'in AYNI formu istek bitmeden İKİNCİ kez göndermesi (çift kayıt/çift güncelleme riski) ENGELLENİYOR.',
+            olmasaydi: '`disabled` olmasaydı, yavaş bir ağ bağlantısında admin "kaydet"e üst üste tıklayabilir, backend\'e AYNI kelime için birden fazla eşzamanlı istek GİDERDİ.'
+          },
+          {
+            satir: "{isSubmitting ? t('words.form.submitting') : t('action.save')}",
+            aciklama: 'Kaydet butonunun METNİ de disabled durumuyla eşleşiyor — istek sürerken "kaydediliyor", aksi halde "kaydet" yazıyor.',
+            neden: 'Buton yalnızca `disabled` olmakla yetinseydi, admin tıklamanın neden ÇALIŞMADIĞINI merak ederdi — metnin de değişmesi, isteğin GERÇEKTEN sürdüğünü açıkça bildiriyor.',
+            olmasaydi: 'Metin sabit "kaydet" kalsaydı ve disabled stilinin (opacity düşmesi) fark edilmediği bir durumda, admin butonun NEDEN tepki vermediğini anlayamaz, formun DONDUĞUNU sanırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'useFormik', tanim: 'Formik\'in kök hook\'u — `initialValues`/`validationSchema`/`onSubmit` alır, `values`/`errors`/`handleChange`/`handleSubmit`/`setFieldValue` döndürür; react-hook-form\'un `useForm`\'unun karşılığı.' },
+          { terim: 'formik.handleChange', tanim: 'Native `<input>`/`<select>` elemanlarını `name` attribute\'undaki YOLA göre forma bağlayan TEK genel event handler — react-hook-form\'un `register(name)`\'inin yerini alıyor.' },
+          { terim: 'formik.setFieldValue(path, value)', tanim: 'Native olmayan (custom) component\'leri (`CategoryPicker`, gramer alanları, `WordExamplesFields`) forma bağlamanın yolu — react-hook-form\'un `Controller`+`field.onChange`\'inin karşılığı, ama TEK adımlı.' },
+          { terim: 'Yup / validationSchema', tanim: 'Formun TÜM alanlarının geçerlilik kurallarını TEK bir şemada (`Yup.object({...})`) toplayan kütüphane — react-hook-form\'un alan-bazlı `register(name, {required: true})` deseninin yerini alıyor.' },
+          { terim: 'Non-null Assertion (!)', tanim: 'TypeScript\'e "bu değer burada KESİNLİKLE null/undefined DEĞİL" diyen, derleyicinin KENDİSİ çıkaramadığı bir garantiyi geliştiricinin ELLE verdiği işaret.' },
+          { terim: 'force=true / Idempotent Olmayan Yeniden Deneme', tanim: 'Aynı isteğin İKİNCİ kez, açıkça "kullanıcı onayladı" bilgisiyle GÖNDERİLMESİ — sıradan bir "hata olunca otomatik tekrar dene" MANTIĞINDAN farklı, ARADA bir insan onayı var.' },
+          { terim: 'Koşullu Varoluş vs Koşullu Stil', tanim: 'Bir elemanın DOM\'a hiç EKLENMEMESİ (`{condition && <X/>}`) ile aynı elemanın yalnızca GÖRSEL olarak gizlenmesi (`display:none`) ARASINDAKİ fark — ilki backend\'in YASAKLADIĞI bir alanı KULLANICIYA hiç sunmaz.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`WordFormModal` TEK component, iki mod — `initialData` prop\'unun VARLIĞI/YOKLUĞU ekle/düzenle ayrımını yapıyor',
+          'Formik + Yup — `wordFormSchema` TEK bir merkezi doğrulama, react-hook-form\'un ALAN bazlı `register` doğrulamasının yerini aldı',
+          'Native alanlar `formik.handleChange` (`name` attribute\'una göre), custom component\'ler (`CategoryPicker`/gramer alanları/`WordExamplesFields`) `formik.setFieldValue(path, value)` ile bağlanıyor',
+          '`.unwrap()` YOK — `useApiMutation` (Bölüm 2) zaten axios\'un native Promise reddini kullanıyor, mutation çağrıları düz `try/catch` içinde `await`leniyor',
+          '`hasGrammar` gramer bölümünü Noun/Verb DIŞINDA hiç render ETMİYOR (koşullu stil değil, koşullu varoluş) — `submit`\'in KENDİ yerel `hasGrammar`\'ı, "yine de ekle" akışında gönderilen `values`\'e sadık kalmak için AYRICA hesaplanıyor',
+          '409 (`WORD_TEXT_ALREADY_EXISTS`) formu KAPATMIYOR — `duplicatePending` doldurulmuş veriyi SAKLAYIP "yine de ekle" onayı bekliyor',
+          'Sırada: gramer bölümünün KENDİSİ — önce Almanca (Bölüm 5), sonra Türkçe (Bölüm 6)'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

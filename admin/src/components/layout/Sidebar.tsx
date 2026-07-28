@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next'
 
 export function Sidebar() {
   const { t } = useTranslation()
-  const links = [{ to: '/', label: t('nav.dashboard') }]
+  const links = [
+    { to: '/', label: t('nav.dashboard') },
+    { to: '/words', label: t('nav.words') },
+    { to: '/words/pairing', label: t('nav.wordPairing') },
+  ]
 
   return (
     <aside className="w-56 shrink-0 border-r border-border bg-surface">

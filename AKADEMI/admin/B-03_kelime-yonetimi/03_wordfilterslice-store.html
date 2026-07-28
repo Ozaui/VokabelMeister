@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>wordFilterSlice.ts — Liste Filtre/Sayfa State'i</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'b03-wordfilterslice',
+    bolumBaslik: 'B-03 — Kelime Yönetimi',
+    oncekiBolum: '02_rtk-query-katmani.html',
+    sonrakiBolum: '04_wordformmodal.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'wordFilterSlice.ts',
+        altBaslik: '`WordListPage`\'in arama/seviye/tür/kategori/sayfa durumunu tutan küçük bir Redux slice — B-01\'in `languageSlice`/`themeSlice`\'iyle AYNI desen, ama bu kez sunucu tercihine DEĞİL, tarayıcı oturumuna bağlı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bu State useApiQuery\'nin İÇİNDE Değil, Ayrı Bir Slice\'ta',
+        aciklama: '`getWords` sorgusunun KENDİSİ `useGetWordsQuery` çağrıldığı ANDA `WordListPage`\'in İÇİNDE (Bölüm 2\'deki `useApiQuery` hook\'u üzerinden) çalışıyor, ama "admin şu an HANGİ filtreyi seçili tutuyor" bambaşka bir şey — bu bir SUNUCU verisi değil, kullanıcı arayüzünün KENDİ durumu; `useApiQuery`\'nin kendi başına bir cache\'i YOK (Bölüm 2), bu ayrımı daha da NET kılıyor.',
+        neden: 'Filtre state\'i `WordListPage` component\'inin İÇİNDE yerel `useState` olarak da tutulabilirdi, ama Redux\'a alınmasının somut sebebi: `setSearch`/`setLevel` gibi eylemlerin HER birinin "sayfayı da 1\'e döndür" gibi PAYLAŞILAN bir yan davranışı var — bu davranış bir reducer\'ın İÇİNDE TEK yerde yazılır, `useState` kullansaydı HER `onChange` handler\'ının kendi İÇİNDE tekrarlanırdı.',
+        olmasaydi: 'Filtre `useState` olsaydı ve "sayfayı 1\'e döndürme" kuralı unutulsaydı (ör. yeni bir filtre eklenirken), admin 3. sayfadayken arama yapınca YENİ sonuç kümesinde 3. sayfa hiç OLMAYABİLİR (arama 2 sonuç döndürüyor ama admin hâlâ "3. sayfa" istiyor) — kullanıcıya BOŞ bir liste, aslında sonuç OLMASINA rağmen, gösterilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'wordFilterSlice.ts — Her Filtre Değişimi Sayfayı 1\'e Döndürür',
+        dosyaYolu: 'admin/src/store/slices/wordFilterSlice.ts',
+        nedenBuKlasor: '`store/slices/` altında — B-01\'in `languageSlice`/`themeSlice` ile AYNI klasör, aynı `createSlice` deseni.',
+        kod: `import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import type { DifficultyLevel, PartOfSpeech } from '../../types/word.types'
+
+interface WordFilterState {
+  search: string
+  level: DifficultyLevel | null
+  partOfSpeech: PartOfSpeech | null
+  categoryId: number | null
+  page: number
+}
+
+const initialState: WordFilterState = {
+  search: '',
+  level: null,
+  partOfSpeech: null,
+  categoryId: null,
+  page: 1,
+}
+
+const wordFilterSlice = createSlice({
+  name: 'wordFilter',
+  initialState,
+  reducers: {
+    // Arama/filtre değiştiğinde sayfa 1'e döner — aksi hâlde 3. sayfadayken filtre değiştirilirse
+    // yeni sonuç kümesinde var olmayan bir sayfada boş bir liste görülür.
+    setSearch: (state, action: PayloadAction<string>) => {
+      state.search = action.payload
+      state.page = 1
+    },
+    setLevel: (state, action: PayloadAction<DifficultyLevel | null>) => {
+      state.level = action.payload
+      state.page = 1
+    },
+    setPartOfSpeech: (state, action: PayloadAction<PartOfSpeech | null>) => {
+      state.partOfSpeech = action.payload
+      state.page = 1
+    },
+    setCategoryId: (state, action: PayloadAction<number | null>) => {
+      state.categoryId = action.payload
+      state.page = 1
+    },
+    setPage: (state, action: PayloadAction<number>) => {
+      state.page = action.payload
+    },
+    resetWordFilters: () => initialState,
+  },
+})
+
+export const { setSearch, setLevel, setPartOfSpeech, setCategoryId, setPage, resetWordFilters } =
+  wordFilterSlice.actions
+export default wordFilterSlice.reducer`,
+        satirlar: [
+          {
+            satir: "setSearch: (state, action: PayloadAction<string>) => {",
+            aciklama: 'Immer tabanlı `createSlice` sayesinde `state.search = ...` doğrudan MUTASYON gibi görünür ama arka planda YENİ, değişmez (immutable) bir state nesnesi üretir.',
+            neden: 'Redux\'un KENDİSİ değişmez state ister (aksi hâlde `useSelector`\'ın referans eşitliği kontrolü BOZULUR, gereksiz re-render\'lar veya KAÇAN re-render\'lar olur) — Immer bu kuralı ihlal ETMEDEN "doğrudan atama" YAZIMINI mümkün kılıyor.',
+            olmasaydi: 'Immer olmasaydı, her reducer `return { ...state, search: action.payload, page: 1 }` gibi ELLE yayılan (spread) bir nesne DÖNDÜRMEK zorunda kalırdı — beş reducer\'ın hepsinde bu TEKRAR, bir tanesinde `page: 1` unutulursa fark etmesi ZOR bir hata olurdu.'
+          },
+          {
+            satir: 'setPage: (state, action: PayloadAction<number>) => {',
+            aciklama: 'TEK reducer — diğer beşinin AKSİNE `page`\'i `1`\'e SIFIRLAMIYOR, yalnızca kendi değerini yazıyor.',
+            neden: 'Bu bilinçli bir ASİMETRİ: "Sonraki"/"Önceki" butonlarına tıklamak filtreyi DEĞİŞTİRMEZ, yalnızca AYNI filtrenin farklı bir sayfasını ister — sayfa 1\'e sıfırlansaydı, "Sonraki"ye her tıklama admin\'i tekrar 1. sayfaya ATARDI.',
+            olmasaydi: '`setPage` de diğerleri gibi kendini sıfırlasaydı (anlamsız ama varsayalım), admin HİÇBİR ZAMAN 1. sayfadan ileri GİDEMEZDİ — her "Sonraki" tıklaması kendi kendini İPTAL ederdi.'
+          },
+          {
+            satir: 'resetWordFilters: () => initialState,',
+            aciklama: 'Argümansız bir reducer — mevcut state\'e BAKMADAN doğrudan `initialState`\'e döner.',
+            neden: 'Diğer beş reducer `(state, action) => {...}` imzasına sahipken bu yalnızca `() => initialState` — çünkü "resetle" eylemi hiçbir GİRDİ (payload) gerektirmiyor, hangi state\'te olursa olsun SONUÇ hep aynı.',
+            olmasaydi: '`resetWordFilters` her alanı TEK TEK `null`/`\'\'`/`1` yapan bir dizi atama olarak yazılsaydı, `initialState`\'e YENİ bir alan eklendiğinde (ör. gelecekte bir `sortBy`) bu reducer\'ın GÜNCELLENMESİ unutulabilirdi — `initialState`\'e dönmek bu riski TAMAMEN ortadan kaldırıyor.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'store.ts — wordFilterReducer Kaydı (Saf Ekleme)',
+        dosyaYolu: 'admin/src/store/store.ts',
+        nedenBuKlasor: 'B-01\'de kurulan kök store — yeni bir slice yazıldığında bu dosyaya İKİ satırlık bir ekleme (import + reducer anahtarı) yeterli, `configureStore`\'un GERİ KALANI değişmiyor.',
+        kod: `import { configureStore } from '@reduxjs/toolkit'
+import { api } from './api'
+import authReducer from './slices/authSlice'
+import languageReducer from './slices/languageSlice'
+import themeReducer from './slices/themeSlice'
+import wordFilterReducer from './slices/wordFilterSlice'
+
+export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+    language: languageReducer,
+    theme: themeReducer,
+    wordFilter: wordFilterReducer,
+    [api.reducerPath]: api.reducer,
+  },
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
+})`,
+        satirlar: [
+          {
+            satir: "wordFilter: wordFilterReducer,",
+            aciklama: '`RootState`\'e `wordFilter` anahtarını ekler — `WordListPage`\'in (Bölüm 8) `useSelector((state: RootState) => state.wordFilter)` çağrısının KARŞILIĞI.',
+            neden: '`RootState` tipi `ReturnType<typeof store.getState>` olarak TÜRETİLİYOR (dosyanın sonunda) — bu satır eklenmeden `state.wordFilter` TypeScript\'e göre HİÇ VAR OLMAZDI, `WordListPage` derleme HATASI verirdi.',
+            olmasaydi: 'Bu satır unutulsaydı, `wordFilterSlice`\'ın reducer\'ları ÇAĞRILABİLİR olurdu (action\'lar dispatch edilebilirdi) ama HİÇBİR şeyi DEĞİŞTİRMEZDİ — store\'da o slice\'a AYRILMIŞ bir yer olmadığı için Redux o action\'ları SESSİZCE yok sayardı, `WordListPage` filtre UI\'ı hiç TEPKİ VERMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Immer', tanim: 'Redux Toolkit\'in İÇİNDE gömülü kütüphane — reducer\'ların İÇİNDE "doğrudan mutasyon" gibi görünen kodu, arka planda değişmez (immutable) bir güncellemeye ÇEVİRİR.' },
+          { terim: 'PayloadAction<T>', tanim: 'Redux Toolkit\'in tip yardımcısı — bir action\'ın `payload` alanının tipini `T` olarak SABİTLER.' },
+          { terim: 'RootState', tanim: '`store.getState()`\'in dönüş tipinden TÜRETİLEN, TÜM slice\'ların birleşimi olan kök state tipi.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`wordFilterSlice` — arama/seviye/tür/kategori/sayfa, beş "değiştir" reducer\'ının HEPSİ sayfayı 1\'e döndürür, `setPage` bu kuralın BİLİNÇLİ istisnası',
+          '`resetWordFilters` argümansız — doğrudan `initialState`\'e döner, alan alan sıfırlama YAZMAZ',
+          '`store.ts`\'e iki satırlık saf ekleme — import + reducer anahtarı',
+          'Sırada: bu filtrelerin ve tiplerin GERÇEKTEN kullanıldığı yer — `WordFormModal` (Bölüm 4), admin panelin şimdiye kadarki EN KARMAŞIK component\'i'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

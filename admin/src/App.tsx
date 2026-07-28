@@ -4,6 +4,8 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppLayout } from './components/layout/AppLayout'
 import { LoginPage } from './components/LoginPage'
 import { OtpVerifyPage } from './components/OtpVerifyPage'
+import { WordListPage } from './components/words/WordListPage'
+import { WordPairingPage } from './components/words/WordPairingPage'
 import { useThemeSync } from './hooks/useThemeSync'
 
 function DashboardPlaceholder() {
@@ -22,6 +24,8 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPlaceholder />} />
+            <Route path="/words" element={<WordListPage />} />
+            <Route path="/words/pairing" element={<WordPairingPage />} />
           </Route>
         </Route>
       </Routes>

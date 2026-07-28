@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API Katmanı — wordsApi + languagesApi + categoriesApi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'b03-api-katmani',
+    bolumBaslik: 'B-03 — Kelime Yönetimi',
+    oncekiBolum: '01_tipler-word-category.html',
+    sonrakiBolum: '03_wordfilterslice-store.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'API Katmanı — wordsApi + languagesApi + categoriesApi',
+        altBaslik: 'Bölüm 1\'in tipleri şimdi GERÇEK HTTP isteklerine dönüşüyor — altı endpoint tek dosyada (`wordsApi.ts`), artı iki küçük yalnız-okuma dosyası, hepsi düz `axios` çağrıları + iki paylaşılan generic hook (`useApiQuery`/`useApiMutation`) üzerinden.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'wordsApi.ts — Altı Endpoint, Düz Fonksiyon + Generic Hook',
+        dosyaYolu: 'admin/src/store/api/wordsApi.ts',
+        nedenBuKlasor: '`store/api/` altında — her domain kendi dosyasında, hepsi B-01\'in paylaşılan `apiClient`\'ını (axios instance, `store/api.ts`) ve `hooks/`\'teki iki generic hook\'u KULLANIYOR; RTK Query\'nin `injectEndpoints`\'i gibi bir merkezi kayıt mekanizması YOK, her fonksiyon bağımsız.',
+        kod: `import { apiClient } from '../api'
+import { useApiQuery } from '../../hooks/useApiQuery'
+import { useApiMutation } from '../../hooks/useApiMutation'
+import type {
+  CreateWordRequest,
+  GetUnmatchedWordConceptsParams,
+  GetWordsParams,
+  PagedResult,
+  PairWordConceptsRequest,
+  UnmatchedWordConcept,
+  UpdateWordRequest,
+  WordConceptDetail,
+  WordListItem,
+} from '../../types/word.types'
+
+async function fetchWords(params: GetWordsParams): Promise<PagedResult<WordListItem>> {
+  const { data } = await apiClient.get<PagedResult<WordListItem>>('/words', { params })
+  return data
+}
+
+async function fetchWordById(id: number): Promise<WordConceptDetail> {
+  const { data } = await apiClient.get<WordConceptDetail>(\`/words/\${id}\`)
+  return data
+}
+
+// force=true, backend'in aynı dilde aynı Text'te 409 döndürdüğü durumda admin onaylayınca gönderilir.
+async function createWord({ body, force }: { body: CreateWordRequest; force?: boolean }): Promise<WordConceptDetail> {
+  const { data } = await apiClient.post<WordConceptDetail>('/words', body, {
+    params: force ? { force: true } : undefined,
+  })
+  return data
+}
+
+async function updateWord({ body, force }: { body: UpdateWordRequest; force?: boolean }): Promise<WordConceptDetail> {
+  const { data } = await apiClient.put<WordConceptDetail>(\`/words/\${body.id}\`, body, {
+    params: force ? { force: true } : undefined,
+  })
+  return data
+}
+
+async function deleteWord(id: number): Promise<void> {
+  await apiClient.delete(\`/words/\${id}\`)
+}
+
+async function fetchUnmatchedWordConcepts(
+  params: GetUnmatchedWordConceptsParams,
+): Promise<PagedResult<UnmatchedWordConcept>> {
+  const { data } = await apiClient.get<PagedResult<UnmatchedWordConcept>>('/words/unmatched', { params })
+  return data
+}
+
+async function pairWordConcepts(body: PairWordConceptsRequest): Promise<WordConceptDetail> {
+  const { data } = await apiClient.post<WordConceptDetail>('/words/pair', body)
+  return data
+}
+
+export function useGetWordsQuery(params: GetWordsParams) {
+  return useApiQuery(fetchWords, params)
+}
+
+export function useGetWordByIdQuery(id: number) {
+  return useApiQuery(fetchWordById, id)
+}
+
+export function useCreateWordMutation() {
+  return useApiMutation(createWord)
+}
+
+export function useUpdateWordMutation() {
+  return useApiMutation(updateWord)
+}
+
+export function useDeleteWordMutation() {
+  return useApiMutation(deleteWord)
+}
+
+export function useGetUnmatchedWordConceptsQuery(
+  params: GetUnmatchedWordConceptsParams,
+  options?: { skip?: boolean },
+) {
+  return useApiQuery(fetchUnmatchedWordConcepts, params, options)
+}
+
+export function usePairWordConceptsMutation() {
+  return useApiMutation(pairWordConcepts)
+}`,
+        satirlar: [
+          {
+            satir: "async function fetchWords(params: GetWordsParams): Promise<PagedResult<WordListItem>> {",
+            aciklama: 'RTK Query\'nin bildirimsel (`builder.query({query: ...})`) tanımının yerini düz bir `async` fonksiyon aldı — istek NASIL atılır (`apiClient.get`) burada AÇIKÇA yazılı, gizli bir "query builder" YOK.',
+            neden: 'Bu proje artık RTK Query\'nin kendi HTTP istemcisini (`fetchBaseQuery`) değil, B-01\'de kurulan tek bir `apiClient` (axios) örneğini KULLANIYOR — her endpoint bu istemciyi ÇAĞIRAN sıradan bir fonksiyon, ekstra bir soyutlama katmanı EKLEMİYOR.',
+            olmasaydi: 'Bu fonksiyon RTK Query\'nin `query:` alanı İÇİNDE kalsaydı, `apiClient`\'a (ve onun `Accept-Language`/`Authorization` interceptor\'larına, bkz. Bölüm 1\'deki `api.ts`) geçiş MÜMKÜN olmazdı — iki AYRI HTTP istemcisi (biri RTK Query\'nin kendi `fetchBaseQuery`\'si, biri axios) aynı projede YAŞARDI.'
+          },
+          {
+            satir: "async function createWord({ body, force }: { body: CreateWordRequest; force?: boolean }): Promise<WordConceptDetail> {",
+            aciklama: '`force` bayrağı `body`\'nin YANINDA, ayrı bir argüman — request body\'nin bir alanı DEĞİL, `apiClient.post`\'un `params` config\'i üzerinden query string\'e (`?force=true`) giden bağımsız bir parametre.',
+            neden: 'Backend `[FromQuery] bool force` olarak OKUYOR (WordsController) — eğer `force` `CreateWordRequest`\'in bir alanı olsaydı, backend\'in gövdeyi OLDUĞU gibi bir Command\'a bind ETMESİ (`CreateWordCommand`) gereksiz bir alanla KİRLENİRDİ.',
+            olmasaydi: '`force` gövdenin İÇİNE konsaydı, `WordFormModal`\'ın `submit(values, force)` çağrısı `payload`\'ı HER seferinde `force` alanı EKLENMİŞ/ÇIKARILMIŞ iki farklı şekilde İNŞA ETMEK zorunda kalırdı — query param olarak ayrılması, aynı `payload`\'ın İKİ farklı `force` değeriyle YENİDEN gönderilmesini (Bölüm 4\'teki "yine de ekle" akışı) BASİTLEŞTİRİYOR.'
+          },
+          {
+            satir: "export function useGetWordsQuery(params: GetWordsParams) {\n  return useApiQuery(fetchWords, params)\n}",
+            aciklama: 'Hook\'un KENDİSİ artık bir `builder`\'dan otomatik ÜRETİLMİYOR — elle yazılan TEK satırlık bir sarmalayıcı, gerçek işi (state/loading/refetch) `hooks/useApiQuery.ts`\'teki paylaşılan generic hook\'a DEVREDİYOR.',
+            neden: '`wordsApi.ts`\'in TEK sorumluluğu "hangi endpoint\'e, hangi parametrelerle" sorusuna cevap vermek — "nasıl loading/error/refetch state\'i yönetilir" sorusunun cevabı (bir kez yazılıp HER domain\'in paylaştığı) `useApiQuery`\'nin işi, burada TEKRARLANMIYOR.',
+            olmasaydi: '`useApiQuery` gibi paylaşılan bir hook OLMASAYDI, her `useGetXQuery` kendi `useState`/`useEffect` state yönetimini KENDİSİ yazmak zorunda kalırdı — altı sorgu hook\'unun HER biri AYNI loading/error/reload mantığını TEKRAR ederdi.'
+          },
+          {
+            satir: 'export function usePairWordConceptsMutation() {\n  return useApiMutation(pairWordConcepts)\n}',
+            aciklama: 'RTK Query\'deki `invalidatesTags: [{type:\'Word\',id:\'LIST\'}, {type:\'Word\',id:\'UNMATCHED\'}]` burada HİÇ YOK — bir eşleştirme başarılı olduğunda hangi listelerin YENİLENECEĞİNE `wordsApi.ts` değil, `WordPairingPage`\'in KENDİSİ (Bölüm 9) karar veriyor (`refetchGerman()`+`refetchTurkish()` çağırarak).',
+            neden: 'axios\'un otomatik bir cache/tag SİSTEMİ yok — bu geçişte BİLİNÇLİ olarak "hangi ekranın hangi veriye bağlı olduğunu SADECE o ekranın kendisi bilir" ilkesiyle, geçersiz kılma sorumluluğu API katmanından ÇAĞIRAN component\'e taşındı (ayrıntı: `hooks/useApiQuery.ts`\'in yorum satırı, Bölüm 2\'nin devamındaki kavram slaydı).',
+            olmasaydi: 'Bu sorumluluk API katmanında TUTULMAYA çalışılsaydı (ör. `wordsApi.ts`\'in kendi İÇİNDE bir mini event-bus/subscriber listesi), bu tam olarak RTK Query\'nin tag sisteminin YENİDEN icat edilmesi olurdu — axios\'a geçişin BASİTLİK kazanımı, YAPAY bir cache katmanıyla GERİ kaybedilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'useApiQuery.ts — Paylaşılan Generic Sorgu Hook\'u',
+        dosyaYolu: 'admin/src/hooks/useApiQuery.ts',
+        nedenBuKlasor: '`hooks/` altında — `wordsApi`/`languagesApi`/`categoriesApi`\'nin ÜÇÜ de (ve B-02\'nin auth sorguları da) bu TEK dosyayı paylaşıyor, domain\'e özgü hiçbir şey İÇERMİYOR.',
+        kod: `import { useEffect, useRef, useState } from 'react'
+
+interface UseApiQueryOptions {
+  // RTK Query'nin skip'iyle aynı amaç — ör. WordPairingPage dil id'si henüz gelmemişken
+  // (languageId: 0) isteği hiç atmaz.
+  skip?: boolean
+}
+
+interface UseApiQueryResult<T> {
+  data: T | undefined
+  error: unknown
+  isLoading: boolean
+  refetch: () => void
+}
+
+// RTK Query'nin providesTags/invalidatesTags'ı yok — axios'a geçişte cache invalidation'ın
+// yerini bilinçli olarak BASİT bir refetch() aldı (CLAUDE.md §3 "spekülatif ortak tip yazılmaz"
+// ilkesiyle aynı gerekçe: burada henüz ihtiyaç duyulmayan bir cache katmanı kurmuyoruz).
+export function useApiQuery<T, P>(
+  fetcher: (params: P) => Promise<T>,
+  params: P,
+  options?: UseApiQueryOptions,
+): UseApiQueryResult<T> {
+  const skip = options?.skip ?? false
+  const [data, setData] = useState<T>()
+  const [error, setError] = useState<unknown>()
+  const [isLoading, setIsLoading] = useState(!skip)
+  const [reloadToken, setReloadToken] = useState(0)
+  const paramsRef = useRef(params)
+  paramsRef.current = params
+  const fetcherRef = useRef(fetcher)
+  fetcherRef.current = fetcher
+  const paramsKey = JSON.stringify(params)
+
+  useEffect(() => {
+    if (skip) return
+    let cancelled = false
+    setIsLoading(true)
+    fetcherRef
+      .current(paramsRef.current)
+      .then((result) => {
+        if (cancelled) return
+        setData(result)
+        setError(undefined)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramsKey, skip, reloadToken])
+
+  return { data, error, isLoading, refetch: () => setReloadToken((t) => t + 1) }
+}`,
+        satirlar: [
+          {
+            satir: 'const paramsKey = JSON.stringify(params)',
+            aciklama: '`useEffect`\'in bağımlılık dizisi `params`\'ın KENDİSİNİ değil, onun JSON string\'ini İZLİYOR — `params` her render\'da YENİ bir nesne referansı OLABİLİR (ör. `wordsApi.ts`\'teki `useGetWordsQuery({search:..., page:...})` çağrısı her render\'da YENİ bir obje literal\'i üretir).',
+            neden: 'React\'in `useEffect` bağımlılık karşılaştırması REFERANS eşitliğine (`===`) bakar — `params` OBJESİ her render\'da yeni bir referans olsaydı ve `paramsKey` OLMASAYDI, effect HER render\'da yeniden ÇALIŞIRDI (sonsuz istek döngüsü riski), çünkü içerik AYNI olsa bile referans HER ZAMAN farklı.',
+            olmasaydi: '`JSON.stringify` OLMASAYDI ve doğrudan `[params]` yazılsaydı, `WordListPage`\'in HER render\'ında (ör. bir input\'a her tuş vuruşunda) `getWords` YENİDEN çalışırdı — filtre state\'i DEĞİŞMESE bile.'
+          },
+          {
+            satir: 'return { data, error, isLoading, refetch: () => setReloadToken((t) => t + 1) }',
+            aciklama: '`refetch`, `reloadToken`\'ı ARTIRARAK `useEffect`\'i YENİDEN tetikleyen basit bir fonksiyon — RTK Query\'nin otomatik tag invalidation\'ının yerini alan, admin\'in (component\'in) ELLE çağırdığı tek mekanizma.',
+            neden: 'axios\'ta "bu mutation hangi sorguları GEÇERSİZ kılar" bilgisini OTOMATİK çıkaracak bir tag sistemi yok — `WordListPage`/`WordPairingPage` (Bölüm 8-9) bir mutation BAŞARILI olduğunda KENDİLERİ `refetch()` çağırıyor, bu da "hangi ekran hangi veriye bağlı" sorusunun cevabını API katmanından ÇAĞIRAN tarafa taşıyor.',
+            olmasaydi: '`refetch` hiç OLMASAYDI, bir kelime silindikten SONRA listenin güncellenmesinin TEK yolu SAYFAYI YENİLEMEK olurdu — admin silme işleminin GERÇEKTEN işe yarayıp yaramadığını göremezdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'useApiMutation.ts — Paylaşılan Generic Mutation Hook\'u',
+        dosyaYolu: 'admin/src/hooks/useApiMutation.ts',
+        nedenBuKlasor: 'Aynı `hooks/` klasörü, `useApiQuery`\'nin YANINDA — `createWord`/`updateWord`/`deleteWord`/`pairWordConcepts` HEPSİ bu TEK hook\'u sarmalıyor.',
+        kod: `import { useState } from 'react'
+
+type UseApiMutationResult<T, A> = [(arg: A) => Promise<T>, { isLoading: boolean }]
+
+// RTK Query mutation hook'larının yerini alır — trigger promise'i RTK'daki gibi .unwrap()
+// GEREKTİRMEZ, axios zaten 2xx dışı yanıtlarda reject eder (çağıran taraf düz try/catch kullanır).
+export function useApiMutation<T, A>(mutationFn: (arg: A) => Promise<T>): UseApiMutationResult<T, A> {
+  const [isLoading, setIsLoading] = useState(false)
+
+  const trigger = async (arg: A) => {
+    setIsLoading(true)
+    try {
+      return await mutationFn(arg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return [trigger, { isLoading }]
+}`,
+        satirlar: [
+          {
+            satir: 'type UseApiMutationResult<T, A> = [(arg: A) => Promise<T>, { isLoading: boolean }]',
+            aciklama: 'Dönüş şekli RTK Query\'nin `[trigger, {isLoading, ...}]` tuple\'ıyla GÖRSEL olarak benziyor ama `trigger` artık düz bir `Promise` DÖNDÜRÜYOR, RTK\'nın özel "thunk action" nesnesini DEĞİL.',
+            neden: 'Bu benzerlik BİLİNÇLİ — `WordFormModal`/`WordListPage`/`WordPairingPage`\'in ÇAĞRI şekli (`const [createWord, {isLoading}] = useCreateWordMutation()`) neredeyse DEĞİŞMEDEN kalabildi, yalnızca `.unwrap()` çağrıları KALKTI; component kodundaki DEĞİŞİKLİK minimuma İNDİRİLDİ.',
+            olmasaydi: 'Dönüş şekli TAMAMEN farklı OLSAYDI (ör. yalnızca `{trigger, isLoading}` bir NESNE), bu geçişte HER mutation çağıran component\'in destructuring KODU da DEĞİŞTİRİLMEK zorunda kalırdı — tuple şeklini KORUMAK bu değişikliği yalnızca `.unwrap()` satırlarına İNDİRGEDİ.'
+          },
+          {
+            satir: 'return await mutationFn(arg)\n    } finally {\n      setIsLoading(false)\n    }',
+            aciklama: '`.unwrap()` YOK — axios zaten 2xx DIŞI bir yanıtta Promise\'i reddeder (`reject`), bu yüzden `trigger`\'ın döndürdüğü Promise ÇAĞIRAN tarafta düz bir `try/catch` ile ele ALINABİLİR.',
+            neden: 'RTK Query\'nin `trigger(arg)` çağrısı normalde HATA DURUMUNDA bile RESOLVE olan bir nesne DÖNDÜRÜR (`{data}` veya `{error}`) — asıl hatayı FIRLATMASI için `.unwrap()` ZORUNLUYDU; axios bu adımı GEREKSİZ kılıyor çünkü zaten native Promise semantiğiyle REDDEDİYOR.',
+            olmasaydi: '`.unwrap()` çağrıları KALDIRILMADAN axios\'a geçilseydi, `WordFormModal`\'ın `submit` fonksiyonundaki `await createWord(...).unwrap()` DERLEME hatası verirdi — axios tabanlı `trigger` zaten düz bir `Promise<T>` döndürüyor, üzerinde `.unwrap` diye bir metot YOK.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'languagesApi.ts / categoriesApi.ts — Aynı Deseni İzleyen İki Küçük Dosya',
+        terimler: [
+          { terim: 'languagesApi.ts (admin/src/store/api/languagesApi.ts)', tanim: 'TEK bir `fetchLanguages` fonksiyonu (`apiClient.get<Language[]>(\'/languages\')`) + TEK bir `useGetLanguagesQuery` hook\'u (`useApiQuery(fetchLanguages, undefined)`) — `WordsController`\'dan AYRI, backend\'deki `LanguagesController` ayrımını yansıtıyor. `WordPairingPage` (Bölüm 9) bu sorgunun sonucundan `code===\'de\'\'/\'tr\'` arayarak `languageId`\'yi bulur.' },
+          { terim: 'categoriesApi.ts (admin/src/store/api/categoriesApi.ts)', tanim: 'AYNI desen — TEK `fetchCategories` fonksiyonu + TEK `useGetCategoriesQuery` hook\'u, mutation YOK (kategori CRUD\'u B-04\'ün işi). `CategoryPicker` (Bölüm 7) bu tek sorguyu okuyor.' },
+          { terim: 'Neden İkisi de Tek Endpoint', tanim: 'İkisi de bir DROPDOWN/AĞAÇ için REFERANS veri okuyor, yazma UCU henüz hiç YOK — YAGNI: `createCategory`/`createLanguage` gibi mutation\'lar, onları KULLANACAK hiçbir component YOKKEN bu dosyalara EKLENMEDİ.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'lib/apiError.ts — getApiErrorCode Eklendi (Saf Ekleme)',
+        dosyaYolu: 'admin/src/lib/apiError.ts',
+        nedenBuKlasor: 'B-02\'de yazılan `getApiErrorMessage`\'ın YANINA, aynı dosyaya eklendi — ikisi de AYNI `{error:{code,message}}` gövdesini `isAxiosError` type guard\'ıyla okuyor, tek bir `hasErrorBody` type guard\'ı PAYLAŞIYORLAR.',
+        kod: `// B-03 (WordFormModal) — "409 DuplicateWordException (WORD_TEXT_ALREADY_EXISTS) → ?force=true ile
+// onaylayarak tekrar gönder" akışı Code'a göre dallanır, dile göre değişen Message'a değil.
+export function getApiErrorCode(error: unknown): string | null {
+  if (isAxiosError(error) && hasErrorBody(error.response?.data)) {
+    return error.response!.data.error.code
+  }
+  return null
+}`,
+        satirlar: [
+          {
+            satir: "export function getApiErrorCode(error: unknown): string | null {",
+            aciklama: 'B-02\'nin `getApiErrorMessage`\'ıyla NEREDEYSE birebir aynı gövde — tek fark `.error.message` yerine `.error.code` okumak; parametre tipi de artık RTK Query\'nin `FetchBaseQueryError | SerializedError`\'ı DEĞİL, düz `unknown` (axios\'un `catch` bloğuna düşen HERHANGİ bir değer).',
+            neden: '`WordFormModal`\'ın (Bölüm 4) "aynı metinli kelime zaten var, yine de eklensin mi?" akışı bir HATA KODUNA (`WORD_TEXT_ALREADY_EXISTS`) göre dallanmalı — `message` alanı admin\'in seçtiği dile göre DEĞİŞİYOR ("Bu dilde aynı metinli..." vs "Ein Wort mit demselben..."), koda göre dallanmak dil FARK ETMEKSİZİN çalışır.',
+            olmasaydi: 'Kod yerine `message` string\'ine göre dallanılsaydı (`error.message.includes(\'already exists\')` gibi), admin panelin dili Almanca\'ya çevrildiğinde bu KARŞILAŞTIRMA sessizce YANLIŞ sonuç verirdi — "yine de ekle" butonu hiç ÇIKMAZDI, admin 409\'un NEDENİNİ hiç anlamazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'force=true — Hata Kodunun Yeniden Deneme Akışına Dönüşmesi',
+        aciklama: 'Backend aynı dilde aynı metinli bir kelime eklenmeye çalışıldığında 409 (`WORD_TEXT_ALREADY_EXISTS`) döner — ama bu her zaman bir HATA değil, bazen bilinçli bir tekrar olabilir (ör. "Bank" hem "banka" hem "sıra/oturak" anlamında iki AYRI kavram olarak var olabilir). `?force=true` bu kontrolü ATLATIR.',
+        neden: 'Bir admin panelinde bu tür "belki kasıtlı" durumlar SESSİZCE reddedilmemeli (admin\'in gerçekten hata yaptığı durumları YAKALAMAK için 409 hâlâ var) ama tamamen ENGELLENMEMELİ de (bilinçli tekrar MÜMKÜN olmalı) — `force` parametresi tam olarak bu ikisinin ARASINDA bir orta yol.',
+        olmasaydi: '409 hiç aşılamaz bir DUVAR olsaydı, gerçekten iki farklı anlamı olan bir kelimenin İKİNCİ kavramı asla EKLENEMEZDİ — admin "Bank" (sıra) kelimesini eklemek için var olan "Bank" (banka) kaydını SİLİP baştan YAZMAK gibi saçma bir yola BAŞVURMAK zorunda kalırdı.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'apiClient (axios instance)', tanim: 'B-01\'de kurulan, TEK bir yerden `Authorization`/`Accept-Language` header\'larını EKLEYEN paylaşılan axios örneği (`store/api.ts`) — RTK Query\'nin `fetchBaseQuery`\'sinin karşılığı, TÜM `store/api/*.ts` dosyaları bunu kullanıyor.' },
+          { terim: 'useApiQuery / useApiMutation', tanim: 'RTK Query\'nin otomatik ÜRETİLEN hook\'larının yerini alan, ELLE yazılmış İKİ generic hook (`hooks/`) — sorgu (loading/error/data/refetch) ve mutation (trigger/isLoading) durumunu YÖNETİYOR, domain\'e özgü hiçbir şey BİLMİYOR.' },
+          { terim: 'refetch()', tanim: 'RTK Query\'nin otomatik tag invalidation\'ının yerini alan, ÇAĞIRAN component\'in ELLE tetiklediği YENİDEN sorgulama — "hangi ekran hangi veriye bağlı" sorusunun cevabı artık API katmanında değil, component\'in kendisinde.' },
+          { terim: 'Query String Parametresi vs Body Alanı', tanim: '`force=true` gibi bir bayrağın istek gövdesine mi (`body`) yoksa URL\'in sorgu dizesine mi (`params` config\'i → `?force=true`) konacağı — backend `[FromQuery]`/`[FromBody]` ayrımıyla belirler.' },
+          { terim: 'HTTP 409 Conflict', tanim: 'İstenen işlemin sunucudaki MEVCUT bir durumla ÇAKIŞTIĞINI belirten HTTP durum kodu — burada "aynı dilde aynı metinli kelime zaten var".' },
+          { terim: 'Type Guard (hasErrorBody / isAxiosError)', tanim: '`isAxiosError` axios\'un kendi type guard\'ı (hatanın GERÇEKTEN bir HTTP yanıtından geldiğini doğrular), `hasErrorBody` ise B-02\'den beri var olan, `data is ApiErrorBody` dönüş tipine sahip yardımcı — hem `getApiErrorMessage` hem `getApiErrorCode` bunu PAYLAŞIR.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`wordsApi.ts` — altı endpoint, HER biri `apiClient` (axios) çağıran düz bir `async` fonksiyon + `useApiQuery`/`useApiMutation` sarmalayıcısı',
+          'Cache geçersiz kılma artık bir TAG SİSTEMİ değil — `refetch()` çağırmak ÇAĞIRAN component\'in (WordListPage/WordPairingPage, Bölüm 8-9) sorumluluğu',
+          '`force` bayrağı body\'nin DEĞİL, `params` config\'inin (query string) parçası — backend\'in `[FromQuery] bool force`\'una birebir karşılık geliyor',
+          '`languagesApi.ts`/`categoriesApi.ts` — AYNI fetch-fonksiyon+hook deseni, ikisi de salt-okunur küçük dosyalar',
+          '`getApiErrorCode` B-02\'nin `getApiErrorMessage`\'ının YANINA saf ekleme — Code\'a göre dallanmak dilden BAĞIMSIZ',
+          'Sırada: bu sorguların GERÇEKTEN kullanıldığı yer — `wordFilterSlice` (Bölüm 3), sonra component\'ler'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
