@@ -321,6 +321,51 @@
       toplam 193/193 yeşil (184 + 9)
 - [x] ➜ **AKADEMI/backend'ye işle** (`09_esleztirme-controller-postman-testler.html` + kapanış `10_ozet-sozluk.html`)
 
+### A-05.1 — Dil Listesi API (GET /languages) ✅
+**Referans:** REFERENCE/API_ENDPOINTS.md §5.2
+**Frontend karşılığı:** B-03 (WordFormModal/WordPairingPage — dil kod↔id eşlemesi)
+> B-03 hazırlığında fark edildi: `GetUnmatchedWordConceptsQuery` sayısal bir `languageId` istiyor
+> ama bunu istemciye söyleyecek hiçbir endpoint yoktu — tek kaynak migration seed'iydi (`de`=1,
+> `tr`=2). `ILanguageRepository.GetAllActiveAsync` A-05'te zaten vardı, yalnızca Query+Controller
+> eksikti; yeni migration YOK.
+- [x] `GetLanguagesQuery`/`GetLanguagesQueryHandler` (`Application/Features/Words/`) — parametresiz,
+      `LanguageDto(Id, Code, Name, NativeName)` (`Application/DTOs/Words/LanguageDtos.cs`)
+- [x] ➜ **AKADEMI/backend'ye işle** (`AKADEMI/backend/A-05.1_dil-listesi-api/02_query-controller-
+      postman-test.html`)
+- [x] `LanguagesController` (`api/v1/languages`, `GET` [Authorize] — Admin şartı yok, CRUD'suz
+      salt-okunur referans tablosu; WordsController'a EKLENMEDİ, SmtpSettingsController/
+      MediaController ile aynı "ayrı domain controller'ı" deseni)
+- [x] ➜ **AKADEMI/backend'ye işle** (aynı bölüm)
+- [x] **Birim testleri:** `GetLanguagesQueryHandlerTests` (1). **298/298 birim testi yeşil** (297'den +1).
+- [x] ➜ **AKADEMI/backend'ye işle** (aynı bölüm, kapanış `ozet`+`sozluk` dahil)
+
+### A-05.2 — Türkçe Gramer Alan Tamamlama (vowelHarmony + possessive) ✅
+**Referans:** REFERENCE/TURKISH_LANGUAGE_FEATURES.md §7 (Kart Tasarımı) / §9 (Doldurma Matrisi)
+**Frontend karşılığı:** B-03 (WordFormModal — tr Noun zorunlu alanları)
+> B-03 hazırlığında fark edilen bir tutarsızlık: `TURKISH_LANGUAGE_FEATURES.md §7` "Kart Tasarımı"
+> ünlü uyumu grubunu (`vowelHarmony`) ve iyelik ekini (`possessive`) isim kartının parçası sayıyor,
+> ama A-05'te `WordGrammarValidator`'ın tr-Noun dalı bu ikisini hiç zorunlu kılmıyordu (bilinçli bir
+> A-05 kararıydı — bkz. A-05 notu "TR'nin §9 matrisinde geçmeyen possessive/vowelHarmony/pluralForm/
+> consonantMutation zorunlu tutulmaz" — ama kart tasarımıyla çelişiyordu). Kullanıcı onayıyla ikisi
+> de zorunlu yapıldı. **`consonantMutation` bilinçli olarak dışarıda bırakıldı** — yalnızca
+> `TURKISH_LANGUAGE_FEATURES.md §8`'deki henüz yazılmamış bir quiz özelliğinde kullanılacak (Faz
+> C/D/E), hiçbir kod onu okumuyor; WordFormModal (B-03) bunu opsiyonel/doğrulanmamış bir alan
+> olarak sunacak (YAGNI).
+- [x] `WordGrammarValidator.ValidateTurkish` (Noun dalı) — `vowelHarmony` (`HasNonEmptyString`) +
+      `possessive` (yeni `HasAllPossessiveFields`, 6 kişi: ben/sen/o/biz/siz/onlar) zorunlu kılındı;
+      `NounOnlyFields` dizisine ikisi eklendi (artık Verb'de de yasaklı)
+- [x] ➜ **AKADEMI/backend'ye işle** (`AKADEMI/backend/A-05.2_turkce-gramer-tamamlama/
+      02_validator-kod-degisiklik.html` — `kod-degisiklik` slaydı, A-05 Bölüm 4'ün "TAM DOSYA"
+      hâline dokunmadan)
+- [x] 2 yeni `ErrorMessages.cs` kodu (tr/de): `GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED`,
+      `GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE`
+- [x] ➜ **AKADEMI/backend'ye işle** (`03_test-ozet-sozluk.html`)
+- [x] **Birim testleri:** `WordGrammarValidatorTests`'e 2 yeni senaryo + 3 var olan tr-Noun
+      fixture'ı (`ValidData`/`MissingPlural`/`IncompleteCases`) güncellendi. **300/300 birim testi
+      yeşil** (298'den +2).
+- [x] ➜ **AKADEMI/backend'ye işle** (aynı bölüm, kapanış `ozet`+`sozluk` dahil)
+- [x] `TURKISH_LANGUAGE_FEATURES.md §9` Noun "Zorunlu" listesi + "Doğrulanmadı uyarısı" notu güncellendi
+
 ### A-06 — Kategori API (Categories) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin — Kategori Yönetimi), D-06 (Web — Kategoriler Sayfası), E-08 (Mobil — Kategoriler Ekranı)

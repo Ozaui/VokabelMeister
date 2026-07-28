@@ -102,12 +102,19 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 
 ```json
 // POST /words (translations[] 1 dil de olabilir — o zaman kavram "eşleşmemiş" kalır)
+// grammarData şekli WordGrammarValidator'ın gerçek alanlarıyla birebir (GERMAN_LANGUAGE_FEATURES.md
+// §10 / TURKISH_LANGUAGE_FEATURES.md §9) — "articleDefiniteNom"/"pluralForm" gibi uydurma alan adı YOK.
 { "partOfSpeech": "Noun", "difficultyLevel": "A1", "imageUrl": "...", "categoryIds": [1],
   "translations": [
     { "languageCode": "de", "text": "Mann",
-      "wordDetail": { "grammarData": { "gender": "Masculine", "articleDefiniteNom": "der", "pluralForm": "Männer" } },
+      "wordDetail": { "grammarData": { "gender": "Masculine", "plural": "Männer",
+        "cases": { "nominative": "der Mann", "accusative": "den Mann", "dative": "dem Mann", "genitive": "des Mannes" } } },
       "examples": [ { "sentenceText": "Der Mann ist hier.", "level": "A1" } ] },
-    { "languageCode": "tr", "text": "Erkek", "examples": [ { "sentenceText": "Adam burada.", "level": "A1" } ] }
+    { "languageCode": "tr", "text": "Erkek",
+      "wordDetail": { "grammarData": { "plural": "erkekler", "vowelHarmony": "ince",
+        "cases": { "nominative": "erkek", "accusative": "erkeği", "dative": "erkeğe", "locative": "erkekte", "ablative": "erkekten", "genitive": "erkeğin" },
+        "possessive": { "ben": "erkeğim", "sen": "erkeğin", "o": "erkeği", "biz": "erkeğimiz", "siz": "erkeğiniz", "onlar": "erkekleri" } } },
+      "examples": [ { "sentenceText": "Adam burada.", "level": "A1" } ] }
   ] }
 // GET /words → data[].{ wordConceptId, partOfSpeech, difficultyLevel, translations[], categories[], userProgress }
 //   + pagination { currentPage, totalPages, totalItems }
@@ -139,6 +146,20 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 // POST /media/images/upload (Content-Type: multipart/form-data, alan adı "file")
 // → 201 { "url": "https://localhost:7001/uploads/3f9ab2c1d4e94f5a8b6c7d8e9f0a1b2c.png" }
 // → 400 UNSUPPORTED_FILE_TYPE / FILE_TOO_LARGE (5 MB üstü)
+```
+
+## 5.2 Diller (A-05.1)
+
+> `languageId`'ye ihtiyaç duyan uçlar (ör. `GET /words/unmatched?languageId=X`) için — daha önce
+> yalnızca migration seed'inden (`de`=1, `tr`=2) biliniyordu, CRUD'u yok (yeni dil = DB'ye elle satır).
+
+| Metot | Yol | Auth | Açıklama |
+|-------|-----|------|----------|
+| GET | `/languages` | [Authorize] | Aktif dillerin listesi (`DisplayOrder`'a göre sıralı) |
+
+```json
+// GET /languages → [ { "id": 1, "code": "de", "name": "German", "nativeName": "Deutsch" },
+//                     { "id": 2, "code": "tr", "name": "Turkish", "nativeName": "Türkçe" } ]
 ```
 
 ## 6. Kategoriler

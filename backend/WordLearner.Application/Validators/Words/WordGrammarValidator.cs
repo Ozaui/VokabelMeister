@@ -34,6 +34,10 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
     ];
     private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
 
+    // Iyelik ekleri de conjugation gibi 6 kişilik ama tek "zaman" (tense kavramı yok) —
+    // HasAllConjugationCells'in tense/person iki katmanına uymadığı için ayrı bir kontrol.
+    private static readonly string[] TrPossessivePersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
+
     private static readonly string[] VerbOnlyFields =
     [
         "isSeparableVerb",
@@ -42,7 +46,10 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
         "pastParticiple",
         "conjugation",
     ];
-    private static readonly string[] NounOnlyFields = ["gender", "plural", "cases"];
+    // "vowelHarmony"/"possessive" tr'ye özgü (de'de kavram bile yok) ama VerbFieldsForbidden
+    // kontrolü iki dilde de aynı diziyi paylaşıyor — Verb'de bulunmaları hep yasak olduğu için
+    // ekstra bir dil-özel dizi açmaya gerek yok.
+    private static readonly string[] NounOnlyFields = ["gender", "plural", "cases", "vowelHarmony", "possessive"];
 
     public WordGrammarValidator()
     {
@@ -142,6 +149,12 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
                 yield return Failure("GRAMMAR_TR_NOUN_PLURAL_REQUIRED");
             if (!HasAllCaseFields(data, TrCaseFields))
                 yield return Failure("GRAMMAR_TR_NOUN_CASES_INCOMPLETE");
+            // A-05.2 retrofit: kart tasarımı (TURKISH_LANGUAGE_FEATURES.md §7) ünlü uyumu grubunu
+            // ve iyelik ekini isim kartının parçası sayıyor — A-05'te §9 matrisine hiç girmemişti.
+            if (!HasNonEmptyString(data, "vowelHarmony"))
+                yield return Failure("GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED");
+            if (!HasAllPossessiveFields(data))
+                yield return Failure("GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE");
             if (HasAnyField(data, ["verbRoot", "negativeForm", "conjugation"]))
                 yield return Failure("GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN");
             yield break;
@@ -201,6 +214,14 @@ public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
             return false;
 
         return caseFields.All(field => HasNonEmptyString(cases, field));
+    }
+
+    private static bool HasAllPossessiveFields(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("possessive", out var possessive))
+            return false;
+
+        return TrPossessivePersons.All(person => HasNonEmptyString(possessive, person));
     }
 
     private static bool HasAllConjugationCells(

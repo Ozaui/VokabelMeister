@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Test Senkronizasyonu + Özet + Sözlük</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'test-ozet-sozluk',
+    bolumBaslik: 'A-05.2 — Türkçe Gramer Alan Tamamlama',
+    oncekiBolum: '02_validator-kod-degisiklik.html',
+    sonrakiBolum: '../A-06_kategori-api/01_hiyerarsi-ve-coklu-dil.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Yeni ErrorMessages Kodları + Test Senkronizasyonu',
+        altBaslik: 'İki yeni zorunlu alan, iki yeni ErrorCode ve mevcut "geçerli tr-Noun" test fixture\'larının güncellenmesini gerektirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ErrorMessages.cs — İki Yeni Kod (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Localization/ErrorMessages.cs',
+        nedenBuKlasor: 'Var olan GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN girdisinin hemen ardına eklenen iki YENİ, bağımsız sözlük satırı — sözlüğün geri kalanı DEĞİŞMEDİ (STANDART.md §3.2, "tek başına çalışabilen ekleme" — yalnızca eklenen kısım + öncesindeki satır gösteriliyor).',
+        kod: `["GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN"] = new()
+{
+    ["tr"] = "İsimlerde fiil alanları (fiil kökü, olumsuz biçim, çekim) bulunamaz.",
+    ["de"] = "Substantive dürfen keine Verbfelder (Verbstamm, Verneinung, Konjugation) enthalten.",
+},
+["GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED"] = new()
+{
+    ["tr"] = "Türkçe isimler için ünlü uyumu grubu (vowelHarmony) zorunludur.",
+    ["de"] = "Für türkische Substantive ist die Vokalharmonie-Gruppe (vowelHarmony) erforderlich.",
+},
+["GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE"] = new()
+{
+    ["tr"] = "Türkçe isimler için iyelik ekinin 6 kişilik çekiminin tamamı doldurulmalı.",
+    ["de"] = "Für türkische Substantive müssen alle 6 Personenformen des Possessivsuffixes ausgefüllt sein.",
+},`,
+        satirlar: [
+          {
+            satir: '["GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED"] = new()',
+            aciklama: 'CLAUDE.md §1 "İstisna" kuralı: istemciye giden hata mesajı Code+ErrorMessages sözlüğünden Accept-Language\'a göre çözülür, exception .Message\'ı DEĞİL.',
+            neden: 'Diğer 24 GRAMMAR_* koduyla aynı desen — her yeni ErrorCode\'un hem tr hem de karşılığı olmadan istemciye anlamlı bir hata dönmez.',
+            olmasaydi: 'Yalnızca WordGrammarValidator.cs\'e ErrorCode eklenip bu sözlüğe girdi eklenmeseydi, ErrorMessages.Resolve bilinmeyen bir kod için ya boş dönerdi ya da bir fallback\'e düşerdi — admin hangi alanın eksik olduğunu anlayamazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordGrammarValidatorTests — Yeni Senaryolar + Fixture Güncellemesi',
+        dosyaYolu: 'backend/WordLearner.Tests/Validators/Words/WordGrammarValidatorTests.cs',
+        kod: `[Fact]
+public void Validate_TrNoun_ValidData_ReturnsNoErrors()
+{
+    var json = """
+        {
+          "plural": "masalar",
+          "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+          "vowelHarmony": "kalın",
+          "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
+        }
+        """;
+
+    var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
+
+    result.IsValid.Should().BeTrue();
+}
+
+[Fact]
+public void Validate_TrNoun_MissingVowelHarmony_ReturnsVowelHarmonyRequiredError()
+{
+    var json = """
+        {
+          "plural": "masalar",
+          "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+          "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
+        }
+        """;
+
+    var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
+
+    ErrorCodes(result).Should().Contain("GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED");
+}
+
+[Fact]
+public void Validate_TrNoun_IncompletePossessive_ReturnsPossessiveIncompleteError()
+{
+    var json = """
+        {
+          "plural": "masalar",
+          "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+          "vowelHarmony": "kalın",
+          "possessive": { "ben":"masam", "sen":"masan" }
+        }
+        """;
+
+    var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
+
+    ErrorCodes(result).Should().Contain("GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE");
+}`,
+        satirlar: [
+          {
+            satir: '"vowelHarmony": "kalın",',
+            aciklama: 'A-05\'ten beri var olan Validate_TrNoun_ValidData_ReturnsNoErrors testi (ve MissingPlural/IncompleteCases testleri) artık bu iki alanı da içermeli — yoksa yeni zorunlu kontroller yüzünden "geçerli" kabul edilen fixture geçersiz hâle gelirdi.',
+            neden: 'Bir validator\'a yeni bir zorunlu alan eklemenin gerçek maliyeti budur: yalnızca yeni test eklemek yetmez, "hepsi doğru dolu" varsayan MEVCUT fixture\'lar da güncellenmelidir.',
+            olmasaydi: 'MissingPlural/IncompleteCases testleri güncellenmeseydi hâlâ geçerdi (Contain — birden fazla hata dönmesi sorun değil) ama ValidData testi güncellenmeseydi KIRILIRDI (IsValid artık false dönerdi, yeni GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED hatası yüzünden).'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-05.2 Bölümü Bitti',
+        maddeler: [
+          'WordGrammarValidator.ValidateTurkish Noun dalına 2 yeni zorunlu kontrol: vowelHarmony (HasNonEmptyString) + possessive (yeni HasAllPossessiveFields, 6 kişi).',
+          'NounOnlyFields dizisine vowelHarmony/possessive eklendi — artık Verb\'de de yasaklı (GRAMMAR_TR_VERB_NOUN_FIELDS_FORBIDDEN kapsamında).',
+          '2 yeni ErrorMessages.cs kodu (tr/de): GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED, GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE.',
+          '2 yeni birim test + 3 var olan tr-Noun fixture\'ı güncellendi (ValidData/MissingPlural/IncompleteCases) — toplam 300/300 birim testi yeşil (A-05.1\'in 298\'inden +2).',
+          'consonantMutation BİLİNÇLİ olarak dışarıda bırakıldı — §8\'deki quiz özelliği (Faz C/D/E) henüz yazılmadı, WordFormModal (B-03) bunu yalnızca opsiyonel/doğrulanmamış bir alan olarak sunacak.',
+          'TURKISH_LANGUAGE_FEATURES.md §9 "Zorunlu" listesi bu değişikliğe göre güncellendi (docs/REFERENCE/TURKISH_LANGUAGE_FEATURES.md).'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'kod-degisiklik (STANDART.md §3.1)', tanim: 'Daha önce bir kod slaydında öğretilmiş bir dosyanın SONRADAN değişmesi — eski bölüm dokunulmadan bırakılır, değişikliği yapan görevin bölümüne git-diff tarzı bir slayt eklenir.' },
+          { terim: 'Saf ekleme (STANDART.md §3.2)', tanim: 'Var olan bir dosyaya davranışı DEĞİŞTİRMEDEN yeni, bağımsız bir şey eklemek (yeni bir sözlük girdisi, yeni bir metot) — normal bir kod slaydı yeterli, kod-degisiklik gerekmez.' },
+          { terim: 'Fixture senkronizasyonu', tanim: 'Bir validator/kural sıkılaştırıldığında, "geçerli" kabul edilen mevcut test verilerinin de yeni kurala uyacak şekilde güncellenmesi gerekliliği — A-03.4\'teki pozisyonel parametre senkronizasyonuyla aynı maliyet kalıbı.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -269,6 +269,16 @@ public static class ErrorMessages
             ["tr"] = "İsimlerde fiil alanları (fiil kökü, olumsuz biçim, çekim) bulunamaz.",
             ["de"] = "Substantive dürfen keine Verbfelder (Verbstamm, Verneinung, Konjugation) enthalten.",
         },
+        ["GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED"] = new()
+        {
+            ["tr"] = "Türkçe isimler için ünlü uyumu grubu (vowelHarmony) zorunludur.",
+            ["de"] = "Für türkische Substantive ist die Vokalharmonie-Gruppe (vowelHarmony) erforderlich.",
+        },
+        ["GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE"] = new()
+        {
+            ["tr"] = "Türkçe isimler için iyelik ekinin 6 kişilik çekiminin tamamı doldurulmalı.",
+            ["de"] = "Für türkische Substantive müssen alle 6 Personenformen des Possessivsuffixes ausgefüllt sein.",
+        },
         ["GRAMMAR_TR_VERB_VERBROOT_REQUIRED"] = new()
         {
             ["tr"] = "Türkçe fiiller için fiil kökü (verbRoot) zorunludur.",

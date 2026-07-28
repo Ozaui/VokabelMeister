@@ -88,9 +88,16 @@ Unicode: ç ğ ı ö ş ü İ (`ı`≠`i` dikkat). Örnekler `WordExamples.Level
 > ölçülmedi (Almanca matrisi 795 satır üzerinden doğrulandı, Türkçe için elimizde henüz veri yok) —
 > gerçek `tr` kelime listesi dolmaya başlayınca bu ikisi gözden geçirilecek. Hâl/çekim
 > sayıları (6 hâl, 30 çekim hücresi) Türkçe dilbilgisinin kendisinden geldiği için bu belirsizliğe dahil değil.
+>
+> **A-05.2 retrofit (B-03 hazırlığında fark edildi):** `vowelHarmony` (§1) ve `possessive` (§4) bu
+> matriste ilk yazıldığında (A-05) hiç zorunlu kılınmamıştı — ama §7 "Kart Tasarımı" ikisini de
+> isim kartının parçası sayıyor. Tutarsızlık fark edilince ikisi de aşağıdaki Zorunlu listesine
+> eklendi ve `WordGrammarValidator`'a işlendi (bkz. `AKADEMI/backend/A-05.2_turkce-gramer-
+> tamamlama/`). `consonantMutation` (§5) ise yalnızca §8'deki henüz yazılmamış bir quiz özelliğinde
+> kullanılacağı için bilinçli olarak YAGNI ile ertelendi — validator'da doğrulanmıyor.
 
 **PartOfSpeech = Noun (İsim)**
-- **Zorunlu:** `Text`, `Definition` (serbest anlam notu), `plural`, 6 hâl (`cases.nominative/accusative/dative/locative/ablative/genitive`, §3).
+- **Zorunlu:** `Text`, `Definition` (serbest anlam notu), `plural`, 6 hâl (`cases.nominative/accusative/dative/locative/ablative/genitive`, §3), `vowelHarmony` (§1 — `"kalın"`|`"ince"`), `possessive` (§4 — 6 kişilik iyelik eki).
 - **Koşullu:** `WordDetails.Notes` (bileşik kelime notu) — yalnızca bileşik isimde dolu (ör. "başöğretmen"), değilse boş/NULL.
 - **Yasak (NULL kalmalı):** `verbRoot`, `negativeForm`, `conjugation.*` (30 hücre) — Noun'da anlamsız.
 
@@ -99,7 +106,7 @@ Unicode: ç ğ ı ö ş ü İ (`ı`≠`i` dikkat). Örnekler `WordExamples.Level
 - **Koşullu:** `WordDetails.Notes` (bileşik kelime notu) — yalnızca bileşik fiilde dolu (ör. "göz atmak"), değilse boş/NULL.
   **Fark (Almancadan):** `de`'de bileşik not yalnızca Noun'da; `tr`'de hem Noun hem Verb'de olabilir —
   validator bu ayrımı dile göre yapar, ortak bir kural değildir.
-- **Yasak:** `plural`, `cases.*` — Verb'de anlamsız.
+- **Yasak:** `plural`, `cases.*`, `vowelHarmony`, `possessive` — Verb'de anlamsız.
 
 **Diğer türler (Adjective, Adverb, Conjunction, Preposition, Pronoun, Other — Sayı/Ünlem gibi ayrı
 enum değeri olmayanlar `PartOfSpeech=Other`'a düşer, `WordConcepts.PartOfSpeech` CHECK listesi sabit)**

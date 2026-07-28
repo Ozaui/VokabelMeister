@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GetLanguagesQuery + LanguagesController + Test</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'query-controller-postman-test',
+    bolumBaslik: 'A-05.1 — Dil Listesi API',
+    oncekiBolum: '01_neden-simdi-fark-edildi.html',
+    sonrakiBolum: '../A-05.2_turkce-gramer-tamamlama/01_neden-simdi-fark-edildi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'Var Olan Repository Metodunu Dışarı Açmak',
+        altBaslik: 'Entity/EF Config/Repository zaten A-05\'te vardı — yalnızca Query+Controller eksikti. Yeni bir migration YOK.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetLanguagesQuery + Handler — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetLanguagesQuery.cs',
+        kod: `using MediatR;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Interfaces.Repositories;
+
+namespace WordLearner.Application.Features.Words;
+
+// languageId'ye ihtiyaç duyan istemci uçları (B-03 WordFormModal/WordPairingPage — de/tr
+// kod↔id eşlemesi) için — daha önce yalnızca migration seed'inden (1=de, 2=tr) biliniyordu.
+public record GetLanguagesQuery : IRequest<IReadOnlyList<LanguageDto>>;
+
+public class GetLanguagesQueryHandler : IRequestHandler<GetLanguagesQuery, IReadOnlyList<LanguageDto>>
+{
+    private readonly ILanguageRepository _languageRepository;
+
+    public GetLanguagesQueryHandler(ILanguageRepository languageRepository) =>
+        _languageRepository = languageRepository;
+
+    public async Task<IReadOnlyList<LanguageDto>> Handle(GetLanguagesQuery request, CancellationToken ct)
+    {
+        var languages = await _languageRepository.GetAllActiveAsync(ct);
+        return languages.Select(l => new LanguageDto(l.Id, l.Code, l.Name, l.NativeName)).ToList();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'public record GetLanguagesQuery : IRequest<IReadOnlyList<LanguageDto>>;',
+            aciklama: 'Girdi parametresi YOK — Word/Category listelerinin aksine filtre/sayfa gerekmiyor, yalnızca 2 (gelecekte birkaç) satırlık statik bir referans listesi.',
+            neden: 'GetWordsQuery/GetCategoriesQuery gibi filtre parametreleri eklemek YAGNI\'yi ihlal ederdi — Language listesi zaten küçük, sayfalamaya hiç ihtiyaç yok.',
+            olmasaydi: 'Boş bir record yerine parametre eklenseydi (ör. isActiveOnly), hiç kullanılmayan bir esneklik için Controller/Handler\'ı gereksiz karmaşıklaştırırdı.'
+          },
+          {
+            satir: 'var languages = await _languageRepository.GetAllActiveAsync(ct);',
+            aciklama: 'A-05\'te zaten yazılmış olan ILanguageRepository.GetAllActiveAsync\'i ÇAĞIRIYOR — yeni bir repository metodu YAZILMADI.',
+            neden: 'Bu görevin tamamı aslında "var olan bir metodu bir Controller\'a bağlamak" — Entity/EF Config/Repository katmanlarında hiçbir değişiklik yok, CLAUDE.md §3\'ün adım 1-8\'i zaten tamamdı.',
+            olmasaydi: 'Bu metot yeniden yazılsaydı (kopya kod), DisplayOrder\'a göre sıralama davranışı iki ayrı yerde bakım gerektirirdi.'
+          },
+          {
+            satir: 'return languages.Select(l => new LanguageDto(l.Id, l.Code, l.Name, l.NativeName)).ToList();',
+            aciklama: 'Entity→DTO dönüşümü tek satırlık düz bir projeksiyon — ayrı bir LanguageDtoBuilder AÇILMADI.',
+            neden: 'AutoMapper proje genelinde yalnızca Auth\'ta kullanılıyor (CLAUDE.md §3 "Koşullu kurallar"); WordConceptDtoBuilder/CategoryDtoBuilder gibi diğer tüm Feature\'lar da elle inşa ediyor — burada da aynı desen, ama tek satır olduğu için ayrı bir builder sınıfı bile gereksiz.',
+            olmasaydi: 'Ayrı bir LanguageDtoBuilder.cs açılsaydı, tek satırlık bir projeksiyon için gereksiz bir dosya + spekülatif bir soyutlama (CLAUDE.md §3 "Spekülatif ortak tip yazılmaz") olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LanguagesController — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/LanguagesController.cs',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Features.Words;
+
+namespace WordLearner.API.Controllers;
+
+// WordsController'dan AYRI — Language kendi entity'si (BaseEntity'siz, statik seed), CategoriesController
+// gibi tek endpoint'lik küçük bir domain controller'ı için ayrı dosya açma emsali (SmtpSettingsController).
+[ApiController]
+[Route("api/v1/languages")]
+public class LanguagesController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public LanguagesController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet]
+    [Authorize]
+    [ProducesResponseType(typeof(IReadOnlyList<LanguageDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<LanguageDto>>> GetLanguages(CancellationToken ct) =>
+        Ok(await _mediator.Send(new GetLanguagesQuery(), ct));
+}`,
+        satirlar: [
+          {
+            satir: '[Route("api/v1/languages")]',
+            aciklama: 'WordsController (api/v1/words) yerine kendi kök yolu — Language, Word\'ün alt kaynağı değil bağımsız bir referans listesi.',
+            neden: 'SmtpSettingsController/MediaController emsalinde olduğu gibi, "ayrı bir domain = ayrı bir controller dosyası" (WordsController\'a EKLENMEDİ).',
+            olmasaydi: 'GET /words/languages gibi WordsController\'a eklenen bir endpoint, Word\'e hiç bağımlı olmayan bu kaynağı yanlış bir hiyerarşiye sokardı.'
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: '[Authorize(Roles="Admin")] DEĞİL — GET /words gibi herhangi bir giriş yapmış kullanıcı (ileride Web/Mobil de) okuyabilir, CRUD yok zaten.',
+            neden: 'CLAUDE.md §1 "Roller ve sahiplik": sistem içeriği CRUD Admin, okuma [Authorize] — Language salt-okunur bir referans tablosu, CRUD\'u yok (yeni dil eklemek DB\'ye elle satır, bkz. A-05.1 Bölüm 1).',
+            olmasaydi: 'Admin\'e kısıtlansaydı, ileride Web/Mobil (Faz D/E) bu listeye ihtiyaç duyduğunda (ör. bir dil seçim ekranı) gereksiz bir yetki engeliyle karşılaşırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /languages',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/languages',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        aciklama: 'Herhangi bir giriş yapmış kullanıcı çağırabilir — Admin şartı yok.',
+        yanit: {
+          durum: '200 OK',
+          govde: `[
+  { "id": 1, "code": "de", "name": "German", "nativeName": "Deutsch" },
+  { "id": 2, "code": "tr", "name": "Turkish", "nativeName": "Türkçe" }
+]`
+        },
+        notlar: [
+          'B-03\'ten itibaren admin panel artık "de"=1, "tr"=2 eşlemesini migration seed\'inden ezbere bilmek yerine bu endpoint\'ten okuyor.'
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetLanguagesQueryHandlerTests — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Words/GetLanguagesQueryHandlerTests.cs',
+        kod: `using FluentAssertions;
+using Moq;
+using WordLearner.Application.Features.Words;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities.Words;
+
+namespace WordLearner.Tests.Features.Words;
+
+public class GetLanguagesQueryHandlerTests
+{
+    private readonly Mock<ILanguageRepository> _languageRepo = new();
+
+    private GetLanguagesQueryHandler CreateHandler() => new(_languageRepo.Object);
+
+    [Fact]
+    public async Task GetLanguages_ReturnsActiveLanguagesMappedToDto()
+    {
+        // ARRANGE
+        _languageRepo
+            .Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new List<Language>
+                {
+                    new()
+                    {
+                        Id = 1,
+                        Code = "de",
+                        Name = "German",
+                        NativeName = "Deutsch",
+                    },
+                    new()
+                    {
+                        Id = 2,
+                        Code = "tr",
+                        Name = "Turkish",
+                        NativeName = "Türkçe",
+                    },
+                }
+            );
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new GetLanguagesQuery(), default);
+
+        // ASSERT
+        result.Should().HaveCount(2);
+        result.Should().ContainSingle(l => l.Id == 1 && l.Code == "de" && l.NativeName == "Deutsch");
+        result.Should().ContainSingle(l => l.Id == 2 && l.Code == "tr" && l.NativeName == "Türkçe");
+    }
+}`,
+        satirlar: [
+          {
+            satir: '.Setup(r => r.GetAllActiveAsync(It.IsAny<CancellationToken>()))',
+            aciklama: 'Repository mock\'lanıyor — gerçek DB\'ye gidilmiyor, Handler\'ın yalnızca "repository\'den geleni DTO\'ya çeviriyor mu" sorusu test ediliyor.',
+            neden: 'Diğer tüm Handler testleriyle aynı desen (GetWordsQueryHandlerTests vb.) — birim test, entegrasyon test değil.',
+            olmasaydi: 'Gerçek DB\'ye bağlanılsaydı test yavaş/kırılgan olurdu, CI\'da SQL Server olmadan hiç çalışmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-05.1 Bölümü Bitti',
+        maddeler: [
+          'Yeni migration YOK — Entity/EF Config/Repository A-05\'te zaten vardı, yalnızca Query+Controller eklendi.',
+          'GetLanguagesQuery (parametresiz) + Handler (tek satır projeksiyon, LanguageDtoBuilder AÇILMADI).',
+          'LanguagesController (api/v1/languages, [Authorize] — Admin şartı yok, salt-okunur referans tablosu).',
+          '1 yeni birim test — 298/298 birim testi yeşil (297\'den +1; A-05.2\'nin 2 yeni testiyle birlikte toplam 300\'e çıkacak).',
+          'B-03 artık "de"=1/"tr"=2\'yi migration seed\'inden ezbere bilmek zorunda değil.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Referans/lookup tablosu', tanim: 'CRUD\'u olmayan, yalnızca okunan sabit bir liste (Language) — Word/Category gibi admin tarafından oluşturulup silinmez.' },
+          { terim: 'IReadOnlyList<T> dönen Query', tanim: 'PagedResult<T> DEĞİL — sayfalama gerektirmeyecek kadar küçük ve sabit bir liste olduğunda kullanılan basit dönüş tipi.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

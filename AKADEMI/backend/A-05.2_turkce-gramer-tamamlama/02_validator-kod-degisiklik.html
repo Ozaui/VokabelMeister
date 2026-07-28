@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WordGrammarValidator — kod-degisiklik</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'validator-kod-degisiklik',
+    bolumBaslik: 'A-05.2 — Türkçe Gramer Alan Tamamlama',
+    oncekiBolum: '01_neden-simdi-fark-edildi.html',
+    sonrakiBolum: '03_test-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'A-05\'te Öğretilmiş Bir Dosyaya Geri Dönmek',
+        altBaslik: 'WordGrammarValidator.cs, A-05 Bölüm 4\'te "TAM DOSYA" olarak öğretilmişti — bu bölüm o hâli DEĞİŞTİRMİYOR, buraya yeni bir kod-degisiklik slaydıyla işaret ediyor (STANDART.md §3.1).'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ValidateTurkish (Noun dalı) + NounOnlyFields — vowelHarmony + possessive Zorunlu',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/WordGrammarValidator.cs',
+        neden: 'A-05.2 — TURKISH_LANGUAGE_FEATURES.md §7 kart tasarımının vaat ettiği vowelHarmony/possessive alanları A-05\'te §9 matrisine hiç girmemişti (bkz. Bölüm 1); kullanıcı onayıyla ikisi de tr-Noun için zorunlu kılındı.',
+        diff: `     private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
+ 
++    // Iyelik ekleri de conjugation gibi 6 kişilik ama tek "zaman" (tense kavramı yok) —
++    // HasAllConjugationCells'in tense/person iki katmanına uymadığı için ayrı bir kontrol.
++    private static readonly string[] TrPossessivePersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
++
+     private static readonly string[] VerbOnlyFields =
+     [
+         "isSeparableVerb",
+         "separablePrefix",
+         "auxiliaryVerb",
+         "pastParticiple",
+         "conjugation",
+     ];
+-    private static readonly string[] NounOnlyFields = ["gender", "plural", "cases"];
++    // "vowelHarmony"/"possessive" tr'ye özgü (de'de kavram bile yok) ama VerbFieldsForbidden
++    // kontrolü iki dilde de aynı diziyi paylaşıyor — Verb'de bulunmaları hep yasak olduğu için
++    // ekstra bir dil-özel dizi açmaya gerek yok.
++    private static readonly string[] NounOnlyFields = ["gender", "plural", "cases", "vowelHarmony", "possessive"];
+ 
+     private static IEnumerable<ValidationFailure> ValidateTurkish(JsonElement data, string partOfSpeech)
+     {
+         if (partOfSpeech == "Noun")
+         {
+             if (!HasNonEmptyString(data, "plural"))
+                 yield return Failure("GRAMMAR_TR_NOUN_PLURAL_REQUIRED");
+             if (!HasAllCaseFields(data, TrCaseFields))
+                 yield return Failure("GRAMMAR_TR_NOUN_CASES_INCOMPLETE");
++            // A-05.2 retrofit: kart tasarımı (TURKISH_LANGUAGE_FEATURES.md §7) ünlü uyumu grubunu
++            // ve iyelik ekini isim kartının parçası sayıyor — A-05'te §9 matrisine hiç girmemişti.
++            if (!HasNonEmptyString(data, "vowelHarmony"))
++                yield return Failure("GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED");
++            if (!HasAllPossessiveFields(data))
++                yield return Failure("GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE");
+             if (HasAnyField(data, ["verbRoot", "negativeForm", "conjugation"]))
+                 yield return Failure("GRAMMAR_TR_NOUN_VERB_FIELDS_FORBIDDEN");
+             yield break;
+         }`,
+        satirlar: [
+          {
+            satir: 'private static readonly string[] TrPossessivePersons = ["ben", "sen", "o", "biz", "siz", "onlar"];',
+            aciklama: 'TrPersons ile aynı 6 kişi ama AYRI bir dizi — conjugation\'ın tense+person iki katmanlı yapısına (HasAllConjugationCells) uymuyor, possessive tek katmanlı (yalnızca kişi, zaman yok).',
+            neden: 'TrPersons\'ı yeniden kullanmak (aynı 6 string) DRY gibi görünür ama HasAllPossessiveFields\'ın imzasını HasAllConjugationCells\'inkiyle karıştırmamak için kavramsal olarak ayrı tutuldu — ikisi aynı içerikte olsa da farklı şeyi temsil ediyor.',
+            olmasaydi: 'TrPersons doğrudan kullanılsaydı, ileride biri conjugation kişi listesini değiştirirse (ör. yeni bir zamir eklense) possessive de yanlışlıkla etkilenirdi — kavramsal olarak bağımsız iki dilbilgisi kavramı.'
+          },
+          {
+            satir: 'private static readonly string[] NounOnlyFields = ["gender", "plural", "cases", "vowelHarmony", "possessive"];',
+            aciklama: 'Var olan bir satırın DEĞİŞTİĞİ (ekleme değil) tek nokta — dizi hem DE hem TR\'nin "Verb\'de bulunması yasak" kontrolünde paylaşılıyor.',
+            neden: 'GRAMMAR_TR_VERB_NOUN_FIELDS_FORBIDDEN kontrolü NounOnlyFields\'ı kullanıyor; vowelHarmony/possessive artık gerçek zorunlu Noun alanları olduğu için, bir Verb\'e yanlışlıkla eklenirse bu da yakalanmalı.',
+            olmasaydi: 'Bu satır güncellenmeseydi, bir admin yanlışlıkla bir Fiil\'e vowelHarmony/possessive eklese hiçbir doğrulama hatası almaz, veri sessizce tutarsız kalırdı.'
+          },
+          {
+            satir: 'if (!HasNonEmptyString(data, "vowelHarmony"))',
+            aciklama: 'gender (DE Noun) ile birebir aynı desen — tek bir string alanın boş olmadığını kontrol eder.',
+            neden: 'HasNonEmptyString zaten var olan, test edilmiş bir yardımcı — yeni bir kontrol fonksiyonu yazmaya gerek yok.',
+            olmasaydi: 'Bu kontrol eklenmeseydi, bir admin ünlü uyumu grubunu hiç girmeden bir Türkçe isim kaydedebilirdi — kart bu bilgiyi hiç gösteremezdi.'
+          },
+          {
+            satir: 'if (!HasAllPossessiveFields(data))',
+            aciklama: 'HasAllCaseFields ile birebir aynı desen (Bölüm 3\'te tanım) — 6 kişinin tamamının dolu olup olmadığını kontrol eder.',
+            neden: 'cases zaten "iç içe obje + N alanın tamamı" desenini kullanıyordu (HasAllCaseFields) — possessive de aynı şekle sahip olduğu için aynı yardımcı deseni (yeni bir HasAllPossessiveFields) tekrarlandı, HasAllCaseFields\'a parametre eklenerek genelleştirilmedi (property adı "cases" vs "possessive" farklı, tek kullanım noktası var, YAGNI).',
+            olmasaydi: 'Yalnızca varlığı (HasNonEmptyString gibi) kontrol edilseydi, admin 6 kişiden yalnızca birini doldurup geri kalanını boş bırakabilirdi — kart eksik/tutarsız iyelik tablosu gösterirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'HasAllPossessiveFields — Yeni Yardımcı Metot (Saf Ekleme)',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/WordGrammarValidator.cs',
+        nedenBuKlasor: 'HasAllCaseFields\'ın (A-05\'te öğretilmiş) hemen yanına eklenen YENİ, bağımsız bir metot — var olan hiçbir metodun içine girmiyor, STANDART.md §3.2 "saf ekleme" kuralına göre normal bir kod slaydı (kod-degisiklik değil).',
+        kod: `private static bool HasAllPossessiveFields(JsonElement data)
+{
+    if (data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("possessive", out var possessive))
+        return false;
+
+    return TrPossessivePersons.All(person => HasNonEmptyString(possessive, person));
+}`,
+        satirlar: [
+          {
+            satir: 'return TrPossessivePersons.All(person => HasNonEmptyString(possessive, person));',
+            aciklama: 'HasAllCaseFields\'ın son satırıyla (caseFields.All(field => HasNonEmptyString(cases, field))) BİREBİR aynı desen — yalnızca hangi iç içe property\'ye ("possessive" vs "cases") baktığı farklı.',
+            neden: 'Aynı desen tekrarlandı çünkü HasAllCaseFields\'ı property adını parametre yapıp genelleştirmek (ör. HasAllNestedFields(data, "possessive", TrPossessivePersons)) tek bir ek kullanım noktası için erken bir soyutlama olurdu.',
+            olmasaydi: 'HasAllCaseFields genelleştirilseydi, iki farklı kavram (hâl ekleri vs iyelik ekleri) aynı fonksiyonun parametresi hâline gelir, okunurluğu (çağrı noktasında "hangi alanı kontrol ediyorum" sorusu) azaltırdı.'
+          }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

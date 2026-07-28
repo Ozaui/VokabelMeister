@@ -205,7 +205,9 @@ public class WordGrammarValidatorTests
         var json = """
             {
               "plural": "masalar",
-              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" }
+              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+              "vowelHarmony": "kalın",
+              "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
             }
             """;
 
@@ -219,7 +221,9 @@ public class WordGrammarValidatorTests
     {
         var json = """
             {
-              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" }
+              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+              "vowelHarmony": "kalın",
+              "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
             }
             """;
 
@@ -234,13 +238,48 @@ public class WordGrammarValidatorTests
         var json = """
             {
               "plural": "masalar",
-              "cases": { "nominative": "masa", "accusative": "masayı" }
+              "cases": { "nominative": "masa", "accusative": "masayı" },
+              "vowelHarmony": "kalın",
+              "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
             }
             """;
 
         var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
 
         ErrorCodes(result).Should().Contain("GRAMMAR_TR_NOUN_CASES_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_TrNoun_MissingVowelHarmony_ReturnsVowelHarmonyRequiredError()
+    {
+        var json = """
+            {
+              "plural": "masalar",
+              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+              "possessive": { "ben":"masam", "sen":"masan", "o":"masası", "biz":"masamız", "siz":"masanız", "onlar":"masaları" }
+            }
+            """;
+
+        var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
+
+        ErrorCodes(result).Should().Contain("GRAMMAR_TR_NOUN_VOWELHARMONY_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_TrNoun_IncompletePossessive_ReturnsPossessiveIncompleteError()
+    {
+        var json = """
+            {
+              "plural": "masalar",
+              "cases": { "nominative": "masa", "accusative": "masayı", "dative": "masaya", "locative": "masada", "ablative": "masadan", "genitive": "masanın" },
+              "vowelHarmony": "kalın",
+              "possessive": { "ben":"masam", "sen":"masan" }
+            }
+            """;
+
+        var result = _validator.Validate(new WordGrammarInput("tr", "Noun", json));
+
+        ErrorCodes(result).Should().Contain("GRAMMAR_TR_NOUN_POSSESSIVE_INCOMPLETE");
     }
 
     [Fact]
