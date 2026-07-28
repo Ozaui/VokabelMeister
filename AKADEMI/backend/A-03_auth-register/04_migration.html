@@ -32,7 +32,7 @@
         tur: 'kod',
         baslik: 'Register\'ın Gerçek İlk Migration\'ı — AddUserAndRefreshToken',
         dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Migrations/20260705150743_AddUserAndRefreshToken.cs',
-        nedenBuKlasor: 'Migrations/ klasörü altında, dosya adı ZAMAN DAMGASI ile başlar (20260705150743) — bu, migration\'ların hangi SIRAYLA uygulanacağını, dosya sistemi sıralamasından bağımsız şekilde garanti eder. Bu, Users ve RefreshTokens tablolarını SIFIRDAN oluşturan, dikey dilimin migration adımı — dosya büyük olduğu için burada yalnızca CreateTable çağrılarının en önemli kısmı gösteriliyor (BaseEntity dışındaki tüm User/RefreshToken alanları için tam liste: bkz. Bölüm 9/13\'teki Entity/Configuration slaytları).',
+        nedenBuKlasor: 'Migrations/ klasörü altında, dosya adı ZAMAN DAMGASI ile başlar (20260705150743) — bu, migration\'ların hangi SIRAYLA uygulanacağını, dosya sistemi sıralamasından bağımsız şekilde garanti eder. Bu, Users ve RefreshTokens tablolarını SIFIRDAN oluşturan, dikey dilimin migration adımı — Users tablosundaki gamifikasyon/onboarding alanlarının (DailyWordGoal, TotalXP, StreakDays vb.) tek tek İŞ ANLAMI için Bölüm 9/13\'teki Entity/Configuration slaytlarına bakılmalı, burada odak migration\'ın YAPISI (constraint/index/foreign key).',
         kod: `public partial class AddUserAndRefreshToken : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -50,9 +50,29 @@
                 AuthProvider = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "Local"),
                 FirstName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                 LastName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                DisplayName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                AvatarUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                DailyWordGoal = table.Column<int>(type: "int", nullable: false, defaultValue: 10),
+                DailyNewWordLimit = table.Column<int>(type: "int", nullable: false, defaultValue: 5),
+                CurrentLevel = table.Column<string>(type: "nvarchar(2)", maxLength: 2, nullable: false, defaultValue: "A1"),
+                TotalXP = table.Column<int>(type: "int", nullable: false),
+                LifetimeXP = table.Column<int>(type: "int", nullable: false),
+                StreakDays = table.Column<int>(type: "int", nullable: false),
+                LastStreakDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                 PendingOtpCodeHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: true),
                 PendingOtpCodeExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                 PendingOtpCodePurpose = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                IsOnboardingCompleted = table.Column<bool>(type: "bit", nullable: false),
+                IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                IsEmailVerified = table.Column<bool>(type: "bit", nullable: false),
+                EmailVerifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                LastLoginIP = table.Column<string>(type: "nvarchar(45)", maxLength: 45, nullable: true),
+                LoginCount = table.Column<int>(type: "int", nullable: false),
+                ScheduledDeletionAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                IsAnonymized = table.Column<bool>(type: "bit", nullable: false),
+                OriginalEmailHash = table.Column<string>(type: "nvarchar(88)", maxLength: 88, nullable: true),
+                OneSignalPlayerId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                 Role = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "User"),
                 CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                 UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -66,6 +86,7 @@
             {
                 table.PrimaryKey("PK_Users", x => x.Id);
                 table.CheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+                table.CheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
                 table.CheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
             });
 
@@ -103,10 +124,40 @@
             });
 
         migrationBuilder.CreateIndex(
+            name: "IX_RefreshTokens_TokenFamily",
+            table: "RefreshTokens",
+            column: "TokenFamily");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_RefreshTokens_TokenHash",
+            table: "RefreshTokens",
+            column: "TokenHash");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_RefreshTokens_UserId",
+            table: "RefreshTokens",
+            column: "UserId");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_Users_AppleId",
+            table: "Users",
+            column: "AppleId");
+
+        migrationBuilder.CreateIndex(
             name: "IX_Users_Email",
             table: "Users",
             column: "Email",
             unique: true);
+
+        migrationBuilder.CreateIndex(
+            name: "IX_Users_GoogleId",
+            table: "Users",
+            column: "GoogleId");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_Users_Role",
+            table: "Users",
+            column: "Role");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
@@ -180,6 +231,12 @@
             olmasaydi: 'Bu constraint olmasaydı, bir bug ya da elle veritabanı güncellemesi AuthProvider\'ı TANINMAYAN bir değere ayarlayabilirdi — [Authorize] ve login akışları bu değeri hiç BEKLEMEDİĞİ için ÖNGÖRÜLEMEZ hatalara yol açardı.'
           },
           {
+            satir: 'table.CheckConstraint("CK_Users_Level", "CurrentLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: '`CurrentLevel` kolonuna, AuthProvider/Role ile AYNI desende ikinci bir CHECK constraint — kullanıcının CEFR seviyesini altı sabit değerle SINIRLAR.',
+            neden: '`CurrentLevel` de (AuthProvider/Role gibi) enum yerine string olarak tutuluyor — veritabanı seviyesindeki bu kısıt olmadan, ileride bir onboarding/seviye-belirleme akışı YANLIŞLIKLA "A0" veya "Beginner" gibi geçersiz bir değer yazsa, bu hata SESSİZCE veritabanına GİRERDİ.',
+            olmasaydi: 'Bu constraint olmasaydı, `CurrentLevel` sütunu TEORİK olarak herhangi bir string\'i kabul ederdi — kelime kartı seçim mantığının (kullanıcının seviyesine göre kelime getiren sorgular) HİÇ TANIMADIĞI bir seviye değeriyle karşılaşması, o kullanıcı için sonsuz veya boş bir kelime listesi DÖNMESİNE yol açabilirdi.'
+          },
+          {
             satir: 'migrationBuilder.CreateTable(',
             aciklama: '(İkinci çağrı) — aynı `CreateTable` metodu bu kez "RefreshTokens" tablosu için çalıştırılır; bir migration TEK bir tabloyla sınırlı DEĞİLDİR, dikey dilimin GEREKTİRDİĞİ tüm tablolar AYNI migration\'da oluşturulabilir.',
             neden: 'User ve RefreshToken, TEK bir dikey dilimin (Register + JWT altyapısı) PARÇASI oldukları için, aralarındaki 1:N ilişkiyi kurabilmek adına AYNI migration\'da birlikte oluşturulmaları GEREKİR.',
@@ -214,6 +271,18 @@
             aciklama: 'Users.Email kolonu üzerine BENZERSİZ (unique) bir index oluşturur — aşağıdaki `unique: true` ile.',
             neden: 'Register akışı "bu e-posta zaten kayıtlı mı" kontrolünü YAPAR (Bölüm 15\'te Handler\'da göreceğiz) ama bu kontrol yarış durumunda (aynı anda iki istek) YETERSİZ kalabilir — unique index, veritabanının KENDİSİNİN aynı Email\'le iki satır OLUŞMASINI engellemesini garanti eden SON savunma hattı.',
             olmasaydi: 'Bu unique index olmasaydı, iki eşzamanlı Register isteği AYNI e-postayla iki farklı User satırı oluşturabilirdi — "bir e-posta = bir hesap" varsayımı SESSİZCE İHLAL edilirdi.'
+          },
+          {
+            satir: 'migrationBuilder.CreateIndex(\n            name: "IX_RefreshTokens_UserId",\n            table: "RefreshTokens",\n            column: "UserId");',
+            aciklama: 'Email\'in AKSİNE, bu index `unique: true` DEĞİL — yalnızca AYNI kullanıcıya ait refresh token\'ları HIZLI bulmak için (bir kullanıcının BİRDEN FAZLA refresh token\'ı olabilir, örn. farklı cihazlar).',
+            neden: 'Login/logout/refresh akışları sürekli "bu kullanıcının GEÇERLİ refresh token\'ları hangileri" diye sorgular (`WHERE UserId = @id`) — bu index olmadan EF Core her sorguda RefreshTokens tablosunun TAMAMINI taramak (full table scan) ZORUNDA kalır.',
+            olmasaydi: 'Bu index olmasaydı, kullanıcı sayısı ve refresh token geçmişi büyüdükçe her login/refresh isteği YAVAŞLARDI — tablo taraması, tablo satır sayısıyla DOĞRUSAL olarak büyüyen bir maliyet demektir.'
+          },
+          {
+            satir: 'migrationBuilder.CreateIndex(\n            name: "IX_Users_AppleId",\n            table: "Users",\n            column: "AppleId");',
+            aciklama: '`AppleId`/`GoogleId`/`Role` kolonları da (Email gibi ama UNIQUE OLMADAN) kendi index\'lerini alır — üçü de sık sık `WHERE` koşulunda ARANAN kolonlar.',
+            neden: 'Google/Apple ile giriş akışı "bu GoogleId/AppleId\'ye kayıtlı bir kullanıcı var mı" diye sorgular, admin listeleme ekranları "Role = Admin olanları getir" gibi filtreler kullanır — index olmadan bu sorguların HER BİRİ tam tablo taraması gerektirirdi.',
+            olmasaydi: 'Bu indexler olmasaydı, sosyal girişin (Google/Apple) kullanıcı BULMA adımı ve admin\'in rol bazlı filtrelemesi, kullanıcı sayısı arttıkça GİDEREK yavaşlayan bir sorguya dönüşürdü — Email\'e unique index koyup AppleId/GoogleId/Role\'ü hiç indexlememek TUTARSIZ bir performans profili yaratırdı.'
           },
           {
             satir: 'protected override void Down(MigrationBuilder migrationBuilder)',
