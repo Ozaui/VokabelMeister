@@ -8,9 +8,9 @@
 
 ### B-01 — Kurulum ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §3, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
-- [x] React + Vite + TS, TailwindCSS, RTK Query, React Hook Form kurulumu (RHF yalnızca kuruldu, ilk kullanımı B-02)
+- [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup kurulumu (RTK Query/React Hook Form ile başlanmıştı, B-03 sonrası axios + `useApiQuery`/`useApiMutation` + Formik/Yup'a geriye dönük geçirildi — bkz. wiki INGEST)
 - [x] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki Turkuaz+Mercan paleti/Nunito+DM Sans/16px-12px radius Tailwind `@theme`'e işlendi (Primary rengi B-01 sırasında `#6D5DFC`'den `#4E93BC`'ye düzeltildi, dokümana not edildi)
-- [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan; `user` nesnesi B-02'de eklenir) + RTK Query `api.ts` (baseQuery, `Authorization` header)
+- [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan; `user` nesnesi B-02'de eklenir) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
 - [x] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı (backend'den gelen mesajlar da seçili dile göre gelsin), Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil). **Backend'de bu ihtiyaç A-03.4 (`Users.LanguagePreference`) retrofit'ini doğurdu** — yazma ucu C-01'e bırakıldı, bkz. `C_kullanici_backend.md` C-01 notu.
 - [x] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
 - [x] **Dark Mode** — `DESIGN_SYSTEM.md`'ye koyu tema paleti eklendi (Primary/Accent/Background/
@@ -44,7 +44,7 @@ kararı: kurulum adımları da atlanmadan `AKADEMI/admin/B-01_kurulum/`'a yazıl
 > Yalnızca e-posta + şifre + OTP (2FA); Google/Apple **yok** (Admin panelde asla).
 - [x] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
 - [x] ➜ **Admin Akademi'ye işle**
-- [x] **RTK Query:** `authApi` — `login`, `verifyOtp` mutation'ları (`store/api/authApi.ts`)
+- [x] **API:** `authApi` — `login`, `verifyOtp` (axios + `useApiMutation`, `store/api/authApi.ts`)
 - [x] ➜ **Admin Akademi'ye işle**
 - [x] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
 - [x] ➜ **Admin Akademi'ye işle**
@@ -82,16 +82,17 @@ kurulumunda atlanabilecek standart bir adım, not olarak düşülüyor). `AKADEM
 B-02_auth-sayfalari/` (7 bölüm), kök `AKADEMI/admin/index.html`'e kart eklendi, B-01'in kapanışı
 buraya zincirlendi.
 
-### B-03 — Kelime Yönetimi ⬜
+### B-03 — Kelime Yönetimi ✅
 **Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5
-- [ ] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
+- [x] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **API:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
       `getUnmatchedWordConcepts` (`languageId` bazlı, `suggestedMatchConceptId` dahil), `pairWordConcepts`
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (RHF — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
+      (axios + `useApiQuery`/`useApiMutation`)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (Formik+Yup — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
       önce dil (`de`/`tr`) sonra `Tür` seçilir, gramer bölümü ikisine göre koşullu render edilir —
       `de` + Noun/Verb/Diğer → `GERMAN_LANGUAGE_FEATURES.md §10`; `tr` + Noun/Verb/Diğer →
       `TURKISH_LANGUAGE_FEATURES.md §9`; backend `WordGrammarValidator`'ın TS karşılığı, aynı mantık
@@ -103,18 +104,44 @@ buraya zincirlendi.
       birincil olandan alınır]; `PartOfSpeech`/kategori farkı yalnızca **bilgilendirme** amaçlı
       gösterilir, onay/force gerektirmez — diller arası tür kayması normal, bkz. `Icerik.md`
       "Eşleştirme")
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
-- [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
+- [x] ➜ **Admin Akademi'ye işle**
+- [x] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
       `WordListPage.test.tsx` (filtre), `WordPairingPage.test.tsx` (eşleştirme mutlu yol + önerilen eşleşme render)
-- [ ] ➜ **Admin Akademi'ye işle**
+- [x] ➜ **Admin Akademi'ye işle**
+
+**Tamamlandı 2026-07-27:** Şimdiye kadarki en büyük admin feature'ı. `WordFormModal` önce dil sonra
+tür seçtirir; gramer bölümü ikisine göre koşullu render edilir (`GermanGrammarFields`/
+`TurkishGrammarFields`, ortak bir `ConjugationGrid` — DE 3×6, TR 5×6 hücre — paylaşılır). Zorunlu
+alanlar formda kırmızı `*` ile işaretlenir (admin backend validator'ın hangi alanı reddedeceğini
+tahmin etmek zorunda kalmaz). Aynı ekranın hazırlığı sırasında iki küçük backend eksiği fark edildi
+ve ayrı retrofit olarak kapatıldı: (1) `languageId`'nin tek kaynağı migration seed'iydi — yeni bir
+`GET /languages` endpoint'i (`languagesApi.ts`) bu boşluğu kapattı; (2) Türkçe isimlerin ünlü uyumu
+ve iyelik eki alanları backend validator'da hiç zorunlu değildi (kart tasarımı dokümanıyla
+tutarsızdı) — ikisi de zorunlu yapıldı, `TurkishGrammarFields`'a işlendi. `WordPairingPage` iki
+sütunu (Almanca/Türkçe eşleşmemiş) TEK bir paylaşılan, saf-render sütun component'iyle gösterir —
+veri çekme sorumluluğu üst bileşende toplanır (ilk taslakta her sütunun kendi verisini çekip
+diğerine side-effect'le sızdırdığı bir tasarım fark edilip düzeltildi). `lib/apiError.ts`'e
+`getApiErrorCode` eklendi (409 `WORD_TEXT_ALREADY_EXISTS` → "yine de ekle" akışı, dile göre değişen
+mesaj yerine sabit koda göre dallanır). **i18n düzeltmesi:** ilk taslakta hâl alanlarının küçük
+etiketleri (nominative/accusative/...) ham İngilizce JSON alan adı olarak sızmıştı, ve ayrıca örnek
+cümle türü (`Normal`/`Idiom`/`Formal`/`Colloquial`) seçimi hiç çevrilmemişti — ikisi de düzeltildi
+(`words.grammar.*.caseLabels`/`personLabels`/`tenseLabels` ve `words.examples.type` i18n anahtarları
+eklendi); ayrıca gerçek Almanca/Türkçe dilbilgisi terimlerinin (Nominativ/Akkusativ vb.) kasıtlı
+olarak İKİ dilde de AYNI kalması gerektiği netleşti — bunlar arayüz metni değil, öğretilen dilin
+kendi terminolojisi. **24/24 frontend testi yeşil**, gerçek bir backend'e (`dotnet run`) karşı
+Chrome'da uçtan uca doğrulandı: Almanca isim (tüm gramer) + Türkçe isim (vowelHarmony/possessive
+dahil) oluşturuldu, Eşleştirme ekranında birleştirildi, Düzenle'de her iki dilin verisi doğru
+şekilde geri yüklendiği görüldü, admin'in kendi arayüz dili TR↔DE canlı değiştirilerek tüm
+etiketlerin (backend'den gelen kategori adları dahil) doğru dilde geldiği doğrulandı. `AKADEMI/admin/
+B-03_kelime-yonetimi/` işlendi, kök `AKADEMI/admin/index.html`'e kart eklendi.
 
 ### B-04 — Kategori Yönetimi ⬜
 **Referans:** A-06 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §6
 - [ ] **Tip:** `Category`, `CategoryFormValues` (`category.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `categoriesApi` — `getCategories` (hiyerarşik), `createCategory`, `updateCategory`, `deleteCategory`
+- [ ] **API:** `categoriesApi` — `getCategories` (hiyerarşik), `createCategory`, `updateCategory`, `deleteCategory` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `CategoryTreePage` (hiyerarşik ağaç liste), `CategoryFormModal` (üst kategori seçimi, ikon, renk, seviye)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -127,7 +154,7 @@ buraya zincirlendi.
 **Referans:** A-07 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §11
 - [ ] **Tip:** `AdminUserListItem`, `UserDetail` (`user.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `adminUsersApi` — `getUsers` (arama/rol filtresi), `getUserDetail`, `changeRole`, `toggleStatus`
+- [ ] **API:** `adminUsersApi` — `getUsers` (arama/rol filtresi), `getUserDetail`, `changeRole`, `toggleStatus` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `UserListPage` (arama+rol filtresi+tablo), `UserDetailPage` (profil+istatistik+rol/durum aksiyonları)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -143,7 +170,7 @@ buraya zincirlendi.
 > yerine **şikayet edilen** kişisel kartları listeler/siler (`GET/DELETE /admin/user-cards`).
 - [ ] **Tip:** `ReportedUserCard` (`moderation.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `moderationApi` — `getReportedUserCards`, `deleteUserCard`
+- [ ] **API:** `moderationApi` — `getReportedUserCards`, `deleteUserCard` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `ModerationPage` (liste + inceleme detayı + sil aksiyonu)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -156,7 +183,7 @@ buraya zincirlendi.
 **Referans:** A-07 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §11
 - [ ] **Tip:** `AdminStatistics` (`statistics.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `statisticsApi` — `getAdminStatistics`
+- [ ] **API:** `statisticsApi` — `getAdminStatistics` (axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `DashboardPage` (toplam/aktif kullanıcı kartları, en çok öğrenilen/sorunlu kelimeler tablosu, günlük/haftalık grafik)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -169,7 +196,7 @@ buraya zincirlendi.
 **Referans:** A-04, A-07 (`A_admin_panel_backend.md`)
 - [ ] **Tip:** `ActivityLogEntry`, `ApplicationLogEntry`, `SecurityLogEntry` (`log.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `logsApi` — `getActivityLogs`, `getApplicationLogs`, `getSecurityLogs` (filtre+sayfa)
+- [ ] **API:** `logsApi` — `getActivityLogs`, `getApplicationLogs`, `getSecurityLogs` (filtre+sayfa, axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `LogsPage` (3 sekme: Activity/Application/Security — filtre + tarih aralığı + sayfalama tablo)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -183,7 +210,7 @@ buraya zincirlendi.
 **Referans:** A-09 (`A_admin_panel_backend.md`)
 - [ ] **Tip:** `SmtpSettingsFormValues` (`smtp.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **RTK Query:** `smtpApi` — `getSmtpSettings` (şifre `***`), `updateSmtpSettings`, `testSmtpConnection`
+- [ ] **API:** `smtpApi` — `getSmtpSettings` (şifre `***`), `updateSmtpSettings`, `testSmtpConnection` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Component:** `SmtpSettingsPage` (form: Host/Port/SSL/Kullanıcı/Şifre/From, kaydet, "Test e-postası gönder")
 - [ ] ➜ **Admin Akademi'ye işle**

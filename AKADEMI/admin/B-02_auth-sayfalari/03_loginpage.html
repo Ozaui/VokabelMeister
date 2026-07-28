@@ -19,7 +19,7 @@
         tur: 'kapak',
         ustBaslik: 'BÖLÜM 3',
         baslik: 'LoginPage.tsx',
-        altBaslik: 'B-01\'in yer tutucusunun (LoginPlaceholder) yerini alan İLK gerçek admin sayfası — react-hook-form\'un B-01\'de kurulup HİÇ kullanılmadığı ilk yer.'
+        altBaslik: 'B-01\'in yer tutucusunun (LoginPlaceholder) yerini alan İLK gerçek admin sayfası — Formik+Yup\'ın admin panelde kullanıldığı ilk yer.'
       },
       {
         tur: 'kod',
@@ -27,9 +27,11 @@
         dosyaYolu: 'admin/src/components/LoginPage.tsx',
         nedenBuKlasor: 'ProtectedRoute.tsx/ThemeSwitcher.tsx gibi diğer B-01 component\'leriyle AYNI, düz `components/` klasöründe — admin panelde ayrı bir `pages/` klasörü YOK, "sayfa" da bir component.',
         kod: `import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useFormik } from 'formik'
+import * as Yup from 'yup'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useLoginMutation } from '../store/api/authApi'
 import { getApiErrorMessage } from '../lib/apiError'
 import type { LoginRequest } from '../types/auth.types'
@@ -40,6 +42,15 @@ interface LoginLocationState {
   from?: { pathname: string; search?: string; hash?: string }
 }
 
+function buildLoginSchema(t: TFunction) {
+  return Yup.object({
+    email: Yup.string()
+      .required(t('auth.login.emailRequired'))
+      .matches(/^\\S+@\\S+\\.\\S+$/, t('auth.login.emailInvalid')),
+    password: Yup.string().required(t('auth.login.passwordRequired')),
+  })
+}
+
 export function LoginPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -47,28 +58,27 @@ export function LoginPage() {
   const locationState = location.state as LoginLocationState | null
   const [login, { isLoading }] = useLoginMutation()
   const [formError, setFormError] = useState<string | null>(null)
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginRequest>()
 
-  const onSubmit = async (values: LoginRequest) => {
-    setFormError(null)
-    try {
-      await login(values).unwrap()
-      // Token burada henüz yok — backend şifreyi doğrulayıp OTP gönderdi (adım 1).
-      // email + "nereden geldiği" bilgisi OtpVerifyPage'e route state ile taşınır.
-      navigate('/verify-otp', { state: { email: values.email, from: locationState?.from } })
-    } catch (err) {
-      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
-    }
-  }
+  const formik = useFormik<LoginRequest>({
+    initialValues: { email: '', password: '' },
+    validationSchema: buildLoginSchema(t),
+    onSubmit: async (values) => {
+      setFormError(null)
+      try {
+        await login(values)
+        // Token burada henüz yok — backend şifreyi doğrulayıp OTP gönderdi (adım 1).
+        // email + "nereden geldiği" bilgisi OtpVerifyPage'e route state ile taşınır.
+        navigate('/verify-otp', { state: { email: values.email, from: locationState?.from } })
+      } catch (err) {
+        setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+      }
+    },
+  })
 
   return (
     <div className="flex h-screen items-center justify-center bg-background font-body text-text">
       <form
-        onSubmit={handleSubmit(onSubmit)}
+        onSubmit={formik.handleSubmit}
         noValidate
         className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
       >
@@ -85,25 +95,32 @@ export function LoginPage() {
         </label>
         <input
           id="email"
+          name="email"
           type="email"
+          value={formik.values.email}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
-          {...register('email', {
-            required: t('auth.login.emailRequired'),
-            pattern: { value: /^\\S+@\\S+\\.\\S+$/, message: t('auth.login.emailInvalid') },
-          })}
         />
-        {errors.email && <p className="mb-3 text-xs text-destructive">{errors.email.message}</p>}
+        {formik.touched.email && formik.errors.email && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.email}</p>
+        )}
 
         <label htmlFor="password" className="mb-1 block text-sm font-medium text-text">
           {t('auth.login.password')}
         </label>
         <input
           id="password"
+          name="password"
           type="password"
+          value={formik.values.password}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
-          {...register('password', { required: t('auth.login.passwordRequired') })}
         />
-        {errors.password && <p className="mb-3 text-xs text-destructive">{errors.password.message}</p>}
+        {formik.touched.password && formik.errors.password && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.password}</p>
+        )}
 
         <button
           type="submit"
@@ -130,22 +147,34 @@ export function LoginPage() {
             olmasaydi: 'İlk taslakta TAM OLARAK bu YAPILMIŞTI (yalnızca `{pathname: string}`) — bağımsız bir kod DENETİMİNDE bu eksik BULUNDU: `/words?page=3`\'ten atılan bir admin, giriş TAMAMLANINCA `/words`\'e (BOŞ sayfa 1\'e) DÜŞÜYORDU, `page=3` SESSİZCE KAYBOLUYORDU.'
           },
           {
+            satir: 'function buildLoginSchema(t: TFunction) {',
+            aciklama: 'Yup validasyon şeması — form GÖNDERİLMEDEN ÖNCE `email`/`password`\'un GEÇERLİ olup OLMADIĞINI tanımlar. Bir FONKSİYONUN İÇİNE alınmasının sebebi: hata mesajları `t(...)` İLE ÇEVRİLİR, bu yüzden şema `t` FONKSİYONU (component\'in İÇİNDEKİ, admin\'in seçtiği dile göre ÇALIŞAN çeviri fonksiyonu) HAZIR olmadan İNŞA EDİLEMEZ.',
+            neden: 'Şema component GÖVDESİNİN İÇİNDE, HER render\'da YENİDEN kurulur — dil DEĞİŞTİĞİNDE (`t` fonksiyonu farklı bir çeviri sözlüğüne bağlanınca) hata mesajları da YENİ dile göre GÜNCELLENİR.',
+            olmasaydi: 'Şema component DIŞINDA, modül SEVİYESİNDE (bir kez, `t` OLMADAN) tanımlansaydı, hata mesajlarını ÇEVİRMENİN bir yolu OLMAZDI — ya SABİT, ÇEVRİLMEMİŞ İngilizce/Türkçe metin YAZILIR ya da her VALİDASYON ÇALIŞTIĞINDA `t` ELLE İÇERİ TAŞINIRDI.'
+          },
+          {
             satir: 'const [login, { isLoading }] = useLoginMutation()',
-            aciklama: 'Bölüm 1\'de yazılan `authApi.ts`\'in OTOMATİK ürettiği hook — `login` bir FONKSİYON (isteği TETİKLER), `isLoading` RTK Query\'nin KENDİ yönettiği bir boolean (istek SÜRERKEN `true`).',
-            neden: '`isLoading`\'i component KENDİSİ bir `useState` ile YÖNETMEK ZORUNDA DEĞİL — RTK Query, isteğin BAŞLADIĞI/BİTTİĞİ anı otomatik TAKİP eder; bu değer aşağıda "Giriş Yap" butonunun `disabled` ve metin durumuna DOĞRUDAN bağlanır.',
-            olmasaydi: 'RTK Query\'nin `isLoading`\'i KULLANILMASAYDI, component KENDİ `const [submitting, setSubmitting] = useState(false)`\'ini YAZAR, `onSubmit` İÇİNDE elle `true`/`false` ayarlardı — B-01\'in TÜM RTK Query kurulumunun ÖNLEMEYE çalıştığı TAM OLARAK bu tekrar.'
+            aciklama: 'Bölüm 1\'de yazılan `authApi.ts`\'in dışa aktardığı hook — `login` bir FONKSİYON (isteği TETİKLER), `isLoading` `useApiMutation`\'IN (B-01) yönettiği bir boolean (istek SÜRERKEN `true`).',
+            neden: '`isLoading`\'i component KENDİSİ bir `useState` ile YÖNETMEK ZORUNDA DEĞİL — `useApiMutation`, isteğin BAŞLADIĞI/BİTTİĞİ anı otomatik TAKİP eder; bu değer aşağıda "Giriş Yap" butonunun `disabled` ve metin durumuna DOĞRUDAN bağlanır.',
+            olmasaydi: '`useApiMutation`\'IN `isLoading`\'i KULLANILMASAYDI, component KENDİ `const [submitting, setSubmitting] = useState(false)`\'ini YAZAR, `onSubmit` İÇİNDE elle `true`/`false` ayarlardı — B-01\'in bu paylaşılan hook\'u KURMASININ sebebi TAM OLARAK bu tekrarı ÖNLEMEK.'
           },
           {
-            satir: 'const onSubmit = async (values: LoginRequest) => {',
-            aciklama: 'React Hook Form\'un `handleSubmit`\'in (JSX\'teki `onSubmit={handleSubmit(onSubmit)}`) SARDIĞI fonksiyon — YALNIZCA form\'un KENDİ validasyon kuralları (`required`/`pattern`, aşağıdaki `register` çağrıları) GEÇTİĞİNDE ÇAĞRILIR.',
-            neden: 'RHF, `handleSubmit`\'in İÇİNE verilen fonksiyonu form GEÇERSİZSE (ör. e-posta boş) HİÇ ÇAĞIRMAZ — bu yüzden `onSubmit`\'in İÇİNDE e-posta/şifre BOŞ mu diye AYRICA kontrol etmeye GEREK yok, backend\'e SADECE geçerli veri GİDER.',
-            olmasaydi: 'RHF\'in bu garantisi olmasaydı (ör. düz bir `<form onSubmit={...}>` kullanılsaydı), her ALAN için "boş mu" kontrolünü `onSubmit`\'in İÇİNDE ELLE yazmak GEREKİRDİ — backend\'e boş bir şifreyle GEREKSİZ bir istek GİDER, sonra 400 ile GERİ dönerdi.'
+            satir: 'const formik = useFormik<LoginRequest>({',
+            aciklama: 'Formik\'in ANA hook\'u — form DEĞERLERİNİ (`values`), dokunulan ALANLARI (`touched`), validasyon HATALARINI (`errors`) VE gönderim FONKSİYONUNU (`handleSubmit`) TEK bir NESNEDE toplar.',
+            neden: '`initialValues`+`validationSchema`+`onSubmit` ÜÇLÜSÜ Formik\'in TEMEL sözleşmesi — form her ALAN DEĞİŞTİĞİNDE Yup şemasına göre KENDİLİĞİNDEN yeniden DOĞRULANIR, component bu döngüyü ELLE YÖNETMEZ.',
+            olmasaydi: '`useFormik` KULLANILMASAYDI, HER alan İÇİN ayrı `useState` + `onChange` + hata HESAPLAMA MANTIĞI ELLE YAZILIRDI — iki ALANLIK bir form BİLE onlarca satırlık, TEKRAR eden state YÖNETİMİYLE ŞİŞERDİ.'
           },
           {
-            satir: 'await login(values).unwrap()',
-            aciklama: '`login(values)`, Bölüm 1\'deki `authApi`\'nin `login` mutation\'ını TETİKLER — `.unwrap()`, RTK Query\'nin KENDİ zarfını (`{data}` ya da `{error}`) SOYAR, BAŞARILIYSA `data`\'yı DÖNDÜRÜR, HATALIYSA gerçek bir JavaScript `Promise` reddi (`throw`) ÜRETİR.',
-            neden: '`.unwrap()` OLMADAN RTK Query bir istek HİÇBİR ZAMAN `throw` ETMEZ (hatayı `{error: ...}` şeklinde bir NESNE olarak DÖNER) — bu component `try/catch` ile YAZILDIĞI için `.unwrap()`, RTK Query\'nin sonucunu NORMAL bir `async/await` hata AKIŞINA ÇEVİRİR.',
-            olmasaydi: '`.unwrap()` UNUTULSAYDI, `catch (err)` bloğu ASLA ÇALIŞMAZDI — yanlış şifre girildiğinde `login(values)` yine de "BAŞARIYLA" tamamlanmış GİBİ görünür (Promise REJECT olmaz), `formError` HİÇ ayarlanmaz, admin HİÇBİR hata mesajı GÖRMEZDİ.'
+            satir: 'onSubmit: async (values) => {',
+            aciklama: 'Formik, bu fonksiyonu YALNIZCA form Yup şemasına göre GEÇERLİYSE ÇAĞIRIR — geçersizse (ör. e-posta boş) HİÇ ÇAĞIRMAZ, bunun yerine `formik.errors`\'ı DOLDURUP ilgili ALANLARIN altında hata METNİ GÖSTERİR.',
+            neden: 'Bu garanti sayesinde `onSubmit`\'in İÇİNDE e-posta/şifre BOŞ mu diye AYRICA kontrol etmeye GEREK yok, backend\'e SADECE geçerli veri GİDER.',
+            olmasaydi: 'Bu garanti OLMASAYDI (ör. düz bir `<form onSubmit={...}>` kullanılsaydı), her ALAN için "boş mu" kontrolünü `onSubmit`\'in İÇİNDE ELLE yazmak GEREKİRDİ — backend\'e boş bir şifreyle GEREKSİZ bir istek GİDER, sonra 400 ile GERİ dönerdi.'
+          },
+          {
+            satir: 'await login(values)',
+            aciklama: '`login(values)`, Bölüm 1\'deki `authApi`\'nin `login` fonksiyonunu (axios üzerinden `POST /auth/login`) TETİKLER — başarısız (4xx/5xx) bir yanıt axios\'un KENDİSİ tarafından bir `Promise` reddi (`throw`) olarak ÜRETİLİR.',
+            neden: 'axios, RTK Query\'nin AKSİNE, başarısız bir HTTP yanıtında EK bir "unwrap" ADIMI GEREKTİRMEDEN doğrudan `throw` eder — bu component`\'in DÜZ bir `try/catch` bloğu YAZMASI YETERLİDİR.',
+            olmasaydi: 'axios\'un bu davranışı OLMASAYDI (ör. hatayı sessizce bir `{error}` NESNESİ olarak DÖNDÜRSEYDİ), `catch (err)` bloğu ASLA ÇALIŞMAZDI — yanlış şifre girildiğinde `login(values)` yine de "BAŞARIYLA" tamamlanmış GİBİ görünür, `formError` HİÇ ayarlanmaz, admin HİÇBİR hata mesajı GÖRMEZDİ.'
           },
           {
             satir: 'navigate(\'/verify-otp\', { state: { email: values.email, from: locationState?.from } })',
@@ -166,22 +195,28 @@ export function LoginPage() {
             olmasaydi: 'Düz bir `<p>` (role OLMADAN) kullanılsaydı, hata mesajı GÖRSEL olarak DOĞRU görünürdü ama ekran okuyucu KULLANAN bir admin için TAMAMEN SESSİZ kalırdı.'
           },
           {
-            satir: '{...register(\'email\', {',
-            aciklama: 'React Hook Form\'un `register`\'ı — `input`\'u RHF\'in DAHİLİ state\'ine BAĞLAR (`name`/`onChange`/`onBlur`/`ref` gibi PROP\'ları OTOMATİK ekler) VE bu ALAN için VALİDASYON kurallarını TANIMLAR.',
-            neden: '`required`/`pattern` mesajları `t(...)` İLE ÇEVRİLİR (react-i18next) — hata TÜRKÇE/ALMANCA arasında admin\'in seçtiği dile göre DEĞİŞİR, backend\'in `Accept-Language`\'ından BAĞIMSIZ olarak (bu SAF frontend validasyonu, backend\'e HİÇ istek GİTMEDEN çalışır).',
-            olmasaydi: '`register` KULLANILMASAYDI, `input`\'un DEĞERİNİ okumak İÇİN elle `useState` + `onChange` YAZMAK gerekirdi — RHF\'in TEK satırlık `register` çağrısı, bu BOILERPLATE\'i (her ALAN için TEKRARLANAN state/onChange KODU) ORTADAN KALDIRIR.'
+            satir: 'value={formik.values.email}',
+            aciklama: '`input`\'un DEĞERİ Formik\'in `values.email`\'İNE BAĞLANIR (`onChange={formik.handleChange}` + `onBlur={formik.handleBlur}` İLE BİRLİKTE) — Formik\'in "controlled input" DESENİ, `input`\'un TEK doğruluk kaynağı Formik state\'İDİR.',
+            neden: '`name="email"` özniteliği, `formik.handleChange`\'İN hangi ALANI (`values` NESNESİNDE hangi anahtarı) GÜNCELLEYECEĞİNİ BULMASINI sağlar — Formik bu eşleştirmeyi `name` üzerinden YAPAR, AYRI bir `onChange` FONKSİYONU yazmaya GEREK yoktur.',
+            olmasaydi: '`value`/`onChange`/`onBlur` ÜÇLÜSÜ BAĞLANMASAYDI, `input` "uncontrolled" KALIRDI — Formik\'in `values.email`\'İ HİÇBİR ZAMAN GÜNCELLENMEZ, `buildLoginSchema`\'nın validasyonu HER ZAMAN boş bir e-posta ÜZERİNDE ÇALIŞIRDI.'
           },
           {
-            satir: 'pattern: { value: /^\\S+@\\S+\\.\\S+$/, message: t(\'auth.login.emailInvalid\') },',
+            satir: '.matches(/^\\S+@\\S+\\.\\S+$/, t(\'auth.login.emailInvalid\')),',
             aciklama: 'Basit bir e-posta ŞEKLİ kontrolü (boşluk YOK + @ + boşluk YOK + nokta + boşluk YOK) — GERÇEK e-posta doğrulaması (var mı, DOĞRULANMIŞ mı) backend\'de zaten YAPILIYOR, bu yalnızca "AÇIKÇA yanlış YAZILMIŞ" bir girdiyi backend\'e GÖNDERMEDEN yakalar.',
             neden: 'Tam RFC 5322 uyumlu bir e-posta regex\'i YAZMAK GEREKSİZ karmaşıklık OLURDU (YAGNI) — bu form yalnızca "@ ve nokta VAR MI" gibi BARİZ yazım hatalarını (ör. "admin" tek başına) YAKALAMak İÇİN var, GERÇEK doğrulama backend\'in İŞİ.',
-            olmasaydi: 'Bu `pattern` HİÇ olmasaydı, "asdf" gibi e-posta OLMAYAN bir metin bile backend\'E GÖNDERİLİR, backend 400 İLE REDDEDERDİ — teknik olarak GÜVENLİ ama admin YANLIŞINI backend\'İN cevabını BEKLEYEREK, bir AĞ isteği SONRASINDA öğrenirdi.'
+            olmasaydi: 'Bu `.matches(...)` HİÇ olmasaydı, "asdf" gibi e-posta OLMAYAN bir metin bile backend\'E GÖNDERİLİR, backend 400 İLE REDDEDERDİ — teknik olarak GÜVENLİ ama admin YANLIŞINI backend\'İN cevabını BEKLEYEREK, bir AĞ isteği SONRASINDA öğrenirdi.'
           },
           {
-            satir: '{...register(\'password\', { required: t(\'auth.login.passwordRequired\') })}',
-            aciklama: 'Şifre alanı e-posta İLE AYNI `register` DESENİNİ izler — TEK fark: `type="password"` (tarayıcı karakterleri GİZLER) ve `pattern` YOK (şifrenin ŞEKLİ değil, backend\'İN onu DOĞRULAYIP DOĞRULAMADIĞI ÖNEMLİ).',
-            neden: 'Şifreye bir UZUNLUK/KARMAŞIKLIK `pattern`\'i EKLENMEDİ çünkü bu KURAL zaten backend\'in KAYIT (register) AKIŞINDA UYGULANIYOR — LoginPage bir şifre OLUŞTURMUYOR, VAR OLANI DOĞRULUYOR; "en az 8 karakter" gibi bir kural BURADA yanlış hesap İÇİN yanlış YERDE olurdu.',
-            olmasaydi: 'Buraya bir `pattern` EKLENSEYDİ (ör. "en az 8 karakter"), ESKİ bir hesabın (kayıt sırasında FARKLI kurallarla oluşturulmuş) GERÇEK şifresi bu YENİ kuralı GEÇEMEYEBİLİRDİ — admin, DOĞRU şifresini yazdığı HALDE, formun KENDİSİ tarafından ENGELLENİRDİ.'
+            satir: 'password: Yup.string().required(t(\'auth.login.passwordRequired\')),',
+            aciklama: 'Şifre alanı e-posta İLE AYNI Yup DESENİNİ izler — TEK fark: `type="password"` (tarayıcı karakterleri GİZLER) ve bir `.matches(...)` YOK (şifrenin ŞEKLİ değil, backend\'İN onu DOĞRULAYIP DOĞRULAMADIĞI ÖNEMLİ).',
+            neden: 'Şifreye bir UZUNLUK/KARMAŞIKLIK kuralı EKLENMEDİ çünkü bu KURAL zaten backend\'in KAYIT (register) AKIŞINDA UYGULANIYOR — LoginPage bir şifre OLUŞTURMUYOR, VAR OLANI DOĞRULUYOR; "en az 8 karakter" gibi bir kural BURADA yanlış hesap İÇİN yanlış YERDE olurdu.',
+            olmasaydi: 'Buraya bir uzunluk KURALI EKLENSEYDİ (ör. "en az 8 karakter"), ESKİ bir hesabın (kayıt sırasında FARKLI kurallarla oluşturulmuş) GERÇEK şifresi bu YENİ kuralı GEÇEMEYEBİLİRDİ — admin, DOĞRU şifresini yazdığı HALDE, formun KENDİSİ tarafından ENGELLENİRDİ.'
+          },
+          {
+            satir: 'formik.touched.email && formik.errors.email && (',
+            aciklama: 'Hata metni yalnızca ALAN "dokunulmuş" (`touched`, admin en az bir kez o alana GİRİP ÇIKMIŞ) VE Yup şeması bir hata ÜRETMİŞSE gösterilir.',
+            neden: '`touched` kontrolü OLMADAN, form İLK açıldığı ANDA (admin HENÜZ HİÇBİR ŞEY yazmamışken) BÜTÜN alanlar "zorunludur" hatasıyla KIRMIZI görünürdü — bu, admin DAHA yazmaya BAŞLAMADAN önce SALDIRIYORMUŞ gibi hissettiren kötü bir kullanıcı deneyimi olurdu.',
+            olmasaydi: 'Yalnızca `formik.errors.email` kontrol edilseydi (`touched` OLMADAN), sayfa AÇILIR AÇILMAZ "E-posta zorunludur" mesajı GÖRÜNÜRDÜ — admin HENÜZ formla HİÇ ETKİLEŞİME GEÇMEDEN.'
           },
           {
             satir: 'disabled={isLoading}',
@@ -199,7 +234,7 @@ export function LoginPage() {
         akis: [
           { eylem: 'Admin var olmayan/yanlış bir şifreyle "Giriş Yap"a tıklar', sonuc: 'Backend 401 döner, formun ÜSTÜNDE kırmızı "E-posta veya şifre hatalı." kutusu (role="alert") görünür — YÖNLENDİRME olmaz, admin AYNI sayfada kalır' },
           { eylem: 'Admin doğru e-posta+şifreyle "Giriş Yap"a tıklar', sonuc: 'Backend OTP\'yi e-postaya gönderir (200, HENÜZ token yok), admin OTOMATİK olarak /verify-otp\'a yönlendirilir' },
-          { eylem: 'Admin hiçbir alanı doldurmadan "Giriş Yap"a tıklar', sonuc: 'İstek HİÇ gitmez — react-hook-form alan altlarında "E-posta zorunludur"/"Şifre zorunludur" gösterir' }
+          { eylem: 'Admin hiçbir alanı doldurmadan "Giriş Yap"a tıklar', sonuc: 'İstek HİÇ gitmez — Formik+Yup alan altlarında "E-posta zorunludur"/"Şifre zorunludur" gösterir' }
         ],
         apiCagrisi: { yontem: 'POST', url: 'http://localhost:5001/api/v1/auth/login' },
         durumlar: [

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Tipler + RTK Query authApi</title>
+<title>Tipler + authApi</title>
 <link rel="stylesheet" href="../engine/slides.css" />
 </head>
 <body>
@@ -18,13 +18,13 @@
       {
         tur: 'kapak',
         ustBaslik: 'BÖLÜM 1',
-        baslik: 'Tipler + RTK Query authApi',
+        baslik: 'Tipler + authApi',
         altBaslik: 'B-01\'de kurulan store/api.ts, ilk gerçek endpoint\'lerini burada alıyor — admin panelin backend\'e attığı İLK gerçek HTTP isteği bu bölümde.'
       },
       {
         tur: 'kavram',
         baslik: 'Neden İki Adımlı Bir Giriş?',
-        aciklama: 'Admin, e-posta+şifresini girip "Giriş Yap"a bastığında token HEMEN dönmez — backend önce şifreyi doğrular, sonra admin\'in e-postasına 6 haneli bir kod gönderir (`POST /auth/login`). Token, ancak bu kod da doğrulanınca (`POST /auth/login/verify-otp`) verilir. Bu yüzden iki AYRI sayfa (LoginPage, OtpVerifyPage) ve iki AYRI RTK Query mutation\'ı var.',
+        aciklama: 'Admin, e-posta+şifresini girip "Giriş Yap"a bastığında token HEMEN dönmez — backend önce şifreyi doğrular, sonra admin\'in e-postasına 6 haneli bir kod gönderir (`POST /auth/login`). Token, ancak bu kod da doğrulanınca (`POST /auth/login/verify-otp`) verilir. Bu yüzden iki AYRI sayfa (LoginPage, OtpVerifyPage) ve iki AYRI istek fonksiyonu var.',
         neden: 'Bu iki adımlı akış backend\'de (A-03 görevinde) zaten TASARLANMIŞ ve ÇALIŞIR durumda — admin panel yalnızca var olan bir sözleşmeye uyar. Tek adımlı bir "şifre yeterli" giriş, çalınmış/tahmin edilmiş bir şifreyle admin paneline erişimi TEK bir bilgiye (şifre) bağlı bırakırdı; ikinci faktör (e-postaya erişim) bunu zorlaştırır.',
         olmasaydi: 'Admin panel yalnızca `POST /auth/login`\'i çağırıp cevaptan token BEKLESEYDİ, kod hiç çalışmazdı — backend bu endpoint\'ten ASLA token döndürmez (yalnızca "OTP gönderildi" mesajı), token yalnızca ikinci adımdan gelir.'
       },
@@ -91,7 +91,7 @@ export interface VerifyOtpResponse {
             satir: 'export interface VerifyOtpResponse {',
             aciklama: 'Backend\'in `AuthTokenResponse` record\'u — `accessToken`/`refreshToken`/`expiresIn`/`user`/`accountWasRecovered` beş alanın TAMAMI.',
             neden: '`refreshToken` burada tanımlı olsa da authSlice (Bölüm 2) onu SAKLAMAZ — B-02\'nin görev listesi yalnızca `accessToken`/`user`/`isAuthenticated` istiyor; tip backend\'in GERÇEKTEN döndürdüğünü yansıtır, admin panelin BUGÜN neyi KULLANDIĞINI değil.',
-            olmasaydi: '`refreshToken` tipten ÇIKARILSAYDI, backend yanıtı hâlâ o alanı gönderirdi ama TypeScript "böyle bir alan yok" derdi — RTK Query\'nin `unwrap()`\'ından dönen nesnede `result.refreshToken`\'a erişmeye çalışan gelecekteki bir kod (ör. B-0X\'te silent refresh eklenirken) DERLEME hatası alırdı.'
+            olmasaydi: '`refreshToken` tipten ÇIKARILSAYDI, backend yanıtı hâlâ o alanı gönderirdi ama TypeScript "böyle bir alan yok" derdi — `await verifyOtp(...)`\'tan dönen nesnede `result.refreshToken`\'a erişmeye çalışan gelecekteki bir kod (ör. B-0X\'te silent refresh eklenirken) DERLEME hatası alırdı.'
           }
         ]
       },
@@ -99,9 +99,8 @@ export interface VerifyOtpResponse {
         tur: 'kod',
         baslik: 'apiError.ts — Backend Hata Gövdesini Okuma',
         dosyaYolu: 'admin/src/lib/apiError.ts',
-        nedenBuKlasor: 'Admin panelin İLK `lib/` klasörü — `components/`/`store/` gibi bir "katman" değil, birden fazla component\'in paylaştığı KÜÇÜK, saf bir yardımcı fonksiyon. Bu kadar küçük bir şey için ayrı bir Redux slice ya da RTK Query endpoint\'i GEREKMEZ.',
-        kod: `import type { SerializedError } from '@reduxjs/toolkit'
-import type { FetchBaseQueryError } from '@reduxjs/toolkit/query'
+        nedenBuKlasor: 'Admin panelin İLK `lib/` klasörü — `components/`/`store/` gibi bir "katman" değil, birden fazla component\'in paylaştığı KÜÇÜK, saf bir yardımcı fonksiyon. Bu kadar küçük bir şey için ayrı bir Redux slice ya da axios isteği GEREKMEZ.',
+        kod: `import { isAxiosError } from 'axios'
 
 interface ApiErrorBody {
   error: { code: string; message: string }
@@ -119,30 +118,39 @@ function hasErrorBody(data: unknown): data is ApiErrorBody {
 // Backend ApiErrorResponse'un { error: { code, message } } şekli ile birebir eşleşir
 // (backend/WordLearner.Application/Common/Models/ApiErrorResponse.cs) — message zaten
 // Accept-Language'a göre çözülmüş, admin panelin ek bir çeviri yapmasına gerek yok.
-export function getApiErrorMessage(error: FetchBaseQueryError | SerializedError | unknown): string | null {
-  if (error && typeof error === 'object' && 'data' in error && hasErrorBody((error as { data: unknown }).data)) {
-    return (error as { data: ApiErrorBody }).data.error.message
+export function getApiErrorMessage(error: unknown): string | null {
+  if (isAxiosError(error) && hasErrorBody(error.response?.data)) {
+    return error.response!.data.error.message
+  }
+  return null
+}
+
+// B-03 (WordFormModal) — "409 DuplicateWordException (WORD_TEXT_ALREADY_EXISTS) → ?force=true ile
+// onaylayarak tekrar gönder" akışı Code'a göre dallanır, dile göre değişen Message'a değil.
+export function getApiErrorCode(error: unknown): string | null {
+  if (isAxiosError(error) && hasErrorBody(error.response?.data)) {
+    return error.response!.data.error.code
   }
   return null
 }`,
         satirlar: [
           {
-            satir: 'import type { FetchBaseQueryError } from \'@reduxjs/toolkit/query\'',
-            aciklama: 'RTK Query\'nin, başarısız bir isteğin hata şeklini tanımlayan tipi — HTTP durumunu (`status`) VE sunucudan dönen ham gövdeyi (`data: unknown`) taşır.',
-            neden: '`data` bilerek `unknown` tipindedir (RTK Query, sunucunun NE döneceğini bilemez) — bu dosyanın TEK işi, bu bilinmeyen veriyi backend\'in GERÇEK şekliyle (`ApiErrorBody`) eşleştirip eşleşmediğini KONTROL etmek.',
-            olmasaydi: 'Bu tip import edilmeseydi, fonksiyonun parametre tipi tanımlanamazdı — `error` parametresi ya `any` (TypeScript\'in TÜM güvenliğini kapatan kaçış tipi) ya da elle YAZILMIŞ, RTK Query\'nin GERÇEK tipiyle SENKRONSUZ kalma riski taşıyan bir tip olurdu.'
+            satir: 'import { isAxiosError } from \'axios\'',
+            aciklama: 'axios\'un kendi type guard\'ı — bir `catch (err)` bloğunda yakalanan `err`\'in GERÇEKTEN axios\'un attığı bir HTTP hatası mı, yoksa BAŞKA türden bir JavaScript hatası mı olduğunu ÇALIŞMA ZAMANINDA ayırt eder.',
+            neden: 'axios, 2xx DIŞI bir HTTP yanıtında (401/409/500...) isteği `throw` eder — ama `catch` bloğu HER TÜRLÜ hatayı yakalar (ör. bir kod hatası da BURAYA düşebilir); `isAxiosError`, yalnızca GERÇEKTEN sunucudan gelen bir HTTP hatasıyla ilgilenildiğini garanti eder.',
+            olmasaydi: 'Bu kontrol olmadan doğrudan `error.response.data` okunsaydı, `error` axios kaynaklı OLMAYAN bir hata (ör. `TypeError`) olduğunda `response` diye bir alanı hiç OLMAYAN bu nesnede `undefined.data` okumaya çalışılır, kod YENİ bir çökmeyle SONUÇLANIRDI.'
           },
           {
             satir: 'interface ApiErrorBody {',
             aciklama: 'Backend\'in HATA yanıtlarının (400/401/409...) gövde şekli — `ApiErrorResponse(ApiErrorDetail Error)` C# record\'unun (`{ error: { code, message } }`) TypeScript karşılığı.',
-            neden: 'Backend\'in HER hata yanıtı bu ŞEKLİ kullanır (`ApiErrorResponse`, backend genelinde TEK bir hata sözleşmesi) — bu yüzden BU dosya yalnızca auth\'a özel değil, B-03\'ten B-09\'a HER RTK Query mutation\'ının hatasını okumak için tekrar KULLANILABİLİR.',
-            olmasaydi: 'Bu ortak tip/fonksiyon olmasaydı, her form component\'i kendi `error.data.error.message` okuma mantığını (ve bunun TypeScript\'i MEMNUN edecek cast\'lerini) kendi içinde TEKRARLARDI.'
+            neden: 'Backend\'in HER hata yanıtı bu ŞEKLİ kullanır (`ApiErrorResponse`, backend genelinde TEK bir hata sözleşmesi) — bu yüzden BU dosya yalnızca auth\'a özel değil, B-03\'ten B-09\'a HER axios isteğinin hatasını okumak için tekrar KULLANILABİLİR.',
+            olmasaydi: 'Bu ortak tip/fonksiyon olmasaydı, her form component\'i kendi `error.response.data.error.message` okuma mantığını (ve bunun TypeScript\'i MEMNUN edecek cast\'lerini) kendi içinde TEKRARLARDI.'
           },
           {
             satir: 'function hasErrorBody(data: unknown): data is ApiErrorBody {',
             aciklama: 'Bir TypeScript "type guard" — `data is ApiErrorBody` dönüş tipi, bu fonksiyon `true` döndürdüğünde TypeScript\'e "bundan sonra `data`\'yı `ApiErrorBody` gibi davran" der.',
-            neden: 'RTK Query\'nin hata gövdesi (`FetchBaseQueryError.data`) tipi `unknown` — backend GERÇEKTEN `{error:{code,message}}` şeklinde bir gövde mi döndürdü, yoksa ağ hatası/boş gövde gibi BAŞKA bir durum mu, bunu ÇALIŞMA ZAMANINDA kontrol etmeden `data.error.message` yazmak TypeScript\'i (ve olası bir çalışma zamanı hatasını) tetikler.',
-            olmasaydi: 'Bu kontrol olmadan doğrudan `(error.data as ApiErrorBody).error.message` yazılsaydı, backend\'in gövdesi BEKLENEN şekilde OLMADIĞI bir durumda (ör. bir ağ zaman aşımı, `data` hiç yok) kod `Cannot read properties of undefined` ile ÇÖKERDİ — hatayı göstermeye çalışırken YENİ bir hata üretmiş olurdu.'
+            neden: 'axios\'un hata gövdesi (`error.response?.data`) tipi `unknown`/`any` — backend GERÇEKTEN `{error:{code,message}}` şeklinde bir gövde mi döndürdü, yoksa ağ hatası/boş gövde gibi BAŞKA bir durum mu, bunu ÇALIŞMA ZAMANINDA kontrol etmeden `data.error.message` yazmak olası bir çalışma zamanı hatasını tetikler.',
+            olmasaydi: 'Bu kontrol olmadan doğrudan `(error.response.data as ApiErrorBody).error.message` yazılsaydı, backend\'in gövdesi BEKLENEN şekilde OLMADIĞI bir durumda (ör. bir ağ zaman aşımı, `data` hiç yok) kod `Cannot read properties of undefined` ile ÇÖKERDİ — hatayı göstermeye çalışırken YENİ bir hata üretmiş olurdu.'
           },
           {
             satir: '\'error\' in data &&',
@@ -151,25 +159,32 @@ export function getApiErrorMessage(error: FetchBaseQueryError | SerializedError 
             olmasaydi: 'Yalnızca `(data as ApiErrorBody).error?.message` yazılıp `in` kontrolü ATLANSAYDI da teknik olarak ÇALIŞIRDI (optional chaining zaten güvenli) — ama `in` kontrolü, "bu nesnenin BEKLENEN şekli var mı" niyetini kodun OKUYUCUSUNA daha AÇIK anlatır.'
           },
           {
-            satir: 'export function getApiErrorMessage(error: FetchBaseQueryError | SerializedError | unknown): string | null {',
-            aciklama: 'RTK Query\'nin bir mutation başarısız olduğunda ÜRETEBİLECEĞİ İKİ tip (`FetchBaseQueryError` — HTTP/ağ hatası, `SerializedError` — JavaScript\'in kendi fırlattığı hata) VE bilinmeyen her şeyi (`unknown`) kabul eder.',
-            neden: 'LoginPage/OtpVerifyPage\'in `catch (err)` bloğunda yakaladığı `err`\'in TAM tipini RTK Query\'nin kendisi bile HER durumda KESİN bilmez (union tip) — `unknown` seçeneği, bu fonksiyonun HİÇBİR durumda kendisi bir TypeScript hatasına yol AÇMAYACAĞINI garanti eder.',
-            olmasaydi: 'Yalnızca `FetchBaseQueryError` kabul edilseydi, `err`\'in GERÇEKTEN bir `SerializedError` (ör. mutation\'ın KENDİSİ bir JS hatası fırlattıysa) olduğu bir durumda TypeScript bu çağrıyı DERLEME hatası olarak İŞARETLERDİ.'
+            satir: 'export function getApiErrorMessage(error: unknown): string | null {',
+            aciklama: 'Parametre bilerek `unknown` — LoginPage/OtpVerifyPage\'in `catch (err)` bloğunda yakaladığı `err`\'in tipi TypeScript\'te ZATEN `unknown`\'dır (hangi türden bir hata fırlatıldığı derleme zamanında BİLİNEMEZ).',
+            neden: '`unknown` seçeneği, bu fonksiyonun HİÇBİR durumda kendisi bir TypeScript hatasına yol AÇMAYACAĞINI garanti eder — asıl daraltma işini bir üst satırdaki `isAxiosError` type guard\'ı yapar.',
+            olmasaydi: 'Parametre `any` olarak yazılsaydı, fonksiyonun İÇİNDE `error.response.data` gibi bir zincir `isAxiosError` kontrolü OLMADAN da (yanlışlıkla) derlenirdi — TypeScript\'in güvenliği kapanır, ağ hatası GİBİ axios-DIŞI bir hata sessizce YANLIŞ okunabilirdi.'
           },
           {
             satir: 'return null',
             aciklama: 'Backend\'in beklenen `{error:{code,message}}` şeklinde bir gövde DÖNMEDİĞİ her durumda (ağ hatası, zaman aşımı, sunucunun hiç cevap VEREMEDİĞİ durumlar) `null` döner.',
             neden: 'Çağıran taraf (LoginPage/OtpVerifyPage), `null` döndüğünde kendi GENEL hata mesajını (`t(\'auth.genericError\')`) gösterir — bu fonksiyon "hata mesajı YOKSA sessiz kal" değil, "backend\'den GELEN spesifik bir mesaj yoksa, BUNU açıkça bildir" sözleşmesi taşır.',
             olmasaydi: '`null` yerine boş bir string (`\'\'`) döndürülseydi, çağıran taraf `formError` state\'ini boş bir string\'e AYARLAR, `{formError && <p>...}` kontrolü (LoginPage, Bölüm 3) boş string\'i "falsy" kabul ettiği için hata KUTUSUNU hiç GÖSTERMEZDİ — admin, bir hata OLDUĞUNU bile fark ETMEZDİ.'
+          },
+          {
+            satir: 'export function getApiErrorCode(error: unknown): string | null {',
+            aciklama: '`getApiErrorMessage` İLE AYNI mantığı yürütür ama admin\'e GÖSTERİLECEK metin (`message`, dile göre çözülmüş) yerine makine tarafından okunabilir `code`\'u DÖNDÜRÜR — B-02 kapsamında HİÇBİR sayfa bunu ÇAĞIRMAZ.',
+            neden: 'Bu fonksiyon dosyada DURUYOR ama B-02\'nin login/OTP akışı yalnızca `message`\'a bakıyor — kod bazlı dallanma (ör. "409 ise farklı bir buton göster") yalnızca bunu GERÇEKTEN kullanan bir sonraki ekranda anlam kazanır.',
+            olmasaydi: 'Bu fonksiyon hiç yazılmasaydı, kod bazlı bir dallanmaya ihtiyaç duyan bir sonraki ekran, `getApiErrorMessage`\'IN DÖNÜŞ tipini (dile göre DEĞİŞEN, insan-okunur bir metin) YANLIŞLIKLA bir makine kodu GİBİ karşılaştırmaya çalışabilirdi.'
           }
         ]
       },
       {
         tur: 'kod',
-        baslik: 'authApi.ts — login + verifyOtp Mutation\'ları',
+        baslik: 'authApi.ts — login + verifyOtp İstekleri',
         dosyaYolu: 'admin/src/store/api/authApi.ts',
-        nedenBuKlasor: '`store/api/` — B-01\'in `store/api.ts`\'inden (tekil dosya) FARKLI, `store/api/` (klasör) B-02\'den itibaren HER feature\'ın kendi RTK Query dosyasını (`authApi.ts`, B-03\'te `wordsApi.ts`...) topladığı yer.',
-        kod: `import { api } from '../api'
+        nedenBuKlasor: '`store/api/` — B-01\'in `store/api.ts`\'inden (tekil dosya, `apiClient`\'ı kuran dosya) FARKLI, `store/api/` (klasör) B-02\'den itibaren HER feature\'ın kendi istek dosyasını (`authApi.ts`, B-03\'te `wordsApi.ts`...) topladığı yer.',
+        kod: `import { apiClient } from '../api'
+import { useApiMutation } from '../../hooks/useApiMutation'
 import type {
   LoginRequest,
   LoginResponse,
@@ -177,54 +192,53 @@ import type {
   VerifyOtpResponse,
 } from '../../types/auth.types'
 
-export const authApi = api.injectEndpoints({
-  endpoints: (builder) => ({
-    login: builder.mutation<LoginResponse, LoginRequest>({
-      query: (body) => ({ url: '/auth/login', method: 'POST', body }),
-    }),
-    verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpRequest>({
-      query: (body) => ({ url: '/auth/login/verify-otp', method: 'POST', body }),
-    }),
-  }),
-})
+async function login(body: LoginRequest): Promise<LoginResponse> {
+  const { data } = await apiClient.post<LoginResponse>('/auth/login', body)
+  return data
+}
 
-export const { useLoginMutation, useVerifyOtpMutation } = authApi`,
+async function verifyOtp(body: VerifyOtpRequest): Promise<VerifyOtpResponse> {
+  const { data } = await apiClient.post<VerifyOtpResponse>('/auth/login/verify-otp', body)
+  return data
+}
+
+export function useLoginMutation() {
+  return useApiMutation(login)
+}
+
+export function useVerifyOtpMutation() {
+  return useApiMutation(verifyOtp)
+}`,
         satirlar: [
           {
-            satir: 'import { api } from \'../api\'',
-            aciklama: 'B-01\'de yazılan TEMEL `api` nesnesi (`store/api.ts`, Authorization+Accept-Language header\'larını zaten ekliyor) — bu dosya YENİ bir `createApi` çağırmaz, VAR OLANI genişletir.',
-            neden: 'B-01\'in `endpoints: () => ({})` bilinçli boşluğu (bkz. `AKADEMI/admin/B-01_kurulum/03_....html`) TAM OLARAK bunun için vardı — header mantığı TEK yerde kalır, bu dosya yalnızca "hangi URL\'ler var" sorusuna cevap verir.',
-            olmasaydi: '`authApi.ts` kendi `createApi({...})`\'sini çağırsaydı, Authorization/Accept-Language header ekleme mantığı BURADA TEKRAR yazılırdı (B-01\'deki `prepareHeaders`\'ın birebir kopyası) — iki AYRI RTK Query örneği, iki AYRI cache, birbirinden HABERSİZ.'
+            satir: 'import { apiClient } from \'../api\'',
+            aciklama: 'B-01\'de yazılan TEMEL `apiClient` nesnesi (`store/api.ts`, bir axios örneği — Authorization+Accept-Language header\'larını zaten ekliyor) — bu dosya YENİ bir axios örneği KURMAZ, VAR OLANI kullanır.',
+            neden: 'Header ekleme mantığı (JWT + `Accept-Language`) TEK yerde (B-01\'in `apiClient` interceptor\'ı) kalır — bu dosya yalnızca "hangi URL\'e, hangi gövdeyle" sorusuna cevap verir.',
+            olmasaydi: '`authApi.ts` kendi `axios.create({...})`\'ini çağırsaydı, Authorization/Accept-Language header ekleme mantığı BURADA TEKRAR yazılırdı (B-01\'deki interceptor\'ın birebir kopyası) — iki AYRI axios örneği, biri header eklerken diğeri UNUTULMUŞ olabilirdi.'
           },
           {
-            satir: 'export const authApi = api.injectEndpoints({',
-            aciklama: 'RTK Query\'nin "code splitting" özelliği — B-01\'deki TEMEL `api`\'ye, BAŞKA bir dosyadan, YENİ endpoint\'ler EKLER.',
-            neden: 'Her feature (B-03\'ün `wordsApi.ts`\'i gibi) KENDİ dosyasında `injectEndpoints` çağırır — TEK bir dev `api.ts` dosyasında TÜM endpoint\'lerin toplanması yerine, her biri kendi feature klasörüne AİT kalır.',
-            olmasaydi: 'B-01\'deki `api.ts`\'in İÇİNE doğrudan `login`/`verifyOtp` eklenseydi, o dosya B-03/B-04/B-09\'a kadar HER endpoint\'i biriktiren, yüzlerce satırlık, hangi feature\'ın NEREDE olduğu takip edilemeyen TEK bir dosyaya dönüşürdü.'
+            satir: 'async function login(body: LoginRequest): Promise<LoginResponse> {',
+            aciklama: 'Sıradan, ELLE yazılmış bir `async` fonksiyon — `apiClient.post` çağırır, backend\'in döndürdüğü `data`\'yı DOĞRUDAN geri verir; RTK Query\'deki gibi bir "endpoint tanımı" DEĞİL, düz bir HTTP isteği.',
+            neden: 'Login bir "veri OKUMA" değil, bir "eylem TETİKLEME" (şifre doğrulama + OTP gönderme) isteği — bu yüzden `useApiQuery`\'nin (otomatik yeniden-çekme) DEĞİL, `useApiMutation`\'ın (yalnızca ÇAĞRILDIĞINDA çalışan) SARDIĞI bir fonksiyon olarak tanımlanır.',
+            olmasaydi: 'Bu fonksiyon `useApiQuery` ile SARILSAYDI, bir component her RENDER olduğunda (ör. bir state DEĞİŞİMİNDE) OTOMATİK olarak TEKRAR "giriş yap" isteği ATILIRDI — login GİBİ bir eylemin, component render EDİLDİĞİ için KENDİLİĞİNDEN tetiklenmesi YANLIŞ bir davranış olurdu.'
           },
           {
-            satir: 'login: builder.mutation<LoginResponse, LoginRequest>({',
-            aciklama: 'RTK Query\'nin `mutation` (veriyi DEĞİŞTİREN/tetikleyen istek — `query`\'nin aksine, sunucu tarafında bir YAN ETKİ oluşturur) tipi — jenerik parametreler `<DönenTip, GöndeirlenTip>` sırasıyla.',
-            neden: 'Login bir "veri OKUMA" değil, bir "eylem TETİKLEME" (şifre doğrulama + OTP gönderme) isteği — RTK Query bu ayrımı (`query` vs `mutation`) ÖNEMSER: `mutation`\'lar varsayılan olarak CACHE\'LENMEZ, her çağrıda GERÇEKTEN yeniden isteğe gider.',
-            olmasaydi: '`mutation` yerine `query` kullanılsaydı, RTK Query bu isteği CACHE\'LEMEYE çalışırdı — ikinci bir "Giriş Yap" tıklamasında (ör. yanlış şifreden sonra düzeltilip TEKRAR denenince), önbellekteki ESKİ (başarısız) sonucu dönme RİSKİ oluşurdu.'
+            satir: 'const { data } = await apiClient.post<LoginResponse>(\'/auth/login\', body)',
+            aciklama: 'Component\'in `login({email, password})` çağırdığında GERÇEKTEN gidecek isteği tanımlar — `url` GÖRECELİ (`/auth/login`), TAM adres B-01\'deki `baseURL` (`VITE_API_URL`, ör. `http://localhost:5001/api/v1`) ile BİRLEŞTİRİLİR.',
+            neden: 'Backend\'in gerçek endpoint\'i (`AuthController`, `[HttpPost("login")]`, `[Route("api/v1/auth")]`) TAM OLARAK bu yola karşılık gelir — göreli yol, admin panel FARKLI bir ortamda (staging/production) FARKLI bir `baseURL`\'e deploy edilse bile DEĞİŞMEZ.',
+            olmasaydi: '`url` TAM adres (`http://localhost:5001/api/v1/auth/login`) olarak YAZILSAYDI, B-01\'deki `baseURL`/`Accept-Language`/`Authorization` header mantığının SAĞLADIĞI ortam-bağımsızlık BOŞA çıkardı — bu satır production\'da HÂLÂ localhost\'a giden bir isteğe DÖNÜŞÜRDÜ.'
           },
           {
-            satir: 'query: (body) => ({ url: \'/auth/login\', method: \'POST\', body }),',
-            aciklama: 'Component\'in `login({email, password})` çağırdığında GERÇEKTEN gidecek isteği tanımlar — `url` GÖRECELİ (`/auth/login`), TAM adres B-01\'deki `baseUrl` (`VITE_API_URL`, ör. `http://localhost:5001/api/v1`) ile BİRLEŞTİRİLİR.',
-            neden: 'Backend\'in gerçek endpoint\'i (`AuthController`, `[HttpPost("login")]`, `[Route("api/v1/auth")]`) TAM OLARAK bu yola karşılık gelir — göreli yol, admin panel FARKLI bir ortamda (staging/production) FARKLI bir `baseUrl`\'e deploy edilse bile DEĞİŞMEZ.',
-            olmasaydi: '`url` TAM adres (`http://localhost:5001/api/v1/auth/login`) olarak YAZILSAYDI, B-01\'deki `baseUrl`/`Accept-Language`/`Authorization` header mantığının SAĞLADIĞI ortam-bağımsızlık BOŞA çıkardı — bu satır production\'da HÂLÂ localhost\'a giden bir isteğe DÖNÜŞÜRDÜ.'
-          },
-          {
-            satir: 'verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpRequest>({',
-            aciklama: 'İkinci mutation — `login`\'in HEMEN altında, AYNI dosyada tanımlanır çünkü ikisi TEK bir akışın (iki adımlı giriş) iki PARÇASI.',
-            neden: 'Bir tek dosyada (`authApi.ts`) BİRDEN FAZLA endpoint tanımlamak RTK Query\'de NORMAL bir desen — endpoint\'ler AYRI dosyalara değil, İLGİLİ OLDUKLARI feature\'a göre GRUPLANIR.',
+            satir: 'async function verifyOtp(body: VerifyOtpRequest): Promise<VerifyOtpResponse> {',
+            aciklama: 'İkinci istek fonksiyonu — `login`\'in HEMEN altında, AYNI dosyada tanımlanır çünkü ikisi TEK bir akışın (iki adımlı giriş) iki PARÇASI.',
+            neden: 'Bir tek dosyada (`authApi.ts`) BİRDEN FAZLA istek fonksiyonu tanımlamak bu projede NORMAL bir desen — istekler AYRI dosyalara değil, İLGİLİ OLDUKLARI feature\'a göre GRUPLANIR.',
             olmasaydi: '`verifyOtp` ayrı bir `otpApi.ts` dosyasına konsaydı, "auth ile ilgili TÜM isteklerin nerede olduğu" sorusunun cevabı İKİ dosyaya YAYILIRDI — tek bir akışın iki adımı, tek bir dosyada okunması daha KOLAY.'
           },
           {
-            satir: 'export const { useLoginMutation, useVerifyOtpMutation } = authApi',
-            aciklama: 'RTK Query\'nin OTOMATİK ürettiği React hook\'ları — `builder.mutation`\'daki `login`/`verifyOtp` isimlerinden TÜRETİLİR (`use` + isim + `Mutation`), ELLE yazılmaz.',
-            neden: 'LoginPage/OtpVerifyPage (Bölüm 3-4) bu hook\'ları ÇAĞIRARAK `[trigger, {isLoading, error}]` şeklinde bir SONUÇ alır — loading/error state\'i component\'in KENDİSİNİN elle `useState` ile YÖNETMESİ GEREKMEZ, RTK Query bunu OTOMATİK sağlar.',
-            olmasaydi: 'Bu satır (ya da `injectEndpoints`\'in KENDİSİ) olmasaydı, `login`/`verifyOtp` isteklerini ATMANIN tek yolu ELLE bir `fetch()` çağrısı yazıp, isLoading/error state\'ini KENDİ `useState`\'leriyle YÖNETMEK olurdu — B-01\'in TÜM RTK Query kurulumunun VAR OLMA sebebi bu TEKRARI önlemek.'
+            satir: 'export function useLoginMutation() {',
+            aciklama: 'Backend isteği ATAN düz `login` fonksiyonunu, component\'in İHTİYACI olan `isLoading` durumuyla SARAN bir hook — `useApiMutation(login)` çağrısı `[trigger, {isLoading}]` şeklinde bir SONUÇ döndürür.',
+            neden: 'LoginPage/OtpVerifyPage (Bölüm 3-4) bu hook\'ları ÇAĞIRARAK loading state\'ini KENDİ `useState`\'leriyle YÖNETMEK ZORUNDA kalmaz — `useApiMutation` (B-01\'de kurulan paylaşılan hook) bunu OTOMATİK sağlar.',
+            olmasaydi: 'Bu fonksiyon (ya da `useApiMutation`\'IN KENDİSİ) olmasaydı, `login`/`verifyOtp` isteklerini ATMANIN tek yolu component İÇİNDE ELLE bir `apiClient.post()` çağrısı yazıp, isLoading/error state\'ini KENDİ `useState`\'leriyle YÖNETMEK olurdu — B-01\'in KURDUĞU paylaşılan hook\'ların VAR OLMA sebebi bu TEKRARI önlemek.'
           }
         ]
       },
@@ -233,7 +247,7 @@ export const { useLoginMutation, useVerifyOtpMutation } = authApi`,
         baslik: 'Bu Bölümde Öğrendiklerimiz',
         maddeler: [
           'auth.types.ts, backend\'in GERÇEKTEN gönderdiği/beklediği alanları birebir yansıtır — ne eksik ne fazla',
-          'authApi.ts, B-01\'deki TEMEL `api`\'yi `injectEndpoints` ile genişletir — header mantığı HİÇ tekrarlanmadı',
+          'authApi.ts, B-01\'deki TEMEL `apiClient`\'ı (paylaşılan axios örneği) kullanan düz `async` fonksiyonlardan oluşur — header mantığı HİÇ tekrarlanmadı, loading state\'i `useApiMutation` sarmalıyor',
           'apiError.ts, backend\'in TEK tip hata gövdesini (`{error:{code,message}}`) okuyan, B-03\'ten itibaren TÜM feature\'ların paylaşacağı bir yardımcı',
           'İki adımlı giriş (login → OTP) backend\'in ZATEN var olan bir kararı — admin panel yalnızca ona UYUYOR, kendi tasarımını dayatmıyor'
         ]

@@ -34,7 +34,7 @@ kanalı bu akademi oldu (Web/Mobil hâlâ kendi roadmap'lerini kullanıyor, bkz.
   baslik: '...', rota: '/words',           // zorunlu — gerçek route path'i
   aciklama: '...',                          // opsiyonel
   akis: [{ eylem: '...', sonuc: '...' }],   // zorunlu, en az 1 — kullanıcı ne yapar → ne olur
-  apiCagrisi: { yontem: 'POST', url: '...' },// opsiyonel — RTK Query'nin gerçekte gittiği backend endpoint'i
+  apiCagrisi: { yontem: 'POST', url: '...' },// opsiyonel — apiClient'ın (axios) gerçekte gittiği backend endpoint'i
   durumlar: [{ durum: 'Yükleniyor', gorunum: '...' }], // opsiyonel
   notlar: ['...']                           // opsiyonel
 }
@@ -44,7 +44,8 @@ Tetikleyici backend'deki "controller'a bağlandığında" kuralıyla birebir ayn
 adım farklı: CLAUDE.md §4 adım 6 (**Route/Import**) tamamlandığında, o component akademiye
 işlenirken `kod` slaytından HEMEN SONRA bir `onizleme` slaytı eklenir. `apiCagrisi` alanı,
 component saf UI/local-state ise (ör. bir modal aç/kapa) hiç yazılmaz — yalnızca gerçekten
-RTK Query üzerinden backend'e giden component'lerde var.
+`apiClient` (axios, `store/api/xxxApi.ts` + `useApiQuery`/`useApiMutation`) üzerinden backend'e
+giden component'lerde var.
 
 ## Motor Neden Kopya, Paylaşılan Değil
 

@@ -27,7 +27,7 @@ npm i -D tailwindcss postcss autoprefixer
 
 # Admin (/admin) — Faz B — Google/Apple YOK
 npm create vite@latest admin -- --template react-ts
-npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom
+npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom
 npm i -D tailwindcss postcss autoprefixer
 
 # Mobil (/mobile) — Faz E

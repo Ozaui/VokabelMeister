@@ -1,4 +1,5 @@
-import { api } from '../api'
+import { apiClient } from '../api'
+import { useApiMutation } from '../../hooks/useApiMutation'
 import type {
   LoginRequest,
   LoginResponse,
@@ -6,15 +7,20 @@ import type {
   VerifyOtpResponse,
 } from '../../types/auth.types'
 
-export const authApi = api.injectEndpoints({
-  endpoints: (builder) => ({
-    login: builder.mutation<LoginResponse, LoginRequest>({
-      query: (body) => ({ url: '/auth/login', method: 'POST', body }),
-    }),
-    verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpRequest>({
-      query: (body) => ({ url: '/auth/login/verify-otp', method: 'POST', body }),
-    }),
-  }),
-})
+async function login(body: LoginRequest): Promise<LoginResponse> {
+  const { data } = await apiClient.post<LoginResponse>('/auth/login', body)
+  return data
+}
 
-export const { useLoginMutation, useVerifyOtpMutation } = authApi
+async function verifyOtp(body: VerifyOtpRequest): Promise<VerifyOtpResponse> {
+  const { data } = await apiClient.post<VerifyOtpResponse>('/auth/login/verify-otp', body)
+  return data
+}
+
+export function useLoginMutation() {
+  return useApiMutation(login)
+}
+
+export function useVerifyOtpMutation() {
+  return useApiMutation(verifyOtp)
+}

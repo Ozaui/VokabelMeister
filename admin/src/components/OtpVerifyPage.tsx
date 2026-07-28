@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useFormik } from 'formik'
+import * as Yup from 'yup'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useDispatch } from 'react-redux'
 import { useVerifyOtpMutation } from '../store/api/authApi'
 import { setCredentials } from '../store/slices/authSlice'
@@ -16,6 +18,14 @@ interface OtpLocationState {
   from?: { pathname: string; search?: string; hash?: string }
 }
 
+function buildOtpSchema(t: TFunction) {
+  return Yup.object({
+    otpCode: Yup.string()
+      .required(t('auth.otp.codeRequired'))
+      .matches(/^\d{6}$/, t('auth.otp.codeInvalid')),
+  })
+}
+
 export function OtpVerifyPage() {
   const { t } = useTranslation()
   const dispatch = useDispatch()
@@ -24,11 +34,6 @@ export function OtpVerifyPage() {
   const state = location.state as OtpLocationState | null
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation()
   const [formError, setFormError] = useState<string | null>(null)
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<OtpFormValues>()
 
   useEffect(() => {
     // E-posta olmadan bu sayfaya doğrudan gelinmişse (ör. sayfa yenilendi) hangi hesabın
@@ -38,28 +43,32 @@ export function OtpVerifyPage() {
     }
   }, [state, navigate])
 
-  if (!state?.email) return null
+  const formik = useFormik<OtpFormValues>({
+    initialValues: { otpCode: '' },
+    validationSchema: buildOtpSchema(t),
+    onSubmit: async (values) => {
+      setFormError(null)
+      try {
+        const result = await verifyOtp({ email: state!.email!, otpCode: values.otpCode })
+        dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))
+        // pathname TEK BAŞINA yeterli değil — ör. /words?page=3'ten atılmış bir admin,
+        // search/hash de geri taşınmazsa filtrelerini/sayfa numarasını KAYBEDER.
+        const destination = state!.from
+          ? `${state!.from.pathname}${state!.from.search ?? ''}${state!.from.hash ?? ''}`
+          : '/'
+        navigate(destination, { replace: true })
+      } catch (err) {
+        setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+      }
+    },
+  })
 
-  const onSubmit = async (values: OtpFormValues) => {
-    setFormError(null)
-    try {
-      const result = await verifyOtp({ email: state.email!, otpCode: values.otpCode }).unwrap()
-      dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))
-      // pathname TEK BAŞINA yeterli değil — ör. /words?page=3'ten atılmış bir admin,
-      // search/hash de geri taşınmazsa filtrelerini/sayfa numarasını KAYBEDER.
-      const destination = state.from
-        ? `${state.from.pathname}${state.from.search ?? ''}${state.from.hash ?? ''}`
-        : '/'
-      navigate(destination, { replace: true })
-    } catch (err) {
-      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
-    }
-  }
+  if (!state?.email) return null
 
   return (
     <div className="flex h-screen items-center justify-center bg-background font-body text-text">
       <form
-        onSubmit={handleSubmit(onSubmit)}
+        onSubmit={formik.handleSubmit}
         noValidate
         className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
       >
@@ -77,17 +86,19 @@ export function OtpVerifyPage() {
         </label>
         <input
           id="otpCode"
+          name="otpCode"
           type="text"
           inputMode="numeric"
           maxLength={6}
           autoComplete="one-time-code"
+          value={formik.values.otpCode}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-center text-lg tracking-[0.5em] text-text"
-          {...register('otpCode', {
-            required: t('auth.otp.codeRequired'),
-            pattern: { value: /^\d{6}$/, message: t('auth.otp.codeInvalid') },
-          })}
         />
-        {errors.otpCode && <p className="mb-3 text-xs text-destructive">{errors.otpCode.message}</p>}
+        {formik.touched.otpCode && formik.errors.otpCode && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.otpCode}</p>
+        )}
 
         <button
           type="submit"

@@ -122,8 +122,12 @@ Backend'le aynı disiplin: bir feature'ı tüm katmanlarıyla bitir, sonra diğe
 
 ```
 1. TS Tipi/Arayüz     → types/
-2. RTK Query Endpoint → store/api/xxxApi.ts     (backend'e istek — cross-link noktası)
-3. Redux Slice        → store/slices/xxxSlice.ts (yalnızca ek local/UI state gerekirse)
+2. API Fonksiyonu     → store/api/xxxApi.ts     (admin: axios `apiClient` + ince `useApiQuery`/
+                        `useApiMutation` hook'u, `hooks/useApiQuery.ts`/`useApiMutation.ts`;
+                        backend'e istek — cross-link noktası)
+3. Redux Slice        → store/slices/xxxSlice.ts (yalnızca ek local/UI state gerekirse — admin'de
+                        RTK Query YOK, Redux Toolkit yalnızca auth/theme/language/filter gibi
+                        local state için)
 4. Custom Hook        → hooks/useXxx.ts          (varsa)
 5. Component          → components/Xxx.tsx
 6. Route/Import       → App.tsx / (mobil) navigation/*Navigator.tsx

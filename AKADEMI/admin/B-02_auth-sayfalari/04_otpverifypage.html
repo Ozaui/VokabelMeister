@@ -27,9 +27,11 @@
         dosyaYolu: 'admin/src/components/OtpVerifyPage.tsx',
         nedenBuKlasor: 'LoginPage.tsx ile AYNI `components/` klasörü — iki sayfa BİRBİRİNE komşu, TEK bir akışın iki YARISI.',
         kod: `import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useFormik } from 'formik'
+import * as Yup from 'yup'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useDispatch } from 'react-redux'
 import { useVerifyOtpMutation } from '../store/api/authApi'
 import { setCredentials } from '../store/slices/authSlice'
@@ -44,6 +46,14 @@ interface OtpLocationState {
   from?: { pathname: string; search?: string; hash?: string }
 }
 
+function buildOtpSchema(t: TFunction) {
+  return Yup.object({
+    otpCode: Yup.string()
+      .required(t('auth.otp.codeRequired'))
+      .matches(/^\\d{6}$/, t('auth.otp.codeInvalid')),
+  })
+}
+
 export function OtpVerifyPage() {
   const { t } = useTranslation()
   const dispatch = useDispatch()
@@ -52,11 +62,6 @@ export function OtpVerifyPage() {
   const state = location.state as OtpLocationState | null
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation()
   const [formError, setFormError] = useState<string | null>(null)
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<OtpFormValues>()
 
   useEffect(() => {
     // E-posta olmadan bu sayfaya doğrudan gelinmişse (ör. sayfa yenilendi) hangi hesabın
@@ -66,28 +71,32 @@ export function OtpVerifyPage() {
     }
   }, [state, navigate])
 
-  if (!state?.email) return null
+  const formik = useFormik<OtpFormValues>({
+    initialValues: { otpCode: '' },
+    validationSchema: buildOtpSchema(t),
+    onSubmit: async (values) => {
+      setFormError(null)
+      try {
+        const result = await verifyOtp({ email: state!.email!, otpCode: values.otpCode })
+        dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))
+        // pathname TEK BAŞINA yeterli değil — ör. /words?page=3'ten atılmış bir admin,
+        // search/hash de geri taşınmazsa filtrelerini/sayfa numarasını KAYBEDER.
+        const destination = state!.from
+          ? \`\${state!.from.pathname}\${state!.from.search ?? ''}\${state!.from.hash ?? ''}\`
+          : '/'
+        navigate(destination, { replace: true })
+      } catch (err) {
+        setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+      }
+    },
+  })
 
-  const onSubmit = async (values: OtpFormValues) => {
-    setFormError(null)
-    try {
-      const result = await verifyOtp({ email: state.email!, otpCode: values.otpCode }).unwrap()
-      dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))
-      // pathname TEK BAŞINA yeterli değil — ör. /words?page=3'ten atılmış bir admin,
-      // search/hash de geri taşınmazsa filtrelerini/sayfa numarasını KAYBEDER.
-      const destination = state.from
-        ? \`\${state.from.pathname}\${state.from.search ?? ''}\${state.from.hash ?? ''}\`
-        : '/'
-      navigate(destination, { replace: true })
-    } catch (err) {
-      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
-    }
-  }
+  if (!state?.email) return null
 
   return (
     <div className="flex h-screen items-center justify-center bg-background font-body text-text">
       <form
-        onSubmit={handleSubmit(onSubmit)}
+        onSubmit={formik.handleSubmit}
         noValidate
         className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
       >
@@ -105,17 +114,19 @@ export function OtpVerifyPage() {
         </label>
         <input
           id="otpCode"
+          name="otpCode"
           type="text"
           inputMode="numeric"
           maxLength={6}
           autoComplete="one-time-code"
+          value={formik.values.otpCode}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-center text-lg tracking-[0.5em] text-text"
-          {...register('otpCode', {
-            required: t('auth.otp.codeRequired'),
-            pattern: { value: /^\\d{6}$/, message: t('auth.otp.codeInvalid') },
-          })}
         />
-        {errors.otpCode && <p className="mb-3 text-xs text-destructive">{errors.otpCode.message}</p>}
+        {formik.touched.otpCode && formik.errors.otpCode && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.otpCode}</p>
+        )}
 
         <button
           type="submit"
@@ -130,6 +141,12 @@ export function OtpVerifyPage() {
 }`,
         satirlar: [
           {
+            satir: 'function buildOtpSchema(t: TFunction) {',
+            aciklama: 'LoginPage\'in (Bölüm 3) `buildLoginSchema`\'sıyla AYNI DESEN — Yup şeması, hata mesajlarını ÇEVİRECEK `t` fonksiyonuna İHTİYAÇ duyduğu için component GÖVDESİNİN İÇİNDE, HER render\'da yeniden İNŞA EDİLİR.',
+            neden: '`.matches(/^\\d{6}$/, ...)` tek bir KURALLA hem "boş mu" hem "6 haneli SAYI mı" sorusunu (required+pattern birlikte) CEVAPLAR — backend HER ZAMAN tam 6 haneli bir SAYISAL kod ÜRETİYOR, bu şema o SÖZLEŞMEYİ frontend tarafında da YANSITIYOR.',
+            olmasaydi: 'Bu şema OLMASAYDI, "123abc" gibi GEÇERSİZ bir kod backend\'e GÖNDERİLİR, backend 400 İLE REDDEDERDİ — teknik olarak GÜVENLİ ama admin HATASINI bir AĞ isteği SONRASINDA öğrenirdi.'
+          },
+          {
             satir: 'const state = location.state as OtpLocationState | null',
             aciklama: 'LoginPage\'in (Bölüm 3) `navigate(\'/verify-otp\', {state: {email, from}})` ile GÖNDERDİĞİ veriyi OKUR — bu sayfaya ULAŞMANIN TEK yolu bu route state\'i, URL\'de HİÇBİR parametre YOKTUR (`/verify-otp` sabit bir yol).',
             neden: '`email`, backend\'in `POST /auth/login/verify-otp` isteğinde HANGİ hesabın OTP\'sinin doğrulanacağını bilmesi için ZORUNLU (Bölüm 1) — bu bilgi BAŞKA hiçbir yerden (URL, localStorage) OKUNAMAZ, yalnızca LoginPage\'DEN GELİR.',
@@ -142,16 +159,16 @@ export function OtpVerifyPage() {
             olmasaydi: '`useEffect` OLMADAN, `if (!state?.email) navigate(...)` DOĞRUDAN component GÖVDESİNE yazılsaydı, React "Cannot update a component while rendering a different component" UYARISI verirdi — bazı React sürümlerinde bu GERÇEK bir HATAYA (sonsuz render döngüsü) bile DÖNÜŞEBİLİR.'
           },
           {
-            satir: 'if (!state?.email) return null',
-            aciklama: '`useEffect` İÇİNDEKİ yönlendirme ASENKRON çalışır (render TAMAMLANDIKTAN sonra) — bu satır, o yönlendirme GERÇEKLEŞENE KADAR geçen KISA an için formun HİÇ görünmemesini SAĞLAR.',
-            neden: 'Bu satır OLMASAYDI, `state.email` YOKKEN bile `<h1>{t(\'auth.otp.subtitle\', {email: state.email})}</h1>` GİBİ satırlar ÇALIŞMAYA çalışır, `state` `null` olduğu için `state.email` OKUMASI (aşağıdaki JSX\'te) bir ÇÖKMEYE (TypeError) yol AÇARDI.',
-            olmasaydi: 'Bu erken çıkış OLMASAYDI: doğrudan `/verify-otp`\'a giden bir admin, YÖNLENDİRME gerçekleşmeden ÖNCE bir an için `state.email` okumaya çalışan JSX\'in ÇÖKMESİYLE karşılaşırdı — beyaz ekran/React hata sayfası.'
+            satir: 'const formik = useFormik<OtpFormValues>({',
+            aciklama: 'LoginPage\'in (Bölüm 3) `useFormik` kullanımıyla AYNI desen — DİKKAT: bu çağrı `if (!state?.email) return null` erken ÇIKIŞINDAN ÖNCE yapılır.',
+            neden: 'React\'in "hook kuralları" HER render\'da AYNI SAYIDA, AYNI SIRADA hook ÇAĞRILMASINI ZORUNLU kılar — `useFormik` bir HOOK\'tur, bu yüzden koşullu erken ÇIKIŞTAN ÖNCE, KOŞULSUZ çağrılmak ZORUNDADIR.',
+            olmasaydi: '`useFormik` erken ÇIKIŞTAN SONRAYA taşınsaydı, `state?.email` YOKKEN component `useFormik`\'i HİÇ ÇAĞIRMAZ, e-posta GELDİĞİNDE (bir SONRAKİ render\'da) ÇAĞIRIRDI — React bunu "önceki render\'dan FARKLI sayıda hook" olarak ALGILAR, çalışma zamanı HATASI fırlatırdı.'
           },
           {
-            satir: 'const result = await verifyOtp({ email: state.email!, otpCode: values.otpCode }).unwrap()',
-            aciklama: '`state.email!` — `!` (non-null assertion), TypeScript\'e "BURAYA kadar geldiysem `state.email` KESİNLİKLE dolu" der; bir ÜST satırdaki `if (!state?.email) return null` bunu ZATEN GARANTİ eder ama TypeScript bu İKİ satır arasındaki BAĞLANTIYI kendisi ÇIKARAMAZ.',
-            neden: 'TypeScript\'in "akış analizi" (control flow analysis) bir FONKSİYONUN GÖVDESİNDE bu kadar İLERİ gitmez — `state.email`\'in tipi HÂLÂ `string | undefined`\'dır, `!` bu ikisi arasındaki BOŞLUĞU (biz İNSAN olarak biliyoruz ama derleyici BİLEMEZ) KAPATIR.',
-            olmasaydi: '`!` OLMASAYDI, TypeScript "`state.email` `undefined` OLABİLİR, bu fonksiyon `string` BEKLİYOR" diye DERLEME hatası verirdi — kod GÜVENLİ olduğu HALDE (üstteki erken çıkış SAYESİNDE) derleyici bunu BİLEMEZ.'
+            satir: 'const result = await verifyOtp({ email: state!.email!, otpCode: values.otpCode })',
+            aciklama: '`state!.email!` — İKİ AYRI non-null assertion. `useFormik` (bir üst satır) `if (!state?.email) return null`\'DAN ÖNCE TANIMLANDIĞI için, bu `onSubmit` callback\'i YAZILIRKEN TypeScript henüz o erken çıkışın GARANTİSİNDEN HABERSİZDİR.',
+            neden: 'Bu callback GERÇEKTE yalnızca form GÖRÜNÜR OLDUĞUNDA (yani `state?.email` dolu OLDUĞUNDA) TETİKLENEBİLİR — ama TypeScript bunu callback\'in TANIMLANDIĞI NOKTADA ÇIKARAMAZ, `!` bu BİLGİYİ elle EKLER.',
+            olmasaydi: '`!` işaretleri OLMASAYDI, TypeScript "`state` `null` OLABİLİR"/"`email` `undefined` OLABİLİR" diye DERLEME hatası verirdi — kod GÜVENLİ olduğu HALDE (formun kendisi yalnızca `state.email` doluyken GÖRÜNÜR OLDUĞU için) derleyici bunu BİLEMEZ.'
           },
           {
             satir: 'dispatch(setCredentials({ accessToken: result.accessToken, user: result.user }))',
@@ -160,8 +177,14 @@ export function OtpVerifyPage() {
             olmasaydi: 'Bu satır ÇAĞRILMASAYDI, backend GERÇEKTEN bir token ÜRETMİŞ olurdu ama admin panel bunu HİÇ KULLANMAZDI — admin, DOĞRU kodu girmesine RAĞMEN sonsuza kadar "giriş yapmamış" GÖRÜNÜRDÜ.'
           },
           {
-            satir: 'const destination = state.from',
-            aciklama: 'LoginPage\'in TAŞIDIĞI `from` bilgisi VARSA (admin BAŞKA bir korumalı sayfadan atılıp BURAYA geldiyse), oraya; YOKSA (admin doğrudan `/login`\'e gidip giriş YAPTIYSA) ana sayfaya (`/`) YÖNLENDİRME hedefini HESAPLAR.',
+            satir: 'if (!state?.email) return null',
+            aciklama: '`useEffect` İÇİNDEKİ yönlendirme ASENKRON çalışır (render TAMAMLANDIKTAN sonra) — bu satır, o yönlendirme GERÇEKLEŞENE KADAR geçen KISA an için formun HİÇ görünmemesini SAĞLAR. Artık `useFormik`\'İN ALTINDA durur çünkü hook\'lar erken çıkıştan ÖNCE çağrılmak ZORUNDADIR.',
+            neden: 'Bu satır OLMASAYDI, `state.email` YOKKEN bile `<h1>{t(\'auth.otp.subtitle\', {email: state.email})}</h1>` GİBİ satırlar ÇALIŞMAYA çalışır, `state` `null` olduğu için `state.email` OKUMASI (aşağıdaki JSX\'te) bir ÇÖKMEYE (TypeError) yol AÇARDI.',
+            olmasaydi: 'Bu erken çıkış OLMASAYDI: doğrudan `/verify-otp`\'a giden bir admin, YÖNLENDİRME gerçekleşmeden ÖNCE bir an için `state.email` okumaya çalışan JSX\'in ÇÖKMESİYLE karşılaşırdı — beyaz ekran/React hata sayfası.'
+          },
+          {
+            satir: 'const destination = state!.from',
+            aciklama: 'LoginPage\'in TAŞIDIĞI `from` bilgisi VARSA (admin BAŞKA bir korumalı sayfadan atılıp BURAYA geldiyse), oraya; YOKSA (admin doğrudan `/login`\'e gidip giriş YAPTIYSA) ana sayfaya (`/`) YÖNLENDİRME hedefini HESAPLAR. `!` burada da AYNI sebepten (bir üstteki `state!.email!` İLE aynı) GEREKLİDİR.',
             neden: '`pathname`+`search`+`hash` AYRI AYRI birleştirilir (tek bir satır ŞABLONU) çünkü React Router\'ın `navigate()`\'i TEK bir STRING URL bekler — üçünü AYRI AYRI taşımak state\'te ANLAMLI ama navigate\'e VERİRKEN TEK bir yola BİRLEŞTİRİLMELİ.',
             olmasaydi: 'Yalnızca `state.from?.pathname ?? \'/\'` yazılsaydı (İLK taslakta OLDUĞU gibi), `/words?page=3&level=A2`\'DEN atılan bir admin girişten SONRA `/words`\'e (BOŞ, 1. sayfaya) düşer, `page=3` sorgu PARAMETRESİ SESSİZCE kaybolurdu — bağımsız bir kod DENETİMİNDE bulunup DÜZELTİLDİ.'
           },
@@ -172,10 +195,22 @@ export function OtpVerifyPage() {
             olmasaydi: '`replace` YERİNE varsayılan (`push`) davranış KULLANILSAYDI, tarayıcı geçmişi `/login → /verify-otp → /words` şeklinde BİRİKİRDİ — "geri" tuşu admin\'i `/verify-otp`\'a, TEKRAR "geri" tuşu `/login`\'e GÖTÜRÜRDÜ, oysa GERÇEKTEN "bir önceki SAYFAYA" dönmek İSTİYORDU.'
           },
           {
+            satir: 'value={formik.values.otpCode}',
+            aciklama: 'LoginPage\'İN (Bölüm 3) e-posta/şifre alanlarıyla AYNI Formik "controlled input" DESENİ — `value`/`onChange={formik.handleChange}`/`onBlur={formik.handleBlur}` ÜÇLÜSÜ, `name="otpCode"` ÜZERİNDEN `formik.values.otpCode`\'A BAĞLANIR.',
+            neden: 'Bu ÜÇLÜ olmadan `input` "uncontrolled" KALIRDI — admin YAZDIKÇA `formik.values.otpCode` HİÇ GÜNCELLENMEZ, `onSubmit`\'e giden `values.otpCode` HER ZAMAN boş STRING olurdu.',
+            olmasaydi: 'Yalnızca `defaultValue` KULLANILSAYDI (React\'in "uncontrolled" ALTERNATİFİ), Formik\'in KENDİ `values`/`touched`/`errors` DÖNGÜSÜ bu alanı HİÇ İZLEMEZDİ — validasyon HER ZAMAN "boş" durumuna göre ÇALIŞIRDI.'
+          },
+          {
+            satir: 'formik.touched.otpCode && formik.errors.otpCode && (',
+            aciklama: 'Hata metni yalnızca alan "dokunulmuş" (`touched`) VE Yup şeması bir hata ÜRETMİŞSE gösterilir — LoginPage\'in (Bölüm 3) `formik.touched.email` DESENİYLE birebir AYNI.',
+            neden: '`touched` kontrolü OLMADAN, sayfa AÇILIR AÇILMAZ (admin HENÜZ hiçbir şey yazmamışken) "Kod zorunludur" hatası GÖRÜNÜRDÜ.',
+            olmasaydi: 'Yalnızca `formik.errors.otpCode` kontrol edilseydi, sayfa AÇILIR AÇILMAZ hata METNİ görünür, admin daha OTP kodunu YAZMAYA BAŞLAMADAN "hatalı" bir form GÖRÜRDÜ.'
+          },
+          {
             satir: 'maxLength={6}',
             aciklama: 'Tarayıcının KENDİSİ, kullanıcı 6 haneden FAZLA karakter YAZAMAYACAK şekilde alanı SINIRLAR — backend zaten TAM 6 haneli bir kod ÜRETİYOR (A-03, `IOtpService`).',
-            neden: '`pattern: /^\\d{6}$/` (aşağıdaki satır) YİNE de GEREKLİ çünkü `maxLength` yalnızca "6\'DAN FAZLA YAZAMA"yı ENGELLER — 3 haneli bir kod GİRİP submit ETMEYE (`maxLength` bunu ENGELLEMEZ) karşı `pattern` KORUMA sağlar.',
-            olmasaydi: '`maxLength` OLMASAYDI, admin YANLIŞLIKLA çok uzun bir metin YAPIŞTIRABİLİRDİ (ör. panodan) — `pattern` yine de bunu REDDEDERDİ ama `maxLength`, HATAYI submit\'TEN ÖNCE, YAZARKEN engelleyerek daha İYİ bir kullanıcı deneyimi SAĞLAR.'
+            neden: '`buildOtpSchema`\'daki `.matches(/^\\d{6}$/, ...)` YİNE de GEREKLİ çünkü `maxLength` yalnızca "6\'DAN FAZLA YAZAMA"yı ENGELLER — 3 haneli bir kod GİRİP submit ETMEYE (`maxLength` bunu ENGELLEMEZ) karşı Yup şeması KORUMA sağlar.',
+            olmasaydi: '`maxLength` OLMASAYDI, admin YANLIŞLIKLA çok uzun bir metin YAPIŞTIRABİLİRDİ (ör. panodan) — Yup şeması yine de bunu REDDEDERDİ ama `maxLength`, HATAYI submit\'TEN ÖNCE, YAZARKEN engelleyerek daha İYİ bir kullanıcı deneyimi SAĞLAR.'
           },
           {
             satir: 'autoComplete="one-time-code"',

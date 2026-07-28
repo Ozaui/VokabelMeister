@@ -68,5 +68,6 @@ Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECUR
 ## 6. Teknolojiler
 
 **Backend:** .NET 9, EF Core 9, FluentValidation 11, BCrypt.Net-Next 4, Serilog 3 (+MSSqlServer sink), MediatR 12, AutoMapper 13.
-**Web/Admin:** React+Vite, TS, TailwindCSS, Redux Toolkit + RTK Query, React Hook Form, Axios; Web ayrıca React Router v6 + `@react-oauth/google`.
+**Admin:** React+Vite, TS, TailwindCSS, Redux Toolkit (yalnızca local/auth/theme/language/filter UI state — RTK Query YOK) + Axios (`store/api/xxxApi.ts` + `hooks/useApiQuery`/`useApiMutation`), Formik + Yup (formlar).
+**Web:** React+Vite, TS, TailwindCSS, Redux Toolkit + RTK Query, React Hook Form, Axios, React Router v6 + `@react-oauth/google` (Faz D — henüz başlamadı).
 **Mobil:** React Native + Expo, Redux Toolkit + RTK Query, React Navigation, Axios, i18next, Expo Secure Store.

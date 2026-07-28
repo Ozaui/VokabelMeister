@@ -1,6 +1,6 @@
 # VokabelMeister — Wiki İndeksi (Ana Harita)
 
-**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-03.4 ✅ tamamlandı** (2026-07-26) — Admin Dil Tercihi (`LanguagePreference`), `ThemePreference` ile birebir aynı retrofit deseni, B-01 (Admin Panel Kurulumu) sırasında ortaya çıktı, **297/297 birim testi yeşil**; detay → Kırk üçüncü INGEST. **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. **A-08 ✅
+**Özet:** VokabelMeister, Almanca-Türkçe kelime öğrenme uygulamasının backend'i (.NET 9) ve planlanan üç istemcisini (Web/Mobil/Admin) haritalayan Obsidian bilgi grafiğinin giriş noktasıdır. Proje şu an **Faz A (Admin Panel Backend)**'in erken adımlarında (A-01 ✅, A-02 ✅, **A-03 ✅ tamamlandı** — Auth API'nin 13 endpoint'i `AuthController` → `IMediator.Send(command)` → `Application/Features/Auth/` altında 13 ayrı Command+Handler (MediatR CQRS) ile yazıldı, gerçek bir sunucu çalıştırılıp curl ile uçtan uca doğrulandı, 72/72 birim testi yeşil; detay → On yedinci INGEST; **A-03.1 ✅ tamamlandı** — QR Kod ile Giriş, 5 MediatR Command+Handler + Controller + 18 birim testi, token üretimi A-03'teki `ILoginCompletionService`'i yeniden kullanıyor; detay → Yirminci INGEST; **A-03.2 ✅ tamamlandı** — Auth başarı mesajlarının lokalizasyonu, [[SuccessMessages]] ([[ErrorMessages]]'ın kardeşi), `MessageResponse` artık `Code+Message`, 7 test dosyasına Almanca senaryo eklendi, toplam 97/97 birim testi yeşil; detay → Yirmi ikinci INGEST. Yirmi dördüncü INGEST'te (2026-07-11, kod kalitesi denetimi) QR ile Giriş akışında 4 gerçek bug (rate-limit self-lockout, boş audit alanları, atlanan soft-delete/hesap-durumu kontrolü, exception mesajına sızan ham token) düzeltildi, 102/102; Yirmi beşinci INGEST'te (aynı gün) 5 orta öncelikli kod kalitesi düzeltmesi yapıldı; Yirmi sekizinci INGEST'te (2026-07-12) düşük öncelikli son tur (ApiErrorResponse→record, Resolve/JwtTokenService/CreateMapper DRY, 18 endpoint'e ProducesResponseType, AutoMapper/Jwt paket bakımı, 15 yeni repository testi) tamamlandı, **güncel toplam 117/117 birim testi yeşil**); **A-03.3 ✅ tamamlandı** — Tema Tercihi (`ThemePreference`); **A-03.4 ✅ tamamlandı** (2026-07-26) — Admin Dil Tercihi (`LanguagePreference`), `ThemePreference` ile birebir aynı retrofit deseni, B-01 (Admin Panel Kurulumu) sırasında ortaya çıktı, **297/297 birim testi yeşil**; detay → Kırk üçüncü INGEST. **A-04 ✅ tamamlandı** (2026-07-19) — Loglama Sistemi: 3 log tablosu (ActivityLog/ApplicationLog/SecurityLog, hiçbiri BaseEntity'den türemiyor), Serilog MSSqlServer sink gerçek şemayla eşlendi, 8 Handler'a SecurityLog entegrasyonu (A-03/A-03.1'den beri bekleyen borç kapandı), `GET /health`, **144/144 birim testi yeşil**; detay → Otuz ikinci INGEST. **A-05 ✅ tamamlandı** (2026-07-21) — Sistem Kelimesi API (Words): çoklu dil modeli (WordConcept+Word), WordGrammarValidator, 7 MediatR Command/Query (CRUD + Eşleştirme), projedeki ilk `[Authorize(Roles="Admin")]`, **193/193 birim testi yeşil**; detay → Otuz üçüncü INGEST. **A-05.1 ✅ tamamlandı** (2026-07-27) — Dil Listesi API (`GET /languages`), B-03 hazırlığında fark edilen bir boşluğu kapatır (`languageId`'nin tek kaynağı migration seed'iydi), **298/298 birim testi yeşil**; **A-05.2 ✅ tamamlandı** (aynı gün) — Türkçe Gramer Alan Tamamlama: `WordGrammarValidator`'ın tr-Noun dalına `vowelHarmony`+`possessive` zorunlu kılındı (`TURKISH_LANGUAGE_FEATURES.md §7` kart tasarımıyla tutarlılık için), `consonantMutation` YAGNI ile ertelendi, **300/300 birim testi yeşil**; detay → Kırk yedinci INGEST. **A-06 ✅ tamamlandı** (2026-07-23) — Kategori API (Categories): self-ref hiyerarşi + çoklu dil çevirisi + kelime eşleştirme (M:N), silme koruması (alt kategori/aktif kelime/döngü), `GET /words`'e `categoryId`/`categories[]` retrofit'i, kod denetiminde bulunan 2 gerçek hatanın (deferred LINQ audit log, duplikat categoryId→500) düzeltilmesi, **219/219 birim testi yeşil**; detay → Otuz dördüncü INGEST. **A-07 ✅ tamamlandı** (2026-07-24) — Admin API: dört dilim (Kullanıcı Yönetimi, İstatistik, Toplu Kelime Import, Log Görüntüleme), `IUserRepository.GetPagedAsync`, 9 MediatR Command/Query (`Application/Features/Admin/`), `AdminController` (`api/v1/admin`, controller-seviyesinde `[Authorize(Roles="Admin")]`, 9 endpoint), rol değiştirme/hesap durumu güncellemenin projedeki İLK çift-loglama (`IActivityLogger`+`ISecurityLogger`) uygulaması, self-lockout koruması (`SelfAdminActionNotAllowedException`), `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, kayıt grafiği — `LoginsByDay` bilinçli olarak yazılmadı), `BulkImportWordsCommand` (her satır bağımsız tek-dilli `WordConcept`, best-effort, TEK `BULK_IMPORT_WORDS` ActivityLog kaydı — A-05'in Eşleştirme tasarımını yeniden kullanır), `LogMessages.cs` (A-04'ten beri bekleyen `SecurityLog.Detail` çözme borcu kapandı), **244/244 birim testi yeşil**; `UserCard` moderasyonu A-07.1'e ertelendi (C-02 bekliyor); detay → Otuz altıncı INGEST. **A-08 ✅
 tamamlandı** (2026-07-24) — Medya/Dosya Yükleme API: `IFileStorageService`/`LocalFileStorageService`
 (Application/Services, uzantı+boyut+İÇERİK [magic bytes] doğrulama, `Guid` tabanlı benzersiz ad
 üretimi), `MediaController` (projedeki İLK `multipart/form-data`/`IFormFile` uç noktası,
@@ -22,7 +22,7 @@ launchSettings.json'daki 29 baytlık hatalı örnek AES anahtarı, "***" maske l
 gerçek şifre olarak şifrelenebilmesi (`SmtpPasswordRequiredException` ile kapatıldı), eşzamanlı PUT
 determinizmi (`OrderBy(Id)`), MailKit'in CVE'li 4.3.0 sürümü (4.17.0'a yükseltildi), Backend
 Akademi'de 5 "Tam Dosya" slaytının gerçek koddan eksik satırlar içermesi; detay → Otuz dokuzuncu
-INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, **Faz B (Admin Panel — frontend) başladı** — **B-01 ✅ tamamlandı** (2026-07-26): `/admin` React+Vite+TS+Tailwind v4 iskeleti, tasarım sistemi (Primary rengi `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi), store+authSlice+api.ts, **dil tercihi altyapısı** (`languageSlice`+react-i18next+Accept-Language — bu ihtiyaç backend'de **A-03.4** `LanguagePreference` retrofit'ini doğurdu, **297/297**), ProtectedRoute+layout+routing, **dark mode** (`themeSlice`, Tailwind v4 `.dark` token override, `lucide-react` — admin panelin İLK ikon kütüphanesi — backend'e HİÇ dokunmadı, `ThemePreference` A-03.3'te zaten vardı); Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 7 bölüm); detay → Kırk dördüncü ve Kırk beşinci INGEST. **B-02 ✅ tamamlandı** (2026-07-27) — Auth Sayfaları: `auth.types.ts`+`lib/apiError.ts`+`authApi.ts` (`login`/`verifyOtp` — admin panelin backend'e attığı İLK gerçek istekler), `authSlice`'a `user` alanı eklendi, `LoginPage`/`OtpVerifyPage` (react-hook-form'un İLK gerçek kullanımı, iki adımlı giriş), admin panelde **İLK KEZ** test altyapısı (Vitest+RTL+jsdom, Node 22+'nin deneysel `localStorage`'ıyla çakışma `--no-experimental-webstorage` ile çözüldü); bağımsız kod denetiminde 2 gerçek düzeltme (login-sonrası yönlendirmede kaybolan query string, `readStoredUser`'ın çökme riski) + 2 bilinçli kapsam kararı (refreshToken/silent-refresh ve client-side rol kontrolü ERTELENDİ, belgelendi); Admin Akademi'ye işlendi (`AKADEMI/admin/B-02_auth-sayfalari/`, 7 bölüm); detay → Kırk altıncı INGEST.
+INGEST. **A-10 ✅ tamamlandı** (2026-07-25) — E-posta Servisi + Hesap Temizleme Görevi: `EmailTemplates` (6 şablon × tr/de), `IEmailService`'in dil kazanması (6 metoda zorunlu `language` + yeni `SendAccountRecoveredNotificationAsync`), `SmtpEmailService` + kritik/bilgilendirme ayrımı, `AccountCleanupService`/`AccountCleanupBackgroundService` (projedeki İLK `IHostedService`), **296/296 birim testi yeşil**; detay → Kırk birinci INGEST. **Faz A tamamlandı**, **Faz B (Admin Panel — frontend) başladı** — **B-01 ✅ tamamlandı** (2026-07-26): `/admin` React+Vite+TS+Tailwind v4 iskeleti, tasarım sistemi (Primary rengi `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi), store+authSlice+api.ts, **dil tercihi altyapısı** (`languageSlice`+react-i18next+Accept-Language — bu ihtiyaç backend'de **A-03.4** `LanguagePreference` retrofit'ini doğurdu, **297/297**), ProtectedRoute+layout+routing, **dark mode** (`themeSlice`, Tailwind v4 `.dark` token override, `lucide-react` — admin panelin İLK ikon kütüphanesi — backend'e HİÇ dokunmadı, `ThemePreference` A-03.3'te zaten vardı); Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 7 bölüm); detay → Kırk dördüncü ve Kırk beşinci INGEST. **B-02 ✅ tamamlandı** (2026-07-27) — Auth Sayfaları: `auth.types.ts`+`lib/apiError.ts`+`authApi.ts` (`login`/`verifyOtp` — admin panelin backend'e attığı İLK gerçek istekler), `authSlice`'a `user` alanı eklendi, `LoginPage`/`OtpVerifyPage` (react-hook-form'un İLK gerçek kullanımı, iki adımlı giriş), admin panelde **İLK KEZ** test altyapısı (Vitest+RTL+jsdom, Node 22+'nin deneysel `localStorage`'ıyla çakışma `--no-experimental-webstorage` ile çözüldü); bağımsız kod denetiminde 2 gerçek düzeltme (login-sonrası yönlendirmede kaybolan query string, `readStoredUser`'ın çökme riski) + 2 bilinçli kapsam kararı (refreshToken/silent-refresh ve client-side rol kontrolü ERTELENDİ, belgelendi); Admin Akademi'ye işlendi (`AKADEMI/admin/B-02_auth-sayfalari/`, 7 bölüm); detay → Kırk altıncı INGEST. **B-03 ✅ tamamlandı** (2026-07-27, aynı gün) — Kelime Yönetimi: `WordFormModal` (dil→tür koşullu gramer, `GermanGrammarFields`/`TurkishGrammarFields`+ortak `ConjugationGrid`), `WordListPage`, `WordPairingPage` (iki sütun+önerilen eşleşme), zorunlu alanlar kırmızı `*` ile işaretli; iki backend retrofit'i (`GET /languages`, Türkçe vowelHarmony/possessive zorunluluğu) tetikledi, iki i18n hatası (hâl etiketleri + örnek cümle türü) bulunup düzeltildi; **24/24 birim testi yeşil**, gerçek backend'e karşı Chrome'da uçtan uca doğrulandı; detay → Kırk sekizinci INGEST.
 Her INGEST sonrası bu dosya güncel tutulur (kural kaynağı: `/wiki_schema.md`).
 
 **Kütüphaneler:** —
@@ -205,6 +205,117 @@ kullanmaması" — fark edilip "vite.config.ts'te globals:true kullanılmaması"
 zincir B-01'in kapanışına bağlandı, kök `AKADEMI/admin/index.html`'e kart eklendi. `docs/TASK/
 B_admin_panel.md` B-02 tamamen `[x]`, `docs/TASK.md` Faz B durumu güncellendi, "Sıradaki task"
 `B-03`'e geçti.*
+
+*Kırk yedinci INGEST (2026-07-27, aynı gün) — B-03 (Kelime Yönetimi) hazırlığı sırasında kod/doküman
+taraması iki gerçek backend boşluğunu ortaya çıkardı, ikisi de kullanıcıya sorulup onaylandıktan
+sonra ayrı birer retrofit olarak kapatıldı — B-03'ün kendisi henüz başlamadı. **(1) A-05.1 — Dil
+Listesi API:** `GetUnmatchedWordConceptsQuery` sayısal bir `languageId` istiyordu ama bunu istemciye
+söyleyecek hiçbir endpoint yoktu (tek kaynak migration seed'i: `de`=1, `tr`=2) — kullanıcı "her şey
+olması gerektiği gibi yapılmalı" diyerek admin tarafında hardcode etmek yerine backend'e dönülmesini
+istedi. `ILanguageRepository.GetAllActiveAsync` A-05'te zaten vardı, yalnızca `GetLanguagesQuery`+
+`LanguagesController` (`GET /languages`, `api/v1/languages`, [Authorize] — Admin şartı yok, CRUD'suz
+referans tablosu) eklendi, yeni migration YOK. **298/298 birim testi yeşil** (297'den +1). **(2)
+A-05.2 — Türkçe Gramer Alan Tamamlama:** `TURKISH_LANGUAGE_FEATURES.md §7` "Kart Tasarımı" ünlü
+uyumu grubunu (`vowelHarmony`) ve iyelik ekini (`possessive`) isim kartının parçası sayıyordu, ama
+A-05'te `WordGrammarValidator`'ın tr-Noun dalı bu ikisini hiç zorunlu kılmıyordu (bilinçli bir A-05
+kararıydı, ama kart tasarımıyla tutarsızdı). Kullanıcıya üçüncü bir alan (`consonantMutation`,
+yalnızca henüz yazılmamış bir quiz özelliğinde kullanılacak) ile birlikte soruldu — vowelHarmony/
+possessive ZORUNLU yapıldı, consonantMutation YAGNI ile ertelendi (WordFormModal'da yalnızca
+opsiyonel/doğrulanmamış bir alan olacak). `ValidateTurkish`'in Noun dalına 2 yeni kontrol +
+`NounOnlyFields`'a ikisi eklendi (artık Verb'de de yasaklı), 2 yeni `ErrorMessages.cs` kodu, 2 yeni
+test + 3 var olan tr-Noun fixture'ı güncellendi. **300/300 birim testi yeşil** (298'den +2). Ayrıca
+`API_ENDPOINTS.md §5`'teki `POST /words` örnek JSON'unun gerçek `WordGrammarValidator` alanlarıyla
+(gender/plural/cases, `articleDefiniteNom`/`pluralForm` gibi uydurma alan adı DEĞİL) uyuşmadığı fark
+edilip düzeltildi — `TURKISH_LANGUAGE_FEATURES.md §9` de yeni zorunlu alanlara göre güncellendi.
+Her iki retrofit `AKADEMI/backend/A-05.1_dil-listesi-api/` (2 bölüm) ve `AKADEMI/backend/
+A-05.2_turkce-gramer-tamamlama/` (3 bölüm, `WordGrammarValidator.cs` için A-05 Bölüm 4'ün "TAM
+DOSYA" hâline dokunmayan bir `kod-degisiklik` slaydı dahil) olarak işlendi, zincir A-05→A-05.1→
+A-05.2→A-06 olacak şekilde iki yönlü güncellendi, kök `AKADEMI/backend/index.html`'e iki kart
+eklendi. `docs/TASK/A_admin_panel_backend.md`'ye A-05.1/A-05.2 eklendi (Faz A "✅ tamamlandı"
+durumu bu retrofit'lerle bozulmadı — A-03.4 emsaliyle aynı desen). B-03'ün kendisi bu INGEST'ten
+sonra başlıyor.*
+
+*Kırk sekizinci INGEST (2026-07-27, aynı gün) — **B-03 (Kelime Yönetimi) tamamlandı**: admin
+panelin şimdiye kadarki en büyük feature'ı. CLAUDE.md §4 dikey dilim sırasıyla `word.types.ts`+
+`category.types.ts` → `wordsApi.ts`/`languagesApi.ts`/`categoriesApi.ts` → `wordFilterSlice.ts`
+(her filtre değişimi sayfayı 1'e döndürür, `setPage` bilinçli istisna) → `WordFormModal` (önce dil
+`de`/`tr`, sonra `Tür` seçilir; gramer bölümü ikisine göre koşullu — `GermanGrammarFields`/
+`TurkishGrammarFields`, ortak bir `ConjugationGrid`'i [DE 3×6, TR 5×6 hücre] paylaşır) →
+`WordListPage` (filtre+tablo+sayfalama, düzenle tıklanınca tam veri `GetWordByIdQuery` ile ayrıca
+çekilir) → `WordPairingPage` (iki sütun, önerilen eşleşme, "birincil tarafı değiştir") → route/
+sidebar → testler (`WordFormModal`/`WordListPage`/`WordPairingPage`/`wordFilterSlice`, **24/24
+yeşil**). Zorunlu alanlar formda kırmızı `*` ile işaretlenir. **İki backend retrofit'i tetikledi**
+(ayrı INGEST'te işlendi, bkz. Kırk yedinci): `GET /languages` (languageId'nin migration seed'inden
+ezbere bilinmesi yerine gerçek bir uç nokta) ve Türkçe isimlerde ünlü uyumu/iyelik ekinin zorunlu
+kılınması. **Mimari düzeltme (geliştirme sırasında yakalandı):** `WordPairingPage`'in ilk taslağı
+her sütunun kendi verisini çekip Almanca listesini üst bileşene bir render-içi yan etki + modül
+seviyesinde önbellekle sızdırıyordu — fark edilip veri çekme sorumluluğu tek bir üst bileşende
+toplanacak, iki sütun saf/controlled bir component'i paylaşacak şekilde yeniden yazıldı. `lib/
+apiError.ts`'e `getApiErrorCode` eklendi (409 `WORD_TEXT_ALREADY_EXISTS` → "yine de ekle" akışı
+mesaj yerine sabit koda göre dallanır). **İki ayrı i18n hatası bulunup düzeltildi:** (1) hâl
+alanlarının küçük etiketleri (nominative/accusative/...) ham İngilizce JSON alan adı olarak
+sızmıştı — `words.grammar.de/tr.caseLabels`/`personLabels`/`tenseLabels` eklendi; gerçek Almanca/
+Türkçe dilbilgisi terimlerinin (Nominativ/Akkusativ vb.) kasıtlı olarak arayüz dili ne olursa olsun
+AYNI kalması gerektiği ayrıca netleşti (bunlar çevrilecek arayüz metni değil, öğretilen dilin
+kendi terminolojisi). (2) Örnek cümle türü seçimi (`Normal`/`Idiom`/`Formal`/`Colloquial`) tamamen
+çevrilmemiş kalmıştı, tam yanındaki kardeş dropdown doğru `t()` kullanırken bu alan atlanmıştı —
+`words.examples.type` eklendi. **Gerçek bir backend'e (`dotnet run`) karşı Chrome'da uçtan uca
+doğrulandı:** bir test admin hesabı oluşturulup (kayıt + e-posta doğrula + DB'de elle `Role=Admin`)
+giriş yapıldı, Almanca bir isim (tüm gramer alanlarıyla) ve Türkçe bir isim (vowelHarmony+possessive
+dahil — A-05.2 retrofit'inin gerçekten kabul ettiği doğrulandı) oluşturuldu, Eşleştirme ekranında
+birleştirildi, Düzenle'de her iki dilin verisinin doğru geri yüklendiği görüldü, admin'in arayüz
+dili TR↔DE canlı değiştirilerek tüm etiketlerin (backend'den gelen kategori adları dahil) doğru
+dilde geldiği doğrulandı — bu doğrulama sırasında bir kez, backend süreci yeni `GET /languages`
+endpoint'ini eklemeden önce başlatılmış olduğu için Eşleştirme sayfası geçici olarak boş
+görünmüştü (kod hatası değil, çalışan sürecin güncel kodu henüz yansıtmaması — sunucu yeniden
+başlatılınca düzeldi). `AKADEMI/admin/B-03_kelime-yonetimi/` işlendi, kök `AKADEMI/admin/
+index.html`'e kart eklendi, zincir B-02'nin kapanışına bağlandı. `docs/TASK/B_admin_panel.md`
+B-03 tamamen `[x]`, `docs/TASK.md` Faz B durumu güncellendi, "Sıradaki task" `B-04`'e geçti.*
+
+*Kırk dokuzuncu INGEST (2026-07-28) — **kod yazılmadı, yalnızca geriye dönük stack değişikliği +
+doküman senkronu:** Kullanıcı admin panelin B-01'de kurulan RTK Query + React Hook Form ikilisinden
+memnun kalmayıp, B-03 sonrasında (B-01/B-02/B-03'ün ÜÇÜ de bu ikiliyle yazılmıştı) **axios + Formik/
+Yup**'a geçilmesini istedi — `Kırk ikinci`/`Kırk altıncı` INGEST'lerde "İLK gerçek kullanım" diye
+belgelenen RTK Query/react-hook-form kararları GERİ ALINMADI/silinmedi (bu satırlar gerçek geçmişi
+anlatıyor, öyle kalıyor), yalnızca proje BUNDAN SONRA farklı bir stack'le devam ediyor. **Teknik
+değişiklik:** `store/api.ts` artık `createApi`/`fetchBaseQuery` değil, düz bir `axios.create(...)`
+(`apiClient`) — `Authorization`/`Accept-Language` interceptor'ı aynı işlevi görmeye devam ediyor;
+`createApi` RTK Query hook'larının (`useXQuery`/`useXMutation`) yerini iki ince genel hook aldı
+(`hooks/useApiQuery.ts`, `hooks/useApiMutation.ts` — cache/`providesTags`/`invalidatesTags` YOK,
+bilinçli olarak basit bir `refetch()`'e indirgendi, CLAUDE.md §3 "spekülatif ortak tip yazılmaz"
+ilkesiyle aynı gerekçe); `store/api/xxxApi.ts` dosyaları artık `injectEndpoints` yerine düz
+`async function` + bu iki hook'u saran ince bir `useXxxQuery`/`useXxxMutation` sarmalayıcısı
+export ediyor (`authApi.ts`, `wordsApi.ts`, `categoriesApi.ts`, `languagesApi.ts`). `store.ts`'ten
+RTK Query middleware'i kalktı — Redux Toolkit artık yalnızca local/UI state (`authSlice`,
+`languageSlice`, `themeSlice`, `wordFilterSlice`) için var. Form tarafında `react-hook-form`
+kaldırıldı, `LoginPage`/`OtpVerifyPage`/`WordFormModal` Formik+Yup'a geçirildi (validasyon şeması
+artık Yup, backend `WordGrammarValidator`'ın TS karşılığı aynı yerde kalıyor). `package.json`:
+`react-hook-form` çıktı, `axios`+`formik`+`yup` eklendi (RTK Query ayrı bir paket olmadığı için
+`@reduxjs/toolkit`'in kendisi kaldı — yalnızca `createApi` kullanımı bırakıldı). **Gerekçe kullanıcı
+kararı** (proje ileride büyüdükçe RTK Query'nin cache-invalidation karmaşıklığını admin panelin
+basit CRUD ihtiyaçları için gereksiz bulması, react-hook-form yerine Formik/Yup'ı tercih etmesi) —
+teknik bir bug/kısıt değil. **Doküman senkronu** (kod tarafı ayrı bir oturumda yapıldı, bu INGEST
+yalnızca dokümantasyonu senkronladı): `CLAUDE.md` §4 adım 2/3 (RTK Query Endpoint → API Fonksiyonu,
+axios+ince hook deseni; Redux Toolkit'in artık yalnızca local state için olduğu netleştirildi),
+`docs/REFERENCE/ARCHITECTURE.md` §6 (Admin satırı Web'den ayrıldı — Web hâlâ Faz D beklediği için
+RTK Query/RHF'yi korudu, Admin axios+Formik/Yup oldu), `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md`
++ `docs/wiki/Standartlar/Teknik_Ozellikler.md` (yalnızca **Admin** npm kurulum satırı `axios formik
+yup`'a güncellendi, Web/Mobil satırları — henüz başlamamış fazlar — DOKUNULMADI), `docs/TASK/
+B_admin_panel.md` (B-01/B-02/B-03'ün tamamlanmış `RTK Query:` satırları `API:` olarak güncellendi +
+parantez içinde axios notu eklendi, B-04…B-09'un henüz yazılmamış `RTK Query:` satırları da aynı
+şekilde `API:` yapıldı — gelecekteki B-fazı işi artık bu standardı izlemeli), `docs/wiki/Frontend/
+Admin_Akademi_Sistemi.md` (`onizleme` slaytının `apiCagrisi` alanı artık `apiClient`/axios'a
+referans veriyor, `AKADEMI/admin/STANDART.md`'nin GÜNCEL — zaten axios diline geçmiş — haliyle
+tutarlı). **Bilinçli olarak DOKUNULMAYAN yerler:** `docs/WEB_YOL_HARITASI/`, `docs/MOBILE_YOL_HARITASI/`,
+`docs/TASK/D_web_app.md`, `docs/TASK/E_mobil.md` (Faz D/E henüz başlamadı, kendi stack kararlarını
+kendi fazları başlayınca verecek); Kırk ikinci/Kırk altıncı INGEST'lerin ve `B_admin_panel.md`'nin
+B-01/B-02/B-03 "tamamlandı" anlatı metinlerindeki RTK Query/react-hook-form GEÇMİŞ referansları
+(gerçekten öyle yazılmıştı, tarih yeniden yazılmaz); `AKADEMI/admin/` altındaki ders içeriği (paralel
+bir oturumda ayrıca güncellendi). **Etkilenen dosyalar:** `CLAUDE.md`, `docs/REFERENCE/
+ARCHITECTURE.md`, `docs/REFERENCE/TECHNICAL_SPECIFICATIONS.md`, `docs/wiki/Standartlar/
+Teknik_Ozellikler.md`, `docs/TASK/B_admin_panel.md`, `docs/wiki/Frontend/Admin_Akademi_Sistemi.md`,
+bu dosya. "Sıradaki task" değişmedi: hâlâ `B-04` (Kategori Yönetimi) — artık axios+Formik/Yup
+standardıyla yazılacak.*
 
 ---
 
@@ -412,7 +523,7 @@ B_admin_panel.md` B-02 tamamen `[x]`, `docs/TASK.md` Faz B durumu güncellendi, 
 | Faz | Aralık | Başlık | Durum |
 |-----|--------|--------|-------|
 | A | A-01…A-10 | Admin Panel Backend | ✅ (A-01…A-10 tamamlandı; A-07.1 bilinçli olarak C-02'yi bekliyor — Faz A'nın "bitti" sayılmasını engellemez) |
-| B | B-01…B-09 | Admin Panel (frontend) | 🔄 (B-01, B-02 tamamlandı) |
+| B | B-01…B-09 | Admin Panel (frontend) | 🔄 (B-01, B-02, B-03 tamamlandı) |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |

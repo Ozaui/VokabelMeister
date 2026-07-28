@@ -27,9 +27,7 @@ describe('LoginPage', () => {
   })
 
   it('mutlu yol: doğru bilgilerle giriş yapılınca /verify-otp\'a yönlendirir', async () => {
-    const trigger = vi.fn().mockReturnValue({
-      unwrap: () => Promise.resolve({ code: 'OTP_SENT', message: 'OTP gönderildi' }),
-    })
+    const trigger = vi.fn().mockResolvedValue({ code: 'OTP_SENT', message: 'OTP gönderildi' })
     mockedUseLoginMutation.mockReturnValue([trigger, { isLoading: false }] as unknown as ReturnType<
       typeof useLoginMutation
     >)
@@ -53,9 +51,9 @@ describe('LoginPage', () => {
   })
 
   it('hatalı şifre: backend hatası formda gösterilir, yönlendirme YAPILMAZ', async () => {
-    const trigger = vi.fn().mockReturnValue({
-      unwrap: () =>
-        Promise.reject({ data: { error: { code: 'INVALID_CREDENTIALS', message: 'E-posta veya şifre hatalı' } } }),
+    const trigger = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { error: { code: 'INVALID_CREDENTIALS', message: 'E-posta veya şifre hatalı' } } },
     })
     mockedUseLoginMutation.mockReturnValue([trigger, { isLoading: false }] as unknown as ReturnType<
       typeof useLoginMutation

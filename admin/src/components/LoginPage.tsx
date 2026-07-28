@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useFormik } from 'formik'
+import * as Yup from 'yup'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useLoginMutation } from '../store/api/authApi'
 import { getApiErrorMessage } from '../lib/apiError'
 import type { LoginRequest } from '../types/auth.types'
@@ -12,6 +14,15 @@ interface LoginLocationState {
   from?: { pathname: string; search?: string; hash?: string }
 }
 
+function buildLoginSchema(t: TFunction) {
+  return Yup.object({
+    email: Yup.string()
+      .required(t('auth.login.emailRequired'))
+      .matches(/^\S+@\S+\.\S+$/, t('auth.login.emailInvalid')),
+    password: Yup.string().required(t('auth.login.passwordRequired')),
+  })
+}
+
 export function LoginPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -19,28 +30,27 @@ export function LoginPage() {
   const locationState = location.state as LoginLocationState | null
   const [login, { isLoading }] = useLoginMutation()
   const [formError, setFormError] = useState<string | null>(null)
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginRequest>()
 
-  const onSubmit = async (values: LoginRequest) => {
-    setFormError(null)
-    try {
-      await login(values).unwrap()
-      // Token burada henüz yok — backend şifreyi doğrulayıp OTP gönderdi (adım 1).
-      // email + "nereden geldiği" bilgisi OtpVerifyPage'e route state ile taşınır.
-      navigate('/verify-otp', { state: { email: values.email, from: locationState?.from } })
-    } catch (err) {
-      setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
-    }
-  }
+  const formik = useFormik<LoginRequest>({
+    initialValues: { email: '', password: '' },
+    validationSchema: buildLoginSchema(t),
+    onSubmit: async (values) => {
+      setFormError(null)
+      try {
+        await login(values)
+        // Token burada henüz yok — backend şifreyi doğrulayıp OTP gönderdi (adım 1).
+        // email + "nereden geldiği" bilgisi OtpVerifyPage'e route state ile taşınır.
+        navigate('/verify-otp', { state: { email: values.email, from: locationState?.from } })
+      } catch (err) {
+        setFormError(getApiErrorMessage(err) ?? t('auth.genericError'))
+      }
+    },
+  })
 
   return (
     <div className="flex h-screen items-center justify-center bg-background font-body text-text">
       <form
-        onSubmit={handleSubmit(onSubmit)}
+        onSubmit={formik.handleSubmit}
         noValidate
         className="w-full max-w-sm rounded-card border border-border bg-surface p-8 shadow-sm"
       >
@@ -57,25 +67,32 @@ export function LoginPage() {
         </label>
         <input
           id="email"
+          name="email"
           type="email"
+          value={formik.values.email}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
-          {...register('email', {
-            required: t('auth.login.emailRequired'),
-            pattern: { value: /^\S+@\S+\.\S+$/, message: t('auth.login.emailInvalid') },
-          })}
         />
-        {errors.email && <p className="mb-3 text-xs text-destructive">{errors.email.message}</p>}
+        {formik.touched.email && formik.errors.email && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.email}</p>
+        )}
 
         <label htmlFor="password" className="mb-1 block text-sm font-medium text-text">
           {t('auth.login.password')}
         </label>
         <input
           id="password"
+          name="password"
           type="password"
+          value={formik.values.password}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
           className="mb-1 w-full rounded-control border border-border bg-background px-3 py-2 text-sm text-text"
-          {...register('password', { required: t('auth.login.passwordRequired') })}
         />
-        {errors.password && <p className="mb-3 text-xs text-destructive">{errors.password.message}</p>}
+        {formik.touched.password && formik.errors.password && (
+          <p className="mb-3 text-xs text-destructive">{formik.errors.password}</p>
+        )}
 
         <button
           type="submit"

@@ -60,9 +60,10 @@ CLAUDE.md §3 adım 13 kuralıyla birebir aynı mantık, yalnızca tetikleyici a
 - `rota`: kopyala-yapıştır yapılabilir gerçek route path'i (`/words`, `/users/:id`) — uydurma değil.
 - `akis[]`: `{ eylem, sonuc }` çiftlerinden oluşan sıralı liste — kullanıcı ne yapar → arayüzde
   ne olur. En az bir adım zorunlu.
-- `apiCagrisi`: `{ yontem, url }` — bu component hangi gerçek backend endpoint'ine (RTK Query
-  üzerinden) istek atıyor; backend akademideki ilgili `postman` slaytına zihinsel köprü kurar
-  (component saf UI/local-state ise, örn. bir modal aç/kapa, bu alan hiç yazılmaz).
+- `apiCagrisi`: `{ yontem, url }` — bu component hangi gerçek backend endpoint'ine (`apiClient`
+  üzerinden, bkz. `admin/src/store/api.ts`) istek atıyor; backend akademideki ilgili `postman`
+  slaytına zihinsel köprü kurar (component saf UI/local-state ise, örn. bir modal aç/kapa, bu
+  alan hiç yazılmaz).
 - `durumlar[]`: `{ durum, gorunum }` — component'in yükleniyor/hata/boş-liste gibi farklı
   state'lerinde ne göründüğü (opsiyonel ama form/liste component'lerinde önerilir).
 - `notlar[]`: ön koşul/bağımlılık (ör. "önce login ile admin token al") — backend'deki

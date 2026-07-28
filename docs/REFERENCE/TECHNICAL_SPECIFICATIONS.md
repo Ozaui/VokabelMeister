@@ -50,7 +50,7 @@ npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
 # Admin (/admin) — Google/Apple/QR yok
 npm create vite@latest admin -- --template react-ts && cd admin
-npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom
+npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
 # Mobil (/mobile)

@@ -238,9 +238,7 @@ describe('LoginPage', () => {
   })
 
   it('mutlu yol: doğru bilgilerle giriş yapılınca /verify-otp\\'a yönlendirir', async () => {
-    const trigger = vi.fn().mockReturnValue({
-      unwrap: () => Promise.resolve({ code: 'OTP_SENT', message: 'OTP gönderildi' }),
-    })
+    const trigger = vi.fn().mockResolvedValue({ code: 'OTP_SENT', message: 'OTP gönderildi' })
     mockedUseLoginMutation.mockReturnValue([trigger, { isLoading: false }] as unknown as ReturnType<
       typeof useLoginMutation
     >)
@@ -264,9 +262,9 @@ describe('LoginPage', () => {
   })
 
   it('hatalı şifre: backend hatası formda gösterilir, yönlendirme YAPILMAZ', async () => {
-    const trigger = vi.fn().mockReturnValue({
-      unwrap: () =>
-        Promise.reject({ data: { error: { code: 'INVALID_CREDENTIALS', message: 'E-posta veya şifre hatalı' } } }),
+    const trigger = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { error: { code: 'INVALID_CREDENTIALS', message: 'E-posta veya şifre hatalı' } } },
     })
     mockedUseLoginMutation.mockReturnValue([trigger, { isLoading: false }] as unknown as ReturnType<
       typeof useLoginMutation
@@ -306,10 +304,16 @@ describe('LoginPage', () => {
             olmasaydi: '`vi.mocked` KULLANILMASAYDI, `mockedUseLoginMutation.mockReturnValue(...)` SATIRI TypeScript HATASI VERİRDİ — "`useLoginMutation` FONKSİYONUNUN `mockReturnValue` diye bir METODU YOK" (çünkü GERÇEK tip bunu BİLMEZ, yalnızca `vi.fn()`\'İN tipi BİLİR).'
           },
           {
-            satir: 'const trigger = vi.fn().mockReturnValue({',
-            aciklama: '`useLoginMutation()`\'IN GERÇEKTE döndürdüğü İKİLİNİN (`[trigger, {isLoading, error}]`) İLK elemanının SAHTE versiyonu — `LoginPage`\'in `login(values)` OLARAK ÇAĞIRDIĞI fonksiyon.',
-            neden: '`.unwrap()` metoduna SAHİP bir NESNE DÖNDÜRÜR çünkü `LoginPage.tsx`\'İN KENDİSİ `await login(values).unwrap()` YAZIYOR (Bölüm 3) — mock, GERÇEK RTK Query\'nin SÖZLEŞMESİNİ (arayüzünü) TAKLİT ETMEK ZORUNDA, aksi HALDE `.unwrap is not a function` HATASI ALINIRDI.',
-            olmasaydi: '`unwrap` metodu OLMAYAN düz bir `Promise` DÖNDÜRÜLSEYDİ (ör. `vi.fn().mockResolvedValue(...)`), `LoginPage.tsx`\'İN `.unwrap()` ÇAĞRISI "TypeError: login(...).unwrap is not a function" İLE ÇÖKERDİ.'
+            satir: 'const trigger = vi.fn().mockResolvedValue({',
+            aciklama: '`useLoginMutation()`\'IN GERÇEKTE döndürdüğü İKİLİNİN (`[trigger, {isLoading}]`) İLK elemanının SAHTE versiyonu — `LoginPage`\'in `login(values)` OLARAK ÇAĞIRDIĞI fonksiyon.',
+            neden: 'Düz bir `Promise` DÖNDÜRÜR (ekstra bir SARMALAYICI metot YOK) çünkü `LoginPage.tsx`\'İN KENDİSİ artık yalnızca `await login(values)` YAZIYOR (Bölüm 3) — axios\'un KENDİSİ 2xx yanıtlarda DOĞRUDAN bir değer DÖNDÜRÜP, hatalı yanıtlarda DOĞRUDAN `throw` ettiği için mock\'un TAKLİT ETMESİ gereken tek şey bu DAVRANIŞ.',
+            olmasaydi: '`mockReturnValue({unwrap: () => ...})` gibi bir sarmalayıcı NESNE döndürülseydi (ESKİ RTK Query deseni), `LoginPage.tsx`\'İN `await login(values)` çağrısı `.unwrap()` OLMAYAN bu nesneyi DOĞRUDAN bir sonuç SANIR, `result.code`/`result.message` yerine sarmalayıcının KENDİSİNİ okurdu — mock, GERÇEK fonksiyonun SÖZLEŞMESİYLE UYUŞMAZDI.'
+          },
+          {
+            satir: 'isAxiosError: true,',
+            aciklama: 'İkinci testteki `trigger`\'ın REDDETTİĞİ (`mockRejectedValue`) nesnenin şekli — `apiError.ts`\'teki (Bölüm 1) `isAxiosError(error)` kontrolünün `true` DÖNMESİ için GEREKEN alan.',
+            neden: '`getApiErrorMessage` (Bölüm 1), gerçek axios hatalarını `isAxiosError` İLE ayırt EDİYOR — mock bu alanı TAŞIMAZSA, `getApiErrorMessage` bu hatayı "axios kaynaklı DEĞİL" SAYAR VE her zaman `null` DÖNER, `formError` HER ZAMAN genel mesaja (`t(\'auth.genericError\')`) DÜŞER.',
+            olmasaydi: '`isAxiosError: true` OLMASAYDI, test BAŞARILI görünse bile YANLIŞ bir sebeple GEÇERDİ — `formError` GERÇEK backend mesajı ("E-posta veya şifre hatalı") yerine HER ZAMAN genel mesajla DOLARDI, `toHaveTextContent(\'E-posta veya şifre hatalı\')` beklentisi BAŞARISIZ OLURDU.'
           },
           {
             satir: 'await userEvent.type(screen.getByLabelText(/e-posta/i), \'admin@wordlearner.test\')',
@@ -320,7 +324,7 @@ describe('LoginPage', () => {
           {
             satir: 'expect(await screen.findByRole(\'alert\')).toHaveTextContent(\'E-posta veya şifre hatalı\')',
             aciklama: '`findByRole` (`getByRole`\'ün AKSİNE) ASENKRONDUR — element HENÜZ DOM\'DA YOKSA (backend YANITI HENÜZ İŞLENİYORSA) BİR SÜRE BEKLER, sonra ARAR.',
-            neden: 'Form GÖNDERİMİ (`onSubmit`) `async`\'DIR — hata mesajı DOM\'A ANINDA DEĞİL, `login(...).unwrap()`\'IN REDDİNDEN (mock\'un `Promise.reject`\'İ) SONRA, BİR "tick" GECİKMEYLE EKLENİR; `findByRole` bu GECİKMEYİ BEKLEMEYİ BİLİR.',
+            neden: 'Form GÖNDERİMİ (`onSubmit`) `async`\'DIR — hata mesajı DOM\'A ANINDA DEĞİL, `login(...)`\'IN REDDİNDEN (mock\'un `mockRejectedValue`\'sı) SONRA, BİR "tick" GECİKMEYLE EKLENİR; `findByRole` bu GECİKMEYİ BEKLEMEYİ BİLİR.',
             olmasaydi: '`findByRole` YERİNE senkron `getByRole` KULLANILSAYDI, test hata KUTUSU DOM\'A EKLENMEDEN ÖNCE ÇALIŞIR, "element BULUNAMADI" HATASIYLA (YANLIŞ bir SEBEPLE) BAŞARISIZ OLURDU — bu HATA rastgele/ARA SIRA (flaky) GÖRÜNÜRDÜ, HER ZAMAN DEĞİL.'
           }
         ]

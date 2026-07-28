@@ -78,105 +78,97 @@ const initialState: AuthState = {
         tur: 'kod',
         baslik: 'api.ts — Authorization + Accept-Language Header\'ları',
         dosyaYolu: 'admin/src/store/api.ts',
-        nedenBuKlasor: 'RTK Query endpoint dosyaları normalde backend\'e istek atan `store/api/xxxApi.ts` deseninde yaşar — ama bu dosya bir `xxxApi.ts` DEĞİL, TÜM diğer API dosyalarının (B-02\'deki `authApi.ts` gibi) `injectEndpoints` ile üzerine inşa edeceği TEMEL `api.ts`.',
-        kod: `export const api = createApi({
-  reducerPath: 'api',
-  baseQuery: fetchBaseQuery({
-    baseUrl: import.meta.env.VITE_API_URL,
-    prepareHeaders: (headers, { getState }) => {
-      const state = getState() as RootState
-      if (state.auth.accessToken) {
-        headers.set('Authorization', \`Bearer \${state.auth.accessToken}\`)
-      }
-      // Backend ErrorMessages/SuccessMessages ve admin log okuma bu header'a göre tr/de çözer
-      // (CLAUDE.md §1 "İstisna"/"İkinci istisna") — admin panelin kendi dil tercihi tek kaynak.
-      headers.set('Accept-Language', state.language.language)
-      return headers
-    },
-  }),
-  endpoints: () => ({}),
+        nedenBuKlasor: '`store/api/xxxApi.ts` dosyaları (B-02\'deki `authApi.ts` gibi) gerçek backend isteklerini burada oluşturulan `apiClient`\'ı import edip atacak — bu dosya bir `xxxApi.ts` DEĞİL, header ekleme mantığını TEK yerde barındıran TEMEL axios örneği.',
+        kod: `import axios from 'axios'
+import { store } from './store'
+
+export const apiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+})
+
+// Backend ErrorMessages/SuccessMessages ve admin log okuma bu header'a göre tr/de çözer
+// (CLAUDE.md §1 "İstisna"/"İkinci istisna") — admin panelin kendi dil tercihi tek kaynak.
+apiClient.interceptors.request.use((config) => {
+  const state = store.getState()
+  if (state.auth.accessToken) {
+    config.headers.Authorization = \`Bearer \${state.auth.accessToken}\`
+  }
+  config.headers['Accept-Language'] = state.language.language
+  return config
 })`,
         satirlar: [
           {
-            satir: 'export const api = createApi({',
-            aciklama: 'RTK Query\'nin (Redux Toolkit\'in resmi veri-getirme katmanı) TEK giriş noktası — düz `fetch`/`axios` çağrıları YERİNE, cache/loading/hata state\'ini OTOMATİK yöneten bu API tanımlanır.',
-            neden: 'B-02\'den itibaren yazılacak her endpoint (`login`, `getWords`, `getCategories`...) elle bir `useState`+`useEffect` yazmak yerine, RTK Query\'nin ürettiği bir `useXxxQuery()` hook\'unu kullanacak — loading/error state\'i HER seferinde elle yönetmek yerine kütüphaneden GELİR.',
-            olmasaydi: 'Düz `fetch` kullanılsaydı, B-03\'teki kelime listesi gibi her ekran kendi loading/error/cache mantığını elle yazardı — aynı veri iki farklı sayfada istenince (ör. kategori listesi hem dropdown\'da hem tabloda), RTK Query\'nin otomatik cache\'i OLMADAN aynı isteği İKİ KEZ atardı.'
+            satir: 'import axios from \'axios\'',
+            aciklama: 'Admin panelin backend\'e giden HER isteği için kullanılacak HTTP kütüphanesi — tarayıcının yerleşik `fetch`\'i YERİNE tercih edilir.',
+            neden: 'axios, interceptor (bu dosyanın esas amacı) ve otomatik JSON parse gibi ortak ihtiyaçları HAZIR sağlar — `fetch` kullanılsaydı bunların HER biri elle yazılırdı.',
+            olmasaydi: '`fetch` kullanılsaydı, giden her isteğe Authorization/Accept-Language eklemek için ya HER çağrı noktasında tekrar eden bir sarmalayıcı fonksiyon yazılırdı ya da bu mantık unutulup bazı isteklerde EKSİK header ile backend\'e gidilirdi.'
           },
           {
-            satir: 'reducerPath: \'api\',',
-            aciklama: 'Bu API\'nin Redux store\'daki (Bölüm 3\'ün son slaytı, `store.ts`) hangi anahtar altında yaşayacağını belirler — `state.api`.',
-            neden: 'RTK Query\'nin cache\'i, normal reducer\'lardan (`auth`, `language`) AYRI bir dilimde tutulur — `reducerPath` bu dilimi store\'a bağlayan isim, `store.ts`\'teki `[api.reducerPath]: api.reducer` satırı bu isme GÖRE eşleşir.',
-            olmasaydi: 'Bu satır olmasaydı RTK Query varsayılan olarak yine `\'api\'` kullanırdı (aynı sonuç) — ama birden fazla `createApi` çağrısı olsaydı (ki B-01\'in tasarımı BUNU bilerek engelliyor, bkz. `endpoints: () => ({})` açıklaması), her biri KENDİ `reducerPath`\'ini elle belirtmek ZORUNDA kalırdı, aksi halde ikisi de `state.api`\'yi kullanıp BİRBİRİNİN cache\'ini EZERDİ.'
+            satir: 'import { store } from \'./store\'',
+            aciklama: 'Redux store\'un KENDİSİ doğrudan import edilir — RTK Query\'nin `prepareHeaders`\'ının aksine, axios interceptor\'ına store bir parametre olarak GEÇİRİLMEZ.',
+            neden: 'axios\'un interceptor sözleşmesi (contract) bir `getState` parametresi SAĞLAMAZ — güncel state\'e erişmenin tek yolu, store modülünü doğrudan import edip `.getState()` çağırmaktır.',
+            olmasaydi: 'Store import edilmeseydi, interceptor\'ın Authorization/Accept-Language header\'larını hangi veriden okuyacağı belli olmazdı — token/dil bilgisine erişim için başka bir (daha karmaşık) köprü kurulması gerekirdi.'
           },
           {
-            satir: 'baseQuery: fetchBaseQuery({',
-            aciklama: 'RTK Query\'nin, tarayıcının yerleşik `fetch` API\'sini SARMALAYAN hazır yardımcı fonksiyonu — her istekte tekrarlanacak ortak mantığı (base URL, header\'lar) TEK yerde tanımlamayı sağlar.',
-            neden: 'Alternatifi `axios`\'tur, ama RTK Query resmi olarak `fetchBaseQuery`\'i önerir — ekstra bir bağımlılık (axios) eklemeden, tarayıcının zaten sahip olduğu `fetch`\'in üzerine ince bir katman kurar.',
-            olmasaydi: '`fetchBaseQuery` kullanılmasaydı, her endpoint kendi `fetch(...)` çağrısını, kendi Authorization/Accept-Language header ekleme mantığıyla YENİDEN yazardı — bu dosyanın VAR OLMA amacı (ortak mantığı TEK yerde toplamak) tamamen boşa çıkardı.'
+            satir: 'export const apiClient = axios.create({',
+            aciklama: 'axios\'un TEK giriş noktası — admin panelin backend\'e attığı HER istek bu `apiClient` örneği ÜZERİNDEN gider, düz `axios.get(...)` gibi global çağrılar KULLANILMAZ.',
+            neden: '`axios.create()` ile üretilen örnek, kendi `baseURL`\'ini VE interceptor\'larını taşır — bu örnek üzerinden atılan HER istek aynı ortak mantığı (bu dosyanın geri kalanı) otomatik miras alır.',
+            olmasaydi: 'Düz global `axios` kullanılsaydı, her çağrı noktası kendi `baseURL`\'ini ve Authorization/Accept-Language ekleme mantığını AYRI AYRI tekrar etmek zorunda kalırdı.'
           },
           {
-            satir: 'baseUrl: import.meta.env.VITE_API_URL,',
+            satir: 'baseURL: import.meta.env.VITE_API_URL,',
             aciklama: 'Backend\'in adresi (ör. `http://localhost:5000/api`) koda GÖMÜLMEZ — Vite\'ın `.env` dosyasından okunan bir ortam değişkeni.',
             neden: 'Backend\'in adresi geliştirme (localhost), test ve production\'da FARKLIDIR — ortama göre değişen böyle bir değer koda GÖMÜLMEZ, bir ortam değişkeninden okunur; aynı derlenmiş kod, çalıştığı ortama göre FARKLI bir backend\'e konuşabilir.',
             olmasaydi: 'URL doğrudan `\'http://localhost:5000/api\'` olarak yazılsaydı, admin panel production\'a deploy edildiğinde HÂLÂ localhost\'a istek atmaya çalışırdı — kodun KENDİSİNİN her ortam için ayrı ayrı DEĞİŞTİRİLİP yeniden derlenmesi gerekirdi.'
           },
           {
-            satir: 'prepareHeaders: (headers, { getState }) => {',
-            aciklama: 'RTK Query\'nin, GİDEN her isteğin header\'larını değiştirmesine izin veren callback — Redux store\'un GÜNCEL durumuna (`getState`) bu fonksiyon İÇİNDEN erişilebilir.',
-            neden: '`getState` parametre olarak GEÇİLİR (bir üst kapsamdan import edilmez) çünkü RTK Query bu fonksiyonu HER istekte YENİDEN çağırır — token yenilendiğinde (B-02) bir sonraki istek OTOMATİK olarak GÜNCEL token\'ı okur, eski/önbelleğe alınmış bir değeri DEĞİL.',
-            olmasaydi: '`getState` yerine store\'a modül seviyesinde bir `import { store }` ile erişilseydi de teknik olarak çalışırdı, ama RTK Query\'nin ÖNERDİĞİ desen bu değil — `prepareHeaders`\'ın kendi parametresini kullanmak, bu fonksiyonun test edilirken SAHTE bir state ile çağrılabilmesini de sağlar.'
+            satir: 'apiClient.interceptors.request.use((config) => {',
+            aciklama: 'axios\'un, GİDEN her isteğin `config`\'ini (URL, header, body) değiştirmesine izin veren callback — `apiClient`\'tan atılan HER istekte, istek backend\'e ULAŞMADAN ÖNCE bu fonksiyon çalışır.',
+            neden: 'Authorization/Accept-Language header\'larını HER çağrı noktasında elle eklemek yerine, bu interceptor TEK bir yerde ÇALIŞIP tüm istekleri kapsar — B-02\'de yazılacak `authApi.ts`/`wordsApi.ts` gibi dosyalar bu mantığı hiç bilmeden OTOMATİK miras alır.',
+            olmasaydi: 'Interceptor kullanılmasaydı, her `apiClient.get(...)`/`apiClient.post(...)` çağrısı Authorization/Accept-Language header\'larını KENDİ İÇİNDE elle eklemek zorunda kalırdı — bir tanesi unutulursa (ör. yeni bir endpoint dosyasında), o istek sessizce token\'sız/varsayılan dille giderdi.'
           },
           {
-            satir: 'const state = getState() as RootState',
-            aciklama: '`getState()`\'in dönüş tipi RTK Query\'nin kendi iç tipiyle GENELLEŞTİRİLMİŞTİR (`unknown`\'a yakın) — `as RootState` cast\'i, `store.ts`\'te (bir sonraki slayt) tanımlanan GERÇEK state şeklini geri KAZANDIRIR.',
-            neden: 'Bu cast olmadan `state.auth.accessToken` yazmak TypeScript hatası verirdi — RTK Query, `api.ts`\'i `store.ts`\'ten ÖNCE tanımlamaya izin verir (aksi halde döngüsel import oluşurdu), bu yüzden gerçek `RootState` tipini BURADA elle iddia etmek gerekir.',
-            olmasaydi: 'Cast olmasaydı, `state.auth`/`state.language` gibi okumalar DERLENMEZDİ — geliştirici ya `// @ts-ignore` gibi daha KÖTÜ bir kaçış yoluna başvururdu ya da `api.ts`\'i `store.ts`\'ten SONRA tanımlamaya çalışıp döngüsel bir import hatasıyla karşılaşırdı.'
+            satir: 'const state = store.getState()',
+            aciklama: 'Interceptor çalıştığı ANDAKİ Redux state\'ini okur — modül yüklenirken BİR KEZ değil, HER istekte YENİDEN çağrılır.',
+            neden: 'Token yenilendiğinde (B-02, refresh) ya da dil değiştirildiğinde (Bölüm 4), bir SONRAKİ istek OTOMATİK olarak GÜNCEL değeri okur — interceptor fonksiyonu HER istekte yeniden çalıştığı için eski/önbelleğe alınmış bir değer asla kullanılmaz.',
+            olmasaydi: '`store.getState()` yalnızca modül yüklenirken BİR KEZ okunup bir değişkende saklansaydı, token yenilendiğinde ya da dil değiştirildiğinde sonraki istekler HÂLÂ eski değerleri gönderirdi.'
           },
           {
             satir: 'if (state.auth.accessToken) {',
             aciklama: 'Authorization header\'ı YALNIZCA token varsa eklenir — `POST /auth/login` gibi anonim endpoint\'ler için hiç header gönderilmez.',
             neden: 'Boş/geçersiz bir Authorization header\'ı göndermek, backend\'de gereksiz bir JWT doğrulama denemesine yol açar (ve bazı senaryolarda 401 yerine YANLIŞ bir hata koduna) — koşul, yalnızca GERÇEKTEN bir token varken header eklenmesini garanti eder.',
-            olmasaydi: 'Koşulsuz `headers.set(\'Authorization\', \`Bearer \${state.auth.accessToken}\`)` yazılsaydı, token `null` iken `"Bearer null"` gibi anlamsız bir header gönderilirdi — backend bunu geçersiz bir token olarak REDDEDER, anonim bir istek olarak değil.'
+            olmasaydi: 'Koşulsuz `config.headers.Authorization = \`Bearer \${state.auth.accessToken}\`` yazılsaydı, token `null` iken `"Bearer null"` gibi anlamsız bir header gönderilirdi — backend bunu geçersiz bir token olarak REDDEDER, anonim bir istek olarak değil.'
           },
           {
-            satir: 'headers.set(\'Authorization\', `Bearer ${state.auth.accessToken}`)',
+            satir: 'config.headers.Authorization = `Bearer ${state.auth.accessToken}`',
             aciklama: '`Bearer ` ön eki, JWT taşıyan bir Authorization header\'ının HTTP standardıdır — backend\'in `[Authorize]` middleware\'i bu formatı BEKLER.',
             neden: 'Bu formatın DIŞINDA bir şey gönderilirse (ör. yalnızca token, `Bearer ` öneki OLMADAN) backend\'in JWT doğrulama middleware\'i isteği tanımaz, geçersiz/anonim sayar.',
-            olmasaydi: '`Bearer ` öneki unutulup yalnızca `headers.set(\'Authorization\', state.auth.accessToken)` yazılsaydı, token TEKNİK olarak doğru olsa bile backend HER isteği 401 (Unauthorized) ile REDDEDERDİ — "token var ama format yanlış" hatası, kod okurken FARK EDİLMESİ zor bir hata sınıfıdır.'
+            olmasaydi: '`Bearer ` öneki unutulup yalnızca `config.headers.Authorization = state.auth.accessToken` yazılsaydı, token TEKNİK olarak doğru olsa bile backend HER isteği 401 (Unauthorized) ile REDDEDERDİ — "token var ama format yanlış" hatası, kod okurken FARK EDİLMESİ zor bir hata sınıfıdır.'
           },
           {
-            satir: 'headers.set(\'Accept-Language\', state.language.language)',
+            satir: 'config.headers[\'Accept-Language\'] = state.language.language',
             aciklama: 'Backend\'in `RequestLanguageResolver`\'ının (A-03, `AKADEMI/backend/A-03_auth-register/`) okuduğu AYNI header — admin panelin `languageSlice`\'ından (Bölüm 4) gelen tr/de değeri, HER isteğe koşulsuz eklenir.',
             neden: 'Admin panel de backend için bir istemci — backend, hata mesajlarını ve log kayıtlarını hangi dilde göstereceğine bu header\'a bakarak karar veriyor. Admin panel bu header\'ı GÖNDERMEZSE, backend\'in dil kararı hep varsayılana (tr) düşer, admin `de` seçse bile hata mesajları tr gelirdi.',
             olmasaydi: 'Bu satır olmasaydı, dil seçici (Bölüm 4) yalnızca admin panelin KENDİ statik metinlerini (react-i18next) çevirirdi — backend\'den gelen HER mesaj (ör. "e-posta zaten kayıtlı" gibi bir validasyon hatası) admin `de` seçmiş olsa bile hep Türkçe gelirdi, tutarsız bir deneyim.'
           },
           {
-            satir: 'return headers',
-            aciklama: 'RTK Query\'nin `prepareHeaders` sözleşmesi (contract) — bu callback\'in GÜNCELLENMİŞ `headers` nesnesini GERİ döndürmesi zorunludur, aksi halde RTK Query hangi header\'ların isteğe EKLENECEĞİNİ bilemez.',
-            neden: '`headers` parametre olarak GELEN, mutasyona UĞRAYAN (yukarıdaki `.set()` çağrılarıyla değiştirilen) bir `Headers` nesnesi — RTK Query, dönüş değerini KULLANARAK gerçek `fetch` isteğini oluşturur.',
-            olmasaydi: 'Bu satır unutulsaydı, fonksiyon `undefined` döndürürdü — RTK Query, `headers` değişikliklerinin hiçbirini (Authorization VE Accept-Language) isteğe EKLEMEZ, tüm istekler anonim/varsayılan dille giderdi, HİÇBİR hata mesajı vermeden.'
-          },
-          {
-            satir: 'endpoints: () => ({}),',
-            aciklama: 'B-01\'de bu API\'ye HİÇBİR endpoint eklenmedi — `injectEndpoints` API\'si (RTK Query\'nin "code splitting" özelliği) sayesinde B-02\'de yazılacak `authApi.ts`, bu TEMEL `api`\'yi import edip `.injectEndpoints({...})` ile `login`/`verifyOtp` mutation\'larını EKLEYECEK, bu dosyaya hiç dokunmadan.',
-            neden: 'Authorization/Accept-Language header mantığı TEK bir yerde (bu dosyada) tanımlanır, her yeni endpoint dosyası (B-03\'teki `wordsApi.ts`, B-04\'teki `categoriesApi.ts`...) bu mantığı OTOMATİK miras alır — tekrar yazılmaz.',
-            olmasaydi: 'Her feature kendi `createApi` çağrısını yapsaydı (B-02 için ayrı, B-03 için ayrı store), her birinde AYNI `prepareHeaders` mantığı kopyalanırdı — Bölüm 2\'deki renk kararı gibi, header mantığında bir değişiklik gerektiğinde (ör. gelecekte refresh token eklenince) düzinelerce dosyada arama-değiştirme gerekirdi.'
+            satir: 'return config',
+            aciklama: 'axios\'un request interceptor sözleşmesi — bu callback\'in GÜNCELLENMİŞ `config` nesnesini GERİ döndürmesi zorunludur, aksi halde axios isteği HİÇ göndermez.',
+            neden: '`config` parametre olarak GELEN, mutasyona UĞRAYAN (yukarıdaki atamalarla değiştirilen) bir nesne — axios, dönüş değerini KULLANARAK gerçek HTTP isteğini oluşturur.',
+            olmasaydi: 'Bu satır unutulsaydı, axios `config`\'in `undefined` döndüğünü görür ve bunu bir HATA olarak ele alırdı — istek hiç GİTMEZ, promise reddedilirdi.'
           }
         ]
       },
       {
         tur: 'kod',
-        baslik: 'store.ts — Tek Store, Üç Reducer',
+        baslik: 'store.ts — Tek Store, İki Reducer',
         dosyaYolu: 'admin/src/store/store.ts',
-        nedenBuKlasor: '`api.ts` ile AYNI `store/` klasöründe yaşar — `api.reducerPath` ve `api.middleware`, RTK Query\'nin cache/loading state\'ini Redux DevTools\'ta görünür kılan bağlantı, ikisi birbirinden AYRI düşünülemez.',
+        nedenBuKlasor: '`api.ts` ile AYNI `store/` klasöründe yaşar — ikisi de Redux\'un GÜNCEL state\'ine (JWT, dil tercihi) erişmesi gereken, birbirinden AYRI düşünülemeyecek parçalar.',
         kod: `export const store = configureStore({
   reducer: {
     auth: authReducer,
     language: languageReducer,
-    [api.reducerPath]: api.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
 })
 
 export type RootState = ReturnType<typeof store.getState>`,
@@ -202,24 +194,12 @@ export type RootState = ReturnType<typeof store.getState>`,
           {
             satir: 'language: languageReducer,',
             aciklama: 'Bölüm 4\'te yazılacak `languageSlice`\'ın reducer\'ı — `state.language.language` (`api.ts`\'teki Accept-Language header\'ının kaynağı) bu anahtara bağlıdır.',
-            neden: 'B-01\'in üç slice\'ı (`auth`, `language`, ileride `theme`) store\'a AYNI şekilde, düz bir nesne olarak eklenir — yerel/UI state tutan her yeni slice, yazıldığı anda bu listeye KATILIR.',
+            neden: 'B-01\'in iki slice\'ı (`auth`, `language`) store\'a AYNI şekilde, düz bir nesne olarak eklenir — yerel/UI state tutan her yeni slice, yazıldığı anda bu listeye KATILIR.',
             olmasaydi: 'Bu satır olmasaydı, Bölüm 4\'teki `languageSlice` YAZILMIŞ olsa bile store\'a hiç BAĞLANMAMIŞ olurdu — `useSelector((state) => state.language)` çağıran hiçbir component GERÇEK veriye ulaşamaz, sürekli `undefined` alırdı.'
           },
           {
-            satir: '[api.reducerPath]: api.reducer,',
-            aciklama: 'Köşeli parantez, JavaScript\'in "hesaplanmış özellik adı" (computed property name) sözdizimi — anahtar, `api.ts`\'teki `reducerPath: \'api\'` değerinden (bu slaytın üstü) OKUNUR, elle `\'api\':` yazılmaz.',
-            neden: 'RTK Query\'nin KENDİ ürettiği `reducerPath` değerini kullanmak, bu iki dosyanın (`api.ts` ve `store.ts`) birbirinden BAĞIMSIZ olarak "api" string\'ini yanlış yazma (typo) riskini ORTADAN kaldırır.',
-            olmasaydi: '`[api.reducerPath]` yerine elle `api: api.reducer` yazılsaydı da bugün AYNI sonucu verirdi (`reducerPath` zaten `\'api\'`) — ama `api.ts`\'teki `reducerPath` değeri yarın değişirse (ör. birden fazla API dosyası gerekirse), bu satırın da ELLE güncellenmesi gerekirdi; hesaplanmış anahtar, bu senkronizasyonu OTOMATİK yapar.'
-          },
-          {
-            satir: 'middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),',
-            aciklama: 'RTK Query\'nin `api.middleware`\'i, cache invalidation/otomatik yeniden çağırma/polling gibi ÖZELLİKLERİ çalıştıran motor — eklenmezse `createApi` ile tanımlanan endpoint\'ler (B-02\'den itibaren) sessizce ÇALIŞMAZ.',
-            neden: 'RTK Query resmi dokümantasyonunun ZORUNLU kurulum adımı — Redux\'un kendisi bu middleware\'i bilmez, `api.ts`\'nin (bir önceki slayt) ürettiği tüm cache/refetch mantığı bu satıra bağlıdır.',
-            olmasaydi: 'Bu satır unutulsaydı, B-02\'de yazılacak `authApi.login` mutation\'ı çağrıldığında hiçbir şey OLMAZDI (ne istek atılır ne hata verilir) — RTK Query\'nin en sık karşılaşılan, tanısı zor kurulum hatalarından biri.'
-          },
-          {
             satir: 'export type RootState = ReturnType<typeof store.getState>',
-            aciklama: '`api.ts`\'teki `getState() as RootState` cast\'inin (bir önceki slayt) tipini SAĞLAYAN satır — store\'un KENDİSİNDEN türetilir, elle yazılmaz.',
+            aciklama: '`api.ts`\'teki `store.getState()` çağrısının (bir önceki slayt) dönüş tipini SAĞLAYAN satır — store\'un KENDİSİNDEN türetilir, elle yazılmaz.',
             neden: '`ReturnType<typeof store.getState>` deseni, `store.ts`\'e yeni bir reducer eklendiğinde (ör. gelecekte bir `themeSlice`) `RootState` tipinin OTOMATİK güncellenmesini sağlar — elle yazılan bir interface, yeni reducer eklenince ELLE senkronize edilmesi gerekirdi.',
             olmasaydi: '`RootState` elle (`interface RootState { auth: AuthState, language: LanguageState }`) yazılsaydı, yeni bir slice eklendiğinde bu interface\'in GÜNCELLENMESİ unutulabilirdi — `api.ts`\'teki `state.language.language` gibi bir okuma, gerçekte var olan ama TİPTE eksik bir alanı derleme hatası vermeden "bulamazdı".'
           }
@@ -230,9 +210,9 @@ export type RootState = ReturnType<typeof store.getState>`,
         baslik: 'Bu Bölümde Öğrendiklerimiz',
         maddeler: [
           'authSlice, JWT\'yi localStorage\'da tutar — sayfa yenilendiğinde admin\'in login durumunun KORUNMASI için',
-          'api.ts, Authorization VE Accept-Language header\'larını TEK bir yerde, TÜM gelecekteki endpoint\'ler için otomatik ekler',
-          '`endpoints: () => ({})` bilinçli bir BOŞLUK — B-02\'den itibaren `injectEndpoints` ile doldurulacak, bu dosyaya bir daha hiç dokunulmayacak',
-          'store.ts, `api.middleware`\'i eklemeyi UNUTMAMALI — RTK Query\'nin en sık atlanan kurulum adımı',
+          'api.ts, Authorization VE Accept-Language header\'larını TEK bir axios interceptor\'ında, TÜM gelecekteki isteklere otomatik ekler',
+          '`apiClient`, B-02\'den itibaren yazılacak `authApi.ts` gibi dosyaların doğrudan import edip kullanacağı TEMEL axios örneği — bu dosyaya bir daha hiç dokunulmayacak',
+          'store.ts, yalnızca istemci-yerel state\'i (auth, language) tutar — sunucu verisi/cache için AYRI bir reducer/middleware GEREKMEZ',
           'Bu bölümde HENÜZ hiçbir gerçek HTTP isteği atılmadı — ilk `onizleme` slaytındaki gerçek `apiCagrisi` (backend\'e giden istek), B-02\'de LoginPage yazıldığında görünecek'
         ]
       }
