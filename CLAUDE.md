@@ -129,9 +129,8 @@ Backend'le aynı disiplin: bir feature'ı tüm katmanlarıyla bitir, sonra diğe
 5. Component          → components/Xxx.tsx
 6. Route/Import       → App.tsx / (mobil) navigation/*Navigator.tsx
 7. Birim Test         → Xxx.test.tsx             (RTL; hemen)
-8. İşleme              → B: AKADEMI/admin/<faz>/ HTML bölümü (Admin Akademi, §6 — component
-                        `kod` slaytından hemen sonra `onizleme` slaytı dahil); D/E: ilgili roadmap
-                        (WEB_YOL_HARITASI/, MOBILE_YOL_HARITASI/)
+8. İşleme              → B/D/E: AKADEMI/<katman>/<faz>/ HTML bölümü (§6 — component `kod`
+                        slaytından hemen sonra `onizleme` slaytı dahil)
 ```
 
 Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 React Navigation; state katmanı web'le paylaşılabilir.

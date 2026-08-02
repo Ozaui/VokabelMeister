@@ -35,7 +35,7 @@
 ### A-03 — Auth API (User) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, REFERENCE/SECURITY.md §2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
 **Frontend karşılığı:** B-02 (Admin — sade giriş+OTP), D-03 (Web — tam akış+Google), E-05 (Mobil — tam akış+Google+Apple)
-*Dikey dilim: `User` + `RefreshToken` entity → servisler → controller → yol haritası.*
+*Dikey dilim: `User` + `RefreshToken` entity → servisler → controller → AKADEMI.*
 - [x] **Entity:** `User`, `RefreshToken` + `OtpPurpose` enum + EF config + migration
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash)
