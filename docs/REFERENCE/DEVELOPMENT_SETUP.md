@@ -9,24 +9,27 @@ Node.js 18.17+ LTS · .NET 9 SDK · SQL Server 2019+ (SSMS) · VS 2022 / VS Code
 
 ## 2. Projeyi Al
 ```bash
-git clone https://github.com/kullanici/WordLearner.git && cd WordLearner && dotnet restore
+git clone https://github.com/kullanici/WordLearner.git && cd WordLearner/backend && dotnet restore
 ```
 
 ## 3. Backend İskeleti (A-01)
+`WordLearner.sln` ve `global.json`, kök dizindeki `admin/`/`web/`/`mobile/` ile karışmasın diye
+`backend/` altında yaşar — SDK sürümü de yalnızca backend'i kapsar, frontend'i etkilemez.
 ```bash
+cd backend
 dotnet new sln -n WordLearner
-dotnet new webapi   -n WordLearner.API            -o backend/WordLearner.API
-dotnet new classlib -n WordLearner.Application    -o backend/WordLearner.Application
-dotnet new classlib -n WordLearner.Infrastructure -o backend/WordLearner.Infrastructure
-dotnet new classlib -n WordLearner.Domain         -o backend/WordLearner.Domain
-dotnet new xunit    -n WordLearner.Tests          -o backend/WordLearner.Tests
-dotnet sln add backend/**/*.csproj
+dotnet new webapi   -n WordLearner.API            -o WordLearner.API
+dotnet new classlib -n WordLearner.Application    -o WordLearner.Application
+dotnet new classlib -n WordLearner.Infrastructure -o WordLearner.Infrastructure
+dotnet new classlib -n WordLearner.Domain         -o WordLearner.Domain
+dotnet new xunit    -n WordLearner.Tests          -o WordLearner.Tests
+dotnet sln add **/*.csproj
 
 # Referanslar: Domain ← Application ← Infrastructure ← API
-dotnet add backend/WordLearner.API reference backend/WordLearner.Application backend/WordLearner.Infrastructure
-dotnet add backend/WordLearner.Application reference backend/WordLearner.Domain
-dotnet add backend/WordLearner.Infrastructure reference backend/WordLearner.Domain
-dotnet add backend/WordLearner.Tests reference backend/WordLearner.Application backend/WordLearner.Infrastructure
+dotnet add WordLearner.API reference WordLearner.Application WordLearner.Infrastructure
+dotnet add WordLearner.Application reference WordLearner.Domain
+dotnet add WordLearner.Infrastructure reference WordLearner.Domain
+dotnet add WordLearner.Tests reference WordLearner.Application WordLearner.Infrastructure
 ```
 Tests klasörü: `{Services, Features, Helpers, Repositories}/` (→ `CODING_STANDARDS.md §7`). NuGet → `TECHNICAL_SPECIFICATIONS.md §1`.
 
@@ -40,7 +43,7 @@ dotnet ef database update --project WordLearner.Infrastructure --startup-project
 
 ## 5. Çalıştırma
 ```bash
-dotnet run --project WordLearner.API      # Swagger: http://localhost:5001/swagger
+cd backend && dotnet run --project WordLearner.API   # Swagger: http://localhost:5001/swagger
 cd admin && npm run dev                    # http://localhost:5173  (yalnızca e-posta+şifre, Admin rolü)
 cd web && npm run dev                      # http://localhost:5174  (token localStorage; Apple yok)
 cd mobile && npx expo start                # token Expo Secure Store
@@ -72,7 +75,6 @@ Commit: Türkçe, task no ile başlar → `CLAUDE.md §7` (ör. `A-03: AuthContr
 ```
 WordLearner/
 ├── CLAUDE.md · docs/
-├── WordLearner.sln
-├── backend/{WordLearner.API, .Application, .Infrastructure, .Domain, .Tests}
+├── backend/{WordLearner.sln, global.json, WordLearner.API, .Application, .Infrastructure, .Domain, .Tests}
 ├── admin/ · web/ · mobile/
 ```

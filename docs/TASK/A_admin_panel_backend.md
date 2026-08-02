@@ -25,7 +25,7 @@
 - [x] Ortak hata tipi: `ApiErrorResponse` (`ExceptionHandlingMiddleware`'in gerçek tüketicisi olduğu
       için burada yazıldı; `ApiResponse<T>`/`PagedResult<T>` hiçbir controller yokken spekülatif
       olarak yazılmıştı → YAGNI kuralına göre geri alındı, ilk gerçek controller'ın ihtiyaç duyduğu
-      anda o task içinde yazılacak — bkz. `../TASK.md` "Spekülatif ortak tip yazılmaz" kuralı)
+      anda o task içinde yazılacak — bkz. `TASK.md` "Spekülatif ortak tip yazılmaz" kuralı)
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] Middleware: global exception, security headers, request/response log
 - [x] ➜ **AKADEMI/backend'ye işle**

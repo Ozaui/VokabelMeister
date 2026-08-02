@@ -1,6 +1,6 @@
 # FAZ D — Web Kullanıcı Uygulaması (`/web`)
 
-> **Yöntem/standart:** Kurallar için → `../TASK.md` (**⭐ Frontend Çalışma Yöntemi**, **Her Parça
+> **Yöntem/standart:** Kurallar için → `TASK.md` (**⭐ Frontend Çalışma Yöntemi**, **Her Parça
 > İçin Döngü**) — o bölümler değişmez standarttır, burada tekrar edilmez. Her feature
 > tip→api→slice→hook→component→route→test sırasıyla yazılır ve `AKADEMI/web/`'e işlenir.
 

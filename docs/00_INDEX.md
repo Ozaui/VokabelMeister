@@ -26,8 +26,8 @@ Admin önce (içerik girilir, kullanıcı tarafı gerçek veriyle test edilir); 
 | Dosya | İçerik |
 |-------|--------|
 | `CLAUDE.md` | ⭐ Agent anayasası: değişmez kurallar + yönlendirme + yazım sırası |
-| `TASK.md` | Yöntem + ilerleme; faz task listeleri → `TASK/<faz>.md` |
-| `DATABASE_SCHEMA.md` | ERD + genel kurallar; tam SQL → `DATABASE_SCHEMA/<domain>.md` |
+| `TASK/TASK.md` | Yöntem + ilerleme; faz task listeleri → `TASK/<faz>.md` |
+| `DATABASE_SCHEMA/DATABASE_SCHEMA.md` | ERD + genel kurallar; tam SQL → `DATABASE_SCHEMA/<domain>.md` |
 | `REFERENCE/ARCHITECTURE.md` | Mimari, akışlar, rol/görünürlük matrisi |
 | `REFERENCE/API_ENDPOINTS.md` | Endpoint listesi + istek/yanıt örnekleri |
 | `REFERENCE/CODING_STANDARDS.md` | Yorum/isim standardı + birim test standardı |

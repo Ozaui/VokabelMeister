@@ -1,6 +1,6 @@
 # FAZ F — Test ve Yayın
 
-> **Yöntem/standart:** Kurallar için → `../TASK.md` (**⭐ Çalışma Yöntemi**, **Her Parça İçin Döngü**)
+> **Yöntem/standart:** Kurallar için → `TASK.md` (**⭐ Çalışma Yöntemi**, **Her Parça İçin Döngü**)
 > — o bölümler değişmez standarttır, burada tekrar edilmez.
 
 ### F-01 — Backend Test Konsolidasyonu (Regresyon) ⬜

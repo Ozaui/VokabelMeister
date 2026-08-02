@@ -1,6 +1,6 @@
 # FAZ E — Mobil Uygulama (`/mobile`)
 
-> **Yöntem/standart:** Kurallar için → `../TASK.md` (**⭐ Frontend Çalışma Yöntemi**, **Her Parça
+> **Yöntem/standart:** Kurallar için → `TASK.md` (**⭐ Frontend Çalışma Yöntemi**, **Her Parça
 > İçin Döngü**) — o bölümler değişmez standarttır, burada tekrar edilmez. Mobil'de adım 6 (Route)
 > `React Navigation` ile yapılır (`navigation/*Navigator.tsx`); state/veri katmanı (tip/api/slice/hook)
 > Web ile aynı desendedir, mümkünse aynı RTK Query tip tanımları paylaşılır.

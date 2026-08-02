@@ -66,8 +66,8 @@ Bu dosyayı okuduktan sonra, task'a göre **yalnızca** ilgili dosyayı aç:
 
 | Ne yapıyorsun | Oku |
 |---------------|-----|
-| Task'a başlıyorum, sıradaki ne? | `TASK.md` → ilgili `TASK/<faz>.md` |
-| Bir tabloyu/entity'yi yazacağım | `DATABASE_SCHEMA.md` → ilgili `DATABASE_SCHEMA/<domain>.md` (yalnızca o domain) |
+| Task'a başlıyorum, sıradaki ne? | `TASK/TASK.md` → ilgili `TASK/<faz>.md` |
+| Bir tabloyu/entity'yi yazacağım | `DATABASE_SCHEMA/DATABASE_SCHEMA.md` → ilgili `DATABASE_SCHEMA/<domain>.md` (yalnızca o domain) |
 | Endpoint imzası/istek-yanıt şekli | `REFERENCE/API_ENDPOINTS.md` (ilgili bölüm) |
 | Sistem mimarisi/akış/rol matrisi | `REFERENCE/ARCHITECTURE.md` |
 | Kod yorum/isim/test standardı | `REFERENCE/CODING_STANDARDS.md` |

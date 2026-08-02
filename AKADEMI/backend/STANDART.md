@@ -18,7 +18,7 @@ AKADEMI/backend/
 ```
 
 - Klasör adı: `<TaskKodu>_<kebab-case-konu>` (ör. `A-04_kelime-crud`). Task kodu
-  `docs/TASK.md`/`docs/TASK/<faz>.md`'deki koduyla **birebir aynı** olmalı — okuyucu iki
+  `docs/TASK/TASK.md`/`docs/TASK/<faz>.md`'deki koduyla **birebir aynı** olmalı — okuyucu iki
   dosya arasında geçiş yaptığında kafası karışmasın.
 - Bölüm dosyaları klasör içinde `01_`, `02_`... öneki ile numaralanır (iki haneli, sıralama
   bozulmasın diye).
