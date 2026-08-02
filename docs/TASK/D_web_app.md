@@ -63,7 +63,7 @@
 
 ### D-05 — Öğrenme / Sınav Sayfası ⬜
 **Referans:** C-05, C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §9
-> **Not (2026-07-07 SRS tasarım kararları, bkz. `wiki/Index.md` On ikinci INGEST):** İstemci artık
+> **Not (2026-07-07 SRS tasarım kararları):** İstemci artık
 > `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
 > gerçek formatı (MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse) backend'de
 > rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.

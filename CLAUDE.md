@@ -58,9 +58,6 @@
 **Test**
 - Her public servis/Handler metodunun birim testi **aynı task içinde** yazılır (Faz F'ye bırakma). Standart → `REFERENCE/CODING_STANDARDS.md §7`.
 
-**Wiki (mimari hafıza)**
-- Yeni plan/özellik istenince kodu taramadan önce `wiki/Index.md`'den başla (**QUERY**). Önemli bir şey değiştiyse ilgili wiki düğümünü + `wiki/Index.md`'yi güncelle (**INGEST**). Kurallar → `wiki_schema.md`.
-
 ---
 
 ## 2. Yönlendirme — Hangi Task İçin Hangi Dosya
@@ -183,5 +180,4 @@ Tüm alt-adımlar `[x]`, ilgili akademiye (§6) işlendi, testler yeşilse:
 1. **Git commit** — Türkçe, task no ile başlar (ör. `A-03: AuthController (13 endpoint) + rate limiting`, `B-02: Auth Sayfaları`). API/feature başına, alt-parça başına değil. **Commit mesajına asla `Co-Authored-By: Claude` (veya başka bir AI/asistan) satırı eklenmez** — yazarlık tek kullanıcıya (`Ozaui`) aittir, GitHub'da ek bir "contributor" görünmemeli.
 2. **Git push** — her zaman kullanıcı onayıyla (otomatik push yok). Onayı **sormak** akışın parçası.
 3. **`TASK.md` güncelle** — faz durumu (⬜→🔄→✅) + "Sıradaki task".
-4. **`wiki/Index.md`'ye INGEST** (varsa).
-5. **Kullanılmayan paket taraması** — backend'de her `.csproj` paketi, frontend'de her `package.json` bağımlılığı için `grep` ile gerçek çağrı noktası doğrula ("muhtemelen kullanılıyordur" varsayma). Sıfır kullanım → (a) kaldır (YAGNI) veya (b) bilinçli hazırlıksa `Teknik_Ozellikler.md`'ye "⚠️ kurulu, henüz bağlı — hedef: A-0X/B-0X" notu.
+4. **Kullanılmayan paket taraması** — backend'de her `.csproj` paketi, frontend'de her `package.json` bağımlılığı için `grep` ile gerçek çağrı noktası doğrula ("muhtemelen kullanılıyordur" varsayma). Sıfır kullanım → (a) kaldır (YAGNI) veya (b) bilinçli hazırlıksa `Teknik_Ozellikler.md`'ye "⚠️ kurulu, henüz bağlı — hedef: A-0X/B-0X" notu.

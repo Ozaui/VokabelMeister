@@ -48,7 +48,7 @@ JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (
 `themePreference` (`Light|Dark|System`) ve `languagePreference` (`tr|de` — admin panelin/ileride
 web-mobilin arayüz dili, `A-03.4`) `RegisterCommand`'da girdi olarak alınmaz — `CurrentLevel`
 ile aynı desen, DB varsayılanı döner; gerçek seçim kayıt sonrası onboarding'de (`PUT /users/me`,
-§4) yapılır. JWT claim'ine hiç girmez (A-03.3, `wiki/Database/Auth_Domain.md`).
+§4) yapılır. JWT claim'ine hiç girmez (A-03.3).
 
 ### 3.1 QR ile Giriş
 

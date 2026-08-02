@@ -164,8 +164,7 @@ Panel** (bkz. aşağıdaki not — B-01'de eklenen `languageSlice` bu API'yi bek
 **Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire)
 **Frontend karşılığı:** E-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok)
 > **Not (2026-07-07):** Zamanlama altyapısı **Hangfire** (SQL Server storage) — Quartz.NET/elle
-> `IHostedService` yerine tercih edildi (gerekçe → `wiki/Database/SRS_Domain.md` "Bildirim
-> Tetikleyicileri (C-10)").
+> `IHostedService` yerine tercih edildi.
 - [ ] `INotificationService` + `OneSignalNotificationService`, `User.OneSignalPlayerId` + migration, `PUT /users/me/device-token`
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] Hangfire kurulumu (`AddHangfire`/`AddHangfireServer`, SQL Server storage, dashboard) +

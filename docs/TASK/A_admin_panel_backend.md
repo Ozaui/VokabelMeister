@@ -140,7 +140,7 @@
 - [x] ➜ **AKADEMI/backend'ye işle**
 
 ### A-03.3 — Tema Tercihi (ThemePreference) ✅
-**Referans:** `DATABASE_SCHEMA/Auth.md` (Users), `wiki/Database/Auth_Domain.md`
+**Referans:** `DATABASE_SCHEMA/Auth.md` (Users)
 > **Neden ayrı task:** A-03 zaten ✅ tamamlanmıştı — bu bir davranış değişikliği/retrofit değil,
 > saf bir DB+DTO eklentisi (A-03.2'nin izlediği desenle aynı: küçük-orta ölçekli, kendi
 > entity/controller'ı yok). Kullanıcı admin panel tasarım kararları sırasında sistemde hiç tema
@@ -168,7 +168,7 @@
 > kodlanmadı (YAGNI), yalnızca not bırakıldı (bkz. `C_kullanici_backend.md` C-01).
 
 ### A-03.4 — Admin Dil Tercihi (LanguagePreference) ✅
-**Referans:** `DATABASE_SCHEMA/Auth.md` (Users), `wiki/Database/Auth_Domain.md`
+**Referans:** `DATABASE_SCHEMA/Auth.md` (Users)
 > **Neden ayrı task:** B-01 (Admin Panel Kurulum) sırasında admin panelin kendi arayüz dilini
 > (tr/de) seçebilmesi gerektiği ortaya çıktı — kullanıcı bunun localStorage'da kalan salt frontend
 > bir tercih DEĞİL, `ThemePreference` gibi DB'ye bağlı bir kullanıcı alanı olması gerektiğini
@@ -421,7 +421,7 @@
 > bağımlı — o entity henüz kodda yok, ancak **C-02**'de (`TASK/C_kullanici_backend.md`) yazılacak.
 > Roadmap sırası A→B→C olduğu için A-07 şu an bu entity'ye erişemez; bu madde A-07'nin kapsamından
 > ÇIKARILDI, C-02 bitince küçük bir retrofit task'ı (**A-07.1**) olarak eklenecek — A-03.2/A-06'daki
-> "sonradan borç kapatma" deseniyle aynı (bkz. `../wiki/Index.md` ilgili INGEST'ler).
+> "sonradan borç kapatma" deseniyle aynı.
 - [x] **Entity/DTO yok** (kullanıcı yönetimi mevcut `User` entity'sini kullanır, `Role`/`IsActive`
       zaten `Auth.md`'de var) — `IUserRepository`'ye admin'e özel sorgular (liste/arama/sayfalama,
       istatistik) veya varsa mevcut Auth repository'sinin genişletilmesi

@@ -202,7 +202,7 @@ public static class SrsCalculator
 
 **Quiz formatı:** İstemci `sessionType` göndermez. Yeni kelime = `Flashcard`; review'da her soru backend'de `MultipleChoice|TranslationQuiz|ArticleQuiz|PluralQuiz|TrueFalse` arasından rastgele.
 
-**Leech eşiği:** `ConsecutiveIncorrect >= 5` (config, ardışık — bir doğru gelince 0'a döner; Anki'nin kümülatif 8'inden daha katı metrik olduğu için düşük). Üç aksiyon (Askıya Al/Sıfırla/Devam) → `wiki/Database/SRS_Domain.md`.
+**Leech eşiği:** `ConsecutiveIncorrect >= 5` (config, ardışık — bir doğru gelince 0'a döner; Anki'nin kümülatif 8'inden daha katı metrik olduğu için düşük). Üç aksiyon: Askıya Al/Sıfırla/Devam.
 
 ## 9. Serilog + ApplicationLog (DB sink)
 ```csharp

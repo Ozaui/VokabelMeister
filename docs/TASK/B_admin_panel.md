@@ -8,7 +8,7 @@
 
 ### B-01 — Kurulum ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §3, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
-- [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup kurulumu (RTK Query/React Hook Form ile başlanmıştı, B-03 sonrası axios + `useApiQuery`/`useApiMutation` + Formik/Yup'a geriye dönük geçirildi — bkz. wiki INGEST)
+- [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup kurulumu (RTK Query/React Hook Form ile başlanmıştı, B-03 sonrası axios + `useApiQuery`/`useApiMutation` + Formik/Yup'a geriye dönük geçirildi)
 - [x] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki Turkuaz+Mercan paleti/Nunito+DM Sans/16px-12px radius Tailwind `@theme`'e işlendi (Primary rengi B-01 sırasında `#6D5DFC`'den `#4E93BC`'ye düzeltildi, dokümana not edildi)
 - [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan; `user` nesnesi B-02'de eklenir) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
 - [x] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı (backend'den gelen mesajlar da seçili dile göre gelsin), Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil). **Backend'de bu ihtiyaç A-03.4 (`Users.LanguagePreference`) retrofit'ini doğurdu** — yazma ucu C-01'e bırakıldı, bkz. `C_kullanici_backend.md` C-01 notu.
@@ -29,7 +29,7 @@
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir — kullanıcı
 kararı: kurulum adımları da atlanmadan `AKADEMI/admin/B-01_kurulum/`'a yazılır.)*
 
-> **Dark Mode — kaldığı yerden (2026-07-26):** İlk kararda (bkz. wiki Kırk dördüncü INGEST) dark
+> **Dark Mode — kaldığı yerden (2026-07-26):** İlk kararda dark
 > mode AskUserQuestion ile **ertelenmişti** ("henüz B-0X numarası yok" notuyla) — kullanıcı hemen
 > ardından fikrini değiştirdi ve B-01 içinde (henüz commit edilmediği için ayrı bir B-0X.Y retrofit
 > AÇILMADI, aynı görevin devamı sayıldı) eklenmesini istedi. Yaklaşım `LanguagePreference` ile

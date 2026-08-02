@@ -71,7 +71,7 @@
 
 ### E-07 — Öğrenme / Sınav Ekranı ⬜
 **Referans:** C-05, C-03 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §9
-> **Not (2026-07-07 SRS tasarım kararları, bkz. `wiki/Index.md` On ikinci INGEST):** İstemci artık
+> **Not (2026-07-07 SRS tasarım kararları):** İstemci artık
 > `sessionType` seçmiyor — oturum `mode: New|Due|Band|Mixed` ile başlatılıyor, her review sorusunun
 > gerçek formatı backend'de rastgele atanıyor. Streak yalnızca `New` (günlük yeni kelime) oturumuna bağlı.
 > **Not (yön/hedef dil):** kullanıcı profilinde sabit bir "öğrendiğim dil" yok — aynı hesapla hem

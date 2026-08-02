@@ -92,7 +92,7 @@ için geçerli — burada tekrar edilmez.
   değişikliği yapan görevin bölümüne bir `kod-degisiklik` slaytı eklenir.
 - **Akademinin KENDİ yazdığı öğretici metinlerinde (`aciklama`/`neden`/`olmasaydi`/
   `nedenBuKlasor`/`altBaslik`/`notlar` gibi alanlar) okuyucuya proje kural dosyası (CLAUDE.md,
-  DESIGN_SYSTEM.md, REFERENCE/*.md, TASK.md, wiki_schema.md vb.) İSİMLE gösterilmez/atıf
+  DESIGN_SYSTEM.md, REFERENCE/*.md, TASK.md vb.) İSİMLE gösterilmez/atıf
   yapılmaz.** Akademiyi okuyan kişi bu dosyaları hiç görmemiştir, "CLAUDE.md §1 kuralına göre"
   gibi bir gerekçe onun için bir OTORİTEYE atıftan ibarettir, mühendislik gerekçesi DEĞİLDİR.
   `neden`/`olmasaydi` her zaman dosya adı geçmeden, KENDİ başına ayakta duran somut bir
