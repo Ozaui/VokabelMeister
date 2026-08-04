@@ -133,7 +133,39 @@ Backend'le aynı disiplin: bir feature'ı tüm katmanlarıyla bitir, sonra diğe
                         slaytından hemen sonra `onizleme` slaytı dahil)
 ```
 
-Admin farkı: Google/Apple yok, endpoint'ler `/admin/*`. Mobil farkı: adım 6 React Navigation; state katmanı web'le paylaşılabilir.
+Admin farkı: Google/Apple yok (**QR ile giriş VAR** — bkz. §4.1), endpoint'ler `/admin/*`. Mobil farkı: adım 6 React Navigation; state katmanı web'le paylaşılabilir.
+
+### 4.1 Ortak Kütüphaneler ve Component Granülerliği (Admin/Web/Mobil)
+
+**Her component detaylı/parçalı yazılır:** Bir sayfa tek bir dev component değildir — form alanı,
+tablo satırı, filtre çubuğu, modal gibi tekrar eden veya mantıksal olarak ayrışan her parça kendi
+`components/Xxx.tsx` dosyasına çıkarılır (örnek: `WordFormModal` yerine `GermanGrammarFields` +
+`TurkishGrammarFields` + ortak `ConjugationGrid`). Amaç: her component'in tek sorumluluğu olması ve
+Akademi'de (§6) tek başına anlatılabilmesi — 300+ satırlık monolit bir sayfa component'i hem
+okunmaz hem `kod` slaytında öğretilemez.
+
+**Zorunlu ortak kütüphaneler** (Admin/Web/Mobil üçünde de aynı — tutarlı kod tabanı, tek öğretim
+deseni):
+| Alan | Kütüphane | Not |
+|------|-----------|-----|
+| State | `@reduxjs/toolkit` + `react-redux` | Yalnızca auth/theme/language/filter gibi local/UI state — sunucu verisi `useApiQuery`/`useApiMutation` (axios) ile çekilir, ayrı bir cache katmanı (RTK Query/React Query) **kullanılmaz** |
+| Routing | `react-router-dom` (Admin/Web) · React Navigation (Mobil — platform gereği, tek istisna) | |
+| Form + Validasyon | `formik` + `yup` | `react-hook-form` **kullanılmaz** — üç alanda da tek form deseni |
+| HTTP | `axios` | Ortak `apiClient` + `Authorization`/`Accept-Language` interceptor'ı |
+| i18n | `i18next` + `react-i18next` | Admin panelin dil tercihi deseni (`languageSlice`, CLAUDE.md §1) üçünde de aynı |
+| İkon | `lucide-react` (Admin/Web) · `lucide-react-native` (Mobil) | |
+| Test | `vitest` + `@testing-library/react` + `jsdom` (Mobil: `@testing-library/react-native`) | |
+
+**Duruma göre eklenen kütüphaneler** (ilgili feature'ı fiilen yazan task'ta eklenir, önceden değil —
+YAGNI, §3 "Spekülatif ortak tip yazılmaz" ile aynı ilke):
+- `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web D-03.1) görsel üretimi.
+- `recharts` — istatistik/dashboard grafiği gereken ilk ekranda (Admin B-07).
+- `date-fns` — tarih filtresi/biçimlendirme gereken ilk ekranda (Admin B-08).
+
+**QR ile giriş artık Admin panelde de var** (2026-08-05 karar değişikliği): Admin'de Google/Apple
+hâlâ yok, ama e-posta+şifre+OTP'ye ek olarak QR ile giriş eklenir (`/auth/qr/*` endpoint'leri
+istemciye göre dallanmaz, backend'de değişiklik gerekmez — bkz. `SECURITY.md §1.3`,
+`TASK/B_admin_panel.md` B-02.1).
 
 ---
 

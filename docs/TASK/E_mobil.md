@@ -3,7 +3,7 @@
 > **Yöntem/standart:** Kurallar için → `TASK.md` (**⭐ Frontend Çalışma Yöntemi**, **Her Parça
 > İçin Döngü**) — o bölümler değişmez standarttır, burada tekrar edilmez. Mobil'de adım 6 (Route)
 > `React Navigation` ile yapılır (`navigation/*Navigator.tsx`); state/veri katmanı (tip/api/slice/hook)
-> Web ile aynı desendedir, mümkünse aynı RTK Query tip tanımları paylaşılır.
+> Web ile aynı desendedir (axios + `useApiQuery`/`useApiMutation`, Formik+Yup — bkz. `CLAUDE.md` §4.1), mümkünse aynı TS tip tanımları paylaşılır.
 
 ### E-01 — Proje Kurulumu ⬜ *(Expo TS, paketler, klasör yapısı, `.env*`)*
 - [ ] Expo TS şablonu, klasör yapısı (`src/{screens,components,navigation,store,hooks,types}`)
@@ -11,7 +11,7 @@
 *(Kurulum task'ı — dikey dilim/roadmap kuralı burada uygulanmaz; ilk feature E-05'ten başlar.)*
 
 ### E-02 — Redux Store ⬜
-- [ ] `store.ts`, `authSlice`, RTK Query `api.ts` (baseQuery + `Authorization` header)
+- [ ] `store.ts`, `authSlice`, axios `apiClient` + `useApiQuery`/`useApiMutation` hook'u (`Authorization` header)
 *(Kurulum task'ı — dikey dilim/roadmap kuralı burada uygulanmaz.)*
 
 ### E-03 — Axios + Auth Service ⬜ *(Expo Secure Store)*
@@ -26,9 +26,9 @@
 **Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 - [ ] **Tip:** `RegisterRequest`, `LoginRequest`, `VerifyOtpRequest`, `User` (`types/auth.ts` — Web'deki ile aynı şekil)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `loginWithApple`
+- [ ] **API:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `loginWithApple` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-> **Not (tema):** `LevelSelectScreen` kendi RTK Query mutation'ını yazmaz — E-14'teki `profileApi.
+> **Not (tema):** `LevelSelectScreen` kendi API çağrısını yazmaz — E-14'teki `profileApi.
 > updateProfile` (`PUT /users/me`) çağrılır, `{ currentLevel, themePreference }` birlikte gönderilir.
 > Login öncesi ekranlarda tema, cihaz sistem tercihi (`Appearance.getColorScheme()`) ile gösterilir;
 > login sonrası `AuthUserDto.themePreference` `authSlice`'a yazılıp senkronlanır.
@@ -47,7 +47,7 @@
 > giriş yapmış olmalı ([Authorize] gerektirir), web/masaüstünde açılan QR'ı okutup onaylar.
 - [ ] **Tip:** `QrScanResponse` (`types/auth.ts`'e eklenir)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `authApi`'ye eklenir — `scanQr`, `confirmQr`, `denyQr` mutation'ları
+- [ ] **API:** `authApi`'ye eklenir — `scanQr`, `confirmQr`, `denyQr` (axios + `useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `QrScannerScreen` (`expo-camera` barcode scanning — deep link'ten token çıkarır, `scanQr` çağırır), `QrConfirmScreen` (cihaz bilgisi + `pairingCode` gösterimi, "Onayla"/"Reddet")
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -81,8 +81,8 @@
 - [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
   `MasteryBand` (`Weak|Medium|Good`), `TargetLanguage` (`de|tr`) (`types/learning.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
-  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
+- [ ] **API:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
+  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu, aktif sorunun rastgele
   atanmış tipi, ipucu/zaman bazlı `selfRating` tavan kilidi
@@ -105,7 +105,7 @@
 **Referans:** A-06, C-02 (`A_admin_panel_backend.md`, `C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §6, §8
 - [ ] **Tip:** `Category`, `UserCategory` (`types/category.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `categoriesApi` — `getCategories`, `getUserCategories`, `createUserCategory`
+- [ ] **API:** `categoriesApi` — `getCategories`, `getUserCategories`, `createUserCategory` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `CategoriesScreen` (sistem + kişisel sekmeleri), `UserCategoryFormModal`
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -118,7 +118,7 @@
 **Referans:** C-04 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §7
 - [ ] **Tip:** `UserCard`, `UserCardFormValues` (`types/userCard.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `userCardsApi` — `getUserCards`, `createUserCard`, `updateUserCard`, `deleteUserCard`
+- [ ] **API:** `userCardsApi` — `getUserCards`, `createUserCard`, `updateUserCard`, `deleteUserCard` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `UserCardsScreen` (+ E-06 `PersonalCard`), `UserCardFormModal` (`expo-image-picker` ile görsel seçimi)
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -131,7 +131,7 @@
 **Referans:** C-07 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §12
 - [ ] **Tip:** `ClassSummary`, `ClassDetail`, `ClassWord` (`types/class.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `classesApi` — `getClasses`, `createClass`, `joinClass`, `getClassDetail`, `getClassStatistics`
+- [ ] **API:** `classesApi` — `getClasses`, `createClass`, `joinClass`, `getClassDetail`, `getClassStatistics` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `ClassListScreen`, `ClassDetailScreen`, `JoinClassModal`
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -144,7 +144,7 @@
 **Referans:** C-08 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §13
 - [ ] **Tip:** `Friendship`, `FriendRequest` (`types/friend.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `friendsApi` — `getFriends`, `getFriendRequests`, `sendRequest`, `acceptRequest`, `rejectRequest`
+- [ ] **API:** `friendsApi` — `getFriends`, `getFriendRequests`, `sendRequest`, `acceptRequest`, `rejectRequest` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `FriendsScreen`, `SendFriendRequestModal`
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -157,7 +157,7 @@
 **Referans:** C-06 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §14
 - [ ] **Tip:** `SharedContentPreview` (`types/share.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `shareApi` — `createShareLink`, `getSharePreview`, `importSharedContent`
+- [ ] **API:** `shareApi` — `createShareLink`, `getSharePreview`, `importSharedContent` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `ShareModal`, `SharePreviewScreen` (deep link ile açılır — anonim erişim)
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -173,8 +173,8 @@
 - [ ] **Tip:** `WordProgress`, `UserCardProgress`, `ProgressSummary` (`weak/medium/good/dueNow` sayıları),
   `Achievement`, `SuspendedWord` (`types/progress.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
-  `getBandWords`, `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements`
+- [ ] **API:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
+  `getBandWords`, `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `ProgressScreen` (mastery listesi, grafik, bant kartları 🔴🟡🟢),
   `BandWordListScreen` (tıklanınca — **İncele** salt okunur liste, **Sına** butonu E-07 `mode: Band`
@@ -191,7 +191,7 @@
 **Referans:** C-01, C-09, C-10 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §4
 - [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil, `types/profile.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **RTK Query:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion`, `updateDeviceToken` (OneSignal)
+- [ ] **API:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion`, `updateDeviceToken` (OneSignal) (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Component (Ekran):** `ProfileScreen` (`expo-image-picker` ile avatar + tema değiştir seçici [Açık/Koyu/Sistem]), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
 - [ ] ➜ **AKADEMI/mobile'a işle**

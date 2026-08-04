@@ -56,7 +56,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 
 | Metot | Yol | Auth | Açıklama |
 |-------|-----|------|----------|
-| POST | `/auth/qr/generate` | Anonim | Web çağırır → `{ qrToken, pairingCode, expiresIn }` |
+| POST | `/auth/qr/generate` | Anonim | Web/Admin çağırır → `{ qrToken, pairingCode, expiresIn }` |
 | GET | `/auth/qr/{token}/status` | Anonim | Polling; Confirmed'de tek seferlik token, sonra Consumed (410) |
 | POST | `/auth/qr/{token}/scan` | [Authorize] | Mobil okuyunca → `{ requesterDeviceInfo, requesterIp, pairingCode }` |
 | POST | `/auth/qr/{token}/confirm` · `/deny` | [Authorize] | Onayla / reddet |

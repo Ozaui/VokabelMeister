@@ -5,94 +5,75 @@
 > (tip→api→slice→hook→component→route→test, her parça yazılır yazılmaz `AKADEMI/admin/`'e
 > işlenir — backend'deki `AKADEMI/backend/` ile aynı disiplin, `postman` yerine `onizleme` slaytı).
 > O bölümler değişmez standarttır — burada tekrar edilmez, her zaman `../../CLAUDE.md`'ye bakılır.
+> **Ortak kütüphaneler (state/routing/form/i18n/HTTP/ikon/QR/grafik/tarih) → `../../CLAUDE.md` §4.1.**
 
-### B-01 — Kurulum ✅
-**Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §3, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
-- [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup kurulumu (RTK Query/React Hook Form ile başlanmıştı, B-03 sonrası axios + `useApiQuery`/`useApiMutation` + Formik/Yup'a geriye dönük geçirildi)
-- [x] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki Turkuaz+Mercan paleti/Nunito+DM Sans/16px-12px radius Tailwind `@theme`'e işlendi (Primary rengi B-01 sırasında `#6D5DFC`'den `#4E93BC`'ye düzeltildi, dokümana not edildi)
-- [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan; `user` nesnesi B-02'de eklenir) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
-- [x] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı (backend'den gelen mesajlar da seçili dile göre gelsin), Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil). **Backend'de bu ihtiyaç A-03.4 (`Users.LanguagePreference`) retrofit'ini doğurdu** — yazma ucu C-01'e bırakıldı, bkz. `C_kullanici_backend.md` C-01 notu.
-- [x] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
-- [x] **Dark Mode** — `DESIGN_SYSTEM.md`'ye koyu tema paleti eklendi (Primary/Accent/Background/
-      Surface/Text/Muted/Border/Success/Warning/Destructive'ın dark varyantları — mevcut
-      Turkuaz+Mercan light paleti DEĞİŞMEDİ, yanına eklendi), `index.css`'te `.dark` seçicisiyle
-      token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System —
-      `languageSlice` ile AYNI desen: localStorage persist, varsayılan `System`, DB'ye YAZMIYOR
-      henüz), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher`
-      (Topbar, `LanguageSwitcher`'ın yanına — `lucide-react` Sun/Moon/Monitor ikonlarıyla, admin
-      panelin İLK ikon kütüphanesi kararı, `DESIGN_SYSTEM.md`'ye işlendi), `index.html`'e
-      FOUC-önleyici senkron script (sayfa ilk boyanmadan `.dark` class'ı localStorage/OS tercihine
-      göre erkenden uygulanır)
-- [x] ➜ **Admin Akademi'ye işle** (`AKADEMI/admin/B-01_kurulum/06_dark-mode.html`)
-**296+ backend testi hâlâ yeşil (A-03.4 sonrası 297/297), admin projesi `npm run build` ile doğrulandı, `localStorage.setItem('accessToken', ...)` ile ProtectedRoute→AppLayout→dil değiştirme→çıkış akışı VE Light/Dark/System tema geçişi tarayıcıda uçtan uca test edildi (kullanıcı bizzat test etti).**
+> **2026-08-05 — Baştan yazım:** Önceki `/admin` kodu (B-01/B-02/B-03) ve onu öğreten
+> `AKADEMI/admin/` tamamen silindi, bu dosyadaki ilerleme ⬜'e sıfırlandı — kullanıcı kararıyla
+> admin frontend'i sıfırdan yeniden yazılacak. Aşağıdaki maddeler önceki turdan çıkan geçerli
+> tasarım kararlarını (paleti, dark mode yaklaşımı, dosya deseni) korur; yalnızca "tamamlandı"
+> anlatıları ve kod-özel detaylar kaldırıldı.
+
+### B-01 — Kurulum ⬜
+**Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §2, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
+- [ ] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki Turkuaz+Mercan paleti (Primary `#4E93BC`)/Nunito+DM Sans/16px-12px radius Tailwind `@theme`'e işlenir
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı, Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'ye (light paletin yanına), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
+- [ ] ➜ **Admin Akademi'ye işle**
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
-paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir — kullanıcı
-kararı: kurulum adımları da atlanmadan `AKADEMI/admin/B-01_kurulum/`'a yazılır.)*
+paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
 
-> **Dark Mode — kaldığı yerden (2026-07-26):** İlk kararda dark
-> mode AskUserQuestion ile **ertelenmişti** ("henüz B-0X numarası yok" notuyla) — kullanıcı hemen
-> ardından fikrini değiştirdi ve B-01 içinde (henüz commit edilmediği için ayrı bir B-0X.Y retrofit
-> AÇILMADI, aynı görevin devamı sayıldı) eklenmesini istedi. Yaklaşım `LanguagePreference` ile
-> BİREBİR aynı: `Users.ThemePreference` (A-03.3) DB'de zaten var, yazma ucu (`PUT /users/me`) HÂLÂ
-> C-01'de — bu yüzden `themeSlice` de `languageSlice` gibi ŞİMDİLİK yalnızca `localStorage`'a
-> yazıyor, backend'de YENİ bir değişiklik GEREKMEDİ (kullanıcının kendi sorusunun cevabı: hayır,
-> gerekmiyor, çünkü DB alanı zaten oradaydı). C-01 tamamlandığında `themeSlice` de `languageSlice`
-> ile AYNI anda gerçek API'ye bağlanmalı (bkz. `C_kullanici_backend.md` C-01 notu, güncellenecek).
-
-### B-02 — Auth Sayfaları ✅
+### B-02 — Auth Sayfaları ⬜
 **Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
-> Yalnızca e-posta + şifre + OTP (2FA); Google/Apple **yok** (Admin panelde asla).
-- [x] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **API:** `authApi` — `login`, `verifyOtp` (axios + `useApiMutation`, `store/api/authApi.ts`)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Component:** `LoginPage` (e-posta+şifre formu), `OtpVerifyPage` (6 haneli kod)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Route:** `/login`, `/verify-otp` (`App.tsx`), başarılı girişte `/` yönlendirme
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Birim testleri:** `LoginPage.test.tsx` (mutlu yol + hatalı şifre), `authSlice.test.ts`
-- [x] ➜ **Admin Akademi'ye işle**
+> E-posta + şifre + OTP (2FA) + **QR ile giriş** (B-02.1); Google/Apple **yok** (Admin panelde asla).
+- [ ] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **API:** `authApi` — `login`, `verifyOtp` (axios + `useApiMutation`, `store/api/authApi.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component:** `LoginPage` (e-posta+şifre formu, "QR ile giriş" linki), `OtpVerifyPage` (6 haneli kod)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Route:** `/login`, `/verify-otp` (`App.tsx`), başarılı girişte `/` yönlendirme
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Birim testleri:** `LoginPage.test.tsx` (mutlu yol + hatalı şifre), `authSlice.test.ts`
+- [ ] ➜ **Admin Akademi'ye işle**
 
-**Tamamlandı 2026-07-27:** `lib/apiError.ts` (backend'in `{error:{code,message}}` gövdesini okuyan
-paylaşılan yardımcı, planlanmamış ama `getApiErrorMessage` her iki sayfada da gerekli çıktı) da
-yazıldı. Admin panelde **ilk kez** test altyapısı kuruldu (Vitest + React Testing Library +
-jsdom — `vite.config.ts`'e `test` bloğu, `src/test/setup.ts`); Node.js 22+'nin kendi deneysel
-`localStorage`'ının jsdom'unkiyle çakışması `"test": "NODE_OPTIONS=--no-experimental-webstorage
-vitest run"` ile çözüldü. **Bağımsız bir kod denetiminde** 2 gerçek düzeltme yapıldı: (1) login
-sonrası yönlendirme yalnızca `pathname` taşıyordu, `/words?page=3` gibi bir sorgu dizesinden
-atılan bir admin girişten sonra filtrelerini kaybediyordu — `from` artık `search`/`hash`'i de
-taşıyor; (2) `authSlice`'ın `readStoredUser()`'ı `try/catch` olmadan `JSON.parse` yapıyordu, bozuk
-bir `authUser` değeri (DevTools'tan elle değiştirme vb.) modül yüklenirken (React mount olmadan
-ÖNCE) tüm admin panelini beyaz ekranda çökertebilirdi — artık kendi kendini onarıyor (bozuk değeri
-silip `null` dönüyor). **İki bilinçli kapsam kararı** (denetimde bulunup ERTELENDİ, unutularak
-değil): (1) backend `VerifyOtpResponse`'ta bir `refreshToken` döndürüyor ama `authSlice` bunu
-SAKLAMIYOR — 15 dakikalık access token süresi dolunca otomatik yenileme (silent refresh) henüz
-yok, ileride ayrı bir görevde ele alınacak; (2) `AdminUser` tipinde `role` alanı yok (backend
-gövdede döndürmüyor, yalnızca JWT'nin içinde) — LoginPage/OtpVerifyPage giriş yapanın gerçekten
-Admin olup olmadığını client tarafında KONTROL ETMİYOR, sıradan bir `User` de bu iki sayfayı
-geçebilir (güvenlik açığı değil — B-03'ten itibaren yazılacak gerçek admin endpoint'lerinin hepsi
-backend'de `[Authorize(Roles="Admin")]` ile zaten korunuyor — ama erken bir "bu hesapla admin
-paneline giremezsin" uyarısı YOK). Gerçek backend'e (dotnet run) karşı Chrome'da uçtan uca
-doğrulandı (yanlış şifre → 401 + doğru hata mesajı, doğru şifre+OTP → gerçek JWT). Bu test
-sırasında DB'nin A-09/A-03.4 migration'larının henüz UYGULANMAMIŞ olduğu ortaya çıktı (`dotnet ef
-database update` ile düzeltildi — bu B-02'ye özel değil, herhangi bir geliştirici ortamının ilk
-kurulumunda atlanabilecek standart bir adım, not olarak düşülüyor). `AKADEMI/admin/
-B-02_auth-sayfalari/` (7 bölüm), kök `AKADEMI/admin/index.html`'e kart eklendi, B-01'in kapanışı
-buraya zincirlendi.
+### B-02.1 — QR Kod ile Giriş ⬜
+**Referans:** A-03.1 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3
+> `LoginPage`'e eklenen "QR ile giriş" sekmesi/linki — Steam benzeri akış: admin panelde QR
+> gösterilir, admin'in kendi hesabıyla mobilde (Faz E tamamlanınca) zaten giriş yapmış olan taraf
+> okutup onaylar. Backend endpoint'leri (`/auth/qr/*`) D-03.1 (Web) / E-05.1 (Mobil) ile
+> **birebir aynı** — istemciye göre dallanmaz, yalnızca admin tarafına yeni bir frontend ekranı
+> eklenir. Onaylanan mobil tarafın `Admin` rolünde olması **gerekmez** (`/auth/qr/generate` kimin
+> çağırdığını bilmez) — güvenlik zaten normal login'deki AYNI token akışından gelir.
+- [ ] **Hook:** `useQrLoginPolling` (durum `Confirmed` olunca `authSlice`'a token yaz + yönlendir; `Expired`/410 olunca QR'ı otomatik yenile)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component:** `QrLoginPage` (`qrcode.react` ile QR görseli + `pairingCode` gösterimi + "süresi doldu, yenile" durumu)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Route:** `/login/qr` (`App.tsx`), `LoginPage`'den link
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Birim testleri:** `QrLoginPage.test.tsx` (polling durum geçişleri, expired→yenile)
+- [ ] ➜ **Admin Akademi'ye işle**
 
-### B-03 — Kelime Yönetimi ✅
+### B-03 — Kelime Yönetimi ⬜
 **Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5
-- [x] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **API:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
+- [ ] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **API:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
       `getUnmatchedWordConcepts` (`languageId` bazlı, `suggestedMatchConceptId` dahil), `pairWordConcepts`
       (axios + `useApiQuery`/`useApiMutation`)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (Formik+Yup — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (Formik+Yup — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
       önce dil (`de`/`tr`) sonra `Tür` seçilir, gramer bölümü ikisine göre koşullu render edilir —
       `de` + Noun/Verb/Diğer → `GERMAN_LANGUAGE_FEATURES.md §10`; `tr` + Noun/Verb/Diğer →
       `TURKISH_LANGUAGE_FEATURES.md §9`; backend `WordGrammarValidator`'ın TS karşılığı, aynı mantık
@@ -104,38 +85,12 @@ buraya zincirlendi.
       birincil olandan alınır]; `PartOfSpeech`/kategori farkı yalnızca **bilgilendirme** amaçlı
       gösterilir, onay/force gerektirmez — diller arası tür kayması normal, bkz. `Icerik.md`
       "Eşleştirme")
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
       `WordListPage.test.tsx` (filtre), `WordPairingPage.test.tsx` (eşleştirme mutlu yol + önerilen eşleşme render)
-- [x] ➜ **Admin Akademi'ye işle**
-
-**Tamamlandı 2026-07-27:** Şimdiye kadarki en büyük admin feature'ı. `WordFormModal` önce dil sonra
-tür seçtirir; gramer bölümü ikisine göre koşullu render edilir (`GermanGrammarFields`/
-`TurkishGrammarFields`, ortak bir `ConjugationGrid` — DE 3×6, TR 5×6 hücre — paylaşılır). Zorunlu
-alanlar formda kırmızı `*` ile işaretlenir (admin backend validator'ın hangi alanı reddedeceğini
-tahmin etmek zorunda kalmaz). Aynı ekranın hazırlığı sırasında iki küçük backend eksiği fark edildi
-ve ayrı retrofit olarak kapatıldı: (1) `languageId`'nin tek kaynağı migration seed'iydi — yeni bir
-`GET /languages` endpoint'i (`languagesApi.ts`) bu boşluğu kapattı; (2) Türkçe isimlerin ünlü uyumu
-ve iyelik eki alanları backend validator'da hiç zorunlu değildi (kart tasarımı dokümanıyla
-tutarsızdı) — ikisi de zorunlu yapıldı, `TurkishGrammarFields`'a işlendi. `WordPairingPage` iki
-sütunu (Almanca/Türkçe eşleşmemiş) TEK bir paylaşılan, saf-render sütun component'iyle gösterir —
-veri çekme sorumluluğu üst bileşende toplanır (ilk taslakta her sütunun kendi verisini çekip
-diğerine side-effect'le sızdırdığı bir tasarım fark edilip düzeltildi). `lib/apiError.ts`'e
-`getApiErrorCode` eklendi (409 `WORD_TEXT_ALREADY_EXISTS` → "yine de ekle" akışı, dile göre değişen
-mesaj yerine sabit koda göre dallanır). **i18n düzeltmesi:** ilk taslakta hâl alanlarının küçük
-etiketleri (nominative/accusative/...) ham İngilizce JSON alan adı olarak sızmıştı, ve ayrıca örnek
-cümle türü (`Normal`/`Idiom`/`Formal`/`Colloquial`) seçimi hiç çevrilmemişti — ikisi de düzeltildi
-(`words.grammar.*.caseLabels`/`personLabels`/`tenseLabels` ve `words.examples.type` i18n anahtarları
-eklendi); ayrıca gerçek Almanca/Türkçe dilbilgisi terimlerinin (Nominativ/Akkusativ vb.) kasıtlı
-olarak İKİ dilde de AYNI kalması gerektiği netleşti — bunlar arayüz metni değil, öğretilen dilin
-kendi terminolojisi. **24/24 frontend testi yeşil**, gerçek bir backend'e (`dotnet run`) karşı
-Chrome'da uçtan uca doğrulandı: Almanca isim (tüm gramer) + Türkçe isim (vowelHarmony/possessive
-dahil) oluşturuldu, Eşleştirme ekranında birleştirildi, Düzenle'de her iki dilin verisi doğru
-şekilde geri yüklendiği görüldü, admin'in kendi arayüz dili TR↔DE canlı değiştirilerek tüm
-etiketlerin (backend'den gelen kategori adları dahil) doğru dilde geldiği doğrulandı. `AKADEMI/admin/
-B-03_kelime-yonetimi/` işlendi, kök `AKADEMI/admin/index.html`'e kart eklendi.
+- [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-04 — Kategori Yönetimi ⬜
 **Referans:** A-06 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §6
@@ -185,7 +140,7 @@ B-03_kelime-yonetimi/` işlendi, kök `AKADEMI/admin/index.html`'e kart eklendi.
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `statisticsApi` — `getAdminStatistics` (axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `DashboardPage` (toplam/aktif kullanıcı kartları, en çok öğrenilen/sorunlu kelimeler tablosu, günlük/haftalık grafik)
+- [ ] **Component:** `DashboardPage` (toplam/aktif kullanıcı kartları, en çok öğrenilen/sorunlu kelimeler tablosu, `recharts` ile günlük/haftalık grafik)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/` (ana sayfa, `App.tsx`)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -198,7 +153,7 @@ B-03_kelime-yonetimi/` işlendi, kök `AKADEMI/admin/index.html`'e kart eklendi.
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `logsApi` — `getActivityLogs`, `getApplicationLogs`, `getSecurityLogs` (filtre+sayfa, axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `LogsPage` (3 sekme: Activity/Application/Security — filtre + tarih aralığı + sayfalama tablo)
+- [ ] **Component:** `LogsPage` (3 sekme: Activity/Application/Security — filtre + tarih aralığı [`date-fns` ile biçimlendirme] + sayfalama tablo)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/logs` (`App.tsx`)
 - [ ] ➜ **Admin Akademi'ye işle**

@@ -42,20 +42,24 @@
 ## 2. npm Paketleri
 
 ```bash
-# Web (/web)
+# Web (/web) — ortak React kütüphane seti admin ile aynı (bkz. CLAUDE.md §4.1)
 npm create vite@latest web -- --template react-ts && cd web
-npm i @reduxjs/toolkit react-redux axios react-hook-form react-router-dom @react-oauth/google
+npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next @react-oauth/google
 npm i qrcode.react   # QR ile giriş — web QR görselini bundan üretir
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
-# Admin (/admin) — Google/Apple/QR yok
+# Admin (/admin) — Google/Apple yok, QR ile giriş VAR (bkz. CLAUDE.md §4.1)
 npm create vite@latest admin -- --template react-ts && cd admin
-npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom
+npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next
+npm i qrcode.react   # QR ile giriş — admin QR görselini bundan üretir (B-02.1)
+npm i recharts       # B-07 istatistik paneli grafikleri
+npm i date-fns       # B-08 log paneli tarih filtre/biçimlendirme
+npm i lucide-react   # ikon kütüphanesi (B-01'de karar verildi)
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
-# Mobil (/mobile)
+# Mobil (/mobile) — form/state/i18n admin/web ile aynı; routing React Navigation (mobil-özel, react-router-dom değil)
 npx create-expo-app mobile --template expo-template-blank-typescript && cd mobile
-npm i @reduxjs/toolkit react-redux axios react-hook-form i18next react-i18next
+npm i @reduxjs/toolkit react-redux axios formik yup i18next react-i18next
 npx expo install expo-secure-store expo-av expo-image-picker expo-apple-authentication expo-camera
 npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/stack
 npm i @react-native-google-signin/google-signin

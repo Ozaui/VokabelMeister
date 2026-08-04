@@ -41,10 +41,10 @@ ADIM 2 — POST /auth/login/verify-otp { email, otpCode }
 
 ### 1.3 QR Kod ile Giriş (Steam benzeri)
 
-Ayrı bir kimlik doğrulama mekanizması **değildir** — kimliği kanıtlama yöntemidir ("zaten mobilde giriş yapmış olmak"). Onaylanınca normal login'deki **AYNI** `ITokenService`/`RefreshTokens` akışı çalışır.
+Ayrı bir kimlik doğrulama mekanizması **değildir** — kimliği kanıtlama yöntemidir ("zaten mobilde giriş yapmış olmak"). Onaylanınca normal login'deki **AYNI** `ITokenService`/`RefreshTokens` akışı çalışır. Endpoint'ler hangi istemcinin çağırdığını bilmez/dallanmaz — Web (D-03.1) ve **Admin panel (B-02.1)** aynı 4 adımı kullanır, tek fark hangi frontend'in QR'ı gösterdiği.
 
 ```
-ADIM 1 — POST /auth/qr/generate (Anonim, web çağırır)
+ADIM 1 — POST /auth/qr/generate (Anonim, web/admin çağırır)
    ├─ Rastgele token + SHA-256 hash DB'ye · 4 haneli PairingCode · ExpiresAt=+2dk · Rate limit 20/saat/IP
    └─ Yanıt: { qrToken, pairingCode, expiresIn: 120 }  (qrToken QR/deep-link içinde, DB'de yalnızca hash)
 ADIM 2 — Mobil okur → POST /auth/qr/{token}/scan [Authorize]
@@ -53,7 +53,7 @@ ADIM 2 — Mobil okur → POST /auth/qr/{token}/scan [Authorize]
    └─ Yanıt: { requesterDeviceInfo, requesterIp, pairingCode } ← mobil ekranda gösterilir, web ile KARŞILAŞTIRILIR
 ADIM 3a — POST /auth/qr/{token}/confirm [Authorize] → Status=Scanned+UserId doğrula → Confirmed · SecurityLog: QrLoginConfirmed
 ADIM 3b — POST /auth/qr/{token}/deny [Authorize] → Denied · SecurityLog: QrLoginDenied
-ADIM 4 — Web ~2sn'de GET /auth/qr/{token}/status (Anonim, polling)
+ADIM 4 — Web/Admin ~2sn'de GET /auth/qr/{token}/status (Anonim, polling)
    ├─ 'Confirmed' İLK okunduğunda: AYNI TokenService ile access+refresh üretilir, RefreshTokens'a yazılır
    ├─ Sonra Status→Consumed (token'lar yalnızca BİR kez döner)
    └─ Consumed sonrası → 410 Gone

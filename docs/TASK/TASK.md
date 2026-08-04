@@ -27,52 +27,20 @@
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
 | A | A-01…A-10 | Admin Panel Backend | ✅ |
-| B | B-01…B-09 | Admin Panel | 🔄 |
+| B | B-01…B-09 (+B-02.1) | Admin Panel | ⬜ |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-04` ⬜ (Kategori Yönetimi) → `TASK/B_admin_panel.md` (B-03 tamamlandı)
-(`B-02 — Auth Sayfaları` ✅ tamamlandı 2026-07-27: `auth.types.ts` (backend'in gerçek DTO'larını
-birebir yansıtan LoginRequest/LoginResponse/VerifyOtpRequest/AdminUser/VerifyOtpResponse),
-`lib/apiError.ts` (backend'in `{error:{code,message}}` hata gövdesini okuyan, planlanmamış ama
-gerekli çıkan paylaşılan yardımcı), `authApi.ts` (B-01'in temel `api`'sine `injectEndpoints` ile
-eklenen İLK gerçek endpoint'ler — `login`/`verifyOtp`, admin panelin backend'e attığı İLK gerçek
-HTTP istekleri), `authSlice`'a `user: AdminUser | null` eklendi (bozuk `localStorage` verisine karşı
-`try/catch` ile kendi kendini onarıyor), `LoginPage`/`OtpVerifyPage` (react-hook-form'un İLK gerçek
-kullanımı, iki adımlı giriş — şifre doğrulama → OTP → JWT), `App.tsx`'teki yer tutucular gerçek
-sayfalarla değişti + yeni `/verify-otp` route'u. Admin panelde **İLK KEZ** test altyapısı kuruldu
-(Vitest+React Testing Library+jsdom — Node 22+'nin kendi deneysel `localStorage`'ının jsdom'unkiyle
-çakışması `NODE_OPTIONS=--no-experimental-webstorage` ile çözüldü), `authSlice.test.ts` (3) +
-`LoginPage.test.tsx` (mutlu yol + hatalı şifre, 2) yeşil. **Bağımsız bir kod denetiminde** 2 gerçek
-düzeltme: login sonrası yönlendirme yalnızca `pathname` taşıyordu (`?page=3` gibi sorgu dizeleri
-kayboluyordu) — `search`/`hash` de taşınacak şekilde düzeltildi; `readStoredUser()`'ın `JSON.parse`'ı
-`try/catch`'siz modül yükleme anında (React mount OLMADAN ÖNCE) tüm admin panelini çökertebilirdi —
-düzeltildi. **İki bilinçli kapsam kararı** (ertelendi, unutulmadı — detay `B_admin_panel.md` B-02
-notunda): (1) `refreshToken` backend'den dönüyor ama `authSlice` SAKLAMIYOR, silent refresh henüz
-YOK; (2) `AdminUser`'da `role` yok, client tarafında admin rolü KONTROLÜ yapılmıyor (backend zaten
-`[Authorize(Roles="Admin")]` ile koruyor, güvenlik açığı değil). Gerçek backend'e karşı Chrome'da
-uçtan uca doğrulandı — bu sırada DB'nin A-09/A-03.4 migration'larının UYGULANMAMIŞ olduğu ortaya
-çıktı (`dotnet ef database update` ile düzeltildi, ortam kurulumuna özel bir not). Admin Akademi'ye
-işlendi (`AKADEMI/admin/B-02_auth-sayfalari/`, 7 bölüm).)
-(`B-01 — Kurulum` ✅ tamamlandı 2026-07-26: `/admin` React 19 + Vite 8 + TS + Tailwind v4 iskeleti,
-tasarım sistemi (`DESIGN_SYSTEM.md`'nin `@theme`'e işlenmesi — Primary rengi gerçek tarayıcıda
-görülünce `#6D5DFC`'den `#4E93BC`'ye [Turkuaz] düzeltildi, karar dokümana kalıcı not edildi),
-`store.ts` + `authSlice` (accessToken/isAuthenticated, localStorage) + RTK Query `api.ts`
-(Authorization + Accept-Language header'ları, henüz endpoint yok), **dil tercihi altyapısı**
-(`languageSlice` tr/de + `react-i18next` — admin panelin İKİ bağımsız dil kanalı: backend
-mesajları Accept-Language'la, admin'in kendi statik metinleri react-i18next'le), `ProtectedRoute`
-(JWT yoksa `/login`, `state`'te nereden geldiğini taşır) + `AppLayout` (Sidebar/Topbar) + routing —
-hepsi tarayıcıda uçtan uca (JWT yok→login, JWT var→layout→dil değiştir→çıkış) doğrulandı, 2
-subagent kod denetimi (redirect state eksikliği, `aria-pressed`/`<html lang>` senkronu eklendi),
-Admin Akademi'ye işlendi (`AKADEMI/admin/B-01_kurulum/`, 6 bölüm). **Backend'e sıçrayan bir
-retrofit:** admin panelin kendi dil tercihinin DB'ye bağlı olması gerektiği (localStorage yetmez)
-netleşince **A-03.4 — Admin Dil Tercihi (`LanguagePreference`)** doğdu, `ThemePreference` (A-03.3)
-ile birebir aynı desen, yazma ucu C-01'e bırakıldı, **297/297 backend testi yeşil** (296'dan +1),
-Backend Akademi'ye de işlendi. Dark mode (`ThemePreference`) admin panelde bilinçli olarak
-ERTELENDİ — henüz B-0X numarası yok, B_admin_panel.md B-01 notunda ve C_kullanici_backend.md
-C-01 notunda çapraz işaretlendi, unutulmaması için.)
+**Sıradaki task:** `B-01` ⬜ (Kurulum) → `TASK/B_admin_panel.md`
+(**2026-08-05 — Admin frontend baştan yazım:** `/admin` kodu ve onu öğreten `AKADEMI/admin/`
+tamamen silindi (kullanıcı kararı), `B_admin_panel.md`'deki B-01/B-02/B-03 ilerlemesi ⬜'e
+sıfırlandı; ayrıca B-02'ye yeni bir **B-02.1 — QR Kod ile Giriş** alt-görevi eklendi (admin panelde
+QR ile giriş artık VAR, bkz. `ARCHITECTURE.md`/`SECURITY.md §1.3`/`CLAUDE.md §4.1`). Backend'de
+(Faz A) hiçbir değişiklik gerekmedi — `A-03.4` (`Users.LanguagePreference`) ve `A-03.3`
+(`ThemePreference`) gibi admin ihtiyacından doğan backend alanları DB'de zaten var, yeni admin
+kodu bunları olduğu gibi tekrar kullanacak.)
 (`A-10 — E-posta Servisi + Hesap Temizleme Görevi` ✅ tamamlandı 2026-07-25: `EmailTemplates.cs`
 (6 şablon × tr/de, `ErrorMessages`/`SuccessMessages`'ın kardeşi, ortak `Layout` + inline stil —
 `string.Format` ve e-posta istemcisi uyumluluğu aynı çözümü gerektiriyor), `IEmailService`'in 6

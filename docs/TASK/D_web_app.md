@@ -5,12 +5,12 @@
 > tip→api→slice→hook→component→route→test sırasıyla yazılır ve `AKADEMI/web/`'e işlenir.
 
 ### D-01 — Kurulum ⬜
-- [ ] React + Vite + TS, Tailwind, Redux Toolkit + RTK Query, React Router v6, RHF, Axios
+- [ ] React + Vite + TS, Tailwind, Redux Toolkit (yalnızca local/UI state — bkz. `CLAUDE.md` §4.1), React Router v6, Formik + Yup, Axios
 - [ ] `.env*` (VITE_API_URL, VITE_GOOGLE_CLIENT_ID), `GoogleOAuthProvider`, ProtectedRoute, temel layout
 *(Kurulum task'ı — dikey dilim/roadmap kuralı burada uygulanmaz; ilk feature D-03'ten başlar.)*
 
 ### D-02 — Redux Store + Auth Service ⬜
-- [ ] `store.ts`, `authSlice`, `uiSlice`, RTK Query `api.ts` (baseQuery + `Authorization` header)
+- [ ] `store.ts`, `authSlice`, `uiSlice`, axios `apiClient` + `useApiQuery`/`useApiMutation` hook'u (`Authorization`/`Accept-Language` interceptor'ı)
 - [ ] TS arayüzleri (`types/`), Axios interceptor (401 → refresh token akışı, `localStorage`)
 *(Kurulum task'ı — dikey dilim/roadmap kuralı burada uygulanmaz.)*
 
@@ -18,9 +18,9 @@
 **Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 - [ ] **Tip:** `RegisterRequest`, `LoginRequest`, `VerifyOtpRequest`, `User` (`auth.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `forgotPassword`, `resetPassword`
+- [ ] **API:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `forgotPassword`, `resetPassword` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
-> **Not (tema):** `LevelSelectPage` kendi RTK Query mutation'ını yazmaz — D-12'deki `profileApi.
+> **Not (tema):** `LevelSelectPage` kendi API çağrısını yazmaz — D-12'deki `profileApi.
 > updateProfile` (`PUT /users/me`) çağrılır, `{ currentLevel, themePreference }` birlikte gönderilir.
 > Login öncesi (bu sayfadan önceki ekranlarda) tema, local cihaz tercihi/`prefers-color-scheme`
 > ile gösterilir; login sonrası `AuthUserDto.themePreference` `authSlice`'a yazılıp senkronlanır.
@@ -39,7 +39,7 @@
 > hatırlamayan ya da yalnızca Google/Apple ile kayıtlı (`PasswordHash` yok) kullanıcılar için.
 - [ ] **Tip:** `QrGenerateResponse`, `QrStatusResponse` (`auth.types.ts`'e eklenir)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `authApi`'ye eklenir — `generateQr` (mutation), `getQrStatus` (polling query, `pollingInterval: 2000`)
+- [ ] **API:** `authApi`'ye eklenir — `generateQr`, `getQrStatus` (axios + `useApiMutation`/`useApiQuery`, polling `useQrLoginPolling` hook'unda ~2sn aralıkla tekrar çağrılır)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Hook:** `useQrLoginPolling` (durum `Confirmed` olunca `authSlice`'a token yaz + yönlendir; `Expired`/410 olunca QR'ı otomatik yenile)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -52,7 +52,7 @@
 
 ### D-04 — Kelime Kartı Komponenti ⬜
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
-> Yeniden kullanılan ortak component — D-05/D-07'de import edilir; kendi RTK Query/route'u yok,
+> Yeniden kullanılan ortak component — D-05/D-07'de import edilir; kendi API çağrısı/route'u yok,
 > yalnızca `component` (+ `tip`) adımları vardır.
 - [ ] **Tip:** `SystemWordCardProps`, `PersonalCardProps` (`card.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -74,8 +74,8 @@
 - [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
   `MasteryBand` (`Weak|Medium|Good`), `TargetLanguage` (`de|tr`) (`learning.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
-  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested`
+- [ ] **API:** `learningApi` — `startSession` (mode bazlı), `submitAnswer`, `requestHint`,
+  `completeSession`, `abandonSession`, `repeatSession`, `getTodayLearned`, `getTodayTested` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu (istemci tarafı ilerleme),
   aktif sorunun rastgele atanmış tipi, ipucu/zaman bazlı `selfRating` tavan kilidi
@@ -100,7 +100,7 @@
 **Referans:** A-06, C-02 (`A_admin_panel_backend.md`, `C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §6, §8
 - [ ] **Tip:** `Category`, `UserCategory` (`category.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `categoriesApi` — `getCategories` (hiyerarşik+kelime sayısı), `getUserCategories`, `createUserCategory`
+- [ ] **API:** `categoriesApi` — `getCategories` (hiyerarşik+kelime sayısı), `getUserCategories`, `createUserCategory` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `CategoriesPage` (sistem kategorileri hiyerarşik grid + kişisel kategoriler sekmesi), `UserCategoryFormModal`
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -113,9 +113,9 @@
 **Referans:** C-04 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §7
 - [ ] **Tip:** `UserCard`, `UserCardFormValues` (`userCard.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `userCardsApi` — `getUserCards` (filtre/sayfa), `createUserCard` (duplikat 409 handling), `updateUserCard`, `deleteUserCard`
+- [ ] **API:** `userCardsApi` — `getUserCards` (filtre/sayfa), `createUserCard` (duplikat 409 handling), `updateUserCard`, `deleteUserCard` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `UserCardsPage` (liste + D-04 `PersonalCard`), `UserCardFormModal` (RHF — sistem kelimesi eşleşme uyarısı gösterimi)
+- [ ] **Component:** `UserCardsPage` (liste + D-04 `PersonalCard`), `UserCardFormModal` (Formik+Yup — sistem kelimesi eşleşme uyarısı gösterimi)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/my-cards` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -126,7 +126,7 @@
 **Referans:** C-07 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §12
 - [ ] **Tip:** `ClassSummary`, `ClassDetail`, `ClassWord` (`class.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `classesApi` — `getClasses`, `createClass`, `joinClass`, `getClassDetail`, `getClassStatistics`, `addClassWord`
+- [ ] **API:** `classesApi` — `getClasses`, `createClass`, `joinClass`, `getClassDetail`, `getClassStatistics`, `addClassWord` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ClassListPage`, `ClassDetailPage` (üye+kelime+istatistik sekmeleri), `JoinClassModal` (davet kodu), `ClassWordFormModal`
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -139,7 +139,7 @@
 **Referans:** C-08 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §13
 - [ ] **Tip:** `Friendship`, `FriendRequest` (`friend.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `friendsApi` — `getFriends`, `getFriendRequests`, `sendRequest`, `acceptRequest`, `rejectRequest`
+- [ ] **API:** `friendsApi` — `getFriends`, `getFriendRequests`, `sendRequest`, `acceptRequest`, `rejectRequest` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `FriendsPage` (arkadaş listesi + gelen/giden istekler sekmeleri), `SendFriendRequestModal`
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -152,7 +152,7 @@
 **Referans:** C-06 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §14
 - [ ] **Tip:** `SharedContentPreview` (`share.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `shareApi` — `createShareLink`, `getSharePreview` (Anonim), `importSharedContent`
+- [ ] **API:** `shareApi` — `createShareLink`, `getSharePreview` (Anonim), `importSharedContent` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ShareModal` (link oluştur, uygulama genelinde ortak), `SharePreviewPage` (anonim erişim — giriş yapılmamışsa da render edilir)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -168,8 +168,8 @@
 - [ ] **Tip:** `WordProgress`, `UserCardProgress`, `ProgressSummary` (`weak/medium/good/dueNow` sayıları),
   `Achievement`, `SuspendedWord` (`progress.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
-  `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements`
+- [ ] **API:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
+  `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, başarı oranı
   grafiği), bant kartları (🔴🟡🟢, tıklanınca `BandWordListPage` — **İncele** salt okunur liste ve
@@ -187,7 +187,7 @@
 **Referans:** C-01, C-09 (`C_kullanici_backend.md`), REFERENCE/API_ENDPOINTS.md §4
 - [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil, `profile.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **RTK Query:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion`
+- [ ] **API:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ProfilePage` (profil formu + avatar yükleme + tema değiştir seçici [Açık/Koyu/Sistem]), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
 - [ ] ➜ **AKADEMI/web'e işle**

@@ -81,12 +81,14 @@
 
 ### A-03.1 — QR Kod ile Giriş ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3, DATABASE_SCHEMA/Auth.md (`QrLoginSessions`)
-**Frontend karşılığı:** D-03 (Web — QR ekranı, `qrcode.react` ile görselleştirme), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
+**Frontend karşılığı:** B-02.1 (Admin — QR ekranı, `qrcode.react` ile görselleştirme), D-03 (Web — aynı desen), E-05 (Mobil — kamera tarayıcı + onay ekranı, `expo-camera`)
 > **A-03 tamamlandıktan sonra** yapılır çünkü `User`/`ITokenService`/`ILoginCompletionService`
 > (özellikle token üretim mantığı) buna bağımlı — QR girişi **ayrı bir kimlik doğrulama sistemi
 > değil**, onaylandığında A-03'te yazılan `ITokenService`'i çağıran yeni bir "kimliği kanıtlama
 > yöntemi"dir (bkz. `SECURITY.md §1.3`).
-> Admin panelde (Faz B) **yok** — yalnızca Web (D) ve Mobil (E).
+> Admin panelde de **var** (B-02.1, 2026-08-05 karar değişikliği) — endpoint'ler istemciye göre
+> dallanmadığı için backend'de ek bir değişiklik gerekmedi, yalnızca frontend tarafında yeni bir
+> ekran.
 - [x] **Entity:** `QrLoginSession` + `QrLoginStatus` enum + EF config + migration
 - [x] ➜ **AKADEMI/backend'ye işle**
 > ⚠️ **Kural güncellemesi (bkz. `TASK.md` "Bir API'ın Yazım Sırası" notu):** Aşağıdaki

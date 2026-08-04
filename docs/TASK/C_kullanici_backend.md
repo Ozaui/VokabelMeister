@@ -30,7 +30,7 @@ Panel** (bkz. aşağıdaki not — B-01'de eklenen `languageSlice` bu API'yi bek
 > `WithErrorCode("INVALID_LANGUAGE_PREFERENCE")`, DB `CK_Users_LanguagePreference` zaten var
 > (A-03.4). Bu task bittiğinde **backend'de bırakmakla kalınmaz** — admin panelin
 > `admin/src/store/slices/languageSlice.ts`'i (B-01'de yazıldı, şu an yalnızca `localStorage`'a
-> yazıyor) gerçek `PUT /users/me` çağrısına bağlanmalı (RTK Query mutation eklenir, dil
+> yazıyor) gerçek `PUT /users/me` çağrısına bağlanmalı (axios + `useApiMutation` eklenir, dil
 > değiştirildiğinde hem `localStorage` hem backend güncellenir, sayfa yenilendiğinde/başka
 > cihazda login olunduğunda `AuthUserDto.languagePreference`'tan senkron okunur) — aksi halde
 > tercih yalnızca tarayıcıda kalır, hesabı takip etmez.

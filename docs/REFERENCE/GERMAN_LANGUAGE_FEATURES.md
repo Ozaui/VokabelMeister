@@ -137,5 +137,5 @@ Unicode: ö ü ä ß Ä Ö Ü. Örnekler `WordExamples.Level`'e göre filtreleni
   import **aynı validator'ı** kullanır.
 - **Frontend (B-03):** `WordFormModal` — önce dil (`de`/`tr`), sonra `Tür` seçilir; gramer bölümü bu
   ikisine göre koşullu render edilir. `de` + Noun/Verb/Diğer için bu bölümdeki gruplar, `tr` + aynı
-  türler için `TURKISH_LANGUAGE_FEATURES.md §9` (RHF conditional schema, backend kuralının TS
+  türler için `TURKISH_LANGUAGE_FEATURES.md §9` (Formik + Yup koşullu şema, backend kuralının TS
   karşılığı — iki taraf ayrı ayrı ama aynı mantıkla yazılır, kod paylaşımı yok).

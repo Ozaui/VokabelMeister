@@ -20,7 +20,7 @@
 **Üç istemci, tek API:**
 - **Mobil:** Google + Apple + e-posta + **QR tarayıcı** (web oturumu onaylar). Token → Expo Secure Store.
 - **Web:** Google + e-posta + **QR ile giriş** (Apple ileriye bırakıldı — bkz. `SECURITY.md §1.2`). Token → localStorage.
-- **Admin:** Yalnızca e-posta+şifre (Google/Apple/QR yok). Yalnızca `Admin` rolü.
+- **Admin:** E-posta+şifre + OTP (2FA) + **QR ile giriş** (Google/Apple yok, admin panelde asla). Yalnızca `Admin` rolü.
 
 ## 2. Backend Katmanlı Mimari
 
@@ -59,7 +59,7 @@ Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECUR
 ## 5. Kullanım Akışları
 
 - **İlk kayıt:** Kayıt (e-posta+şifre) → e-posta doğrulama OTP → seviye seçimi → ana ekran.
-- **QR ile giriş:** Web `/auth/qr/generate` → QR gösterir → mobilde giriş yapmış kullanıcı okutur (`.../scan`) → cihaz bilgisi + eşleşme kodunu görüp onaylar (`.../confirm`) → web polling ile aynı `ITokenService` token'ını alır (normal login ile birebir). Detay → `SECURITY.md §1.3`.
+- **QR ile giriş:** Web/Admin `/auth/qr/generate` → QR gösterir → mobilde giriş yapmış kullanıcı okutur (`.../scan`) → cihaz bilgisi + eşleşme kodunu görüp onaylar (`.../confirm`) → web/admin polling ile aynı `ITokenService` token'ını alır (normal login ile birebir). Endpoint istemciye göre dallanmaz — admin panelde de aynı akış (bkz. `TASK/B_admin_panel.md` B-02.1). Detay → `SECURITY.md §1.3`.
 - **Öğrenme:** "Öğren" → filtre (seviye/kategori/tür) → SRS sıralaması → kart → cevap → XP → sonraki review.
 - **Kişisel kart:** FrontText sistem `Words.Text` ile (aynı dilde) eşleşirse → "sisteme ekleyelim mi?" → Evet: `learn-system-word` (UserProgress, UserCard yok) / Hayır: UserCard.
 - **Paylaşım:** "Paylaş" → UUID link → arkadaş anonim önizler → giriş yapıp "listeme ekle".
@@ -68,6 +68,9 @@ Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECUR
 ## 6. Teknolojiler
 
 **Backend:** .NET 9, EF Core 9, FluentValidation 11, BCrypt.Net-Next 4, Serilog 3 (+MSSqlServer sink), MediatR 12, AutoMapper 13.
-**Admin:** React+Vite, TS, TailwindCSS, Redux Toolkit (yalnızca local/auth/theme/language/filter UI state — RTK Query YOK) + Axios (`store/api/xxxApi.ts` + `hooks/useApiQuery`/`useApiMutation`), Formik + Yup (formlar).
-**Web:** React+Vite, TS, TailwindCSS, Redux Toolkit + RTK Query, React Hook Form, Axios, React Router v6 + `@react-oauth/google` (Faz D — henüz başlamadı).
-**Mobil:** React Native + Expo, Redux Toolkit + RTK Query, React Navigation, Axios, i18next, Expo Secure Store.
+**Admin/Web/Mobil ortak kütüphaneler → `CLAUDE.md` §4.1** (Redux Toolkit yalnızca local/auth/theme/
+language/filter UI state — RTK Query/React Query YOK, sunucu verisi axios + `useApiQuery`/
+`useApiMutation` ile çekilir; Formik + Yup formlarda; `react-i18next` arayüz dilinde).
+**Admin:** React+Vite, TS, TailwindCSS, React Router DOM, `lucide-react`, `qrcode.react` (QR ile giriş), `recharts` (istatistik), `date-fns` (log tarihleri) — henüz başlamadı (2026-08-05 baştan yazım).
+**Web:** React+Vite, TS, TailwindCSS, React Router v6, `@react-oauth/google`, `qrcode.react` (QR ile giriş) (Faz D — henüz başlamadı).
+**Mobil:** React Native + Expo, React Navigation (tek routing istisnası — `react-router-dom` değil), `expo-camera` (QR tarayıcı), Expo Secure Store (Faz E — henüz başlamadı).
