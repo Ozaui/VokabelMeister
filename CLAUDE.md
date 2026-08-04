@@ -77,7 +77,7 @@ Bu dosyayı okuduktan sonra, task'a göre **yalnızca** ilgili dosyayı aç:
 | Kurulum/çalıştırma/yayınlama | `REFERENCE/DEVELOPMENT_SETUP.md` |
 | Kelime kartı gramer JSON'u (Almanca) | `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` |
 | Kelime kartı gramer JSON'u (Türkçe) | `REFERENCE/TURKISH_LANGUAGE_FEATURES.md` |
-| Admin panel görsel tasarımı (renk/tipografi/stil) | `REFERENCE/DESIGN_SYSTEM.md` |
+| Frontend görsel tasarımı (renk/tipografi/radius/gölge/boşluk) | `REFERENCE/DESIGN_SYSTEM.md` — **Admin + Web ortak** (Mobil aynı token'ları native'e uyarlar) |
 
 ---
 
@@ -144,6 +144,16 @@ tablo satırı, filtre çubuğu, modal gibi tekrar eden veya mantıksal olarak a
 Akademi'de (§6) tek başına anlatılabilmesi — 300+ satırlık monolit bir sayfa component'i hem
 okunmaz hem `kod` slaytında öğretilemez.
 
+> **Not (2026-08-05 — task dosyalarında component detayı zorunluluğu):** `TASK/TASK_B_admin_panel.md` ve
+> `TASK/TASK_D_web_app.md`'deki **"Component:" maddeleri özet/üst-seviye listelerdir, atomik değildir.**
+> Gerçek yazımda her isimlendirilmiş component (ör. `WordFormModal`) yukarıdaki kuralca kendi alt
+> component'lerine bölünür ve roadmap'e **her alt component kendi `[ ]` satırı olarak** işlenir —
+> tek bir "Component" checkbox'ı işaretlenip geçilmez. `TASK_B_admin_panel.md`'deki B-03 ve
+> `TASK_D_web_app.md`'deki D-05 bu bölünmenin nasıl yapılacağına örnek olacak şekilde önceden alt
+> maddelere ayrılmıştır — yeni bir sayfaya başlarken o iki bölüm şablon olarak kullanılır. Bir
+> component'in ne kadar bölüneceğine karar verirken ölçüt: component 150 satırı aşıyorsa veya
+> içinde başka bir yerde tekrar kullanılabilecek bir alt-parça varsa, ayrı dosyaya çıkar.
+
 **Zorunlu ortak kütüphaneler** (Admin/Web/Mobil üçünde de aynı — tutarlı kod tabanı, tek öğretim
 deseni):
 | Alan | Kütüphane | Not |
@@ -154,18 +164,18 @@ deseni):
 | HTTP | `axios` | Ortak `apiClient` + `Authorization`/`Accept-Language` interceptor'ı |
 | i18n | `i18next` + `react-i18next` | Admin panelin dil tercihi deseni (`languageSlice`, CLAUDE.md §1) üçünde de aynı |
 | İkon | `lucide-react` (Admin/Web) · `lucide-react-native` (Mobil) | |
+| Bildirim | `react-toastify` (Admin/Web) | Başarı/hata toast'ları (ör. "Kelime eklendi", 409 çakışma mesajı) — Mobil'in kendi eşdeğeri (ör. `react-native-toast-message`) ilgili faz başladığında seçilir, DOM tabanlı `react-toastify` React Native'de çalışmaz |
 | Test | `vitest` + `@testing-library/react` + `jsdom` (Mobil: `@testing-library/react-native`) | |
 
 **Duruma göre eklenen kütüphaneler** (ilgili feature'ı fiilen yazan task'ta eklenir, önceden değil —
 YAGNI, §3 "Spekülatif ortak tip yazılmaz" ile aynı ilke):
 - `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web D-03.1) görsel üretimi.
-- `recharts` — istatistik/dashboard grafiği gereken ilk ekranda (Admin B-07).
 - `date-fns` — tarih filtresi/biçimlendirme gereken ilk ekranda (Admin B-08).
 
 **QR ile giriş artık Admin panelde de var** (2026-08-05 karar değişikliği): Admin'de Google/Apple
 hâlâ yok, ama e-posta+şifre+OTP'ye ek olarak QR ile giriş eklenir (`/auth/qr/*` endpoint'leri
 istemciye göre dallanmaz, backend'de değişiklik gerekmez — bkz. `SECURITY.md §1.3`,
-`TASK/B_admin_panel.md` B-02.1).
+`TASK/TASK_B_admin_panel.md` B-02.1).
 
 ---
 

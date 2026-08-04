@@ -24,7 +24,7 @@ Panel** (bkz. aşağıdaki not — B-01'de eklenen `languageSlice` bu API'yi bek
 > (`themeSlice`, `LanguagePreference` ile AYNI desen — şimdilik yalnızca `localStorage`).
 > `ThemePreference`'ın yazma ucu çalışır hale gelince, `admin/src/store/slices/themeSlice.ts`
 > (B-01'de yazıldı) `languageSlice.ts` ile BİRLİKTE gerçek `PUT /users/me` çağrısına bağlanmalı —
-> bkz. `B_admin_panel.md` B-01 "Dark Mode" notu.
+> bkz. `TASK_B_admin_panel.md` B-01 "Dark Mode" notu.
 > **Not (A-03.4, `LanguagePreference`) — ⚠️ UNUTULMASIN, admin panel tarafı da güncellenmeli:**
 > `ThemePreference` ile birebir aynı desen — `RuleFor(x => x.LanguagePreference)`,
 > `WithErrorCode("INVALID_LANGUAGE_PREFERENCE")`, DB `CK_Users_LanguagePreference` zaten var

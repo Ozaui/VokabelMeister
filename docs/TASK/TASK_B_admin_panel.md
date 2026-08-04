@@ -1,4 +1,3 @@
-
 # FAZ B — Admin Panel (`/admin`)
 
 > **Yöntem/standart:** Bu dosyadaki her feature, `../../CLAUDE.md` §4/§6 kurallarına göre yazılır
@@ -7,17 +6,28 @@
 > O bölümler değişmez standarttır — burada tekrar edilmez, her zaman `../../CLAUDE.md`'ye bakılır.
 > **Ortak kütüphaneler (state/routing/form/i18n/HTTP/ikon/QR/grafik/tarih) → `../../CLAUDE.md` §4.1.**
 
+> **"Component:" maddeleri özettir, atomik değildir** (`../../CLAUDE.md` §4.1'deki 2026-08-05
+> notu) — gerçek yazımda her isimlendirilmiş component kendi alt-component'lerine bölünür ve
+> roadmap'e her biri **ayrı `[ ]` satırı** olarak işlenir. **B-03 aşağıda bu bölünmenin örneği
+> olarak önceden alt maddelere ayrılmıştır** — yeni bir sayfaya başlarken şablon olarak kullanılır.
+
 > **2026-08-05 — Baştan yazım:** Önceki `/admin` kodu (B-01/B-02/B-03) ve onu öğreten
 > `AKADEMI/admin/` tamamen silindi, bu dosyadaki ilerleme ⬜'e sıfırlandı — kullanıcı kararıyla
 > admin frontend'i sıfırdan yeniden yazılacak. Aşağıdaki maddeler önceki turdan çıkan geçerli
 > tasarım kararlarını (paleti, dark mode yaklaşımı, dosya deseni) korur; yalnızca "tamamlandı"
 > anlatıları ve kod-özel detaylar kaldırıldı.
 
+> **2026-08-05 — Tasarım sistemi yenilendi:** B-01'deki palet/font referansı, `REFERENCE/
+> DESIGN_SYSTEM.md`'nin baştan yazımına göre güncellendi (Turkuaz+Mercan/Nunito+DM Sans →
+> yeni nötr palet/Inter). Tasarım sistemi artık Admin+Web ortak — ayrıntı `DESIGN_SYSTEM.md`.
+
 ### B-01 — Kurulum ⬜
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §2, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
 - [ ] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki Turkuaz+Mercan paleti (Primary `#4E93BC`)/Nunito+DM Sans/16px-12px radius Tailwind `@theme`'e işlenir
+- [ ] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki ortak palet (Primary/accent `#5B54F0`
+      light · `#8A83FF` dark), Inter fontu, §4 radius skalası (buton/input 8px, kart 16px, modal
+      20px, badge 999px) ve §5 gölge skalası Tailwind `@theme`'e + `.dark` override'ına işlenir
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -25,7 +35,7 @@
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'ye (light paletin yanına), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
+- [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
 - [ ] ➜ **Admin Akademi'ye işle**
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
@@ -65,6 +75,10 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 
 ### B-03 — Kelime Yönetimi ⬜
 **Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5
+> **Component detaylandırma örneği:** aşağıdaki alt maddeler `CLAUDE.md` §4.1'deki granülerlik
+> kuralının uygulanmış hâlidir — `WordFormModal` ve `WordPairingPage` tek satırlık birer madde
+> değil, her biri kendi dosyasına çıkan alt component'lerin listesidir. Yeni bir sayfaya
+> başlarken bu bölüm şablon olarak kopyalanır.
 - [ ] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
@@ -73,19 +87,28 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `WordListPage` (filtre+tablo+sayfalama), `WordFormModal` (Formik+Yup — WordDetail + örnek cümle + kategori seçimi, ekle/düzenle ortak;
-      önce dil (`de`/`tr`) sonra `Tür` seçilir, gramer bölümü ikisine göre koşullu render edilir —
-      `de` + Noun/Verb/Diğer → `GERMAN_LANGUAGE_FEATURES.md §10`; `tr` + Noun/Verb/Diğer →
-      `TURKISH_LANGUAGE_FEATURES.md §9`; backend `WordGrammarValidator`'ın TS karşılığı, aynı mantık
-      iki ayrı katmanda tekrar yazılır — kod paylaşımı yok), `WordPairingPage` (iki sütun — solda `de`
-      eşleşmemiş liste, sağda `tr` eşleşmemiş liste, her satırda varsa **önerilen eşleşme**
-      [`suggestedMatchConceptId`] öne çıkarılmış — admin onaylar veya manuel seçip "Eşleştir" der;
-      onay öncesi açık bir **"birincil tarafı değiştir"** kontrolü [varsayılan: işlemi başlattığın
-      taraf `primaryId` olur, istersen karşı tarafa çevirebilirsin — Tür/Seviye/Kategori bilgisi
-      birincil olandan alınır]; `PartOfSpeech`/kategori farkı yalnızca **bilgilendirme** amaçlı
-      gösterilir, onay/force gerektirmez — diller arası tür kayması normal, bkz. `Icerik.md`
-      "Eşleştirme")
-- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component — `WordListPage`:**
+  - [ ] `WordListPage` (üst kapsayıcı — filtre çubuğu + tablo + sayfalamayı bir araya getirir, kendi mantığı yok)
+  - [ ] `WordFilterBar` (arama input + level/partOfSpeech select — `wordFilterSlice`'a yazar)
+  - [ ] `WordTable` (satır render, sıralama başlıkları)
+  - [ ] `WordTableRow` (tek satır — düzenle/sil aksiyon butonları)
+  - [ ] `Pagination` (sayfa numarası, genel amaçlı — başka listelerde de kullanılacak, `components/common/`'a konur)
+  - [ ] ➜ **Admin Akademi'ye işle** (her alt component kendi bölümü)
+- [ ] **Component — `WordFormModal`:**
+  - [ ] `WordFormModal` (üst kapsayıcı — Formik context + Yup şema + submit/ekle-düzenle ortak akış)
+  - [ ] `LanguageAndTypeStep` (önce dil [`de`/`tr`] sonra Tür seçimi — gramer bölümünün hangi alt component'i göstereceğine karar verir)
+  - [ ] `GermanGrammarFields` (`de` + Noun/Verb/Diğer — `GERMAN_LANGUAGE_FEATURES.md §10`'un TS karşılığı)
+  - [ ] `TurkishGrammarFields` (`tr` + Noun/Verb/Diğer — `TURKISH_LANGUAGE_FEATURES.md §9`'un TS karşılığı; backend `WordGrammarValidator` ile aynı mantık, kod paylaşımı yok — bkz. A-05 notu)
+  - [ ] `ConjugationGrid` (fiil çekim tablosu — Almanca/Türkçe form'unun ikisinde de kullanılan ortak alt component)
+  - [ ] `ExampleSentenceField` (örnek cümle + kategori seçimi)
+  - [ ] ➜ **Admin Akademi'ye işle** (her alt component kendi bölümü)
+- [ ] **Component — `WordPairingPage`:**
+  - [ ] `WordPairingPage` (üst kapsayıcı — iki sütun layout + eşleştirme state'i)
+  - [ ] `UnmatchedWordColumn` (tek dilin eşleşmemiş liste sütunu — `de`/`tr` için aynı component iki kez kullanılır)
+  - [ ] `SuggestedMatchBadge` (`suggestedMatchConceptId` varsa öne çıkaran rozet)
+  - [ ] `PrimarySideToggle` ("birincil tarafı değiştir" kontrolü — varsayılan: işlemi başlatan taraf `primaryId`)
+  - [ ] `PairingConfirmModal` (onay öncesi özet — Tür/Seviye/Kategori farkı yalnızca bilgilendirme, force gerektirmez)
+  - [ ] ➜ **Admin Akademi'ye işle** (her alt component kendi bölümü)
 - [ ] **Route:** `/words`, `/words/pairing` (`App.tsx`), sidebar linki
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
@@ -98,7 +121,7 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `categoriesApi` — `getCategories` (hiyerarşik), `createCategory`, `updateCategory`, `deleteCategory` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `CategoryTreePage` (hiyerarşik ağaç liste), `CategoryFormModal` (üst kategori seçimi, ikon, renk, seviye)
+- [ ] **Component:** `CategoryTreePage` (hiyerarşik ağaç liste), `CategoryTreeNode` (tek düğüm — özyinelemeli render), `CategoryFormModal` (üst kategori seçimi, ikon, renk, seviye)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/categories` (`App.tsx`), sidebar linki
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -111,7 +134,7 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `adminUsersApi` — `getUsers` (arama/rol filtresi), `getUserDetail`, `changeRole`, `toggleStatus` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `UserListPage` (arama+rol filtresi+tablo), `UserDetailPage` (profil+istatistik+rol/durum aksiyonları)
+- [ ] **Component:** `UserListPage` (arama+rol filtresi+tablo — `WordListPage` ile aynı `Pagination` ortak component'i kullanılır), `UserDetailPage` (profil+istatistik+rol/durum aksiyonları), `RoleBadge`/`StatusBadge` (küçük, tekrar kullanılan rozet component'leri)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/users`, `/users/:id` (`App.tsx`)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -140,7 +163,7 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `statisticsApi` — `getAdminStatistics` (axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `DashboardPage` (toplam/aktif kullanıcı kartları, en çok öğrenilen/sorunlu kelimeler tablosu, `recharts` ile günlük/haftalık grafik)
+- [ ] **Component:** `DashboardPage` (üst kapsayıcı), `StatCard` (tekil metrik kartı — toplam/aktif kullanıcı, tekrar kullanılır), `TopWordsTable` (en çok öğrenilen/sorunlu kelimeler), `ActivityChart` (günlük/haftalık grafik — grafik kütüphanesi bu task'ta seçilir, henüz karar verilmedi)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/` (ana sayfa, `App.tsx`)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -153,7 +176,7 @@ paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akade
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `logsApi` — `getActivityLogs`, `getApplicationLogs`, `getSecurityLogs` (filtre+sayfa, axios + `useApiQuery`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `LogsPage` (3 sekme: Activity/Application/Security — filtre + tarih aralığı [`date-fns` ile biçimlendirme] + sayfalama tablo)
+- [ ] **Component:** `LogsPage` (üst kapsayıcı — sekme state'i), `LogTabs` (3 sekme: Activity/Application/Security), `LogFilterBar` (filtre + tarih aralığı [`date-fns` ile biçimlendirme]), `LogTable` (sayfalama tablo — `Pagination` ortak component'i kullanılır)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/logs` (`App.tsx`)
 - [ ] ➜ **Admin Akademi'ye işle**

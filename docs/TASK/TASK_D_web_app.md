@@ -4,8 +4,22 @@
 > İçin Döngü**) — o bölümler değişmez standarttır, burada tekrar edilmez. Her feature
 > tip→api→slice→hook→component→route→test sırasıyla yazılır ve `AKADEMI/web/`'e işlenir.
 
+> **"Component:" maddeleri özettir, atomik değildir** (`../../CLAUDE.md` §4.1'deki 2026-08-05
+> notu) — gerçek yazımda her isimlendirilmiş component kendi alt-component'lerine bölünür ve
+> roadmap'e her biri **ayrı `[ ]` satırı** olarak işlenir. **D-05 aşağıda bu bölünmenin örneği
+> olarak önceden alt maddelere ayrılmıştır** — yeni bir sayfaya başlarken şablon olarak kullanılır.
+
+> **2026-08-05 — Tasarım sistemi eklendi:** D-01'e, Admin ile ortak `REFERENCE/DESIGN_SYSTEM.md`
+> uygulama adımı eklendi — önceden Web'in kendi ayrı tasarım kararı alması bekleniyordu, bu ayrım
+> kaldırıldı (bkz. `DESIGN_SYSTEM.md` kapsam notu).
+
 ### D-01 — Kurulum ⬜
 - [ ] React + Vite + TS, Tailwind, Redux Toolkit (yalnızca local/UI state — bkz. `CLAUDE.md` §4.1), React Router v6, Formik + Yup, Axios
+- [ ] Tasarım sistemi uygulaması — `REFERENCE/DESIGN_SYSTEM.md`'deki Admin ile ortak palet
+      (Primary/accent `#5B54F0` light · `#8A83FF` dark), Inter fontu, §4 radius skalası
+      (buton/input 8px, kart 16px, modal 20px, badge 999px) ve §5 gölge skalası Tailwind
+      `@theme`'e + `.dark` override'ına işlenir — Admin'deki `index.css` token'larıyla birebir
+      aynı değerler, ayrı bir palet icat edilmez
 - [ ] `.env*` (VITE_API_URL, VITE_GOOGLE_CLIENT_ID), `GoogleOAuthProvider`, ProtectedRoute, temel layout
 *(Kurulum task'ı — dikey dilim/roadmap kuralı burada uygulanmaz; ilk feature D-03'ten başlar.)*
 
@@ -71,6 +85,9 @@
 > Almanca hem Türkçe öğrenilebilir (bkz. `C_kullanici_backend.md` C-05, `DATABASE_SCHEMA/Icerik.md`
 > "Eşleştirme"). `targetLanguageId` her oturum başlatmada seçilir (`HomePage`'de bir dil anahtarı/
 > sekmesi — `de`/`tr`), `POST /learning-sessions` gövdesine eklenir.
+> **Component detaylandırma örneği:** aşağıdaki alt maddeler `CLAUDE.md` §4.1'deki granülerlik
+> kuralının uygulanmış hâlidir — bu sayfa projedeki en karmaşık ekran olduğu için (6 farklı soru
+> tipi + özet + leech modalı) şablon olarak seçildi.
 - [ ] **Tip:** `LearningSession`, `AnswerRequest`, `SessionResult`, `SessionMode` (`New|Due|Band|Mixed`),
   `MasteryBand` (`Weak|Medium|Good`), `TargetLanguage` (`de|tr`) (`learning.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -80,15 +97,28 @@
 - [ ] **Slice:** `learningSessionSlice` — mevcut soru index'i, oturum durumu (istemci tarafı ilerleme),
   aktif sorunun rastgele atanmış tipi, ipucu/zaman bazlı `selfRating` tavan kilidi
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `HomePage` (streak, günlük hedef ilerleme çubuğu, pasif due rozeti, hedef
-  tamamlanınca opsiyonel "tekrar edelim mi" teklifi, "Bugün Öğrendiklerim"/"Bugün Test Ettiklerim"
-  listeleri — seviyesiz vs. `masteryBefore→masteryAfter` yüzdelik, **dil anahtarı** [Almanca öğren/
-  Türkçe öğren, `targetLanguageId` seçimi — her ikisinin streak/ilerlemesi bağımsız]), `FlashcardScreen` (4'lü öz
-  değerlendirme + ipucu butonu + zaman/ipucu bazlı seçenek kilitleme + D-04 `SystemWordCard`),
-  `MultipleChoiceScreen`, `TranslationQuizScreen`, `ArticleQuizScreen`, `PluralQuizScreen`,
-  `TrueFalseScreen`, `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et),
-  `SessionSummaryPage` (özet + XP + "Aynı Kelimelerle Tekrar Et" butonu)
-- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Component — `HomePage`:**
+  - [ ] `HomePage` (üst kapsayıcı)
+  - [ ] `LanguageTabSwitcher` (Almanca/Türkçe öğren sekmesi — `targetLanguageId` seçimi, her ikisinin streak/ilerlemesi bağımsız)
+  - [ ] `StreakBadge` (streak sayacı — yalnızca `New` oturumuna bağlı)
+  - [ ] `DailyGoalProgressBar` (günlük hedef ilerleme çubuğu + tamamlanınca opsiyonel "tekrar edelim mi" teklifi)
+  - [ ] `DueBadge` (pasif due rozeti)
+  - [ ] `TodayLearnedList` / `TodayTestedList` ("Bugün Öğrendiklerim"/"Bugün Test Ettiklerim" — seviyesiz vs. `masteryBefore→masteryAfter` yüzdelik gösterimi ortak bir `MasteryDeltaRow` alt component'iyle)
+  - [ ] ➜ **AKADEMI/web'e işle** (her alt component kendi bölümü)
+- [ ] **Component — Soru ekranları (ortak `QuizLayout` kapsayıcısı + 6 tip):**
+  - [ ] `QuizLayout` (ortak kapsayıcı — ilerleme çubuğu, D-04 `SystemWordCard`, alt aksiyon barı; 6 ekran de bunu sarar)
+  - [ ] `FlashcardScreen` (4'lü öz değerlendirme + ipucu butonu + zaman/ipucu bazlı seçenek kilitleme)
+  - [ ] `MultipleChoiceScreen`
+  - [ ] `TranslationQuizScreen`
+  - [ ] `ArticleQuizScreen`
+  - [ ] `PluralQuizScreen`
+  - [ ] `TrueFalseScreen`
+  - [ ] `SelfRatingButtons` (4'lü değerlendirme kontrolü — `FlashcardScreen` içinde kullanılan, ama tek başına test edilebilir alt component)
+  - [ ] ➜ **AKADEMI/web'e işle** (her alt component kendi bölümü)
+- [ ] **Component — Diğer:**
+  - [ ] `LeechActionModal` (5 ardışık yanlıştan sonra — Askıya Al/Sıfırla/Devam Et)
+  - [ ] `SessionSummaryPage` (özet + XP), `RepeatSessionButton` ("Aynı Kelimelerle Tekrar Et" — kendi mutation çağrısı olan ayrı alt component)
+  - [ ] ➜ **AKADEMI/web'e işle** (her alt component kendi bölümü)
 - [ ] **Route:** `/learn`, `/learn/session/:id` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Birim testleri:** `FlashcardScreen.test.tsx` (öz değerlendirme akışı + ipucu/zaman tavan
@@ -172,10 +202,11 @@
   `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, başarı oranı
-  grafiği), bant kartları (🔴🟡🟢, tıklanınca `BandWordListPage` — **İncele** salt okunur liste ve
-  **Sına** butonu ile D-05 `mode: Band` oturumunu başlatma; leech kelimeler 🩹 işaretli),
-  `SuspendedWordsPage` (askıya alınmışlar, geri getir butonu), `AchievementsSection` (rozet
-  grid'i, `Icon` resim URL'i + `Rarity` renk kodu)
+  grafiği), `BandCard` (🔴🟡🟢 bant kartı — tıklanınca `BandWordListPage`'e gider, leech kelimeler 🩹
+  işaretli), `BandWordListPage` (**İncele** salt okunur liste ve **Sına** butonu ile D-05
+  `mode: Band` oturumunu başlatma), `SuspendedWordsPage` (askıya alınmışlar, geri getir butonu),
+  `AchievementsSection` (rozet grid'i), `AchievementBadge` (tek rozet — `Icon` resim URL'i +
+  `Rarity` renk kodu, `AchievementsSection` içinde tekrarlı kullanılır)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/progress`, `/progress/band/:band`, `/progress/suspended` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**

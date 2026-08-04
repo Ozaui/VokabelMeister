@@ -14,9 +14,9 @@
 | Faz | Ne | Neden | Dosya |
 |-----|----|----|-------|
 | **A** | Admin panel backend (altyapı+auth+log+içerik+admin) | Endpoint'ler önce | `TASK/A_admin_panel_backend.md` |
-| **B** | Admin panel (`/admin`) | Kelime/kategori girilir, API gerçek veriyle test edilir | `TASK/B_admin_panel.md` |
+| **B** | Admin panel (`/admin`) | Kelime/kategori girilir, API gerçek veriyle test edilir | `TASK/TASK_B_admin_panel.md` |
 | **C** | Kullanıcı backend | Kart, SRS, öğrenme, sosyal | `TASK/C_kullanici_backend.md` |
-| **D** | Web app (`/web`) | Tarayıcıda hızlı test, mobile referans | `TASK/D_web_app.md` |
+| **D** | Web app (`/web`) | Tarayıcıda hızlı test, mobile referans | `TASK/TASK_D_web_app.md` |
 | **E** | Mobil (`/mobile`) | API+içerik+web referansı hazır | `TASK/E_mobil.md` |
 | **F** | Test & deployment | Son kontroller, entegrasyon/regresyon | `TASK/F_test_yayin.md` |
 
@@ -33,9 +33,9 @@
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-01` ⬜ (Kurulum) → `TASK/B_admin_panel.md`
+**Sıradaki task:** `B-01` ⬜ (Kurulum) → `TASK/TASK_B_admin_panel.md`
 (**2026-08-05 — Admin frontend baştan yazım:** `/admin` kodu ve onu öğreten `AKADEMI/admin/`
-tamamen silindi (kullanıcı kararı), `B_admin_panel.md`'deki B-01/B-02/B-03 ilerlemesi ⬜'e
+tamamen silindi (kullanıcı kararı), `TASK_B_admin_panel.md`'deki B-01/B-02/B-03 ilerlemesi ⬜'e
 sıfırlandı; ayrıca B-02'ye yeni bir **B-02.1 — QR Kod ile Giriş** alt-görevi eklendi (admin panelde
 QR ile giriş artık VAR, bkz. `ARCHITECTURE.md`/`SECURITY.md §1.3`/`CLAUDE.md §4.1`). Backend'de
 (Faz A) hiçbir değişiklik gerekmedi — `A-03.4` (`Users.LanguagePreference`) ve `A-03.3`
