@@ -29,8 +29,8 @@
       light · `#8A83FF` dark), Inter fontu, §4 radius skalası (buton/input 8px, kart 16px, modal
       20px, badge 999px) ve §5 gölge skalası Tailwind `@theme`'e + `.dark` override'ına işlenir
 - [x] ➜ **Admin Akademi'ye işle**
-- [ ] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
-- [ ] ➜ **Admin Akademi'ye işle**
+- [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
+- [x] ➜ **Admin Akademi'ye işle**
 - [ ] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı, Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)

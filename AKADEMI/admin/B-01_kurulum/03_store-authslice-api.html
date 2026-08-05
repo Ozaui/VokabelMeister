@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Redux Store + Auth Slice + API İstemcisi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'store-authslice-api',
+    bolumBaslik: 'B-01 — Kurulum',
+    oncekiBolum: '02_tasarim-sistemi.html',
+    sonrakiBolum: '04_dil-tercihi-i18n.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Redux Store + Auth Slice + API İstemcisi',
+        altBaslik: 'Kimlik doğrulama durumunun nerede tutulacağı ve her backend isteğine hangi header\'ların otomatik ekleneceği — B-02\'nin (Auth Sayfaları) üzerine ineceği temel.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Slice Nedir? Sınırını Ne Belirler?',
+        aciklama: 'Redux Toolkit\'te "slice", store\'un state ağacının bir DİLİMİ\'dir — TEK bir konuyla ilgili state\'i VE o state\'i değiştiren reducer\'ları bir arada tutan bir birim. `createSlice({ name: \'auth\', initialState, reducers: {...} })` çağrısı, "store\'un `auth` adlı bir dilimi olacak, başlangıç değeri şu, bu dilimi şu fonksiyonlarla değiştirebilirsin" der.',
+        neden: 'Bir slice\'ın state alanları TEK bir "olay"a BİRLİKTE tepki vermeli. `authSlice`teki `accessToken` ve `isAuthenticated` iki AYRI alan ama AYNI slice\'ta, çünkü giriş yapıldığında ikisi de AYNI ANDA değişir (token gelir VE "giriş yapıldı" durumu true olur), çıkış yapıldığında ikisi de AYNI ANDA sıfırlanır — birbirinden bağımsız DEĞİL, birbirine BAĞLI iki alan.',
+        olmasaydi: '`accessToken` ve `isAuthenticated` ayrı iki slice\'ta olsaydı, login akışı iki AYRI action dispatch etmek zorunda kalırdı (`setToken` + `setAuthenticated`) — biri dispatch edilip diğeri unutulsa, uygulama "token var ama isAuthenticated false" gibi TUTARSIZ bir duruma düşebilirdi.'
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Slice Sınırı: Alan Bazlı mı, Konu Bazlı mı?',
+        iyi: {
+          baslik: 'Doğru — konu (domain) bazlı',
+          maddeler: [
+            '`authSlice` → `accessToken` + `isAuthenticated` TEK slice\'ta (ikisi de girişte/çıkışta BİRLİKTE değişiyor)',
+            'Login\'de TEK bir `setCredentials` action\'ı ikisini de AYNI ANDA günceller',
+            'İleride eklenecek `languageSlice`/`themeSlice` de kendi BAĞIMSIZ konularının slice\'ı olacak — auth\'la hiç ilgileri yok'
+          ]
+        },
+        kotu: {
+          baslik: 'Yanlış — alan (field) bazlı',
+          maddeler: [
+            '`accessTokenSlice` + `isAuthenticatedSlice` diye İKİ ayrı slice açmak',
+            'Login akışı iki ayrı action dispatch etmek zorunda kalırdı: `setAccessToken` sonra `setIsAuthenticated`',
+            'Biri dispatch edilip diğeri unutulursa state kendi içinde ÇELİŞEBİLİR (token var ama isAuthenticated false)'
+          ]
+        }
+      },
+      {
+        tur: 'kod',
+        baslik: 'store/slices/authSlice.ts — Kimlik Doğrulama Durumu',
+        dosyaYolu: 'admin/src/store/slices/authSlice.ts',
+        nedenBuKlasor: 'Her state konusu (`auth`, ileride `language`/`theme`/`wordFilter`) kendi dosyasında, `store/slices/` altında toplanıyor — `store.ts`in kendisi (store\'u KURAN dosya) ile tek tek konuların state\'ini tanımlayan dosyalar aynı klasörde karışmasın diye ayrı bir alt klasör.',
+        kod: `import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+
+interface AuthState {
+  accessToken: string | null
+  isAuthenticated: boolean
+}
+
+const initialState: AuthState = {
+  accessToken: localStorage.getItem('accessToken'),
+  isAuthenticated: localStorage.getItem('accessToken') !== null,
+}
+
+const authSlice = createSlice({
+  name: 'auth',
+  initialState,
+  reducers: {
+    setCredentials: (state, action: PayloadAction<{ accessToken: string }>) => {
+      state.accessToken = action.payload.accessToken
+      state.isAuthenticated = true
+      localStorage.setItem('accessToken', action.payload.accessToken)
+    },
+    logout: (state) => {
+      state.accessToken = null
+      state.isAuthenticated = false
+      localStorage.removeItem('accessToken')
+    },
+  },
+})
+
+export const { setCredentials, logout } = authSlice.actions
+export default authSlice.reducer`,
+        satirlar: [
+          {
+            satir: "import { createSlice, type PayloadAction } from '@reduxjs/toolkit'",
+            aciklama: 'Redux Toolkit\'in `createSlice` fonksiyonunu ve TypeScript\'e özel `PayloadAction` tipini içe aktarır — `type` öneki, bu import\'un yalnızca DERLEME zamanında (tip kontrolü için) var olduğunu, çalışma zamanında hiçbir JS kodu üretmediğini belirtir.',
+            neden: '`PayloadAction<T>`, bir action\'ın `payload` alanının TİPİNİ belirtmeye yarar — `setCredentials` çağrıldığında `action.payload.accessToken`in bir `string` olduğunu TypeScript bilir, yanlışlıkla bir sayı gönderilse derleme zamanında hata verir.',
+            olmasaydi: '`PayloadAction` kullanılmasaydı `action.payload` tipi `any` (tipsiz) kalırdı — `action.payload.accessTokenn` gibi bir YAZIM hatası derleyici tarafından YAKALANMAZ, hata ancak çalışma zamanında (tarayıcı konsolunda `undefined`) fark edilirdi.'
+          },
+          {
+            satir: 'interface AuthState {',
+            aciklama: 'Bu slice\'ın state\'inin şeklini tanımlayan TypeScript arayüzü — store\'un `auth` diliminin TAM OLARAK hangi alanları taşıyacağını söyler.',
+            neden: 'Bir interface tanımlamak, `initialState`in VE her reducer\'ın `state` parametresinin doğru tipte olduğunu TypeScript\'e garanti ettirir.',
+            olmasaydi: null
+          },
+          {
+            satir: 'accessToken: string | null',
+            aciklama: 'Giriş yapılmış bir kullanıcının JWT access token\'ı — henüz giriş yapılmadıysa `null`.',
+            neden: '`string | null` (union tip), bu alanın İKİ durumu olabileceğini AÇIKÇA ifade eder — yalnızca `string` yazılsaydı "giriş yapılmamış" durumunu temsil etmek için boş string (`\'\'`) gibi belirsiz bir değer kullanmak gerekirdi.',
+            olmasaydi: '`if (accessToken)` gibi bir kontrol boş string\'i de "token yok" olarak SAYAR ama bu TESADÜFİ bir doğruluk, `null` kadar AÇIK bir niyet ifadesi değil.'
+          },
+          {
+            satir: 'isAuthenticated: boolean',
+            aciklama: 'Kullanıcının giriş yapıp yapmadığını doğrudan söyleyen ayrı bir bayrak.',
+            neden: 'Bu alan `accessToken !== null`dan HESAPLANABİLİR olurdu, ama ayrı bir alan olarak tutulması `ProtectedRoute` gibi tüketicilerin `Boolean(state.auth.accessToken)` yazmak yerine doğrudan `state.auth.isAuthenticated` okumasını sağlar — niyet daha AÇIK okunur.',
+            olmasaydi: 'Bu alan olmasaydı "giriş yapılmış mı" sorusu her yerde `accessToken !== null` gibi DOLAYLI bir ifadeyle sorulurdu.'
+          },
+          {
+            satir: 'const initialState: AuthState = {',
+            aciklama: 'Uygulama İLK açıldığında `auth` diliminin ne durumda olacağını tanımlar — sayfa yenilendiğinde (F5) Redux store SIFIRDAN kurulur, bu obje o anki başlangıç değerini belirler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "accessToken: localStorage.getItem('accessToken'),",
+            aciklama: 'Başlangıç token\'ını Redux\'un KENDİ hafızasından değil, tarayıcının `localStorage`ından okur.',
+            neden: 'Redux store sayfa her yenilendiğinde SIFIRDAN kurulur — Redux hiçbir şeyi KALICI hatırlamaz. Kullanıcı giriş yaptıktan sonra sayfa yenilenince tekrar `/login`e atılmaması için token\'ın tarayıcının KALICI depolama alanından okunması gerekir.',
+            olmasaydi: 'Bu satır `null` olarak sabitlenseydi, kullanıcı giriş yaptıktan HEMEN sonra F5 yapsa `isAuthenticated` sıfırlanır, `ProtectedRoute` onu tekrar `/login`e yönlendirirdi — her sayfa yenilemede oturum KAYBEDİLİRDİ.'
+          },
+          {
+            satir: "isAuthenticated: localStorage.getItem('accessToken') !== null,",
+            aciklama: '`isAuthenticated`in başlangıç değerini de AYNI kaynaktan (localStorage\'da bir token var mı) türetir.',
+            neden: 'Bir üstteki satırla TUTARLI kalması gerekir — token localStorage\'da varsa `isAuthenticated` de `true` başlamalı, aksi halde bu iki alan başlangıçta birbiriyle ÇELİŞEN bir durumda doğardı.',
+            olmasaydi: 'Bu satır `false` olarak sabitlenseydi, localStorage\'da geçerli bir token OLSA bile `isAuthenticated` false başlardı — `ProtectedRoute` kullanıcıyı YANLIŞ ŞEKİLDE `/login`e yönlendirirdi.'
+          },
+          {
+            satir: 'const authSlice = createSlice({',
+            aciklama: 'Redux Toolkit\'in `createSlice` fonksiyonunu çağırarak bu slice\'ı OLUŞTURUR — `name`, `initialState` ve `reducers` alanlarını alıp, hem bir reducer fonksiyonu hem de otomatik üretilmiş action creator\'lar (`setCredentials`, `logout`) döndürür.',
+            neden: 'Klasik Redux\'ta bir action\'ın TİPİNİ (`\'auth/setCredentials\'` gibi bir string sabiti), action creator fonksiyonunu VE reducer\'ın `switch(action.type)` mantığını AYRI AYRI elle yazmak gerekirdi — `createSlice` bu üçünü TEK bir çağrıda üretir.',
+            olmasaydi: '`createSlice` kullanılmasaydı, action type string sabitlerinin elle yazılıp export edilmesi, reducer\'ın bir `switch` bloğuyla yazılması gerekirdi — küçük bir yazım hatası (string\'in iki yerde farklı yazılması) sessizce action\'ın hiç ETKİ ETMEMESİNE yol açardı.'
+          },
+          {
+            satir: "name: 'auth',",
+            aciklama: 'Bu slice\'ın Redux DevTools\'ta ve action tiplerinde görünen ismi — üretilen action\'ların tipi otomatik olarak `auth/setCredentials`, `auth/logout` şeklinde olur.',
+            neden: 'Bu isim, `store.ts`te `reducer: { auth: authReducer }` ile eklenirken kullanılan anahtarla (`auth`) AYNI olacak şekilde seçildi — state\'e `state.auth.accessToken` olarak erişilirken görülen isimle DevTools\'taki action loglarının TUTARLI olması için.',
+            olmasaydi: null
+          },
+          {
+            satir: 'initialState,',
+            aciklama: 'Yukarıda tanımlanan başlangıç değerini slice\'a bağlar (kısaltılmış obje söz dizimi — `initialState: initialState` ile AYNI anlama gelir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'reducers: {',
+            aciklama: 'Bu slice\'ın state\'ini DEĞİŞTİREBİLECEK tüm fonksiyonların tanımlandığı obje — her alt-fonksiyon, aynı isimde bir action creator\'a otomatik DÖNÜŞÜR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'setCredentials: (state, action: PayloadAction<{ accessToken: string }>) => {',
+            aciklama: 'Giriş başarılı olduğunda çağrılacak reducer — backend\'den gelen access token\'ı state\'e YAZAR. `state` parametresi, Redux Toolkit\'in içindeki Immer kütüphanesi sayesinde DOĞRUDAN değiştirilebilir GİBİ yazılır, ama arka planda gerçek Redux\'un gerektirdiği YENİ bir state objesi üretilir.',
+            neden: 'Klasik Redux\'ta state\'i DOĞRUDAN değiştirmek (`state.accessToken = ...`) YASAKTIR — her zaman `{ ...state, accessToken: ... }` gibi YENİ bir obje döndürmek gerekir. Immer bu "gibi yazılıyor ama aslında immutable" hissini verir, kod çok daha OKUNAKLI kalır.',
+            olmasaydi: 'Immer olmasaydı bu reducer `return { ...state, accessToken: ..., isAuthenticated: true }` gibi yazılması gerekirdi — alan sayısı arttıkça her reducer\'da DEĞİŞMEYEN alanları da tekrar tekrar `...state` ile kopyalamak GEREKİRDİ, biri unutulursa SESSİZCE kaybolurdu.'
+          },
+          {
+            satir: 'state.accessToken = action.payload.accessToken',
+            aciklama: 'Backend\'den gelen (login/OTP doğrulama sonrası) gerçek access token\'ı state\'e yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'state.isAuthenticated = true',
+            aciklama: '"Giriş yapıldı" bayrağını AÇAR — bir üstteki satırla AYNI ANDA, tek bir reducer içinde, tek bir action dispatch\'iyle değişir.',
+            neden: 'Bu satırın `accessToken` atamasıyla AYNI reducer içinde olması, bu ikisinin ASLA birbirinden bağımsız güncellenmemesini GARANTİ eder — bölümün başındaki "slice sınırı" tartışmasının somut kanıtı budur.',
+            olmasaydi: null
+          },
+          {
+            satir: "localStorage.setItem('accessToken', action.payload.accessToken)",
+            aciklama: 'Token\'ı Redux\'un GEÇİCİ (sayfa yenilenince sıfırlanan) hafızasının YANI SIRA, tarayıcının KALICI `localStorage`ına da yazar.',
+            neden: 'Bu satır olmadan `initialState`teki `localStorage.getItem(\'accessToken\')` okuması hiçbir zaman bir DEĞER bulamazdı — bu iki satır (biri OKUYAN, biri YAZAN) birbirine bağımlı bir ÇİFT oluşturur.',
+            olmasaydi: 'Bu satır atlansaydı, kullanıcı giriş yapardı, Redux state\'i `isAuthenticated: true` olurdu, ama sayfa yenilendiğinde hiçbir token BULUNAMAZDI — oturum sayfa yenilemede KAYBOLURDU.'
+          },
+          {
+            satir: 'logout: (state) => {',
+            aciklama: 'Çıkış yapıldığında çağrılacak reducer — `setCredentials`in TAM TERSİ, state\'i başlangıç haline döndürür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'state.accessToken = null',
+            aciklama: 'Token\'ı state\'ten SİLER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'state.isAuthenticated = false',
+            aciklama: '"Giriş yapıldı" bayrağını KAPATIR — token silme işlemiyle AYNI ANDA.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "localStorage.removeItem('accessToken')",
+            aciklama: 'Token\'ı `localStorage`dan da SİLER.',
+            neden: 'Bu satır olmadan Redux state\'i temiz görünse bile, sayfa yenilendiğinde `initialState` localStorage\'da HÂLÂ duran eski token\'ı okur ve kullanıcıyı tekrar "giriş yapılmış" durumuna DÖNDÜRÜRDÜ.',
+            olmasaydi: '"Çıkış yap" butonu yalnızca O ANKİ sekmede işe yarardı — sayfa yenilendiğinde veya yeni bir sekme açıldığında kullanıcı YİNE giriş yapmış görünürdü, güvenlik açısından ciddi bir hataydı.'
+          },
+          {
+            satir: 'export const { setCredentials, logout } = authSlice.actions',
+            aciklama: '`createSlice`in otomatik ürettiği action creator fonksiyonlarını (`setCredentials`, `logout`) obje YIKIMI (destructuring) ile çıkarıp dışa aktarır.',
+            neden: 'Bu iki fonksiyon, ileride `LoginPage`/`OtpVerifyPage` (B-02) ve bir "Çıkış Yap" butonunda `dispatch(setCredentials({ accessToken: \'...\' }))` / `dispatch(logout())` şeklinde ÇAĞRILACAK — component\'lerin erişebilmesi için EXPORT edilmeleri gerekir.',
+            olmasaydi: 'Bu satır olmasaydı `setCredentials`/`logout` bu dosyanın DIŞINDA hiç ERİŞİLEMEZ kalırdı — hiçbir component state\'i güncelleyemezdi.'
+          },
+          {
+            satir: 'export default authSlice.reducer',
+            aciklama: 'Slice\'ın REDUCER fonksiyonunu (action creator\'lardan FARKLI, state\'i güncelleyen asıl mantık) varsayılan export olarak dışa aktarır.',
+            neden: '`store.ts` bu reducer\'ı `import authReducer from \'./slices/authSlice\'` ile alıp `configureStore`a `{ auth: authReducer }` olarak EKLEYECEK.',
+            olmasaydi: 'Bu export olmasaydı `store.ts` bu slice\'ı store\'a hiç EKLEYEMEZDİ — `auth` diye bir state dilimi hiç var OLMAZDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'store/store.ts — Store Kurulumu',
+        dosyaYolu: 'admin/src/store/store.ts',
+        nedenBuKlasor: null,
+        kod: `import { configureStore } from '@reduxjs/toolkit'
+import authReducer from './slices/authSlice'
+
+export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+  },
+})
+
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch`,
+        satirlar: [
+          {
+            satir: "import { configureStore } from '@reduxjs/toolkit'",
+            aciklama: 'Redux Toolkit\'in store OLUŞTURMA fonksiyonunu içe aktarır.',
+            neden: 'Klasik Redux\'un `createStore` fonksiyonu YERİNE — `configureStore`, Redux DevTools bağlantısını VE geliştirmede faydalı bazı kontrolleri (ör. yanlışlıkla state\'i mutate etmeyi YAKALAYAN bir kontrol) OTOMATİK kurar.',
+            olmasaydi: '`createStore` kullanılsaydı, DevTools entegrasyonu VE geliştirme kontrolleri elle, ayrı paketlerle KURULMASI gerekirdi.'
+          },
+          {
+            satir: "import authReducer from './slices/authSlice'",
+            aciklama: 'Bir önceki dosyada yazılan `authSlice`in reducer\'ını içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export const store = configureStore({',
+            aciklama: 'Uygulamanın TEK ve GERÇEK Redux store\'unu oluşturur ve dışa aktarır — bu store, `main.tsx`te `<Provider>` ile TÜM uygulamaya sarılacak.',
+            neden: 'Bir Redux uygulamasında normalde TEK bir store olur (birden fazla store, state\'in NEREDE tutulduğu konusunda kafa karışıklığı yaratırdı) — bu dosyanın TEK sorumluluğu bu store\'u kurmak.',
+            olmasaydi: null
+          },
+          {
+            satir: 'reducer: {',
+            aciklama: 'Store\'un hangi "dilimler"den (slice) oluşacağını tanımlayan obje — her anahtar, state ağacında bir üst-seviye alan haline gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'auth: authReducer,',
+            aciklama: '`authSlice`i store\'a `auth` ANAHTARI altında ekler — bundan sonra herhangi bir component `state.auth.accessToken` şeklinde bu veriye erişebilir.',
+            neden: 'Bu anahtar (`auth`), `authSlice.ts`teki `createSlice({ name: \'auth\', ... })`daki `name` alanıyla BİLİNÇLİ olarak aynı seçildi — state erişimindeki isimle DevTools\'taki action isimlerinin TUTARLI olması için.',
+            olmasaydi: 'Bu satır olmadan `authSlice`in reducer\'ı store\'a hiç BAĞLANMAZ — dosyası var olsa bile, o slice\'ın state\'i uygulamada HİÇBİR YERDE görünmezdi.'
+          },
+          {
+            satir: 'export type RootState = ReturnType<typeof store.getState>',
+            aciklama: 'Store\'un TÜM state ağacının TypeScript tipini, `store.getState` fonksiyonunun dönüş tipinden OTOMATİK türetir — elle `interface RootState { auth: AuthState }` yazmaya GEREK kalmaz.',
+            neden: 'Store\'a yeni bir slice eklendiğinde (ör. ileride `languageSlice`), `RootState` tipi bu satır sayesinde OTOMATİK güncellenir — `reducer` objesine yeni bir satır eklemek YETERLİDİR.',
+            olmasaydi: '`RootState` elle yazılsaydı, her yeni slice eklendiğinde İKİ yeri (hem `reducer` objesini hem elle yazılan tip tanımını) güncellemek gerekirdi — biri unutulursa TypeScript state\'in GERÇEK şeklinden farklı bir tip önerirdi.'
+          },
+          {
+            satir: 'export type AppDispatch = typeof store.dispatch',
+            aciklama: 'Store\'un `dispatch` fonksiyonunun TAM tipini dışa aktarır.',
+            neden: 'İleride yazılacak async action\'lar (ör. thunk), `dispatch`in normal action\'ların YANI SIRA fonksiyon da kabul ettiğini bilmesi gerekir — bu tip, o senaryoda component\'lerin `dispatch`i DOĞRU tipte kullanmasını sağlar.',
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'store/api.ts — Axios İstemcisi ve Interceptor\'lar',
+        dosyaYolu: 'admin/src/store/api.ts',
+        nedenBuKlasor: null,
+        kod: `import axios from 'axios'
+import { store } from './store'
+
+const apiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5001/api/v1',
+})
+
+apiClient.interceptors.request.use((config) => {
+  const { accessToken } = store.getState().auth
+  if (accessToken) {
+    config.headers.Authorization = \`Bearer \${accessToken}\`
+  }
+
+  config.headers['Accept-Language'] = localStorage.getItem('language') ?? 'tr'
+
+  return config
+})
+
+export default apiClient`,
+        satirlar: [
+          {
+            satir: "import axios from 'axios'",
+            aciklama: 'HTTP istekleri atmak için axios kütüphanesini içe aktarır.',
+            neden: 'Tarayıcının yerleşik `fetch` fonksiyonu YERİNE axios seçildi — axios\'un istek/yanıt INTERCEPTOR\'ları (bu dosyanın asıl amacı) `fetch`te elle her çağrıda tekrarlanması gereken bir özellik.',
+            olmasaydi: '`fetch` kullanılsaydı, Authorization/Accept-Language header\'larını her TEK TEK API çağrısında elle EKLEMEK gerekirdi — bu dosyanın sağladığı "TEK yerden, otomatik" davranış kaybolurdu.'
+          },
+          {
+            satir: "import { store } from './store'",
+            aciklama: 'Bir önceki dosyada oluşturulan Redux store\'u içe aktarır — güncel `accessToken`ı OKUMAK için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const apiClient = axios.create({',
+            aciklama: 'axios\'un varsayılan (global) örneğini KULLANMAK yerine, bu projeye ÖZEL, kendi ayarlarına sahip bir axios örneği oluşturur.',
+            neden: 'axios\'un global örneğini doğrudan kullanmak, interceptor\'ların uygulamanın YAZDIĞI HER axios çağrısına mı yoksa başka bir kütüphanenin İÇTEN kullandığı axios\'a mı uygulanacağını BELİRSİZLEŞTİRİR — ayrı bir örnek, interceptor\'ların SADECE bu projenin backend çağrılarına uygulanmasını garanti eder.',
+            olmasaydi: 'Ayrı bir örnek oluşturulmasaydı, `baseURL` VE interceptor\'lar her API çağrısında TEK TEK, elle tekrar YAZILMASI gerekirdi.'
+          },
+          {
+            satir: "baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5001/api/v1',",
+            aciklama: 'Tüm isteklerin başına eklenecek TEMEL adres — `import.meta.env.VITE_API_URL`, Vite\'ın `.env` dosyalarından okuduğu ortam değişkeni; henüz `.env` dosyası YOKSA (B-01\'in ilerleyen bir bölümünde eklenecek), `??` ile geliştirme backend\'inin varsayılan adresine DÜŞER.',
+            neden: 'Backend\'in adresi geliştirme/test/production ortamlarında FARKLI olacak — bu adresi KOD İÇİNE sabit yazmak yerine ortam değişkeninden okumak, hiçbir kod satırı değiştirmeden farklı ortamlara DEPLOY edilebilmesini sağlar.',
+            olmasaydi: 'Adres doğrudan koda yazılsaydı, production\'a geçerken bu satırın ELLE değiştirilmesi ve bu değişikliğin YANLIŞLIKLA commit\'lenip geliştirme adresinin production\'a SIZMASI riski doğardı.'
+          },
+          {
+            satir: 'apiClient.interceptors.request.use((config) => {',
+            aciklama: 'axios\'a, bu istemciyle atılan HER istekten ÖNCE çalışacak bir fonksiyon TANIMLAR — `config` parametresi, gitmek üzere olan isteğin (URL, header, body) TAMAMINI temsil eder.',
+            neden: 'Her endpoint çağrısına (`login`, `getWords`, `createWord`...) Authorization/Accept-Language header\'ını TEK TEK elle eklemek yerine, bu interceptor TEK bir yerden, TÜM isteklere OTOMATİK uygular.',
+            olmasaydi: 'Projedeki HER API fonksiyonu kendi içinde `headers: { Authorization: ... }` yazmak ZORUNDA kalırdı — bir gün yeni bir endpoint eklenirken bu satır UNUTULSA, o istek SESSİZCE kimliksiz (401 dönen) bir istek olarak giderdi.'
+          },
+          {
+            satir: 'const { accessToken } = store.getState().auth',
+            aciklama: 'Redux store\'un O ANKİ (güncel) durumundan `auth` dilimini okuyup, içinden `accessToken`ı ÇIKARIR.',
+            neden: '`store.getState()`, bir React component\'i OLMADAN doğrudan store\'a erişmenin yoludur — axios interceptor\'ı bir React component\'i DEĞİL, `useSelector` gibi React\'e özel hook\'ları burada KULLANAMAZ.',
+            olmasaydi: 'Bu satır olmasaydı, hangi token\'ın Authorization header\'ına yazılacağı BİLİNEMEZDİ.'
+          },
+          {
+            satir: 'if (accessToken) {',
+            aciklama: 'Yalnızca bir token VARSA (kullanıcı giriş yapmışsa) Authorization header\'ını EKLER.',
+            neden: 'Login/OTP-doğrulama gibi kimlik doğrulaması GEREKTİRMEYEN isteklerde `accessToken` `null`dır — bu kontrol olmadan header\'a `Bearer null` gibi ANLAMSIZ bir değer YAZILIRDI.',
+            olmasaydi: 'Giriş yapılmamış durumda atılan bir istek `Authorization: Bearer null` header\'ıyla giderdi — backend bunu geçersiz bir token olarak DEĞERLENDİRİP gereksiz bir 401 loglayabilirdi.'
+          },
+          {
+            satir: 'config.headers.Authorization = `Bearer ${accessToken}`',
+            aciklama: 'Token\'ı, backend\'in JWT doğrulamasının BEKLEDİĞİ standart formatla (`Bearer <token>`) Authorization header\'ına yazar.',
+            neden: '`Bearer` öneki HTTP\'nin standart kimlik doğrulama şemalarından biri — backend\'in `[Authorize]` middleware\'i bu header\'ı TAM OLARAK bu formatta BEKLER, önek olmadan token\'ı TANIMAZ.',
+            olmasaydi: 'Yalnızca `config.headers.Authorization = accessToken` yazılsaydı (Bearer öneki olmadan), backend bu header\'ı GEÇERSİZ bir format olarak reddedip her istekte 401 dönerdi — kullanıcı GİRİŞ YAPMIŞ olsa bile hiçbir korumalı endpoint\'e erişemezdi.'
+          },
+          {
+            satir: "config.headers['Accept-Language'] = localStorage.getItem('language') ?? 'tr'",
+            aciklama: 'Backend\'in hata/başarı mesajlarını hangi dilde döneceğini belirten header\'ı ekler — dil tercihi HENÜZ `languageSlice` (bu bölümün sıradaki task\'ı) yazılmadığı için ŞİMDİLİK doğrudan `localStorage`dan okunuyor.',
+            neden: '`languageSlice` yazıldığında bu satırın DEĞİŞMESİ gerekmeyecek şekilde bilinçli tasarlandı: `languageSlice` de dil tercihini AYNI `localStorage` anahtarına (`language`) yazacak — bu interceptor o slice\'ın VARLIĞINDAN habersiz kalıp yine doğru değeri okumaya devam edecek.',
+            olmasaydi: 'Bu satır hiç yazılmasaydı, backend\'den dönen hata mesajları HER ZAMAN varsayılan dilde (tr) gelirdi — Admin panelin kendi dil tercihi yalnızca STATİK arayüz metinlerini (buton/etiket) etkiler, backend\'den gelen mesajları ETKİLEMEZDİ.'
+          },
+          {
+            satir: 'return config',
+            aciklama: 'Değiştirilmiş (Authorization/Accept-Language eklenmiş) `config` objesini axios\'a GERİ döndürür — istek ANCAK bu döndürülen config ile GÖNDERİLİR.',
+            neden: 'Bir request interceptor `config`i döndürmek ZORUNDADIR — axios\'un iç mekanizması "işim bitti, isteği bu haliyle gönder" sinyalini BU dönüş değeriyle ALIR.',
+            olmasaydi: 'Bu satır unutulsaydı, axios her istekte `config undefined` hatasıyla ÇÖKERDİ — uygulamadaki HİÇBİR API çağrısı ÇALIŞMAZDI.'
+          },
+          {
+            satir: 'export default apiClient',
+            aciklama: 'Yapılandırılmış axios örneğini dışa aktarır — ileride yazılacak `authApi.ts`, `wordsApi.ts` gibi dosyalar bu `apiClient`i import edip GERÇEK istekleri (`apiClient.post(\'/auth/login\', ...)`) bununla atacak.',
+            neden: null,
+            olmasaydi: 'Bu export olmasaydı her API dosyası kendi axios örneğini KURMAK zorunda kalırdı — Authorization/Accept-Language interceptor\'ları HER dosyada TEKRAR yazılırdı.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'main.tsx — Store\'u React\'e Bağlama',
+        dosyaYolu: 'admin/src/main.tsx',
+        nedenBuKlasor: null,
+        kod: `import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { Provider } from 'react-redux'
+import './index.css'
+import App from './App.tsx'
+import { store } from './store/store.ts'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Provider store={store}>
+      <App />
+    </Provider>
+  </StrictMode>,
+)`,
+        satirlar: [
+          {
+            satir: "import { StrictMode } from 'react'",
+            aciklama: 'React\'in geliştirme sırasında ekstra kontrol yapan `StrictMode` sarmalayıcısını içe aktarır — Vite şablonundan gelen, bu dosyada DEĞİŞMEYEN bir satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { createRoot } from 'react-dom/client'",
+            aciklama: 'React uygulamasını GERÇEK DOM\'a bağlayan (mount eden) fonksiyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { Provider } from 'react-redux'",
+            aciklama: 'Redux store\'u React\'in component ağacına TANITAN sarmalayıcı component — bu bölümde YENİ eklenen satır.',
+            neden: '`Provider` olmadan `useSelector`/`useDispatch` gibi react-redux hook\'ları HANGİ store\'a bakacaklarını BİLEMEZ — React\'in kendi Context mekanizmasını kullanarak store\'u ağacın her seviyesine, prop olarak elle taşımadan ULAŞTIRIR.',
+            olmasaydi: '`Provider` eklenmeseydi, `useSelector(state => state.auth.isAuthenticated)` gibi bir çağrı "could not find react-redux context value" hatasıyla ÇÖKERDİ — store yazılmış olsa bile hiçbir component ona erişemezdi.'
+          },
+          {
+            satir: "import './index.css'",
+            aciklama: 'Tasarım sistemi token\'larının tanımlı olduğu CSS dosyasını YÜKLER — Vite şablonundan gelen, değişmeyen satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import App from './App.tsx'",
+            aciklama: 'Kök component\'i içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { store } from './store/store.ts'",
+            aciklama: 'Bu bölümde yazılan Redux store\'u içe aktarır — bu bölümün YENİ eklenen ikinci satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "createRoot(document.getElementById('root')!).render(",
+            aciklama: '`index.html`teki `<div id="root">` elemanını BULUP, React uygulamasının içine ÇİZİLECEĞİ yer olarak işaretler — `!` işareti TypeScript\'e "bu elemanın kesinlikle `null` olmayacağından EMİNİM" der.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<StrictMode>',
+            aciklama: 'Geliştirme modunda component\'leri İKİ KEZ render ederek yan etkilerin (side effect) YANLIŞLIKLA state\'i doğrudan DEĞİŞTİRİP değiştirmediğini yakalamaya YARDIMCI olan geliştirme-ONLY bir sarmalayıcı — production build\'de HİÇBİR etkisi yoktur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<Provider store={store}>',
+            aciklama: 'Az önce içe aktarılan `store`u, `Provider`a prop olarak VERİR — bu satırdan SONRA, `<App />`in İÇİNDEKİ HER component (ne kadar derinde olursa olsun) bu store\'a erişebilir HALE gelir.',
+            neden: 'Bu bölümün ASIL amacı budur: `authSlice`/`store.ts` yazılmış olması TEK BAŞINA YETERLİ DEĞİL — store, React ağacına GERÇEKTEN bağlanmadıkça hiçbir component ondan state OKUYAMAZ ya da action DISPATCH edemez.',
+            olmasaydi: '`Provider` eklenmeden yalnızca `store.ts` yazılmış olsaydı, store BELLEKTE var olurdu ama React\'in HİÇBİR component\'i ona erişemezdi — B-02\'de yazılacak `LoginPage`, `dispatch(setCredentials(...))` çağırmaya ÇALIŞTIĞINDA hata alırdı.'
+          },
+          {
+            satir: '<App />',
+            aciklama: 'Uygulamanın kök component\'i — artık `Provider`ın İÇİNDE, yani store\'a erişebilen bir konumda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '</Provider>',
+            aciklama: 'Provider sarmalayıcısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '</StrictMode>,',
+            aciklama: 'StrictMode sarmalayıcısının kapanışı — sondaki virgül, `.render(...)` çağrısının tek argümanının bittiğini belirtir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Bu Bölümde Kullandığımız Terminal Komutları',
+        terminal: true,
+        kod: `$ npm run build
+$ npm run lint`,
+        satirlar: [
+          {
+            satir: '$ npm run build',
+            aciklama: 'TypeScript tip kontrolünü VE Vite\'ın production build\'ini ARKA ARKAYA çalıştırır (`package.json`teki `build` script\'i `tsc -b && vite build`).',
+            neden: 'authSlice/store.ts/api.ts/main.tsx değişikliklerinden sonra hem TİP hatası (ör. `PayloadAction` yanlış kullanımı) hem de gerçek bir PAKETLEME hatası olmadığını TEK komutla doğrulamanın en hızlı yolu.',
+            olmasaydi: 'Bu adım atlansaydı, `store.getState().auth` gibi bir çağrıdaki YAZIM hatası ancak `npm run dev` çalıştırılıp tarayıcı konsolunda fark edilirdi.'
+          },
+          {
+            satir: '$ npm run lint',
+            aciklama: 'ESLint\'i tüm proje üzerinde çalıştırır — kullanılmayan bir import, yanlış kullanılmış bir React Hook gibi hataları derleme adımı hiç ÇALIŞTIRMADAN yakalar.',
+            neden: 'Örneğin `store.ts`teki `authReducer` import\'u YANLIŞLIKLA kullanılmadan bırakılsaydı, `tsc` bunu (varsayılan ayarlarla) hata SAYMAZDI ama ESLint\'in `no-unused-vars` kuralı YAKALARDI.',
+            olmasaydi: 'Kullanılmayan bir import ya da değişken projede SESSİZCE birikmeye başlardı — zamanla hangi kodun GERÇEKTEN kullanıldığı belirsizleşirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Redux slice sınırı ALAN (field) bazlı değil, KONU (domain) bazlı çizilir — birlikte doğan/birlikte ölen state\'ler AYNI slice\'ta durur',
+          '`authSlice`: `accessToken`/`isAuthenticated` TEK reducer\'da (`setCredentials`) birlikte güncellenir, tutarsız bir ara duruma asla düşmez',
+          'Redux store sayfa yenilendiğinde SIFIRDAN kurulur — oturumun hayatta kalması için `initialState`in `localStorage`dan okunması GEREKİR',
+          '`configureStore` + `Provider` ikilisi: biri store\'u KURAR, diğeri onu React ağacına BAĞLAR — biri olmadan diğeri işe yaramaz',
+          'axios `apiClient`, Authorization VE Accept-Language header\'larını TEK bir request interceptor\'da, TÜM isteklere OTOMATİK ekler',
+          'Accept-Language ŞİMDİLİK doğrudan localStorage\'dan okunuyor — sıradaki bölümde yazılacak `languageSlice` AYNI anahtarı kullanacağı için bu satırın değişmesine gerek KALMAYACAK',
+          'RootState/AppDispatch tipleri store\'dan OTOMATİK türetildi — yeni bir slice eklendiğinde elle güncellenmesi gereken AYRI bir tip tanımı YOK'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
