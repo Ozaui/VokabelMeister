@@ -33,8 +33,8 @@
 - [x] ➜ **Admin Akademi'ye işle**
 - [x] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı, Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil)
 - [x] ➜ **Admin Akademi'ye işle**
-- [ ] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
-- [ ] ➜ **Admin Akademi'ye işle**
+- [x] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
+- [x] ➜ **Admin Akademi'ye işle**
 - [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
 - [ ] ➜ **Admin Akademi'ye işle**
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
