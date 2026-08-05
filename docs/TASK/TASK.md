@@ -27,13 +27,19 @@
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
 | A | A-01…A-10 | Admin Panel Backend | ✅ |
-| B | B-01…B-09 (+B-02.1) | Admin Panel | ⬜ |
+| B | B-01…B-09 (+B-02.1) | Admin Panel | 🔄 |
 | C | C-01…C-10 | Kullanıcı Backend | ⬜ |
 | D | D-01…D-12 | Web App | ⬜ |
 | E | E-01…E-14 | Mobil | ⬜ |
 | F | F-01…F-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `B-01` ⬜ (Kurulum) → `TASK/TASK_B_admin_panel.md`
+**Sıradaki task:** `B-02` ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md`
+(`B-01 — Kurulum` ✅ tamamlandı 2026-08-05: Vite+React+TS iskeleti + CLAUDE.md §4.1 ortak
+kütüphaneleri (oxlint yerine ESLint), tasarım sistemi (index.css `@theme`+`.dark`), Redux store +
+authSlice + axios `apiClient`, dil tercihi (`languageSlice`+react-i18next+`LanguageSwitcher`),
+`.env`+React Router+`ProtectedRoute`+`AppLayout` (Sidebar/Topbar, mobilde açılır-kapanır panel),
+Dark Mode (`themeSlice`+`useThemeSync`+`ThemeSwitcher`+FOUC-önleyici script) — tümü
+`AKADEMI/admin/B-01_kurulum/`e işlendi, bkz. `07_ozet-sozluk.html`.)
 (**2026-08-05 — Admin frontend baştan yazım:** `/admin` kodu ve onu öğreten `AKADEMI/admin/`
 tamamen silindi (kullanıcı kararı), `TASK_B_admin_panel.md`'deki B-01/B-02/B-03 ilerlemesi ⬜'e
 sıfırlandı; ayrıca B-02'ye yeni bir **B-02.1 — QR Kod ile Giriş** alt-görevi eklendi (admin panelde

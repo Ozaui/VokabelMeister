@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import AppLayout from './components/layout/AppLayout'
 import ProtectedRoute from './routes/ProtectedRoute'
 import { useLanguageSync } from './hooks/useLanguageSync'
+import { useThemeSync } from './hooks/useThemeSync'
 
 function DashboardPlaceholder() {
   const { t } = useTranslation()
@@ -17,6 +18,7 @@ function DashboardPlaceholder() {
 
 function App() {
   useLanguageSync()
+  useThemeSync()
 
   return (
     <Routes>

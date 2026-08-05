@@ -21,7 +21,7 @@
 > DESIGN_SYSTEM.md`'nin baştan yazımına göre güncellendi (Turkuaz+Mercan/Nunito+DM Sans →
 > yeni nötr palet/Inter). Tasarım sistemi artık Admin+Web ortak — ayrıntı `DESIGN_SYSTEM.md`.
 
-### B-01 — Kurulum ⬜
+### B-01 — Kurulum ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §2, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
 - [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
 - [x] ➜ **Admin Akademi'ye işle**
@@ -35,8 +35,8 @@
 - [x] ➜ **Admin Akademi'ye işle**
 - [x] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
 - [x] ➜ **Admin Akademi'ye işle**
-- [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
-- [ ] ➜ **Admin Akademi'ye işle**
+- [x] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
+- [x] ➜ **Admin Akademi'ye işle**
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
 
