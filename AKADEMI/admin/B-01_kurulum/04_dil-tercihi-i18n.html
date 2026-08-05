@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dil Tercihi (i18n)</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dil-tercihi-i18n',
+    bolumBaslik: 'B-01 — Kurulum',
+    oncekiBolum: '03_store-authslice-api.html',
+    sonrakiBolum: '05_env-protectedroute-layout.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'Dil Tercihi (i18n)',
+        altBaslik: 'Redux\'ta bir dil state\'i tutmak yetmez — o state\'in gerçekten arayüz metinlerini değiştirmesi, backend\'e doğru Accept-Language\'ı göndermesi ve <html lang>\'ı senkron tutması gerekiyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'İki Ayrı Sistem: languageSlice ve react-i18next',
+        aciklama: 'Bu bölümde İKİ farklı kütüphane bir arada çalışıyor: Redux `languageSlice` (bir önceki bölümdeki `authSlice`le AYNI desende, dil tercihini TUTAN ve `localStorage`a YAZAN state) ve react-i18next (yalnızca "şu an aktif dile göre şu anahtar HANGİ metne karşılık gelir" sorusunu cevaplayan, KENDİ İÇ state\'i olan AYRI bir kütüphane). Bu ikisi birbirinden HABERSİZ doğdu — react-i18next Redux\'un VARLIĞINDAN bile haberdar değil.',
+        neden: 'Redux tarafı, dil tercihinin UYGULAMA GENELİNDEKİ "tek doğruluk kaynağı" olması için var (api.ts\'in Accept-Language header\'ı, ileride backend\'e yazılacak tercih hep BURADAN okunacak). react-i18next tarafı ise YALNIZCA "bu metni ekrana NASIL basarım" sorusunu çözen bir RENDER motoru — ikisini TEK bir sisteme sıkıştırmak, Redux\'un state yönetimi felsefesiyle i18next\'in kendi React entegrasyonunu (useTranslation, otomatik yeniden render) ÇAKIŞTIRIRDI.',
+        olmasaydi: 'Yalnızca Redux kullanılıp react-i18next hiç eklenmeseydi, HER metin için `state.language.language === \'tr\' ? \'...\' : \'...\'` gibi component içinde EL YORDAMIYLA koşullu metin yazmak gerekirdi — onlarca ekranda tekrar eden, hataya AÇIK bir desen. Yalnızca react-i18next kullanılıp Redux hiç eklenmeseydi, dil tercihinin backend\'e (Accept-Language) VE ileride kullanıcı hesabına YAZILMASI için AYRICA bir state yönetimi kurmak gerekirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'store/slices/languageSlice.ts — Dil Tercihi State\'i',
+        dosyaYolu: 'admin/src/store/slices/languageSlice.ts',
+        nedenBuKlasor: '`authSlice.ts` ile AYNI gerekçe (bir önceki bölüm) — her state konusu kendi dosyasında, `store/slices/` altında toplanıyor.',
+        kod: `import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+
+export type Language = 'tr' | 'de'
+
+const SUPPORTED_LANGUAGES: Language[] = ['tr', 'de']
+
+interface LanguageState {
+  language: Language
+}
+
+function resolveInitialLanguage(): Language {
+  const stored = localStorage.getItem('language')
+  return SUPPORTED_LANGUAGES.includes(stored as Language) ? (stored as Language) : 'tr'
+}
+
+const initialState: LanguageState = {
+  language: resolveInitialLanguage(),
+}
+
+const languageSlice = createSlice({
+  name: 'language',
+  initialState,
+  reducers: {
+    setLanguage: (state, action: PayloadAction<Language>) => {
+      state.language = action.payload
+      localStorage.setItem('language', action.payload)
+    },
+  },
+})
+
+export const { setLanguage } = languageSlice.actions
+export default languageSlice.reducer`,
+        satirlar: [
+          {
+            satir: "import { createSlice, type PayloadAction } from '@reduxjs/toolkit'",
+            aciklama: "authSlice'takiyle AYNI ikili — createSlice fonksiyonu ve action payload'ının tipini belirtmeye yarayan PayloadAction.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "export type Language = 'tr' | 'de'",
+            aciklama: 'Desteklenen dilleri, olası TÜM değerleri SAYARAK tanımlayan bir "literal union" tipi — `Language` artık yalnızca TAM OLARAK `\'tr\'` veya `\'de\'` olabilir, başka HİÇBİR string kabul edilmez.',
+            neden: 'Bu tip `export` edildi çünkü `LanguageSwitcher` gibi başka dosyalar da "geçerli bir dil nedir" sorusuna AYNI cevaba ihtiyaç duyacak — tip TEK bir yerde tanımlanıp PAYLAŞILIYOR.',
+            olmasaydi: "`Language` yerine düz `string` kullanılsaydı, `setLanguage('fr')` gibi GEÇERSİZ bir çağrı derleme zamanında YAKALANMAZDI — hata ancak çalışma zamanında (i18next bilinmeyen bir dile düşünce) fark edilirdi."
+          },
+          {
+            satir: "const SUPPORTED_LANGUAGES: Language[] = ['tr', 'de']",
+            aciklama: "`Language` tipinin ALABİLECEĞİ tüm değerleri, ÇALIŞMA ZAMANINDA da kontrol edilebilecek gerçek bir DİZİYE dönüştürür.",
+            neden: "TypeScript'in `'tr' | 'de'` union tipi yalnızca DERLEME zamanında var olur — çalışma zamanında (localStorage'dan okunan bir string'in GERÇEKTEN tr/de olup olmadığını kontrol ederken) bu tip SORGULANAMAZ, bunun için gerçek bir diziye ihtiyaç var.",
+            olmasaydi: "Bu dizi olmadan, aşağıdaki `resolveInitialLanguage` localStorage'daki değerin GEÇERLİ olup olmadığını kontrol edemezdi — bozuk bir değer (ör. 'fr') SESSİZCE yanlış bir dile geçilmesine yol açardı."
+          },
+          {
+            satir: 'interface LanguageState {',
+            aciklama: "Bu slice'ın state şeklini tanımlar — `authSlice`teki `AuthState`le AYNI desen.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'language: Language',
+            aciklama: "Kullanıcının o anki dil tercihi — yukarıda tanımlanan `Language` tipini kullanır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'function resolveInitialLanguage(): Language {',
+            aciklama: "Uygulama İLK açıldığında hangi dilin kullanılacağına karar veren, AYRI bir fonksiyona çıkarılmış mantık — `authSlice`teki `initialState` gibi doğrudan bir satırda DEĞİL, çünkü burada birden fazla adımlı bir KARAR var.",
+            neden: '`accessToken` için "var mı yok mu" (iki durumlu) bir kontrol yeterliydi; dil tercihi için "var VE geçerli mi" (üç durumlu) bir kontrol gerekiyor — bu ek karmaşıklık, satır içinde değil ADI OLAN bir fonksiyonda daha okunaklı.',
+            olmasaydi: "Bu fonksiyon olmadan `initialState` doğrudan `localStorage.getItem('language')` yazardı — localStorage'da GEÇERSİZ bir değer olsaydı, uygulama bunu sorgusuzca kullanmaya çalışırdı."
+          },
+          {
+            satir: "const stored = localStorage.getItem('language')",
+            aciklama: "`localStorage`dan ham (doğrulanmamış) değeri okur — bu değer `string | null` tipindedir, HENÜZ `Language` tipinde DEĞİLDİR.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "return SUPPORTED_LANGUAGES.includes(stored as Language) ? (stored as Language) : 'tr'",
+            aciklama: "Okunan değerin GERÇEKTEN desteklenen bir dil olup olmadığını `SUPPORTED_LANGUAGES` dizisinde ARAR — varsa onu kullanır, yoksa `'tr'`ye DÜŞER.",
+            neden: 'Bu satır, ErrorMessages/SuccessMessages sözlüğünde de kullanılan "desteklenmiyorsa varsayılana düş" kuralının frontend\'teki karşılığı — bir kullanıcı tarayıcı konsolundan localStorage\'ı bozsa bile uygulama ÇÖKMEZ, sessizce Türkçeye döner.',
+            olmasaydi: "Bu kontrol olmasaydı, bozuk bir localStorage değeri i18next'e kadar İLERLERDİ — i18next tanımadığı bir dil kodu için hiçbir çeviri BULAMAZ, arayüz metinleri ham anahtar isimleriyle (ör. \"app.title\") görünürdü."
+          },
+          {
+            satir: 'const initialState: LanguageState = {',
+            aciklama: "Slice'ın başlangıç state'i — `authSlice`teki desenle AYNI.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'language: resolveInitialLanguage(),',
+            aciklama: 'Başlangıç dilini, yukarıdaki doğrulama mantığını çalıştıran fonksiyondan alır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const languageSlice = createSlice({',
+            aciklama: '`authSlice`teki AYNI `createSlice` deseni — bu bölümün başındaki "slice sınırı konu bazlıdır" kararının İKİNCİ somut örneği: dil tercihi kendi BAĞIMSIZ konusu olduğu için kendi AYRI slice\'ında.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "name: 'language',",
+            aciklama: "Store'a `store.ts`te `{ language: languageReducer }` olarak eklenirken kullanılacak anahtarla AYNI isim.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'initialState,',
+            aciklama: 'Yukarıda hesaplanan başlangıç değerini bağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'reducers: {',
+            aciklama: "Bu slice'ın TEK reducer'ını tanımlayan obje.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'setLanguage: (state, action: PayloadAction<Language>) => {',
+            aciklama: "Dil değiştiğinde çağrılacak TEK reducer — `action.payload`in tipi doğrudan `Language` (authSlice'teki `{ accessToken: string }` gibi bir obje İÇİNE SARILMAMIŞ), çünkü taşınacak TEK bir değer var.",
+            neden: "`PayloadAction<Language>` (sarmalanmamış) ile `PayloadAction<{ language: Language }>` (sarmalanmış) arasında bilinçli bir seçim — burada tek bir alan taşınıyor, ekstra bir obje katmanı hiçbir şey KAZANDIRMAZDI.",
+            olmasaydi: null
+          },
+          {
+            satir: 'state.language = action.payload',
+            aciklama: 'Yeni dili state\'e yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "localStorage.setItem('language', action.payload)",
+            aciklama: "Yeni dili `localStorage`a da yazar — `authSlice`teki `accessToken` yazma satırıyla AYNI \"Redux + localStorage senkron\" deseni.",
+            neden: "Bir önceki bölümde (`api.ts`) \"languageSlice AYNI localStorage anahtarını kullanacak\" diye verilen sözün TUTULDUĞU satır — `api.ts`teki `localStorage.getItem('language')` satırı hiçbir DEĞİŞİKLİK gerektirmeden artık GERÇEKTEN güncel dili okuyor.",
+            olmasaydi: "Bu satır olmadan Redux state'i değişirdi ama localStorage ESKİ kalırdı — `api.ts`teki interceptor (Redux'tan DEĞİL, localStorage'dan okuyor) kullanıcı dili değiştirdikten SONRA bile backend'e ESKİ Accept-Language header'ını göndermeye devam ederdi."
+          },
+          {
+            satir: 'export const { setLanguage } = languageSlice.actions',
+            aciklama: "Action creator'ı dışa aktarır — `LanguageSwitcher` bunu `dispatch(setLanguage('de'))` şeklinde çağıracak.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export default languageSlice.reducer',
+            aciklama: "Reducer'ı dışa aktarır — `store.ts` bunu `language` anahtarıyla store'a EKLEYECEK.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'store/hooks.ts — Typed Redux Hook\'ları',
+        dosyaYolu: 'admin/src/store/hooks.ts',
+        nedenBuKlasor: "`store/slices/` DEĞİL, doğrudan `store/` kökünde — bu dosya TEK bir slice'a ait değil, TÜM slice'ları tüketmek için kullanılan genel bir araç; `store.ts`in kendisiyle AYNI seviyede durması \"bu store'un GENEL altyapısı\" olduğunu görsel olarak da ifade ediyor.",
+        kod: `import { useDispatch, useSelector } from 'react-redux'
+import type { AppDispatch, RootState } from './store'
+
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()`,
+        satirlar: [
+          {
+            satir: "import { useDispatch, useSelector } from 'react-redux'",
+            aciklama: "react-redux'un TİPSİZ (generic, herhangi bir Redux projesiyle çalışabilen) temel hook'larını içe aktarır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import type { AppDispatch, RootState } from './store'",
+            aciklama: "Bir önceki bölümde `store.ts`te tanımlanan, bu PROJEYE özel iki tipi içe aktarır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export const useAppDispatch = useDispatch.withTypes<AppDispatch>()',
+            aciklama: "`useDispatch`in bu PROJEYE özel, `AppDispatch` tipini ZATEN bilen bir versiyonunu üretir — component'ler artık `useDispatch()` yerine `useAppDispatch()` çağıracak.",
+            neden: '`authSlice`/`languageSlice` yazıldıktan SONRA, bunları GERÇEKTEN tüketen İLK component (`LanguageSwitcher`) yazılırken eklendi — bir soyutlama, ona ihtiyaç duyan somut kod yazılmadan ÖNCE eklenmedi.',
+            olmasaydi: "Bu hook olmadan her component `useDispatch()` çağırıp, TypeScript'in `dispatch` tipini `AppDispatch` olarak BİLMESİ için AYRICA `useDispatch<AppDispatch>()` yazması gerekirdi — bu tekrar bir component'te UNUTULSA `dispatch`in tipi generic (daha az güvenli) kalırdı."
+          },
+          {
+            satir: 'export const useAppSelector = useSelector.withTypes<RootState>()',
+            aciklama: "AYNI desen, `useSelector` için — component'ler `state`in tipini elle YAZMADAN, otomatik tamamlamayla görür.",
+            neden: null,
+            olmasaydi: "Her `useSelector((state: RootState) => ...)` çağrısında `RootState` tipini ELLE eklemek gerekirdi — bir component bunu unutursa `state` parametresi `unknown` tipinde kalır, `state.language.language` yazarken TypeScript hata verirdi."
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'i18n/locales/tr.json — Türkçe Çeviriler',
+        dosyaYolu: 'admin/src/i18n/locales/tr.json',
+        nedenBuKlasor: "`i18n/` klasörü altında AYRI bir `locales/` alt klasörü — i18next'in KURULUM/YAPILANDIRMA kodu (`index.ts`) ile ÇEVİRİ VERİSİ (bu JSON dosyaları) farklı şeyler: biri kod, diğeri İÇERİK; ileride yazılımcı olmayan biri bile yalnızca bu klasöre bakıp metinleri güncelleyebilir.",
+        kod: `{
+  "app": {
+    "title": "VokabelMeister Admin"
+  },
+  "common": {
+    "placeholderNotice": "Yönlendirme ve gerçek sayfalar B-01'in ilerleyen bölümlerinde eklenecek."
+  }
+}`,
+        satirlar: [
+          {
+            satir: '"app": {',
+            aciklama: 'Çeviri anahtarlarını İÇ İÇE (nested) gruplayan bir NAMESPACE — "app" ile ilgili TÜM metinler bu obje içinde.',
+            neden: "İleride onlarca çeviri anahtarı birikince (ör. words.title, auth.loginButton) düz bir liste yerine GRUPLANMIŞ bir yapı, hangi metnin HANGİ özelliğe ait olduğunu isimden bile anlaşılır kılar.",
+            olmasaydi: 'Gruplama olmadan (ör. "appTitle", "commonPlaceholderNotice" gibi düz anahtarlar) proje büyüdükçe onlarca benzer önekli anahtar arasında istenen metni BULMAK zorlaşırdı.'
+          },
+          {
+            satir: '"title": "VokabelMeister Admin"',
+            aciklama: "`t('app.title')` çağrısıyla `App.tsx`/`Topbar.tsx`ta okunacak GERÇEK metin.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"common": {',
+            aciklama: "Birden fazla EKRANDA/component'te tekrar edebilecek GENEL metinler için namespace — `app` (uygulamaya özel TEK metin) ile AYNI dosyada ama AYRI bir grup.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"placeholderNotice": "Yönlendirme ve gerçek sayfalar B-01\'in ilerleyen bölümlerinde eklenecek."',
+            aciklama: "Daha önce `App.tsx`e SABİT (hardcoded) yazılmış olan metnin AYNISI — artık kaynak kod içinde DEĞİL, bu dosyada yaşıyor.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'i18n/locales/de.json — Almanca Çeviriler',
+        dosyaYolu: 'admin/src/i18n/locales/de.json',
+        nedenBuKlasor: null,
+        kod: `{
+  "app": {
+    "title": "VokabelMeister Admin"
+  },
+  "common": {
+    "placeholderNotice": "Weiterleitung und echte Seiten werden in den weiteren Abschnitten von B-01 hinzugefügt."
+  }
+}`,
+        satirlar: [
+          {
+            satir: '"app": {',
+            aciklama: 'tr.json ile BİREBİR aynı anahtar yapısı — YALNIZCA değerler Almanca.',
+            neden: "i18next, bir anahtarı tr.json'da bulup de.json'da BULAMAZSA sessizce boş/ham anahtar adı gösterir — bu yüzden iki dosyanın anahtar YAPISI birebir SENKRON tutulmak ZORUNDA.",
+            olmasaydi: "Bir anahtar yalnızca tr.json'da olup de.json'da UNUTULSAYDI, Almanca kullanan bir kullanıcı o metnin yerinde ÇEVİRİSİZ ham anahtar adını (\"app.title\") görürdü."
+          },
+          {
+            satir: '"title": "VokabelMeister Admin"',
+            aciklama: '"VokabelMeister Admin" — marka adı bir isim olduğu için çevrilmedi (tr.json ile AYNI değer, BİLİNÇLİ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"common": {',
+            aciklama: 'AYNI namespace, tr.json ile.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"placeholderNotice": "Weiterleitung und echte Seiten werden in den weiteren Abschnitten von B-01 hinzugefügt."',
+            aciklama: "tr.json'daki metnin Almanca karşılığı — cümle yapısı BİREBİR çeviri değil, Almancada doğal okunacak şekilde kuruldu.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'i18n/index.ts — i18next Yapılandırması',
+        dosyaYolu: 'admin/src/i18n/index.ts',
+        nedenBuKlasor: "`store/`ün YANINDA, kendi başına bir üst-seviye klasör — i18next Redux'un BİR PARÇASI değil, TAMAMEN ayrı bir kütüphane/instance; `store/i18n.ts` gibi store'un altına gizlemek, iki bağımsız sistemin AYNI hiyerarşiye aitmiş YANILGISINI yaratırdı.",
+        kod: `import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+import de from './locales/de.json'
+import tr from './locales/tr.json'
+
+i18n.use(initReactI18next).init({
+  resources: {
+    tr: { translation: tr },
+    de: { translation: de },
+  },
+  lng: localStorage.getItem('language') ?? 'tr',
+  fallbackLng: 'tr',
+  interpolation: {
+    escapeValue: false,
+  },
+})
+
+export default i18n`,
+        satirlar: [
+          {
+            satir: "import i18n from 'i18next'",
+            aciklama: "i18next kütüphanesinin ANA (React'ten bağımsız) instance'ını içe aktarır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { initReactI18next } from 'react-i18next'",
+            aciklama: "i18next'i React'e BAĞLAYAN köprü eklentisini içe aktarır — `useTranslation` hook'unun çalışabilmesi için GEREKLİ.",
+            neden: "i18next kendi başına React'ten HABERSİZ, saf bir JS kütüphanesi (Vue/Angular projelerinde de kullanılabilir) — `initReactI18next`, React component'lerinin dil değişikliklerini DİNLEYİP otomatik yeniden render OLMASINI sağlayan parça.",
+            olmasaydi: "Bu eklenti kullanılmasaydı `useTranslation` hiç ÇALIŞMAZDI — dil değiştiğinde component'ler bunu FARK ETMEZ, eski dildeki metni göstermeye DEVAM ederdi."
+          },
+          {
+            satir: "import de from './locales/de.json'",
+            aciklama: 'Bir önceki slaytta yazılan çeviri dosyasını DOĞRUDAN JSON olarak içe aktarır — TypeScript\'in JSON import desteği sayesinde ek bir "yükleme" ADIMI gerekmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import tr from './locales/tr.json'",
+            aciklama: 'AYNI şekilde Türkçe çeviri dosyası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'i18n.use(initReactI18next).init({',
+            aciklama: "i18next'e React eklentisini TAKAR (`use`) ve ardından GERÇEK yapılandırmayla başlatır (`init`) — iki adım TEK zincire bağlanmış.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'resources: {',
+            aciklama: 'Hangi dil kodunun HANGİ çeviri objesine karşılık geldiğini tanımlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tr: { translation: tr },',
+            aciklama: "`'tr'` dil kodunu, içe aktarılan `tr.json` içeriğine bağlar — `translation` alt-anahtarı i18next'in VARSAYILAN \"namespace\" ismi (bu proje TEK namespace kullanıyor).",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'de: { translation: de },',
+            aciklama: 'AYNI eşleme, Almanca için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "lng: localStorage.getItem('language') ?? 'tr',",
+            aciklama: "i18next'in İLK açılışta hangi dille başlayacağını belirler — `languageSlice`teki `resolveInitialLanguage`le AYNI `localStorage` anahtarını okur.",
+            neden: "İki AYRI sistemin (Redux store VE i18next'in kendi iç state'i) İLK yüklemede birbirinden BAĞIMSIZ ama AYNI SONUCA varması gerekiyor — ikisi de AYNI kaynağı okuduğu için, sayfa ilk açıldığında bir SENKRONİZASYON adımına gerek KALMIYOR.",
+            olmasaydi: "Bu satır sabit 'tr' olsaydı, Almanca tercih etmiş bir kullanıcı sayfayı her yenilediğinde arayüz metinleri KISA bir an Türkçe görünüp SONRA (useLanguageSync'in etkisiyle) Almancaya DÖNERDİ — gözle fark edilen bir \"yanıp sönme\" oluşurdu."
+          },
+          {
+            satir: "fallbackLng: 'tr',",
+            aciklama: 'İstenen dil için bir çeviri anahtarı BULUNAMAZSA (ör. de.json\'da unutulmuş bir anahtar) hangi dile DÜŞÜLECEĞİNİ belirler.',
+            neden: '"Desteklenmiyorsa tr\'ye düş" kuralının i18next YAPILANDIRMASINDAKİ karşılığı — `resolveInitialLanguage`teki AYNI karar burada da tekrarlanıyor.',
+            olmasaydi: 'Bu ayar olmadan, eksik bir çeviri anahtarı i18next\'in kendi varsayılanına (genelde anahtar adının KENDİSİNİ EKRANA basmak) DÜŞERDİ — kullanıcı çeviri metni yerine bir KOD ifadesi görürdü.'
+          },
+          {
+            satir: 'interpolation: {',
+            aciklama: "Çeviri metinleri İÇİNDE `{{degisken}}` gibi yer tutucular kullanıldığında bunların NASIL işleneceğini ayarlar.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'escapeValue: false,',
+            aciklama: "i18next'in çeviri değerlerini HTML-escape ETMESİNİ kapatır.",
+            neden: "React zaten kendi JSX render motorunda HER değeri OTOMATİK escape eder (XSS'e karşı) — i18next'in AYRICA bir escape katmanı eklemesi, React ile React'in çevirdiği metnin İKİ KEZ escape edilmesine yol AÇAR.",
+            olmasaydi: 'Bu satır olmasaydı ve bir çeviri metninde "&" gibi bir karakter olsaydı, ekranda çift escape edilmiş, BOZUK görünen bir metin ORTAYA çıkabilirdi.'
+          },
+          {
+            satir: 'export default i18n',
+            aciklama: "Yapılandırılmış i18next instance'ını dışa aktarır — `useLanguageSync` hook'u (bir SONRAKİ slayt) bunu `i18n.changeLanguage(...)` çağırmak için KULLANACAK.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'hooks/useLanguageSync.ts — Redux ile i18next Arasındaki Köprü',
+        dosyaYolu: 'admin/src/hooks/useLanguageSync.ts',
+        nedenBuKlasor: '`components/`in DEĞİL, kendi üst-seviye `hooks/` klasörünün altında — bu bir React COMPONENT değil (ekrana hiçbir şey ÇİZMEZ), birden fazla component\'in (şimdi App, ileride belki ThemeSwitcher\'ın yanı) ORTAK ihtiyaç duyabileceği bir DAVRANIŞ.',
+        kod: `import { useEffect } from 'react'
+import i18n from '../i18n'
+import { useAppSelector } from '../store/hooks'
+
+export function useLanguageSync() {
+  const language = useAppSelector((state) => state.language.language)
+
+  useEffect(() => {
+    document.documentElement.lang = language
+    i18n.changeLanguage(language)
+  }, [language])
+}`,
+        satirlar: [
+          {
+            satir: "import { useEffect } from 'react'",
+            aciklama: 'React\'in "yan etki" (side effect — burada DOM\'u ve i18next\'i GÜNCELLEMEK) çalıştırma hook\'u.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import i18n from '../i18n'",
+            aciklama: 'Bir önceki slaytta yapılandırılan i18next instance\'ını içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { useAppSelector } from '../store/hooks'",
+            aciklama: "Redux state'ini OKUMAK için typed hook.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export function useLanguageSync() {',
+            aciklama: "Özel (custom) bir React hook — İÇİNDE başka hook'lar (useAppSelector, useEffect) ÇAĞIRDIĞI için adı `use` ile BAŞLAMAK ZORUNDA (React'in kuralı, eslint-plugin-react-hooks bunu DENETLİYOR).",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const language = useAppSelector((state) => state.language.language)',
+            aciklama: "Redux'taki GÜNCEL dil tercihini okur — bu değer HER `dispatch(setLanguage(...))` çağrısından SONRA otomatik güncellenir.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'useEffect(() => {',
+            aciklama: "`language` değeri DEĞİŞTİĞİNDE (ilk render dahil) İÇİNDEKİ kodu çalıştırır.",
+            neden: "DOM'u (document.documentElement.lang) ve i18next'i (i18n.changeLanguage) güncellemek birer YAN ETKİ — React'in kendi render sürecinin DIŞINDA gerçekleşmesi gerekir, bu yüzden useEffect içinde.",
+            olmasaydi: "useEffect olmadan bu kod doğrudan component GÖVDESİNDE çalıştırılsaydı, HER render'da (gerekli gereksiz) tekrar tekrar i18n.changeLanguage ÇAĞRILIRDI — gereksiz iş VE potansiyel bir sonsuz render DÖNGÜSÜ riski."
+          },
+          {
+            satir: 'document.documentElement.lang = language',
+            aciklama: "`<html>` etiketinin `lang` özniteliğini GÜNCEL dille senkronlar — bu, `index.html`de sabit yazılan `lang=\"tr\"`in, 2. bölümde VERİLEN sözün TUTULDUĞU satır.",
+            neden: "Ekran okuyucular VE tarayıcının kendi telaffuz özellikleri bu özniteliğe BAKAR — kullanıcı arayüzü Almancaya çevirdiğinde bu öznitelik hâlâ tr kalsaydı, bir ekran okuyucu Almanca metni TÜRKÇE telaffuz kurallarıyla OKURDU.",
+            olmasaydi: '2. bölümde index.html\'teki lang="tr" satırı için verilen söz ("kullanıcı dil değiştirdiğinde JS ile CANLI güncellenecek") tutulmamış OLURDU.'
+          },
+          {
+            satir: 'i18n.changeLanguage(language)',
+            aciklama: "i18next instance'ının AKTİF dilini değiştirir — bu çağrı, useTranslation() kullanan HER component'in (Topbar, App) YENİDEN render OLMASINI VE yeni dildeki metni GÖSTERMESİNİ tetikler.",
+            neden: "i18n/index.ts'teki `lng: ...` ayarının yalnızca İLK yükleme için yeterli olduğu, SONRAKİ değişiklikler için AYRI bir mekanizma gerektiği gerçeğinin ÇÖZÜMÜ — i18next kendi başına Redux'u DİNLEMEZ, bu köprü BURADA kuruluyor.",
+            olmasaydi: "Bu satır olmadan, LanguageSwitcher'da DE'ye tıklandığında Redux state'i değişirdi, <html lang> (bir üstteki satır) GÜNCELLENİRDİ, ama i18next'in KENDİ iç dili DEĞİŞMEZDİ — Topbar/App'teki t('app.title') HÂLÂ eski dildeki metni GÖSTERMEYE devam ederdi, buton görsel olarak \"DE\" seçili görünse bile."
+          },
+          {
+            satir: '}, [language])',
+            aciklama: "useEffect'in İKİNCİ argümanı — \"bağımlılık dizisi\" (dependency array). [language] demek: bu efekt YALNIZCA `language` değeri DEĞİŞTİĞİNDE (ve component ilk mount olduğunda) yeniden ÇALIŞIR, her render'da DEĞİL.",
+            neden: "Bu dizi olmasaydı (parametre hiç verilmeseydi) React efekti HER render'da tekrar ÇALIŞTIRIRDI — burada zararı sınırlı olurdu (aynı dili tekrar set etmek) ama gereksiz iş; boş dizi ([]) verilseydi efekt yalnızca İLK mount'ta çalışır, language DEĞİŞTİĞİNDE bir daha HİÇ tetiklenmezdi.",
+            olmasaydi: "[language] yerine boş dizi ([]) yazılsaydı, LanguageSwitcher'a tıklamak Redux state'ini DEĞİŞTİRİRDİ ama bu useEffect BİR DAHA çalışmazdı — <html lang> ve i18next İLK yüklemedeki dilde DONUP kalırdı, buton tıklamaları hiçbir GÖRSEL etki YARATMAZDI."
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'components/layout/LanguageSwitcher.tsx — Dil Değiştirme Butonları',
+        dosyaYolu: 'admin/src/components/layout/LanguageSwitcher.tsx',
+        nedenBuKlasor: "`components/layout/` — Topbar'ın İÇİNDE yaşayan, sayfa genelinin \"çerçevesine\" ait bir kontrol; bir SONRAKİ bölümde (Dark Mode) buraya ThemeSwitcher da eklenecek, ikisi de AYNI \"layout kontrolü\" kategorisinde.",
+        kod: `import { useAppDispatch, useAppSelector } from '../../store/hooks'
+import { setLanguage, type Language } from '../../store/slices/languageSlice'
+
+const LANGUAGES: { code: Language; label: string }[] = [
+  { code: 'tr', label: 'TR' },
+  { code: 'de', label: 'DE' },
+]
+
+function LanguageSwitcher() {
+  const dispatch = useAppDispatch()
+  const currentLanguage = useAppSelector((state) => state.language.language)
+
+  return (
+    <div className="inline-flex overflow-hidden rounded-control border border-border">
+      {LANGUAGES.map(({ code, label }) => (
+        <button
+          key={code}
+          type="button"
+          aria-pressed={currentLanguage === code}
+          onClick={() => dispatch(setLanguage(code))}
+          className="px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors duration-150 aria-pressed:bg-accent aria-pressed:text-white"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export default LanguageSwitcher`,
+        satirlar: [
+          {
+            satir: "import { useAppDispatch, useAppSelector } from '../../store/hooks'",
+            aciklama: "Bir önceki slaytta yazılan TYPED Redux hook'larını içe aktarır — GERÇEKTEN kullanılan İLK yer burası.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { setLanguage, type Language } from '../../store/slices/languageSlice'",
+            aciklama: "Dil değiştirme action'ını VE tip tanımını languageSlice'ten içe aktarır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const LANGUAGES: { code: Language; label: string }[] = [',
+            aciklama: "Desteklenen dilleri, HER biri için hem KOD (action'a gönderilecek) hem GÖRÜNEN metni (butonda YAZACAK) içeren bir DİZİ olarak tanımlar.",
+            neden: "Component'in JSX'i AŞAĞIDA bu diziyi .map() ile GEZECEK — yeni bir dil eklenmek istendiğinde (ör. İngilizce) TEK yapılması gereken bu DİZİYE bir satır eklemek, JSX'in KENDİSİNE dokunmaya GEREK yok.",
+            olmasaydi: 'Bu dizi olmadan, iki buton (TR ve DE) JSX\'e AYRI AYRI elle yazılmış İKİ `<button>` olarak eklenmesi gerekirdi — üçüncü bir dil eklendiğinde JSX\'in KENDİSİNİN değiştirilmesi GEREKİRDİ.'
+          },
+          {
+            satir: "{ code: 'tr', label: 'TR' },",
+            aciklama: 'Türkçe seçeneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "{ code: 'de', label: 'DE' },",
+            aciklama: 'Almanca seçeneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'function LanguageSwitcher() {',
+            aciklama: "Bu component'in KENDİSİ — Topbar'ın SAĞINDA render edilecek.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const dispatch = useAppDispatch()',
+            aciklama: 'Action GÖNDERMEK (dispatch) için typed hook\'u çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const currentLanguage = useAppSelector((state) => state.language.language)',
+            aciklama: 'Redux\'taki GÜNCEL dili okur — HANGİ butonun "seçili" (aria-pressed) GÖRÜNECEĞİNE karar vermek için kullanılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return (',
+            aciklama: "Component'in ekrana ÇİZECEĞİ JSX'i döndürür.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<div className="inline-flex overflow-hidden rounded-control border border-border">',
+            aciklama: "Bu satırda BEŞ ayrı Tailwind utility class'ı var, her biri kendi CSS özelliğini kontrol eder:\n- inline-flex: elemanı satır-içi bir flex konteynere çevirir — TR/DE butonları yan yana, aralarında ekstra boşluk BIRAKMADAN dizilir.\n- overflow-hidden: konteynerin kendi sınırlarını AŞAN her şeyi (aktif butonun köşedeki dolgu rengi) görünmez yapar.\n- rounded-control: köşe yuvarlaklığını index.css'teki --radius-control token'ına (8px) bağlar.\n- border: 1px kalınlığında bir kenarlık EKLER (rengi henüz belirtilmedi).\n- border-border: bir önceki class'ın eklediği kenarlığın RENGİNİ --color-border token'ına bağlar.",
+            neden: "overflow-hidden + rounded-control İKİLİSİ bu component'in \"segmented control\" (tek çerçeveli, bölünmüş buton grubu) GÖRÜNÜMÜNÜN temeli: aktif butonun (bg-accent) dolgusu köşelerde dış çerçevenin YUVARLAKLIĞINI AŞARSA (overflow-hidden olmadan), kare köşeli bir dolgu yuvarlak bir çerçeveden TAŞMIŞ gibi görünürdü.",
+            olmasaydi: "overflow-hidden yazılmasaydı, DE butonuna tıklandığında dolgusunun (bg-accent) köşeleri dış çerçevenin (rounded-control) yuvarlattığı köşelerden DIŞARI TAŞAR, keskin köşeli bir dikdörtgen yuvarlak bir çerçevenin İÇİNDEN fırlamış gibi GÖRÜNÜRDÜ."
+          },
+          {
+            satir: '{LANGUAGES.map(({ code, label }) => (',
+            aciklama: "Yukarıda tanımlanan LANGUAGES dizisini gezip HER öğe için bir <button> üretir.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<button',
+            aciklama: 'HER dil için üretilen TEK butonun başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'key={code}',
+            aciklama: "React'in liste render ederken HER öğeyi BENZERSİZ tanıması için gereken key prop'u — code (tr/de) zaten benzersiz olduğu için doğrudan KULLANILDI.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'type="button"',
+            aciklama: "Bu butonun bir FORM submit butonu OLMADIĞINI belirtir.",
+            neden: '`<button>` HTML\'de bir `<form>` içindeyse VARSAYILAN type "submit"tir — bu component ileride bir formun (ör. LoginPage) İÇİNDE kullanılırsa, type="button" OLMADAN bu buton YANLIŞLIKLA formu GÖNDERİRDİ.',
+            olmasaydi: 'Bu satır olmadan, LanguageSwitcher bir form İÇİNDE render edilseydi, DE/TR butonuna TIKLAMAK dili değiştirmenin YANI SIRA formu da GÖNDERİRDİ (sayfa yenilenirdi).'
+          },
+          {
+            satir: 'aria-pressed={currentLanguage === code}',
+            aciklama: 'Bu butonun ŞU AN "basılı" (seçili) durumda olup olmadığını hem EKRAN OKUYUCULARA hem de aşağıdaki Tailwind aria-pressed: varyantlarına BİLDİRİR.',
+            neden: 'aria-pressed, HTML\'in "toggle button" (basılı/basılı değil iki durumlu buton) için TANIMLADIĞI standart öznitelik — bir checkbox\'ın checked\'ı gibi, EKRAN OKUYUCULARA "bu bir seçenek VE şu an seçili" bilgisini DOĞRUDAN verir, ayrıca bir aria-label YAZMAYA gerek KALMAZ.',
+            olmasaydi: 'Bu öznitelik olmadan, EKRAN OKUYUCU kullanan bir kullanıcı hangi dilin şu an SEÇİLİ olduğunu ANLAYAMAZDI — buton görsel olarak renkli görünse bile, bu bilgi yalnızca RENKLE (ekran okuyucunun ERİŞEMEDİĞİ bir kanalla) veriliyor olurdu.'
+          },
+          {
+            satir: 'onClick={() => dispatch(setLanguage(code))}',
+            aciklama: "Tıklanınca, o butonun temsil ettiği dili (code) setLanguage action'ıyla DISPATCH eder.",
+            neden: "Bu TEK satır Redux state'i günceller → useLanguageSync (bir önceki slayt) bu değişikliği YAKALAR → hem <html lang> hem i18next GÜNCELLENİR → TÜM arayüz metinleri YENİDEN render OLUR — component'in kendisi bu ZİNCİRİN geri kalanından HABERSİZ, yalnızca \"dil değişti\" diye BİLDİRİYOR.",
+            olmasaydi: "Bu component i18n.changeLanguage'ı VEYA document.documentElement.lang'ı DOĞRUDAN çağırsaydı, dil değişikliği yalnızca O ANKİ render'da ETKİLİ olurdu — sayfa yenilendiğinde (languageSlice'teki resolveInitialLanguage'e HİÇ uğramadığı için) tercih KALICI olmazdı."
+          },
+          {
+            satir: 'className="px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors duration-150 aria-pressed:bg-accent aria-pressed:text-white"',
+            aciklama: "Bu satırda DOKUZ Tailwind utility class'ı var:\n- px-3: yatay (sol+sağ) 12px iç boşluk.\n- py-1.5: dikey (üst+alt) 6px iç boşluk.\n- text-sm: küçük (14px) yazı boyutu.\n- font-medium: orta kalınlıkta (500) yazı ağırlığı.\n- text-text-secondary: index.css'teki ikincil metin rengi token'ı — pasif (seçili olmayan) durumdaki renk.\n- transition-colors: yalnızca RENK özelliklerindeki (arka plan, metin) değişiklikleri YUMUŞAK geçişli yapar.\n- duration-150: bu geçişin 150 milisaniye SÜRMESİNİ belirler.\n- aria-pressed:bg-accent: SADECE aria-pressed=\"true\" olduğunda arka planı accent rengine boyar.\n- aria-pressed:text-white: SADECE aria-pressed=\"true\" olduğunda metni beyaza çevirir.",
+            neden: "transition-colors + duration-150 İKİLİSİ birkaç süre denemesinden (150ms → 300ms → tekrar 150ms) SONRA kararlaştırıldı: 150ms göz için ANLIK değil ama YAVAŞ da değil — kullanıcı tıklamasının bir SONUCU olduğunu HİSSETTİRECEK kadar belirgin, bekletecek kadar UZUN değil. aria-pressed: öneki, React'te \"if (aktifse bu class'ı EKLE\" gibi bir JS mantığı YAZMADAN, tarayıcının kendi aria-pressed özniteliğine göre stil seçmesini sağlar — bir SATIR üstteki aria-pressed={...} özniteliğiyle DOĞRUDAN bağlantılı.",
+            olmasaydi: "transition-colors olmadan, aria-pressed değiştiğinde arka plan rengi ANLIK (0ms) değişirdi — göz bunu bir \"geçiş\" olarak değil, ani bir \"flaş\" olarak ALGILARDI. aria-pressed: öneki KULLANILMASAYDI, hangi butonun aktif OLDUĞUNU göstermek için className'i JavaScript içinde koşullu OLARAK elle BİRLEŞTİRMEK gerekirdi."
+          },
+          {
+            satir: '{label}',
+            aciklama: 'Butonun İÇİNDE görünen metin — "TR" veya "DE".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '</button>',
+            aciklama: 'Tek bir dil butonunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '</div>',
+            aciklama: 'Dış segmented-control çerçevesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export default LanguageSwitcher',
+            aciklama: "Component'i dışa aktarır — Topbar.tsx bunu import EDECEK.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'components/layout/Topbar.tsx — Üst Bar',
+        dosyaYolu: 'admin/src/components/layout/Topbar.tsx',
+        nedenBuKlasor: "`components/layout/` klasöründeki İLK dosya — sayfanın genel ÇERÇEVESİNE (üst bar) ait, herhangi bir TEK özelliğe (auth, words) ait DEĞİL.",
+        kod: `import { useTranslation } from 'react-i18next'
+import LanguageSwitcher from './LanguageSwitcher'
+
+function Topbar() {
+  const { t } = useTranslation()
+
+  return (
+    <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-4">
+      <span className="font-semibold text-text-primary">{t('app.title')}</span>
+      <LanguageSwitcher />
+    </header>
+  )
+}
+
+export default Topbar`,
+        satirlar: [
+          {
+            satir: "import { useTranslation } from 'react-i18next'",
+            aciklama: "react-i18next'in ANA hook'unu içe aktarır — `t` fonksiyonunu VERİR, bu fonksiyon bir çeviri ANAHTARINI (ör. 'app.title') o an AKTİF dildeki GERÇEK metne çevirir.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import LanguageSwitcher from './LanguageSwitcher'",
+            aciklama: 'Bir önceki slaytta yazılan dil değiştirme component\'ini içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'function Topbar() {',
+            aciklama: 'Sayfanın en üstünde, HER ekranda GÖRÜNECEK üst bar component\'i.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const { t } = useTranslation()',
+            aciklama: "useTranslation hook'unu çağırıp yalnızca t fonksiyonunu (obje YIKIMIYLA) çıkarır — hook AYRICA aktif dil/i18n instance gibi başka DEĞERLER de döndürür ama bu component yalnızca t'ye ihtiyaç duyuyor.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return (',
+            aciklama: "Component'in ekrana çizeceği JSX.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<header className="flex items-center justify-between border-b border-border bg-surface px-6 py-4">',
+            aciklama: "Bu satırda SEKİZ Tailwind utility class'ı var:\n- flex: içeriği (başlık + dil değiştirici) yatay bir flex düzende dizer.\n- items-center: bu iki öğeyi DİKEY eksende ORTALAR.\n- justify-between: aralarındaki BOŞLUĞU maksimuma çıkarır — biri en SOLA, diğeri en SAĞA yaslanır.\n- border-b: yalnızca ALT kenarlığı ekler (dört yönü DEĞİL, TEK yönü).\n- border-border: bu kenarlığın rengini --color-border token'ına bağlar.\n- bg-surface: zemin rengini --color-surface token'ına bağlar — index.css'teki \"background'dan bir TON açık, yüzen elemanlar için\" kararının bu component'teki UYGULAMASI.\n- px-6: yatayda 24px iç boşluk.\n- py-4: dikeyde 16px iç boşluk.",
+            neden: "<header> SEMANTİK HTML etiketi (düz bir <div> DEĞİL) BİLİNÇLİ seçildi — ekran okuyucular VE arama motorları \"burası sayfanın üst BÖLGESİ\" bilgisini bu etiketten ANLAR. border-b (dört yönlü border DEĞİL) da BİLİNÇLİ: Topbar'ın ALTINDAKİ sayfa içeriğinden yalnızca TEK bir çizgiyle AYRILMASI isteniyor, bir kutu İÇİNDE değil.",
+            olmasaydi: "border-b yerine dört yönlü border kullanılsaydı, Topbar'ın SOL/SAĞ/ÜST kenarlarında da GEREKSİZ çizgiler oluşurdu — ekranın kenarına bitişik bir barın SOL/SAĞ/ÜST kenarlığı zaten GÖRÜNMEZ (viewport dışında), yalnızca fazladan render maliyeti yaratırdı."
+          },
+          {
+            satir: "<span className=\"font-semibold text-text-primary\">{t('app.title')}</span>",
+            aciklama: "İKİ Tailwind class'ı VE bir çeviri çağrısı:\n- font-semibold: orta-kalın (600) yazı ağırlığı — index.css'teki \"700+ ağırlık YOK\" kararına uygun.\n- text-text-primary: ana metin rengi token'ı.\n- {t('app.title')}: sabit \"VokabelMeister Admin\" yazmak YERİNE, aktif dildeki karşılığını i18n/locales/*.json'dan OKUR.",
+            neden: "t('app.title') kullanımı bu bölümün ASIL amacının kanıtı: dil DE'ye çevrildiğinde MEKANİZMA çalışıyor — bu metin de.json'da AYNI kalsa bile (marka adı çevrilmedi), bir SONRAKİ ekranda (App.tsx'teki placeholderNotice) GERÇEKTEN farklı bir Almanca metin GÖRÜLECEK.",
+            olmasaydi: "Metin sabit yazılsaydı, LanguageSwitcher'a tıklamak SADECE buton görünümünü DEĞİŞTİRİRDİ — Topbar'daki başlık metni HER ZAMAN Türkçe kalırdı, \"dil değişti\" YANILSAMASI yaratan ama GERÇEKTE hiçbir metni ÇEVİRMEYEN yarım bir özellik OLURDU."
+          },
+          {
+            satir: '<LanguageSwitcher />',
+            aciklama: "Bir önceki slaytta yazılan component'i BURADA, Topbar'ın SAĞ tarafında (justify-between SAYESİNDE) render eder.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '</header>',
+            aciklama: 'Üst barın kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'export default Topbar',
+            aciklama: "Component'i dışa aktarır — App.tsx (bir SONRAKİ slayt) bunu import EDECEK.",
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'App.tsx — Topbar\'ı Bağlama ve Statik Metni Çeviriye Taşıma',
+        dosyaYolu: 'admin/src/App.tsx',
+        neden: "2. bölümde App.tsx yalnızca tasarım sistemini DOĞRULAYAN bir yer tutucuydu, metinleri SABİT (hardcoded) Türkçeydi. Bu bölümde HEM gerçek bir layout parçası (Topbar) bağlandı HEM de metinler i18next ÜZERİNDEN okunur hale GETİRİLDİ — dil değiştirmenin GERÇEKTEN görünür bir sonucu olması için bu değişiklik ZORUNLUYDU.",
+        diff: `+import { useTranslation } from 'react-i18next'
++import Topbar from './components/layout/Topbar'
++import { useLanguageSync } from './hooks/useLanguageSync'
++
+ function App() {
++  useLanguageSync()
++  const { t } = useTranslation()
++
+   return (
+-    <div className="flex min-h-svh items-center justify-center bg-background text-text-primary">
+-      <div className="rounded-card border border-border bg-surface p-8 shadow-sm">
+-        <h1 className="text-2xl font-semibold">VokabelMeister Admin</h1>
+-        <p className="mt-2 text-text-secondary">
+-          Yönlendirme ve gerçek sayfalar B-01'in ilerleyen bölümlerinde eklenecek.
+-        </p>
+-      </div>
+-    </div>
++    <div className="flex min-h-svh flex-col bg-background text-text-primary">
++      <Topbar />
++      <div className="flex flex-1 items-center justify-center">
++        <div className="rounded-card border border-border bg-surface p-8 shadow-sm">
++          <h1 className="text-2xl font-semibold">{t('app.title')}</h1>
++          <p className="mt-2 text-text-secondary">{t('common.placeholderNotice')}</p>
++        </div>
++      </div>
+   )
+ }
+
+ export default App`,
+        satirlar: [
+          {
+            satir: "import { useTranslation } from 'react-i18next'",
+            aciklama: "Çeviri fonksiyonunu bu component'e de KAZANDIRIR.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import Topbar from './components/layout/Topbar'",
+            aciklama: 'Yeni yazılan üst barı içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "import { useLanguageSync } from './hooks/useLanguageSync'",
+            aciklama: 'Dil senkronizasyon hook\'unu içe aktarır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'useLanguageSync()',
+            aciklama: "Hook'u ÇAĞIRIR — bu satır, uygulamanın KÖK component'inde (her sayfa/route'tan BAĞIMSIZ, her zaman aktif) çalışması gerektiği için BURADA, App'in en ÜSTÜNDE.",
+            neden: "Henüz gerçek bir routing (React Router) YOK — App şu an tek ekranın kendisi. Routing eklendiğinde (bir SONRAKİ bölüm) bu çağrı App'te KALACAK çünkü App, TÜM route'ları SARAN en dış component OLACAK — dil senkronu route DEĞİŞSE bile HER ZAMAN aktif kalmalı.",
+            olmasaydi: "Bu satır olmadan, languageSlice'teki state değişirdi ama <html lang>/i18next HİÇBİR yerde GÜNCELLENMEZDİ — bir önceki bölümde yazılan TÜM zincir (hook, slice, interceptor) BAĞLANTISIZ, KULLANILMAYAN kod olarak KALIRDI."
+          },
+          {
+            satir: 'const { t } = useTranslation()',
+            aciklama: "Aşağıdaki JSX'te kullanılacak çeviri fonksiyonunu ALIR.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<div className="flex min-h-svh flex-col bg-background text-text-primary">',
+            aciklama: "Bir önceki bölümdeki class'ların BİRİ değişti, DÖRDÜ aynı kaldı:\n- flex: (aynı) flex düzeni.\n- min-h-svh: (aynı) en az ekran yüksekliği.\n- flex-col: (YENİ) — önceki \"items-center justify-center\" (içeriği YATAY VE dikey ORTALA) YERİNE, çocukları DİKEY DİZ (Topbar EN ÜSTTE, içerik ALTINDA).\n- bg-background: (aynı) zemin rengi.\n- text-text-primary: (aynı) metin rengi.",
+            neden: "items-center/justify-center KALDIRILDI çünkü artık İKİ farklı öğe var (Topbar + ana içerik) — Topbar SAYFANIN ENİNE yayılmalı, yalnızca ALTINDAKİ içerik kutusu ORTALANMALI (bu ORTALAMA görevi bir SONRAKİ satırdaki yeni iç div'e DEVREDİLDİ).",
+            olmasaydi: "flex-col EKLENMESEYDİ (varsayılan flex-row KALSAYDI), Topbar ile altındaki kart YAN YANA dizilirdi — Topbar sayfanın ÜSTÜNDE bir bar OLMAK yerine, SOLDA dar bir sütun olarak GÖRÜNÜRDÜ."
+          },
+          {
+            satir: '<Topbar />',
+            aciklama: 'Yeni component — sayfanın EN ÜSTÜNE yerleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '<div className="flex flex-1 items-center justify-center">',
+            aciklama: "YENİ eklenen bir SARMALAYICI div, DÖRT class ile:\n- flex: flex düzeni.\n- flex-1: kalan TÜM boş alanı (Topbar'ın yüksekliği DIŞINDAKİ her şeyi) kaplar.\n- items-center: içeriği DİKEY ortalar.\n- justify-center: içeriği YATAY ortalar.",
+            neden: "Bir önceki satırda dış div'den KALDIRILAN \"ortalama\" görevi bu YENİ iç div'e TAŞINDI — flex-1 ile bu div Topbar DIŞINDAKİ TÜM alanı DOLDURUR, kart bu alanın TAM ortasına OTURUR.",
+            olmasaydi: "flex-1 olmasaydı, kart sayfanın ÜST kısmına (Topbar'ın hemen ALTINA) yapışık KALIRDI — dikey ortalama yalnızca \"Topbar + kartın KENDİ yüksekliği\" kadar bir alanda GERÇEKLEŞİRDİ, sayfanın GERİ KALAN boş alanı kartın ALTINDA anlamsızca BOŞ dururdu."
+          },
+          {
+            satir: "<h1 className=\"text-2xl font-semibold\">{t('app.title')}</h1>",
+            aciklama: "Sabit \"VokabelMeister Admin\" metni YERİNE t('app.title') çağrısı — class'lar (text-2xl, font-semibold) DEĞİŞMEDİ, 2. bölümde AÇIKLANDI.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "<p className=\"mt-2 text-text-secondary\">{t('common.placeholderNotice')}</p>",
+            aciklama: 'AYNI değişiklik — sabit metin YERİNE çeviri anahtarı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'main.tsx — i18next\'i Başlatma',
+        dosyaYolu: 'admin/src/main.tsx',
+        neden: "i18n/index.ts YAZILMASI TEK BAŞINA yeterli değil — i18next'in init() çağrısının GERÇEKTEN ÇALIŞMASI için o dosyanın bir YERDE import EDİLMESİ gerekir; en MANTIKLI yer, uygulamanın HER ŞEYDEN önce çalışan giriş noktası.",
+        diff: ` import { StrictMode } from 'react'
+ import { createRoot } from 'react-dom/client'
+ import { Provider } from 'react-redux'
+ import './index.css'
++import './i18n'
+ import App from './App.tsx'
+ import { store } from './store/store.ts'
+
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <Provider store={store}>
+       <App />
+     </Provider>
+   </StrictMode>,
+ )`,
+        satirlar: [
+          {
+            satir: "import './i18n'",
+            aciklama: "i18n/index.ts'i \"YAN ETKİ İÇİN\" (side-effect) import eder — dosyadan hiçbir DEĞER alınmıyor (import x from DEĞİL, sadece import), tek amaç o dosyanın İÇİNDEKİ i18n.init(...) çağrısının ÇALIŞMASINI tetiklemek.",
+            neden: "Bu satır, JS modülleri YUKARIDAN AŞAĞI sırayla ÇALIŞTIRILDIĞI için App render EDİLMEDEN önce çalışır — App içindeki useTranslation() çağrıldığında i18next'in ZATEN yapılandırılmış OLMASI garanti edilir.",
+            olmasaydi: 'Bu import olmasaydı, i18n/index.ts dosyası HİÇBİR YERDEN çağrılmamış OLURDU — i18next hiç init EDİLMEZ, useTranslation() çağıran HER component çalışma zamanında bir hata FIRLATIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: "store/store.ts — languageSlice'ı Store'a Ekleme",
+        dosyaYolu: 'admin/src/store/store.ts',
+        neden: "languageSlice YAZILMASI, o slice'ın GERÇEKTEN store'un bir PARÇASI olmasını SAĞLAMAZ — authSlice'te olduğu gibi, reducer objesine EL İLE eklenmesi GEREKİR.",
+        diff: ` import { configureStore } from '@reduxjs/toolkit'
+ import authReducer from './slices/authSlice'
++import languageReducer from './slices/languageSlice'
+
+ export const store = configureStore({
+   reducer: {
+     auth: authReducer,
++    language: languageReducer,
+   },
+ })
+
+ export type RootState = ReturnType<typeof store.getState>
+ export type AppDispatch = typeof store.dispatch`,
+        satirlar: [
+          {
+            satir: "import languageReducer from './slices/languageSlice'",
+            aciklama: "Yeni slice'ın reducer'ını içe aktarır.",
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'language: languageReducer,',
+            aciklama: "Store'a `language` anahtarıyla EKLER — bu satırdan SONRA RootState tipi (aşağıdaki satır, DEĞİŞMEDEN) OTOMATİK olarak state.language alanını da İÇERİR.",
+            neden: "Bu TEK satır eklendiğinde, RootState/AppDispatch tiplerinin ELLE güncellenmesine GEREK kalmadı — 3. bölümde bu iki tipin NEDEN otomatik türetildiği anlatılmıştı, bu satır o kararın SOMUT faydasının GÖRÜLDÜĞÜ ilk an.",
+            olmasaydi: "Bu satır olmadan languageSlice.ts dosyası var OLURDU ama store'un hiç PARÇASI olmazdı — useAppSelector((state) => state.language.language) çağrısı TypeScript'te DERLEME HATASI verirdi (state objesinde language diye bir alan YOK)."
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: "components/ Altında Klasörleme: Konu Bazlı mı, Tür Bazlı mı?",
+        iyi: {
+          baslik: 'Doğru — konu/özellik (domain) bazlı',
+          maddeler: [
+            "components/layout/ — Topbar, LanguageSwitcher, ileride ThemeSwitcher: sayfanın GENEL çerçevesine ait her şey TEK klasörde",
+            "İleride: components/auth/ (LoginPage, OtpVerifyPage), components/words/ (WordFormModal, WordListPage) — HER özellik kendi klasöründe",
+            "Bir özelliği (ör. auth) SİLMEK/TAŞIMAK gerekirse, TEK bir klasörü silmek/taşımak YETERLİ"
+          ]
+        },
+        kotu: {
+          baslik: 'Yanlış — tür (UI kalıbı) bazlı',
+          maddeler: [
+            "components/buttons/, components/headers/ gibi UI TÜRÜNE göre klasörleme",
+            'LanguageSwitcher bir "buton" mu yoksa "layout parçası" mı? — sınır BELİRSİZLEŞİR',
+            "Bir özelliği (ör. auth) anlamak için 5 farklı TÜR klasörüne (buttons/, forms/, headers/) DAĞILMIŞ dosyaları TOPLAMAK gerekir"
+          ]
+        }
+      },
+      {
+        tur: 'kavram',
+        baslik: "Dil Tercihi Şimdi localStorage'da, Ama Backend'de Bir Karşılığı Zaten Var",
+        aciklama: "Backend'in AuthUserDto kaydında (backend/WordLearner.Application/DTOs/Auth/AuthTokenResponse.cs) LanguagePreference diye bir alan ZATEN var — Users tablosundaki LanguagePreference kolonundan (varsayılan tr) geliyor. Şu an admin panelde HENÜZ giriş (login) akışı OLMADIĞI için bu alana hiç ERİŞEMİYORUZ; languageSlice'in TEK kaynağı localStorage.",
+        neden: "Bu GEÇİCİ değil, BİLİNÇLİ bir aşama: B-02'de (Auth Sayfaları) login yanıtı GELDİĞİNDE, dispatch(setLanguage(user.languagePreference)) ile Redux/localStorage'daki değer backend'deki GERÇEK tercihle senkronlanacak — o AN backend \"otorite\" haline gelecek, çünkü ARTIK kim olduğumuzu BİLİYORUZ. Kullanıcının dili DEĞİŞTİRMESİNİN backend'e YAZILMASI ise daha SONRAKİ bir fazda geliyor.",
+        olmasaydi: "Bu ayrım GÖZ ARDI edilip languageSlice \"backend'den GELİYORMUŞ gibi\" tasarlansaydı, henüz VAR OLMAYAN bir login akışına BAĞIMLI, ÇALIŞMAYAN bir özellik yazılmış OLURDU — B-01'de dil hiç DEĞİŞTİRİLEMEZDİ, bu bölümün TAMAMI B-02'yi BEKLEMEK zorunda KALIRDI."
+      },
+      {
+        tur: 'kod',
+        baslik: 'Bu Bölümde Kullandığımız Terminal Komutları',
+        terminal: true,
+        kod: `$ npm run build
+$ npm run lint
+$ npm run dev`,
+        satirlar: [
+          {
+            satir: '$ npm run build',
+            aciklama: "TypeScript tip kontrolü + production build — YENİ dosyaların (languageSlice, hooks.ts, i18n/*, useLanguageSync, LanguageSwitcher, Topbar) VE değişen dosyaların (App.tsx, main.tsx, store.ts) HİÇBİR tip/paketleme hatası içermediğini doğrular.",
+            neden: "Özellikle JSON import'ları (import tr from './locales/tr.json') VE react-redux'un withTypes API'si gibi daha AZ sık kullanılan özellikler test edildiği için, bu adım TypeScript yapılandırmasının bunları GERÇEKTEN desteklediğini KANITLAMANIN en hızlı yolu.",
+            olmasaydi: null
+          },
+          {
+            satir: '$ npm run lint',
+            aciklama: 'ESLint kontrolü — TÜM yeni dosyalar dahil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '$ npm run dev',
+            aciklama: "Geliştirme sunucusunu başlatıp TARAYICIDA gerçek TR↔DE geçişini, aria-pressed stilini VE <html lang> senkronunu GÖZLE doğrulamak için.",
+            neden: "Bu üç davranış (metin çevirisi, buton vurgusu, html lang) BİRBİRİNDEN BAĞIMSIZ üç farklı KOD YOLU (i18next, Tailwind aria-pressed varyantı, document.documentElement.lang) — biri ÇALIŞIP diğeri ÇALIŞMAYABİLİR, YALNIZCA build/lint'in geçmesi bunların GERÇEKTEN çalıştığını KANITLAMAZ.",
+            olmasaydi: "Yalnızca build/lint'e güvenilseydi, ör. useLanguageSync'in i18n.changeLanguage çağırmayı UNUTMASI gibi bir MANTIK hatası (tip açısından GEÇERLİ ama davranış olarak YANLIŞ kod) fark EDİLMEZDİ."
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          "İki AYRI sistem: Redux languageSlice (kaynak OTORİTE, localStorage'a yazan) ile react-i18next (yalnızca STATİK metinleri RENDER eden) — useLanguageSync köprüsüyle BAĞLANIYOR",
+          "resolveInitialLanguage: localStorage'daki değer GEÇERSİZSE sessizce tr'ye düşüyor — ErrorMessages/SuccessMessages'taki AYNI \"desteklenmiyorsa varsayılana düş\" deseni",
+          "İKİ farklı SİSTEM (Redux + i18next) AYNI localStorage anahtarını (language) okuduğu için, İLK yüklemede birbirinden BAĞIMSIZ ama SENKRON başlıyorlar",
+          "useAppDispatch/useAppSelector: bunlara GERÇEKTEN ihtiyaç duyan İLK kod (LanguageSwitcher) yazılırken eklendi, ÖNCEDEN değil",
+          "components/layout/ klasörü: konu/özellik bazlı klasörleme kararı — ileride auth/, words/, common/ AYNI desende AÇILACAK",
+          "Dil tercihi ŞİMDİLİK yalnızca localStorage'da — B-02'de login yanıtındaki AuthUserDto.LanguagePreference ile senkronlanacak, backend GERÇEK otorite olacak",
+          "Tailwind'in aria-pressed: varyantı: koşullu stil için JS'te className birleştirmek YERİNE, tarayıcının kendi aria-pressed özniteliğine göre CSS seçici çalıştırıyor"
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

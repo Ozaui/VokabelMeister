@@ -60,9 +60,9 @@
     return `
       <div class="annotation-panel">
         <div class="annotation-line"><code>${esc(s.satir)}</code></div>
-        <div class="annotation-block"><div class="annotation-tag">Ne yapıyor</div><div>${esc(s.aciklama)}</div></div>
-        ${s.neden ? `<div class="annotation-block annotation-neden"><div class="annotation-tag">Neden böyle</div><div>${esc(s.neden)}</div></div>` : ''}
-        ${s.olmasaydi ? `<div class="annotation-block annotation-olmasaydi"><div class="annotation-tag">Böyle olmasaydı</div><div>${esc(s.olmasaydi)}</div></div>` : ''}
+        <div class="annotation-block"><div class="annotation-tag">Ne yapıyor</div><div class="annotation-body">${esc(s.aciklama)}</div></div>
+        ${s.neden ? `<div class="annotation-block annotation-neden"><div class="annotation-tag">Neden böyle</div><div class="annotation-body">${esc(s.neden)}</div></div>` : ''}
+        ${s.olmasaydi ? `<div class="annotation-block annotation-olmasaydi"><div class="annotation-tag">Böyle olmasaydı</div><div class="annotation-body">${esc(s.olmasaydi)}</div></div>` : ''}
       </div>`;
   }
 
