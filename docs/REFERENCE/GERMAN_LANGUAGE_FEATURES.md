@@ -75,7 +75,9 @@ Bileşik olduğunu belirten ayrı bir alan yok; açıklama **mevcut `WordDetails
 (ör. "Anruf + Beantworter" — der Anrufbeantworter), yeni bir GrammarData anahtarı **açılmaz** (YAGNI).
 
 ## 8. Kart Tasarımı
-- **İsim:** artikel + kelime (cinsiyet rengi) + 4 hâl tablosu + çoğul + Türkçe + örnek (seviyeye göre) + kategoriler + ses/IPA.
+> **Ses:** kayıtlı dosya değil, istemci taraflı TTS (Web `window.speechSynthesis`, Mobil `expo-speech`)
+> — bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu.
+- **İsim:** artikel + kelime (cinsiyet rengi) + 4 hâl tablosu + çoğul + Türkçe + örnek (seviyeye göre) + kategoriler + ses (TTS)/IPA.
 - **Fiil:** mastar + ayrılabilir göstergesi + çekim tablosu (present/preterite/perfect) + Türkçe + örnek.
 
 ## 9. Sınav Türleri

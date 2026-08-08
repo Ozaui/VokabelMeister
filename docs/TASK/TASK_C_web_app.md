@@ -74,14 +74,32 @@
 ### C-04 — Kelime Kartı Komponenti ⬜
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
 > Yeniden kullanılan ortak component — C-05/C-07'de import edilir; kendi API çağrısı/route'u yok,
-> yalnızca `component` (+ `tip`) adımları vardır.
+> yalnızca `component` (+ `tip`/`hook`) adımları vardır.
 - [ ] **Tip:** `SystemWordCardProps`, `PersonalCardProps` (`card.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `SystemWordCard` (artikel + cinsiyet rengi + 4 hâl + çoğul; fiil çekim; ayrılabilir
-  gösterimi; + ses/IPA — `WordDetails.AudioUrl`/`Pronunciation`, tarayıcı native `<audio>` elemanıyla,
-  D-06'daki `expo-av` hook'una gerek yok), `PersonalCard` (flip animasyonu)
+- [ ] **Hook:** `useTextToSpeech` (`window.speechSynthesis` — ekstra kütüphane yok) — **4 durumlu**
+  state makinesi, sessizce yanlış dilde okumak yerine her durumu açıkça dışa verir:
+  `checking` (sesler henüz yüklenmedi — `getVoices()` bazı tarayıcılarda asenkron doldurur,
+  `voiceschanged` event'i beklenir) → `unsupported` (`window.speechSynthesis` tanımsız, API'nin
+  kendisi yok) **veya** `unavailable` (API var ama `Words.LanguageId`'ye karşılık gelen `de-DE`/`tr-TR`
+  önekli hiçbir ses bulunamadı) → `ready` (ses bulundu, `speak(text)` çağrılabilir). `speak()`
+  yalnızca `ready`'de gerçek etki yapar, diğer durumlarda no-op'tur (UI zaten butonu devre dışı bırakır).
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Birim testleri:** `SystemWordCard.test.tsx` (cinsiyet rengi/artikel render), `PersonalCard.test.tsx` (flip)
+- [ ] **Component:** `TtsFallbackNotice` (`components/common/` — `SystemWordCard`/`PersonalCard`'ın
+  ikisinde de kullanılan paylaşılan uyarı, DESIGN_SYSTEM §4 Tooltip/Popover deseni [8px radius]; ses
+  butonunun yanında yalnızca `unsupported`/`unavailable` durumunda görünür: **"Tarayıcınız bu dilde
+  sesli okumayı desteklemiyor. En iyi destek için Chrome veya Edge kullanmanızı öneririz."**
+  — Chromium tabanlı tarayıcılar Web Speech API'de en geniş/tutarlı ses kataloğuna sahip olduğu için
+  önerilir; bloklamaz, kart TTS olmadan da tam işlevseldir), `SystemWordCard` (artikel + cinsiyet
+  rengi + 4 hâl + çoğul; fiil çekim; ayrılabilir gösterimi; + `useTextToSpeech` ile ses butonu + IPA
+  gösterimi — ses kayıtlı dosyadan değil anlık üretilir, bkz. `DATABASE_SCHEMA/Icerik.md`
+  `WordDetails` notu), `PersonalCard` (flip animasyonu + aynı `useTextToSpeech` hook'uyla ses butonu
+  — `FrontText`/`BackText` düz metin olduğu için admin kürasyonu gerekmez)
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Birim testleri:** `SystemWordCard.test.tsx` (cinsiyet rengi/artikel render), `PersonalCard.test.tsx`
+  (flip), `useTextToSpeech.test.ts` (mock `speechSynthesis` — `unsupported`/`unavailable`/`ready`
+  durumlarının her biri, `speak()`'in yalnızca `ready`'de gerçek çağrı yaptığı), `TtsFallbackNotice.test.tsx`
+  (duruma göre doğru metin/görünürlük — `ready`'de hiç render edilmediği dahil)
 - [ ] ➜ **AKADEMI/web'e işle**
 
 ### C-05 — Öğrenme / Sınav Sayfası ⬜

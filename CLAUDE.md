@@ -172,6 +172,10 @@ deseni):
 YAGNI, §3 "Spekülatif ortak tip yazılmaz" ile aynı ilke):
 - `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web C-03.1) görsel üretimi.
 - `date-fns` — tarih filtresi/biçimlendirme gereken ilk ekranda (Admin B-08).
+- Telaffuz (TTS, yalnızca Web+Mobil — Admin'de kelime kartı yok): Web native `window.speechSynthesis`
+  (kütüphane eklenmez), Mobil `expo-speech` — kelime kartı component'inde eklenir (Web C-04, Mobil
+  D-06). Ses kayıtlı bir dosyadan DEĞİL istemci tarafında anlık üretilir; backend'e ses yükleme/saklama
+  sorumluluğu hiç binmez (bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu — `AudioUrl` sütunu yok).
 
 **QR ile giriş artık Admin panelde de var** (2026-08-05 karar değişikliği): Admin'de Google/Apple
 hâlâ yok, ama e-posta+şifre+OTP'ye ek olarak QR ile giriş eklenir (`/auth/qr/*` endpoint'leri

@@ -65,15 +65,31 @@
 
 ### D-06 — Kelime Kartı Komponenti ⬜ *(+ ses/görsel/IPA)*
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
-> Web'deki C-04 `SystemWordCard`/`PersonalCard` ile aynı veri şekli; mobil'e özgü ek: ses çalma
-> (`expo-av`) ve IPA telaffuz gösterimi.
+> Web'deki C-04 `SystemWordCard`/`PersonalCard` ile aynı veri şekli; mobil'e özgü ek: TTS ile
+> telaffuz sesi (`expo-speech`) ve IPA telaffuz gösterimi. Ses kayıtlı bir dosyadan DEĞİL istemci
+> tarafında anlık üretilir — `WordDetails.AudioUrl`/`UserCards.AudioUrl` yok (bkz.
+> `DATABASE_SCHEMA/Icerik.md`/`Kisisel_Icerik.md`), backend'e ses yükleme/saklama sorumluluğu binmez.
 - [ ] **Tip:** `SystemWordCardProps`, `PersonalCardProps` (`types/card.ts`)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **Hook:** `useAudioPlayer` (`expo-av` ile telaffuz sesi çalma)
+- [ ] **Hook:** `useTextToSpeech` (`expo-speech` — `Speech.speak(text, { language })`) — Web C-04 ile
+  **aynı 4 durumlu** state makinesi: `checking` (`Speech.getAvailableVoicesAsync()` sürüyor) →
+  `unsupported` (native `Speech` modülü hiç yok — Expo Go/managed workflow'da pratikte oluşmaz,
+  yalnızca bozuk custom dev client senaryosu) **veya** `unavailable` (API var ama `Words.LanguageId`'ye
+  karşılık gelen `de`/`tr` önekli ses cihazda kurulu değil) → `ready`. `speak()` yalnızca `ready`'de
+  gerçek etki yapar.
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **Component:** `SystemWordCard` (artikel + cinsiyet rengi + 4 hâl + çoğul + IPA + ses butonu), `PersonalCard` (flip)
+- [ ] **Component:** `TtsFallbackNotice` (`components/common/` — `SystemWordCard`/`PersonalCard`'ın
+  ikisinde de kullanılan paylaşılan uyarı; `unavailable` durumunda `Platform.OS`'a göre somut
+  yönlendirme — Android: **"Ayarlar > Dil ve Giriş > Metinden Sese Çıkışı'ndan [dil] ses paketini
+  indirin"**, iOS: **"Ayarlar > Erişilebilirlik > Konuşulan İçerik > Sesler'den [dil] indirin"**;
+  `unsupported` durumunda genel "Bu cihazda sesli okuma desteklenmiyor" mesajı — bloklamaz, kart TTS
+  olmadan da tam işlevseldir), `SystemWordCard` (artikel + cinsiyet rengi + 4 hâl + çoğul + IPA + ses
+  butonu), `PersonalCard` (flip + aynı `useTextToSpeech` hook'uyla ses butonu — `FrontText`/`BackText`
+  düz metin olduğu için admin kürasyonu gerekmez)
 - [ ] ➜ **AKADEMI/mobile'a işle**
-- [ ] **Birim testleri:** `SystemWordCard.test.tsx`, `useAudioPlayer.test.ts` (mock `expo-av`)
+- [ ] **Birim testleri:** `SystemWordCard.test.tsx`, `useTextToSpeech.test.ts` (mock `expo-speech` —
+  `unsupported`/`unavailable`/`ready` durumlarının her biri), `TtsFallbackNotice.test.tsx`
+  (`Platform.OS`'a göre doğru yönlendirme metni)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 
 ### D-07 — Öğrenme / Sınav Ekranı ⬜

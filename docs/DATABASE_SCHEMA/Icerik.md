@@ -63,14 +63,18 @@ CREATE TABLE Words (
 CREATE TABLE WordDetails (
     Id INT PRIMARY KEY IDENTITY,
     WordId INT NOT NULL UNIQUE,
-    Pronunciation NVARCHAR(500) NULL,        -- IPA
-    AudioUrl NVARCHAR(500) NULL,
+    Pronunciation NVARCHAR(500) NULL,        -- IPA — yalnızca görsel referans, TTS motoruna girdi olarak verilmez
     Notes NVARCHAR(MAX) NULL, CommonMistakes NVARCHAR(MAX) NULL,
     GrammarData NVARCHAR(MAX) NULL,          -- JSON — şekli Words.LanguageId'ye göre değişir
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (WordId) REFERENCES Words(Id) ON DELETE CASCADE
 );
 ```
+> **Ses (2026-08-08 sonrası karar):** Ayrı bir `AudioUrl` sütunu yok — telaffuz istemci tarafında
+> TTS ile anlık üretilir (Web: `window.speechSynthesis`, Mobil: `expo-speech`, bkz. `TASK_C_web_app.md`
+> C-04 / `D_mobil.md` D-06). Backend hiçbir ses dosyası saklamaz/sunmaz; bu yüzden A-07 (Medya API)
+> kapsamı yalnızca görsel kalır. `Pronunciation` (IPA) ile duyulan ses aynı motordan gelmez —
+> tarayıcı/OS TTS motorları düz metin okur, IPA fonem girdisini kabul etmez.
 > **GrammarData JSON şeması dil bazında:** de → `REFERENCE/GERMAN_LANGUAGE_FEATURES.md`, tr → `REFERENCE/TURKISH_LANGUAGE_FEATURES.md`, en → `REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` (tanımlı ama henüz kullanılmıyor).
 > **Trade-off:** `Gender` üzerinde DB `CHECK`/`INDEX` yok; "tüm maskülinleri getir" gibi filtreler uygulama katmanında (`JSON_VALUE`). Bu ölçekte sorun değil.
 

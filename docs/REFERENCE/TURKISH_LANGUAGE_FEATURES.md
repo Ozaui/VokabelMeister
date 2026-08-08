@@ -67,7 +67,9 @@ Olumsuz `-me/-ma` kişi ekinden önce (gel**me**yeceğim) — `negativeForm` yal
 biçimini tutar, her zamanın olumsuzu kurala göre türetilir (ayrı 30 kolon daha açılmaz — YAGNI).
 
 ## 7. Kart Tasarımı
-- **İsim:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik + Almanca + örnek + kategoriler + ses/IPA.
+> **Ses:** kayıtlı dosya değil, istemci taraflı TTS (Web `window.speechSynthesis`, Mobil `expo-speech`)
+> — bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu.
+- **İsim:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik + Almanca + örnek + kategoriler + ses (TTS)/IPA.
 - **Fiil:** mastar (`-mek/-mak`) + ünsüz yumuşaması göstergesi + çekim (şimdiki/geniş/geçmiş/gelecek) + Almanca + örnek.
 
 ## 8. Sınav Türleri

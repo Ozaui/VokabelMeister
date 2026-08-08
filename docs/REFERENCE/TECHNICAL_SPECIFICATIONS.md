@@ -60,10 +60,11 @@ npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 # Mobil (/mobile) — form/state/i18n admin/web ile aynı; routing React Navigation (mobil-özel, react-router-dom değil)
 npx create-expo-app mobile --template expo-template-blank-typescript && cd mobile
 npm i @reduxjs/toolkit react-redux axios formik yup i18next react-i18next
-npx expo install expo-secure-store expo-av expo-image-picker expo-apple-authentication expo-camera
+npx expo install expo-secure-store expo-speech expo-image-picker expo-apple-authentication expo-camera
 npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/stack
 npm i @react-native-google-signin/google-signin
 # expo-camera: QR ile giriş — mobil web'deki QR'ı bununla okur
+# expo-speech: kelime kartı telaffuzu (D-06) — istemci taraflı TTS, ses dosyası saklanmaz
 ```
 
 ## 3. appsettings.json (yapı — değerler `ENV.md`)

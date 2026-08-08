@@ -8,13 +8,15 @@ CREATE TABLE UserCards (
     Id INT PRIMARY KEY IDENTITY,
     UserId INT NOT NULL,                  -- sahip; sorgularda zorunlu filtre
     FrontText NVARCHAR(500) NOT NULL, BackText NVARCHAR(500) NOT NULL,
-    Notes NVARCHAR(MAX) NULL, ImageUrl NVARCHAR(500) NULL, AudioUrl NVARCHAR(500) NULL,
+    Notes NVARCHAR(MAX) NULL, ImageUrl NVARCHAR(500) NULL,
     IsActive BIT NOT NULL DEFAULT 1,
     IsDeleted BIT NOT NULL DEFAULT 0, DeletedAt DATETIME2 NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE,
     INDEX IX_UserCards_UserId (UserId)
 );
+-- Ses: ayrı bir AudioUrl sütunu yok — FrontText/BackText düz metin olduğu için istemci TTS'i
+-- (bkz. Icerik.md WordDetails notu) admin kürasyonu gerekmeden doğrudan çalışır.
 CREATE TABLE UserCardExamples (
     Id INT PRIMARY KEY IDENTITY, UserCardId INT NOT NULL,
     SentenceFront NVARCHAR(MAX) NOT NULL, SentenceBack NVARCHAR(MAX) NOT NULL,
