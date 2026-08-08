@@ -17,7 +17,7 @@
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
 - **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
 - **İkinci istisna — `ActivityLog`/`SecurityLog`'un admin'e görünen alanları:** `Action`/`EventType` sabit/dilden bağımsız kod kalır (`_logger.Log*` ile aynı kural) ama `Detail`/`OldValue`/`NewValue` **admin panelin kendisi bir istemci olduğu için** (admin de dil tercihine sahip) serbest metin yerine bir **Code** olarak yazılır — log satırı yazılırken (ör. anonim bir isteğin `Accept-Language`'ıyla) hangi admin'in ne zaman hangi dille okuyacağı bilinmediğinden, tr/de çözümü ancak admin `GET /admin/logs/*` (A-07) ile okurken KENDİ `Accept-Language`'ıyla yapılabilir — `ErrorMessages` ile birebir aynı Code-sonra-çöz deseni, yalnızca çözme anı farklı (istek anı değil, okuma anı).
-- **Admin panelin kendi dil tercihi (B-01'den itibaren):** `admin/src/store/slices/languageSlice.ts` (tr/de, `localStorage` persist, varsayılan **tr** — `ErrorMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `admin/src/store/api.ts` her istekte bu tercihi `Accept-Language` header'ı olarak backend'e yollar (yukarıdaki iki istisnanın frontend tarafı budur — backend mesajları VE log okuma bu sayede admin'in seçtiği dilde döner). Admin panelin KENDİ statik arayüz metinleri (buton/etiket, backend'den gelmeyen) `react-i18next` ile ayrıca tr/de çevrilir — bu backend `ErrorMessages`'tan bağımsız, saf frontend kopyası (`admin/src/i18n/locales/{tr,de}.json`). Web/Mobil (Faz D/E) aynı deseni kendi fazları başladığında kurar.
+- **Admin panelin kendi dil tercihi (B-01'den itibaren):** `admin/src/store/slices/languageSlice.ts` (tr/de, `localStorage` persist, varsayılan **tr** — `ErrorMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `admin/src/store/api.ts` her istekte bu tercihi `Accept-Language` header'ı olarak backend'e yollar (yukarıdaki iki istisnanın frontend tarafı budur — backend mesajları VE log okuma bu sayede admin'in seçtiği dilde döner). Admin panelin KENDİ statik arayüz metinleri (buton/etiket, backend'den gelmeyen) `react-i18next` ile ayrıca tr/de çevrilir — bu backend `ErrorMessages`'tan bağımsız, saf frontend kopyası (`admin/src/i18n/locales/{tr,de}.json`). Web/Mobil (Faz C/D) aynı deseni kendi fazları başladığında kurar.
 
 **Yorum satırları**
 - Kod kendini anlatır (iyi isimlendirme). Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, non-obvious bir NEDEN, bilerek alınmış bir karar. NE yaptığını değil NEDEN öyle yaptığını anlat.
@@ -42,12 +42,13 @@
 - `async/await` + `CancellationToken` her I/O metodunda.
 - Log tabloları değişmez (insert-only): soft delete yok, güncellenmez.
 - **İçerik değiştiren her CRUD** (`Word`/`Category`/`UserCard`/`Class`/`SharedContent` vb. create/
-  update/delete, admin toplu import, medya yükleme, hesap anonimleştirme) A-04'te yazılan
-  `IActivityLogger`'a yazar (`Action=CREATE_X`/`UPDATE_X`/`DELETE_X`, `EntityType`+`EntityId`,
-  `OldValue`/`NewValue` JSON diff — şifre/hash gibi hassas alanlar diff'ten hariç tutulur). Admin'e
-  özel hassas işlemler (rol/hesap durumu değişimi, SMTP ayarları) **ayrıca** `ISecurityLogger`'a
-  (`LogEventType.AdminAction`) da yazar. Yeni bir task'a başlarken bu kural unutulursa `TASK/
-  A_admin_panel_backend.md` A-04 sonrası eklenen per-task notlarına bakılır.
+  update/delete, admin toplu import, medya yükleme, hesap anonimleştirme) bir loglama sistemi
+  yazılınca (Faz A) ortaya çıkacak `IActivityLogger`'a yazar (`Action=CREATE_X`/`UPDATE_X`/
+  `DELETE_X`, `EntityType`+`EntityId`, `OldValue`/`NewValue` JSON diff — şifre/hash gibi hassas
+  alanlar diff'ten hariç tutulur). Admin'e özel hassas işlemler (rol/hesap durumu değişimi, SMTP
+  ayarları) **ayrıca** `ISecurityLogger`'a (`LogEventType.AdminAction`) da yazar. Yeni bir task'a
+  başlarken bu kural unutulursa `TASK/A_backend.md`'deki loglama task'ının per-task notlarına
+  bakılır.
 
 **Kimlik & güvenlik**
 - ASP.NET Identity **KULLANILMAZ** — JWT + şifre hashleme manuel.
@@ -56,7 +57,7 @@
 - Loglarda ham e-posta yok → `SHA-256(email)`. Şifre/token asla loglanmaz.
 
 **Test**
-- Her public servis/Handler metodunun birim testi **aynı task içinde** yazılır (Faz F'ye bırakma). Standart → `REFERENCE/CODING_STANDARDS.md §7`.
+- Her public servis/Handler metodunun birim testi **aynı task içinde** yazılır (Faz E'ye bırakma). Standart → `REFERENCE/CODING_STANDARDS.md §6`.
 
 ---
 
@@ -113,7 +114,7 @@ Kanonik desen MediatR Command+Handler; "Servis Arayüzü/Servis" deseni **terk e
 
 ---
 
-## 4. Frontend Feature Yazım Sırası (Faz B/D/E)
+## 4. Frontend Feature Yazım Sırası (Faz B/C/D)
 
 Backend'le aynı disiplin: bir feature'ı tüm katmanlarıyla bitir, sonra diğerine geç.
 
@@ -145,11 +146,11 @@ Akademi'de (§6) tek başına anlatılabilmesi — 300+ satırlık monolit bir s
 okunmaz hem `kod` slaytında öğretilemez.
 
 > **Not (2026-08-05 — task dosyalarında component detayı zorunluluğu):** `TASK/TASK_B_admin_panel.md` ve
-> `TASK/TASK_D_web_app.md`'deki **"Component:" maddeleri özet/üst-seviye listelerdir, atomik değildir.**
+> `TASK/TASK_C_web_app.md`'deki **"Component:" maddeleri özet/üst-seviye listelerdir, atomik değildir.**
 > Gerçek yazımda her isimlendirilmiş component (ör. `WordFormModal`) yukarıdaki kuralca kendi alt
 > component'lerine bölünür ve roadmap'e **her alt component kendi `[ ]` satırı olarak** işlenir —
 > tek bir "Component" checkbox'ı işaretlenip geçilmez. `TASK_B_admin_panel.md`'deki B-03 ve
-> `TASK_D_web_app.md`'deki D-05 bu bölünmenin nasıl yapılacağına örnek olacak şekilde önceden alt
+> `TASK_C_web_app.md`'deki C-05 bu bölünmenin nasıl yapılacağına örnek olacak şekilde önceden alt
 > maddelere ayrılmıştır — yeni bir sayfaya başlarken o iki bölüm şablon olarak kullanılır. Bir
 > component'in ne kadar bölüneceğine karar verirken ölçüt: component 150 satırı aşıyorsa veya
 > içinde başka bir yerde tekrar kullanılabilecek bir alt-parça varsa, ayrı dosyaya çıkar.
@@ -169,7 +170,7 @@ deseni):
 
 **Duruma göre eklenen kütüphaneler** (ilgili feature'ı fiilen yazan task'ta eklenir, önceden değil —
 YAGNI, §3 "Spekülatif ortak tip yazılmaz" ile aynı ilke):
-- `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web D-03.1) görsel üretimi.
+- `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web C-03.1) görsel üretimi.
 - `date-fns` — tarih filtresi/biçimlendirme gereken ilk ekranda (Admin B-08).
 
 **QR ile giriş artık Admin panelde de var** (2026-08-05 karar değişikliği): Admin'de Google/Apple
@@ -196,10 +197,10 @@ Her katman (backend, admin, gelecekte web/mobil) kendi **akademi klasörüne** v
 
 | Faz | Akademi klasörü | Task kodu | "Nasıl denerim" slaytı |
 |---|---|---|---|
-| A (backend) | `AKADEMI/backend/` | `A-0X` | `postman` |
+| A (backend — tek/ortak, admin+web+mobil ayrımı yok) | `AKADEMI/backend/` | `A-0X` | `postman` |
 | B (admin) | `AKADEMI/admin/` | `B-0X` | `onizleme` |
-| D (web) | `AKADEMI/web/` (D fazı başlayınca açılır) | `D-0X` | `onizleme` |
-| E (mobil) | `AKADEMI/mobile/` (E fazı başlayınca açılır) | `E-0X` | `onizleme` |
+| C (web) | `AKADEMI/web/` (C fazı başlayınca açılır) | `C-0X` | `onizleme` |
+| D (mobil) | `AKADEMI/mobile/` (D fazı başlayınca açılır) | `D-0X` | `onizleme` |
 
 Tüm akademiler kök `AKADEMI/` klasörü altında yaşar (kök dizin kalabalıklaşmasın diye), `AKADEMI/index.html` hepsine tek giriş noktasıdır. Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı ilgili `AKADEMI/<katman>/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı — backend için `AKADEMI/backend/STANDART.md`, admin için `AKADEMI/admin/STANDART.md` (ikincisi ortak kurallarda birinciye referans verir, tekrar etmez) — burada tekrar edilmez.
 

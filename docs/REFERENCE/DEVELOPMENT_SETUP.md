@@ -31,7 +31,7 @@ dotnet add WordLearner.Application reference WordLearner.Domain
 dotnet add WordLearner.Infrastructure reference WordLearner.Domain
 dotnet add WordLearner.Tests reference WordLearner.Application WordLearner.Infrastructure
 ```
-Tests klasörü: `{Services, Features, Helpers, Repositories}/` (→ `CODING_STANDARDS.md §7`). NuGet → `TECHNICAL_SPECIFICATIONS.md §1`.
+Tests klasörü: `{Services, Features, Helpers, Repositories}/` (→ `CODING_STANDARDS.md §6`). NuGet → `TECHNICAL_SPECIFICATIONS.md §1`.
 
 ## 4. Migration (dikey dilim — her API kendi migration'ını ekler)
 ```bash

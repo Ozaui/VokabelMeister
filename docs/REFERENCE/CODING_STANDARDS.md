@@ -54,23 +54,23 @@ Gerçekten çok adımlı bir akış varsa (ör. SM-2 hesaplama) kod kendi akış
 - **Repository:** async + CancellationToken + Include (N+1 önle) + soft delete filtresi.
 - **Controller/Handler:** Controller ince (yalnızca `_mediator.Send`); iş mantığı Handler'da.
 
-## 6. Genel Pratikler
+## 5. Genel Pratikler
 
 `async/await`+`CancellationToken` her I/O'da · guard clause + İngilizce loglama · SOLID/DRY/KISS · soft delete + (kişiselde) UserId filtresi · parametreli sorgu / EF LINQ.
 
-## 7. Birim Test Standardı (zorunlu — Faz F'ye bırakılmaz)
+## 6. Birim Test Standardı (zorunlu — Faz E'ye bırakılmaz)
 
 **Araçlar:** xUnit + Moq + FluentAssertions + `EFCore.InMemory` (yalnızca `Repository<T>` gibi DB'ye dokunan testlerde). Proje: `WordLearner.Tests`.
 
-**7.1 Konum/adlandırma:** `Tests/{Services|Features|Helpers|Repositories}/`. `{TestEdilenSınıf}Tests.cs`.
+**6.1 Konum/adlandırma:** `Tests/{Services|Features|Helpers|Repositories}/`. `{TestEdilenSınıf}Tests.cs`.
 
-**7.2 Metot adı (İngilizce):** `{Metot}_{Senaryo}_{BeklenenSonuç}`
+**6.2 Metot adı (İngilizce):** `{Metot}_{Senaryo}_{BeklenenSonuç}`
 ```
 ✅ UpdateProgressAsync_QualityIsLow_ResetsLevel · Register_EmailAlreadyRegistered_ThrowsDuplicateException
 ❌ Test1 · UpdateProgress_Test · (Türkçe ad)
 ```
 
-**7.3 AAA deseni** — her test ARRANGE/ACT/ASSERT (Türkçe yorumla bölünür); NEDEN yalnızca beklenti açık değilse Assert'te.
+**6.3 AAA deseni** — her test ARRANGE/ACT/ASSERT (Türkçe yorumla bölünür); NEDEN yalnızca beklenti açık değilse Assert'te.
 ```csharp
 [Fact]
 public async Task UpdateProgressAsync_QualityIsLow_ResetsLevel()
@@ -88,18 +88,18 @@ public async Task UpdateProgressAsync_QualityIsLow_ResetsLevel()
 }
 ```
 
-**7.4 Mock kuralları:** Repository + dış servisler (email, OneSignal, Google/Apple) her zaman mock. `Mock.Of<ILogger<T>>()`; log içeriği test edilmez. `IMapper` mock'lanmaz — gerçek Profile'dan kurulur. Gerçek in-memory EF yalnızca `Repository<T>` testinde.
+**6.4 Mock kuralları:** Repository + dış servisler (email, OneSignal, Google/Apple) her zaman mock. `Mock.Of<ILogger<T>>()`; log içeriği test edilmez. `IMapper` mock'lanmaz — gerçek Profile'dan kurulur. Gerçek in-memory EF yalnızca `Repository<T>` testinde.
 
-**7.5 Minimum kapsam** her public metot için: happy path · bulunamadı (EntityNotFoundException) · yetki/sahiplik ihlali (403/404, kişiselde) · sınır/uç durum (duplikat 409, quality<3 vb.).
+**6.5 Minimum kapsam** her public metot için: happy path · bulunamadı (EntityNotFoundException) · yetki/sahiplik ihlali (403/404, kişiselde) · sınır/uç durum (duplikat 409, quality<3 vb.).
 
-**7.6 Roadmap'e işleme:** Her API'ın HTML sayfasında ayrı "Test" alanı; test sınıfı birebir kopya + her metoda 3 satır:
+**6.6 Roadmap'e işleme:** Her API'ın HTML sayfasında ayrı "Test" alanı; test sınıfı birebir kopya + her metoda 3 satır:
 ```
 Test Adı      : UpdateProgressAsync_QualityIsLow_ResetsLevel
 Ne Test Edildi: Quality=0'da SM-2'nin seviyeyi sıfırlaması
 Neden Önemli  : Yanlışta mastery kaybı olmazsa kullanıcı öğrenmiş görünür ama unutmuştur (SRS bozulur).
 ```
 
-## 8. Dosya Kontrol Listesi
+## 7. Dosya Kontrol Listesi
 
 ```
 [ ] Şablon dosya-başı/method-başı yorum bloğu YOK

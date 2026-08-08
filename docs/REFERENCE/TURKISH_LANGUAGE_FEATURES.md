@@ -89,12 +89,13 @@ Unicode: ç ğ ı ö ş ü İ (`ı`≠`i` dikkat). Örnekler `WordExamples.Level
 > gerçek `tr` kelime listesi dolmaya başlayınca bu ikisi gözden geçirilecek. Hâl/çekim
 > sayıları (6 hâl, 30 çekim hücresi) Türkçe dilbilgisinin kendisinden geldiği için bu belirsizliğe dahil değil.
 >
-> **A-05.2 retrofit (B-03 hazırlığında fark edildi):** `vowelHarmony` (§1) ve `possessive` (§4) bu
-> matriste ilk yazıldığında (A-05) hiç zorunlu kılınmamıştı — ama §7 "Kart Tasarımı" ikisini de
-> isim kartının parçası sayıyor. Tutarsızlık fark edilince ikisi de aşağıdaki Zorunlu listesine
-> eklendi ve `WordGrammarValidator`'a işlendi (bkz. `AKADEMI/backend/A-05.2_turkce-gramer-
-> tamamlama/`). `consonantMutation` (§5) ise yalnızca §8'deki henüz yazılmamış bir quiz özelliğinde
-> kullanılacağı için bilinçli olarak YAGNI ile ertelendi — validator'da doğrulanmıyor.
+> **Tarihsel not — vowelHarmony/possessive zorunluluğu:** İlk turda (eski A-05) bu iki alan
+> `WordGrammarValidator`'a zorunlu kılınmamıştı, sonradan ayrı bir "A-05.2" retrofit task'ıyla
+> eklenmişti — ama §7 "Kart Tasarımı" ikisini de isim kartının parçası sayıyor, tutarsızlık böyle
+> fark edilmişti. 2026-08-08 backend yeniden tasarımından itibaren bu ayrım kalktı: ikisi de baştan
+> **A-05**'in parçası olarak zorunlu (bkz. `A_backend.md` A-05 notu), ayrı bir retrofit task'ı yok.
+> `consonantMutation` (§5) ise yalnızca §8'deki henüz yazılmamış bir quiz özelliğinde kullanılacağı
+> için bilinçli olarak YAGNI ile ertelendi — validator'da doğrulanmıyor.
 
 **PartOfSpeech = Noun (İsim)**
 - **Zorunlu:** `Text`, `Definition` (serbest anlam notu), `plural`, 6 hâl (`cases.nominative/accusative/dative/locative/ablative/genitive`, §3), `vowelHarmony` (§1 — `"kalın"`|`"ince"`), `possessive` (§4 — 6 kişilik iyelik eki).

@@ -20,8 +20,8 @@ CREATE TABLE Users (
     DailyNewWordLimit INT NOT NULL DEFAULT 5,   -- geri kalanı SRS tekrarı
     -- İstatistikler
     CurrentLevel NVARCHAR(2) NOT NULL DEFAULT 'A1',
-    ThemePreference NVARCHAR(10) NOT NULL DEFAULT 'System',  -- Light|Dark|System — CurrentLevel ile aynı desen: register'da toplanmaz, kayıt sonrası onboarding'de (PUT /users/me, C-01) set edilir
-    LanguagePreference NVARCHAR(2) NOT NULL DEFAULT 'tr',  -- tr|de — istemcinin (admin panel, ileride web/mobil) arayüz dili; Languages tablosundaki kelime içeriği diliyle KARIŞTIRILMAMALI. ThemePreference ile birebir aynı desen: yazma ucu C-01'de (PUT /users/me), A-03.4'te eklendiğinde yalnızca login yanıtından (AuthUserDto) okunabiliyordu
+    ThemePreference NVARCHAR(10) NOT NULL DEFAULT 'System',  -- Light|Dark|System — CurrentLevel ile aynı desen: register'da toplanmaz, kayıt sonrası onboarding'de (PUT /users/me, A-12) set edilir
+    LanguagePreference NVARCHAR(2) NOT NULL DEFAULT 'tr',  -- tr|de — istemcinin (admin panel, ileride web/mobil) arayüz dili; Languages tablosundaki kelime içeriği diliyle KARIŞTIRILMAMALI. ThemePreference ile birebir aynı desen: yazma ucu A-12'de (PUT /users/me) — A-03 kayıt anında toplanmaz, yalnızca login yanıtından (AuthUserDto) okunur, varsayılan değer DB'den gelir
     TotalXP INT NOT NULL DEFAULT 0,
     LifetimeXP INT NOT NULL DEFAULT 0,
     StreakDays INT NOT NULL DEFAULT 0,

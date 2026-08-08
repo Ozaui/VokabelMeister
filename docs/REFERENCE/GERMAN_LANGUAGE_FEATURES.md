@@ -84,7 +84,7 @@ Unicode: ö ü ä ß Ä Ö Ü. Örnekler `WordExamples.Level`'e göre filtreleni
 
 ## 10. Tür Bazlı Alan Doldurma Kuralı (GrammarData Doldurma Matrisi)
 > 795 kelimelik gerçek içerik ölçümünden çıkarılan desen — hem tekil kelime formunda (B-03
-> `WordFormModal`) hem toplu içe aktarımda (A-07) **aynı koşullu kural** uygulanır: kaynak
+> `WordFormModal`) hem toplu içe aktarımda (A-18) **aynı koşullu kural** uygulanır: kaynak
 > `WordConcepts.PartOfSpeech`. Bu bölüm `WordValidator`/`WordFormModal`'in tek doğruluk kaynağıdır —
 > kod bu kuralları tekrar tanımlamaz, buraya referans verir.
 >
@@ -133,7 +133,7 @@ Unicode: ö ü ä ß Ä Ö Ü. Örnekler `WordExamples.Level`'e göre filtreleni
 - **Backend (A-05):** `WordGrammarValidator` (FluentValidation) önce `Words.LanguageId`/`Languages.Code`'a
   göre dile dispatch eder, sonra o dilin kendi `PartOfSpeech` matrisini uygular — `de` dalı bu
   bölümdeki kural, `tr` dalı `TURKISH_LANGUAGE_FEATURES.md §9`. `en` henüz içerik girilmediği için
-  dal yok (gerektiğinde eklenir). Hem tekil `CreateWordCommand`/`UpdateWordCommand` hem A-07 toplu
+  dal yok (gerektiğinde eklenir). Hem tekil `CreateWordCommand`/`UpdateWordCommand` hem A-18 toplu
   import **aynı validator'ı** kullanır.
 - **Frontend (B-03):** `WordFormModal` — önce dil (`de`/`tr`), sonra `Tür` seçilir; gramer bölümü bu
   ikisine göre koşullu render edilir. `de` + Noun/Verb/Diğer için bu bölümdeki gruplar, `tr` + aynı

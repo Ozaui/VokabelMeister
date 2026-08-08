@@ -17,9 +17,11 @@ Kimlik doğrulama: ASP.NET Identity **yok**, JWT + şifre hashleme manuel. Rolle
 ## Geliştirme Sırası (Faz)
 
 ```
-A) Admin BE → B) Admin Panel → C) Kullanıcı BE → D) Web → E) Mobil → F) Test & Yayın
+A) Backend (tek/ortak) → B) Admin Panel → C) Web → D) Mobil → E) Test & Yayın
 ```
-Admin önce (içerik girilir, kullanıcı tarafı gerçek veriyle test edilir); web mobilden önce (hızlı test, mobile referans).
+Backend admin/web/mobil ayrımı olmadan tek seferde tüm API'leri kapsar (bkz. `TASK/TASK.md`
+2026-08-08 roadmap notu); admin panel önce gelir (içerik girilir, kullanıcı tarafı gerçek veriyle
+test edilir), web mobilden önce (hızlı test, mobile referans).
 
 ## Dosya Haritası
 

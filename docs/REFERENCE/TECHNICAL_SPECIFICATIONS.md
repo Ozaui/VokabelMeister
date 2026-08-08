@@ -25,8 +25,8 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
-<PackageReference Include="MailKit" Version="4.17.0" />                    <!-- SMTP e-posta (A-09 kod denetiminde 4.3.0'ın bilinen bir CVE'si nedeniyle güncellendi) -->
-<PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- C-10 bildirim scheduler'ı -->
+<PackageReference Include="MailKit" Version="4.17.0" />                    <!-- SMTP e-posta (A-19/A-20 kod denetiminde 4.3.0'ın bilinen bir CVE'si nedeniyle güncellendi) -->
+<PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- A-17 bildirim scheduler'ı -->
 <PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist -->
 
 <!-- WordLearner.Tests (xUnit) -->
@@ -36,7 +36,7 @@
 <PackageReference Include="Moq" Version="4.20.70" />
 <PackageReference Include="FluentAssertions" Version="6.12.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />   <!-- Repository<T> testleri -->
-<PackageReference Include="coverlet.collector" Version="6.0.2" />          <!-- Coverage (F-01) -->
+<PackageReference Include="coverlet.collector" Version="6.0.2" />          <!-- Coverage (E-01) -->
 ```
 
 ## 2. npm Paketleri

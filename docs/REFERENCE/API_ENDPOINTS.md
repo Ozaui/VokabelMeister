@@ -46,9 +46,9 @@ JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (
   "user": { "id": 1, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" }, "accountWasRecovered": false }
 ```
 `themePreference` (`Light|Dark|System`) ve `languagePreference` (`tr|de` — admin panelin/ileride
-web-mobilin arayüz dili, `A-03.4`) `RegisterCommand`'da girdi olarak alınmaz — `CurrentLevel`
+web-mobilin arayüz dili, `A-03`) `RegisterCommand`'da girdi olarak alınmaz — `CurrentLevel`
 ile aynı desen, DB varsayılanı döner; gerçek seçim kayıt sonrası onboarding'de (`PUT /users/me`,
-§4) yapılır. JWT claim'ine hiç girmez (A-03.3).
+§4) yapılır. JWT claim'ine hiç girmez (A-03).
 
 ### 3.1 QR ile Giriş
 
@@ -148,7 +148,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 // → 400 UNSUPPORTED_FILE_TYPE / FILE_TOO_LARGE (5 MB üstü)
 ```
 
-## 5.2 Diller (A-05.1)
+## 5.2 Diller (A-05)
 
 > `languageId`'ye ihtiyaç duyan uçlar (ör. `GET /words/unmatched?languageId=X`) için — daha önce
 > yalnızca migration seed'inden (`de`=1, `tr`=2) biliniyordu, CRUD'u yok (yeni dil = DB'ye elle satır).
@@ -259,7 +259,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 |-------|-----|----------|
 | GET | `/admin/users` · `/admin/users/{id}` | Liste (page, search, role) / detay+istatistik |
 | PUT | `/admin/users/{id}/role` · `/status` | `{ role }` / `{ isActive, reason }` |
-| GET/DELETE | `/admin/user-cards[/{id}]` | Moderasyon: liste / sil — **A-07.1'e ertelendi**, `UserCard` entity'si C-02'de yazılana kadar kodlanamaz (bkz. `TASK/A_admin_panel_backend.md`) |
+| GET/DELETE | `/admin/user-cards[/{id}]` | Moderasyon: liste / sil — **A-18**'in parçası (`TASK/A_backend.md`), `UserCard` entity'si **A-10**'da yazılana kadar kodlanamaz |
 | GET | `/admin/statistics?daysForGraph=` | Toplam/aktif/dondurulmuş kullanıcı, toplam kelime/kategori, son N günün kayıt grafiği (varsayılan 30 gün; `LoginsByDay` yok — login-event geçmişi şemada yok) |
 | POST | `/admin/words/import` | `{ rows: [{ partOfSpeech, difficultyLevel, imageUrl?, translation: { languageCode, text, definition?, wordDetail?, examples? }, categoryIds? }] }` — satır bazlı best-effort, yanıt `{ totalRows, importedCount, skippedCount, results: [{ rowIndex, languageCode, text, success, errorCode? }] }` |
 | GET/PUT | `/admin/smtp-settings` | Şifre `***` maskeli |
