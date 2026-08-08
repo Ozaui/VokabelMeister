@@ -9,7 +9,7 @@ function DashboardPlaceholder() {
   const { t } = useTranslation()
 
   return (
-    <div className="rounded-card border border-border bg-surface p-8 shadow-sm">
+    <div className="rounded-card border border-border bg-surface p-8">
       <h1 className="text-2xl font-semibold">{t('app.title')}</h1>
       <p className="mt-2 text-text-secondary">{t('common.placeholderNotice')}</p>
     </div>

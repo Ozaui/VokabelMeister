@@ -40,6 +40,14 @@
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
 
+🔄 **2026-08-06 — Palet güncellemesi:** `DESIGN_SYSTEM.md`'deki renk/tipografi/radius/gölge sistemi
+"Turkuaz+Mor" temelinden "Apple + Duolingo" temeline (accent `#FF6B00` Canlı Turuncu, font Plus
+Jakarta Sans, radius skalası genişletildi — ör. `--radius-control` yerine ayrı `--radius-input`/
+`--radius-button`) yeniden yazıldı. `admin/src/index.css`, `App.tsx`, `LanguageSwitcher`/
+`ThemeSwitcher` (`rounded-control`→`rounded-button`) senkronlandı, `AKADEMI/admin/B-01_kurulum/`
+bölümleri (02, 04, 05, 06) yeni token değerleriyle güncellendi. B-01 tekrar ⬜'e alınmadı — bu
+yalnızca bir token senkronizasyonu.
+
 ### B-02 — Auth Sayfaları ⬜
 **Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 > E-posta + şifre + OTP (2FA) + **QR ile giriş** (B-02.1); Google/Apple **yok** (Admin panelde asla).

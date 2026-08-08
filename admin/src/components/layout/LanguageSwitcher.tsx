@@ -11,7 +11,7 @@ function LanguageSwitcher() {
   const currentLanguage = useAppSelector((state) => state.language.language)
 
   return (
-    <div className="inline-flex overflow-hidden rounded-control border border-border">
+    <div className="inline-flex overflow-hidden rounded-button border border-border">
       {LANGUAGES.map(({ code, label }) => (
         <button
           key={code}

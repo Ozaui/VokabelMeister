@@ -13,7 +13,7 @@ function ThemeSwitcher() {
   const currentTheme = useAppSelector((state) => state.theme.theme)
 
   return (
-    <div className="inline-flex overflow-hidden rounded-control border border-border">
+    <div className="inline-flex overflow-hidden rounded-button border border-border">
       {THEMES.map(({ value, label, Icon }) => (
         <button
           key={value}
