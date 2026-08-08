@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yapılandırma Dosyaları ve Kapanış</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'yapilandirma-ozet-sozluk',
+    bolumBaslik: 'A-01 — Proje İskeleti',
+    oncekiBolum: '01_katmanli-mimari-ve-projeler.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'Yapılandırma: Hassas Olan / Olmayan',
+        altBaslik: 'appsettings.json, appsettings.Development.json, global.json ve başlangıç Program.cs — hiçbiri henüz bir veritabanına bağlanmıyor, o A-02\'de.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'appsettings.json vs. appsettings.Development.json',
+        aciklama: '`appsettings.json`, TÜM ortamlarda geçerli, HASSAS OLMAYAN varsayılan ayarları taşır ve git\'e COMMIT edilir. `appsettings.Development.json` ise yalnızca kendi bilgisayarında geçerli, GERÇEK bağlantı dizesi/JWT anahtarı gibi HASSAS değerleri taşır — ENV.md\'nin şablonuna göre doldurulur ve `.gitignore`\'da listelenir, hiçbir zaman GitHub\'a YÜKLENMEZ.',
+        neden: 'CLAUDE.md §1: "Hassas değer (`SecretKey`, bağlantı dizesi, AES anahtarı) asla `appsettings.json`/kaynak koda girmez." Bir geliştiricinin yerel SQL Server şifresi, ekip/genel erişimi olan bir GitHub reposuna SIZMAMALI.',
+        olmasaydi: '`appsettings.Development.json` `.gitignore`\'da olmasaydı, gerçek DB şifresi/JWT anahtarı İLK commit\'te GitHub\'a yüklenir, git GEÇMİŞİNDE kalıcı bir İZ bırakırdı — dosya sonradan silinse bile geçmiş commit\'lerde okunabilir kalırdı.'
+        },
+      {
+        tur: 'kod',
+        baslik: 'appsettings.json — Commit Edilen, Hassas Olmayan Kısım',
+        dosyaYolu: 'backend/WordLearner.API/appsettings.json',
+        nedenBuKlasor: '`WordLearner.API/` altında — ASP.NET Core, çalışma zamanında bu dosyayı çalıştırılabilir projenin (API) kök dizininden otomatik OKUR; Application/Infrastructure\'ın kendi appsettings\'i OLMAZ.',
+        kod: `{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}`,
+        satirlar: [
+          {
+            satir: '"Default": "Information",',
+            aciklama: 'Uygulamanın GENEL log seviyesi — `Information` ve üzeri (Warning, Error, Critical) önem derecesindeki loglar YAZILIR, `Debug`/`Trace` gibi daha ayrıntılı loglar YAZILMAZ.',
+            neden: 'A-04\'te Serilog bağlanınca bu ayar TÜM sink\'leri (konsol, dosya, `ApplicationLog` tablosu) etkileyecek — üretimde her HTTP isteğinin her adımını (`Debug` seviyesi) loglamak hem GEREKSİZ hem PERFORMANS maliyetlidir.',
+            olmasaydi: null
+          },
+          {
+            satir: '"Microsoft.AspNetCore": "Warning"',
+            aciklama: 'ASP.NET Core\'un KENDİ iç bileşenlerinden (routing, middleware pipeline) gelen logları `Warning` seviyesine KISITLAR — uygulamanın kendi logları (`Default`) bundan ETKİLENMEZ.',
+            neden: 'ASP.NET Core\'un kendi `Information` seviyesindeki iç logları ("İstek X rotaya eşlendi" gibi) çok GEVEZE — bunlar açık kalsaydı, uygulamanın KENDİ önemli logları (ör. bir Handler\'ın attığı hata) bu gürültünün İÇİNDE KAYBOLURDU.',
+            olmasaydi: 'Bu satır olmasaydı, konsol/log dosyası ASP.NET Core\'un iç framework loglarıyla DOLAR, geliştiricinin ARADIĞI kendi uygulama logunu bulması ZORLAŞIRDI.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'global.json — SDK Sürümünü Backend\'e Sabitlemek',
+        dosyaYolu: 'backend/global.json',
+        nedenBuKlasor: 'DEVELOPMENT_SETUP.md §3: `WordLearner.sln` ve `global.json`, kök dizindeki `admin/`/`web/`/`mobile/` ile KARIŞMASIN diye `backend/` altında yaşar — SDK sürümü YALNIZCA backend\'i kapsar, frontend\'i (Node.js sürümünü) hiç ETKİLEMEZ.',
+        kod: `{
+  "sdk": {
+    "version": "9.0.309",
+    "rollForward": "latestFeature"
+  }
+}`,
+        satirlar: [
+          {
+            satir: '"version": "9.0.309",',
+            aciklama: 'Bu klasörde (`backend/` ve altındaki tüm projelerde) `dotnet` komutunun kullanacağı TAM .NET SDK sürümünü sabitler.',
+            neden: 'Farklı geliştiricilerin makinesinde FARKLI .NET SDK sürümleri kurulu olabilir — bu dosya olmadan biri 9.0.100, biri 9.0.309 ile derleme yapabilir; küçük SDK farkları bazen farklı derleme DAVRANIŞINA yol açabilir.',
+            olmasaydi: '`global.json` olmasaydı, `dotnet` komutu makinede kurulu EN YENİ SDK\'yı kullanırdı — bir geliştiricinin makinesinde derlenen kod, başka birinin makinesinde FARKLI bir SDK davranışıyla karşılaşabilirdi ("bende çalışıyordu" sorunu).'
+          },
+          {
+            satir: '"rollForward": "latestFeature"',
+            aciklama: 'Tam `9.0.309` bulunamazsa, `dotnet`in AYNI `9.0` ana/minor sürüm hattı içinde EN YENİ feature sürümüne (ör. `9.0.310`) otomatik geçmesine izin verir — `9.1`e veya `10.0`a ASLA atlamaz.',
+            neden: 'Yamalı (patch) güncellemeler genelde GÜVENLİK düzeltmeleri taşır — SDK\'nın otomatik olarak EN YENİ patch\'e geçmesi istenir, ama major/minor bir sürüm SIÇRAMASI (yeni dil özellikleri, olası breaking change) KASITLI ve elle yapılmalı.',
+            olmasaydi: 'Bu ayar olmasaydı (varsayılan `latestPatch`), makinede tam `9.0.309` kurulu olmayan bir geliştirici `dotnet`in HİÇBİR uygun SDK bulamadığı bir hatayla karşılaşabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — A-01\'in Temel İskeleti',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'API projesinin GİRİŞ NOKTASI — uygulama `dotnet run` ile başladığında ÇALIŞAN ilk (ve tek) dosya.',
+        kod: `var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();`,
+        satirlar: [
+          {
+            satir: 'var builder = WebApplication.CreateBuilder(args);',
+            aciklama: 'Uygulamanın DI konteynerini, yapılandırmasını (`appsettings.json` okuma dahil) ve HTTP sunucusunu KURACAK "builder" nesnesini oluşturur — sonraki tüm satırlar bunun ÜZERİNE inşa edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddControllers();',
+            aciklama: 'Attribute tabanlı (`[ApiController]`, `[HttpGet]`...) Controller\'ların ÇALIŞMASI için gereken servisleri DI konteynerine kaydeder.',
+            neden: 'A-03+\'te yazılacak `AuthController`/`WordsController` gibi sınıfların HTTP isteklerine cevap VEREBİLMESİ için bu kayıt şart.',
+            olmasaydi: 'Bu satır olmadan bir Controller sınıfı yazılsa bile, ASP.NET Core onu bir HTTP endpoint\'i olarak TANIMAZDI.'
+          },
+          {
+            satir: 'builder.Services.AddSwaggerGen();',
+            aciklama: 'Yazılan Controller/DTO\'ları TARAYIP bir Swagger/OpenAPI şeması ÜRETEN servisi kaydeder.',
+            neden: 'DEVELOPMENT_SETUP.md §5\'teki `http://localhost:5001/swagger` sayfasının ÇALIŞMASININ ön koşulu.',
+            olmasaydi: null
+          },
+          {
+            satir: 'if (app.Environment.IsDevelopment())',
+            aciklama: 'Swagger arayüzünün YALNIZCA geliştirme ortamında açılmasını sağlayan koşul.',
+            neden: 'Swagger, API\'nin TÜM endpoint\'lerini/DTO şekillerini herkese AÇIK şekilde gösterir — üretimde (production) bu, saldırganlara API\'nin İÇ YAPISINI ücretsiz bir harita olarak sunmak ANLAMINA gelirdi.',
+            olmasaydi: 'Bu koşul olmadan Swagger üretimde de AÇIK kalır, API yüzeyinin TAMAMI (endpoint isimleri, body şekilleri) internete AÇIK bir dokümana dönüşürdü.'
+          },
+          {
+            satir: 'app.UseAuthorization();',
+            aciklama: '`[Authorize]` attribute\'unu OKUYUP isteğin yetkili olup olmadığını KONTROL EDEN middleware\'i pipeline\'a ekler.',
+            neden: 'Bu satır şu an TEK BAŞINA yeterli değil — A-02/A-03\'te `app.UseAuthentication()` (kimin istekte bulunduğunu ÇÖZEN adım) bundan ÖNCE eklenecek; A-01\'de henüz hiçbir `[Authorize]`\'lı endpoint YOK, bu yüzden şimdilik yalnızca iskelet.',
+            olmasaydi: null
+          },
+          {
+            satir: 'app.MapControllers();',
+            aciklama: 'Yukarıda `AddControllers()` ile kaydedilen Controller\'ları GERÇEK HTTP route\'larına (`/api/v1/...`) bağlar — bu satır olmadan Controller\'lar KAYITLI ama ERİŞİLEMEZ kalırdı.',
+            neden: null,
+            olmasaydi: 'Bu satır olmadan `[HttpGet("/api/v1/words")]` gibi bir attribute yazılsa bile, o adrese giden bir istek 404 (bulunamadı) DÖNERDİ — pipeline hiçbir isteği Controller\'lara YÖNLENDİRMEZDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Bu Program.cs "Bitti" mi?',
+        iyi: {
+          baslik: 'A-01\'in kapsamı — doğru beklenti',
+          maddeler: [
+            'Yalnızca "iskelet çalışsın, Swagger açılsın" hedefi',
+            'Henüz HİÇBİR veritabanı bağlantısı, JWT doğrulaması, Serilog, middleware YOK',
+            'Bu dosya A-02\'de JWT/CORS/Serilog/FluentValidation/MediatR kayıtlarıyla GENİŞLEYECEK (TECHNICAL_SPECIFICATIONS.md §10)'
+          ]
+        },
+        kotu: {
+          baslik: 'Yanlış beklenti',
+          maddeler: [
+            '"appsettings.json\'a JWT/DB ayarlarını A-01\'de ekleyelim" — henüz onu OKUYACAK hiçbir servis YOK (YAGNI ihlali)',
+            '"Program.cs\'e şimdiden DbContext/Auth ekleyelim" — `WordLearnerDbContext` A-02\'de yazılacak, henüz VAR OLMAYAN bir şeye bağlanılamaz'
+          ]
+        }
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'appsettings.json', tanim: 'Tüm ortamlarda geçerli, hassas olmayan ve git\'e commit edilen yapılandırma dosyası.' },
+          { terim: 'appsettings.Development.json', tanim: 'Yalnızca yerel makinede geçerli, hassas değerler içeren ve .gitignore\'da olan yapılandırma dosyası.' },
+          { terim: 'global.json', tanim: 'Bir klasördeki `dotnet` komutunun kullanacağı .NET SDK sürümünü sabitleyen dosya.' },
+          { terim: 'Middleware', tanim: 'Her HTTP isteğinin, Controller\'a ulaşmadan önce (veya yanıt dönerken) sırayla geçtiği işlem adımlarından biri (ör. `UseAuthorization`).' },
+          { terim: 'DI Konteyneri', tanim: '`builder.Services`e kaydedilen servislerin merkezi kayıt/üretim yeri — bir sınıf ihtiyaç duyduğu bağımlılığı buradan alır.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-01\'de Öğrendiklerimiz',
+        maddeler: [
+          '5 proje (Domain, Application, Infrastructure, API, Tests), CLAUDE.md §5\'teki "Domain ← Application ← Infrastructure ← API" tek yönlü zinciriyle kuruldu.',
+          'Her projenin NuGet paketleri TECHNICAL_SPECIFICATIONS.md §1\'deki blueprint\'le birebir eşleşiyor (bazı paketlerde daha yeni PATCH sürümleri çözümlendi — API sözleşmesi değişmez).',
+          'Domain hiçbir şeye bağımlı değil; Application ve Infrastructure yalnızca Domain\'e; API ikisini de BİRLEŞTİRİYOR.',
+          'appsettings.json (commit edilir, hassas değer İÇERMEZ) / appsettings.Development.json (gitignore, hassas değerler) ayrımı ENV.md\'ye göre kuruldu.',
+          'Program.cs şu an yalnızca temel iskelet (Controller + Swagger) — JWT/CORS/Serilog/DbContext/middleware A-02\'de eklenecek.',
+          'global.json, .NET SDK sürümünü YALNIZCA backend\'e sabitliyor — admin/web/mobile\'ın Node.js sürümünü etkilemiyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

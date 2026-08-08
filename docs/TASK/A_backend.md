@@ -17,10 +17,11 @@
 > sonradan **A-07.1** retrofit'ine ertelenmişti — burada **Admin API**, Kişisel Kart API'sinden
 > SONRAYA alındı, moderasyon ilk seferde tam yazılır, ayrı bir retrofit task'ı gerekmez.
 
-### A-01 — Proje İskeleti ⬜
+### A-01 — Proje İskeleti ✅
 **Referans:** REFERENCE/DEVELOPMENT_SETUP.md §3, REFERENCE/ENV.md
-- [ ] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
-- [ ] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
+- [x] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
+- [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/` (2 bölüm)
 
 ### A-02 — Ortak Altyapı ⬜
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7

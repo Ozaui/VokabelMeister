@@ -32,14 +32,19 @@
 
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
-| A | A-01…A-20 | Backend | ⬜ |
+| A | A-01…A-20 | Backend | 🔄 |
 | B | B-01…B-09 (+B-02.1) | Admin Panel | 🔄 |
 | C | C-01…C-12 | Web App | ⬜ |
 | D | D-01…D-14 | Mobil | ⬜ |
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-01` ⬜ (Proje İskeleti) → `TASK/A_backend.md`. Faz A tamamlanınca kaldığı
+**Sıradaki task:** `A-02` ⬜ (Ortak Altyapı) → `TASK/A_backend.md`. Faz A tamamlanınca kaldığı
 yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
+
+(`A-01 — Proje İskeleti` ✅ tamamlandı 2026-08-09: 5 proje [Domain/Application/Infrastructure/API/
+Tests], CLAUDE.md §5'teki tek yönlü bağımlılık zinciri, TECHNICAL_SPECIFICATIONS.md §1'deki NuGet
+paketleri, appsettings.json/appsettings.Development.json ayrımı [ENV.md], başlangıç `Program.cs` —
+`AKADEMI/backend/A-01_proje-iskeleti/`e işlendi, bkz. `02_yapilandirma-ozet-sozluk.html`.)
 
 (**2026-08-08 — Backend roadmap'i baştan tasarlandı:** `TASK/A_backend.md` A-01…A-20, eski A
 [admin backend] + C [kullanıcı backend] görevlerinin TEK sıraya birleşmiş hâli — git geçmişindeki
