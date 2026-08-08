@@ -40,6 +40,14 @@
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
 
+⚠️ **2026-08-08 — Backend baştan yazım:** `backend/` kodu ve `AKADEMI/backend/` tamamen
+sıfırlandı (kullanıcı kararı), `A_backend.md`'de A-01…A-20 olarak yeniden tasarlandı (tek/ortak
+Faz A — admin/kullanıcı backend ayrımı yok). Aşağıdaki madde başlarındaki **"Referans: A-0X"**
+işaretleri bu YENİ numaralara güncellendi — Auth=A-03 (QR dahil), Words=A-05, Categories=A-06,
+Loglama=A-04 hiç değişmedi; **Admin API eski A-07'den A-18'e, SMTP eski A-09'dan A-19'a kaydı**
+(Admin API artık Kişisel Kart API'sinden [A-10] SONRA — içerik moderasyonu ilk seferde tam
+yazılıyor, eski "A-07.1 ertelendi" retrofit'i artık yok, bkz. `A_backend.md` başlık notu).
+
 🔄 **2026-08-06 — Palet güncellemesi:** `DESIGN_SYSTEM.md`'deki renk/tipografi/radius/gölge sistemi
 "Turkuaz+Mor" temelinden "Apple + Duolingo" temeline (accent `#FF6B00` Canlı Turuncu, font Plus
 Jakarta Sans, radius skalası genişletildi — ör. `--radius-control` yerine ayrı `--radius-input`/
@@ -49,7 +57,7 @@ bölümleri (02, 04, 05, 06) yeni token değerleriyle güncellendi. B-01 tekrar 
 yalnızca bir token senkronizasyonu.
 
 ### B-02 — Auth Sayfaları ⬜
-**Referans:** A-03 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3
+**Referans:** A-03 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 > E-posta + şifre + OTP (2FA) + **QR ile giriş** (B-02.1); Google/Apple **yok** (Admin panelde asla).
 - [ ] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -65,10 +73,10 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-02.1 — QR Kod ile Giriş ⬜
-**Referans:** A-03.1 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3
+**Referans:** A-03 (`A_backend.md`) — QR ile giriş, ayrı bir alt-task değil, A-03'ün parçası, REFERENCE/API_ENDPOINTS.md §3.1, REFERENCE/SECURITY.md §1.3
 > `LoginPage`'e eklenen "QR ile giriş" sekmesi/linki — Steam benzeri akış: admin panelde QR
-> gösterilir, admin'in kendi hesabıyla mobilde (Faz E tamamlanınca) zaten giriş yapmış olan taraf
-> okutup onaylar. Backend endpoint'leri (`/auth/qr/*`) D-03.1 (Web) / E-05.1 (Mobil) ile
+> gösterilir, admin'in kendi hesabıyla mobilde (Faz D tamamlanınca) zaten giriş yapmış olan taraf
+> okutup onaylar. Backend endpoint'leri (`/auth/qr/*`) C-03.1 (Web) / D-05.1 (Mobil) ile
 > **birebir aynı** — istemciye göre dallanmaz, yalnızca admin tarafına yeni bir frontend ekranı
 > eklenir. Onaylanan mobil tarafın `Admin` rolünde olması **gerekmez** (`/auth/qr/generate` kimin
 > çağırdığını bilmez) — güvenlik zaten normal login'deki AYNI token akışından gelir.
@@ -82,7 +90,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-03 — Kelime Yönetimi ⬜
-**Referans:** A-05 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §5
+**Referans:** A-05 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §5
 > **Component detaylandırma örneği:** aşağıdaki alt maddeler `CLAUDE.md` §4.1'deki granülerlik
 > kuralının uygulanmış hâlidir — `WordFormModal` ve `WordPairingPage` tek satırlık birer madde
 > değil, her biri kendi dosyasına çıkan alt component'lerin listesidir. Yeni bir sayfaya
@@ -124,7 +132,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-04 — Kategori Yönetimi ⬜
-**Referans:** A-06 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §6
+**Referans:** A-06 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §6
 - [ ] **Tip:** `Category`, `CategoryFormValues` (`category.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `categoriesApi` — `getCategories` (hiyerarşik), `createCategory`, `updateCategory`, `deleteCategory` (axios + `useApiQuery`/`useApiMutation`)
@@ -137,7 +145,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-05 — Kullanıcı Yönetimi ⬜
-**Referans:** A-07 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §11
+**Referans:** A-18 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §11
 - [ ] **Tip:** `AdminUserListItem`, `UserDetail` (`user.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `adminUsersApi` — `getUsers` (arama/rol filtresi), `getUserDetail`, `changeRole`, `toggleStatus` (axios + `useApiQuery`/`useApiMutation`)
@@ -150,10 +158,15 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-06 — Paylaşım/İçerik Moderasyonu ⬜
-**Referans:** A-07 (`A_admin_panel_backend.md`)
+**Referans:** A-18 (`A_backend.md`)
 > **Not:** "Herkese açık + admin onayı" modeli kaldırıldı — DATABASE_SCHEMA/Kisisel_Icerik.md'de `IsPublic`/`IsApproved`
 > alanı yok, gerçek mekanizma `SharedContents` (link tabanlı, admin onayı gerektirmez). Bu sayfa onun
 > yerine **şikayet edilen** kişisel kartları listeler/siler (`GET/DELETE /admin/user-cards`).
+> **Backend bağımlılığı (2026-08-08 roadmap'inde çözüldü):** `GET/DELETE /admin/user-cards`
+> **A-18**'in parçası — eski turda `UserCard` entity'si (**A-10**) yokken planlanıp ayrı bir
+> "A-07.1 ertelendi" retrofit task'ına bölünmüştü, yeni roadmap'te Admin API bilinçli olarak
+> Kişisel Kart API'sinden SONRAYA alındığı için bu artık gerekmiyor — Faz A tamamlandığında
+> A-18 de dahil tüm admin endpoint'leri hazır olacak, B-06'nın atlanması/retrofit edilmesi gerekmez.
 - [ ] **Tip:** `ReportedUserCard` (`moderation.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `moderationApi` — `getReportedUserCards`, `deleteUserCard` (axios + `useApiQuery`/`useApiMutation`)
@@ -166,7 +179,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-07 — İstatistik Paneli ⬜
-**Referans:** A-07 (`A_admin_panel_backend.md`), REFERENCE/API_ENDPOINTS.md §11
+**Referans:** A-18 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §11
 - [ ] **Tip:** `AdminStatistics` (`statistics.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `statisticsApi` — `getAdminStatistics` (axios + `useApiQuery`)
@@ -179,7 +192,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-08 — Log Görüntüleme Paneli ⬜
-**Referans:** A-04, A-07 (`A_admin_panel_backend.md`)
+**Referans:** A-04, A-18 (`A_backend.md`)
 - [ ] **Tip:** `ActivityLogEntry`, `ApplicationLogEntry`, `SecurityLogEntry` (`log.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `logsApi` — `getActivityLogs`, `getApplicationLogs`, `getSecurityLogs` (filtre+sayfa, axios + `useApiQuery`)
@@ -193,7 +206,7 @@ yalnızca bir token senkronizasyonu.
 - [ ] CSV dışa aktarma (opsiyonel)
 
 ### B-09 — SMTP Ayarları Sayfası ⬜
-**Referans:** A-09 (`A_admin_panel_backend.md`)
+**Referans:** A-19 (`A_backend.md`)
 - [ ] **Tip:** `SmtpSettingsFormValues` (`smtp.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `smtpApi` — `getSmtpSettings` (şifre `***`), `updateSmtpSettings`, `testSmtpConnection` (axios + `useApiQuery`/`useApiMutation`)

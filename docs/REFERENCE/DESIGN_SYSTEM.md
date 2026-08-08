@@ -1,10 +1,10 @@
 # TASARIM SİSTEMİ (Admin + Web — ortak)
 
 > **Kapsam (2026-08-05'ten itibaren):** Bu doküman artık **Admin Panel (`/admin`, Faz B) ve Web
-> (`/web`, Faz D) için ortak, tek tasarım sistemidir.** Önceden ("Turkuaz + Mercan" dönemi) yalnızca
+> (`/web`, Faz C) için ortak, tek tasarım sistemidir.** Önceden ("Turkuaz + Mercan" dönemi) yalnızca
 > Admin'i kapsıyordu, Web/Mobil kendi kararlarını ayrı alacaktı — bu ayrım kaldırıldı: iki frontend
 > aynı renk/tipografi/radius token'larını kullanır, tek bir Tailwind `@theme` kaynağından türer.
-> **Mobil (Faz E)** aynı renk/tipografi kararlarını native bileşenlere (React Native `StyleSheet`)
+> **Mobil (Faz D)** aynı renk/tipografi kararlarını native bileşenlere (React Native `StyleSheet`)
 > uyarlar — piksel-birebir Tailwind eşleşmesi şart değil, ama token değerleri (hex/px) aynı kalır.
 
 > **Not (2026-08-06 — Tasarım sistemi baştan yazıldı):** Önceki renk paleti tamamen değiştirildi. Karar
@@ -186,9 +186,9 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 | B-08 | Log Görüntüleme (3 sekme)                     | LogsPage                                     |
 | B-09 | SMTP Ayarları                                 | SmtpSettingsPage                             |
 
-### Web (D-01 → D-12, `docs/TASK/TASK_D_web_app.md`)
+### Web (C-01 → C-12, `docs/TASK/TASK_C_web_app.md`)
 
-Bkz. ilgili dosyadaki D-03 → D-12 başlıkları — aynı token setini kullanır, ayrı bir tabloya gerek yok.
+Bkz. ilgili dosyadaki C-03 → C-12 başlıkları — aynı token setini kullanır, ayrı bir tabloya gerek yok.
 
 Diğer agent'a verilen tam tasarım brief'i (ekran detayları + kısıtlar) bu paletle birebir aynıdır —
 bu doküman o brief'in kalıcı, kod-tarafı referans halidir.

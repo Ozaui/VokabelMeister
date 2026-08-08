@@ -72,5 +72,5 @@ Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECUR
 language/filter UI state — RTK Query/React Query YOK, sunucu verisi axios + `useApiQuery`/
 `useApiMutation` ile çekilir; Formik + Yup formlarda; `react-i18next` arayüz dilinde).
 **Admin:** React+Vite, TS, TailwindCSS, React Router DOM, `lucide-react`, `react-toastify` (bildirim), `qrcode.react` (QR ile giriş), `date-fns` (log tarihleri) — henüz başlamadı (2026-08-05 baştan yazım).
-**Web:** React+Vite, TS, TailwindCSS, React Router v6, `lucide-react`, `react-toastify` (bildirim), `@react-oauth/google`, `qrcode.react` (QR ile giriş) (Faz D — henüz başlamadı).
-**Mobil:** React Native + Expo, React Navigation (tek routing istisnası — `react-router-dom` değil), `expo-camera` (QR tarayıcı), Expo Secure Store (Faz E — henüz başlamadı).
+**Web:** React+Vite, TS, TailwindCSS, React Router v6, `lucide-react`, `react-toastify` (bildirim), `@react-oauth/google`, `qrcode.react` (QR ile giriş) (Faz C — henüz başlamadı).
+**Mobil:** React Native + Expo, React Navigation (tek routing istisnası — `react-router-dom` değil), `expo-camera` (QR tarayıcı), Expo Secure Store (Faz D — henüz başlamadı).

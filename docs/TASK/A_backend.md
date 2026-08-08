@@ -1,0 +1,381 @@
+# FAZ A — Backend (`.NET 9 Web API`)
+
+> **Yöntem/standart:** Bu dosyadaki her task, `../../CLAUDE.md` §3/§6 kurallarına göre yazılır
+> (dikey dilim, MediatR CQRS, parça yazılır yazılmaz `AKADEMI/backend/`ye işlenir). O bölümler
+> değişmez standarttır — burada tekrar edilmez, her zaman `../../CLAUDE.md`'ye bakılır.
+
+> **2026-08-08 — Baştan yazım:** Önceki backend kodu (`backend/`) ve onu öğreten `AKADEMI/backend/`
+> tamamen silindi (kullanıcı kararı) — git geçmişinde duruyor, kayıp değil. Backend artık "Admin
+> Panel Backend" / "Kullanıcı Backend" diye ikiye ayrılmıyor — TEK, ortak bir backend, TEK bir faz
+> olarak baştan tasarlandı. `docs/DATABASE_SCHEMA/` ve `docs/REFERENCE/` (API_ENDPOINTS,
+> ARCHITECTURE, SECURITY, TECHNICAL_SPECIFICATIONS, ENV, GERMAN/TURKISH_LANGUAGE_FEATURES)
+> korundu — aşağıdaki task'lar bunları blueprint olarak kullanır. **Aşağıdaki sıralama, eski
+> A/C fazlarının iki bilinçli tasarım hatasını düzeltir:** (1) eski C-01 (`/users/me/statistics`)
+> `UserProgress` yazılmadan önce geliyordu (yarım/anlamsız istatistik döndürüyordu) — burada
+> **Kullanıcı Profil API**, SRS/İlerleme'den SONRAYA alındı, ilk günden gerçek veri döner;
+> (2) eski A-07'nin "UserCard Moderasyonu" maddesi `UserCard` entity'si henüz yokken planlanmış,
+> sonradan **A-07.1** retrofit'ine ertelenmişti — burada **Admin API**, Kişisel Kart API'sinden
+> SONRAYA alındı, moderasyon ilk seferde tam yazılır, ayrı bir retrofit task'ı gerekmez.
+
+### A-01 — Proje İskeleti ⬜
+**Referans:** REFERENCE/DEVELOPMENT_SETUP.md §3, REFERENCE/ENV.md
+- [ ] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
+- [ ] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
+
+### A-02 — Ortak Altyapı ⬜
+**Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
+*(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
+- [ ] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazılır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `ApiErrorResponse` (`{ error: { code, message }, success }`) — ilk gerçek controller'dan önce
+      spekülatif ortak DTO (`ApiResponse<T>`/`PagedResult<T>` vb.) **açılmaz**, her tip onu fiilen
+      kullanan ilk task'ta yazılır (CLAUDE.md §3 YAGNI kuralı)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Middleware: global exception handling, security headers, request/response log
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR kayıtları (AutoMapper yalnızca
+      koşullu — CLAUDE.md §3 "AutoMapper Profile yalnızca" kuralı, ilk gerçek Entity→DTO dönüşümünde eklenir)
+- [ ] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-03 — Auth API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
+**Frontend karşılığı:** B-02/B-02.1 (Admin — sade giriş+OTP+QR), C-03/C-03.1 (Web — tam akış+Google+QR), D-05/D-05.1 (Mobil — tam akış+Google+Apple+QR tarayıcı)
+> Eski turda QR ile giriş / tema tercihi / dil tercihi / başarı mesajı lokalizasyonu dört ayrı
+> "retrofit" task'ı olarak sonradan eklenmişti (kullanıcı ihtiyacı iterasyon sırasında ortaya
+> çıkmıştı). Artık hepsi baştan biliniyor — bu task hepsini **ilk turda** kapsar, ayrı retrofit
+> task'ı açılmaz.
+- [ ] **Entity:** `User` (Role/IsActive/CurrentLevel/**ThemePreference**[Light|Dark|System, CHECK
+      constraint]/**LanguagePreference**[tr|de, CHECK constraint] dahil), `RefreshToken`,
+      `QrLoginSession` + `OtpPurpose`/`QrLoginStatus` enum + EF config + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash), `ITokenService` (JWT access 15dk +
+      refresh, algorithm-confusion önlemi, claim'ler: NameIdentifier/Email/Role/firstName —
+      Theme/LanguagePreference JWT'ye GİRMEZ, yalnızca yetki taşınır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IOtpService`/`OtpService` (Register/Login/ResetPassword/AccountDeletion ortak OTP üretimi/
+      doğrulaması), `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple/QR
+      girişlerinin ortak son adımı: grace period kurtarma, token üretimi)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] 13 Auth Command+Handler (`Application/Features/Auth/`): Register, VerifyEmail,
+      ResendVerification, Login, VerifyLoginOtp, LoginWithGoogle, LoginWithApple, Refresh, Logout,
+      ForgotPassword, ResetPassword, RequestAccountDeletion, ConfirmAccountDeletion + `IEmailService`
+      sözleşmesi + `DevEmailService` (gerçek SMTP gönderimi A-20'de) + `IAppleTokenValidator`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] 5 QR Login Command+Handler (`Application/Features/QrLogin/`): Generate/Scan/Confirm/Deny/
+      GetStatus (Confirmed'de `ILoginCompletionService` ile tek seferlik token) +
+      `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Başarı mesajları (`MessageResponse` döndüren Command'lar) — `ErrorMessages.cs` deseniyle
+      simetrik bir `SuccessMessages.cs` (Code + `Accept-Language`'a göre tr/de çözümü), hardcode
+      Türkçe metin **yazılmaz**
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `AuthController` (13 endpoint) + `QrLoginController` (4 endpoint) + FluentValidation
+      (ThemePreference/LanguagePreference dahil) + rate limiting (100/dk genel, 10/dk anonim, QR
+      generate IP başına partitioned)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** 13+5 Command Handler testi, `OtpServiceTests`, `LoginCompletionServiceTests`,
+      `JwtTokenServiceTests`, `PasswordServiceTests`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-04 — Loglama Sistemi ⬜
+**Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
+**Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)
+> `ActivityLog`/`SecurityLog`'un `UserId` FK'i `Users`'a bağlı (SET NULL) — bu yüzden A-03'ten
+> SONRA gelir. A-03'ün handler'ları bu task bitene kadar loglama YAPMAZ; bu task'ın bir parçası
+> olarak A-03'e (ve varsa QR akışına) **geriye dönük** `IActivityLogger`/`ISecurityLogger`
+> çağrıları eklenir — tek seferlik, planlı bir entegrasyon adımı, sürpriz retrofit değil.
+- [ ] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config +
+      migration — hiçbiri `BaseEntity`'den türemez (insert-only, soft delete yok)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLogs` (konsol+dosya+DB), `RequestResponseLoggingMiddleware`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IActivityLogger`/`ActivityLogger` (OldValue/NewValue JSON diff), `ISecurityLogger`/`SecurityLogger`
+      (e-posta `IPasswordService.HashToken` ile hash'lenip `EmailHash`'e yazılır — ham e-posta ASLA loglanmaz)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` (sayfalı, filtreli — `PagedResult<T>`'in ilk gerçek tüketicisi)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/
+      QrLoginDenied + PasswordReset/AccountDeletion başarı olayları — `SecurityLog.Detail` serbest
+      metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `ActivityLoggerTests`, `SecurityLoggerTests`, 3 Repository testi, A-03 handler testlerine eklenen log-doğrulama senaryoları
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-05 — Sistem Kelimesi API (Words) ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §5, §5.1, §5.2, REFERENCE/GERMAN_LANGUAGE_FEATURES.md §10, REFERENCE/TURKISH_LANGUAGE_FEATURES.md §9
+**Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
+> Dil listesi endpoint'i (eski A-05.1) ve Türkçe `vowelHarmony`/`possessive` zorunluluğu (eski
+> A-05.2) artık baştan biliniyor — bu task ilk turda kapsar.
+- [ ] **Entity:** `Language` (`BaseEntity`'den TÜREMEZ — statik seed/referans tablosu, audit
+      gerekmez) + seed (`de`, `tr`); `WordConcept`/`Word`/`WordDetail`/`WordExample` (`BaseEntity`'den
+      türer) + EF config + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `WordGrammarValidator` (FluentValidation, `LanguageId`'ye göre dile dispatch): **`de`**
+      (Noun: gender+plural+4 hâl zorunlu; Verb: 18 çekim+auxiliary+pastParticiple+koşullu
+      `separablePrefix`; Diğer: GrammarData NULL), **`tr`** (Noun: plural+6 hâl+**vowelHarmony**+
+      **possessive**[6 kişi] zorunlu; Verb: verbRoot+negativeForm+30 çekim; Diğer: GrammarData
+      NULL) — `consonantMutation` bilinçli olarak dışarıda bırakılır (yalnızca ileri bir quiz
+      özelliğinde kullanılacak, YAGNI)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `ILanguageRepository`/`IWordConceptRepository` + `GetLanguagesQuery` + 5 Command/Query
+      (Create/Update/Delete/GetById/GetWords) — `translations[]` 1 veya 2 dil tek işlemde, duplikat
+      409+`?force=true`, tek dilse kavram "eşleşmemiş" kalır
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `LanguagesController` (`GET /languages`, `[Authorize]`), `WordsController` (`[Authorize]`
+      liste/detay, `[Authorize(Roles="Admin")]` CRUD)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı + `suggestedMatchConceptId`
+      — `Definition` virgülle ayrılmış çoklu karşılığı token'lara bölünüp aranır) + `PairWordConceptsCommand`
+      (`primaryId` kazanır, tür/kategori çakışması bloklamaz — dilin doğası)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`IActivityLogger`:** `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `WordGrammarValidatorTests` (her dil×tür), 5 Command/Query Handler testi, eşleştirme testleri
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-06 — Kategori API (Categories) ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §6
+**Frontend karşılığı:** B-04 (Admin), C-06 (Web), D-08 (Mobil)
+- [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation`, `WordCategory` ara tablo
+      (`WordConceptId`↔`CategoryId` — kategori dilden bağımsız) + EF config (CHECK MinLevel/MaxLevel,
+      self-ref FK Restrict) + migration (12 kategori + 24 çeviri seed, `DATABASE_SCHEMA.md` sırasıyla)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `ICategoryRepository` (hiyerarşik liste, `HasChildrenAsync`/`HasActiveWordsAsync`/`WouldCreateCycleAsync`)
+      + 5 Command/Query (Create/Update/Delete/GetCategories/GetCategoryWords)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Silme koruması (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`/`CategoryParentCycleException`, 409/400), `CategoriesController` (5 endpoint)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `GET /words`'e `categoryId` filtresi + Word DTO'larına `categories[]` alanı
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`IActivityLogger`:** `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** hiyerarşik liste + orphan terfi, silme koruması, döngü koruması, `categoryId` filtresi
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-07 — Medya / Dosya Yükleme API ⬜
+**Referans:** REFERENCE/ENV.md §7
+**Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi formundaki görsel yükleme)
+> `WordConcept.ImageUrl` alanı A-05'te zaten var — bu task yeni migration açmaz, yalnızca oraya
+> yazılacak URL'i üreten yükleme uç noktasını yazar.
+- [ ] `IFileStorageService`/`LocalFileStorageService` (uzantı jpg/jpeg/png/webp + 5 MB + **içerik**
+      [magic bytes] doğrulaması — yalnızca uzantı kontrolü GÜVENSİZ, bir `.exe` `.png` adıyla
+      yüklenebilir), `Guid` tabanlı benzersiz ad üretimi
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `MediaController` (`POST /media/images/upload`, `[Authorize(Roles="Admin")]`, `IFormFile?`
+      nullable + `FileRequiredException` — eksik dosya projenin standart `ApiErrorResponse`
+      şeklinde döner, ASP.NET'in ham hata şekli DEĞİL), `[RequestSizeLimit]`, `UseStaticFiles`
+      (auth'tan ÖNCE, `/uploads` herkese açık)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`IActivityLogger`:** `UPLOAD_MEDIA` (`EntityType=Word`)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** boyut/uzantı/içerik doğrulama (spoofing regresyonu dahil), benzersiz ad üretimi
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-08 — Kişisel Kategori API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §8
+**Frontend karşılığı:** C-06 (Web — Kategoriler Sayfası, kişisel sekme), D-08 (Mobil — Kategoriler Ekranı)
+> A-10'daki (Kişisel Kart) `UserCardUserCategories` ara tablosunun FK verdiği `UserCategory`
+> entity'si önce hazır olmalı — dikey dilim bütünlüğü için Kişisel Kart'tan ÖNCE gelir.
+- [ ] **Entity:** `UserCategory` + migration, `IUserCategoryService`/`UserCategoryController` (yalnızca sahibi, `UserId` filtresi zorunlu)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`IActivityLogger`:** `CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** sahiplik filtresi, CRUD
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-09 — SRS / İlerleme API (UserProgress) ⬜
+**Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §8
+**Frontend karşılığı:** C-11 (Web — İlerleme Sayfası), D-13 (Mobil — İlerleme Ekranı); C-05/D-07 (Öğrenme/Sınav) bu API'nin sonuçlarını dolaylı kullanır (bkz. A-11)
+> `POST /user-cards/learn-system-word` (A-10'da yazılacak) bu entity'yi (`UserProgress`) kullanır
+> — bu yüzden Kişisel Kart API'sından ÖNCE bitirilmesi gerekir.
+- [ ] **Entity:** `UserProgress`, `UserCardProgress` (`NextReviewAt` **nullable** — NULL=yeni kelime
+      havuzu, + `ConsecutiveIncorrect`/`IsSuspended` leech alanları), `LearningHistory` (+
+      `HintUsed`/`IsExtraPractice`/`MasteryBefore`/`MasteryAfter`), `Achievements`/`UserAchievements` + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5 + `CalculateMastery` yüzdelik formülü)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları, Mastery formülü)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IProgressService`/`ProgressService` (XP, streak **yalnızca günlük yeni kelime hedefine
+      bağlı**, Mastery bantları Zayıf/Orta/İyi 0-40/40-70/70-100, yeni kelime seçim sorgusu,
+      leech tespiti `ConsecutiveIncorrect>=5` → Suspend/Reset/Continue), `ProgressController`
+      (`GET /progress/summary`, `GET /progress/words`, `GET /progress/suspended`, leech-action endpoint'leri)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IAchievementService`/`AchievementService` (seed: streak 3/7/30, kelime sayısı 50/200/500, ilk
+      `CurrentLevel=5`, 100 kelime İyi bantta, hatasız oturum, leech kurtarma), `GET /achievements/me`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `ProgressServiceTests` (XP/streak, `NextReviewAt`, bant eşikleri, leech), `AchievementServiceTests`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-10 — Kişisel Kart API (UserCard) ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §7
+**Frontend karşılığı:** C-07 (Web — Kişisel Kartlar Sayfası), D-09 (Mobil — Kişisel Kartlar Ekranı)
+- [ ] **Entity:** `UserCard`, `UserCardExample` + ara tablolar (`UserCardCategory`, `UserCardUserCategory`) + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IUserCardService`/`UserCardService` (liste/detay/CRUD — yalnızca sahibi), duplikat uyarısı
+      (409+`?force=true`), sistem kelimesi eşleşme uyarısı (`suggestedSystemWordId`)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `POST /user-cards/learn-system-word` → `UserCard` değil **`UserProgress`** açar, `UserCardController`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`IActivityLogger`:** `CREATE_USER_CARD`/`UPDATE_USER_CARD`/`DELETE_USER_CARD`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** sahiplik filtresi, duplikat 409, learn-system-word akışı, audit çağrısı
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-11 — Öğrenme / Sınav API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §9
+**Frontend karşılığı:** C-05 (Web — Öğrenme/Sınav Sayfası), D-07 (Mobil — Öğrenme/Sınav Ekranı)
+- [ ] **Entity:** `LearningSession` (+ `TargetLanguageId` FK `Languages`, 6 `SessionType` — MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse/Flashcard) + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `ILearningSessionService`/`LearningSessionService` (başlat — `mode: New|Due|Band|Mixed` +
+      zorunlu `targetLanguageId` [her oturum kendi yönünü seçer, `UserProgress`/`UserCardProgress`
+      `WordId`'ye [dile özel] bağlı olduğu için iki yön bağımsız ilerler — şema değişikliği
+      gerekmez], kelime havuzu yalnızca **eşleşmiş** `WordConcept`'lerden, her review sorusu için
+      rastgele format ataması, ipucu→quality tavanı düşürme, "günde tek resmi review" kuralı
+      [`IsExtraPractice`], tamamla/bırak/`repeat` [SM-2 güncellemeden tekrar])
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `LearningSessionController` (+ `GET /learning-history/today/learned`, `/today/tested`)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** Mixed dedup, SRS önceliği, rastgele format ataması, ipucu/TrueFalse tavanı, repeat'in SM-2'yi etkilememesi
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-12 — Kullanıcı Profil API (`/users/me`) ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §4
+**Frontend karşılığı:** B-01 (Admin — `languageSlice`/`themeSlice`'ın gerçek yazma ucu), C-12 (Web — Profil Sayfası), D-14 (Mobil — Profil Ekranı)
+> A-09'dan (SRS) SONRA geliyor — `GET /users/me/statistics` ilk günden **gerçek** `UserProgress`
+> verisi döner, boş/yarım bir istatistik uç noktası olarak başlamaz.
+- [ ] `UserController`: `GET /users/me`, `PUT /users/me` (CurrentLevel, ThemePreference,
+      LanguagePreference dahil — `RegisterCommand`'a girdi olarak EKLENMEZ, DB varsayılanı döner,
+      gerçek seçim burada), `GET /users/me/statistics` (A-09'un `UserProgress`/`Achievements`'ından), `DELETE /users/me`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Admin panel bağlantısı:** `admin/src/store/slices/languageSlice.ts`/`themeSlice.ts` (B-01'de
+      yalnızca `localStorage`'a yazıyordu) bu API'ye bağlanır — dil/tema değiştirildiğinde hem
+      `localStorage` hem backend güncellenir, başka cihazda login'de `AuthUserDto`'dan senkron okunur
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** profil güncelleme, istatistik hesaplama, ThemePreference/LanguagePreference validasyonu
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-13 — Avatar Yükleme API ⬜
+**Frontend karşılığı:** C-12 (Web — Profil Sayfası, avatar), D-14 (Mobil — Profil Ekranı, avatar)
+- [ ] `POST /users/me/avatar` (multipart, max 5MB, jpg/png/webp, benzersiz ad, eski avatar silinir — A-07'nin `IFileStorageService`'i yeniden kullanılır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** boyut/uzantı reddi, eski dosyanın silindiğinin doğrulanması
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-14 — Paylaşım API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §14
+**Frontend karşılığı:** C-10 (Web — Paylaşım Linki Sayfası), D-12 (Mobil — Paylaşım Linki Ekranı)
+- [ ] **Entity:** `SharedContent`, `SharedContentImport` + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IShareService`/`ShareService` (UUID link, anonim önizleme, listene kopyala, sil), `SharedContentController`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** link üretimi, `expiresAt` kontrolü, anonim önizleme
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-15 — Sınıf API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §12
+**Frontend karşılığı:** C-08 (Web — Sınıf Sayfası), D-10 (Mobil — Sınıf Ekranı)
+- [ ] **Entity:** `Class`, `ClassMembership`, `ClassWord`, `ClassCategory`, `ClassUserCategory` + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IClassService`/`ClassService` (oluştur+davet kodu, katıl, kategori ekle, istatistik, ayrıl/sil)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IClassWordService`/`ClassWordService` (yalnızca sahibi ekler/düzenler/siler, üyeler görür — duplikat + sistem uyarısı), `ClassController`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** davet kodu, katılım, sahiplik, üye görünürlüğü
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-16 — Arkadaş API ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §13
+**Frontend karşılığı:** C-09 (Web — Arkadaş Sayfası), D-11 (Mobil — Arkadaş Ekranı)
+- [ ] **Entity:** `Friendship` + migration, `IFriendshipService`/`FriendshipService`, `FriendshipController`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** istek/kabul/reddet, self-friendship engeli
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-17 — Push Notification (OneSignal) ⬜
+**Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire)
+**Frontend karşılığı:** D-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok)
+- [ ] `INotificationService`/`OneSignalNotificationService`, `User.OneSignalPlayerId` + migration, `PUT /users/me/device-token`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Hangfire (SQL Server storage, dashboard) + recurring job'lar: günlük hatırlatma (hedef
+      tamamlanmadıysa), due hatırlatması (eşik geçince günde 1), streak riski (gün sonuna
+      yaklaşırken hedef eksikse); achievement bildirimi event-driven (A-09'un `AchievementService`'i tetikleyince anlık)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock), `NotificationTriggerJobTests` (her tetikleyici koşulu)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-18 — Admin API (Kullanıcı Yönetimi + İstatistik + Toplu Import + Log Görüntüleme + İçerik Moderasyonu) ⬜
+**Referans:** REFERENCE/API_ENDPOINTS.md §11, §11.1
+**Frontend karşılığı:** B-05 (Kullanıcı Yönetimi), B-06 (İçerik Moderasyonu), B-07 (İstatistik Paneli), B-08 (Log Görüntüleme Paneli)
+> A-10'dan (Kişisel Kart) SONRA geliyor — `UserCard` moderasyonu (liste/sil) ilk turda tam yazılır,
+> eski turdaki gibi ayrı bir "A-07.1 ertelendi" retrofit'i açılmaz.
+- [ ] Kullanıcı yönetimi: `IUserRepository`'ye admin sorguları + `GetUsersQuery`/`GetUserByIdQuery`/
+      `UpdateUserRoleCommand`/`UpdateUserStatusCommand` — her ikisi **hem** `IActivityLogger` **hem**
+      `ISecurityLogger`'a (`AdminAction`) yazar; **self-lockout koruması**
+      (`Id==UserId` → `SelfAdminActionNotAllowedException`, 400)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] İstatistik: `GetAdminStatisticsQuery` (toplam/aktif/dondurulmuş kullanıcı, toplam kelime/
+      kategori/kişisel kart, kayıt grafiği) — `LoginsByDay` YAZILMAZ (SecurityLog'a yeni bir
+      `LogEventType` gerektirir, ayrı/büyük bir task, burada spekülatif açılmaz — YAGNI)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Toplu kelime import: `BulkImportWordsCommand` — her satır bağımsız tek dilli `WordConcept`
+      (A-05'in `translations[]`'ının AKSİNE birleştirmez, eşleştirme A-05'in `pair` akışına
+      bırakılır), A-05'in `WordGrammarValidator`'ı yeniden kullanılır, best-effort
+      (`BulkImportResultDto.Results[]` satır bazlı hata raporu), TEK `BULK_IMPORT_WORDS` ActivityLog kaydı
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Log görüntüleme: `GetActivityLogsQuery`/`GetApplicationLogsQuery`/`GetSecurityLogsQuery`
+      (filtre+sayfa) + `LogMessages.cs` (yalnızca `SecurityLog.Detail` Code→mesaj çözer,
+      `ActivityLog.Action`/`OldValue`/`NewValue` sabit kalır/ham JSON döner — CLAUDE.md §1)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] İçerik moderasyonu: `GetUserCardsForModerationQuery` (tüm kullanıcıların kartları, filtre+sayfa),
+      `DeleteUserCardAsAdminCommand` (`IActivityLogger` → `DELETE_USER_CARD`)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `AdminController` (`[Authorize(Roles="Admin")]`) — kullanıcı(4) + istatistik(1) + import(1) + log(3) + moderasyon(2) = 11 endpoint
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** her Command/Query Handler için ayrı test dosyası (self-lockout, best-effort import, log filtreleme, moderasyon liste+silme+audit)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-19 — SMTP Ayarları API ⬜
+**Referans:** REFERENCE/SECURITY.md §3.2, REFERENCE/ENV.md §5
+**Frontend karşılığı:** B-09 (Admin — SMTP Ayarları Sayfası)
+- [ ] **Entity:** `SmtpSettings` (`BaseEntity`'den türer — ayrı bir `UpdatedBy` alanı AÇILMAZ, `BaseEntity.UpdatedByUserId` yeterli) + migration
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `IEncryptionService`/`AesEncryptionService` (AES-256-CBC, rastgele IV, `AES_ENCRYPTION_KEY` tam 32 bayta çözüldüğü constructor'da doğrulanır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `ISmtpSettingsRepository` (`OrderBy(Id)` ile deterministik okuma), `SmtpSettingsController`:
+      `GET` (şifre `***` maskeli), `PUT` (upsert + "***" gönderilirse eski şifreyi koruma —
+      hiç ayar yokken maskenin gerçek şifre sanılmaması için `SmtpPasswordRequiredException`),
+      `POST .../test` (`ISmtpTestService`/`MailKitSmtpTestService`, MailKit ile gerçek bağlantı)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Loglama:** `PUT` hem `IActivityLogger` (`UPDATE_SMTP_SETTINGS`, şifre diff'ten hariç) hem `ISecurityLogger` (`AdminAction`)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `AesEncryptionServiceTests` (round-trip, 32 byte kontrolü), 3 Command/Query Handler testi
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-20 — E-posta Servisi + Hesap Temizleme Görevi ⬜
+**Referans:** REFERENCE/SECURITY.md §7, §9
+- [ ] E-posta şablonları (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı, şifre değişti,
+      hesap kurtarıldı) — `EmailTemplates.cs` (6 şablon × tr/de, ortak `Layout` + inline stil);
+      `IEmailService`'in tüm metotları zorunlu `string? language` alır (A-03'te zaten böyle tasarlandı)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `SmtpEmailService` (MailKit, A-19'un şifreli SMTP ayarlarını HER gönderimde okur — önbellek
+      YOK, admin panelden anlık değiştirilebilsin diye) — DI: dev→`DevEmailService`(A-03),
+      prod→`SmtpEmailService`. **Kritik/bilgilendirme ayrımı:** OTP e-postaları gönderilemezse
+      `EmailSendFailedException` (503) fırlatılır, bildirim e-postaları hata yutulup loglanır
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `AccountCleanupBackgroundService : BackgroundService` (Hangfire varsa A-17'nin recurring
+      job'larına eklenir, yoksa günde 1 `IHostedService`) — 30 gün grace sonrası anonimleştirme
+      (`DisplayName`/`AvatarUrl`/`LastLoginIP`/`OneSignalPlayerId`/bekleyen OTP + `IsActive=false`),
+      `OriginalEmailHash` GERÇEK adresten `Email` üzerine yazılmadan ÖNCE üretilir (tekrar kayıt
+      engelinin tamamı bu sıraya bağlı), `IActivityLogger` → `ANONYMIZE_ACCOUNT` (`ActorRole=NULL`, `OldValue` YAZILMAZ)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `AccountCleanupServiceTests` (grace period, blok hash sırası, PII temizliği,
+      çoklu kayıt), `EmailTemplatesTests`, `SmtpEmailServiceTests` (kritik/bilgilendirme ayrımı)
+- [ ] ➜ **AKADEMI/backend'ye işle**
