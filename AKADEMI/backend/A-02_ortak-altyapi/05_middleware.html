@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Middleware — Hata Yakalama, Güvenlik Başlıkları, İstek Loglama</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'middleware',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '04_hata-mesajlari.html',
+    sonrakiBolum: '06_program-cs.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'Üç Middleware: Hata, Güvenlik, Loglama',
+        altBaslik: 'Her HTTP isteğinin Controller\'a ulaşmadan önce (ve yanıt dönerken) sırayla geçtiği üç ortak katman — ExceptionHandlingMiddleware, SecurityHeadersMiddleware, RequestResponseLoggingMiddleware.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Middleware Sırası Neden Önemli?',
+        aciklama: 'ASP.NET Core\'da middleware\'ler Program.cs\'e (Bölüm 6) kaydedildikleri SIRAYLA çalışır — bir istek önce İLK kaydedilen middleware\'den geçer, en SON kaydedilene kadar iner, sonra yanıt TERS sırayla geri çıkar. Bu üç middleware\'in sırası: önce Loglama (en dışta), sonra Hata Yakalama, sonra Güvenlik Başlıkları.',
+        neden: 'ExceptionHandlingMiddleware bir exception\'ı YAKALAYIP kendi içinde bir HTTP yanıtına ÇEVİRİYOR (dışarı yeniden fırlatmıyor) — bu yüzden onun DIŞINDA (önce) çalışan RequestResponseLoggingMiddleware, bir istek exception\'a düşse BİLE her zaman DOĞRU, nihai status code\'u (404, 500...) loglayabiliyor.',
+        olmasaydi: 'Loglama middleware\'i Hata Yakalama\'nın İÇİNDE (sonra) kaydedilseydi, bir exception fırlatıldığında Loglama\'nın `await _next(context)` sonrası çalışması gereken kod hiç ÇALIŞMAZDI (exception onu ATLAR) — o isteğin log kaydı hiç oluşmazdı, tam da hata ayıklamak için EN ÇOK ihtiyaç duyulan anda.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ExceptionHandlingMiddleware.cs — Tüm Exception\'ları Tek Yerden Yönet',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/ExceptionHandlingMiddleware.cs',
+        nedenBuKlasor: 'Middleware, HTTP pipeline\'ının bir parçası olduğu için API katmanına ait; Application\'daki `ErrorMessages`/`ApiErrorResponse`\'ı (Bölüm 4) ve Domain\'deki `EntityNotFoundException`\'ı (Bölüm 1) BİRLEŞTİRİR.',
+        kod: `using WordLearner.Application.Common;
+using WordLearner.Application.DTOs;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.API.Middleware;
+
+public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (EntityNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);
+            await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception. Path: {Path}", context.Request.Path);
+            await WriteErrorAsync(context, StatusCodes.Status500InternalServerError, "INTERNAL_SERVER_ERROR");
+        }
+    }
+
+    private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code)
+    {
+        var message = ErrorMessages.Resolve(code, ExtractLanguage(context));
+
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = statusCode;
+        await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(code, message)));
+    }
+
+    // "de-DE, tr;q=0.9" gibi bir header'dan yalnızca birincil dil alt etiketini (ilk "de") çıkarır.
+    private static string? ExtractLanguage(HttpContext context)
+    {
+        var header = context.Request.Headers.AcceptLanguage.ToString();
+        if (string.IsNullOrWhiteSpace(header))
+            return null;
+
+        var primary = header.Split(',')[0].Split(';')[0].Trim();
+        return primary.Split('-')[0].ToLowerInvariant();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Common;',
+            aciklama: 'Bölüm 4\'teki `ErrorMessages`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: 'Bölüm 4\'teki `ApiErrorResponse`/`ApiErrorDetail`\'i kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: 'Bölüm 1\'deki `EntityNotFoundException`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.API.Middleware;',
+            aciklama: 'Klasör yoluyla (`API/Middleware/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ExceptionHandlingMiddleware',
+            aciklama: 'Bu sınıf ASP.NET Core\'un yerleşik bir arayüzünü UYGULAMAZ — "convention-based middleware" deseni kullanılıyor: bir `RequestDelegate next` alan constructor VE bir `InvokeAsync(HttpContext)` metodu olması YETERLİ, framework bunu OTOMATİK tanır (`app.UseMiddleware<ExceptionHandlingMiddleware>()`, Bölüm 6).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly RequestDelegate _next;',
+            aciklama: 'Pipeline\'daki bir SONRAKİ middleware\'i temsil eden delege — çağrılınca isteği bir adım İLERİ taşır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILogger<ExceptionHandlingMiddleware> _logger;',
+            aciklama: 'Yakalanan exception\'ları loglamak için — `<ExceptionHandlingMiddleware>` jenerik parametresi, log kayıtlarının HANGİ sınıftan geldiğini otomatik etiketler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)',
+            aciklama: 'Constructor injection — hem `next` (framework tarafından pipeline kurulurken otomatik SAĞLANIR) hem `logger` (DI konteynerinden) buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_next = next;',
+            aciklama: 'Gelen delegeyi alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger = logger;',
+            aciklama: 'Gelen logger\'ı alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task InvokeAsync(HttpContext context)',
+            aciklama: 'Framework tarafından HER istek için otomatik çağrılan metot — convention-based middleware\'in TEK zorunlu metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'try',
+            aciklama: 'Aşağı akıştaki (downstream) TÜM middleware\'leri/Controller\'ı kapsayan hata yakalama bloğunun başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'try bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _next(context);',
+            aciklama: '`_next(context)`, pipeline\'daki BİR SONRAKİ middleware\'i (sonunda Controller\'ı) çağırır — bu middleware\'den SONRAKİ HER ŞEY bu `try` bloğunun İÇİNDE çalışır, bu yüzden aşağı akıştaki HERHANGİ bir exception buradan yakalanabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'try bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch (EntityNotFoundException ex)',
+            aciklama: 'En ÖZEL (specific) exception türü ÖNCE yakalanır — C# `catch` blokları YUKARIDAN AŞAĞI, İLK eşleşenle çalışır; bu yüzden `Exception` (genel) bloğu her zaman EN SONA yazılır.',
+            neden: '`EntityNotFoundException` özel olarak 404\'e, diğer HER ŞEY genel olarak 500\'e eşlenmeli — eğer sıra TERS olsaydı (genel `Exception` önce), `EntityNotFoundException` de HER ZAMAN 500 olarak ele alınırdı, asla kendi özel bloğuna ULAŞAMAZDI.',
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'catch bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);',
+            aciklama: 'Bulunamadı durumu bir "hata" değil, beklenen bir iş akışı sonucu olduğu için `LogError` değil `LogWarning` seviyesinde loglanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);',
+            aciklama: '`ex.Code` (Bölüm 1\'de her zaman `"ENTITY_NOT_FOUND"`) `WriteErrorAsync`\'e geçilir — `ex.Message` (İngilizce, dinamik Id içeren) İSTEMCİYE HİÇ gönderilmez, yalnızca bir satır üstte LOGLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'catch bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch (Exception ex)',
+            aciklama: 'BEKLENMEYEN her şeyi (null reference, veritabanı hatası, vs.) yakalayan "son çare" bloğu — hiçbir istek bu middleware\'den ASLA çözülmemiş bir exception\'la ÇIKMAZ.',
+            neden: 'Bir exception middleware\'den DIŞARI sızsaydı, ASP.NET Core\'un varsayılan hata sayfası (geliştirme modunda TAM stack trace, üretimde boş bir 500) devreye girerdi — HİÇBİRİ bizim standart `ApiErrorResponse` şeklimize UYMAZ, istemci tarafında ayrıştırılamaz bir yanıt olurdu.',
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogError(ex, "Unhandled exception. Path: {Path}", context.Request.Path);',
+            aciklama: 'Beklenmeyen bir durum olduğu için `LogWarning` DEĞİL, `LogError` seviyesinde loglanır — bu seviyedeki loglar üretimde genelde bir UYARI/alarm sistemine BAĞLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await WriteErrorAsync(context, StatusCodes.Status500InternalServerError, "INTERNAL_SERVER_ERROR");',
+            aciklama: 'BEKLENMEYEN hatalarda HER ZAMAN sabit, genel bir Code kullanılır — gerçek exception\'ın TÜRÜ/mesajı istemciye asla YANSITILMAZ (güvenlik).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'InvokeAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code)',
+            aciklama: 'Her iki `catch` bloğunun da paylaştığı ortak yanıt-yazma mantığı — `static` çünkü `_logger`/`_next` gibi örnek durumuna (instance state) ihtiyaç duymuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var message = ErrorMessages.Resolve(code, ExtractLanguage(context));',
+            aciklama: 'Bölüm 4\'teki `ErrorMessages.Resolve` çağrısı — Code\'u, isteğin dil tercihine göre GERÇEK bir metne çevirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.ContentType = "application/json";',
+            aciklama: 'Yanıtın JSON olduğunu istemciye AÇIKÇA bildirir — bu satır olmadan bazı HTTP istemcileri yanıtı DÜZ METİN olarak yorumlayabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.StatusCode = statusCode;',
+            aciklama: 'HTTP durum kodu (404 veya 500) — istemci tarafındaki HTTP kütüphaneleri (axios vb.) genelde İLK ÖNCE bu koda bakarak başarı/hata ayrımı yapar, `success: false` alanından ÖNCE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(code, message)));',
+            aciklama: 'Bölüm 4\'teki `ApiErrorResponse`/`ApiErrorDetail` record\'larını JSON\'a SERİLEŞTİRİP yanıt gövdesine yazar — `WriteAsJsonAsync`, ASP.NET Core\'un varsayılan (camelCase) System.Text.Json ayarlarını KULLANIR, ek yapılandırma gerekmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'WriteErrorAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string? ExtractLanguage(HttpContext context)',
+            aciklama: 'İsteğin `Accept-Language` header\'ından, sözlükte kullanılan basit dil koduna (`"tr"`, `"de"`) çeviren yardımcı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var header = context.Request.Headers.AcceptLanguage.ToString();',
+            aciklama: 'İstemcinin gönderdiği `Accept-Language` header\'ını okur (ör. admin panelin dil tercihi ayarının HER isteğe eklediği header).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(header))',
+            aciklama: 'Header hiç gönderilmemiş mi kontrolü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Header yoksa `null` döner — `ErrorMessages.Resolve` (Bölüm 4) bu durumda otomatik `tr`\'ye DÜŞER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "var primary = header.Split(',')[0].Split(';')[0].Trim();",
+            aciklama: 'Header birden çok dil/ağırlık içerebilir (`"de-DE,tr;q=0.9,en;q=0.8"`) — bu satır yalnızca EN ÖNCELİKLİ (ilk) dili, ağırlık (`;q=...`) kısmı OLMADAN ayıklar.',
+            neden: 'Şu an sistemde yalnızca TEK bir dil tercihi (kullanıcının seçtiği tr/de) her zaman TEK bir değer olarak gönderiliyor — ama bu ayrıştırma, tarayıcının kendi göndereceği daha KARMAŞIK `Accept-Language` header\'larını da (ileride farklı bir istemci senaryosunda) DOĞRU işleyebilir.',
+            olmasaydi: null
+          },
+          {
+            satir: "return primary.Split('-')[0].ToLowerInvariant();",
+            aciklama: '`"de-DE"` gibi bölge kodlu bir değerden yalnızca birincil alt etiketi (`"de"`) alır — Bölüm 4\'teki `ErrorMessages` sözlüğü bölge AYRIMI yapmadan, yalnızca `"tr"`/`"de"` anahtarlarıyla çalışıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityHeadersMiddleware.cs — Güvenlik Başlıkları',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/SecurityHeadersMiddleware.cs',
+        nedenBuKlasor: 'HTTP yanıt başlıkları, HTTP pipeline\'ının bir parçası olduğu için `API/Middleware/` altında yaşıyor.',
+        kod: `namespace WordLearner.API.Middleware;
+
+public class SecurityHeadersMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public SecurityHeadersMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        context.Response.Headers.Append("X-Frame-Options", "DENY");
+        context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+        context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+        context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
+        context.Response.Headers.Append("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+
+        await _next(context);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.API.Middleware;',
+            aciklama: 'ExceptionHandlingMiddleware ile AYNI ad alanı — üçü de aynı klasörde yaşıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class SecurityHeadersMiddleware',
+            aciklama: 'ExceptionHandlingMiddleware ile AYNI convention-based middleware deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly RequestDelegate _next;',
+            aciklama: 'Pipeline\'daki bir SONRAKİ middleware\'i temsil eden delege.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public SecurityHeadersMiddleware(RequestDelegate next)',
+            aciklama: 'Bu middleware\'in `_logger`\'a ihtiyacı YOK — yalnızca sabit başlıklar ekliyor, loglanacak dinamik bir durum yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_next = next;',
+            aciklama: 'Gelen delegeyi alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task InvokeAsync(HttpContext context)',
+            aciklama: 'Framework tarafından HER istek için otomatik çağrılan metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.Headers.Append("X-Frame-Options", "DENY");',
+            aciklama: 'Sitenin bir `<iframe>` İÇİNDE gösterilmesini TAMAMEN engeller.',
+            neden: 'Bu başlık olmadan bir saldırgan, API\'nin döndürdüğü sayfaları/yanıtları GÖRÜNMEZ bir iframe içine gömüp kullanıcıyı kandırarak farklı bir şeye tıkladığını SANDIRABİLİR ("clickjacking" saldırısı).',
+            olmasaydi: 'Clickjacking saldırılarına karşı sıfır KORUMA olurdu.'
+          },
+          {
+            satir: 'context.Response.Headers.Append("X-Content-Type-Options", "nosniff");',
+            aciklama: 'Tarayıcının, sunucunun belirttiği `Content-Type`\'ı YOK SAYIP içeriği "tahmin ederek" farklı yorumlamasını (MIME-sniffing) engeller.',
+            neden: 'MIME-sniffing olmadan bir saldırgan, aslında JSON olan ama kötü niyetle HAZIRLANMIŞ bir yanıtı tarayıcıya HTML/JavaScript gibi YORUMLATIP XSS çalıştırmaya çalışabilir.',
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");',
+            aciklama: 'Kullanıcı bu API\'den BAŞKA bir siteye giden bir bağlantıya tıkladığında, `Referer` header\'ında NE KADAR bilgi (tam URL mi, yalnızca domain mi) paylaşılacağını sınırlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.Headers.Append("Content-Security-Policy", "default-src \'self\'");',
+            aciklama: 'Tarayıcıya, bu API\'den dönen İÇERİĞİN (varsa HTML/script) yalnızca AYNI kaynaktan (`\'self\'`) gelen kaynakları YÜKLEYEBİLECEĞİNİ söyler.',
+            neden: 'Bir API çoğunlukla JSON döner ama bu başlık TÜM yanıtlar için (ileride Swagger UI, hata sayfaları gibi HTML da döndürebilecek uç noktalar dahil) uygulanır — savunma derinliği (defense in depth) ilkesi.',
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.Headers.Append("Permissions-Policy", "geolocation=(), microphone=(), camera=()");',
+            aciklama: 'Tarayıcıya, bu kaynağın konum/mikrofon/kamera gibi hassas TARAYICI API\'lerini KULLANAMAYACAĞINI söyler — boş parantez `()` "hiçbir kaynağa izin YOK" anlamına gelir.',
+            neden: 'Bu bir API sunucusu, bu izinlerin HİÇBİRİNE ihtiyacı YOK — açıkça reddetmek, ileride bu API\'nin yanıtı bir şekilde tarayıcıda ÇALIŞTIRILABİLİR bir bağlamda kullanılsa bile (ör. bir güvenlik açığı zinciri) bu izinlerin İSTİSMAR edilmesini engeller.',
+            olmasaydi: null
+          },
+          {
+            satir: 'await _next(context);',
+            aciklama: 'Başlıklar EKLENDİKTEN sonra pipeline\'ın DEVAMINA geçer — bu satır EN SONDA, çünkü başlıklar yanıt DAHA OLUŞMADAN önce eklenmiş olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'InvokeAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RequestResponseLoggingMiddleware.cs — Her İsteğin Özeti',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/RequestResponseLoggingMiddleware.cs',
+        nedenBuKlasor: 'İleride Serilog\'a bir veritabanı sink\'i eklendiğinde, bu middleware\'in ürettiği loglar HİÇBİR kod değişikliği olmadan otomatik olarak DB\'ye de akacak (Serilog TÜM `ILogger` çıktısını, hangi sink varsa oraya yönlendirir).',
+        kod: `using System.Diagnostics;
+
+namespace WordLearner.API.Middleware;
+
+public class RequestResponseLoggingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
+
+    public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        await _next(context);
+
+        stopwatch.Stop();
+        _logger.LogInformation(
+            "{Method} {Path} responded {StatusCode} in {ElapsedMs}ms",
+            context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Diagnostics;',
+            aciklama: '`Stopwatch` sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.API.Middleware;',
+            aciklama: 'Diğer iki middleware ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RequestResponseLoggingMiddleware',
+            aciklama: 'AYNI convention-based middleware deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly RequestDelegate _next;',
+            aciklama: 'Pipeline\'daki bir SONRAKİ middleware\'i temsil eden delege.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILogger<RequestResponseLoggingMiddleware> _logger;',
+            aciklama: 'İstek özetini loglamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)',
+            aciklama: 'Constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_next = next;',
+            aciklama: 'Gelen delegeyi alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger = logger;',
+            aciklama: 'Gelen logger\'ı alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task InvokeAsync(HttpContext context)',
+            aciklama: 'Framework tarafından HER istek için otomatik çağrılan metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var stopwatch = Stopwatch.StartNew();',
+            aciklama: 'İsteğin bu middleware\'e GİRDİĞİ anı işaretler — pipeline\'ın GERİ KALANININ (Exception Handling, Security Headers, Controller, hepsi dahil) ne kadar sürdüğünü ÖLÇMEK için.',
+            neden: 'Bu middleware\'in Bölüm 6\'da EN DIŞTA (ilk) kaydedilecek olması, bu ölçümün GERÇEKTEN toplam istek süresini (uçtan uca) yansıtmasını sağlıyor — daha İÇERİDE bir middleware\'e konsaydı, önceki middleware\'lerin harcadığı süre ÖLÇÜME dahil olmazdı.',
+            olmasaydi: null
+          },
+          {
+            satir: 'await _next(context);',
+            aciklama: 'Pipeline\'ın GERİ KALANINI çalıştırır — bu middleware EN DIŞTA olduğu ve ExceptionHandlingMiddleware bir exception\'ı KENDİ İÇİNDE çözüp normal bir yanıt olarak DÖNDÜRDÜĞÜ için, bu satırdan sonra `context.Response.StatusCode` HER ZAMAN nihai, doğru değeri (200, 404, 500...) taşır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'stopwatch.Stop();',
+            aciklama: 'Ölçümü durdurur — pipeline\'ın GERİ KALANI tamamlandığı an.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogInformation(',
+            aciklama: 'Yapısal (structured) loglama — mesaj İngilizce, `{Method}`/`{Path}` gibi YER TUTUCULAR Serilog tarafından ayrı ALANLAR olarak saklanır (düz metin birleştirme DEĞİL).',
+            neden: '`_logger.Log*` mesajlarının İngilizce olması gerekiyor; yapısal loglama SAYESİNDE (ileride bir DB sink eklendiğinde) "yalnızca 500 dönen istekleri filtrele" gibi SORGULAR, düz metin içinde arama yapmak yerine ALAN bazlı çalışabilir.',
+            olmasaydi: 'Düz string birleştirme (`$"{method} {path} ..."`) kullanılsaydı, log mesajı okunabilir kalırdı AMA ileride eklenecek DB sink\'inde `Method`/`Path`/`StatusCode` AYRI, SORGULANABİLİR kolonlar olarak SAKLANAMAZDI.'
+          },
+          {
+            satir: '"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms",',
+            aciklama: 'Log şablonu — dört yer tutucu, aşağıdaki satırdaki dört değere SIRAYLA eşlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);',
+            aciklama: 'Dört alan: HTTP metodu (GET/POST...), yol, nihai durum kodu, geçen süre (ms) — bir isteği ÖZETLEMEK için asgari ama YETERLİ bilgi seti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'InvokeAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Middleware', tanim: 'Her HTTP isteğinin, Controller\'a ulaşmadan önce (veya yanıt dönerken) sırayla geçtiği işlem adımlarından biri.' },
+          { terim: 'Pipeline', tanim: 'Program.cs\'te kaydedilme sırasına göre oluşan, bir isteğin içinden geçtiği middleware zinciri.' },
+          { terim: 'Convention-Based Middleware', tanim: 'Belirli bir arayüzü uygulamak yerine, yalnızca beklenen constructor+InvokeAsync şeklini taşıyarak ASP.NET Core tarafından middleware olarak tanınan sınıf.' },
+          { terim: 'Clickjacking', tanim: 'Bir sitenin görünmez bir iframe içine gömülüp kullanıcının farkında olmadan gizli bir eyleme tıklatılması saldırısı.' },
+          { terim: 'Yapısal Loglama (Structured Logging)', tanim: 'Log mesajındaki değişken kısımların düz metin yerine ayrı, sorgulanabilir alanlar olarak saklanması.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ExceptionHandlingMiddleware, Bölüm 1\'in EntityNotFoundException\'ını ve Bölüm 4\'ün ApiErrorResponse/ErrorMessages\'ını BİRLEŞTİRİR — HİÇBİR exception istemciye çözümlenmemiş bir hata olarak SIZMAZ.',
+          'SecurityHeadersMiddleware, beş güvenlik başlığını HER yanıta ekler.',
+          'RequestResponseLoggingMiddleware, EN DIŞTA çalışarak istek/yanıt döngüsünün TAMAMINI (exception dahil) ölçer ve yapısal olarak loglar — ileride bu loglar hiçbir kod değişikliği olmadan DB\'ye de akacak.',
+          'Middleware SIRASI (Loglama → Hata Yakalama → Güvenlik Başlıkları) bilinçli bir tercih: ExceptionHandlingMiddleware exception\'ı KENDİ İÇİNDE çözdüğü için, DIŞINDAKİ Loglama her zaman NİHAİ durum kodunu görür.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

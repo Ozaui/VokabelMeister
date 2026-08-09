@@ -28,7 +28,7 @@ dotnet sln add **/*.csproj
 # Referanslar: Domain ← Application ← Infrastructure ← API
 dotnet add WordLearner.API reference WordLearner.Application WordLearner.Infrastructure
 dotnet add WordLearner.Application reference WordLearner.Domain
-dotnet add WordLearner.Infrastructure reference WordLearner.Domain
+dotnet add WordLearner.Infrastructure reference WordLearner.Domain WordLearner.Application
 dotnet add WordLearner.Tests reference WordLearner.Application WordLearner.Infrastructure
 ```
 Tests klasörü: `{Services, Features, Helpers, Repositories}/` (→ `CODING_STANDARDS.md §6`). NuGet → `TECHNICAL_SPECIFICATIONS.md §1`.

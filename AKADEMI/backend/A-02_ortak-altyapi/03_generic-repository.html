@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generic Repository — IRepository&lt;T&gt; ve Repository&lt;T&gt;</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'generic-repository',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '02_dbcontext-ve-soft-delete.html',
+    sonrakiBolum: '04_hata-mesajlari.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Generic Repository: Bir Sınıf, Sonsuz Entity',
+        altBaslik: 'IRepository<T> (Application) + Repository<T> (Infrastructure) — her yeni entity için sıfırdan bir Repository yazmak yerine, TEK generic sınıf tüm CRUD ihtiyacını karşılıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Infrastructure, Application\'a Bağımlı?',
+        aciklama: 'Proje iskeleti kurulurken `WordLearner.Infrastructure` yalnızca `WordLearner.Domain`\'e referans veriyordu — Application\'a değil. Bu görevde bu EKSİK olduğu fark edildi ve düzeltildi: `Repository<T>` (Infrastructure), `IRepository<T>` (Application) arayüzünü İMPLEMENTE ettiği için Infrastructure\'ın Application\'ı GÖREBİLMESİ gerekiyor.',
+        neden: 'Klasik "Repository deseni": arayüz (sözleşme) İŞ MANTIĞININ yaşadığı katmanda (Application) tanımlanır, gerçek veritabanı erişimi (implementasyon) VERİ katmanında (Infrastructure) yazılır. Handler\'lar (ileride) yalnızca `IRepository<T>`\'yi bilir, `Repository<T>`\'nin EF Core kullandığını bile bilmez — bu, veritabanı teknolojisini DEĞİŞTİRMEYİ (teoride) Handler kodunu hiç etkilemeden mümkün kılar.',
+        olmasaydi: 'Infrastructure, Application\'ı görmeseydi, `IRepository<T>` DOMAIN katmanına taşınmak zorunda kalırdı — bu da Domain\'in (hiçbir şeye bağımlı olmaması gereken en saf katman) bir "arayüz sözleşmesi" kavramıyla KİRLENMESİNE yol açardı; iş mantığına ait bir soyutlama, iş mantığından TAMAMEN habersiz olması gereken Domain\'e sızardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IRepository.cs — Sözleşme (Application)',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/IRepository.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/` klasörü, ileride başka arayüz gruplarından (ör. `Interfaces/Services/`) AYRIŞTIRILMIŞ durur.',
+        kod: `using WordLearner.Domain.Entities;
+
+namespace WordLearner.Application.Interfaces.Repositories;
+
+public interface IRepository<T> where T : BaseEntity
+{
+    Task<T?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<List<T>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task AddAsync(T entity, int? userId = null, CancellationToken cancellationToken = default);
+    Task UpdateAsync(T entity, int? userId = null, CancellationToken cancellationToken = default);
+    Task SoftDeleteAsync(int id, int? userId = null, CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'yi (Bölüm 1) kullanabilmek için gerekli — arayüzün generic kısıtı (`where T : BaseEntity`) bu türü referans alıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories;',
+            aciklama: 'Klasör yoluyla (`Application/Interfaces/Repositories/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IRepository<T> where T : BaseEntity',
+            aciklama: '`T`, `BaseEntity`\'den türeyen HERHANGİ bir tür olabilir — bu arayüz bir kere yazılır, `IRepository<Word>`, `IRepository<UserCard>` gibi HER entity için otomatik "var olur", ayrı ayrı yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Arayüz gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<T?> GetByIdAsync(int id, CancellationToken cancellationToken = default);',
+            aciklama: 'Dönüş türü `T?` (nullable) — kayıt bulunamazsa `null` döner, exception FIRLATMAZ; "bulunamadı" durumu SoftDeleteAsync\'ten farklı olarak burada normal bir akış (çağıran kod `null` kontrolü yapıp kendi kararını verir).',
+            neden: 'Bir kaydın var olup olmadığını KONTROL ETMEK (ör. "bu e-posta zaten kayıtlı mı?") çoğu zaman bir HATA değil, olağan bir iş akışı adımıdır — her `GetByIdAsync` çağrısında exception fırlatmak, çağıran her yerde gereksiz try/catch bloklarına ZORLARDI.',
+            olmasaydi: 'Bu metot `null` yerine exception fırlatsaydı, yalnızca "kayıt var mı diye BAKMAK" isteyen her çağrı yeri (ör. bir duplike kontrolü) exception yakalamak ZORUNDA kalırdı — exception\'lar İSTİSNAİ durumlar için var, olağan akış kontrolü için DEĞİL.'
+          },
+          {
+            satir: 'Task<List<T>> GetAllAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'Global query filter (Bölüm 2) sayesinde bu metot zaten yalnızca silinmemiş kayıtları döner — Repository\'nin İÇİNDE ayrıca bir `IsDeleted` kontrolüne gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddAsync(T entity, int? userId = null, CancellationToken cancellationToken = default);',
+            aciklama: '`userId` opsiyonel (`= null`) — çünkü bazı ekleme işlemleri bir kullanıcıya bağlı OLMAYABİLİR (ör. sistem tarafından otomatik oluşturulan bir kayıt); `int?` olması "kim yaptı" alanının BaseEntity\'deki türüyle (Bölüm 1) BİREBİR eşleşir.',
+            neden: '`userId`\'nin opsiyonel olması, henüz bir kimlik doğrulama sistemi OLMADAN bile Repository\'nin şimdiden doğru şekle sahip olmasını sağlıyor — "kim yaptı" alanı, bir kullanıcı bağlamı olmayan çağrılarda `null` kalabiliyor.',
+            olmasaydi: '`userId` zorunlu (opsiyonel değil) olsaydı, henüz bir "mevcut kullanıcı" kavramı OLMAYAN bu aşamada bile HER çağrı yerinin anlamsız bir değer (`0` gibi) geçmesi gerekirdi — bu, "kim yaptı" alanının anlamını BOZARDI.'
+          },
+          {
+            satir: 'Task UpdateAsync(T entity, int? userId = null, CancellationToken cancellationToken = default);',
+            aciklama: '`AddAsync` ile AYNI imza şeklini taşır — tutarlı bir CRUD arayüzü sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SoftDeleteAsync(int id, int? userId = null, CancellationToken cancellationToken = default);',
+            aciklama: 'Silinecek nesnenin KENDİSİNİ değil, yalnızca `id`\'sini alır — çağıran kod önce `GetByIdAsync` ile nesneyi çekmek ZORUNDA değildir, Repository kaydı kendi içinde bulur.',
+            neden: 'Bu metot bulunamayan bir `id` için `EntityNotFoundException` FIRLATIR (GetByIdAsync\'ten FARKLI olarak) — çünkü "var olmayan bir kaydı SİLMEYE çalışmak" gerçek bir HATA durumudur, olağan bir akış değil (çağıran kod zaten "bu id\'nin var olduğunu" varsayarak sildirme isteği gönderiyor).',
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'Add/Update/SoftDelete metotları veritabanına HENÜZ yazmaz (yalnızca EF Core\'un ChangeTracker\'ına işaretler) — gerçek yazma işlemi bu metot çağrıldığında olur.',
+            neden: 'Bir Handler\'ın (ileride) TEK bir iş işlemi içinde birden çok değişiklik yapması (ör. "kullanıcıyı ekle VE bir hoşgeldin bildirimini ekle") gerekebilir — SaveChangesAsync\'in AYRI bir adım olması, bu değişikliklerin TEK bir veritabanı transaction\'ında birlikte kaydedilmesini sağlar.',
+            olmasaydi: 'Her Add/Update/SoftDelete çağrısı KENDİ İÇİNDE otomatik SaveChanges yapsaydı, "5 değişikliği TEK seferde, ya hep ya hiç kaydet" ihtiyacı olan bir Handler bunu YAPAMAZDI — ilk değişiklik veritabanına yazılır, ikincisi bir hatayla karşılaşırsa veritabanı TUTARSIZ bir ara durumda kalırdı.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Arayüz gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Repository.cs — İmplementasyon (Infrastructure)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Repository.cs',
+        nedenBuKlasor: 'EF Core\'a (yani gerçek veritabanına) dair TÜM detaylar bu dosyada, Application katmanı bunlardan HABERSİZ.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Domain.Entities;
+using WordLearner.Domain.Exceptions;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories;
+
+public class Repository<T> : IRepository<T> where T : BaseEntity
+{
+    private readonly WordLearnerDbContext _context;
+    private readonly DbSet<T> _dbSet;
+
+    public Repository(WordLearnerDbContext context)
+    {
+        _context = context;
+        _dbSet = context.Set<T>();
+    }
+
+    public async Task<T?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>
+        await _dbSet.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+    public async Task<List<T>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await _dbSet.ToListAsync(cancellationToken);
+
+    public async Task AddAsync(T entity, int? userId = null, CancellationToken cancellationToken = default)
+    {
+        entity.CreatedByUserId = userId;
+        entity.UpdatedByUserId = userId;
+        await _dbSet.AddAsync(entity, cancellationToken);
+    }
+
+    public Task UpdateAsync(T entity, int? userId = null, CancellationToken cancellationToken = default)
+    {
+        entity.UpdatedByUserId = userId;
+        _dbSet.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbSet.FirstOrDefaultAsync(e => e.Id == id, cancellationToken)
+            ?? throw new EntityNotFoundException($"{typeof(T).Name} not found: Id={id}");
+
+        entity.IsDeleted = true;
+        entity.DeletedAt = DateTime.UtcNow;
+        entity.DeletedByUserId = userId;
+        entity.UpdatedByUserId = userId;
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DbSet<T>`, `FirstOrDefaultAsync`, `ToListAsync` gibi EF Core türlerini/uzantı metotlarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories;',
+            aciklama: 'İmplemente edilecek `IRepository<T>` sözleşmesinin bulunduğu ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: 'Bölüm 1\'deki `EntityNotFoundException`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: 'Bölüm 2\'deki `WordLearnerDbContext`\'i kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories;',
+            aciklama: 'Klasör yoluyla (`Infrastructure/Repositories/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class Repository<T> : IRepository<T> where T : BaseEntity',
+            aciklama: 'Bu sınıf `IRepository<T>` sözleşmesini İMPLEMENTE eder — Application katmanı yalnızca sözleşmeyi bilir, bu implementasyonun EF Core kullandığını hiç bilmez (Bölüm 6\'da Program.cs, hangi implementasyonun kullanılacağını DI ile bağlar).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: 'DbContext\'in kendisi — `SaveChangesAsync` çağrısı bu alan üzerinden yapılır (aşağıda).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly DbSet<T> _dbSet;',
+            aciklama: 'EF Core\'un `T` türü için tablo erişimini temsil eden nesne — `context.Set<T>()` ile alınır, `T` için ayrı bir `DbSet<T>` PROPERTY\'si `WordLearnerDbContext`\'te TANIMLI olmasa bile çalışır (Bölüm 2\'de DbContext\'in "boş" olmasının nedeni tam olarak bu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Repository(WordLearnerDbContext context)',
+            aciklama: 'Constructor injection — `WordLearnerDbContext`, DI konteynerinden (Bölüm 6\'daki `AddInfrastructureServices` kaydı sayesinde) otomatik SAĞLANIR, Repository bunu kendisi OLUŞTURMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context = context;',
+            aciklama: 'Gelen DbContext\'i alana kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_dbSet = context.Set<T>();',
+            aciklama: 'DbContext\'ten `T` türü için tablo erişimini alır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<T?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>',
+            aciklama: 'İfade gövdeli (expression-bodied) üye — tek satırlık bir metot gövdesi için `{ return ...; }` yerine `=>` kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _dbSet.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);',
+            aciklama: '`Id == id` koşuluyla eşleşen İLK (ve tek olması beklenen) kaydı bulur, yoksa `null` döner — global query filter (Bölüm 2) SAYESİNDE bu sorgu zaten `IsDeleted=false` koşulunu da OTOMATİK içerir, burada elle eklenmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<List<T>> GetAllAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: '`GetByIdAsync` ile AYNI ifade-gövdeli üslup.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _dbSet.ToListAsync(cancellationToken);',
+            aciklama: 'Global query filter (Bölüm 2) sayesinde yalnızca silinmemiş kayıtları listeler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync(T entity, int? userId = null, CancellationToken cancellationToken = default)',
+            aciklama: 'Bu metodun birden çok satırlık bir gövdesi olduğu için (aşağıda) ifade-gövdeli DEĞİL, klasik `{ }` bloklu şekilde yazıldı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entity.CreatedByUserId = userId;',
+            aciklama: 'Yeni eklenen kaydın "kim oluşturdu" alanı burada set edilir — `CreatedAt`/`UpdatedAt` (zaman damgaları) İSE burada DEĞİL, `WordLearnerDbContext.SaveChangesAsync` override\'ında (Bölüm 2) doldurulur.',
+            neden: 'Repository "KİM yaptı" (userId, çağıran koddan gelen bilgi) sorumluluğunu taşır; DbContext "NE ZAMAN oldu" (zaman damgası, sistem saatinden gelen bilgi) sorumluluğunu taşır — bu ayrım, Repository\'yi BYPASS eden herhangi bir kodun (nadir de olsa) yine de doğru zaman damgaları almasını garanti eder.',
+            olmasaydi: 'Zaman damgası da BURADA set edilseydi, DbContext\'e Repository\'yi atlayarak doğrudan erişen bir kod bu alanları hiç DOLDURMAZDI — iki farklı "doğru" `CreatedAt` kaynağı olurdu, tutarsızlık riski doğardı.'
+          },
+          {
+            satir: 'entity.UpdatedByUserId = userId;',
+            aciklama: '"Kim en son değiştirdi" alanı — bu satır kodda ÜÇ kez geçiyor (yeni ekleme, güncelleme, soft delete) çünkü HER ÜÇÜ de teknik olarak "kaydı en son değiştiren kullanıcı"nın güncellenmesini gerektirir; yeni eklemede `CreatedByUserId` ile AYNI değeri, güncelleme/silmede YENİ değeri alır.',
+            neden: 'Tek bir "en son kim değiştirdi" alanının HER değişiklik yolunda (ekleme dahil) tutarlı şekilde doldurulması, "bu kaydı en son kim değiştirdi" sorusunun HER ZAMAN doğru cevaplanmasını sağlar.',
+            olmasaydi: null
+          },
+          {
+            satir: 'await _dbSet.AddAsync(entity, cancellationToken);',
+            aciklama: 'Nesneyi EF Core\'un ChangeTracker\'ına "Added" durumuyla işaretler — HENÜZ veritabanına YAZILMAZ, bu yalnızca `SaveChangesAsync()` çağrıldığında olur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'AddAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task UpdateAsync(T entity, int? userId = null, CancellationToken cancellationToken = default)',
+            aciklama: 'Bu metot `async`/`await` KULLANMAZ (`_dbSet.Update` senkron bir çağrı, veritabanına gitmez) — yine de dönüş türü `Task` çünkü `IRepository<T>` sözleşmesi bunu ister; `Task.CompletedTask` ile "zaten bitti" bir Task döner.',
+            neden: '`IRepository<T>`\'nin TÜM metotları `Task` döner (arayüz tutarlılığı, çağıran kod her metodu `await` edebilir) — ama `Update` işleminin kendisi bellek-içi bir işaretlemeden İBARET, gerçek I/O `SaveChangesAsync`\'e ERTELENMİŞ durumda.',
+            olmasaydi: 'Bu metot `async`/`await` kullanmaya ZORLANSAYDI, derleyici "bu async metotta await YOK" uyarısı (CS1998) verirdi — gereksiz bir state machine oluşturulmuş olurdu, küçük ama anlamsız bir performans MALİYETİ.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_dbSet.Update(entity);',
+            aciklama: 'Nesneyi ChangeTracker\'a "Modified" durumuyla işaretler — nesnenin TÜM property\'leri (yalnızca değişenler değil) güncellenmiş kabul edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Task.CompletedTask;',
+            aciklama: 'Zaten tamamlanmış, önbelleğe alınmış bir `Task` nesnesi döner — her çağrıda YENİ bir Task ALLOKE etmekten daha verimlidir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'UpdateAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SoftDeleteAsync(int id, int? userId = null, CancellationToken cancellationToken = default)',
+            aciklama: 'Bölüm 1\'deki `EntityNotFoundException`\'ın fırlatıldığı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var entity = await _dbSet.FirstOrDefaultAsync(e => e.Id == id, cancellationToken)',
+            aciklama: 'Silinecek kaydı ÖNCE bulmaya çalışır — `SoftDeleteAsync` yalnızca `id` aldığı için (bkz. IRepository), kaydın kendisine bu şekilde ulaşılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"{typeof(T).Name} not found: Id={id}");',
+            aciklama: 'Null-coalescing operatörü (`??`) — `FirstOrDefaultAsync` `null` dönerse (kayıt yoksa), HEMEN bu satırda exception fırlatılır; `typeof(T).Name` çalışma zamanında "Word", "UserCard" gibi GERÇEK entity adını mesaja gömer.',
+            neden: 'Bu, Bölüm 1\'de yazılan `EntityNotFoundException`\'ın kullanıldığı YER — "var olmayan bir kaydı silmeye çalışmak" bir hata olduğu için (GetByIdAsync\'in aksine) burada sessizce `null` dönmek yerine EXPLICIT bir exception fırlatılır.',
+            olmasaydi: 'Bu kontrol olmasaydı, bir sonraki satır (`entity.IsDeleted = true`) `null` bir nesne üzerinde çalışmaya çalışır ve .NET\'in genel `NullReferenceException`\'ını (anlamsız, Code\'suz, İngilizce bile olmayan bir hata) fırlatırdı — istemciye HİÇBİR anlamlı 404 yanıtı DÖNMEZDİ.'
+          },
+          {
+            satir: 'entity.IsDeleted = true;',
+            aciklama: 'Soft delete bayrağı — bu satırdan sonra, global query filter (Bölüm 2) bu kaydı TÜM normal sorgulardan gizleyecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entity.DeletedAt = DateTime.UtcNow;',
+            aciklama: 'Silinme anı BURADA, Repository\'de set edilir — DbContext\'in `SaveChangesAsync` override\'ı (Bölüm 2) yalnızca `CreatedAt`/`UpdatedAt`\'ten sorumlu, `DeletedAt`\'ten DEĞİL (çünkü DbContext bir kaydın "silinme amacıyla mı" yoksa "normal bir alan güncellemesi amacıyla mı" değiştiğini AYIRT EDEMEZ, ikisi de aynı `EntityState.Modified` durumunda görünür).',
+            neden: 'Yalnızca Repository\'nin `SoftDeleteAsync` metodu, bu değişikliğin GERÇEKTEN bir "silme" olduğunu BİLİYOR — bu yüzden `DeletedAt`\'i doldurma sorumluluğu ORAYA ait, genel amaçlı `SaveChangesAsync` override\'ına DEĞİL.',
+            olmasaydi: '`DeletedAt`\'i DbContext seviyesinde doldurmaya çalışsaydık, DbContext "bu Modified kayıt bir soft-delete mi yoksa sıradan bir alan güncellemesi mi?" sorusunu CEVAPLAYAMAZDI — `IsDeleted` alanına bakıp "true ise DeletedAt\'i de doldur" gibi EK, kırılgan bir mantık gerekirdi.'
+          },
+          {
+            satir: 'entity.DeletedByUserId = userId;',
+            aciklama: 'Silme işlemini yapan kullanıcı kaydedilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'SoftDeleteAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: 'Repository\'nin `SaveChangesAsync`\'i, DbContext\'in override edilmiş `SaveChangesAsync`\'ini (Bölüm 2 — zaman damgalarını dolduran) DOĞRUDAN çağırır; Repository kendi başına EK bir mantık eklemez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Gerçek veritabanı yazma işlemi burada gerçekleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DependencyInjection.cs — Tek Satırda Kayıt',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        nedenBuKlasor: 'Paylaşılan Infrastructure yardımcıları flat (alt klasörsüz) tutulur — bu dosya Infrastructure\'ın kök dizininde yaşıyor; TÜM Infrastructure DI kaydı burada toplanıyor.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Infrastructure.Data;
+using WordLearner.Infrastructure.Repositories;
+
+namespace WordLearner.Infrastructure;
+
+// Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır
+// yazar; ileride ActivityLogger/SecurityLogger kaydı da buraya eklenecek (aynı gerekçe: Infrastructure
+// katmanının DI kaydı Infrastructure'ın kendi sorumluluğu, Program.cs'e sızmaz).
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddDbContext<WordLearnerDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+        services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+
+        return services;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`AddDbContext`/`UseSqlServer` uzantı metotlarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`IConfiguration` türünü kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.DependencyInjection;',
+            aciklama: '`IServiceCollection`, `AddScoped` gibi DI türlerini/uzantılarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories;',
+            aciklama: '`IRepository<>` açık generic türünü kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext`\'i kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories;',
+            aciklama: '`Repository<>` açık generic implementasyonunu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure;',
+            aciklama: 'Alt klasöre gömülmeden, doğrudan Infrastructure\'ın kök ad alanında yaşıyor (yukarıdaki "flat" kararının kod karşılığı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static class DependencyInjection',
+            aciklama: 'Statik sınıf — yalnızca extension metotlar barındırır, nesne örneği ÜRETİLMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)',
+            aciklama: '`this IServiceCollection services` — bu bir EXTENSION metodudur; `Program.cs`\'te `builder.Services.AddInfrastructureServices(builder.Configuration)` şeklinde, sanki `IServiceCollection`\'ın kendi metoduymuş gibi çağrılır.',
+            neden: '.NET\'in kendi `AddControllers()`, `AddSwaggerGen()` gibi metotlarıyla AYNI, tanıdık desen — Program.cs\'i okuyan biri, bu satırın da benzer bir "bir grup servisi kaydet" işlemi olduğunu HEMEN anlar.',
+            olmasaydi: 'Extension metot yerine normal bir static metot (`DependencyInjection.AddInfrastructureServices(services, configuration)`) kullanılsaydı, Program.cs\'teki diğer TÜM `builder.Services.Add...()` çağrılarıyla TUTARSIZ, farklı bir çağrı şekli ortaya çıkardı.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddDbContext<WordLearnerDbContext>(options =>',
+            aciklama: 'DbContext\'i DI konteynerine kaydeder — varsayılan ömür (lifetime) `Scoped`\'dır (her HTTP isteği için YENİ bir DbContext örneği), bu EF Core\'un ChangeTracker\'ının istekler arasında KARIŞMAMASI için doğru seçimdir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));',
+            aciklama: 'Bağlantı dizesi `IConfiguration`\'dan okunur — gerçek değer commit edilen `appsettings.json`\'da DEĞİL, yereldeki `.gitignore`\'lu bir dosyada veya ortam değişkenlerinde (prod) yaşar.',
+            neden: 'Hassas bir değer (bağlantı dizesi dahil) asla appsettings.json/kaynak koda GİRMEZ — bu satır bağlantı dizesinin DEĞERİNİ değil, NEREDEN okunacağını (`IConfiguration` üzerinden) tanımlar.',
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped(typeof(IRepository<>), typeof(Repository<>));',
+            aciklama: 'AÇIK (open) generic kayıt — `IRepository<Word>`, `IRepository<UserCard>` gibi HERHANGİ bir kapalı (closed) generic türü, ilk kez bir Handler\'ın constructor\'ında istendiğinde DI konteyneri otomatik `Repository<Word>`, `Repository<UserCard>` örnekleri ÜRETİR; her entity için TEK TEK kayıt satırı YAZILMAZ.',
+            neden: 'Bu tek satır, ileride onlarca farklı entity için tekrar tekrar kullanılacak `IRepository<X>` ihtiyacını ŞİMDİDEN karşılıyor — her yeni entity DI kaydına yeni bir satır EKLEMEYİ gerektirmiyor.',
+            olmasaydi: 'Açık generic kayıt yerine her entity için `services.AddScoped<IRepository<Word>, Repository<Word>>();` gibi ayrı satırlar gerekseydi, 20+ entity sonunda DependencyInjection.cs onlarca neredeyse-birebir-aynı satırdan OLUŞURDU — DRY ilkesinin doğrudan ihlali.'
+          },
+          {
+            satir: 'return services;',
+            aciklama: 'Extension metot deseni gereği aynı `IServiceCollection`\'ı geri döner — bu, `builder.Services.AddInfrastructureServices(...).AddSomethingElse()` gibi zincirleme (chaining) çağrılara izin verir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Metot gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'TestEntity.cs — Test İçin Minimal Bir Entity',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/TestEntity.cs',
+        nedenBuKlasor: 'Gerçek in-memory EF testi yalnızca Repository&lt;T&gt; testinde kullanılır — ama henüz GERÇEK bir domain entity\'si (Word, User...) yok, bu yüzden testler için minik, üretim kodunun PARÇASI OLMAYAN bir test çifti (test double) yazıldı.',
+        kod: `using WordLearner.Domain.Entities;
+
+namespace WordLearner.Tests.Repositories;
+
+// Repository<T> generic olduğu için gerçek bir domain entity'sine ihtiyaç duymaz — bu sınıf
+// yalnızca bu test dosyasında kullanılan bir test çiftidir (double), üretim kodunun parçası DEĞİLDİR.
+public class TestEntity : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'den türeyebilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Repositories;',
+            aciklama: 'Klasör yoluyla (`Tests/Repositories/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class TestEntity : BaseEntity',
+            aciklama: '`BaseEntity`\'den türeyen, sahte/minimal bir entity — `Repository<TestEntity>` bu sınıfla, tıpkı ileride `Repository<Word>` ile çalışacağı gibi, tam çalışır durumda test edilebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Name { get; set; } = string.Empty;',
+            aciklama: 'Testlerin "bir kayıt oluştur" adımında anlamlı bir veri verebilmesi için eklenmiş, sıradan bir alan — Repository\'nin generic davranışını test etmek için asgari düzeyde gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'TestDbContext.cs — WordLearnerDbContext\'in Test Alt Sınıfı',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/TestDbContext.cs',
+        nedenBuKlasor: 'Aynı klasörde (`Tests/Repositories/`) — `TestEntity` ve bu sınıf yalnızca RepositoryTests.cs tarafından kullanılıyor, birbirinden AYRILMAMALI.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Tests.Repositories;
+
+public class TestDbContext(DbContextOptions<TestDbContext> options) : WordLearnerDbContext(options)
+{
+    public DbSet<TestEntity> TestEntities => Set<TestEntity>();
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DbContextOptions<T>`, `DbSet<T>` türlerini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: 'Türetilecek `WordLearnerDbContext`\'i (Bölüm 2) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Repositories;',
+            aciklama: 'Klasör yoluyla (`Tests/Repositories/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class TestDbContext(DbContextOptions<TestDbContext> options) : WordLearnerDbContext(options)',
+            aciklama: 'Birincil constructor (primary constructor) sözdizimi — `WordLearnerDbContext`\'ten türer ve aldığı `options`\'ı doğrudan üst constructor\'a AKTARIR; bu, Bölüm 2\'de `WordLearnerDbContext`\'in constructor\'ının NEDEN generic-olmayan `DbContextOptions` aldığının somut KANITIDIR.',
+            neden: 'EF Core, bir context\'in DbSet property\'lerini VE (miras alınmış) `OnModelCreating`\'ini KULLANARAK modeli kurar — `TestDbContext`, `WordLearnerDbContext`\'i override ETMEDEN, yalnızca YENİ bir `DbSet<TestEntity>` ekleyerek, Bölüm 2\'deki soft-delete filtresi ve zaman damgalama mantığının AYNEN çalışmasını miras alır.',
+            olmasaydi: 'Testler için `WordLearnerDbContext`\'ten BAĞIMSIZ, sıfırdan bir test context\'i yazılsaydı, testler soft-delete filtresini VE zaman damgalama davranışını TEST ETMİŞ olmazdı — yalnızca EF Core\'un genel davranışını test etmiş olurduk, `WordLearnerDbContext`\'e ÖZGÜ mantığı DEĞİL.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<TestEntity> TestEntities => Set<TestEntity>();',
+            aciklama: 'EF Core, bir context sınıfındaki (miras alınan sınıflar DAHİL) `DbSet<T>` property\'lerini modele OTOMATİK ekler — bu satır SAYESİNDE `TestEntity`, `OnModelCreating` çalıştığında modele KAYITLI olur ve Bölüm 2\'deki soft-delete-filtresi döngüsü onu da KAPSAR.',
+            neden: null,
+            olmasaydi: 'Bu `DbSet<TestEntity>` property\'si olmasaydı, EF Core `TestEntity`\'nin var olduğunu HİÇ bilmezdi — `context.Set<TestEntity>()` çağrısı "bu tür modelde kayıtlı değil" hatasıyla ÇÖKERDİ.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RepositoryTests.cs — CRUD + Soft Delete + Bulunamadı',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/RepositoryTests.cs',
+        nedenBuKlasor: 'Minimum test kapsamı: happy path (Add), sınır/uç durum (soft-delete SONRASI görünmezlik) ve bulunamadı (SoftDeleteAsync exception) — üç senaryo Repository&lt;T&gt;\'nin generic davranışını temsilen kapsar.',
+        kod: `using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Exceptions;
+using WordLearner.Infrastructure.Repositories;
+
+namespace WordLearner.Tests.Repositories;
+
+public class RepositoryTests
+{
+    private static TestDbContext CreateContext() =>
+        new(new DbContextOptionsBuilder<TestDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+
+    [Fact]
+    public async Task AddAsync_ValidEntity_SetsCreatedByUserIdAndPersists()
+    {
+        // ARRANGE
+        await using var context = CreateContext();
+        var repository = new Repository<TestEntity>(context);
+        var entity = new TestEntity { Name = "kelime" };
+
+        // ACT
+        await repository.AddAsync(entity, userId: 7);
+        await repository.SaveChangesAsync();
+
+        // ASSERT — "kim yaptı" alanı Repository'de, CreatedAt DbContext.SaveChangesAsync override'ında dolduruldu
+        entity.CreatedByUserId.Should().Be(7);
+        entity.CreatedAt.Should().NotBe(default);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_SoftDeletedEntity_ReturnsNull()
+    {
+        // ARRANGE — bir kayıt ekleyip soft delete uygula
+        await using var context = CreateContext();
+        var repository = new Repository<TestEntity>(context);
+        var entity = new TestEntity { Name = "silinecek" };
+        await repository.AddAsync(entity);
+        await repository.SaveChangesAsync();
+
+        // ACT
+        await repository.SoftDeleteAsync(entity.Id);
+        await repository.SaveChangesAsync();
+
+        // ASSERT — global query filter IsDeleted=true kaydı GetByIdAsync'ten gizler
+        var result = await repository.GetByIdAsync(entity.Id);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SoftDeleteAsync_EntityDoesNotExist_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        await using var context = CreateContext();
+        var repository = new Repository<TestEntity>(context);
+
+        // ACT
+        var act = async () => await repository.SoftDeleteAsync(id: 999);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>()
+            .WithMessage("TestEntity not found: Id=999");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` uzantı metotlarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DbContextOptionsBuilder`, `UseInMemoryDatabase` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: 'Test edilen `EntityNotFoundException`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories;',
+            aciklama: 'Test edilen `Repository<T>` sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Repositories;',
+            aciklama: 'Klasör yoluyla (`Tests/Repositories/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RepositoryTests',
+            aciklama: 'Test sınıfı adı `{TestEdilenSınıf}Tests` deseninde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static TestDbContext CreateContext() =>',
+            aciklama: 'Üç testin de tekrarladığı "yeni, izole bir test context\'i oluştur" adımını TEK bir yardımcı metotta toplar.',
+            neden: 'Bu yardımcı metot olmasaydı, her testin başında AYNI dört satırlık kurulum kodu (DbContextOptionsBuilder + UseInMemoryDatabase + Guid) TEKRAR EDERDİ — bir testte bu kurulumun değişmesi gerekirse (ör. yeni bir seçenek eklenmesi) üç yeri de ayrı ayrı güncellemek gerekirdi.',
+            olmasaydi: null
+          },
+          {
+            satir: 'new(new DbContextOptionsBuilder<TestDbContext>()',
+            aciklama: 'Hedef tür zaten metodun dönüş türünden (`TestDbContext`) bilindiği için `new TestDbContext(...)` yerine kısaltılmış `new(...)` (target-typed new) kullanılabiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.UseInMemoryDatabase(Guid.NewGuid().ToString())',
+            aciklama: 'Her test için RASTGELE, benzersiz bir veritabanı adı üretir — EF Core InMemory provider, AYNI isim verilirse testler arasında VERİ PAYLAŞIR; bu, testlerin birbirinden İZOLE (bağımsız) çalışmasını garanti eder.',
+            neden: 'Testler AYNI in-memory veritabanı adını paylaşsaydı, bir testte eklenen `TestEntity` kaydı BAŞKA bir testin sonucunu ETKİLERDİ — testler artık hangi sırayla çalıştırıldığına bağlı, KARARSIZ (flaky) hale gelirdi.',
+            olmasaydi: null
+          },
+          {
+            satir: '.Options);',
+            aciklama: '`DbContextOptionsBuilder`\'ın inşa ettiği nihai `DbContextOptions<TestDbContext>` nesnesini alır ve `TestDbContext` constructor\'ına geçirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit\'e "bu metot parametresiz, tek senaryolu bir test" olduğunu bildiren öznitelik — dosyada ÜÇ kez, her test metodundan önce geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync_ValidEntity_SetsCreatedByUserIdAndPersists()',
+            aciklama: 'Happy-path senaryosu: geçerli bir entity eklenip kaydedildiğinde "kim yaptı" ve zaman damgası alanlarının doğru dolduğunu test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metodu gövdesinin açılışı — dosyada test metotlarının HER BİRİNDE tekrarlanan bir yapı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await using var context = CreateContext();',
+            aciklama: '`await using` — `DbContext` `IAsyncDisposable` uyguladığı için, test bittiğinde (başarılı ya da hatalı) context otomatik ve ASENKRON olarak temizlenir; bu satır HER ÜÇ testte de ARRANGE adımının ilk satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var repository = new Repository<TestEntity>(context);',
+            aciklama: 'Test edilecek `Repository<TestEntity>` örneği — HER ÜÇ testte de aynı şekilde kurulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var entity = new TestEntity { Name = "kelime" };',
+            aciklama: 'Eklenecek örnek kayıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await repository.AddAsync(entity, userId: 7);',
+            aciklama: 'ACT adımı — `userId: 7` isimli argüman (named argument) ile hangi kullanıcı tarafından eklendiği belirtiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await repository.SaveChangesAsync();',
+            aciklama: 'ChangeTracker\'daki işaretlemeleri (Add/SoftDelete) GERÇEK veritabanı (burada in-memory) yazımına dönüştürür — dosyada ÜÇ kez geçiyor, her seferinde bir önceki Repository çağrısını KALICI hale getirmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entity.CreatedByUserId.Should().Be(7);',
+            aciklama: 'Repository.AddAsync\'in `userId` parametresini doğru alana YAZDIĞINI doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entity.CreatedAt.Should().NotBe(default);',
+            aciklama: '`WordLearnerDbContext.SaveChangesAsync` override\'ının (Bölüm 2) GERÇEKTEN çalıştığını, `CreatedAt`\'in varsayılan (`DateTime.MinValue`) DEĞİL, gerçek bir zaman damgası olduğunu doğrular.',
+            neden: 'Bu satır, Repository VE DbContext\'in BİRLİKTE doğru çalıştığını (entegrasyon) doğrular — yalnızca Repository\'yi mock\'layan bir test, DbContext override\'ının GERÇEKTEN devreye girip girmediğini asla YAKALAYAMAZDI.',
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task GetByIdAsync_SoftDeletedEntity_ReturnsNull()',
+            aciklama: 'Sınır/uç durum senaryosu: bir kayıt soft-delete edildikten SONRA normal bir sorgudan artık GÖRÜNMEDİĞİNİ test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var entity = new TestEntity { Name = "silinecek" };',
+            aciklama: 'Silinecek örnek kayıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await repository.AddAsync(entity);',
+            aciklama: 'Bu testte `userId` verilmiyor (opsiyonel parametre varsayılanına, `null`\'a düşüyor) — çünkü bu test "kim yaptı" alanını DEĞİL, soft-delete davranışını doğruluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await repository.SoftDeleteAsync(entity.Id);',
+            aciklama: 'ACT adımı — kaydı soft-delete eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await repository.GetByIdAsync(entity.Id);',
+            aciklama: 'Soft-delete SONRASI aynı `id` ile tekrar sorgulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().BeNull();',
+            aciklama: 'Global query filter\'ın (Bölüm 2) GERÇEKTEN çalıştığının kanıtı — kayıt veritabanında hâlâ VAR (fiziksel olarak silinmedi) ama normal bir sorgu ARTIK onu göremiyor.',
+            neden: 'Bu test olmasaydı, `HasQueryFilter` satırındaki bir YAZIM hatası (ör. `e.IsDeleted` yerine yanlışlıkla `!e.IsDeleted` unutulup ters yazılması) fark edilmeden PRODUCTION\'a kadar gidebilirdi — soft-delete edilmiş kayıtlar YANLIŞLIKLA herkese görünür kalırdı.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SoftDeleteAsync_EntityDoesNotExist_ThrowsEntityNotFoundException()',
+            aciklama: 'Bulunamadı senaryosu: var olmayan bir `id` ile soft-delete denendiğinde Bölüm 1\'deki `EntityNotFoundException`\'ın fırlatıldığını test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var act = async () => await repository.SoftDeleteAsync(id: 999);',
+            aciklama: 'FluentAssertions\'ın exception testleri için beklediği desen: çağrıyı HEMEN yapmak yerine bir `Func<Task>` içine SARMALAR, gerçek çağrı bir SONRAKİ satırda (`act.Should().ThrowAsync`) yapılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<EntityNotFoundException>()',
+            aciklama: 'Sarmalanmış çağrının GERÇEKTEN `EntityNotFoundException` fırlattığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMessage("TestEntity not found: Id=999");',
+            aciklama: '`typeof(T).Name` ifadesinin (Repository.cs\'te) ÇALIŞMA ZAMANINDA gerçekten "TestEntity" ürettiğini doğrular — generic bir sınıfta `typeof(T)` davranışının BEKLENDİĞİ gibi çalıştığının somut kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Generic Repository', tanim: 'Belirli bir entity türüne değil, `BaseEntity`\'den türeyen HERHANGİ bir türe (`<T>`) çalışan, tek seferde yazılan ortak Repository sınıfı.' },
+          { terim: 'Constructor Injection', tanim: 'Bir sınıfın ihtiyaç duyduğu bağımlılıkları (ör. DbContext) kendisi oluşturmak yerine constructor parametresi olarak DI konteynerinden almasi.' },
+          { terim: 'Open Generic Kayıt', tanim: '`typeof(IRepository<>)` gibi tür parametresi belirtilmeden yapılan DI kaydı — HER kapalı generic türü (`IRepository<Word>` vb.) otomatik karşılar.' },
+          { terim: 'Test Double', tanim: 'Yalnızca test amacıyla yazılan, üretim kodunun bir parçası OLMAYAN sahte/minimal sınıf (ör. bu bölümdeki `TestEntity`).' },
+          { terim: 'InMemory Provider', tanim: 'EF Core\'un, gerçek bir veritabanına bağlanmadan, bellekte çalışan test amaçlı sağlayıcısı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IRepository<T> (Application) ve Repository<T> (Infrastructure) — sözleşme ve implementasyon AYRI katmanlarda, klasik Repository deseni.',
+          'Proje iskeletinde eksik bırakılan Infrastructure→Application proje referansı bu görevde fark edilip düzeltildi.',
+          '"Kim yaptı" (Repository) ile "ne zaman" (DbContext) sorumlulukları BİLİNÇLİ olarak ayrı tutuldu.',
+          'Open generic DI kaydı (`AddScoped(typeof(IRepository<>), typeof(Repository<>))`) HER gelecekteki entity için TEK satırla yeterli.',
+          'Testler gerçek bir domain entity\'si olmadan, minimal bir TestEntity/TestDbContext çiftiyle Repository<T>\'nin CRUD + soft-delete + bulunamadı davranışlarını doğruluyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

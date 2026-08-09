@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WordLearnerDbContext — Otomatik Soft Delete Filtresi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dbcontext-ve-soft-delete',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '01_domain-katmani.html',
+    sonrakiBolum: '03_generic-repository.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'WordLearnerDbContext: Boş Ama Akıllı',
+        altBaslik: 'Henüz tek bir DbSet (Word, User...) yok — ama soft delete filtresi ve otomatik zaman damgalama ŞİMDİDEN kuruluyor, böylece ilk gerçek entity eklendiğinde HİÇBİR ek kod gerekmeyecek.'
+      },
+      {
+        tur: 'kavram',
+        baslik: '"Boş" DbContext Nasıl Bir Şeyi Filtreleyebilir?',
+        aciklama: 'EF Core\'da bir global query filter normalde `modelBuilder.Entity<Word>().HasQueryFilter(...)` gibi HER entity için elle yazılır. Ama bu DbContext hiçbir entity tanımıyor — bunun yerine `OnModelCreating` içinde, modele KAYITLI olan (henüz sıfır tane) her entity türü için bu filtreyi REFLECTION ile otomatik uygulayan bir döngü yazıldı.',
+        neden: 'Henüz hiçbir entity yokken bu filtreyi "elle" yazmak zaten İMKANSIZ — ama ileride Word/User/UserCard eklendiğinde her birine ayrı ayrı `HasQueryFilter` satırı yazmayı UNUTMAK, bir geliştiricinin soft-delete edilmiş bir kaydı yanlışlıkla listelemesine yol açabilirdi. Reflection tabanlı döngü bu unutma riskini TAMAMEN ortadan kaldırıyor.',
+        olmasaydi: 'Her yeni entity için elle `HasQueryFilter` yazmak gerekseydi, 20\'den fazla entity arasında bir tanesinde bu satır unutulsaydı, o tablodaki "silinmiş" kayıtlar sessizce normal sorgu sonuçlarında GÖRÜNMEYE devam ederdi — soft-delete edilmiş kayıtlar yanlışlıkla herkese görünür kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordLearnerDbContext.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        nedenBuKlasor: 'Infrastructure katmanı veri erişiminden (DbContext, Repository, EF konfigürasyonları) sorumlu — DbContext veri erişiminin başlangıç noktası olduğu için `Infrastructure/Data/` altına konuldu.',
+        kod: `using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Entities;
+
+namespace WordLearner.Infrastructure.Data;
+
+public class WordLearnerDbContext : DbContext
+{
+    public WordLearnerDbContext(DbContextOptions options) : base(options)
+    {
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+        // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+        // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                continue;
+
+            var method = typeof(WordLearnerDbContext)
+                .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                .MakeGenericMethod(entityType.ClrType);
+            method.Invoke(null, [modelBuilder]);
+        }
+
+        base.OnModelCreating(modelBuilder);
+    }
+
+    private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+    {
+        modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.UpdatedAt = now;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = now;
+            }
+        }
+
+        return await base.SaveChangesAsync(cancellationToken);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Reflection;',
+            aciklama: 'Aşağıda `GetMethod`/`MakeGenericMethod` ile çalışma-zamanı (reflection) tür işlemleri yapabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DbContext`, `ModelBuilder`, `EntityState` gibi EF Core türlerini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: 'Bölüm 1\'deki `BaseEntity`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data;',
+            aciklama: 'Klasör yoluyla (`Infrastructure/Data/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordLearnerDbContext : DbContext',
+            aciklama: 'EF Core\'un temel `DbContext` sınıfından türer — bir DbContext, bir veritabanı BAĞLANTISINI ve o bağlantı üzerinden yapılan TÜM sorgu/değişiklik takibini temsil eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public WordLearnerDbContext(DbContextOptions options) : base(options)',
+            aciklama: 'Constructor, generic OLMAYAN `DbContextOptions` alıyor (`DbContextOptions<WordLearnerDbContext>` DEĞİL) — bu, testlerde bu sınıftan türeyen bir `TestDbContext`\'in KENDİ generic options türünü (`DbContextOptions<TestDbContext>`) üst constructor\'a sorunsuz aktarabilmesini sağlıyor.',
+            neden: 'Generic olmayan `DbContextOptions`, TÜM generic `DbContextOptions<T>` türlerinin taban sınıfıdır — bu yüzden hem gerçek uygulamadaki `AddDbContext<WordLearnerDbContext>()` kaydı HEM DE testteki `TestDbContext : WordLearnerDbContext` alt sınıfı bu TEK constructor\'ı sorunsuz kullanabiliyor.',
+            olmasaydi: 'Constructor `DbContextOptions<WordLearnerDbContext>` alsaydı, `TestDbContext` (Bölüm 3\'teki RepositoryTests) kendi `DbContextOptions<TestDbContext>`\'ini bu constructor\'a AKTARAMAZDI — derleme hatası alırdık.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı — gövde boş, çünkü tüm kurulum işi `: base(options)` ile üst sınıfa (`DbContext`) devredilmiş durumda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected override void OnModelCreating(ModelBuilder modelBuilder)',
+            aciklama: 'EF Core\'un, veritabanı modelini (hangi tablolar, hangi kolonlar, hangi kısıtlar) KURARKEN bir kez çağırdığı metot — burada YAZILAN her şey modelin PARÇASI haline gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);',
+            aciklama: 'Infrastructure assembly\'sindeki (bu dosyanın bulunduğu proje) TÜM `IEntityTypeConfiguration<T>` sınıflarını OTOMATİK bulup uygular — ileride her entity için `Infrastructure/Data/Configurations/<Domain>/` altına yazılacak konfigürasyon dosyaları BUNUN SAYESİNDE elle tek tek kaydedilmeden devreye girecek.',
+            neden: 'Şu an bu satır SIFIR konfigürasyon bulur (henüz hiçbiri yazılmadı) — ama ilk gerçek entity konfigürasyonu yazıldığında, bu satıra HİÇBİR ek satır eklemeden otomatik devreye girecek.',
+            olmasaydi: 'Bu satır olmasaydı, her yeni entity konfigürasyonu için `modelBuilder.ApplyConfiguration(new WordConfiguration());` gibi elle bir satır eklemek gerekirdi — 20\'den fazla entity\'de bu elle-ekleme adımı kolayca UNUTULABİLİRDİ.'
+          },
+          {
+            satir: 'foreach (var entityType in modelBuilder.Model.GetEntityTypes())',
+            aciklama: 'O ana kadar modele KAYITLI olan (DbSet property\'leri veya yukarıdaki `ApplyConfigurationsFromAssembly` ile keşfedilen) tüm entity türlerini gezer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Döngü gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))',
+            aciklama: 'Yalnızca `BaseEntity`\'den türeyen entity\'leri seçer — ileride `BaseEntity`\'den TÜREMEYEN bir tablo eklenirse (ör. sabit bir seed/referans tablosu, audit gerekmeyen), o tablo bu filtreden ETKİLENMEZ.',
+            neden: 'Audit gerektirmeyen bir tabloda `IsDeleted` alanı hiç YOK — bu kontrol olmadan reflection döngüsü o tür için de filtre uygulamaya çalışıp çalışma zamanı hatası verirdi.',
+            olmasaydi: 'Bu kontrol olmasaydı, `BaseEntity`\'den türemeyen bir entity modele eklendiğinde `ApplySoftDeleteFilter<TEntity>` onun için de çağrılmaya çalışılır, generic kısıt (`where TEntity : BaseEntity`) YÜZÜNDEN derleme zamanı DEĞİL ama reflection `MakeGenericMethod` çağrısı çalışma zamanında PATLARDI.'
+          },
+          {
+            satir: 'continue;',
+            aciklama: 'BaseEntity\'den türemeyen entity için döngünün geri kalanını ATLAR, bir sonraki entity türüne geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var method = typeof(WordLearnerDbContext)',
+            aciklama: 'Aşağıdaki `ApplySoftDeleteFilter<TEntity>` generic metodunun reflection üzerinden bir referansını alır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!',
+            aciklama: '`private static` bir metot normal yoldan (derleme zamanı `TEntity` bilinmeden) çağrılamayacağı için `BindingFlags.NonPublic | BindingFlags.Static` ile reflection üzerinden bulunur; `!` operatörü "bu metot kesinlikle bulunacak, null kontrolüne gerek yok" der.',
+            neden: '`TEntity` yalnızca ÇALIŞMA ZAMANINDA (döngüdeki `entityType.ClrType`\'tan) bilinebiliyor — normal bir generic metot çağrısı (`ApplySoftDeleteFilter<Word>()`) DERLEME zamanında tür bilgisi ister, ama biz o türü henüz bilmiyoruz (henüz hiçbir entity yazılmadı).',
+            olmasaydi: 'Reflection kullanılmasaydı, HER entity türü için `modelBuilder.Entity<Word>().HasQueryFilter(...)`, `modelBuilder.Entity<UserCard>().HasQueryFilter(...)`... gibi elle, tek tek satır yazmak gerekirdi — tam da bu bölümün başında kaçınmaya çalıştığımız "unutma riski".'
+          },
+          {
+            satir: '.MakeGenericMethod(entityType.ClrType);',
+            aciklama: 'Reflection ile bulunan generic metot şablonunu, ÇALIŞMA ZAMANINDA bilinen `entityType.ClrType` (ör. gerçekte `typeof(Word)`) ile "somutlaştırır" — artık çağrılabilir, `ApplySoftDeleteFilter<Word>` ile AYNI etkiye sahip bir metot nesnesi elde edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'method.Invoke(null, [modelBuilder]);',
+            aciklama: 'Somutlaştırılan metodu ÇAĞIRIR — `null` ilk parametre, metodun `static` olduğunu (bir nesne örneğine ihtiyaç duymadığını) belirtir; `[modelBuilder]` metoda geçilecek argüman dizisidir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Döngü gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'base.OnModelCreating(modelBuilder);',
+            aciklama: 'EF Core\'un kendi varsayılan model kurma mantığının da çalışmasını sağlar — bu satır ATLANIRSA, EF Core\'un iç conventions\'ları (ör. bazı ilişki keşifleri) devre dışı kalabilir.',
+            neden: 'Bir sınıf `override` yaptığı bir metotta `base.` çağrısını atlarsa, üst sınıfın (burada `DbContext`) o metotta yapması gereken TEMEL işler hiç ÇALIŞMAZ.',
+            olmasaydi: '`base.OnModelCreating` çağrılmasaydı, EF Core\'un kendi iç model kurulum adımları atlanabilir, ileride bazı navigation property\'lerin veya conventions\'ların BEKLENMEDİK şekilde çalışmaması gibi teşhisi zor hatalara yol açabilirdi.'
+          },
+          {
+            satir: '}',
+            aciklama: 'OnModelCreating metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity',
+            aciklama: 'Asıl filtreyi uygulayan generic yardımcı metot — `where TEntity : BaseEntity` kısıtı, yalnızca `BaseEntity` türevleri için ÇAĞRILABİLECEĞİNİ derleme zamanında garanti eder (`e.IsDeleted` erişimi bu kısıt SAYESİNDE güvenlidir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);',
+            aciklama: 'EF Core\'a "bu entity türü için yazılan HER LINQ sorgusuna otomatik olarak `WHERE IsDeleted = 0` ekle" der — Repository (Bölüm 3) veya başka bir yerde `.Where(!e.IsDeleted)` YAZILMASA bile bu filtre devrede kalır.',
+            neden: 'Global query filter, "her Repository metodunda elle soft-delete filtresi yaz" yaklaşımından DAHA GÜVENLİDİR — bir geliştiricinin BİR yerde bu filtreyi unutması artık MÜMKÜN değil, çünkü filtre Repository\'nin DIŞINDA, veritabanı sorgusunun kendisine gömülü.',
+            olmasaydi: 'Global filter olmasaydı, "her sorguda soft delete filtresi zorunlu" kuralı HER TEK sorguda elle uygulanmak zorunda kalırdı — bir LINQ sorgusunda bu satır unutulsa, silinmiş bir kayıt sessizce listeye SIZARDI.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Metot gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)',
+            aciklama: '`DbContext.SaveChangesAsync`\'i override eder — artık HER `SaveChangesAsync()` çağrısı (Repository üzerinden ya da doğrudan) bu metottan geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var now = DateTime.UtcNow;',
+            aciklama: 'Tek bir "şimdi" anı yakalanır ve TÜM entry\'lere aynı değer atanır.',
+            neden: 'Aynı `SaveChangesAsync()` çağrısında 5 farklı kayıt ekleniyorsa, hepsinin `CreatedAt`\'i BİREBİR aynı milisaniyeye sahip olmalı — döngü içinde her seferinde `DateTime.UtcNow` çağrılsaydı, mikroskobik ama gereksiz farklar oluşurdu.',
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var entry in ChangeTracker.Entries<BaseEntity>())',
+            aciklama: 'EF Core\'un "değişiklik takipçisi" (`ChangeTracker`), bu `SaveChangesAsync()` çağrısında eklenecek/güncellenecek TÜM `BaseEntity` türevi nesneleri döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Döngü gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (entry.State == EntityState.Added)',
+            aciklama: 'Yeni eklenen bir kayıt mı? (Repository.AddAsync ile `_dbSet.AddAsync` çağrılmış ama henüz veritabanına YAZILMAMIŞ durumdaki nesneler bu state\'te.)',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'if bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entry.Entity.CreatedAt = now;',
+            aciklama: 'Yeni kayıtta `CreatedAt` ("oluşturulduğu an") set edilir.',
+            neden: 'Bu alanı Repository\'nin `AddAsync` metodunda DEĞİL, burada (DbContext seviyesinde) doldurmak, Repository DIŞINDA bir yoldan (ör. bir Handler\'ın doğrudan `_context.Add()` çağırdığı nadir bir durum) eklenen kayıtların da BU zaman damgasını doğru almasını garanti eder.',
+            olmasaydi: 'Bu satır Repository\'nin İÇİNDE olsaydı, DbContext\'e Repository\'yi BYPASS ederek doğrudan erişen herhangi bir kod `CreatedAt`\'i BOŞ (varsayılan `DateTime.MinValue`) bırakırdı.'
+          },
+          {
+            satir: 'entry.Entity.UpdatedAt = now;',
+            aciklama: 'Bir kaydın `UpdatedAt`\'i, hem YENİ eklendiğinde (bu satır, `Added` dalında — "henüz hiç güncellenmemiş" durumunun doğal karşılığı olarak `CreatedAt` ile AYNI anı alır) hem de var olan bir kayıt GÜNCELLENDİĞİNDE (aynı satır, aşağıdaki `Modified` dalında) YENİLENİR.',
+            neden: 'Repository\'nin `UpdateAsync` VE `SoftDeleteAsync` metotlarının (soft delete de teknik olarak bir UPDATE\'tir) HER İKİSİNİN de kendi içinde `UpdatedAt`\'i elle güncellemesi yerine, bu tek merkezi kontrol (`Modified` durumundaki HER kayıt) "her update yolunda UpdatedAt\'i unutma" riskini ortadan kaldırıyor.',
+            olmasaydi: 'Bu merkezi mantık olmasaydı, Repository\'nin `UpdateAsync` VE `SoftDeleteAsync` metotlarının HER İKİSİNİN de ayrı ayrı `entity.UpdatedAt = DateTime.UtcNow;` yazması gerekirdi — ileride üçüncü bir update yolu eklendiğinde bu satır kolayca UNUTULABİLİRDİ.'
+          },
+          {
+            satir: '}',
+            aciklama: 'if bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else if (entry.State == EntityState.Modified)',
+            aciklama: 'Var olan bir kayıt güncelleniyor mu? (Repository.UpdateAsync ya da SoftDeleteAsync ile değiştirilmiş nesneler bu state\'te — soft delete de teknik olarak bir UPDATE\'tir, `IsDeleted` alanı değiştiği için.)',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'else-if bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'else-if bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'foreach döngüsünün kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return await base.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Zaman damgaları dolduruktan SONRA, EF Core\'un gerçek veritabanı yazma işlemini yapan orijinal `SaveChangesAsync`\'i çağırır.',
+            neden: null,
+            olmasaydi: 'Bu satır olmasaydı (ya da unutulsaydı), yukarıdaki `foreach` döngüsü yalnızca BELLEKTEKİ nesnelerin alanlarını değiştirir ama HİÇBİR şey veritabanına YAZILMAZDI.'
+          },
+          {
+            satir: '}',
+            aciklama: 'SaveChangesAsync metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Global Query Filter mı, Elle .Where(!IsDeleted) mi?',
+        iyi: {
+          baslik: 'Bu görevin seçtiği yaklaşım',
+          maddeler: [
+            'Filtre DbContext seviyesinde, TEK yerde tanımlı — hiçbir sorguda unutulamaz.',
+            'Yeni bir entity eklendiğinde HİÇBİR ek kod yazılmadan otomatik devreye girer.',
+            'Gerçekten silinmiş kayıtlara erişmek gerekirse (ör. admin "geri yükle" özelliği) `.IgnoreQueryFilters()` ile İSTENÇLİ olarak bypass edilebilir.'
+          ]
+        },
+        kotu: {
+          baslik: 'Kaçınılan yaklaşım',
+          maddeler: [
+            'Her Repository metodunda elle `.Where(e => !e.IsDeleted)` yazmak — 20+ entity\'de tekrar eden, unutulmaya AÇIK kod.',
+            'Bir geliştiricinin YENİ bir sorgu yazarken bu filtreyi eklemeyi unutması — silinmiş bir kaydın sessizce listeye SIZMASI.'
+          ]
+        }
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Global Query Filter', tanim: 'EF Core\'un, bir entity türü için yazılan HER sorguya otomatik olarak eklediği ortak bir WHERE koşulu (`HasQueryFilter`).' },
+          { terim: 'ChangeTracker', tanim: 'EF Core\'un, `SaveChanges` çağrılana kadar hangi nesnelerin eklendiğini/güncellendiğini/silindiğini takip eden mekanizması.' },
+          { terim: 'Reflection', tanim: '.NET\'in, tür bilgisini (metot, property, generic parametre) DERLEME zamanı yerine ÇALIŞMA zamanında okuyup kullanabilme yeteneği.' },
+          { terim: 'EntityState', tanim: 'ChangeTracker\'ın bir nesneye atadığı durum (`Added`, `Modified`, `Deleted`, `Unchanged`) — bu nesnenin SaveChanges\'te ne olacağını belirler.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'WordLearnerDbContext şu an "boş" (hiçbir DbSet yok) ama soft-delete filtresi ve zaman damgalama mekanizması HAZIR — ilk entity eklendiğinde otomatik devreye girecek.',
+          'Reflection tabanlı bir döngü, HER BaseEntity türevine `HasQueryFilter(!IsDeleted)` uygular — elle, entity başına tekrarlanan kod YOK.',
+          'SaveChangesAsync override\'ı CreatedAt/UpdatedAt\'i merkezi olarak doldurur — Repository katmanı yalnızca "kim yaptı" alanlarından (Bölüm 3) sorumlu.',
+          'Constructor generic olmayan DbContextOptions alıyor — bu sayede testlerde bu sınıftan türeyen bir TestDbContext sorunsuz çalışabiliyor (Bölüm 3).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

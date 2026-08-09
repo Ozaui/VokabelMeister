@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Domain Katmanı — BaseEntity ve EntityNotFoundException</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'domain-katmani',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '../A-01_proje-iskeleti/02_yapilandirma-ozet-sozluk.html',
+    sonrakiBolum: '02_dbcontext-ve-soft-delete.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Domain Katmanı: BaseEntity ve EntityNotFoundException',
+        altBaslik: 'A-02 "Ortak Altyapı" — henüz hiçbir feature (Word, User, UserCard...) YOK, yalnızca her API\'nin üzerine oturacağı paylaşılan temel yazılıyor. Domain, hiçbir şeye bağımlı olmayan en alt katman — bu yüzden ilk buradan başlıyoruz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Önce "Ortak Altyapı"? Neden Hiç Feature Yok?',
+        aciklama: 'A-02, ileride yazılacak TÜM API\'ların ortak ihtiyaç duyacağı temel parçaları (BaseEntity, DbContext, Repository, hata yönetimi, middleware) tek seferde kurar. Bu görevde tek bir Word/User/UserCard entity\'si YAZILMAZ — yalnızca "her entity BÖYLE davranacak" diyen genel bir iskelet kurulur.',
+        neden: 'Eğer her API kendi Repository\'sini, kendi soft-delete mantığını, kendi hata yanıt şeklini sıfırdan yazsaydı, 20 API sonunda 20 farklı (ve muhtemelen tutarsız) CRUD deseni ortaya çıkardı. Ortak altyapıyı BİR kere, dikkatle kurup her feature\'ın onun üzerine binmesi, hem tutarlılığı hem hızı garantiler.',
+        olmasaydi: 'Ortak altyapı olmasaydı, ileride "Word nasıl soft-delete edilir" sorusunun cevabı "User nasıl soft-delete edilir" cevabından FARKLI olabilirdi — biri IsDeleted filtresini unutabilir, feature\'lar arası davranış tutarsızlaşırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'BaseEntity.cs — Her Tablonun Ortak İskeleti',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/BaseEntity.cs',
+        nedenBuKlasor: 'Domain katmanı hiçbir projeye bağımlı DEĞİL, bu yüzden Application/Infrastructure/API\'nin HEPSİ bu sınıfı sorunsuz görebilir. `abstract` olması, "sadece BaseEntity\'den doğrudan bir tablo oluşturulmasın, mutlaka somut bir entity (Word, User...) türesin" kuralını derleme zamanında zorlar.',
+        kod: `namespace WordLearner.Domain.Entities;
+
+public abstract class BaseEntity
+{
+    public int Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public int? CreatedByUserId { get; set; }
+    public int? UpdatedByUserId { get; set; }
+    public int? DeletedByUserId { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Entities;',
+            aciklama: 'Dosya-kapsamlı (file-scoped) namespace bildirimi — dosyanın tamamı, klasör yapısıyla (`Domain/Entities/`) birebir eşleşen `WordLearner.Domain.Entities` ad alanına ait.',
+            neden: 'Klasör ile ad alanının birebir eşleşmesi, bir sınıfı ararken "hangi klasörde?" sorusunun cevabını ad alanından DOĞRUDAN çıkarabilmeyi sağlar.',
+            olmasaydi: 'Ad alanı klasörle eşleşmeseydi, büyüyen bir kod tabanında bir sınıfın FİZİKSEL olarak nerede yaşadığını bulmak yalnızca "ara" (search) ile mümkün olurdu, isimden TAHMİN edilemezdi.'
+          },
+          {
+            satir: 'public abstract class BaseEntity',
+            aciklama: '`abstract` — bu sınıftan doğrudan bir nesne (`new BaseEntity()`) ÜRETİLEMEZ, yalnızca ondan türeyen somut sınıflar (`Word : BaseEntity`, `User : BaseEntity`) nesne olabilir.',
+            neden: 'BaseEntity tek başına anlamsız bir kayıt temsil eder ("hangi tabloya ait bu?" sorusunun cevabı yok) — `abstract` bu anlamsız kullanımı DERLEME zamanında engeller, çalışma zamanına kadar beklemeye gerek kalmaz.',
+            olmasaydi: '`abstract` olmasaydı, bir geliştirici yanlışlıkla `new BaseEntity()` yazıp veritabanında karşılığı olmayan, hiçbir işe yaramayan bir nesne oluşturabilirdi — bu hata ancak çalışma zamanında (ya da hiç) fark edilirdi.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Birincil anahtar (primary key) — EF Core, adı `Id` olan bir `int` property\'yi HİÇBİR ek yapılandırma olmadan otomatik olarak birincil anahtar kabul eder (convention-based).',
+            neden: 'Tüm entity\'lerin AYNI isimde (`Id`) bir birincil anahtarı olması, Repository&lt;T&gt;\'nin (bkz. Bölüm 3) `GetByIdAsync(int id)` gibi TEK bir generic metotla HER entity türü için çalışabilmesini sağlar.',
+            olmasaydi: 'Her entity kendi birincil anahtarını farklı isimle tanımlasaydı (`WordId`, `UserId`...), generic bir `Repository<T>` yazmak İMKANSIZLAŞIRDI — her entity için ayrı, neredeyse birebir aynı bir Repository sınıfı gerekirdi.'
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Kaydın veritabanına EKLENDİĞİ an — bu alan elle set edilmez, `WordLearnerDbContext.SaveChangesAsync()` override\'ı (Bölüm 2) otomatik doldurur.',
+            neden: '"Bu kayıt ne zaman oluşturuldu?" sorusu admin panelde (ör. log/moderasyon ekranı) ve destek taleplerinde sürekli sorulan bir sorudur — her tabloya elle bir `CreatedAt` kolonu eklemek yerine BaseEntity\'de bir kere tanımlanır.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime UpdatedAt { get; set; }',
+            aciklama: 'Kaydın SON güncellendiği an — her `UPDATE`\'te (soft delete DAHİL, çünkü o da bir UPDATE\'tir) otomatik yenilenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsDeleted { get; set; }',
+            aciklama: 'Soft delete bayrağı — `true` olduğunda kayıt veritabanından GERÇEKTEN silinmez, yalnızca "silinmiş" olarak İŞARETLENİR ve global query filter (Bölüm 2) tarafından normal sorgulardan GİZLENİR.',
+            neden: 'Gerçek `DELETE` yerine soft delete kullanmak, bir kullanıcı yanlışlıkla bir kelimeyi/kartı silse bile verinin fiziksel olarak KAYBOLMAMASINI, geri alınabilir kalmasını sağlar; ayrıca GDPR/KVKK denetiminde "ne zaman silindi" bilgisi (bkz. `DeletedAt`) SAKLANMALI.',
+            olmasaydi: 'Gerçek `DELETE` kullanılsaydı, yanlışlıkla silinen bir kayıt GERİ DÖNDÜRÜLEMEZDİ ve o kaydın var olduğuna dair HİÇBİR iz kalmazdı — ne bir admin loguyla ne bir yedekle (yedek almadan önce) telafi edilebilirdi.'
+          },
+          {
+            satir: 'public DateTime? DeletedAt { get; set; }',
+            aciklama: 'Silinme anı — yalnızca `IsDeleted=true` olduğunda dolu; `?` (nullable) çünkü silinmemiş bir kaydın silinme tarihi YOKTUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? CreatedByUserId { get; set; }',
+            aciklama: '"Kim yaptı" alanlarından ilki — kaydı oluşturan kullanıcının Id\'si. `int?` (nullable), çünkü bazı kayıtlar (ör. seed veri, sistem tarafından otomatik oluşturulan) bir kullanıcıya bağlı OLMAYABİLİR.',
+            neden: 'Her tablonun bu "kim yaptı" alanlarını taşıması, ileride yazılacak denetim (audit) mekanizmasının bu alanları OKUYARAK "hangi admin bu kelimeyi değiştirdi" gibi sorulara cevap verebilmesini sağlar.',
+            olmasaydi: 'Bu alan olmasaydı, bir kelime yanlış düzenlendiğinde "bunu HANGİ admin yaptı" sorusunun cevabı yalnızca ayrı bir denetim tablosundan (varsa) çıkarılabilirdi — entity\'nin KENDİSİ bu bilgiyi asla taşımazdı.'
+          },
+          {
+            satir: 'public int? UpdatedByUserId { get; set; }',
+            aciklama: 'Kaydı EN SON güncelleyen kullanıcının Id\'si — her `UpdateAsync`/`SoftDeleteAsync` çağrısında yenilenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? DeletedByUserId { get; set; }',
+            aciklama: 'Kaydı silen (soft delete uygulayan) kullanıcının Id\'si — yalnızca `IsDeleted=true` olduğunda anlamlıdır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'EntityNotFoundException Neden Bağımsız Bir Sınıf?',
+        aciklama: 'İleride yazılacak `AppException`, bilinen iş hatalarının (ör. "e-posta zaten kayıtlı") ortak taban sınıfı olacak ve Application katmanında yaşayacak (çünkü iş kuralları Application\'ın sorumluluğu). `EntityNotFoundException` ise Domain katmanında yaşıyor — çünkü onu FIRLATAN kod (Repository&lt;T&gt;, Bölüm 3) Infrastructure katmanında ve Infrastructure, Domain\'e (ve Application\'a, ama bu ayrı bir konu) bağımlı.',
+        neden: 'Katman bağımlılık yönü tek yönlüdür: Domain hiçbir üst katmana (Application dahil) bağımlı OLAMAZ. `EntityNotFoundException` Domain\'de yaşadığı için Application\'daki `AppException`\'ı REFERANS ALAMAZ — bu yüzden kendi başına, `Exception`\'dan doğrudan türeyen bağımsız bir sınıftır.',
+        olmasaydi: '`EntityNotFoundException`, Application\'daki `AppException`\'dan türemeye ZORLANSAYDI, ya Domain katmanı Application\'a bağımlı hale gelirdi (bağımlılık yönü BOZULURDU) ya da `AppException`\'ın kendisi Domain\'e taşınması gerekirdi (ki bu, iş kurallarını Domain\'e karıştırırdı).'
+      },
+      {
+        tur: 'kod',
+        baslik: 'EntityNotFoundException.cs — Kayıt Bulunamadığında',
+        dosyaYolu: 'backend/WordLearner.Domain/Exceptions/EntityNotFoundException.cs',
+        nedenBuKlasor: 'Repository&lt;T&gt;.SoftDeleteAsync (Bölüm 3, Infrastructure katmanında) bu exception\'ı fırlatıyor — Infrastructure, Domain\'i görebildiği için bu sınıf Domain\'de yaşamak ZORUNDA (yukarıdaki kavram slaytına bak).',
+        kod: `namespace WordLearner.Domain.Exceptions;
+
+// AppException'dan bilinçli olarak türemez (Application katmanında yaşar, Domain ona bağımlı olamaz)
+// ama aynı ilkeyi taşır: Code sabit/dilden bağımsız, istemciye ErrorMessages sözlüğünden çözülerek gider.
+public class EntityNotFoundException : Exception
+{
+    public string Code { get; }
+
+    public EntityNotFoundException(string message) : base(message)
+    {
+        Code = "ENTITY_NOT_FOUND";
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Exceptions;',
+            aciklama: '`Entities/` klasöründen AYRI bir `Exceptions/` alt klasörü/ad alanı — exception sınıfları arttıkça (ileride başka Domain exception\'ları çıkarsa) entity\'lerden görsel/mantıksal olarak AYRIŞIK kalırlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class EntityNotFoundException : Exception',
+            aciklama: '.NET\'in yerleşik `Exception` sınıfından DOĞRUDAN türer — bir üst taban sınıfa (`AppException`) ihtiyaç duymaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Code { get; }',
+            aciklama: 'Yalnızca `get` — nesne oluşturulduktan (constructor\'dan) SONRA bu alan asla değiştirilemez (immutable). İstemciye giden hata yanıtının Code\'u bu alandan okunur.',
+            neden: 'İstemciye giden mesaj DAİMA bir Code üzerinden `ErrorMessages` sözlüğünden çözülür, `.Message` asla doğrudan istemciye gitmez (bkz. bir sonraki `kavram` slaytı) — `ExceptionHandlingMiddleware` (Bölüm 5) bu Code\'a bakarak istemciye HANGİ dilde/hangi metni döneceğine karar verir.',
+            olmasaydi: '`Code` alanı olmasaydı, `ExceptionHandlingMiddleware` (Bölüm 5) istemciye HANGİ dilde/hangi metni döneceğini bilemezdi — ya `ex.Message`\'ı (İngilizce, dinamik Id içeren) DOĞRUDAN döner (yanlış dil + gereksiz teknik detay sızıntısı) ya da hiçbir mesaj döndüremezdi.'
+          },
+          {
+            satir: 'public EntityNotFoundException(string message) : base(message)',
+            aciklama: 'Constructor, çağıranın (Repository&lt;T&gt;) verdiği dinamik mesajı (`"Word not found: Id=5"` gibi) `.Message`\'a taşır — bu mesaj yalnızca LOGLANIR, istemciye asla gitmez.',
+            neden: '`.Message` İngilizce ve dinamik veri (hangi entity, hangi Id) içerir — bu, geliştirici için hata ayıklamada ÇOK değerli ama son kullanıcıya (tr/de) gösterilecek bir metin DEĞİL; bu yüzden ayrı, sabit bir `Code` ile ikisi birbirinden AYRILDI.',
+            olmasaydi: 'Mesaj hem log hem istemci için TEK bir alan olsaydı, ya log İngilizce dinamik detaydan (geliştirici için değerli) FEDAKARLIK ederdi ya da istemci "Word not found: Id=5" gibi çevrilmemiş, İngilizce bir teknik mesaj GÖRÜRDÜ.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Constructor gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Code = "ENTITY_NOT_FOUND";',
+            aciklama: 'Şu an TEK, genel bir Code kullanılıyor — hangi entity türü olursa olsun (Word, UserCard, Class...) 404 yanıtı aynı Code\'u taşır.',
+            neden: 'A-02\'de henüz HİÇBİR somut entity (Word, UserCard...) yok — entity-özel Code\'lar (`WORD_NOT_FOUND` gibi) şimdiden yazmak, henüz kullanılmayan bir ayrımı önceden tasarlamak anlamına gelirdi. İleride bir feature\'ın DAHA SPESİFİK bir mesaja ihtiyacı olursa, o Handler `EntityNotFoundException`\'ı yakalayıp kendi `AppException` türevini fırlatabilir.',
+            olmasaydi: 'Şimdiden her entity için ayrı bir Code/mesaj yazılsaydı, henüz VAR OLMAYAN Word/UserCard/Class gibi entity\'ler için tahmini, muhtemelen YANLIŞ çıkacak çeviriler üretilmiş olurdu.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Constructor gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Bir Hata Mesajı Dil Kararı',
+        aciklama: 'İstemciye (admin ya da son kullanıcı, fark etmeksizin) giden HER metnin dile göre değişebilmesi ve yeni bir dilin kolayca eklenebilmesi gerekiyor — bu yüzden `EntityNotFoundException` için de aynı ilke geçerli kılındı: `.Message` HER ZAMAN İngilizce/log-only kalır; istemciye giden metin (tr/de, ileride başka diller de) DAİMA `Code` + `ErrorMessages` sözlüğü üzerinden üretilir.',
+        neden: 'Sabit, tek dilli bir `.Message`\'ı doğrudan istemciye göstermek, yeni bir dil eklendiğinde (ör. İngilizce) o mesajın YENİDEN yazılmasını gerektirirdi — Code + sözlük deseni bu genişlemeyi TEK bir yeni sözlük girdisiyle sınırlıyor.',
+        olmasaydi: 'İki farklı yaklaşım (bazı hatalarda Code+sözlük, bazılarında doğrudan `.Message`) bir arada kullanılsaydı, aynı proje içinde İKİ farklı, tutarsız hata mesajı deseni ortaya çıkardı — bir geliştirici hangi deseni ne zaman kullanacağını HER seferinde yeniden düşünmek zorunda kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'EntityNotFoundExceptionTests.cs — Code ve Message Doğru mu?',
+        dosyaYolu: 'backend/WordLearner.Tests/Helpers/EntityNotFoundExceptionTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/{Services|Features|Helpers|Repositories}/` şeklinde sabit — bu basit exception sınıfı bir servis/feature/repository olmadığı için `Helpers/` altına yazıldı.',
+        kod: `using FluentAssertions;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Tests.Helpers;
+
+public class EntityNotFoundExceptionTests
+{
+    [Fact]
+    public void Constructor_MessageProvided_SetsMessageAndCode()
+    {
+        // ARRANGE + ACT
+        var exception = new EntityNotFoundException("Word not found: Id=5");
+
+        // ASSERT — Message İngilizce ve yalnızca log içindir, Code istemciye giden ErrorMessages çözümünün anahtarıdır
+        exception.Message.Should().Be("Word not found: Id=5");
+        exception.Code.Should().Be("ENTITY_NOT_FOUND");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` uzantı metotlarını (extension methods) kullanabilmek için gerekli — okunabilir, akıcı (fluent) assertion söz dizimi sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: 'Test edilen `EntityNotFoundException` sınıfının bulunduğu ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Helpers;',
+            aciklama: 'Test projesinin ad alanı, klasör yoluyla (`Tests/Helpers/`) eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class EntityNotFoundExceptionTests',
+            aciklama: 'Test sınıfı adı `{TestEdilenSınıf}Tests` deseninde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit\'e "bu metot parametresiz, tek senaryolu bir test" olduğunu bildiren öznitelik (attribute).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Constructor_MessageProvided_SetsMessageAndCode()',
+            aciklama: 'Test metodu adı `{Metot}_{Senaryo}_{BeklenenSonuç}` deseninde — constructor test edildiği için metot adı "Constructor" ile başlıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metodu gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var exception = new EntityNotFoundException("Word not found: Id=5");',
+            aciklama: 'ARRANGE ve ACT birleşik — test edilecek nesne tek satırda hem hazırlanıyor hem "eylem" (constructor çağrısı) gerçekleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'exception.Message.Should().Be("Word not found: Id=5");',
+            aciklama: 'Constructor\'a verilen ham mesajın, `.Message`\'a HİÇBİR değişikliğe uğramadan aktarıldığını doğrular.',
+            neden: 'Bu satır olmadan, bir gelecekteki değişiklik (ör. mesajı otomatik büyük harfe çevirmek gibi yanlışlıkla eklenen bir davranış) log\'un okunabilirliğini BOZABİLİR ve fark edilmezdi.',
+            olmasaydi: null
+          },
+          {
+            satir: 'exception.Code.Should().Be("ENTITY_NOT_FOUND");',
+            aciklama: '`Code`\'un HER ZAMAN sabit `"ENTITY_NOT_FOUND"` değerini aldığını doğrular — mesaj ne olursa olsun (hangi entity, hangi Id) Code DEĞİŞMEZ.',
+            neden: 'Bu Code, Bölüm 5\'teki `ExceptionHandlingMiddleware`\'in `ErrorMessages.Resolve()`\'a gönderdiği anahtar — Code yanlışlıkla değişirse (ör. birisi `Code = message;` yazsa) sözlükte KARŞILIĞI olmayan bir anahtar aranır, istemci hatalı/boş bir mesaj alır.',
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'BaseEntity', tanim: 'Her domain entity\'sinin türediği, ortak audit/soft-delete alanlarını (Id, CreatedAt, IsDeleted...) taşıyan soyut taban sınıf.' },
+          { terim: 'Soft Delete', tanim: 'Bir kaydı veritabanından fiziksel olarak silmek yerine `IsDeleted=true` işaretleyip normal sorgulardan gizlemek.' },
+          { terim: 'Kim Yaptı Alanları', tanim: '`CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId` — bir kaydı hangi kullanıcının oluşturduğunu/güncellediğini/sildiğini tutan alanlar.' },
+          { terim: 'AppException', tanim: '(ileride yazılacak) Application katmanında yaşayan, bilinen iş hatalarının ortak taban sınıfı — yalnızca Code taşır.' },
+          { terim: 'Code', tanim: 'Bir hatayı DİLDEN BAĞIMSIZ tanımlayan sabit metin (ör. `ENTITY_NOT_FOUND`) — istemciye giden asıl metin bundan çözülür.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'BaseEntity, her tabloya audit (CreatedAt/UpdatedAt) ve soft-delete (IsDeleted/DeletedAt) alanlarını TEK yerden kazandırıyor.',
+          '"Kim yaptı" alanları (CreatedByUserId vb.) ileride bir denetim (audit) mekanizması için gerekli izi şimdiden hazırlıyor.',
+          'EntityNotFoundException, katman bağımlılık yönü (Domain hiçbir üst katmana bağımlı olamaz) yüzünden AppException\'dan BİLİNÇLİ olarak türemiyor, ama kendi Code alanıyla AYNI ilkeyi (istemciye giden metin dilden bağımsız bir Code üzerinden çözülür) taşıyor.',
+          '.Message HER ZAMAN İngilizce/log-only; istemciye giden metin HER ZAMAN Code + ErrorMessages sözlüğü üzerinden üretilir.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

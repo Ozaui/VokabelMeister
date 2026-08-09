@@ -23,27 +23,36 @@
 - [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/` (2 bölüm)
 
-### A-02 — Ortak Altyapı ⬜
+### A-02 — Ortak Altyapı 🔄
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
-- [ ] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazılır)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `ApiErrorResponse` (`{ error: { code, message }, success }`) — ilk gerçek controller'dan önce
+> **A-02 sırasında düzeltilen 2 şey (kayıt altına alınmış kararlar):** (1) A-01'de proje referansları
+> kurulurken `WordLearner.Infrastructure` yalnızca `WordLearner.Domain`'e referans veriyordu, Application'a
+> değil — `Repository<T>`'nin `IRepository<T>`'yi implemente edebilmesi için bu eksik fark edilip
+> düzeltildi (`DEVELOPMENT_SETUP.md` güncellendi). (2) `SECURITY.md §1.4`'teki "EntityNotFoundException
+> için 404 yanıtı ex.Message (yalnızca Türkçe)" notu `CLAUDE.md §1`/`CODING_STANDARDS.md`'nin
+> "exception .Message İngilizce" kuralıyla çelişiyordu — çözüldü: `.Message` her zaman İngilizce/log-only,
+> istemciye giden metin her zaman `Code` + `ErrorMessages` sözlüğü üzerinden üretilir (`EntityNotFoundException`
+> kendi `Code` alanını taşıyor, `AppException`'dan türemeden aynı ilkeyi uyguluyor).
+- [x] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazılır)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `IRepository<T>` + `Repository<T>` generic base + `AddInfrastructureServices()`
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `ApiErrorResponse` (`{ error: { code, message }, success }`) — ilk gerçek controller'dan önce
       spekülatif ortak DTO (`ApiResponse<T>`/`PagedResult<T>` vb.) **açılmaz**, her tip onu fiilen
-      kullanan ilk task'ta yazılır (CLAUDE.md §3 YAGNI kuralı)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] Middleware: global exception handling, security headers, request/response log
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      kullanan ilk task'ta yazılır (CLAUDE.md §3 YAGNI kuralı); istemciye giden hata metnini dile göre
+      çözen `ErrorMessages` sözlüğü de bu adımda yazıldı (`Application/Common/ErrorMessages.cs`)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] Middleware: global exception handling, security headers, request/response log
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR kayıtları (AutoMapper yalnızca
       koşullu — CLAUDE.md §3 "AutoMapper Profile yalnızca" kuralı, ilk gerçek Entity→DTO dönüşümünde eklenir)
-- [ ] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
+- [x] ➜ **AKADEMI/backend'ye işle**
 
 ### A-03 — Auth API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6

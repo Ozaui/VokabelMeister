@@ -70,9 +70,9 @@ Bilinen iş hataları tek taban sınıftan türer: `AppException` — yalnızca 
 4. ErrorMessages.Resolve(code, dil) → tr/de metin (yoksa tr'ye düşer; yeni dil = sözlüğe sütun)
 5. İstemciye: { "error": { "code": "...", "message": "<dile göre>" } }
 ```
-- `AppException.Message` (.NET `.Message`) → yalnızca log/geliştirici, daima Türkçe, istemciye gitmez.
-- `ErrorMessages.Resolve()` → istemciye giden, dile göre değişen metin.
-- `EntityNotFoundException` bilinçli olarak `AppException`'dan türemez (mesajı dinamik veri içerir); 404 için `ex.Message` (yalnızca Türkçe).
+- `AppException.Message` (.NET `.Message`) → yalnızca log/geliştirici, daima İngilizce (`CLAUDE.md §1`), istemciye gitmez.
+- `ErrorMessages.Resolve(code, dil)` → istemciye giden, dile göre değişen metin (şu an tr/de, varsayılan tr).
+- `EntityNotFoundException` bilinçli olarak `AppException`'dan türemez (mesajı dinamik veri — hangi entity/Id — içerir, bu ayrıntı istemciye asla gitmemeli) ama AYNI ilkeyi taşır: kendi `Code` alanı vardır (ör. `ENTITY_NOT_FOUND`), 404 yanıtı `ErrorMessages.Resolve(ex.Code, dil)` ile üretilir — `ex.Message` (İngilizce, dinamik Id içerir) yalnızca loglanır, istemciye asla gitmez. Kısaca: **hangi exception olursa olsun, istemciye giden metin daima bir Code üzerinden sözlükten çözülür — `.Message` her zaman yalnızca log/geliştirici içindir.**
 - Yeni dil = `ErrorMessages.cs` sözlüğüne sütun; exception sınıflarına dokunulmaz.
 
 ## 2. Yetkilendirme (RBAC)

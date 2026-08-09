@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ApiErrorResponse ve ErrorMessages — Dile Göre Hata Metni</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'hata-mesajlari',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '03_generic-repository.html',
+    sonrakiBolum: '05_middleware.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'ApiErrorResponse ve ErrorMessages',
+        altBaslik: 'İstemciye giden HER hata yanıtının ortak şekli (ApiErrorResponse) ve Code\'dan dile göre metne çeviren sözlük (ErrorMessages) — Bölüm 1\'deki EntityNotFoundException\'ın Code\'unu GERÇEK bir Türkçe/Almanca metne çeviren mekanizma.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Yalnızca ApiErrorResponse? Başarı Zarfı Nerede?',
+        aciklama: 'İstemciye giden başarılı yanıtlar için de ortak bir zarf (ör. `{ success, data, message, timestamp }`) düşünülebilir. Ama henüz tek bir gerçek endpoint (veri döndüren bir controller) yok — bu yüzden yalnızca HATA yanıtı (`ApiErrorResponse`) yazıldı, başarı zarfı (`ApiResponse<T>`) YAZILMADI.',
+        neden: 'Spekülatif ortak tipler yazılmaz — her tip onu fiilen kullanan ilk task\'ta yazılır. `ApiErrorResponse`\'a bu görevde ihtiyaç VAR çünkü `ExceptionHandlingMiddleware` (Bölüm 5) onu KULLANACAK — ama başarı zarfını kullanacak İLK gerçek controller henüz yazılmadı.',
+        olmasaydi: 'Başarı zarfı da şimdiden yazılsaydı, ilk gerçek controller yazıldığında bu tip muhtemelen o controller\'ın GERÇEK ihtiyacına (ör. sayfalama alanları gerekip gerekmediği) tam UYMAYABİLİRDİ — kullanılmadan önce tasarlanan bir tip, genelde yanlış tahminlerle DOLU olur.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApiErrorResponse.cs — İstemciye Giden Hata Şekli',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/ApiErrorResponse.cs',
+        nedenBuKlasor: 'Response DTO\'lar `Application/DTOs/` altında yaşar — bu DTO\'yu üretecek olan `ExceptionHandlingMiddleware` (API katmanında) Application\'ı zaten görüyor, DTO\'nun Application\'da yaşaması bu akışa uyuyor.',
+        kod: `namespace WordLearner.Application.DTOs;
+
+public record ApiErrorResponse(bool Success, ApiErrorDetail Error);
+
+public record ApiErrorDetail(string Code, string Message);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs;',
+            aciklama: 'Klasör yoluyla (`Application/DTOs/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ApiErrorResponse(bool Success, ApiErrorDetail Error);',
+            aciklama: '`record` — C#\'ın değişmez (immutable) veri taşıyıcı türü; bir hata yanıtı oluşturulduktan sonra ALANLARI değiştirilemez, bu da "bir yerde yanlışlıkla üzerine yazılmış bir hata yanıtı" hatasını İMKANSIZ kılar. Alan adları (`Success`, `Error`) System.Text.Json\'ın varsayılan camelCase kuralıyla otomatik `success`/`error` olarak SERİLEŞTİRİLİR.',
+            neden: '`class` yerine `record` seçildi çünkü bu tür SALT VERİ taşır, davranışı (metodu) yok — record\'lar ayrıca otomatik `Equals`/`ToString` üretir, bu da test kodunda `response.Should().Be(beklenenYanit)` gibi karşılaştırmaları KOLAYLAŞTIRIR.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ApiErrorDetail(string Code, string Message);',
+            aciklama: '`Code` (dilden bağımsız, sabit — ör. `"ENTITY_NOT_FOUND"`) ve `Message` (dile göre ÇÖZÜLMÜŞ, son kullanıcıya gösterilecek metin) AYRI alanlar — istemci (admin/web/mobil) `Code`\'u programatik karar için (ör. "bu 404 ise farklı bir ekran göster"), `Message`\'ı doğrudan EKRANDA göstermek için kullanabilir.',
+            neden: 'İstemci tarafında `error.code === "ENTITY_NOT_FOUND"` gibi bir kontrol yazmak, `error.message === "Kayıt bulunamadı."` gibi DİLE bağımlı bir string karşılaştırmasından çok daha GÜVENİLİRDİR (dil değişse bile kod aynı kalır).',
+            olmasaydi: 'Yalnızca `Message` olsaydı, istemci tarafında "bu hangi hata türü?" sorusunu CEVAPLAMANIN tek yolu gösterilen METNİ ayrıştırmak olurdu — dil değiştiğinde (tr→de) bu kontrol SESSİZCE bozulurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'ErrorMessages Sözlüğü: "Sütun Ekleme" ile Yeni Dil',
+        aciklama: 'ErrorMessages, DIŞ katmandaki anahtarı DİL (`"tr"`, `"de"`), iç katmandaki anahtarı Code (`"ENTITY_NOT_FOUND"`) olan iki seviyeli bir sözlük. Yeni bir dil (ör. `"en"`) eklemek, var olan `"tr"`/`"de"` bloklarına DOKUNMADAN, yalnızca YENİ bir üst-seviye blok eklemek demektir.',
+        neden: 'İstemciye giden her metnin dile göre değişebilmesi ve yeni bir dilin var olan koda dokunmadan eklenebilmesi gerekiyor — dil = dış anahtar tasarımı bunu doğrudan sağlıyor: `"en"` eklemek TAMAMEN bağımsız, izole bir ekleme.',
+        olmasaydi: 'Sözlük Code\'u dış anahtar, dili iç anahtar yapacak şekilde TERSİNE tasarlansaydı (`Messages["ENTITY_NOT_FOUND"]["en"]`), yeni bir dil eklemek HER TEK Code satırına dokunmayı gerektirirdi — "bir sütun eklemek" yerine "her satıra bir hücre eklemek" olurdu, çok daha hataya AÇIK.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ErrorMessages.cs — Code + Dil → Metin',
+        dosyaYolu: 'backend/WordLearner.Application/Common/ErrorMessages.cs',
+        nedenBuKlasor: '`Application/Common/` — bu, flat tutulan paylaşılan yardımcılara benzer bir yeni klasör; DTO değil (davranışı var: `Resolve()` metodu), bir Feature\'a da ait değil (TÜM Handler\'lar/Middleware kullanacak) — bu yüzden ayrı bir `Common/` altına kondu.',
+        kod: `namespace WordLearner.Application.Common;
+
+// Yeni dil eklemek yalnızca bu sözlüğe yeni bir üst-seviye anahtar (ör. "en") eklemekle olur —
+// var olan Code'lara veya exception sınıflarına dokunulmaz.
+public static class ErrorMessages
+{
+    private const string DefaultLanguage = "tr";
+
+    private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
+    {
+        [DefaultLanguage] = new()
+        {
+            ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
+            ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
+        },
+        ["de"] = new()
+        {
+            ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
+            ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
+        },
+    };
+
+    public static string Resolve(string code, string? language)
+    {
+        var resolvedLanguage = language is not null && Messages.ContainsKey(language)
+            ? language
+            : DefaultLanguage;
+
+        return Messages[resolvedLanguage].TryGetValue(code, out var message) ? message : code;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Common;',
+            aciklama: 'Klasör yoluyla (`Application/Common/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static class ErrorMessages',
+            aciklama: 'Statik sınıf — sözlük ve `Resolve()` metodu, bir nesne örneği oluşturulmadan doğrudan sınıf adı üzerinden (`ErrorMessages.Resolve(...)`) kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string DefaultLanguage = "tr";',
+            aciklama: 'Desteklenmeyen ya da eksik bir dil isteğinde DÜŞÜLECEK varsayılan dil.',
+            neden: 'Hedef kitle Almanca↔Türkçe öğrenen kullanıcılar olduğu için, desteklenmeyen bir dil istendiğinde varsayılan dil `en` DEĞİL, `tr` seçildi.',
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()',
+            aciklama: 'Dış sözlüğün anahtarı DİL KODU (`"tr"`, `"de"`), değeri ise Code→metin eşleşmesini tutan İÇ sözlük.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sözlük başlatıcısının (collection initializer) açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[DefaultLanguage] = new()',
+            aciklama: 'Türkçe blok — sabiti (`DefaultLanguage`) doğrudan anahtar olarak kullanmak, ileride varsayılan dil değişirse bu satırın da OTOMATİK doğru anahtara işaret etmesini sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Türkçe iç sözlüğün açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",',
+            aciklama: 'Bölüm 1\'deki `EntityNotFoundException.Code`\'un TÜRKÇE karşılığı — herhangi bir entity türü için GENEL bir "bulunamadı" mesajı (henüz entity-özel Code\'lar yok, bkz. Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",',
+            aciklama: 'Bölüm 5\'teki `ExceptionHandlingMiddleware`\'in, BEKLENMEYEN (ör. bir null reference, bir SQL hatası) her exception için kullanacağı genel 500 mesajının TÜRKÇE karşılığı.',
+            neden: 'Beklenmeyen bir exception\'ın GERÇEK `.Message`\'ını (ör. bir stack trace parçası) istemciye göstermek GÜVENLİK riski taşır (iç sistem detaylarını SIZDIRABİLİR) — bu yüzden BEKLENMEYEN hatalarda daima bu SABİT, genel mesaj kullanılır, gerçek detay yalnızca loga yazılır.',
+            olmasaydi: 'Sabit bir 500 mesajı olmasaydı, `ExceptionHandlingMiddleware` yakaladığı HER exception\'ın `.Message`\'ını doğrudan istemciye DÖNMEK zorunda kalabilirdi — bu da (örneğin bir veritabanı bağlantı hatasında) sunucunun İÇ YAPISI hakkında istenmeyen bilgi SIZDIRABİLİRDİ.'
+          },
+          {
+            satir: '},',
+            aciklama: 'Türkçe iç sözlüğün kapanışı — sonra `"de"` kardeş girdisi geldiği için virgülle biter.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["de"] = new()',
+            aciklama: 'Almanca blok — yeni bir dil eklemek (ör. `["en"] = new() { ... }`) tam olarak bu satırın bir benzerini eklemek demek, var olan `tr`/`de` bloklarına DOKUNULMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Almanca iç sözlüğün açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",',
+            aciklama: '`ENTITY_NOT_FOUND` Code\'unun ALMANCA karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",',
+            aciklama: '`INTERNAL_SERVER_ERROR` Code\'unun ALMANCA karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '},',
+            aciklama: 'Almanca iç sözlüğün kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: 'Dış sözlüğün (Messages) kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static string Resolve(string code, string? language)',
+            aciklama: '`language` nullable (`string?`) — çağıran taraf (Middleware) bir `Accept-Language` header\'ı BULAMAMIŞ olabilir, bu durumda `null` geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var resolvedLanguage = language is not null && Messages.ContainsKey(language)',
+            aciklama: 'İstenen dil `null` DEĞİLSE VE sözlükte gerçekten TANIMLIYSA o dil kullanılır; aksi durumda (dil hiç gönderilmemişse VEYA desteklenmeyen bir dilse, ör. `"fr"`) `DefaultLanguage`\'a (tr) düşülür.',
+            neden: 'Bu satır olmadan, desteklenmeyen bir dil (`"fr"`) istendiğinde `Messages["fr"]` erişimi bir `KeyNotFoundException` FIRLATIRDI — bir hata yanıtı ÜRETMEYE çalışırken YENİ bir hata fırlatmak, sonsuz bir kısır döngü riski taşırdı.',
+            olmasaydi: null
+          },
+          {
+            satir: '? language',
+            aciklama: 'Koşul sağlanıyorsa (dil biliniyorsa) o dilin KENDİSİ kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': DefaultLanguage;',
+            aciklama: 'Koşul sağlanmıyorsa varsayılan dile (tr) düşülür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Messages[resolvedLanguage].TryGetValue(code, out var message) ? message : code;',
+            aciklama: 'Code sözlükte varsa çevrilmiş metni, YOKSA (ör. yeni bir Code eklenip sözlüğe unutulduysa) Code\'un KENDİSİNİ döner — böylece istemci en azından BOŞ bir mesaj yerine ham Code\'u görür, sorun HEMEN fark edilir.',
+            neden: '`TryGetValue`, `Messages[resolvedLanguage][code]` gibi doğrudan indeksleme yerine kullanılır çünkü doğrudan indeksleme, Code sözlükte yoksa exception FIRLATIRDI — bir HATA yanıtı üretirken yeni bir hataya düşmemek burada da öncelikli.',
+            olmasaydi: 'Bu düşme (fallback) davranışı olmasaydı, bir geliştirici YENİ bir Code fırlatıp `ErrorMessages`\'a eklemeyi UNUTURSA, istemci BOŞ ya da çökmüş bir hata yanıtı alırdı — bu şekilde en azından okunabilir bir Code görür, hata GİZLİ kalmaz.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Resolve metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'record', tanim: 'C#\'ta değeri (state) merkezli, immutable (değiştirilemez) veri taşıyıcı tür — otomatik Equals/ToString üretir.' },
+          { terim: 'Code', tanim: 'Bir hatayı dilden bağımsız tanımlayan sabit metin (ör. ENTITY_NOT_FOUND) — istemciye giden asıl metin bundan çözülür.' },
+          { terim: 'Fallback (Düşme)', tanim: 'İstenen değer bulunamadığında güvenli bir varsayılana geri dönme davranışı (ör. desteklenmeyen dilde tr\'ye düşmek).' },
+          { terim: 'TryGetValue', tanim: '.NET sözlüklerinde, bir anahtarın var olup olmadığını exception fırlatmadan kontrol eden metot.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ApiErrorResponse, yalnızca HATA yanıtı için yazıldı — başarı zarfı ilk gerçek controller\'a kadar ertelendi.',
+          'ApiErrorDetail, Code (dilden bağımsız) ve Message (dile göre çözülmüş) alanlarını AYRI tutarak istemcinin hem programatik karar hem ekran metni ihtiyacını karşılıyor.',
+          'ErrorMessages sözlüğü dil-dışta/Code-içte tasarlandı — yeni bir dil eklemek, "bir sütun eklemek" kadar basit ve izole bir işlem.',
+          'Resolve(), hem desteklenmeyen dilde hem sözlükte olmayan Code\'da GÜVENLİ bir düşme (fallback) davranışı sergiliyor — bir hata yanıtı üretirken YENİ bir hataya düşmüyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
