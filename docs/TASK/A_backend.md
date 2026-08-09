@@ -23,7 +23,7 @@
 - [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/` (2 bölüm)
 
-### A-02 — Ortak Altyapı 🔄
+### A-02 — Ortak Altyapı ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
 > **A-02 sırasında düzeltilen 2 şey (kayıt altına alınmış kararlar):** (1) A-01'de proje referansları
@@ -49,7 +49,7 @@
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] Middleware: global exception handling, security headers, request/response log
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR kayıtları (AutoMapper yalnızca
+- [x] `Program.cs`: JWT auth, CORS, Serilog, FluentValidation, MediatR kayıtları (AutoMapper yalnızca
       koşullu — CLAUDE.md §3 "AutoMapper Profile yalnızca" kuralı, ilk gerçek Entity→DTO dönüşümünde eklenir)
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
 - [x] ➜ **AKADEMI/backend'ye işle**

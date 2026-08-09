@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Program.cs — Tüm Ortak Altyapının Bağlandığı Yer</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'program-cs',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '05_middleware.html',
+    sonrakiBolum: '07_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'Program.cs: Tüm Parçaların Bağlandığı Yer',
+        altBaslik: 'BaseEntity, DbContext, Repository, hata yönetimi, middleware — önceki 5 bölümde yazılan HER ŞEY burada bir araya geliyor. Bu dosya, A-01\'de kurulan basit iskeletin ÜZERİNE inşa ediliyor, sıfırdan yazılmıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Bu Dosya A-01\'in Devamı, Yeniden Yazımı Değil',
+        aciklama: 'A-01\'de Program.cs yalnızca "Controller + Swagger çalışsın" hedefiyle yazılmıştı: `AddControllers`, `AddEndpointsApiExplorer`, `AddSwaggerGen`, geliştirme ortamında Swagger UI, `UseHttpsRedirection`, `UseAuthorization`, `MapControllers`, `app.Run()`. Bu satırların HİÇBİRİ değişmedi — aralarına Serilog, DbContext/Repository kaydı, JWT kimlik doğrulama, CORS ve üç middleware EKLENDİ.',
+        neden: 'Var olan, çalışan satırlara dokunmadan yalnızca ARADAKİ boşluklara yeni kod eklemek, A-01\'de test edilmiş davranışın (Swagger\'ın açılması gibi) yanlışlıkla bozulma riskini en aza indirir.',
+        olmasaydi: 'Program.cs sıfırdan yeniden yazılsaydı, A-01\'de bilinçli verilen kararlardan biri (ör. Swagger\'ın yalnızca geliştirme ortamında açılması) yanlışlıkla atlanabilir, fark edilmeden PRODUCTION\'a kadar gidebilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — Tam Dosya',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'API projesinin giriş noktası — uygulama `dotnet run` ile başladığında çalışan ilk (ve tek) dosya, bu yüzden TÜM katmanların DI kaydı ve HTTP pipeline kurulumu burada toplanır.',
+        kod: `using System.Text;
+using FluentValidation;
+using MediatR;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using WordLearner.API.Middleware;
+using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Infrastructure;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, configuration) => configuration
+    .MinimumLevel.Information()
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddInfrastructureServices(builder.Configuration);
+
+// Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+// IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ClockSkew = TimeSpan.Zero
+    });
+builder.Services.AddAuthorization();
+
+builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .AllowAnyMethod()
+    .AllowAnyHeader()));
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseMiddleware<RequestResponseLoggingMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseHttpsRedirection();
+app.UseCors("Default");
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();`,
+        satirlar: [
+          {
+            satir: 'using System.Text;',
+            aciklama: 'JWT anahtarını (`string`) `Encoding.UTF8.GetBytes` ile byte dizisine çevirmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AddValidatorsFromAssembly` uzantı metodunu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using MediatR;',
+            aciklama: '`AddMediatR` uzantı metodunu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Authentication.JwtBearer;',
+            aciklama: '`JwtBearerDefaults.AuthenticationScheme` ve `AddJwtBearer` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.IdentityModel.Tokens;',
+            aciklama: '`TokenValidationParameters`/`SymmetricSecurityKey` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Serilog;',
+            aciklama: '`UseSerilog`/`RollingInterval` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.API.Middleware;',
+            aciklama: 'Bölüm 5\'teki üç middleware sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories;',
+            aciklama: 'Aşağıda assembly marker olarak kullanılan `IRepository<>`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure;',
+            aciklama: 'Bölüm 3\'teki `AddInfrastructureServices` uzantı metodunu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var builder = WebApplication.CreateBuilder(args);',
+            aciklama: 'A-01\'den değişmedi — uygulamanın DI konteynerini/yapılandırmasını kuracak builder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Host.UseSerilog((context, configuration) => configuration',
+            aciklama: 'ASP.NET Core\'un varsayılan loglama sistemini Serilog\'a devreder — bundan sonra TÜM `ILogger` çağrıları (middleware\'lerdeki `_logger.LogInformation` gibi) bu yapılandırmadan geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.MinimumLevel.Information()',
+            aciklama: '`Information` ve üzeri (Warning, Error, Critical) loglanır — `Debug`/`Trace` gibi daha ayrıntılı seviyeler kapalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Enrich.FromLogContext()',
+            aciklama: 'Log kayıtlarına, kod içinde `LogContext.PushProperty` ile eklenmiş ek bağlamsal alanların da (ileride, ör. bir istek kimliği) dahil edilmesini sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.Console()',
+            aciklama: 'Loglar konsola (terminale) yazılır — geliştirme sırasında anlık gözlem için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));',
+            aciklama: 'Loglar ayrıca `logs/` klasörüne, HER GÜN yeni bir dosyaya (`app-20260810.txt` gibi) yazılır — bir veritabanı sink\'i (Serilog.Sinks.MSSqlServer, ApplicationLog tablosu ileride bir sonraki görevde eklenecek) henüz YOK, bu yüzden şimdilik yalnızca konsol+dosya.',
+            neden: 'ApplicationLog tablosu henüz oluşturulmadığı (ilgili entity henüz yazılmadığı) için Serilog\'a bir MSSqlServer sink\'i ŞİMDİDEN eklemek, var olmayan bir tabloya yazmaya çalışıp uygulamanın BAŞLAMASINI engelleyebilirdi — konsol+dosya, bu tablo eklenene kadar YETERLİ ve güvenli bir ara adım.',
+            olmasaydi: 'Şimdiden bir DB sink\'i eklenseydi ve tablo yoksa, `AutoCreateSqlTable=false` ayarıyla (planlanan yapılandırma) Serilog her log yazma denemesinde SESSİZCE başarısız olur ya da uygulama başlangıcında hataya yol açabilirdi.'
+          },
+          {
+            satir: 'builder.Services.AddControllers();',
+            aciklama: 'A-01\'den değişmedi — Controller\'ların HTTP isteklerine cevap verebilmesi için gereken servisleri kaydeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddEndpointsApiExplorer();',
+            aciklama: 'A-01\'den değişmedi — Swagger\'ın endpoint\'leri keşfedebilmesi için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddSwaggerGen();',
+            aciklama: 'A-01\'den değişmedi — Swagger/OpenAPI şema üretici.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddInfrastructureServices(builder.Configuration);',
+            aciklama: 'Bölüm 3\'teki extension metot — DbContext + generic Repository kaydını TEK satırda yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);',
+            aciklama: 'Application assembly\'sindeki (ileride yazılacak) TÜM `FluentValidation` doğrulayıcılarını otomatik bulup kaydeder — `typeof(IRepository<>).Assembly` yalnızca "hangi assembly taranacak" bilgisini vermek için bir referans noktası (marker), `IRepository<>`\'nin kendisiyle doğrulama İLGİSİ YOK.',
+            neden: 'Application katmanında henüz somut bir Command/Validator sınıfı yok — ama bu satır ŞİMDİDEN doğru assembly\'yi taradığı için, ilk validator yazıldığında BAŞKA hiçbir Program.cs değişikliği gerekmeyecek.',
+            olmasaydi: 'Bu satır olmasaydı, her yeni validator yazıldığında Program.cs\'e `services.AddScoped<IValidator<X>, XValidator>();` gibi elle bir kayıt eklemek gerekirdi.'
+          },
+          {
+            satir: 'builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));',
+            aciklama: 'Application assembly\'sindeki (ileride yazılacak) TÜM MediatR Command/Query Handler\'larını otomatik bulup kaydeder — AYNI assembly-marker mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>',
+            aciklama: 'JWT Bearer kimlik doğrulama şemasını kaydeder — henüz `[Authorize]` işaretli TEK bir endpoint yok, ama bu şema en baştan hazır olmalı ki ileride eklenen `[Authorize]`\'lı endpoint\'ler ÇALIŞSIN.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.TokenValidationParameters = new TokenValidationParameters',
+            aciklama: 'Gelen bir JWT\'nin GEÇERLİ sayılması için kontrol edilecek kuralları tanımlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Nesne başlatıcısının (object initializer) açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateIssuerSigningKey = true,',
+            aciklama: 'Token\'ın imzasının, bilinen (bizim `SecretKey`\'imizle üretilmiş) bir anahtarla eşleştiği doğrulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),',
+            aciklama: 'Doğrulama anahtarı, yapılandırmadan (`appsettings.Development.json` yerelde, ortam değişkenleri üretimde) okunur — kaynak koda GÖMÜLMEZ.',
+            neden: 'Hassas bir değer (JWT anahtarı dahil) asla appsettings.json/kaynak koda GİRMEZ — `!` (null-forgiving) operatörü, "bu değerin ortamda MUTLAKA tanımlı olacağını" belirtir; tanımlı değilse uygulama BAŞLARKEN net bir hatayla durur (sessizce yanlış davranmaz).',
+            olmasaydi: 'Anahtar doğrudan kaynak koda yazılsaydı, GitHub\'a push edilen İLK commit\'te sızmış olurdu — git geçmişinde SONSUZA dek kalıcı bir iz bırakırdı.'
+          },
+          {
+            satir: 'ValidateIssuer = true,',
+            aciklama: 'Token\'ın `iss` (issuer) alanının beklenen değerle eşleştiği doğrulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidIssuer = builder.Configuration["Jwt:Issuer"],',
+            aciklama: 'Beklenen issuer değeri yapılandırmadan okunur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateAudience = true,',
+            aciklama: 'Token\'ın `aud` (audience) alanının beklenen değerle eşleştiği doğrulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidAudience = builder.Configuration["Jwt:Audience"],',
+            aciklama: 'Beklenen audience değeri yapılandırmadan okunur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ClockSkew = TimeSpan.Zero',
+            aciklama: 'Varsayılan olarak JWT doğrulaması, sunucular arası saat farkını tolere etmek için süre dolumuna 5 dakikalık bir "tolerans payı" ekler — bu satır o payı SIFIRLAR, token tam olarak belirtilen sürede geçersiz olur.',
+            neden: 'Access token zaten kısa ömürlü (15 dakika) tasarlandığı için, 5 dakikalık ekstra tolerans payı, süresi dolmuş bir token\'ın olması gerekenden ÇOK DAHA UZUN süre geçerli kalmasına (%33\'e varan bir uzama) yol açardı.',
+            olmasaydi: 'Bu satır olmasaydı, 15 dakikalık bir access token gerçekte 20 dakikaya kadar geçerli KALABİLİRDİ — güvenlik beklentisiyle gerçek davranış arasında sessiz bir sapma oluşurdu.'
+          },
+          {
+            satir: '});',
+            aciklama: 'Nesne başlatıcısının kapanışı ve `AddJwtBearer` çağrısının sonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddAuthorization();',
+            aciklama: '`[Authorize]` özniteliğini okuyup yetki kontrolü yapan servisleri kaydeder — bu kayıt olmadan aşağıdaki `app.UseAuthorization()` çalışma zamanında hata verirdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy',
+            aciklama: '"Default" adlı bir CORS politikası tanımlar — bu isim aşağıda `app.UseCors("Default")` ile eşleştirilecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])',
+            aciklama: 'İzin verilen origin listesi yapılandırmadan okunur; `?? []` — yapılandırmada bu bölüm hiç TANIMLI değilse (ör. henüz o ortam ayarlanmadıysa) boş bir dizi kullanılır, `null` referans hatası yerine "hiçbir origin\'e izin yok" gibi GÜVENLİ bir varsayılana düşülür.',
+            neden: 'CORS origin listesi ortama göre DEĞİŞTİĞİ (dev\'de localhost portları, prod\'da gerçek domain) için kaynak koda sabitlenmez, yapılandırmadan okunur.',
+            olmasaydi: '`?? []` olmasaydı, bu bölüm yapılandırmada eksik olduğunda `WithOrigins(null)` çağrılır, bu da bir `ArgumentNullException` ile uygulamanın BAŞLARKEN çökmesine yol açardı.'
+          },
+          {
+            satir: '.AllowAnyMethod()',
+            aciklama: 'GET/POST/PUT/DELETE gibi TÜM HTTP metotlarına izin verir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.AllowAnyHeader()));',
+            aciklama: 'İzin verilen origin\'lerden gelen isteklerde TÜM header\'lara (ör. `Authorization`, `Content-Type`) izin verir; kapanan üç parantez `AddPolicy`/`AddCors` çağrılarını kapatır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var app = builder.Build();',
+            aciklama: 'A-01\'den değişmedi — tüm `builder.Services.Add...()` kayıtlarını BİR ARAYA getirip çalışabilir uygulama nesnesini üretir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (app.Environment.IsDevelopment())',
+            aciklama: 'A-01\'den değişmedi — Swagger yalnızca geliştirme ortamında açılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Koşullu bloğun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseSwagger();',
+            aciklama: 'A-01\'den değişmedi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseSwaggerUI();',
+            aciklama: 'A-01\'den değişmedi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Koşullu bloğun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseMiddleware<RequestResponseLoggingMiddleware>();',
+            aciklama: 'Bölüm 5\'te açıklanan sıralamayla EN DIŞTA (ilk) kaydedilir — böylece istek/yanıt döngüsünün TAMAMINI, aşağıdaki ExceptionHandlingMiddleware\'in çözdüğü exception\'lar DAHİL, ölçüp loglayabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseMiddleware<ExceptionHandlingMiddleware>();',
+            aciklama: 'Loglama\'nın hemen İÇİNDE — aşağı akıştaki (Security Headers, Controller\'lar) HERHANGİ bir exception\'ı yakalar, kendi içinde bir HTTP yanıtına çevirir, dışarı YENİDEN FIRLATMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseMiddleware<SecurityHeadersMiddleware>();',
+            aciklama: 'Hata Yakalama\'nın İÇİNDE — böylece bu middleware\'in kendisi bir exception fırlatırsa (olası değil ama), o exception yine de dıştaki ExceptionHandlingMiddleware tarafından YAKALANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseHttpsRedirection();',
+            aciklama: 'A-01\'den değişmedi — HTTP isteklerini HTTPS\'e yönlendirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseCors("Default");',
+            aciklama: 'Yukarıda tanımlanan "Default" CORS politikasını pipeline\'a EKLER — isim, `AddPolicy("Default", ...)` ile BİREBİR eşleşmeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseAuthentication();',
+            aciklama: 'Gelen isteğin JWT\'sini OKUYUP "bu kullanıcı kim?" sorusunu cevaplayan middleware — `UseAuthorization()`\'dan ÖNCE gelmesi ZORUNLU, çünkü yetki kontrolü önce kimliğin BİLİNMESİNİ gerektirir.',
+            neden: '`UseAuthentication` "kim yaptı", `UseAuthorization` "bu kişinin buna YETKİSİ var mı" sorularını cevaplar — sıra TERS olsaydı, yetki kontrolü henüz kimliği ÇÖZÜLMEMİŞ bir isteğe uygulanmaya çalışılırdı.',
+            olmasaydi: 'Bu satır olmadan (ya da UseAuthorization\'dan SONRA gelseydi) `[Authorize]` işaretli endpoint\'ler HER ZAMAN 401 dönerdi — geçerli bir token gönderilse bile kimlik hiç ÇÖZÜLMEMİŞ olurdu.'
+          },
+          {
+            satir: 'app.UseAuthorization();',
+            aciklama: 'A-01\'de zaten vardı ama o zaman `UseAuthentication` OLMADIĞI için tek başına işlevsizdi — şimdi ikisi birlikte tam kimlik doğrulama+yetkilendirme zincirini oluşturuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.MapControllers();',
+            aciklama: 'A-01\'den değişmedi — Controller\'ları gerçek HTTP route\'larına bağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.Run();',
+            aciklama: 'A-01\'den değişmedi — HTTP sunucusunu başlatıp istekleri dinlemeye başlar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Bu Program.cs "Bitti" mi?',
+        iyi: {
+          baslik: 'Bu görevin kapsamı — doğru beklenti',
+          maddeler: [
+            'JWT kimlik doğrulama şeması KURULDU ama henüz TEK bir [Authorize] endpoint YOK — bu bilinçli, ileride gelecek Auth API bu şemanın üzerine oturacak.',
+            'Serilog yalnızca konsol+dosya — veritabanı sink\'i ApplicationLog tablosu yazılana kadar EKLENMEYECEK.',
+            'MediatR/FluentValidation kayıtları hazır ama henüz TARAYACAK hiçbir Command/Validator yok — sıfır kayıtla çalışırlar, hataya yol açmazlar.'
+          ]
+        },
+        kotu: {
+          baslik: 'Yanlış beklenti',
+          maddeler: [
+            '"JWT kuruldu, şimdi Auth API\'yi de bu görevde yazalım" — Auth API kendi entity\'lerini (User, RefreshToken) gerektiren AYRI, büyük bir görev.',
+            '"Serilog\'a şimdiden DB sink\'i ekleyelim" — henüz o tablo YOK, eklemek uygulamanın başlamasını RİSKE atar.'
+          ]
+        }
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Assembly Marker', tanim: 'Bir tarama işleminin (ör. AddMediatR) "hangi derlemeyi (assembly) tarayacağını" belirtmek için kullanılan, o derlemede kesin var olan bir tür referansı.' },
+          { terim: 'JWT Bearer', tanim: 'İstemcinin her istekte `Authorization: Bearer <token>` header\'ıyla kimliğini kanıtladığı, sunucu tarafında oturum (session) SAKLAMAYAN kimlik doğrulama yöntemi.' },
+          { terim: 'ClockSkew', tanim: 'Süresi dolmuş bir token\'a, sunucular arası saat farkını tolere etmek için tanınan ek geçerlilik süresi.' },
+          { terim: 'CORS Policy', tanim: 'Hangi origin\'lerden (domain+port) gelen tarayıcı isteklerinin kabul edileceğini tanımlayan kural seti.' },
+          { terim: 'Middleware Pipeline', tanim: 'Program.cs\'te kaydedilme sırasına göre oluşan, bir HTTP isteğinin içinden geçtiği ardışık işlem zinciri.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Program.cs, A-01\'in basit iskeletinin ÜZERİNE inşa edildi — var olan satırlar korunarak Serilog, DI kayıtları, JWT, CORS ve üç middleware EKLENDİ.',
+          'Assembly-marker deseni (`typeof(IRepository<>).Assembly`), henüz somut bir Command/Validator/Handler yokken bile MediatR/FluentValidation\'ın DOĞRU assembly\'yi taramasını sağlıyor.',
+          'JWT kimlik doğrulama şeması kuruldu ama henüz kullanılmıyor — ileride [Authorize] endpoint\'ler eklendiğinde hazır olacak.',
+          'Middleware sırası (Loglama → Hata Yakalama → Güvenlik Başlıkları → ... → Authentication → Authorization → Controllers) bilinçli, her adımın gerekçesi var.',
+          'Uygulama gerçekten çalıştırılıp (dotnet run) Swagger\'ın açıldığı, güvenlik başlıklarının eklendiği ve isteklerin loglandığı DOĞRULANDI.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

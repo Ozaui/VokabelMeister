@@ -38,7 +38,7 @@
 | D | D-01…D-14 | Mobil | ⬜ |
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-02` 🔄 (Ortak Altyapı — yalnızca `Program.cs` kaldı) → `TASK/A_backend.md`.
+**Sıradaki task:** `A-03` ⬜ (Auth API) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
 
 (`A-01 — Proje İskeleti` ✅ tamamlandı 2026-08-09: 5 proje [Domain/Application/Infrastructure/API/
@@ -46,14 +46,16 @@ Tests], CLAUDE.md §5'teki tek yönlü bağımlılık zinciri, TECHNICAL_SPECIFI
 paketleri, appsettings.json/appsettings.Development.json ayrımı [ENV.md], başlangıç `Program.cs` —
 `AKADEMI/backend/A-01_proje-iskeleti/`e işlendi, bkz. `02_yapilandirma-ozet-sozluk.html`.)
 
-(`A-02 — Ortak Altyapı` 🔄 devam ediyor 2026-08-10: BaseEntity, EntityNotFoundException,
+(`A-02 — Ortak Altyapı` ✅ tamamlandı 2026-08-10: BaseEntity, EntityNotFoundException,
 WordLearnerDbContext [reflection tabanlı otomatik soft-delete filtresi], IRepository<T>/Repository<T>/
 AddInfrastructureServices, ApiErrorResponse+ErrorMessages [Code+dil sözlüğü], 3 middleware
-[ExceptionHandling/SecurityHeaders/RequestResponseLogging], RepositoryTests+EntityNotFoundExceptionTests
-[4/4 yeşil] tamamlandı — `AKADEMI/backend/A-02_ortak-altyapi/`e işlendi (5 bölüm). Kalan: `Program.cs`
-[JWT/CORS/Serilog/FluentValidation/MediatR kayıtları]. Bu görevde 2 düzeltme yapıldı: A-01'de eksik
-bırakılan Infrastructure→Application proje referansı, ve SECURITY.md/CLAUDE.md arasındaki bir hata-mesajı
-dil çelişkisi — detay `TASK/A_backend.md` A-02 notunda.)
+[ExceptionHandling/SecurityHeaders/RequestResponseLogging], Program.cs [Serilog/JWT/CORS/
+FluentValidation/MediatR — gerçekten çalıştırılıp Swagger/güvenlik başlıkları/loglama canlı
+doğrulandı], RepositoryTests+EntityNotFoundExceptionTests [4/4 yeşil] — `AKADEMI/backend/
+A-02_ortak-altyapi/`e işlendi (7 bölüm). Bu görevde 2 düzeltme yapıldı: A-01'de eksik bırakılan
+Infrastructure→Application proje referansı, ve bir hata-mesajı dil çelişkisi (EntityNotFoundException'ın
+istemciye giden metni de Code+ErrorMessages sözlüğü üzerinden çözülecek şekilde netleştirildi) —
+detay `TASK/A_backend.md` A-02 notunda.)
 
 (**2026-08-08 — Backend roadmap'i baştan tasarlandı:** `TASK/A_backend.md` A-01…A-20, eski A
 [admin backend] + C [kullanıcı backend] görevlerinin TEK sıraya birleşmiş hâli — git geçmişindeki
