@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — EF Konfigürasyonları ve İlk Migration</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'ef-konfigurasyonlari-ve-migration',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '01_entity-katmani.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'EF Konfigürasyonları ve İlk Migration',
+        altBaslik: 'Bölüm 1\'deki entity\'lerin C# sınıfları veritabanı tablolarına NASIL dönüşüyor — kolon tipleri, CHECK constraint\'ler, index\'ler, yabancı anahtarlar; ve bunlardan OTOMATİK üretilen ilk migration.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'IEntityTypeConfiguration — Neden Entity\'nin İçine Değil, Ayrı Bir Dosyaya?',
+        aciklama: 'Bölüm 1\'deki `User`/`RefreshToken`/`QrLoginSession` sınıfları yalnızca PROPERTY\'ler taşıyor — hangi kolonun kaç karakter olacağı, hangi index\'in kurulacağı, hangi CHECK constraint\'in uygulanacağı gibi VERİTABANINA ÖZGÜ detaylar `IEntityTypeConfiguration<T>` uygulayan AYRI sınıflarda yazılıyor (`Infrastructure/Data/Configurations/Auth/`).',
+        neden: 'Domain katmanındaki entity, HİÇBİR veritabanı teknolojisinden (EF Core, SQL Server, kolon uzunlukları) HABERSİZ kalmalı — bu ayrım, Domain\'in "hiçbir şeye bağımlı olmayan en saf katman" ilkesini korur; `Microsoft.EntityFrameworkCore.Metadata.Builders` gibi bir EF Core türü Domain projesine ASLA sızmaz.',
+        olmasaydi: 'Bu ayrım olmasaydı ve konfigürasyon Entity sınıfının İÇİNE (ör. `[MaxLength(254)]` gibi attribute\'larla) yazılsaydı, `WordLearner.Domain` projesi EF Core\'a REFERANS VERMEK zorunda kalırdı — Domain\'in "yalnızca Domain\'e bağımlı olabilir" (A-02, Bölüm 3) ilkesi BOZULURDU.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserConfiguration.cs — En Çok Alanlı Tablo',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/UserConfiguration.cs',
+        nedenBuKlasor: '`Infrastructure/Data/Configurations/Auth/` — dikey dilim yazım sırasının "EF Konfigürasyon" adımının tam karşılığı; A-02\'deki `WordLearnerDbContext.ApplyConfigurationsFromAssembly` (A-02, Bölüm 2) bu dosyayı OTOMATİK bulup uygulayacak.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
+
+public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.ToTable("Users", tb =>
+        {
+            tb.HasCheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
+            tb.HasCheckConstraint("CK_Users_ThemePreference", "ThemePreference IN ('Light','Dark','System')");
+            tb.HasCheckConstraint("CK_Users_LanguagePreference", "LanguagePreference IN ('tr','de')");
+            tb.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
+            tb.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+        });
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Email).HasMaxLength(254).IsRequired();
+        builder.HasIndex(x => x.Email).IsUnique();
+
+        builder.Property(x => x.PasswordHash).HasMaxLength(60).IsUnicode(false);
+        builder.Property(x => x.GoogleId).HasMaxLength(255);
+        builder.HasIndex(x => x.GoogleId);
+        builder.Property(x => x.AppleId).HasMaxLength(255);
+        builder.HasIndex(x => x.AppleId);
+        builder.Property(x => x.AuthProvider).HasMaxLength(20).IsRequired().HasDefaultValue("Local");
+        builder.Property(x => x.FirstName).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.LastName).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.DisplayName).HasMaxLength(100);
+        builder.Property(x => x.AvatarUrl).HasMaxLength(500);
+
+        builder.Property(x => x.DailyWordGoal).HasDefaultValue(10);
+        builder.Property(x => x.DailyNewWordLimit).HasDefaultValue(5);
+
+        builder.Property(x => x.CurrentLevel).HasMaxLength(2).IsRequired().HasDefaultValue("A1");
+        builder.Property(x => x.ThemePreference).HasMaxLength(10).IsRequired().HasDefaultValue("System");
+        builder.Property(x => x.LanguagePreference).HasMaxLength(2).IsRequired().HasDefaultValue("tr");
+        builder.Property(x => x.TotalXP).HasDefaultValue(0);
+        builder.Property(x => x.LifetimeXP).HasDefaultValue(0);
+        builder.Property(x => x.StreakDays).HasDefaultValue(0);
+
+        builder.Property(x => x.PendingOtpCodeHash).HasMaxLength(44).IsUnicode(false);
+        builder.Property(x => x.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
+
+        builder.Property(x => x.IsOnboardingCompleted).HasDefaultValue(false);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+        builder.Property(x => x.IsEmailVerified).HasDefaultValue(false);
+        builder.Property(x => x.LastLoginIP).HasMaxLength(45).IsUnicode(false);
+        builder.Property(x => x.LoginCount).HasDefaultValue(0);
+
+        builder.Property(x => x.IsAnonymized).HasDefaultValue(false);
+        builder.Property(x => x.OriginalEmailHash).HasMaxLength(44).IsUnicode(false);
+        builder.Property(x => x.OneSignalPlayerId).HasMaxLength(100);
+
+        builder.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue("User");
+        builder.HasIndex(x => x.Role);
+
+        builder.Property(x => x.IsDeleted).HasDefaultValue(false);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`IEntityTypeConfiguration<T>` arayüzünü kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: 'Bölüm 1\'deki `User` entity\'sini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Auth;',
+            aciklama: 'Klasör yoluyla (`Infrastructure/Data/Configurations/Auth/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class UserConfiguration : IEntityTypeConfiguration<User>',
+            aciklama: 'EF Core\'un tanıdığı standart arayüz — `ApplyConfigurationsFromAssembly` (A-02, Bölüm 2) bu arayüzü uygulayan HER sınıfı otomatik bulur ve `Configure` metodunu çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<User> builder)',
+            aciklama: '`builder`, `User` türü için TÜM kolon/index/kısıt tanımlarının yapıldığı Fluent API nesnesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("Users", tb =>',
+            aciklama: 'Tablo adını AÇIKÇA "Users" olarak belirler (EF Core varsayılan olarak sınıf adının ÇOĞULUNU kullanır, ama açık isim daha net) ve ikinci parametreyle CHECK constraint\'leri tanımlamaya başlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'CHECK constraint tanımlarını gruplayan lambda gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Users_Level", "CurrentLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: 'Veritabanı seviyesinde bir kısıt — `CurrentLevel` kolonuna bu ALTI değerin DIŞINDA bir şey yazılmaya çalışılırsa SQL Server bunu REDDEDER.',
+            neden: 'C# tarafında `CurrentLevel` düz bir `string` (Bölüm 1) — bu, uygulama kodunda YANLIŞ bir değer (ör. bir yazım hatasıyla "A3") atanmasını ENGELLEMEZ; CHECK constraint bu korumayı VERİTABANI seviyesinde, uygulama kodundan BAĞIMSIZ olarak sağlıyor.',
+            olmasaydi: 'CHECK constraint olmasaydı, bir Handler\'daki (ileride yazılacak) bir hata veya eksik bir FluentValidation kuralı, veritabanına GEÇERSİZ bir seviye değeri YAZILMASINA izin verirdi — bu hata ancak o veriyi OKUYAN bir yerde fark edilirdi.'
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Users_ThemePreference", "ThemePreference IN (\'Light\',\'Dark\',\'System\')");',
+            aciklama: 'ThemePreference için AYNI mantıkla üç değerle sınırlı bir kısıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Users_LanguagePreference", "LanguagePreference IN (\'tr\',\'de\')");',
+            aciklama: 'LanguagePreference için tr/de ile sınırlı bir kısıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Users_Role", "Role IN (\'User\',\'Admin\')");',
+            aciklama: 'Role için iki değerle sınırlı bir kısıt — bu, "hiçbir public endpoint rol yükseltemez" ilkesinin veritabanı seviyesindeki son savunma HATTI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN (\'Local\',\'Google\',\'Apple\')");',
+            aciklama: 'AuthProvider için üç değerle sınırlı bir kısıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '});',
+            aciklama: 'Lambda gövdesinin ve `ToTable` çağrısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: '`Id`\'nin birincil anahtar olduğunu AÇIKÇA belirtir — `Id` isimlendirme convention\'ı zaten bunu ima eder ama açık tanım okunabilirliği ARTIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Email).HasMaxLength(254).IsRequired();',
+            aciklama: 'RFC 5321\'e göre bir e-posta adresinin teorik AZAMİ uzunluğu 254 karakterdir — Auth şemasındaki `NVARCHAR(254)` tanımıyla birebir eşleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.Email).IsUnique();',
+            aciklama: 'Aynı e-posta ile İKİ hesap açılamaz — bu kısıt VERİTABANI seviyesinde uygulanır (uygulama kodundaki bir kontrol RACE CONDITION\'a karşı yeterli değildir, aynı anda iki istek aynı e-postayla kayıt olmaya çalışabilir).',
+            neden: 'Uygulama seviyesinde "önce var mı diye bak, yoksa ekle" mantığı, İKİ isteğin TAM AYNI ANDA çalışması durumunda ikisi de "yok" görüp İKİSİ de eklemeye çalışabilir — yalnızca veritabanı seviyesindeki UNIQUE index bu YARIŞ durumunu kesin olarak ÖNLER.',
+            olmasaydi: 'Yalnızca uygulama kodunda bir "e-posta zaten var mı" kontrolü olsaydı, YÜKSEK eşzamanlı trafikte (ör. aynı e-postayla saniyede birden fazla kayıt denemesi) NADİREN de olsa aynı e-postayla İKİ hesap oluşabilirdi.'
+          },
+          {
+            satir: 'builder.Property(x => x.PasswordHash).HasMaxLength(60).IsUnicode(false);',
+            aciklama: 'BCrypt hash\'i her zaman TAM 60 karakter, yalnızca ASCII — `IsUnicode(false)` SQL Server\'da `VARCHAR` (NVARCHAR değil) kullanılmasını sağlar, bu da Unicode\'a göre YARI depolama alanı kaplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.GoogleId).HasMaxLength(255);',
+            aciklama: 'Google\'ın kimlik uzunluğuna göre 255 karakter sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.GoogleId);',
+            aciklama: 'Google ile giriş yapan bir kullanıcıyı `GoogleId`\'ye göre HIZLI bulabilmek için index — UNIQUE DEĞİL (Email\'in aksine), çünkü çoğu satırda bu alan `null` olacak ve SQL Server `null` değerleri UNIQUE index\'te ÇAKIŞMA saymaz zaten, ama yine de burada uniqueness AÇIKÇA istenmedi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.AppleId).HasMaxLength(255);',
+            aciklama: 'GoogleId ile AYNI mantık, Apple kimliği için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.AppleId);',
+            aciklama: 'GoogleId ile AYNI gerekçeyle index.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.AuthProvider).HasMaxLength(20).IsRequired().HasDefaultValue("Local");',
+            aciklama: '`HasDefaultValue("Local")`, C# tarafındaki `= "Local"` (Bölüm 1) ile AYNI varsayılanı VERİTABANI seviyesinde de tanımlar — iki farklı yerde AYNI bilginin tekrarı gibi görünse de, biri (C#) yeni nesne oluşturulurken, diğeri (DB) HAM bir SQL INSERT\'te devreye girer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.FirstName).HasMaxLength(50).IsRequired();',
+            aciklama: 'Ad alanı için 50 karakter sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.LastName).HasMaxLength(50).IsRequired();',
+            aciklama: 'Soyad alanı için 50 karakter sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DisplayName).HasMaxLength(100);',
+            aciklama: 'Görünen ad için 100 karakter sınırı — `IsRequired()` YOK, çünkü opsiyonel.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.AvatarUrl).HasMaxLength(500);',
+            aciklama: 'URL için 500 karakter sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DailyWordGoal).HasDefaultValue(10);',
+            aciklama: 'C#\'taki `= 10` (Bölüm 1) ile eşleşen DB varsayılanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DailyNewWordLimit).HasDefaultValue(5);',
+            aciklama: 'C#\'taki `= 5` ile eşleşen DB varsayılanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.CurrentLevel).HasMaxLength(2).IsRequired().HasDefaultValue("A1");',
+            aciklama: 'CEFR kodları hep 2 karakter (A1, B2, C1...) — `HasMaxLength(2)` bu formatı YANSITIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.ThemePreference).HasMaxLength(10).IsRequired().HasDefaultValue("System");',
+            aciklama: '"System" en uzun değer olduğu için (6 karakter, ama pay bırakılarak 10) HasMaxLength(10).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.LanguagePreference).HasMaxLength(2).IsRequired().HasDefaultValue("tr");',
+            aciklama: 'ISO dil kodları 2 karakter (tr, de).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.TotalXP).HasDefaultValue(0);',
+            aciklama: 'DB varsayılanı 0 — C# `int` zaten 0\'dan başlar ama defense-in-depth için DB seviyesinde de AÇIKÇA tanımlandı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.LifetimeXP).HasDefaultValue(0);',
+            aciklama: 'TotalXP ile AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.StreakDays).HasDefaultValue(0);',
+            aciklama: 'TotalXP ile AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.PendingOtpCodeHash).HasMaxLength(44).IsUnicode(false);',
+            aciklama: 'SHA-256 hash\'i Base64\'e çevrildiğinde HER ZAMAN 44 karakterdir (32 byte → Base64 padding ile 44).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);',
+            aciklama: '`HasConversion<string>()` — C# tarafında `OtpPurpose` (enum, Bölüm 1) olan bu alanı, veritabanında OKUNABİLİR bir metin (`"LoginOtp"` gibi) olarak saklar; sayısal enum indeksi (0,1,2,3) DEĞİL.',
+            neden: 'Enum\'ı sayı olarak saklamak (EF Core\'un VARSAYILANI) veritabanını doğrudan İNCELEYEN birinin (ör. bir DBA) "2 ne demek?" sorusuna cevap VEREMEZ; string olarak saklamak SQL sorgularını da (`WHERE PendingOtpCodePurpose = \'LoginOtp\'`) OKUNABİLİR kılar.',
+            olmasaydi: 'HasConversion<string>() olmasaydı, DB\'de bu kolon `0`/`1`/`2`/`3` gibi sayılar taşırdı — enum\'a yeni bir değer EKLENDİĞİNDE (ör. arada bir değer sıkıştırılırsa) sayı-anlam eşleşmesi KAYABİLİR, var olan verinin anlamı SESSİZCE değişebilirdi.'
+          },
+          {
+            satir: 'builder.Property(x => x.IsOnboardingCompleted).HasDefaultValue(false);',
+            aciklama: 'DB varsayılanı false.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'DB varsayılanı true — C#\'taki `= true` (Bölüm 1) ile eşleşen TEK "true" varsayılanlı boolean.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsEmailVerified).HasDefaultValue(false);',
+            aciklama: 'DB varsayılanı false.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.LastLoginIP).HasMaxLength(45).IsUnicode(false);',
+            aciklama: 'IPv6 adreslerinin AZAMİ metin uzunluğu 45 karakterdir (IPv4 için çok daha kısa, ama sütun İKİSİNİ de barındırabilmeli).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.LoginCount).HasDefaultValue(0);',
+            aciklama: 'DB varsayılanı 0.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsAnonymized).HasDefaultValue(false);',
+            aciklama: 'DB varsayılanı false.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.OriginalEmailHash).HasMaxLength(44).IsUnicode(false);',
+            aciklama: 'PendingOtpCodeHash ile AYNI gerekçe: SHA-256→Base64 sabit 44 karakter.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.OneSignalPlayerId).HasMaxLength(100);',
+            aciklama: 'OneSignal\'ın kimlik formatına göre 100 karakter sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue("User");',
+            aciklama: '"Admin" en uzun değer (5 karakter) olduğu için pay bırakılarak 20 karakter.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.Role);',
+            aciklama: 'Admin panelin "tüm adminleri listele" gibi Role\'e göre FİLTRELEME yapacak sorgularını HIZLANDIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsDeleted).HasDefaultValue(false);',
+            aciklama: 'DB varsayılanı false — User BaseEntity\'den türemediği için (Bölüm 1) bu alan burada AYRICA, elle yapılandırılıyor; BaseEntity türevlerinde bu konfigürasyona gerek YOK, A-02\'nin global query filter\'ı (soft-delete) otomatik uygulanıyordu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Configure metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshTokenConfiguration.cs — Yabancı Anahtar ve CASCADE Silme',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/RefreshTokenConfiguration.cs',
+        nedenBuKlasor: 'UserConfiguration ile AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        builder.ToTable("RefreshTokens");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.TokenHash).HasMaxLength(44).IsUnicode(false).IsRequired();
+        builder.HasIndex(x => x.TokenHash);
+
+        builder.Property(x => x.TokenFamily).HasMaxLength(36).IsRequired();
+        builder.HasIndex(x => x.TokenFamily);
+
+        builder.Property(x => x.DeviceInfo).HasMaxLength(500);
+        builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`IEntityTypeConfiguration<T>`, `DeleteBehavior` gibi türleri kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: 'Bölüm 1\'deki `RefreshToken` ve `User` entity\'lerini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Auth;',
+            aciklama: 'UserConfiguration ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>',
+            aciklama: 'UserConfiguration ile AYNI desen, `RefreshToken` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<RefreshToken> builder)',
+            aciklama: '`RefreshToken` türü için TÜM kolon/index/ilişki tanımlarının yapıldığı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("RefreshTokens");',
+            aciklama: 'UserConfiguration\'ın aksine burada CHECK constraint YOK — RefreshTokens tablosunda CHECK gerektiren bir string-enum alan bulunmuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: 'Birincil anahtar tanımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.TokenHash).HasMaxLength(44).IsUnicode(false).IsRequired();',
+            aciklama: 'SHA-256→Base64 sabit 44 karakter — User.PendingOtpCodeHash ile AYNI format.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.TokenHash);',
+            aciklama: 'Refresh isteğinde gelen ham token\'ın hash\'iyle KAYDI hızlıca bulabilmek için — bu sorgu HER TEK refresh isteğinde çalışacak, index olmadan tablo TAM TARAMA yapardı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.TokenFamily).HasMaxLength(36).IsRequired();',
+            aciklama: 'Bir GUID\'in standart metin gösterimi TAM 36 karakterdir (`8-4-4-4-12` formatı, tireler dahil).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.TokenFamily);',
+            aciklama: 'Bir replay tespit edildiğinde "bu family\'deki TÜM token\'ları iptal et" sorgusunu HIZLANDIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DeviceInfo).HasMaxLength(500);',
+            aciklama: 'User-Agent metinleri UZUN olabilir, bu yüzden geniş bir sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);',
+            aciklama: 'User.LastLoginIP ile AYNI format (IPv6 azami uzunluğu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<User>()',
+            aciklama: '`RefreshToken`\'ın `User` ile İLİŞKİSİNİ tanımlamaya başlar — `<User>()` generic parametresiyle, `RefreshToken`\'da bir navigasyon property\'si (ör. `public User User { get; set; }`) OLMADAN da ilişki kurulabilir.',
+            neden: 'User veya RefreshToken sınıflarına birbirlerine referans veren navigasyon property\'leri (ör. `User.RefreshTokens` listesi) EKLENMEDİ, çünkü Repository&lt;T&gt; deseni (A-02) bu tür navigasyonlara İHTİYAÇ DUYMUYOR — Handler\'lar doğrudan `IRepository<RefreshToken>` ile `UserId` filtresiyle sorgu yapacak.',
+            olmasaydi: 'Kullanılmayan navigasyon property\'leri eklenseydi, bu YAGNI\'yi ihlal eden, hiçbir kodun okumadığı "ölü" alanlar olurdu.'
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir User\'ın BİRDEN ÇOK RefreshToken\'ı olabileceğini belirtir (bir kullanıcı birden fazla cihazdan giriş yapabilir) — parantez BOŞ, çünkü User tarafında bir koleksiyon navigasyon property\'si YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.UserId)',
+            aciklama: 'İlişkinin hangi kolon üzerinden kurulacağını belirtir — `RefreshToken.UserId`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir User SİLİNİRSE (gerçek DELETE — nadir, çoğunlukla anonimleştirme kullanılır ama şema seviyesinde tanımlı), TÜM refresh token\'ları da OTOMATİK silinir.',
+            neden: 'RefreshToken, User olmadan HİÇBİR anlam taşımaz (yetim bir token güvenlik açığı OLURDU) — Cascade, bu "yetim kayıt" durumunun veritabanı seviyesinde İMKANSIZ olmasını garanti eder.',
+            olmasaydi: 'Cascade OLMASAYDI (varsayılan davranış `Restrict`), bir User\'ı silmeye çalışan bir işlem, ÖNCE tüm RefreshToken\'larını elle silmek ZORUNDA kalır, aksi halde yabancı anahtar kısıtı YÜZÜNDEN silme işlemi HATA verirdi.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Configure metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionConfiguration.cs — Nullable Yabancı Anahtar',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/QrLoginSessionConfiguration.cs',
+        nedenBuKlasor: 'Diğer iki konfigürasyonla AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Auth;
+
+public class QrLoginSessionConfiguration : IEntityTypeConfiguration<QrLoginSession>
+{
+    public void Configure(EntityTypeBuilder<QrLoginSession> builder)
+    {
+        builder.ToTable("QrLoginSessions", tb =>
+            tb.HasCheckConstraint("CK_QrLoginSessions_Status", "Status IN ('Pending','Scanned','Confirmed','Consumed','Denied','Expired')"));
+
+        builder.Property(x => x.QrTokenHash).HasMaxLength(44).IsUnicode(false).IsRequired();
+        builder.HasIndex(x => x.QrTokenHash);
+
+        builder.Property(x => x.PairingCode).HasMaxLength(4).IsFixedLength().IsUnicode(false).IsRequired();
+
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(QrLoginStatus.Pending);
+
+        builder.Property(x => x.RequesterIp).HasMaxLength(45).IsUnicode(false);
+        builder.Property(x => x.RequesterDeviceInfo).HasMaxLength(500);
+
+        builder.HasIndex(x => x.ExpiresAt);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`IEntityTypeConfiguration<T>`, `DeleteBehavior` gibi türleri kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>`\'yi kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: 'Bölüm 1\'deki `QrLoginSession` ve `User` entity\'lerini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`QrLoginStatus` enum\'ını (aşağıda `HasDefaultValue` için) kullanabilmek üzere gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Auth;',
+            aciklama: 'Diğer iki konfigürasyonla aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrLoginSessionConfiguration : IEntityTypeConfiguration<QrLoginSession>',
+            aciklama: 'UserConfiguration/RefreshTokenConfiguration ile AYNI desen, `QrLoginSession` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<QrLoginSession> builder)',
+            aciklama: '`QrLoginSession` türü için TÜM kolon/index/kısıt/ilişki tanımlarının yapıldığı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("QrLoginSessions", tb =>',
+            aciklama: 'Tek bir CHECK constraint olduğu için (User\'ın aksine, beş DEĞİL) blok gövde yerine tek satırlık lambda kullanıldı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_QrLoginSessions_Status", "Status IN (\'Pending\',\'Scanned\',\'Confirmed\',\'Consumed\',\'Denied\',\'Expired\')"));',
+            aciklama: 'Status kolonunun, `QrLoginStatus` enum\'ının (Bölüm 1) TAM ALTI değerinden biriyle SINIRLANDIĞINI veritabanı seviyesinde garanti eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.QrTokenHash).HasMaxLength(44).IsUnicode(false).IsRequired();',
+            aciklama: 'RefreshToken.TokenHash ile AYNI format (SHA-256→Base64).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.QrTokenHash);',
+            aciklama: 'Mobil "scan" isteğinde gelen ham token\'ın hash\'iyle oturumu HIZLICA bulmak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.PairingCode).HasMaxLength(4).IsFixedLength().IsUnicode(false).IsRequired();',
+            aciklama: '`IsFixedLength()` — SQL Server\'da `VARCHAR(4)` yerine `CHAR(4)` kullanılmasını sağlar; PairingCode HER ZAMAN tam 4 haneli olduğu için (değişken uzunluk gerekmiyor) sabit uzunluk hem daha VERİMLİ hem niyeti daha AÇIK ifade eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(QrLoginStatus.Pending);',
+            aciklama: 'User.PendingOtpCodePurpose ile AYNI desen (enum→string dönüşümü) — `HasDefaultValue(QrLoginStatus.Pending)` burada bir STRING değil, ENUM DEĞERİ olarak verilir; EF Core bunu otomatik "Pending" metnine ÇEVİRİR.',
+            neden: 'EF Core\'da `HasDefaultValue`, property\'nin C# (dönüşüm ÖNCESİ) türünü BEKLER — `HasDefaultValue("Pending")` (düz string) YERİNE `HasDefaultValue(QrLoginStatus.Pending)` (enum değeri) yazılması, dönüştürücünün (`HasConversion<string>`) bu değeri de DOĞRU şekilde işlemesini sağlar.',
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.RequesterIp).HasMaxLength(45).IsUnicode(false);',
+            aciklama: 'IPv6 azami uzunluğu — diğer IP alanlarıyla AYNI format.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.RequesterDeviceInfo).HasMaxLength(500);',
+            aciklama: 'User-Agent metinleri için geniş sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.ExpiresAt);',
+            aciklama: 'Süresi dolmuş oturumları filtreleyecek (ör. ileride bir temizlik görevi ya da "durum sorgusu" endpoint\'i) sorguları HIZLANDIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<User>()',
+            aciklama: 'RefreshTokenConfiguration ile AYNI desen — `QrLoginSession`\'da da User\'a giden bir navigasyon property\'si YOK, ilişki yalnızca `HasForeignKey` ile kurulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir User\'ın BİRDEN ÇOK QR oturumu (farklı zamanlarda, farklı cihazlardan) olabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.UserId)',
+            aciklama: 'İlişki `QrLoginSession.UserId` üzerinden kurulur — bu alan `int?` (nullable) olduğu için (Bölüm 1), aşağıdaki `.IsRequired(false)` bunu Fluent API\'ye AÇIKÇA bildirecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.SetNull)',
+            aciklama: 'RefreshToken\'ın AKSİNE `Cascade` DEĞİL, `SetNull` — bir User silinirse, o kullanıcının GEÇMİŞ QR oturum KAYITLARI silinmez, yalnızca `UserId` alanı `null`\'a çekilir.',
+            neden: 'QrLoginSession, RefreshToken\'ın aksine BİR audit kaydıdır (BaseEntity\'den türediği için soft-delete/denetim izini TAŞIYOR, Bölüm 1) — bir kullanıcı silinse bile "bu tarihte bir QR girişi denendi" bilgisinin İZİ kaybolmamalı; RefreshToken\'da ise User olmadan token\'ın HİÇBİR anlamı yok, o yüzden Cascade.',
+            olmasaydi: 'SetNull yerine Cascade kullanılsaydı, bir kullanıcı silindiğinde geçmiş QR giriş denemelerinin TÜM izi de silinirdi — güvenlik denetimi (ör. "bu hesaba kim, ne zaman QR ile giriş denedi") açısından değerli bir kayıt KAYBOLURDU.'
+          },
+          {
+            satir: '.IsRequired(false);',
+            aciklama: '`UserId`\'nin nullable (`int?`) olduğunu Fluent API\'ye AÇIKÇA bildirir — QR taranana kadar bu alan boş kalabilir (Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Configure metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: Konfigürasyonların EF Tarafından Üretilen SQL Karşılığı',
+        aciklama: '`dotnet ef migrations add AddAuthEntities` komutu, yukarıdaki üç konfigürasyon dosyasını (ve Bölüm 1\'deki entity\'leri) OKUYUP `CreateTable`/`CreateIndex`/`CheckConstraint`/`ForeignKey` çağrılarından oluşan bir C# dosyası ÜRETİR — bu dosya elle YAZILMAZ, EF Core tarafından OTOMATİK oluşturulur.',
+        neden: 'Migration dosyası, "modelin şu anki hâli" ile "veritabanının şu anki hâli" arasındaki FARKI hesaplayıp bunu uygulanabilir bir adıma çevirir — bu sayede farklı geliştiricilerin makinelerindeki veritabanları AYNI, tutarlı şemaya GÜNCELLENEBİLİR.',
+        olmasaydi: 'Migration olmasaydı, her geliştirici veritabanı şemasını ELLE (ör. SSMS\'te tıklayarak) güncellemek zorunda kalırdı — bir geliştiricinin makinesindeki şema başka birininkinden FARKLILAŞABİLİR, "bende çalışıyor ama sunucuda çalışmıyor" sorunları ortaya çıkardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AddAuthEntities Migration — Down() ve RefreshTokens CreateTable\'ı (Temsili)',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Migrations/20260809223700_AddAuthEntities.cs',
+        nedenBuKlasor: '`Infrastructure/Migrations/` — `dotnet ef migrations add` komutunun OTOMATİK oluşturduğu, elle taşınmaması gereken klasör; dosya adının başındaki zaman damgası (`20260809223700`) migration\'ların UYGULANMA sırasını garanti eder.',
+        kod: `        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            // ... Users ve QrLoginSessions CreateTable çağrıları (yukarıdaki konfigürasyonlardan
+            // BİREBİR üretilir, aynı desen) — temsilen yalnızca RefreshTokens gösteriliyor.
+            migrationBuilder.CreateTable(
+                name: "RefreshTokens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    TokenHash = table.Column<string>(type: "varchar(44)", unicode: false, maxLength: 44, nullable: false),
+                    TokenFamily = table.Column<string>(type: "nvarchar(36)", maxLength: 36, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsUsed = table.Column<bool>(type: "bit", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeviceInfo = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    IpAddress = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+        }
+
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "QrLoginSessions");
+
+            migrationBuilder.DropTable(
+                name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+        }`,
+        satirlar: [
+          {
+            satir: 'protected override void Up(MigrationBuilder migrationBuilder)',
+            aciklama: '`dotnet ef database update` çalıştırıldığında ÇALIŞAN metot — veritabanını bu migration\'ın hedeflediği ŞEKLE getirir (tabloları/kısıtları OLUŞTURUR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'migrationBuilder.CreateTable(',
+            aciklama: 'Yeni bir tablo oluşturma çağrısı — Users ve QrLoginSessions için de AYNI desende, yalnızca kolon isimleri/tipleri FARKLI iki çağrı daha var (temsilen burada gösterilmiyor, Users için UserConfiguration, QrLoginSessions için QrLoginSessionConfiguration bu bölümde ZATEN tam açıklandı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "RefreshTokens",',
+            aciklama: 'Oluşturulacak tablonun adı — `RefreshTokenConfiguration.ToTable("RefreshTokens")` çağrısından GELİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'columns: table => new',
+            aciklama: 'Tablonun kolonlarını tanımlayan lambda\'nın başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Anonim kolon nesnesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Id = table.Column<int>(type: "int", nullable: false)',
+            aciklama: '`RefreshToken.Id` property\'sinin SQL karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Annotation("SqlServer:Identity", "1, 1"),',
+            aciklama: 'SQL Server\'a "bu kolon OTOMATİK ARTAN bir kimlik" der (`1, 1` = 1\'den başla, her seferinde 1 artır) — `HasKey`\'in (RefreshTokenConfiguration) EF Core convention\'ıyla BİRLEŞİMİNDEN otomatik üretilir, elle yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserId = table.Column<int>(type: "int", nullable: false),',
+            aciklama: '`RefreshTokenConfiguration.HasForeignKey(x => x.UserId)`\'in kolon karşılığı — `nullable: false` çünkü `RefreshToken.UserId` (Bölüm 1) `int` (nullable DEĞİL), `QrLoginSession.UserId`\'nin `int?` olmasından FARKLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenHash = table.Column<string>(type: "varchar(44)", unicode: false, maxLength: 44, nullable: false),',
+            aciklama: '`.HasMaxLength(44).IsUnicode(false).IsRequired()` (RefreshTokenConfiguration) çağrısının BİREBİR SQL karşılığı — `varchar(44)`, `unicode: false`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenFamily = table.Column<string>(type: "nvarchar(36)", maxLength: 36, nullable: false),',
+            aciklama: '`.HasMaxLength(36).IsRequired()` karşılığı — `unicode: false` YOK (varsayılan Unicode kalır), bu yüzden `nvarchar`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),',
+            aciklama: '`DateTime ExpiresAt` (nullable olmayan) property\'sinin karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IsUsed = table.Column<bool>(type: "bit", nullable: false),',
+            aciklama: '`bool IsUsed` property\'sinin karşılığı — SQL Server\'da boolean `bit` türüyle temsil edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RevokedAt = table.Column<DateTime>(type: "datetime2", nullable: true),',
+            aciklama: '`DateTime? RevokedAt` (nullable) property\'sinin karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'DeviceInfo = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),',
+            aciklama: '`.HasMaxLength(500)` (IsRequired YOK) karşılığı — `nullable: true`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IpAddress = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),',
+            aciklama: '`.HasMaxLength(45).IsUnicode(false)` (IsRequired YOK) karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)',
+            aciklama: '`DateTime CreatedAt` property\'sinin karşılığı — dizideki SON kolon olduğu için virgülsüz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '},',
+            aciklama: 'Kolon nesnesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'constraints: table =>',
+            aciklama: 'Kısıtları (birincil anahtar, yabancı anahtar) tanımlayan lambda\'nın başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Kısıt lambda gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'table.PrimaryKey("PK_RefreshTokens", x => x.Id);',
+            aciklama: '`HasKey(x => x.Id)`\'nin (RefreshTokenConfiguration) SQL karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'table.ForeignKey(',
+            aciklama: '`HasOne<User>().WithMany().HasForeignKey(...)`\'in (RefreshTokenConfiguration) SQL karşılığının başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "FK_RefreshTokens_Users_UserId",',
+            aciklama: 'Kısıt adı EF Core convention\'ıyla otomatik üretildi — `FK_{ÇocukTablo}_{EbeveynTablo}_{Kolon}` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'column: x => x.UserId,',
+            aciklama: 'Yabancı anahtarın hangi kolon üzerinden kurulduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'principalTable: "Users",',
+            aciklama: 'Bağlandığı EBEVEYN tablo.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'principalColumn: "Id",',
+            aciklama: 'Ebeveyn tablodaki hangi kolona bağlandığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'onDelete: ReferentialAction.Cascade);',
+            aciklama: '`.OnDelete(DeleteBehavior.Cascade)`\'in (RefreshTokenConfiguration) SQL karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '});',
+            aciklama: 'Kısıt lambda gövdesinin ve `CreateTable` çağrısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Up metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected override void Down(MigrationBuilder migrationBuilder)',
+            aciklama: '`Up`\'ın TAM TERSİ — bu migration\'ı GERİ ALMAK (`dotnet ef migrations remove` ya da bir önceki migration\'a DÖNMEK) istendiğinde çalışır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'migrationBuilder.DropTable(',
+            aciklama: 'Bir tabloyu tamamen SİLEN çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "QrLoginSessions");',
+            aciklama: 'İLK silinen tablo — QrLoginSessions, Users\'a yabancı anahtarla BAĞLI olduğu için Users\'tan ÖNCE silinmeli.',
+            neden: 'Silme SIRASI, `Up`\'taki OLUŞTURMA sırasının TAM TERSİ: yabancı anahtarı OLAN tablolar (QrLoginSessions, RefreshTokens) önce, REFERANS ALINAN tablo (Users) en son silinir — aksi halde SQL Server "bu tabloyu silemezsin, başka bir tablo ona BAĞLI" hatası verirdi.',
+            olmasaydi: 'Sıra ters olsaydı (Users önce silinmeye çalışılsaydı), hâlâ Users\'a bağlı RefreshTokens/QrLoginSessions tabloları YÜZÜNDEN silme işlemi bir yabancı anahtar HATASIYLA BAŞARISIZ olurdu.'
+          },
+          {
+            satir: 'migrationBuilder.DropTable(',
+            aciklama: 'İkinci `DropTable` çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "RefreshTokens");',
+            aciklama: 'İKİNCİ silinen tablo — RefreshTokens de Users\'a bağlı, Users\'tan ÖNCE silinmeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'migrationBuilder.DropTable(',
+            aciklama: 'Üçüncü `DropTable` çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "Users");',
+            aciklama: 'EN SON silinen tablo — artık hiçbir tablo ona BAĞLI olmadığı için güvenle silinebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Down metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'IEntityTypeConfiguration<T>', tanim: 'Bir entity\'nin veritabanı eşlemesini (kolon tipi, index, kısıt) Domain\'in dışında, Infrastructure katmanında tanımlayan EF Core arayüzü.' },
+          { terim: 'CHECK Constraint', tanim: 'Bir kolonun alabileceği değerleri veritabanı seviyesinde sınırlayan kural — uygulama kodundan BAĞIMSIZ çalışır.' },
+          { terim: 'UNIQUE Index', tanim: 'Bir kolonda (veya kolon grubunda) yinelenen değerleri veritabanı seviyesinde ENGELLEYEN index türü.' },
+          { terim: 'Cascade Delete', tanim: 'Bir ebeveyn kayıt silindiğinde, ona bağlı çocuk kayıtların da OTOMATİK silinmesi.' },
+          { terim: 'SetNull Delete', tanim: 'Bir ebeveyn kayıt silindiğinde, ona bağlı çocuk kayıtların YABANCI ANAHTAR alanının null\'a çekilmesi (kayıt kendisi silinmez).' },
+          { terim: 'HasConversion', tanim: 'Bir C# tipinin (ör. enum) veritabanında FARKLI bir tipte (ör. string) saklanmasını sağlayan EF Core yapılandırması.' },
+          { terim: 'Migration', tanim: 'Veritabanı şemasının bir versiyondan diğerine nasıl DEĞİŞECEĞİNİ tanımlayan, EF Core tarafından otomatik üretilen C# dosyası.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IEntityTypeConfiguration<T>, veritabanına özgü tüm detayları (kolon uzunluğu, CHECK constraint, index) Domain\'in DIŞINDA tutuyor.',
+          'CHECK constraint\'ler, C# tarafında düz string olan alanların (CurrentLevel, ThemePreference, LanguagePreference, Role, AuthProvider) veritabanı seviyesinde de SINIRLANMASINI sağlıyor.',
+          'HasConversion<string>(), enum alanlarının (OtpPurpose, QrLoginStatus) veritabanında OKUNABİLİR metin olarak saklanmasını sağlıyor — sayısal indeks değil.',
+          'RefreshToken→User ilişkisi Cascade (token, kullanıcısız anlamsız); QrLoginSession→User ilişkisi SetNull (denetim izi kullanıcı silinse de kalmalı) — aynı "kullanıcı silinirse ne olsun" sorusuna İKİ FARKLI, bilinçli cevap.',
+          'Migration dosyası elle yazılmıyor — üç konfigürasyon dosyasından `dotnet ef migrations add` ile OTOMATİK üretiliyor, Up() oluşturma sırasını, Down() bunun TAM TERSİNİ (yabancı anahtar sırasına göre) uyguluyor.',
+          'İlk migration başarıyla oluşturuldu, build ve testler yeşil kaldı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

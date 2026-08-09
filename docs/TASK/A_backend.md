@@ -54,17 +54,23 @@
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
 - [x] ➜ **AKADEMI/backend'ye işle**
 
-### A-03 — Auth API ⬜
+### A-03 — Auth API 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
 **Frontend karşılığı:** B-02/B-02.1 (Admin — sade giriş+OTP+QR), C-03/C-03.1 (Web — tam akış+Google+QR), D-05/D-05.1 (Mobil — tam akış+Google+Apple+QR tarayıcı)
 > Eski turda QR ile giriş / tema tercihi / dil tercihi / başarı mesajı lokalizasyonu dört ayrı
 > "retrofit" task'ı olarak sonradan eklenmişti (kullanıcı ihtiyacı iterasyon sırasında ortaya
 > çıkmıştı). Artık hepsi baştan biliniyor — bu task hepsini **ilk turda** kapsar, ayrı retrofit
 > task'ı açılmaz.
-- [ ] **Entity:** `User` (Role/IsActive/CurrentLevel/**ThemePreference**[Light|Dark|System, CHECK
+> **A-03 sırasında verilen bir tasarım kararı:** `User`/`RefreshToken`, `BaseEntity`'den BİLİNÇLİ
+> olarak türemiyor — gerçek DB şemaları (DATABASE_SCHEMA/Auth.md) BaseEntity'nin "kim yaptı"
+> alanlarını (User) ya da soft-delete alanlarını (RefreshToken, kendi IsUsed/RevokedAt deseni var)
+> taşımıyor. `QrLoginSession` ise BaseEntity'nin tüm alanlarını birebir taşıdığı için ondan türüyor.
+> Bu, CLAUDE.md §1 "her tablo BaseEntity taşır (log tabloları hariç)" kuralına yeni, kayıt altına
+> alınmış iki istisna daha ekliyor (User, RefreshToken).
+- [x] **Entity:** `User` (Role/IsActive/CurrentLevel/**ThemePreference**[Light|Dark|System, CHECK
       constraint]/**LanguagePreference**[tr|de, CHECK constraint] dahil), `RefreshToken`,
       `QrLoginSession` + `OtpPurpose`/`QrLoginStatus` enum + EF config + migration
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash), `ITokenService` (JWT access 15dk +
       refresh, algorithm-confusion önlemi, claim'ler: NameIdentifier/Email/Role/firstName —
       Theme/LanguagePreference JWT'ye GİRMEZ, yalnızca yetki taşınır)

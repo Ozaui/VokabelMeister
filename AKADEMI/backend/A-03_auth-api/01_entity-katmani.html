@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Auth Entity Katmanı: User, RefreshToken, QrLoginSession</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-katmani',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '../A-02_ortak-altyapi/07_ozet-sozluk.html',
+    sonrakiBolum: '02_ef-konfigurasyonlari-ve-migration.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Auth Entity Katmanı: User, RefreshToken, QrLoginSession',
+        altBaslik: 'A-02\'nin ortak altyapısından sonra ilk gerçek entity\'ler — projenin ilk migration\'ı, ilk CHECK constraint\'leri, ilk enum\'ları.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden User ve RefreshToken BaseEntity\'den Türemiyor?',
+        aciklama: 'Ortak altyapıda kurulan BaseEntity, "kim yaptı" alanlarını (CreatedByUserId/UpdatedByUserId/DeletedByUserId) da içerir. Ama gerçek Users/RefreshTokens tablo şemasına bakıldığında: Users bu üç alanı HİÇ taşımıyor (yalnızca IsDeleted/DeletedAt/CreatedAt/UpdatedAt var), RefreshTokens ise CreatedAt dışında BaseEntity\'nin HİÇBİR alanını taşımıyor — soft delete yerine kendi IsUsed/RevokedAt mekanizmasını kullanıyor.',
+        neden: 'Bir User kaydını "kim oluşturdu" sorusu self-servis kayıtta anlamsız — kullanıcı KENDİ hesabını oluşturuyor, bunu "oluşturan" ayrı bir aktör yok. RefreshToken ise zaten geçici, güvenlik amaçlı bir kayıt: "silinmiş" değil "kullanılmış" (IsUsed) ya da "iptal edilmiş" (RevokedAt) olur — bu iki durum soft-delete\'in IsDeleted/DeletedAt kelime dağarcığına UYMUYOR, Token Family Pattern\'in kendi terimleri var.',
+        olmasaydi: 'User/RefreshToken BaseEntity\'den ZORLA türetilseydi, ya veritabanı şemasına anlamsız/hiç doldurulmayacak kolonlar (CreatedByUserId gibi) eklenirdi ya da RefreshToken\'ın IsUsed/RevokedAt deseniyle ÇAKIŞAN, kullanılmayan bir IsDeleted/DeletedAt çifti ortaya çıkardı — iki farklı "bu kayıt artık geçersiz" göstergesi aynı tabloda birbirine KARIŞIRDI.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'QrLoginSession Neden BaseEntity\'den Türüyor?',
+        aciklama: 'QrLoginSessions tablosu, User/RefreshToken\'ın aksine BaseEntity\'nin TÜM alanlarını (kim yaptı dahil) birebir taşıyor — bu yüzden `QrLoginSession : BaseEntity` yazıldı, User/RefreshToken gibi bağımsız bir sınıf DEĞİL.',
+        neden: 'Bir QR oturumu (kimin onayladığı, kimin reddettiği) gerçek bir "kim yaptı" bilgisine sahip olabilir (ör. bir admin araya girip bir oturumu manuel iptal ederse) — bu yüzden şema tasarımı bu alanları BİLİNÇLİ olarak içeriyor, User/RefreshToken\'dan FARKLI bir karar.',
+        olmasaydi: 'QrLoginSession de bağımsız bir sınıf olarak yazılsaydı, BaseEntity\'nin soft-delete filtresi ve zaman damgalama mekanizmasından (A-02, Bölüm 2) YARARLANAMAZDI — Repository&lt;T&gt; generic altyapısı bu entity için de KULLANILAMAZDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpPurpose.cs — Tek OTP Alanı, Amaca Göre Ayrılır',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Auth/OtpPurpose.cs',
+        nedenBuKlasor: 'Entity/enum bir domain alt klasöründe yaşar — enum\'lar `Domain/Enums/<Domain>/` altında, entity\'lerin `Domain/Entities/<Domain>/` konumuna PARALEL bir yapı.',
+        kod: `namespace WordLearner.Domain.Enums.Auth;
+
+public enum OtpPurpose
+{
+    EmailVerification,
+    LoginOtp,
+    PasswordReset,
+    AccountDeletion
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Enums.Auth;',
+            aciklama: 'Klasör yoluyla (`Domain/Enums/Auth/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum OtpPurpose',
+            aciklama: 'Users tablosunda TEK bir OTP alan seti var (PendingOtpCodeHash/PendingOtpCodeExpiresAt/PendingOtpCodePurpose) — bu enum, o TEK kodun HANGİ amaçla (e-posta doğrulama mı, giriş mi, şifre sıfırlama mı, hesap silme mi) üretildiğini ayırt eder.',
+            neden: 'Kullanıcı başına aynı anda yalnızca TEK bir "bekleyen" OTP olabilir (yeni bir OTP isteği eskisinin ÜZERİNE yazar) — dört ayrı amaç için dört ayrı kolon seti açmak yerine TEK bir set + bir "amaç" etiketi, şemayı sadeleştirir.',
+            olmasaydi: 'Her amaç için ayrı bir hash/expiry/purpose üçlüsü açılsaydı (`EmailVerificationOtpHash`, `LoginOtpHash`, ...), Users tablosu SEKİZ yeni kolona çıkardı — çoğu zaman biri dolu, diğer üçü HER ZAMAN boş kalırdı.'
+          },
+          {
+            satir: '{',
+            aciklama: 'Enum gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EmailVerification,',
+            aciklama: 'Kayıt sonrası e-posta doğrulama OTP\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LoginOtp,',
+            aciklama: 'İki adımlı giriş akışının (şifre doğrulandıktan sonra) ikinci adım OTP\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PasswordReset,',
+            aciklama: 'Şifremi unuttum akışının OTP\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AccountDeletion',
+            aciklama: 'Hesap silme talebini onaylayan OTP — son eleman olduğu için virgülsüz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Enum gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginStatus.cs — QR Oturumunun Yaşam Döngüsü',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Auth/QrLoginStatus.cs',
+        nedenBuKlasor: 'OtpPurpose ile AYNI klasör — Auth domain\'inin tüm enum\'ları bir arada.',
+        kod: `namespace WordLearner.Domain.Enums.Auth;
+
+public enum QrLoginStatus
+{
+    Pending,
+    Scanned,
+    Confirmed,
+    Consumed,
+    Denied,
+    Expired
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Enums.Auth;',
+            aciklama: 'OtpPurpose ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum QrLoginStatus',
+            aciklama: 'Bir QR giriş oturumunun geçebileceği TÜM durumları temsil eder — web/admin\'in QR\'ı üretmesinden (Pending), mobilin okutmasına (Scanned), onaylamasına (Confirmed), web\'in token\'ı ALMASINA (Consumed) kadar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Enum gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Pending,',
+            aciklama: 'Oturum üretildi, henüz hiçbir cihaz okutmadı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Scanned,',
+            aciklama: 'Mobil cihaz QR\'ı okuttu, kimliğini bildirdi — henüz ONAYLAMADI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Confirmed,',
+            aciklama: 'Mobil kullanıcı, cihaz/IP bilgisini görüp GİRİŞİ onayladı — web/admin bu durumu polling ile YAKALAYACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Consumed,',
+            aciklama: 'Web/admin, Confirmed durumunu okuyup KENDİ token\'ını aldı — bu oturum artık BİR DAHA kullanılamaz (tek seferlik).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Denied,',
+            aciklama: 'Mobil kullanıcı, cihaz/IP bilgisini görüp girişi REDDETTİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Expired',
+            aciklama: 'Süre (2 dakika) dolduğunda YORUMLANAN durum — son eleman olduğu için virgülsüz; ayrı bir arka plan temizlik görevi bu durumu OTOMATİK set ETMEZ, `ExpiresAt` geçmişse okuma anında bu şekilde yorumlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Enum gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'User.cs — Bağımsız Bir Sınıf, BaseEntity\'den Türemez',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/User.cs',
+        nedenBuKlasor: '`Domain/Entities/Auth/` — her entity kendi domain alt klasöründe yaşar; `Auth` alt klasörü, ileride başka domain\'lerin (`Icerik`, `SRS`...) entity\'lerinden AYRIŞIK durur.',
+        kod: `using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Domain.Entities.Auth;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — "kim yaptı" alanları (CreatedByUserId vb.) self-servis
+// kayıtta anlamsız (bir User'ı başka biri "oluşturmaz"); DATABASE_SCHEMA/Auth.md'deki Users
+// tablosuyla birebir eşleşir.
+public class User
+{
+    public int Id { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string? PasswordHash { get; set; }
+    public string? GoogleId { get; set; }
+    public string? AppleId { get; set; }
+    public string AuthProvider { get; set; } = "Local";
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? AvatarUrl { get; set; }
+
+    public int DailyWordGoal { get; set; } = 10;
+    public int DailyNewWordLimit { get; set; } = 5;
+
+    public string CurrentLevel { get; set; } = "A1";
+    public string ThemePreference { get; set; } = "System";
+    public string LanguagePreference { get; set; } = "tr";
+    public int TotalXP { get; set; }
+    public int LifetimeXP { get; set; }
+    public int StreakDays { get; set; }
+    public DateTime? LastStreakDate { get; set; }
+
+    public string? PendingOtpCodeHash { get; set; }
+    public DateTime? PendingOtpCodeExpiresAt { get; set; }
+    public OtpPurpose? PendingOtpCodePurpose { get; set; }
+
+    public bool IsOnboardingCompleted { get; set; }
+    public bool IsActive { get; set; } = true;
+    public bool IsEmailVerified { get; set; }
+    public DateTime? EmailVerifiedAt { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+    public string? LastLoginIP { get; set; }
+    public int LoginCount { get; set; }
+
+    public DateTime? ScheduledDeletionAt { get; set; }
+    public bool IsAnonymized { get; set; }
+    public string? OriginalEmailHash { get; set; }
+    public string? OneSignalPlayerId { get; set; }
+
+    public string Role { get; set; } = "User";
+
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose`\'u kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Auth;',
+            aciklama: 'Klasör yoluyla (`Domain/Entities/Auth/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class User',
+            aciklama: '`abstract` DEĞİL (BaseEntity\'nin aksine) — bu sınıf kendi başına somut, doğrudan `new User()` ile oluşturulabilir bir varlık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Birincil anahtar — BaseEntity\'den TÜREMEDİĞİ için bu alan burada AYRICA tanımlanmak zorunda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "public string Email { get; set; } = string.Empty;",
+            aciklama: 'Benzersiz (UNIQUE), zorunlu — bir kullanıcının sisteme giriş yaptığı asıl kimlik alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? PasswordHash { get; set; }',
+            aciklama: 'Nullable — sosyal girişle (Google/Apple) kaydolan bir kullanıcının ŞİFRESİ yoktur, `AuthProvider` alanına bakarak ayırt edilir.',
+            neden: 'Şifre alanının nullable OLMASI, "her kullanıcının bir şifresi olmalı" varsayımını KIRAR — bu bilinçli bir tasarım, çünkü Google/Apple ile kaydolan bir kullanıcı asla bir şifre BELİRLEMEZ (istese sonradan forgot-password akışıyla belirleyebilir).',
+            olmasaydi: 'PasswordHash zorunlu (NOT NULL) olsaydı, sosyal girişle kaydolan bir kullanıcı için SAHTE/rastgele bir hash üretmek gerekirdi — bu hem anlamsız hem YANLIŞLIKLA "bu kullanıcının bir şifresi var" izlenimi verirdi.'
+          },
+          {
+            satir: 'public string? GoogleId { get; set; }',
+            aciklama: 'Google\'ın kullanıcıya verdiği benzersiz kimlik — yalnızca `AuthProvider="Google"` olan kullanıcılarda dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? AppleId { get; set; }',
+            aciklama: 'Apple\'ın kullanıcıya verdiği benzersiz kimlik (`sub` claim\'i) — yalnızca `AuthProvider="Apple"` olan kullanıcılarda dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string AuthProvider { get; set; } = "Local";',
+            aciklama: '"Local"/"Google"/"Apple" — hangi yöntemle kaydolduğunu belirtir; C# `enum` DEĞİL, düz `string` (aşağıdaki Bölüm 2\'de bir CHECK constraint ile veritabanı seviyesinde sınırlanacak).',
+            neden: 'Yalnızca `OtpPurpose` ve `QrLoginStatus` C# enum olarak yazıldı (görev tanımında AÇIKÇA belirtilen ikisi) — `AuthProvider`/`Role`/`ThemePreference`/`LanguagePreference`/`CurrentLevel` düz string kaldı, çünkü bunlar JWT claim\'i gibi doğrudan dışarıya (istemciye, token\'a) SIZAN değerler; enum\'a çevirmek ek bir dönüşüm katmanı gerektirirdi.',
+            olmasaydi: null
+          },
+          {
+            satir: "public string FirstName { get; set; } = string.Empty;",
+            aciklama: 'Zorunlu ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "public string LastName { get; set; } = string.Empty;",
+            aciklama: 'Zorunlu soyad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? DisplayName { get; set; }',
+            aciklama: 'Opsiyonel görünen ad — boşsa istemci FirstName+LastName\'i BİRLEŞTİREREK gösterebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? AvatarUrl { get; set; }',
+            aciklama: 'Profil fotoğrafının URL\'i — dosyanın kendisi DEĞİL, yalnızca yolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int DailyWordGoal { get; set; } = 10;',
+            aciklama: 'Kullanıcının günlük kelime hedefi — varsayılan 10, ileride kullanıcı DEĞİŞTİREBİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int DailyNewWordLimit { get; set; } = 5;',
+            aciklama: 'Günlük gösterilecek YENİ kelime sayısı üst sınırı — geri kalanı SRS tekrarından gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string CurrentLevel { get; set; } = "A1";',
+            aciklama: 'CEFR dil seviyesi (A1-C2) — kayıt sonrası onboarding\'de kullanıcı SEÇER, varsayılan A1.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string ThemePreference { get; set; } = "System";',
+            aciklama: 'Arayüz teması tercihi — CurrentLevel ile AYNI desen: kayıt anında toplanmaz, kayıt sonrası ayarlardan set edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string LanguagePreference { get; set; } = "tr";',
+            aciklama: 'İstemcinin (admin panel, ileride web/mobil) arayüz dili — kelime içeriğinin dili (Languages tablosu) ile KARIŞTIRILMAMALI, bu tamamen ayrı bir kavram.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int TotalXP { get; set; }',
+            aciklama: 'Toplam deneyim puanı — C# `int` varsayılanı (0) DB\'deki DEFAULT 0 ile zaten eşleşiyor, ayrıca `= 0` yazmaya gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int LifetimeXP { get; set; }',
+            aciklama: 'Hiç azalmayan, ömür boyu toplam XP (TotalXP bir "seviye" mekanizmasıyla sıfırlanabilirken bu SIFIRLANMAZ — istatistik amaçlı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int StreakDays { get; set; }',
+            aciklama: 'Ardışık gün serisi (streak) sayacı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? LastStreakDate { get; set; }',
+            aciklama: 'Serinin en son GÜNCELLENDİĞİ tarih — bir sonraki girişte "bugün mü dün mü" karşılaştırması için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? PendingOtpCodeHash { get; set; }',
+            aciklama: 'Bekleyen OTP\'nin SHA-256 hash\'i — ham kod ASLA saklanmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? PendingOtpCodeExpiresAt { get; set; }',
+            aciklama: 'OTP\'nin son geçerlilik anı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public OtpPurpose? PendingOtpCodePurpose { get; set; }',
+            aciklama: 'Nullable enum (`OtpPurpose?`) — bekleyen bir OTP yoksa bu alan `null`; C# enum olarak yazılmasının nedeni, kod içinde `if (user.PendingOtpCodePurpose == OtpPurpose.LoginOtp)` gibi TİP GÜVENLİ karşılaştırmalar yapılabilmesi (bir `"LoginOtp"` string\'ini yanlış yazma riski YOK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsOnboardingCompleted { get; set; }',
+            aciklama: 'Kayıt sonrası ilk kurulum adımlarının (seviye seçimi vb.) TAMAMLANIP tamamlanmadığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: 'Hesap aktif mi — `= true` C#\'ın `bool` varsayılanı (`false`) DB\'deki DEFAULT 1 (true) ile ÇAKIŞTIĞI için AÇIKÇA set edilmesi gereken tek boolean alan.',
+            neden: 'Diğer boolean alanların (IsOnboardingCompleted, IsEmailVerified...) hepsi varsayılan olarak `false` başlamalı ve C#\'ın kendi `bool` varsayılanı zaten `false` — ama `IsActive`\'in varsayılanı `true` OLMALI, bu yüzden TEK istisna olarak açıkça `= true` yazıldı.',
+            olmasaydi: '`= true` yazılmasaydı, yeni oluşturulan HER User nesnesi `IsActive=false` ile başlardı — kayıt olan bir kullanıcı YANLIŞLIKLA hemen devre dışı bırakılmış gibi görünürdü.'
+          },
+          {
+            satir: 'public bool IsEmailVerified { get; set; }',
+            aciklama: 'E-posta doğrulandı mı — varsayılan `false`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? EmailVerifiedAt { get; set; }',
+            aciklama: 'E-postanın doğrulandığı an.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? LastLoginAt { get; set; }',
+            aciklama: 'En son giriş anı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? LastLoginIP { get; set; }',
+            aciklama: 'En son giriş yapılan IP adresi — güvenlik/denetim amaçlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int LoginCount { get; set; }',
+            aciklama: 'Toplam giriş sayısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? ScheduledDeletionAt { get; set; }',
+            aciklama: 'Hesap silme talebi sonrası 30 günlük "grace period"un biteceği an — bu tarihe kadar hesap GERİ ALINABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsAnonymized { get; set; }',
+            aciklama: 'Hesap KALICI olarak anonimleştirildi mi — grace period sonrası true olur, bu noktadan sonra GERİ DÖNÜŞ yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? OriginalEmailHash { get; set; }',
+            aciklama: 'Anonimleştirmeden ÖNCEKİ e-postanın SHA-256 hash\'i — aynı e-postayla TEKRAR kayıt olmayı engellemek için (e-postanın kendisi silinir ama hash\'i kalır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? OneSignalPlayerId { get; set; }',
+            aciklama: 'Push bildirim servisi (OneSignal) kimliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Role { get; set; } = "User";',
+            aciklama: 'İki değerden biri: "User" veya "Admin" — JWT\'nin `role` claim\'ine DOĞRUDAN yazılacak değer, bu yüzden `enum` değil düz `string`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsDeleted { get; set; }',
+            aciklama: 'BaseEntity\'deki İLE AYNI isim/anlam ama BURADA AYRICA tanımlanmış (BaseEntity\'den miras alınmıyor) — soft delete filtresi Bölüm 2\'de bu entity için de MANUEL kurulacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? DeletedAt { get; set; }',
+            aciklama: 'Silinme (soft delete) anı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Oluşturulma anı — BaseEntity\'nin SaveChangesAsync override\'ı YALNIZCA `BaseEntity` türevlerini otomatik doldurur, `User` bundan TÜREMEDİĞİ için bu alan ileride Handler seviyesinde elle set edilecek.',
+            neden: 'Bu, User\'ın BaseEntity\'den türememesinin somut bir MALİYETİ — otomatik zaman damgalama A-02\'nin DbContext override\'ından YARARLANAMIYOR, Register Handler\'ı (ileride) bu alanı kendisi dolduracak.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime UpdatedAt { get; set; }',
+            aciklama: 'Son güncelleme anı — AYNI nedenle elle yönetilecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshToken.cs — Token Family Pattern\'in Veri Modeli',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/RefreshToken.cs',
+        nedenBuKlasor: 'User ile AYNI klasör — ikisi de Auth domain\'inin parçası.',
+        kod: `namespace WordLearner.Domain.Entities.Auth;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — soft delete yerine kendi geçersizleştirme deseni var
+// (IsUsed/RevokedAt, Token Family Pattern); DATABASE_SCHEMA/Auth.md'deki RefreshTokens tablosuyla
+// birebir eşleşir.
+public class RefreshToken
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string TokenFamily { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public bool IsUsed { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? DeviceInfo { get; set; }
+    public string? IpAddress { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Auth;',
+            aciklama: 'User ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RefreshToken',
+            aciklama: 'Bağımsız sınıf — User gibi BaseEntity\'den TÜREMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Birincil anahtar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int UserId { get; set; }',
+            aciklama: 'Bu token\'ın HANGİ kullanıcıya ait olduğu — yabancı anahtar (foreign key), Bölüm 2\'de `Users` tablosuna CASCADE silme ile bağlanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "public string TokenHash { get; set; } = string.Empty;",
+            aciklama: 'Refresh token\'ın SHA-256 hash\'i — ham token İSTEMCİYE gönderilir ama VERİTABANINDA asla saklanmaz (yalnızca hash).',
+            neden: 'Ham token DB\'de saklansaydı, bir veritabanı sızıntısında SALDIRGAN doğrudan o token\'ları KULLANARAK kullanıcı hesaplarına erişebilirdi — hash tek yönlü olduğu için sızıntı olsa bile token\'lar GERİ ÇEVRİLEMEZ.',
+            olmasaydi: null
+          },
+          {
+            satir: "public string TokenFamily { get; set; } = string.Empty;",
+            aciklama: 'Bir GUID — İLK giriş anında üretilir, HER refresh\'te (rotation ile) YENİ token\'a AKTARILIR; aynı family\'den bir token İKİNCİ kez kullanılmaya çalışılırsa bu bir "replay" (çalıntı token kullanımı) SAYILIR ve TÜM family iptal edilir.',
+            neden: 'Token Family Pattern, çalınan bir refresh token\'ın FARK EDİLMESİNİ sağlar: normal kullanıcı token\'ını BİR KEZ kullanıp YENİSİNİ alır; eğer eski (kullanılmış) bir token TEKRAR kullanılmaya çalışılıyorsa, bu ya bir hata ya da BİRİNİN çalıntı token\'ı kullanmaya çalıştığının işaretidir — ikinci durumda TÜM zincir (family) güvenlik önlemi olarak iptal edilir.',
+            olmasaydi: 'TokenFamily olmasaydı, çalınan bir refresh token SESSİZCE, SONSUZA dek kullanılabilirdi — orijinal kullanıcı token\'ını rotasyonla YENİLESE bile, saldırgandaki ESKİ (ama hâlâ geçerli) token çalışmaya devam ederdi.'
+          },
+          {
+            satir: 'public DateTime ExpiresAt { get; set; }',
+            aciklama: 'Token\'ın son geçerlilik anı (7 gün sonrası).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsUsed { get; set; }',
+            aciklama: 'Bu token BİR KEZ refresh için kullanıldı mı — kullanıldıysa TEKRAR kullanılamaz (rotation\'ın temel kuralı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? RevokedAt { get; set; }',
+            aciklama: 'Token\'ın MANUEL olarak iptal edildiği an (ör. kullanıcı "tüm cihazlardan çıkış yap" dediğinde, ya da bir replay tespit edildiğinde TÜM family) — `IsUsed`\'ten FARKLI bir geçersizleştirme yolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? DeviceInfo { get; set; }',
+            aciklama: 'Token\'ın hangi cihazdan/tarayıcıdan üretildiği (User-Agent) — kullanıcının "aktif oturumlarım" ekranında GÖSTERİLEBİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? IpAddress { get; set; }',
+            aciklama: 'Token\'ın üretildiği IP adresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Oluşturulma anı — User\'da olduğu gibi, BaseEntity\'den türemediği için elle yönetilecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSession.cs — BaseEntity\'den Türeyen Tek Auth Entity\'si',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/QrLoginSession.cs',
+        nedenBuKlasor: 'User/RefreshToken ile AYNI klasör.',
+        kod: `using WordLearner.Domain.Entities;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Domain.Entities.Auth;
+
+// BaseEntity'den türer — DATABASE_SCHEMA/Auth.md'deki QrLoginSessions tablosu BaseEntity'nin
+// tüm alanlarını (kim yaptı dahil) birebir taşıyor, User/RefreshToken'ın aksine.
+public class QrLoginSession : BaseEntity
+{
+    public string QrTokenHash { get; set; } = string.Empty;
+    public string PairingCode { get; set; } = string.Empty;
+    public QrLoginStatus Status { get; set; } = QrLoginStatus.Pending;
+    public int? UserId { get; set; }
+    public string? RequesterIp { get; set; }
+    public string? RequesterDeviceInfo { get; set; }
+    public DateTime? ScannedAt { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'yi kullanabilmek için gerekli — bu dosya `Entities.Auth` ad alanında olduğu için üst `Entities` ad alanı OTOMATİK görünmez, açıkça import edilmesi gerekir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`QrLoginStatus`\'u kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Auth;',
+            aciklama: 'User/RefreshToken ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrLoginSession : BaseEntity',
+            aciklama: 'A-02\'deki BaseEntity\'den türer — `Id`, `CreatedAt`, `UpdatedAt`, `IsDeleted`, `DeletedAt`, `CreatedByUserId`, `UpdatedByUserId`, `DeletedByUserId` OTOMATİK miras alınır, burada AYRICA yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "public string QrTokenHash { get; set; } = string.Empty;",
+            aciklama: 'QR kodun/deep-link\'in içindeki ham token\'ın SHA-256 hash\'i — RefreshToken.TokenHash ile AYNI gerekçe: ham token DB\'de asla saklanmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: "public string PairingCode { get; set; } = string.Empty;",
+            aciklama: '4 haneli, web VE mobil onay ekranında GÖSTERİLEN kod — kullanıcı ikisini GÖZLE karşılaştırıp eşleştiğinden emin olur.',
+            neden: 'Bir saldırgan kendi QR\'ını kurbanın taramasını sağlamaya çalışsa bile (relay/phishing saldırısı), web ekranındaki PairingCode mobildeki ile UYUŞMAZ — kullanıcı bunu FARK EDİP onaylamayı reddedebilir.',
+            olmasaydi: 'PairingCode olmasaydı, kullanıcı mobilde "bir giriş isteği onaylıyor musun?" sorusuna KÖRLEMESİNE evet diyebilir, hangi cihazın/oturumun onaylandığını GÖREMEZDİ.'
+          },
+          {
+            satir: 'public QrLoginStatus Status { get; set; } = QrLoginStatus.Pending;',
+            aciklama: 'Oturumun şu anki durumu — varsayılan `Pending` (henüz hiçbir cihaz okutmadı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? UserId { get; set; }',
+            aciklama: 'Nullable — QR taranana kadar HANGİ kullanıcının onaylayacağı BİLİNMEZ; mobil cihaz okuttuğunda kendi kimliğiyle DOLAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? RequesterIp { get; set; }',
+            aciklama: 'QR\'ı İSTEYEN tarafın (web/admin) IP adresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? RequesterDeviceInfo { get; set; }',
+            aciklama: 'QR\'ı İSTEYEN tarafın User-Agent\'ı — mobil onay ekranında "bu cihazdan bir giriş isteği var" diye GÖSTERİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? ScannedAt { get; set; }',
+            aciklama: 'QR\'ın okutulduğu an.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime? ConfirmedAt { get; set; }',
+            aciklama: 'Girişin onaylandığı an.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime ExpiresAt { get; set; }',
+            aciklama: 'Oturumun süresinin dolacağı an (+2 dakika) — `BaseEntity.CreatedAt`\'ten FARKLI bir alan, bu iş kuralına özgü bir zaman damgası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Token Family Pattern', tanim: 'Bir refresh token zincirini (rotation ile birbirine bağlı token\'lar) TEK bir GUID ile gruplayıp, eski bir token TEKRAR kullanılmaya çalışılırsa TÜM zinciri iptal eden güvenlik deseni.' },
+          { terim: 'Token Rotation', tanim: 'Her refresh isteğinde eski token\'ın geçersiz kılınıp YENİ bir refresh token üretilmesi.' },
+          { terim: 'Replay Saldırısı', tanim: 'Daha önce kullanılmış (veya çalınmış) bir token\'ın TEKRAR kullanılmaya çalışılması.' },
+          { terim: 'PairingCode', tanim: 'QR ile girişte web ve mobil ekranlarında gösterilen, kullanıcının gözle karşılaştırıp phishing/relay saldırılarını fark etmesini sağlayan 4 haneli kod.' },
+          { terim: 'CEFR Seviyesi', tanim: 'Avrupa Dilleri Ortak Çerçeve Programı — A1\'den C2\'ye altı basamaklı dil yeterlilik ölçeği.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'User ve RefreshToken, BaseEntity\'den BİLİNÇLİ olarak türemiyor — gerçek DB şemasına birebir uyuyorlar, kim-yaptı alanları ya da (RefreshToken\'da) soft-delete alanları YOK.',
+          'QrLoginSession BaseEntity\'den türüyor — şeması BaseEntity\'nin tüm alanlarını birebir taşıdığı için.',
+          'OtpPurpose ve QrLoginStatus, görevde açıkça istenen İKİ C# enum — diğer string alanlar (Role, AuthProvider, ThemePreference, LanguagePreference, CurrentLevel) JWT/istemciyle doğrudan etkileştiği için düz string kaldı.',
+          'RefreshToken.TokenFamily, Token Family Pattern\'in temel yapı taşı — çalınan bir token\'ın replay\'ini TESPİT etmeyi sağlıyor.',
+          'User/RefreshToken BaseEntity\'den türemediği için CreatedAt/UpdatedAt zaman damgaları A-02\'nin otomatik DbContext mekanizmasından YARARLANAMIYOR — bu alanlar ileride Handler seviyesinde elle doldurulacak.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
