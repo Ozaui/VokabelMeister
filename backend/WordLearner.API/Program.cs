@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using WordLearner.API.Middleware;
+using WordLearner.Application;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Infrastructure;
 
@@ -21,6 +22,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddApplicationServices();
 
 // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
 // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.

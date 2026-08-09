@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — IPasswordService: BCrypt ve SHA-256</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'sifre-servisi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '02_ef-konfigurasyonlari-ve-migration.html',
+    sonrakiBolum: '04_token-servisi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'IPasswordService: Aynı Sınıf, İki Farklı Hash Amacı',
+        altBaslik: 'Şifreler bcrypt ile (yavaş, kasıtlı), refresh/OTP token\'lar SHA-256 ile (hızlı) hash\'lenir — aynı serviste, iki AYRI metotla.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Şifre İçin bcrypt, Token İçin SHA-256?',
+        aciklama: 'Bir ŞİFRE, kullanıcının HATIRLADIĞI ve TAHMİN edilebilecek kısa bir metindir — bu yüzden bcrypt gibi BİLEREK yavaş bir algoritma kullanılır (brute-force denemesini pahalılaştırmak için). Bir REFRESH/OTP TOKEN ise zaten rastgele üretilmiş, uzun ve tahmin EDİLEMEZ bir değerdir — bu değerin hash\'ini ALMANIN tek amacı veritabanı sızıntısında ham değeri SAKLAMAMAK, brute-force\'a karşı YAVAŞLIK gerektirmez.',
+        neden: 'bcrypt (workFactor 12) bir hash işlemini KASITLI olarak ~250ms sürecek şekilde yavaşlatır — bu, saniyede milyonlarca şifre denemesi yapabilen bir saldırganı saniyede birkaç denemeye DÜŞÜRÜR. Ama zaten 64 byte\'lık rastgele bir refresh token\'ı bu kadar YAVAŞ hash\'lemek anlamsız bir performans MALİYETİDİR — SHA-256 (mikrosaniyeler) burada YETERLİ, çünkü tehdit modeli "token\'ı tahmin etmeye çalışmak" değil "hash\'ten ham değere geri DÖNMEK".',
+        olmasaydi: 'Şifreler için SHA-256 kullanılsaydı, saldırgan bir veritabanı sızıntısında ELE GEÇİRDİĞİ hash\'leri MİLYARLARCA/saniye hızda deneyebilirdi (SHA-256 HIZLI olacak şekilde tasarlanmıştır) — zayıf şifreler DAKİKALAR içinde kırılabilirdi. Token\'lar için bcrypt kullanılsaydı, HER refresh isteğinde ~250ms\'lik gereksiz bir gecikme eklenirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IPasswordService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IPasswordService.cs',
+        nedenBuKlasor: '`Application/Interfaces/Services/` — Repository arayüzlerinin (`Interfaces/Repositories/`, A-02) yanında, paylaşılan SERVİS arayüzleri için kardeş bir klasör.',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public interface IPasswordService
+{
+    string Hash(string password);
+    bool Verify(string password, string hash);
+    string HashToken(string token); // SHA-256 — refresh/OTP token hash, bcrypt DEĞİL
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla (`Application/Interfaces/Services/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IPasswordService',
+            aciklama: 'Handler\'lar (ileride yazılacak Register/Login gibi) yalnızca bu SÖZLEŞMEYİ bilecek, bcrypt kullanıldığını hiç bilmeyecek — A-02\'deki Repository deseninin AYNISI, servisler için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Arayüz gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string Hash(string password);',
+            aciklama: 'Ham şifreyi bcrypt hash\'ine çevirir — kayıt sırasında kullanılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'bool Verify(string password, string hash);',
+            aciklama: 'Girilen şifrenin, saklanan hash ile EŞLEŞİP eşleşmediğini kontrol eder — giriş sırasında kullanılacak; hash\'i GERİ ÇÖZMEZ (bcrypt tek yönlüdür), yalnızca karşılaştırma yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string HashToken(string token); // SHA-256 — refresh/OTP token hash, bcrypt DEĞİL',
+            aciklama: 'Yorum, bu metodun DİĞER İKİSİNDEN farklı bir algoritma kullandığını AÇIKÇA belirtiyor — isimden ("HashToken") bu ayrım hemen anlaşılmayabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Arayüz gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'PasswordService.cs — Implementasyon',
+        dosyaYolu: 'backend/WordLearner.Application/Services/PasswordService.cs',
+        nedenBuKlasor: '`Application/Services/` — flat tutulan paylaşılan servis klasörü; A-02\'deki Repository deseninden FARKLI olarak implementasyon burada Infrastructure\'da DEĞİL, Application\'da yaşıyor, çünkü bcrypt/SHA-256 bir VERİTABANI teknolojisi değil, saf bir HESAPLAMA — Infrastructure\'a taşınması için hiçbir gerekçe yok.',
+        kod: `using System.Security.Cryptography;
+using System.Text;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class PasswordService : IPasswordService
+{
+    public string Hash(string password) => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
+
+    public bool Verify(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);
+
+    public string HashToken(string token)
+    {
+        using var sha = SHA256.Create();
+        return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(token)));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Cryptography;',
+            aciklama: '`SHA256` sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Text;',
+            aciklama: '`Encoding.UTF8` ile string\'i byte dizisine çevirebilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IPasswordService` sözleşmesinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla (`Application/Services/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class PasswordService : IPasswordService',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Hash(string password) => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);',
+            aciklama: '`BCrypt.Net-Next` kütüphanesinin statik `HashPassword` metodunu çağırır — `workFactor: 12`, hash işleminin ne kadar YAVAŞ (dolayısıyla ne kadar GÜVENLİ) olacağını belirler; bcrypt SALTI kendi İÇİNDE, otomatik üretir, ayrıca bir salt parametresi VERİLMEZ.',
+            neden: 'workFactor 12, günümüz donanımında ~250ms\'lik bir hesaplama süresine denk gelir — bu, KULLANICI DENEYİMİNİ (kayıt/giriş anında fark edilmeyecek kadar hızlı) BOZMADAN, brute-force saldırılarını YETERİNCE yavaşlatan, yaygın kabul görmüş bir denge noktasıdır.',
+            olmasaydi: 'workFactor çok DÜŞÜK olsaydı (ör. 4), hash işlemi ÇOK hızlı olur, saldırgan saniyede ÇOK daha fazla şifre denemesi yapabilirdi; çok YÜKSEK olsaydı (ör. 20), her giriş isteği KULLANICIYA fark edilir bir gecikme (saniyeler) olarak YANSIRDI.'
+          },
+          {
+            satir: 'public bool Verify(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);',
+            aciklama: 'bcrypt\'in `Verify` metodu, hash\'in İÇİNDEKİ salt\'ı OKUYUP aynı işlemi girilen şifreyle TEKRARLAR ve SONUÇLARI karşılaştırır — bu yüzden ayrıca bir salt parametresi geçmeye gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string HashToken(string token)',
+            aciklama: 'Tek satırlık DEĞİL, blok gövdeli — çünkü `SHA256.Create()` bir `using` bloğu (kaynak temizliği) gerektiriyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using var sha = SHA256.Create();',
+            aciklama: '`using var` — SHA256 nesnesi, yönetilmeyen (unmanaged) kaynak kullandığı için metot SONUNDA otomatik olarak `Dispose` edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(token)));',
+            aciklama: 'Üç adım TEK satırda: string\'i byte\'a çevir → SHA-256 hash\'ini hesapla (32 byte) → Base64 metne çevir (44 karakter, padding dahil) — Auth.md şemasındaki `VARCHAR(44)` alanlarının (Bölüm 1, `TokenHash`/`QrTokenHash`) NEDEN tam 44 karakter olduğunun kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'HashToken metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'PasswordServiceTests.cs — Bcrypt ve SHA-256 Doğru Çalışıyor mu?',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/PasswordServiceTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/{Services|Features|Helpers|Repositories}/` — bu bir SERVİS testi.',
+        kod: `using FluentAssertions;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Tests.Services;
+
+public class PasswordServiceTests
+{
+    private readonly PasswordService _service = new();
+
+    [Fact]
+    public void Hash_ValidPassword_ProducesHashThatVerifiesCorrectly()
+    {
+        // ARRANGE
+        const string password = "S3curePassword!";
+
+        // ACT
+        var hash = _service.Hash(password);
+
+        // ASSERT — bcrypt hash'i her zaman 60 karakter, ham şifreyle AYNI DEĞİL
+        hash.Should().HaveLength(60);
+        hash.Should().NotBe(password);
+        _service.Verify(password, hash).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Verify_WrongPassword_ReturnsFalse()
+    {
+        // ARRANGE
+        var hash = _service.Hash("DoğruŞifre!1");
+
+        // ACT
+        var result = _service.Verify("YanlışŞifre!1", hash);
+
+        // ASSERT
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HashToken_SameInput_ProducesDeterministicHash()
+    {
+        // ARRANGE + ACT — SHA-256, bcrypt'in AKSİNE rastgele salt İÇERMEZ, aynı girdi aynı çıktıyı üretmeli
+        var first = _service.HashToken("refresh-token-ornegi");
+        var second = _service.HashToken("refresh-token-ornegi");
+
+        // ASSERT
+        first.Should().Be(second);
+        first.Should().HaveLength(44);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` uzantı metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `PasswordService` sınıfının ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Klasör yoluyla (`Tests/Services/`) eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class PasswordServiceTests',
+            aciklama: '`{TestEdilenSınıf}Tests` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly PasswordService _service = new();',
+            aciklama: 'Bağımlılığı OLMAYAN bir sınıf olduğu için (constructor\'ı boş) mock\'lamaya GEREK YOK — doğrudan gerçek nesne kullanılıyor.',
+            neden: 'CODING_STANDARDS\'ın "Repository + dış servisler mock\'lanır" kuralı PasswordService için GEÇERLİ DEĞİL — bu servis hiçbir dış kaynağa (DB, ağ, dosya) bağımlı değil, saf bir hesaplama; onu mock\'lamak GERÇEK davranışı (bcrypt\'in gerçekten çalışıp çalışmadığını) test ETMEMEK anlamına gelirdi.',
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği — dosyada ÜÇ kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Hash_ValidPassword_ProducesHashThatVerifiesCorrectly()',
+            aciklama: 'Happy-path senaryosu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metodu gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'const string password = "S3curePassword!";',
+            aciklama: 'Test için sabit bir örnek şifre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var hash = _service.Hash(password);',
+            aciklama: 'ACT adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'hash.Should().HaveLength(60);',
+            aciklama: 'bcrypt hash\'inin HER ZAMAN tam 60 karakter olduğunu doğrular — `UserConfiguration.cs`\'teki (Bölüm 2) `HasMaxLength(60)` kararının GERÇEKTEN doğru varsayım olduğunun kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'hash.Should().NotBe(password);',
+            aciklama: 'Şifrenin GERÇEKTEN dönüştürüldüğünü, olduğu gibi SAKLANMADIĞINI doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_service.Verify(password, hash).Should().BeTrue();',
+            aciklama: 'Üretilen hash\'in, AYNI şifreyle doğrulandığında `true` DÖNDÜĞÜNÜ doğrular — Hash ve Verify\'ın BİRLİKTE tutarlı çalıştığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_WrongPassword_ReturnsFalse()',
+            aciklama: 'Sınır/uç durum senaryosu: YANLIŞ şifreyle doğrulama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var hash = _service.Hash("DoğruŞifre!1");',
+            aciklama: 'ARRANGE — doğru şifrenin hash\'i.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify("YanlışŞifre!1", hash);',
+            aciklama: 'ACT — FARKLI bir şifreyle doğrulama denemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().BeFalse();',
+            aciklama: 'Yanlış şifrenin REDDEDİLDİĞİNİ doğrular — bu test olmadan, `Verify`\'ın HER ZAMAN `true` döndüren (güvenlik açığı olan) bozuk bir implementasyonu fark edilmeden geçebilirdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void HashToken_SameInput_ProducesDeterministicHash()',
+            aciklama: 'SHA-256\'nın bcrypt\'ten FARKLI bir özelliğini doğrulayan senaryo: DETERMİNİZM.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var first = _service.HashToken("refresh-token-ornegi");',
+            aciklama: 'Aynı girdiyle İLK çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var second = _service.HashToken("refresh-token-ornegi");',
+            aciklama: 'AYNI girdiyle İKİNCİ çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'first.Should().Be(second);',
+            aciklama: 'SHA-256\'nın (bcrypt\'in AKSİNE) rastgele salt İÇERMEDİĞİNİ, aynı girdinin HER ZAMAN aynı çıktıyı ürettiğini doğrular — bu özellik ÖNEMLİ çünkü `RefreshTokenRepository` (ileride) bir token\'ı hash\'ine göre ARAYACAK, hash rastgele olsaydı bu arama İMKANSIZ olurdu.',
+            neden: 'Eğer `HashToken` yanlışlıkla bcrypt gibi rastgele salt\'lı bir algoritmaya DEĞİŞTİRİLİRSE, bu test HEMEN kırılır — "aynı token\'ı iki kez hash\'le, farklı sonuç al" gibi sessiz, geç fark edilecek bir hatayı ERKENDEN yakalar.',
+            olmasaydi: null
+          },
+          {
+            satir: 'first.Should().HaveLength(44);',
+            aciklama: 'SHA-256→Base64 çıktısının HER ZAMAN 44 karakter olduğunu doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'bcrypt', tanim: 'Kasıtlı olarak YAVAŞ çalışan, kendi salt\'ını otomatik üreten bir şifre hash algoritması — brute-force saldırılarını zorlaştırmak için tasarlanmıştır.' },
+          { terim: 'Work Factor', tanim: 'bcrypt\'in ne kadar YAVAŞ çalışacağını belirleyen parametre — yüksek değer daha güvenli ama daha yavaş.' },
+          { terim: 'SHA-256', tanim: 'Hızlı, deterministik (aynı girdi = aynı çıktı) bir hash algoritması — brute-force\'a karşı KORUMA sağlamaz, yalnızca geri döndürülemezlik sağlar.' },
+          { terim: 'Determinizm (Hash)', tanim: 'Aynı girdinin HER ZAMAN aynı hash çıktısını üretmesi — SHA-256\'da var, salt kullanan bcrypt\'te YOK.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IPasswordService, TEK bir arayüzde iki farklı amaç için iki farklı algoritma taşıyor: Hash/Verify (bcrypt, şifreler için) ve HashToken (SHA-256, token\'lar için).',
+          'bcrypt\'in KASITLI yavaşlığı brute-force\'a karşı, SHA-256\'nın hızı ve determinizmi ise "token\'ı hash\'ine göre ARAYABİLME" ihtiyacına hizmet ediyor.',
+          'PasswordService, A-02\'deki Repository deseninden FARKLI olarak Infrastructure\'da DEĞİL, Application\'da yaşıyor — çünkü hiçbir veritabanı teknolojisine bağımlı değil.',
+          'Testler, hem happy-path (Hash+Verify tutarlılığı) hem sınır durumu (yanlış şifre reddi) hem de SHA-256\'ya özgü bir özelliği (determinizm) doğruluyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

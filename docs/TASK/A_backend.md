@@ -71,10 +71,10 @@
       constraint]/**LanguagePreference**[tr|de, CHECK constraint] dahil), `RefreshToken`,
       `QrLoginSession` + `OtpPurpose`/`QrLoginStatus` enum + EF config + migration
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash), `ITokenService` (JWT access 15dk +
+- [x] `IPasswordService` (BCrypt wf:12 + SHA-256 token hash), `ITokenService` (JWT access 15dk +
       refresh, algorithm-confusion önlemi, claim'ler: NameIdentifier/Email/Role/firstName —
       Theme/LanguagePreference JWT'ye GİRMEZ, yalnızca yetki taşınır)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IOtpService`/`OtpService` (Register/Login/ResetPassword/AccountDeletion ortak OTP üretimi/
       doğrulaması), `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple/QR
       girişlerinin ortak son adımı: grace period kurtarma, token üretimi)

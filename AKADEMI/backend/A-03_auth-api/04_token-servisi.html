@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — ITokenService: JWT ve Algorithm Confusion Savunması</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'token-servisi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '03_sifre-servisi.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'ITokenService: JWT Üretimi ve Algorithm Confusion Savunması',
+        altBaslik: 'Access token üretimi, refresh token üretimi, ve süresi dolmuş bir access token\'dan güvenli şekilde kimlik okuma — üçü de A-02\'de kurulan JWT altyapısının (Bölüm 6) ÜZERİNE, ama ondan BAĞIMSIZ olarak inşa ediliyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'A-02\'nin JWT Middleware\'i ile Bu Servis Arasındaki Fark',
+        aciklama: 'A-02\'de Program.cs\'e eklenen `AddJwtBearer` (Bölüm 6), gelen bir isteğin `Authorization` header\'ındaki token\'ı OKUYUP doğrulayan middleware\'i kurar — bu, isteği "gönderen" tarafta çalışır. `ITokenService` ise token\'ı ÜRETEN taraf: bir kullanıcı giriş yaptığında YENİ bir access/refresh token ÇİFTİ oluşturur.',
+        neden: 'Token\'ı ÜRETMEK ve DOĞRULAMAK iki AYRI sorumluluk — biri "bu kullanıcıya bir kimlik kartı VER", diğeri "bu kimlik kartı GERÇEK mi kontrol et". A-02\'nin middleware\'i SÜREKLİ (her istekte) çalışır, ITokenService yalnızca giriş/refresh ANLARINDA.',
+        olmasaydi: 'Bu ayrım olmasaydı, token üretim mantığı Program.cs\'e ya da bir Controller\'a KARIŞIRDI — "dikey dilim" disiplini (her sorumluluk kendi katmanında) BOZULURDU.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ITokenService.cs — Sözleşme + RefreshTokenResult',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/ITokenService.cs',
+        nedenBuKlasor: 'IPasswordService ile AYNI klasör — `RefreshTokenResult`, yalnızca bu arayüzün DÖNÜŞ tipi olarak kullanıldığı için AYRI bir dosyaya değil, aynı dosyaya kondu (A-02\'deki ApiErrorResponse/ApiErrorDetail ile AYNI desen).',
+        kod: `using System.Security.Claims;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public record RefreshTokenResult(string Token, DateTime ExpiresAt);
+
+public interface ITokenService
+{
+    string GenerateAccessToken(User user);
+    RefreshTokenResult GenerateRefreshToken();
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Claims;',
+            aciklama: '`ClaimsPrincipal`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: 'Bölüm 1\'deki `User` entity\'sini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'IPasswordService ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record RefreshTokenResult(string Token, DateTime ExpiresAt);',
+            aciklama: 'Refresh token ÜRETİLDİĞİNDE, hem ham token\'ın (istemciye gidecek) hem de son geçerlilik ANININ (veritabanına, `RefreshToken.ExpiresAt`\'e yazılacak) BİRLİKTE dönmesi gerekiyor — `record` (A-02\'deki ApiErrorResponse ile AYNI gerekçe) bu ikiliyi immutable bir pakette taşıyor.',
+            neden: 'Token ve süresi HER ZAMAN BİRLİKTE üretilip BİRLİKTE kullanılıyor — iki AYRI metot (`GenerateRefreshTokenValue()` ve `GetRefreshTokenExpiry()`) yazılsaydı, çağıran kodun bunları doğru EŞLEŞTİRMESİ gerekirdi ve aralarında bir TUTARSIZLIK riski doğardı (ör. ikisi FARKLI zamanlarda çağrılıp farklı "şimdi" anlarına göre hesaplanabilirdi).',
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ITokenService',
+            aciklama: 'IPasswordService ile AYNI: Handler\'lar bu sözleşmeyi bilecek, `System.IdentityModel.Tokens.Jwt` kütüphanesinin KULLANILDIĞINI hiç bilmeyecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Arayüz gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string GenerateAccessToken(User user);',
+            aciklama: 'Bir `User` nesnesinden 15 dakikalık bir JWT access token üretir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RefreshTokenResult GenerateRefreshToken();',
+            aciklama: 'Bir `User` parametresi ALMAZ — refresh token\'ın İÇERİĞİ rastgele baytlardan oluşur, kullanıcı bilgisi TAŞIMAZ (JWT gibi kendi kendini AÇIKLAYAN bir yapı değil, yalnızca veritabanında bir kayda karşılık gelen OPAK bir anahtar).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);',
+            aciklama: 'Nullable dönüş — token GEÇERSİZSE (bozuk, yanlış imzalı, ya da algoritma UYUŞMUYORSA) `null` döner; adındaki "Expired" kelimesi BİLEREK var, çünkü bu metot SÜRESİ DOLMUŞ bir token\'dan bile kimlik OKUYABİLMELİ (refresh akışında access token zaten süresi dolmuş OLACAK, asıl kontrol imza+algoritmadır, süre DEĞİL).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Arayüz gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'JwtTokenService.cs — Implementasyon',
+        dosyaYolu: 'backend/WordLearner.Application/Services/JwtTokenService.cs',
+        nedenBuKlasor: 'PasswordService ile AYNI klasör — JWT üretimi de bir veritabanı teknolojisi DEĞİL, Infrastructure\'a taşınması için gerekçe yok.',
+        kod: `using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Services;
+
+public class JwtTokenService : ITokenService
+{
+    private readonly IConfiguration _cfg;
+
+    public JwtTokenService(IConfiguration cfg) => _cfg = cfg;
+
+    public string GenerateAccessToken(User user)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:SecretKey"]!));
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim("firstName", user.FirstName)
+        };
+        var token = new JwtSecurityToken(
+            issuer: _cfg["Jwt:Issuer"], audience: _cfg["Jwt:Audience"], claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(15),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public RefreshTokenResult GenerateRefreshToken()
+    {
+        var bytes = new byte[64];
+        RandomNumberGenerator.Fill(bytes);
+        var days = _cfg.GetValue<int>("Jwt:RefreshTokenExpirationDays", 7);
+        return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));
+    }
+
+    public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:SecretKey"]!));
+        var p = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = key,
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = false
+        };
+        try
+        {
+            var principal = new JwtSecurityTokenHandler().ValidateToken(token, p, out var validated);
+            // JWT Algorithm Confusion Attack önlemi:
+            if (validated is not JwtSecurityToken jwt ||
+                !jwt.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return principal;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Claims;',
+            aciklama: '`Claim`, `ClaimTypes`, `ClaimsPrincipal` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Security.Cryptography;',
+            aciklama: '`RandomNumberGenerator` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Text;',
+            aciklama: '`Encoding.UTF8` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`IConfiguration` ve `GetValue<T>` uzantı metodu için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.IdentityModel.Tokens;',
+            aciklama: '`SymmetricSecurityKey`, `SigningCredentials`, `TokenValidationParameters`, `SecurityAlgorithms` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.IdentityModel.Tokens.Jwt;',
+            aciklama: '`JwtSecurityToken`, `JwtSecurityTokenHandler` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `ITokenService` sözleşmesinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'PasswordService ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class JwtTokenService : ITokenService',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IConfiguration _cfg;',
+            aciklama: 'JWT anahtarı/issuer/audience gibi ayarları OKUMAK için — DI konteynerinden gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public JwtTokenService(IConfiguration cfg) => _cfg = cfg;',
+            aciklama: 'İfade-gövdeli constructor — tek satırlık bir atama için `{ }` blok yerine `=>` kullanıldı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string GenerateAccessToken(User user)',
+            aciklama: 'A-02\'nin (Bölüm 6) `Program.cs`\'teki JWT DOĞRULAMA yapılandırmasıyla AYNI anahtarı/issuer\'ı/audience\'ı kullanarak bir token ÜRETİR — üretilen token, o middleware tarafından SORUNSUZ doğrulanabilir olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:SecretKey"]!));',
+            aciklama: 'A-02\'nin Program.cs\'indeki (Bölüm 6) `IssuerSigningKey` satırıyla BİREBİR aynı mantık — AYNI gizli anahtardan üretilen simetrik anahtar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var claims = new[]',
+            aciklama: 'Token\'ın İÇİNE gömülecek, kimlik doğrulama sonrası HER istekte okunabilir olacak veri parçaları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Dizi başlatıcısının açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),',
+            aciklama: 'Kullanıcının Id\'si — `[Authorize]`\'lı bir Controller içinde `User.FindFirst(ClaimTypes.NameIdentifier)` ile OKUNACAK, "bu isteği yapan kim" sorusunun asıl cevabı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new Claim(ClaimTypes.Email, user.Email),',
+            aciklama: 'Kullanıcının e-postası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new Claim(ClaimTypes.Role, user.Role),',
+            aciklama: '"User" veya "Admin" — `[Authorize(Roles="Admin")]` gibi rol tabanlı yetkilendirme bu claim\'i OKUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new Claim("firstName", user.FirstName)',
+            aciklama: 'Standart bir `ClaimTypes` sabiti YOK bu alan için, bu yüzden düz string ("firstName") kullanıldı — istemcinin "Hoş geldin, Ada" gibi bir karşılama METNİ göstermesi için, ayrı bir `/users/me` isteği ATMADAN.',
+            neden: 'ThemePreference/LanguagePreference BİLEREK JWT\'ye GİRMİYOR (yalnızca yetki taşınır) — ama `firstName` sık kullanılan, sık DEĞİŞMEYEN bir görüntüleme bilgisi olduğu için token\'a EKLENDİ; bu bilinçli bir seçim, "her alanı token\'a koy" değil.',
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: 'Dizi başlatıcısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var token = new JwtSecurityToken(',
+            aciklama: 'Yukarıdaki claim\'leri, imza anahtarını ve süresini BİRLEŞTİREN JWT nesnesini oluşturur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'issuer: _cfg["Jwt:Issuer"], audience: _cfg["Jwt:Audience"], claims: claims,',
+            aciklama: 'A-02\'nin (Bölüm 6) doğrulama tarafındaki `ValidIssuer`/`ValidAudience` ile EŞLEŞMESİ gereken değerler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'expires: DateTime.UtcNow.AddMinutes(15),',
+            aciklama: 'Access token TAM 15 dakika sonra geçersiz olur — güvenlik politikasının belirlediği süre.',
+            neden: 'Kısa ömürlü bir access token, ÇALINSA bile SALDIRGANIN kullanabileceği zaman penceresini DAR tutar — bu yüzden 15 dakika gibi kısa bir süre TERCİH EDİLDİ, uzun ömürlü tek bir token yerine "kısa access + uzun refresh" ikili modeli KURULDU.',
+            olmasaydi: 'Access token uzun ömürlü olsaydı (ör. 7 gün, refresh token\'la AYNI süre), çalınan bir token GÜNLERCE geçerli kalırdı — kısa ömür, ÇALINTI bir token\'ın etkisini SINIRLANDIRAN temel savunma katmanlarından biri.'
+          },
+          {
+            satir: 'signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));',
+            aciklama: 'Token\'ın HANGİ anahtar VE hangi algoritmayla (HmacSha256) imzalanacağını belirtir — bu, aşağıdaki `GetPrincipalFromExpiredToken`\'daki algoritma kontrolünün NEDEN her zaman HmacSha256 BEKLEDİĞİNİN kaynağı: bu servis HİÇBİR ZAMAN başka bir algoritmayla token ÜRETMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new JwtSecurityTokenHandler().WriteToken(token);',
+            aciklama: 'JWT nesnesini, üç parçalı (`header.payload.signature`) standart METİN gösterimine çevirir — istemciye DÖNECEK asıl string budur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'GenerateAccessToken metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public RefreshTokenResult GenerateRefreshToken()',
+            aciklama: 'Bir `User` parametresi YOK — ITokenService\'te açıklandığı gibi, refresh token kullanıcı bilgisi TAŞIMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var bytes = new byte[64];',
+            aciklama: '64 byte (512 bit) — bir refresh token\'ın TAHMİN edilemez olması için yeterince geniş bir alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RandomNumberGenerator.Fill(bytes);',
+            aciklama: 'KRİPTOGRAFİK OLARAK güvenli rastgele baytlarla doldurur — .NET\'in genel amaçlı `Random` sınıfı DEĞİL, çünkü `Random` TAHMİN edilebilir bir algoritma kullanır ve güvenlik amaçlı token üretimi için UYGUN DEĞİLDİR.',
+            neden: '`Random` sınıfının ürettiği sayı dizisi, başlangıç "seed" değeri BİLİNİRSE (ya da zamanla İSTATİSTİKSEL olarak) TAHMİN edilebilir — bir saldırganın refresh token\'ları TAHMİN edebilmesi, kimlik doğrulamanın TAMAMEN çökmesi anlamına gelirdi.',
+            olmasaydi: '`Random.NextBytes()` kullanılsaydı, teorik olarak (düşük olasılıkla da olsa) bir saldırgan üretim ÖRÜNTÜSÜNÜ analiz edip GELECEKTEKİ token\'ları tahmin etmeye ÇALIŞABİLİRDİ — kriptografik RNG bu riski TAMAMEN ortadan kaldırır.'
+          },
+          {
+            satir: 'var days = _cfg.GetValue<int>("Jwt:RefreshTokenExpirationDays", 7);',
+            aciklama: '`GetValue<int>(key, varsayılan)` — yapılandırmada bu anahtar TANIMLI değilse (ör. appsettings\'e eklenmeyi UNUTULMUŞSA) 7 güne DÜŞER, exception FIRLATMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new RefreshTokenResult(Convert.ToBase64String(bytes), DateTime.UtcNow.AddDays(days));',
+            aciklama: 'Rastgele baytları Base64 metne çevirir (istemciye/DB\'ye YAZILABİLİR hale getirir) ve son geçerlilik anıyla BİRLİKTE `RefreshTokenResult` olarak döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'GenerateRefreshToken metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)',
+            aciklama: 'Refresh akışında kullanılacak: istemci süresi dolmuş bir access token + geçerli bir refresh token GÖNDERDİĞİNDE, bu metot access token\'ın İÇİNDEKİ kimliği (hangi kullanıcı) OKUR — süre kontrolü YAPMADAN.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_cfg["Jwt:SecretKey"]!));',
+            aciklama: 'GenerateAccessToken\'daki İLE AYNI anahtar — doğrulama, imzalamayla AYNI gizli anahtarı kullanmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var p = new TokenValidationParameters',
+            aciklama: 'Bu doğrulamanın A-02\'nin Program.cs\'indeki (Bölüm 6) NORMAL doğrulamadan FARKLI olduğu yer burası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Nesne başlatıcısının açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateIssuerSigningKey = true,',
+            aciklama: 'İmza HALA doğrulanır — bu ASLA kapatılmaz, aksi halde HERHANGİ biri sahte bir token ÜRETEBİLİRDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IssuerSigningKey = key,',
+            aciklama: 'Yukarıda oluşturulan anahtar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateIssuer = false,',
+            aciklama: 'A-02\'nin NORMAL doğrulamasından (Program.cs, `ValidateIssuer = true`) FARKLI — burada gevşetildi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateAudience = false,',
+            aciklama: 'AYNI şekilde gevşetildi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateLifetime = false',
+            aciklama: 'EN ÖNEMLİ FARK: süre kontrolü KAPALI — bu metodun VAROLUŞ SEBEBİ zaten "süresi dolmuş bir token\'dan kimlik oku" olduğu için, süre kontrolü açık olsaydı HER ÇAĞRI `SecurityTokenExpiredException` ile PATLARDI.',
+            neden: 'Refresh akışının TEMEL varsayımı: access token\'ın SÜRESİ zaten dolmuş (kullanıcı 15 dakikadan fazla aktifse bu NORMAL bir durum) — burada kontrol EDİLMESİ gereken şey "bu token GERÇEKTEN bizim ürettiğimiz mi" (imza+algoritma), "hala geçerli mi" DEĞİL.',
+            olmasaydi: '`ValidateLifetime = true` olsaydı, HER refresh isteği (ki access token\'ın süresi dolduğu İÇİN yapılıyor zaten) bir exception\'la BAŞARISIZ olurdu — refresh akışı TAMAMEN çalışmaz hale gelirdi.'
+          },
+          {
+            satir: '};',
+            aciklama: 'Nesne başlatıcısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'try',
+            aciklama: '`ValidateToken`, GEÇERSİZ bir token için (bozuk format, yanlış imza) exception FIRLATIR — bu try/catch, o exception\'ı yakalayıp `null` döndürmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'try bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var principal = new JwtSecurityTokenHandler().ValidateToken(token, p, out var validated);',
+            aciklama: 'Token\'ı yukarıdaki (gevşetilmiş) kurallarla doğrular — `out var validated` ile doğrulanan HAM token nesnesini de ALIR (aşağıdaki algoritma kontrolü için gerekli).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// JWT Algorithm Confusion Attack önlemi:',
+            aciklama: 'Bu yorum, aşağıdaki iki satırın NEDEN var olduğunu tek cümlede özetliyor — kodun kendisi bu NEDENİ açıkça göstermiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (validated is not JwtSecurityToken jwt ||',
+            aciklama: '`ValidateToken`\'ın döndürdüğü nesnenin GERÇEKTEN bir `JwtSecurityToken` olup OLMADIĞINI kontrol eder (tür güvenliği) — `is not` ile PATTERN MATCHING.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '!jwt.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.OrdinalIgnoreCase))',
+            aciklama: 'Token\'ın HEADER\'ındaki `alg` alanının GERÇEKTEN "HS256" olduğunu, `ValidateIssuerSigningKey=true` imza kontrolünü GEÇMİŞ olsa bile AYRICA doğrular — `TokenValidationParameters` bir `ValidAlgorithms` KISITLAMASI TAŞIMADIĞI için, AYNI simetrik anahtarla FARKLI bir HMAC algoritmasıyla (ör. HS384) imzalanmış bir token da imza kontrolünü GEÇEBİLİR; bu satır o senaryoyu AYRICA reddeder.',
+            neden: 'Bir saldırgan (ya da yanlış yapılandırılmış bir istemci), AYNI gizli anahtarla ama FARKLI bir HMAC varyantıyla (HS384/HS512) imzalanmış bir token ÜRETİRSE, `ValidateIssuerSigningKey` TEK BAŞINA bunu YAKALAYAMAZ — imza MATEMATİKSEL olarak geçerlidir, yalnızca algoritma FARKLIDIR; bu servisin KENDİSİ yalnızca HmacSha256 ÜRETTİĞİ için (yukarıda), doğrulama tarafı da SADECE bunu kabul etmeli.',
+            olmasaydi: 'Bu kontrol OLMASAYDI, `JwtTokenServiceTests.cs`\'teki (aşağıda) "AYNI anahtarla HmacSha384 imzalı token" testi BAŞARISIZ olurdu — böyle bir token YANLIŞLIKLA geçerli kabul edilir, sistemin algoritma varsayımlarına GÜVENEN başka bir kod yolunda (ileride) BEKLENMEDİK bir davranışa yol AÇABİLİRDİ.'
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Algoritma UYUŞMUYORSA, geçerli bir imza olsa BİLE `null` döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return principal;',
+            aciklama: 'Tüm kontroller geçildiyse, doğrulanmış kimlik bilgisini (`ClaimsPrincipal`) döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'try bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch',
+            aciklama: 'Belirli bir exception türü BELİRTİLMEDİ (`catch (Exception ex)` bile değil) — `ValidateToken`\'ın fırlatabileceği ÇEŞİTLİ exception türlerinin (format hatası, imza hatası, vb.) HEPSİ AYNI şekilde ele alınıyor: "geçersiz token, null dön".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'catch bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Herhangi bir doğrulama hatasında GÜVENLİ varsayılan: reddet.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'catch bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'GetPrincipalFromExpiredToken metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'JwtTokenServiceTests.cs — Algorithm Confusion Savunması Gerçekten Çalışıyor mu?',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/JwtTokenServiceTests.cs',
+        nedenBuKlasor: 'PasswordServiceTests ile AYNI klasör.',
+        kod: `using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Services;
+
+public class JwtTokenServiceTests
+{
+    private const string SecretKey = "test-icin-en-az-32-karakter-uzunlugunda-bir-anahtar";
+
+    private static JwtTokenService CreateService() =>
+        new(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:SecretKey"] = SecretKey,
+            ["Jwt:Issuer"] = "WordLearnerApp",
+            ["Jwt:Audience"] = "WordLearnerApp",
+            ["Jwt:RefreshTokenExpirationDays"] = "7"
+        }).Build());
+
+    private static User CreateUser() => new()
+    {
+        Id = 42,
+        Email = "test@example.com",
+        FirstName = "Ada",
+        Role = "User"
+    };
+
+    [Fact]
+    public void GenerateAccessToken_ValidUser_ContainsExpectedClaims()
+    {
+        // ARRANGE
+        var service = CreateService();
+        var user = CreateUser();
+
+        // ACT
+        var token = service.GenerateAccessToken(user);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+
+        // ASSERT — dört claim de (Id/Email/Role/firstName) token'a doğru yazılmış olmalı
+        jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "42");
+        jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.Email && c.Value == "test@example.com");
+        jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "User");
+        jwt.Claims.Should().Contain(c => c.Type == "firstName" && c.Value == "Ada");
+    }
+
+    [Fact]
+    public void GenerateRefreshToken_ReturnsTokenWithFutureExpiry()
+    {
+        // ARRANGE
+        var service = CreateService();
+
+        // ACT
+        var result = service.GenerateRefreshToken();
+
+        // ASSERT — 7 gün sonrası (appsettings'teki RefreshTokenExpirationDays), makul bir tolerans içinde
+        result.Token.Should().NotBeNullOrWhiteSpace();
+        result.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public void GetPrincipalFromExpiredToken_ValidToken_ReturnsPrincipal()
+    {
+        // ARRANGE
+        var service = CreateService();
+        var token = service.GenerateAccessToken(CreateUser());
+
+        // ACT
+        var principal = service.GetPrincipalFromExpiredToken(token);
+
+        // ASSERT
+        principal.Should().NotBeNull();
+        principal!.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be("42");
+    }
+
+    [Fact]
+    public void GetPrincipalFromExpiredToken_TokenSignedWithDifferentAlgorithm_ReturnsNull()
+    {
+        // ARRANGE — AYNI anahtarla ama HmacSha384 ile imzalanmış bir token (algorithm confusion senaryosu)
+        var service = CreateService();
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SecretKey));
+        var maliciousToken = new JwtSecurityToken(
+            issuer: "WordLearnerApp", audience: "WordLearnerApp",
+            claims: [new Claim(ClaimTypes.NameIdentifier, "42")],
+            expires: DateTime.UtcNow.AddMinutes(15),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha384));
+        var tokenString = new JwtSecurityTokenHandler().WriteToken(maliciousToken);
+
+        // ACT
+        var principal = service.GetPrincipalFromExpiredToken(tokenString);
+
+        // ASSERT — imza AYNI anahtarla geçerli olsa bile, algoritma HmacSha256 DEĞİLSE reddedilmeli
+        principal.Should().BeNull();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.IdentityModel.Tokens.Jwt;',
+            aciklama: 'Üretilen token\'ı OKUYUP claim\'lerini incelemek (`ReadJwtToken`) ve sahte bir token İNŞA etmek (`JwtSecurityToken`) için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Security.Claims;',
+            aciklama: '`ClaimTypes`, `Claim` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Text;',
+            aciklama: '`Encoding.UTF8` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`ConfigurationBuilder`/`AddInMemoryCollection` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.IdentityModel.Tokens;',
+            aciklama: '`SymmetricSecurityKey`, `SigningCredentials`, `SecurityAlgorithms` için gerekli (sahte token üretimi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `JwtTokenService`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'PasswordServiceTests ile aynı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class JwtTokenServiceTests',
+            aciklama: '`{TestEdilenSınıf}Tests` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string SecretKey = "test-icin-en-az-32-karakter-uzunlugunda-bir-anahtar";',
+            aciklama: 'Testlerde kullanılacak sabit anahtar — HEM `CreateService()` içindeki gerçek servisin HEM de "algorithm confusion" testindeki SAHTE token\'ın AYNI anahtarı kullanması gerekiyor (saldırı senaryosunun ÖZÜ: "aynı anahtar, farklı algoritma").',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static JwtTokenService CreateService() =>',
+            aciklama: 'PasswordService\'in aksine `JwtTokenService`\'in bir bağımlılığı (IConfiguration) VAR — bu yardımcı metot, o bağımlılığı GERÇEK (mock değil) bir `ConfigurationBuilder` ile kurup HER testte tekrarı ÖNLÜYOR.',
+            neden: 'IConfiguration mock\'lanmadı çünkü `GetValue<T>` bir EXTENSION metottur (statik) — Moq gibi araçlar extension metotları DOĞRUDAN mock\'layamaz; gerçek bir `ConfigurationBuilder` kullanmak hem BASİT hem de gerçek davranışı test EDER.',
+            olmasaydi: null
+          },
+          {
+            satir: 'new(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>',
+            aciklama: 'Gerçek bir appsettings.json dosyası OLMADAN, bellekte anahtar-değer çiftlerinden bir `IConfiguration` inşa eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Dictionary başlatıcısının açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:SecretKey"] = SecretKey,',
+            aciklama: 'A-02\'nin (Bölüm 6) `builder.Configuration["Jwt:SecretKey"]` okumasıyla AYNI anahtar YOLU (`:` ile iç içe geçiş).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:Issuer"] = "WordLearnerApp",',
+            aciklama: 'Test issuer değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:Audience"] = "WordLearnerApp",',
+            aciklama: 'Test audience değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:RefreshTokenExpirationDays"] = "7"',
+            aciklama: '`GetValue<int>` metodunun bu STRING değeri `int`\'e ÇEVİREBİLDİĞİNİ de dolaylı olarak test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}).Build());',
+            aciklama: 'Dictionary\'yi ve `ConfigurationBuilder` çağrısını KAPATIP nihai `IConfiguration`\'ı inşa eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static User CreateUser() => new()',
+            aciklama: 'Testlerde tekrar eden "örnek bir kullanıcı" kurulumunu TEK yerde toplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Nesne başlatıcısının açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Id = 42,',
+            aciklama: 'Kolayca TANINABİLİR, sabit bir test Id\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Email = "test@example.com",',
+            aciklama: 'Test e-postası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'FirstName = "Ada",',
+            aciklama: 'Test adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Role = "User"',
+            aciklama: 'Test rolü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: 'Nesne başlatıcısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'Dosyada DÖRT kez geçen xUnit test özniteliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void GenerateAccessToken_ValidUser_ContainsExpectedClaims()',
+            aciklama: 'Happy-path: üretilen token DOĞRU claim\'leri taşıyor mu?',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService();',
+            aciklama: 'ARRANGE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'ARRANGE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var token = service.GenerateAccessToken(user);',
+            aciklama: 'ACT.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);',
+            aciklama: 'Üretilen token metnini TEKRAR ayrıştırır — `ValidateToken` DEĞİL, yalnızca `ReadJwtToken` (imza KONTROLÜ yapmaz, sadece içeriği okur) çünkü burada amaç DOĞRULAMA değil, İÇERİK kontrolü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "42");',
+            aciklama: 'Id claim\'inin GERÇEKTEN token\'a yazıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.Email && c.Value == "test@example.com");',
+            aciklama: 'Email claim\'ini doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'jwt.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "User");',
+            aciklama: 'Role claim\'ini doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'jwt.Claims.Should().Contain(c => c.Type == "firstName" && c.Value == "Ada");',
+            aciklama: 'Özel "firstName" claim\'ini doğrular — bu test olmadan, bir yazım hatası (ör. "firstname" küçük harf) FARK EDİLMEDEN geçebilirdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void GenerateRefreshToken_ReturnsTokenWithFutureExpiry()',
+            aciklama: 'Refresh token üretiminin doğru ÇALIŞTIĞINI test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = service.GenerateRefreshToken();',
+            aciklama: 'ACT.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Token.Should().NotBeNullOrWhiteSpace();',
+            aciklama: 'Bir token GERÇEKTEN üretildiğini doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromMinutes(1));',
+            aciklama: '`BeCloseTo` — test ÇALIŞMA ANI ile assertion ANI arasında geçen milisaniyelik farkı TOLERE eder; tam eşitlik (`Should().Be`) burada YANLIŞ olurdu çünkü iki `DateTime.UtcNow` çağrısı FARKLI anlarda ölçülür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void GetPrincipalFromExpiredToken_ValidToken_ReturnsPrincipal()',
+            aciklama: 'Happy-path: GEÇERLİ (kendi ürettiğimiz) bir token doğru şekilde OKUNUYOR mu?',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var token = service.GenerateAccessToken(CreateUser());',
+            aciklama: 'ARRANGE — gerçek bir token üretilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var principal = service.GetPrincipalFromExpiredToken(token);',
+            aciklama: 'ACT.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'principal.Should().NotBeNull();',
+            aciklama: 'Geçerli bir token için `null` DÖNMEDİĞİNİ doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'principal!.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be("42");',
+            aciklama: 'Dönen `ClaimsPrincipal`\'ın İÇİNDE doğru kimliğin olduğunu doğrular — `!` operatörleri, bir önceki satırın `NotBeNull` ile zaten bu değerin `null` OLMADIĞINI garanti ETTİĞİNİ derleyiciye bildirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void GetPrincipalFromExpiredToken_TokenSignedWithDifferentAlgorithm_ReturnsNull()',
+            aciklama: 'Bu bölümün EN ÖNEMLİ testi: Algorithm Confusion savunmasının GERÇEKTEN çalıştığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SecretKey));',
+            aciklama: 'Servisin KULLANDIĞI İLE AYNI anahtar — saldırı senaryosunun ÖZÜ bu: anahtar SIZMIŞ ya da bir şekilde ELE GEÇİRİLMİŞ ama algoritma farklı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var maliciousToken = new JwtSecurityToken(',
+            aciklama: 'Servisi HİÇ kullanmadan, TESTİN KENDİSİ manuel bir "kötü niyetli" token inşa ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'issuer: "WordLearnerApp", audience: "WordLearnerApp",',
+            aciklama: 'Geçerli issuer/audience — bu ikisi zaten `GetPrincipalFromExpiredToken`\'da DOĞRULANMIYOR (`ValidateIssuer/Audience = false`), bu yüzden testin ODAĞI değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'claims: [new Claim(ClaimTypes.NameIdentifier, "42")],',
+            aciklama: 'Basitleştirilmiş tek claim — testin ödağı KİMLİK içeriği değil, ALGORİTMA.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'expires: DateTime.UtcNow.AddMinutes(15),',
+            aciklama: 'Süresi henüz DOLMAMIŞ bir token bile olsa (`ValidateLifetime=false` olduğu için süre zaten kontrol EDİLMİYOR) algoritma kontrolü devreye girmeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha384));',
+            aciklama: 'KRİTİK satır: AYNI anahtarla ama `HmacSha256` YERİNE `HmacSha384` ile imzalanıyor — bu, gerçek servisin ASLA üretmeyeceği ama matematiksel olarak GEÇERLİ bir imzaya sahip bir token.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tokenString = new JwtSecurityTokenHandler().WriteToken(maliciousToken);',
+            aciklama: 'Sahte token\'ı standart JWT metin formatına çevirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var principal = service.GetPrincipalFromExpiredToken(tokenString);',
+            aciklama: 'ACT — GERÇEK servis, sahte token\'ı işlemeye ÇALIŞIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'principal.Should().BeNull();',
+            aciklama: 'Bu, `JwtTokenService.cs`\'teki (Bölüm 4) algoritma kontrolünün GERÇEKTEN çalıştığının somut KANITI — bu satır olmadan, `if (!jwt.Header.Alg.Equals(...))` kontrolü KOD İÇİNDE var olsa bile hiç TEST EDİLMEMİŞ, doğruluğu VARSAYILMIŞ olurdu; bu test, o güvenlik önleminin gerçekten İŞE YARADIĞINI ÇALIŞTIRARAK gösteriyor.',
+            neden: 'Güvenlik kritik bir kod yolu, yalnızca "böyle yazdım, doğru olmalı" varsayımıyla BIRAKILMAMALI — bu test SİLİNSEYDİ ya da algoritma kontrolü YANLIŞLIKLA kaldırılsaydı, bu TEK test HEMEN kırılırdı; testsiz bir güvenlik önlemi, refactor sırasında SESSİZCE kaybolabilecek bir önlemdir.',
+            olmasaydi: 'Bu test olmasaydı, ileride bir geliştirici `JwtTokenService.cs`\'i "sadeleştireyim" diyerek algoritma kontrolünü YANLIŞLIKLA silebilir, hiçbir test bunu YAKALAMAZ, güvenlik açığı PRODUCTION\'a kadar fark edilmeden gidebilirdi.'
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Application/DependencyInjection.cs — Infrastructure\'daki Desenle Simetrik',
+        dosyaYolu: 'backend/WordLearner.Application/DependencyInjection.cs',
+        nedenBuKlasor: 'Application katmanının KÖK dizini — A-02\'deki `Infrastructure/DependencyInjection.cs` ile AYNI isim/desen, yalnızca farklı katmanda; Program.cs\'in bu iki çağrıyı (`AddInfrastructureServices`/`AddApplicationServices`) YAN YANA, TUTARLI bir şekilde okuyabilmesi için.',
+        kod: `using Microsoft.Extensions.DependencyInjection;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+
+namespace WordLearner.Application;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        services.AddScoped<IPasswordService, PasswordService>();
+        services.AddScoped<ITokenService, JwtTokenService>();
+
+        return services;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.Extensions.DependencyInjection;',
+            aciklama: '`IServiceCollection`/`AddScoped` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`/`ITokenService` arayüzlerini kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: '`PasswordService`/`JwtTokenService` implementasyonlarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application;',
+            aciklama: 'Application projesinin KÖK ad alanı — A-02\'deki `WordLearner.Infrastructure` (kök) ile SİMETRİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static class DependencyInjection',
+            aciklama: 'A-02\'deki Infrastructure DependencyInjection sınıfıyla AYNI isim — iki AYRI ad alanında yaşadıkları için (WordLearner.Application vs WordLearner.Infrastructure) çakışma OLMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static IServiceCollection AddApplicationServices(this IServiceCollection services)',
+            aciklama: 'A-02\'deki `AddInfrastructureServices`\'ten TEK farkı: `IConfiguration` parametresi YOK — bu servislerin İKİSİ de (PasswordService parametre ALMAZ, JwtTokenService `IConfiguration`\'ı KENDİSİ DI\'dan alır) ek bir parametreye ihtiyaç DUYMUYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IPasswordService, PasswordService>();',
+            aciklama: 'A-02\'deki Repository kaydından (open generic) FARKLI olarak burada KAPALI (closed) bir kayıt — çünkü `IPasswordService` generic DEĞİL, TEK bir implementasyonu var.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<ITokenService, JwtTokenService>();',
+            aciklama: 'AYNI desen, `ITokenService` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return services;',
+            aciklama: 'A-02\'deki AYNI zincirleme (chaining) deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Metot gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Program.cs — Tek Satırlık Ekleme',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        nedenBuKlasor: 'A-02\'nin Bölüm 6\'sında TAM olarak öğretilen dosyaya, VAR OLAN `AddInfrastructureServices` çağrısının hemen ALTINA, tek bir yeni satır eklendi — dosyanın tamamı değil, yalnızca eklenen kısım + bağlamı gösteriliyor.',
+        kod: `using WordLearner.Application;
+// ...
+
+builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddApplicationServices();
+
+// Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application;',
+            aciklama: 'Bu bölümdeki `AddApplicationServices` extension metodunu kullanabilmek için EKLENEN yeni using — A-02\'de zaten var olan `using WordLearner.Application.Interfaces.Repositories;` satırından FARKLI, KÖK Application ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddInfrastructureServices(builder.Configuration);',
+            aciklama: 'A-02\'den DEĞİŞMEDİ — bağlam göstermek için burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddApplicationServices();',
+            aciklama: 'EKLENEN tek satır — `IPasswordService`/`ITokenService`\'i DI konteynerine kaydeder; `AddInfrastructureServices`\'in HEMEN ALTINA konuldu çünkü ikisi de "katmanın kendi servislerini toplu kaydet" görevini görüyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Algorithm Confusion Attack', tanim: 'Bir JWT\'nin imza ANAHTARI aynı kalsa bile FARKLI bir imza algoritmasıyla (ör. HS256 yerine HS384, ya da asimetrikten simetriğe) üretilip doğrulama sistemini YANILTMAYA çalışan saldırı türü.' },
+          { terim: 'ClaimsPrincipal', tanim: '.NET\'in, bir kullanıcının doğrulanmış kimlik bilgilerini (claim\'ler) taşıyan standart nesnesi.' },
+          { terim: 'Claim', tanim: 'Bir JWT\'nin içine gömülen, "tür: değer" şeklindeki tek bir kimlik bilgisi parçası (ör. NameIdentifier: 42).' },
+          { terim: 'Kriptografik RNG', tanim: 'Tahmin edilemez, güvenlik amaçlı kullanılabilecek rastgele sayı üreticisi (`RandomNumberGenerator`) — genel amaçlı `Random` sınıfından FARKLI.' },
+          { terim: 'ValidateLifetime', tanim: 'JWT doğrulamasının, token\'ın süresinin DOLUP dolmadığını kontrol edip etmeyeceğini belirleyen ayar.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ITokenService, A-02\'de kurulan JWT DOĞRULAMA middleware\'inden AYRI bir sorumluluk: token ÜRETİMİ.',
+          'GenerateAccessToken, A-02\'nin Program.cs\'iyle AYNI anahtar/issuer/audience\'ı kullanarak, o middleware tarafından doğrulanabilir bir token üretiyor.',
+          'GenerateRefreshToken, kriptografik RNG ile TAHMİN edilemez, kullanıcı bilgisi TAŞIMAYAN bir opak anahtar üretiyor.',
+          'GetPrincipalFromExpiredToken, süre kontrolünü BİLEREK kapatıyor (refresh akışının gerekliliği) ama imza + algoritma kontrolünü SIKI tutuyor — algoritma kontrolü, AYNI anahtarla farklı bir HMAC varyantıyla imzalanmış token\'ları REDDEDEN, testle DOĞRULANMIŞ bir savunma katmanı.',
+          'Application/DependencyInjection.cs, A-02\'deki Infrastructure deseniyle SİMETRİK bir `AddApplicationServices()` kurdu — Program.cs\'e tek satırlık, temiz bir ekleme.',
+          'Testler, güvenlik açısından KRİTİK bir senaryoyu (algorithm confusion) GERÇEKTEN çalıştırarak doğruluyor — yalnızca kodun VAR OLMASI değil, İŞE YARADIĞI kanıtlanıyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
