@@ -45,6 +45,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.Property(x => x.PendingOtpCodeHash).HasMaxLength(44).IsUnicode(false);
         builder.Property(x => x.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
+        builder.Property(x => x.PendingOtpCodeAttempts).HasDefaultValue(0);
 
         builder.Property(x => x.IsOnboardingCompleted).HasDefaultValue(false);
         builder.Property(x => x.IsActive).HasDefaultValue(true);

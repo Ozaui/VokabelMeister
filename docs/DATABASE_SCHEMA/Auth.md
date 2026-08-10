@@ -30,6 +30,7 @@ CREATE TABLE Users (
     PendingOtpCodeHash VARCHAR(44) NULL,        -- SHA-256(otp)→Base64, sabit 44 karakter
     PendingOtpCodeExpiresAt DATETIME2 NULL,
     PendingOtpCodePurpose NVARCHAR(20) NULL,    -- EmailVerification|LoginOtp|PasswordReset|AccountDeletion
+    PendingOtpCodeAttempts INT NOT NULL DEFAULT 0,  -- 3 yanlış denemede IOtpService kodu temizler (SECURITY.md §1) — A-03 OtpService adımında eklendi
     -- Hesap durumu
     IsOnboardingCompleted BIT NOT NULL DEFAULT 0,
     IsActive BIT NOT NULL DEFAULT 1,

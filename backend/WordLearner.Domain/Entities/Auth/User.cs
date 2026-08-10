@@ -32,6 +32,7 @@ public class User
     public string? PendingOtpCodeHash { get; set; }
     public DateTime? PendingOtpCodeExpiresAt { get; set; }
     public OtpPurpose? PendingOtpCodePurpose { get; set; }
+    public int PendingOtpCodeAttempts { get; set; }
 
     public bool IsOnboardingCompleted { get; set; }
     public bool IsActive { get; set; } = true;

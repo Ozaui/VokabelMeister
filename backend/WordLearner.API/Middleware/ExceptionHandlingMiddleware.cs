@@ -1,4 +1,5 @@
 using WordLearner.Application.Common;
+using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs;
 using WordLearner.Domain.Exceptions;
 
@@ -25,6 +26,11 @@ public class ExceptionHandlingMiddleware
         {
             _logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);
             await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);
+        }
+        catch (AppException ex)
+        {
+            _logger.LogWarning(ex, "Application exception: {Code}. Path: {Path}", ex.Code, context.Request.Path);
+            await WriteErrorAsync(context, (int)ex.StatusCode, ex.Code);
         }
         catch (Exception ex)
         {

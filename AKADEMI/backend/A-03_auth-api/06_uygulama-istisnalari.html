@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AppException: İlk Gerçek İş İstisnası</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'uygulama-istisnalari',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '05_otp-servisi.html',
+    sonrakiBolum: '07_giris-tamamlama-servisi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'AppException: SECURITY.md §1.4\'ün İlk Kod Karşılığı',
+        altBaslik: '"Code + HTTP durumu taşı, mesajı sabitleme" kuralının temel sınıfı — bir sonraki bölümdeki LoginCompletionService, hesabı anonimleştirilmiş bir kullanıcıyı reddetmek için buna ihtiyaç duyuyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden AppException Şimdi Yazılıyor, Daha Önce Değil?',
+        aciklama: 'A-02\'de yazılan `EntityNotFoundException` (Bölüm 1, A-02) bilinçli olarak `AppException`\'dan TÜREMİYORDU — o zaman `AppException` henüz YAZILMAMIŞTI, `EntityNotFoundException` kendi başına `Code` taşıyan BAĞIMSIZ bir sınıftı. Şimdi `LoginCompletionService`\'in (Bölüm 7) "hesap kalıcı silinmiş" durumunu bir İŞ hatası olarak sinyallemesi gerekiyor — bu, projenin İLK gerçek `AppException` alt sınıfı ihtiyacı.',
+        neden: 'CLAUDE.md §3\'ün YAGNI ilkesi ("spekülatif ortak tip yazılmaz") gereği `AppException` daha ÖNCE, henüz onu kullanan somut bir kod YOKKEN yazılmadı — SECURITY.md §1.4\'te TASARIMI belgelenmiş olsa bile, "belgelenmiş" ile "gerçekten kod olarak var" AYRI şeyler; ilk gerçek TÜKETİCİSİ (`AccountAnonymizedException`) ortaya çıkınca yazıldı.',
+        olmasaydi: 'AppException önceden, hiçbir somut kullanım OLMADAN yazılsaydı, tasarımı YANLIŞ tahmin edilmiş olabilirdi (ör. `HttpStatusCode` yerine `int`, ya da `Code` yerine bir `enum`) — ilk gerçek kullanım ortaya çıkana kadar bu TASARIM kararları SPEKÜLATİF kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AppException.cs — Code + HTTP Durumu, Mesaj Yok',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/AppException.cs',
+        nedenBuKlasor: '`Application/Common/` — `ErrorMessages.cs`/`ApiErrorResponse.cs` (A-02 Bölüm 4) ile AYNI klasör, altında YENİ bir `Exceptions/` alt klasörü: Domain\'deki `EntityNotFoundException`\'ın (A-02 Bölüm 1) aksine bu sınıf Application katmanında yaşıyor çünkü `HttpStatusCode` gibi bir HTTP/web kavramı taşıyor — Domain katmanı HTTP\'den HABERSİZ olmalı.',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+// SECURITY.md §1.4: yalnızca Code + HTTP durumu taşır, istemciye giden metni sabitlemez —
+// ExceptionHandlingMiddleware Code'u ErrorMessages sözlüğünden Accept-Language'a göre çözer.
+public abstract class AppException : Exception
+{
+    public string Code { get; }
+    public HttpStatusCode StatusCode { get; }
+
+    protected AppException(string code, HttpStatusCode statusCode, string message) : base(message)
+    {
+        Code = code;
+        StatusCode = statusCode;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` enum\'u (ör. `HttpStatusCode.Forbidden`) için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — bu bölümde yazılan TÜM iş hataları burada toplanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// SECURITY.md §1.4: yalnızca Code + HTTP durumu taşır, istemciye giden metni sabitlemez —',
+            aciklama: 'Sınıf üstü yorumun 1. satırı — sınıfın TASARIM ilkesini özetler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ExceptionHandlingMiddleware Code\'u ErrorMessages sözlüğünden Accept-Language\'a göre çözer.',
+            aciklama: 'Yorumun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public abstract class AppException : Exception',
+            aciklama: '`abstract` — bu sınıf DOĞRUDAN fırlatılmaz (`throw new AppException(...)` YAZILAMAZ), yalnızca `AccountAnonymizedException` gibi SOMUT alt sınıflar üzerinden kullanılır; her alt sınıf kendi `Code`/`StatusCode`/mesajını constructor\'ında SABİTLER.',
+            neden: 'Somut olsaydı, bir geliştirici her fırlatma noktasında `Code`/`StatusCode` DEĞERLERİNİ elle YAZABİLİRDİ (ör. `throw new AppException("INVALID_CREDENTIALS", HttpStatusCode.Unauthorized, "...")`) — bu, aynı hatanın FARKLI yerlerde farklı `Code` string\'leriyle fırlatılma riskini DOĞURURDU; `abstract` + isimlendirilmiş alt sınıflar bu riski ORTADAN kaldırır (Code, sınıf İSMİYLE birlikte TEK yerde tanımlı).',
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Code { get; }',
+            aciklama: '`ENTITY_NOT_FOUND`\'daki `Code` property\'siyle AYNI ilke (A-02 Bölüm 1) — `{ get; }` (setter YOK), yalnızca constructor\'da atanır, sonradan DEĞİŞTİRİLEMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public HttpStatusCode StatusCode { get; }',
+            aciklama: '`EntityNotFoundException`\'ın SAHİP OLMADIĞI yeni bir alan — o sınıf her zaman 404 döndürdüğü için `ExceptionHandlingMiddleware` HTTP kodunu SABİT yazmıştı; `AppException`\'ın çok farklı HTTP kodları (401/403/409...) döndürecek birçok alt sınıfı olacağı için bu bilgi ARTIK exception\'ın kendisinde taşınıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected AppException(string code, HttpStatusCode statusCode, string message) : base(message)',
+            aciklama: '`protected` — yalnızca alt sınıflar bu constructor\'ı ÇAĞIRABİLİR, dışarıdan `new AppException(...)` YAPILAMAZ (zaten `abstract` bunu engelliyor, `protected` bunu PEKİŞTİRİYOR); `: base(message)` — .NET\'in kendi `Exception.Message`\'ına yazılan bu metin, SECURITY.md §1.4\'ün kuralı gereği YALNIZCA log/geliştirici içindir, İNGİLİZCE olmalı ve İSTEMCİYE ASLA gönderilmez — istemciye giden metin her zaman `Code` üzerinden `ErrorMessages.Resolve` ile üretilir (bkz. bu bölümün ilerisi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf/constructor gövdelerinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Code = code;',
+            aciklama: 'Parametre olarak gelen `Code` değeri property\'e atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'StatusCode = statusCode;',
+            aciklama: 'Parametre olarak gelen `StatusCode` değeri property\'e atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf/constructor gövdelerinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AccountAnonymizedException.cs — İlk Somut AppException',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/AccountAnonymizedException.cs',
+        nedenBuKlasor: '`AppException` ile AYNI klasör — her yeni iş hatası (ileride `InvalidCredentialsException`, `TokenReplayException` gibi 13 Auth Handler\'ın ihtiyaç duyacakları) buraya eklenecek.',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class AccountAnonymizedException : AppException
+{
+    public AccountAnonymizedException()
+        : base("ACCOUNT_ANONYMIZED", HttpStatusCode.Forbidden, "Account has been permanently anonymized.")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AppException` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class AccountAnonymizedException : AppException',
+            aciklama: 'SECURITY.md §1: "IsAnonymized → 403 (kalıcı silindi)" kuralının kod karşılığı — Bölüm 7\'deki `LoginCompletionService` bunu, kalıcı olarak anonimleştirilmiş bir hesapla giriş tamamlanmaya çalışıldığında fırlatacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf/constructor gövdelerinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public AccountAnonymizedException()',
+            aciklama: 'Parametresiz constructor — bu hatanın hangi kullanıcıda OLUŞTUĞU zaten çağrı yerinde (LoginCompletionService içinde, `user` parametresiyle) BİLİNİYOR, exception\'ın kendisinin dinamik bir veri TAŞIMASINA gerek yok (EntityNotFoundException\'ın `Id` gibi dinamik bir mesaj TAŞIMASININ aksine, A-02 Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("ACCOUNT_ANONYMIZED", HttpStatusCode.Forbidden, "Account has been permanently anonymized.")',
+            aciklama: 'Üç sabit değer: istemciye giden `Code`, HTTP durumu (`403 Forbidden`), ve yalnızca LOG\'a giden İngilizce mesaj.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf/constructor gövdelerinin kapanışı (constructor gövdesi BOŞ — tüm iş `base(...)` çağrısında yapılıyor).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ExceptionHandlingMiddleware.cs — Yeni Bir catch (AppException) Kolu',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/ExceptionHandlingMiddleware.cs',
+        neden: 'A-02 Bölüm 5\'te TAM öğretilmiş bu dosyanın `InvokeAsync` metoduna, `AppException` (bu bölüm) alt sınıflarını genel bir şekilde 403/401/409... gibi doğru HTTP koduna çeviren YENİ bir catch kolu eklendi — STANDART.md §3.1 gereği dosyanın TAMAMI gösteriliyor, turuncu (context) satırlar A-02\'den değişmeden kalanlar, yeşil olanlar bu bölümde YENİ.',
+        diff: ` using WordLearner.Application.Common;
++using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Domain.Exceptions;
+
+ namespace WordLearner.API.Middleware;
+
+ public class ExceptionHandlingMiddleware
+ {
+     private readonly RequestDelegate _next;
+     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+     public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+     {
+         _next = next;
+         _logger = logger;
+     }
+
+     public async Task InvokeAsync(HttpContext context)
+     {
+         try
+         {
+             await _next(context);
+         }
+         catch (EntityNotFoundException ex)
+         {
+             _logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);
+             await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);
+         }
++        catch (AppException ex)
++        {
++            _logger.LogWarning(ex, "Application exception: {Code}. Path: {Path}", ex.Code, context.Request.Path);
++            await WriteErrorAsync(context, (int)ex.StatusCode, ex.Code);
++        }
+         catch (Exception ex)
+         {
+             _logger.LogError(ex, "Unhandled exception. Path: {Path}", context.Request.Path);
+             await WriteErrorAsync(context, StatusCodes.Status500InternalServerError, "INTERNAL_SERVER_ERROR");
+         }
+     }
+
+     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code)
+     {
+         var message = ErrorMessages.Resolve(code, ExtractLanguage(context));
+
+         context.Response.ContentType = "application/json";
+         context.Response.StatusCode = statusCode;
+         await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(code, message)));
+     }
+
+     // "de-DE, tr;q=0.9" gibi bir header'dan yalnızca birincil dil alt etiketini (ilk "de") çıkarır.
+     private static string? ExtractLanguage(HttpContext context)
+     {
+         var header = context.Request.Headers.AcceptLanguage.ToString();
+         if (string.IsNullOrWhiteSpace(header))
+             return null;
+
+         var primary = header.Split(',')[0].Split(';')[0].Trim();
+         return primary.Split('-')[0].ToLowerInvariant();
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Bu bölümde yazılan `AppException` sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch (AppException ex)',
+            aciklama: 'YENİ eklenen kol — `EntityNotFoundException`\'dan SONRA, genel `catch (Exception ex)`\'ten ÖNCE konumlanmalı: C#\'ta catch kolları YUKARIDAN AŞAĞI sırayla denenir, en ÖZEL (`EntityNotFoundException`) en üstte, en GENEL (`Exception`) en altta olmalı.',
+            neden: 'Bu kol `catch (Exception ex)`\'ten SONRAYA konsaydı, DERLEME HATASI alınırdı (C#, asla erişilemeyecek bir catch kolunu YASAKLAR) — `EntityNotFoundException`\'dan ÖNCEYE konsaydı ise DERLENİRDİ ama YANLIŞ olurdu değil (ikisi kardeş sınıflar DEĞİL, EntityNotFoundException AppException\'dan TÜREMİYOR) bu spesifik durumda fark ETMEZDİ; yine de "özelden genele" sıralaması bir OKUNABİLİRLİK/gelecek-güvenliği kuralı olarak korunuyor.',
+            olmasaydi: 'Bu kol hiç eklenmeseydi, `AccountAnonymizedException` (ya da ileride yazılacak HERHANGİ bir AppException alt sınıfı) `catch (Exception ex)`\'e DÜŞERDİ — istemciye HER ZAMAN 500 + "beklenmeyen bir hata oluştu" dönerdi, gerçek 403 + "hesap kalıcı silinmiş" mesajı yerine.'
+          },
+          {
+            satir: '_logger.LogWarning(ex, "Application exception: {Code}. Path: {Path}", ex.Code, context.Request.Path);',
+            aciklama: '`LogError` DEĞİL `LogWarning` — bir `AppException`, `EntityNotFoundException` gibi BEKLENEN bir iş durumu (kullanıcı hatası, geçersiz istek), sistemin kendi HATASI değil; log seviyesi bu ayrımı YANSITIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await WriteErrorAsync(context, (int)ex.StatusCode, ex.Code);',
+            aciklama: '`EntityNotFoundException` kolundaki `StatusCodes.Status404NotFound` (SABİT) değerinin AKSİNE, burada HTTP durumu `ex.StatusCode`\'DAN (exception\'ın KENDİSİNDEN) okunuyor — çünkü `AppException` alt sınıfları FARKLI HTTP kodları (403, ileride 401/409...) döndürecek, middleware\'in HER biri için AYRI bir catch kolu YAZMASINA gerek YOK.',
+            neden: 'Middleware\'in kendisi bu satırdan SONRA hiç değişmeden KALACAK — ileride `InvalidCredentialsException` (401) ya da `TokenReplayException` (401) gibi onlarca YENİ AppException alt sınıfı eklenecek ama middleware\'e HİÇBİR yeni catch kolu eklemek GEREKMEYECEK, çünkü hepsi TEK bu genel kolda yakalanıyor.',
+            olmasaydi: 'Her yeni iş hatası için middleware\'e AYRI bir `catch (XyzException ex)` kolu eklemek gerekseydi, bu dosya A-03/A-18 gibi görevler ilerledikçe ONLARCA neredeyse BİREBİR AYNI catch bloğuyla ŞİŞERDİ — genel `catch (AppException ex)` bu tekrarı TAMAMEN ortadan kaldırıyor.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ErrorMessages.cs — Yeni Code için tr/de Metinleri',
+        dosyaYolu: 'backend/WordLearner.Application/Common/ErrorMessages.cs',
+        neden: 'A-02 Bölüm 4\'te TAM öğretilmiş bu sözlüğe, `AccountAnonymizedException`\'ın `Code`\'una (`ACCOUNT_ANONYMIZED`) karşılık gelen tr/de metinleri eklendi — `Resolve` metodu DEĞİŞMEDİ (turuncu context), yalnızca sözlüğe iki yeni anahtar-değer çifti eklendi (yeşil).',
+        diff: ` namespace WordLearner.Application.Common;
+
+ // Yeni dil eklemek yalnızca bu sözlüğe yeni bir üst-seviye anahtar (ör. "en") eklemekle olur —
+ // var olan Code'lara veya exception sınıflarına dokunulmaz (CLAUDE.md §1).
+ public static class ErrorMessages
+ {
+     private const string DefaultLanguage = "tr";
+
+     private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
+     {
+         [DefaultLanguage] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
+             ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
++            ["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",
+         },
+         ["de"] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
+             ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
++            ["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",
+         },
+     };
+
+     public static string Resolve(string code, string? language)
+     {
+         var resolvedLanguage = language is not null && Messages.ContainsKey(language)
+             ? language
+             : DefaultLanguage;
+
+         return Messages[resolvedLanguage].TryGetValue(code, out var message) ? message : code;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: '["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",',
+            aciklama: '`AccountAnonymizedException.Code` (`"ACCOUNT_ANONYMIZED"`) ile BİREBİR aynı string — bu iki değer arasında derleme zamanında bir BAĞ yok (biri C# sabiti, diğeri sözlük anahtarı), bu yüzden yazım hatası riski `Resolve`\'un `TryGetValue` başarısız olursa `Code`\'un KENDİSİNİ (İngilizce, ör. "ACCOUNT_ANONYMIZED") mesaj olarak DÖNDÜRMESİYLE (A-02 Bölüm 4) SESSİZCE tolere ediliyor.',
+            neden: 'CLAUDE.md §1\'in "yeni dil eklemek yalnızca sözlüğe sütun eklemekle olur" kuralı, YENİ bir Code eklemek için de AYNI şekilde işliyor: exception sınıfına DOKUNMADAN, yalnızca bu sözlüğe iki satır eklemek YETERLİ oldu.',
+            olmasaydi: 'Bu iki satır eklenmeseydi, `AccountAnonymizedException` fırlatıldığında istemci `message` alanında Türkçe/Almanca bir cümle yerine DOĞRUDAN `"ACCOUNT_ANONYMIZED"` string\'ini GÖRÜRDÜ (Resolve\'un "bulunamazsa Code\'u döndür" davranışı, A-02 Bölüm 4) — işlevsel olarak ÇALIŞIRDI ama kullanıcı deneyimi bakımından kötü olurdu.'
+          },
+          {
+            satir: '["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",',
+            aciklama: 'Almanca karşılığı — tr satırıyla AYNI Code, farklı dil.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'abstract class', tanim: 'Doğrudan örneği OLUŞTURULAMAYAN, yalnızca alt sınıflar üzerinden kullanılabilen sınıf — ortak alanları/davranışı TANIMLAR ama kendisi asla `new` ile çağrılmaz.' },
+          { terim: 'Catch Kolu Sırası', tanim: 'C#\'ta try/catch bloklarında birden fazla catch varsa, en ÖZEL (spesifik) tipten en GENEL tipe doğru sıralanmalı — aksi durum derleme hatasına ya da yanlışlıkla erken yakalamaya yol açar.' },
+          { terim: 'HttpStatusCode', tanim: '.NET\'in `System.Net` ad alanındaki, HTTP durum kodlarını (200, 403, 404...) isimlendirilmiş sabitler olarak sunan enum — sihirli sayı (403) yerine `HttpStatusCode.Forbidden` yazmayı sağlar.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'AppException, SECURITY.md §1.4\'ün "Code + HTTP durumu taşı, mesajı sabitleme" kuralının TEMEL sınıfı — ilk gerçek tüketicisi (AccountAnonymizedException) ortaya çıkınca, spekülatif değil, GEREKTİĞİ anda yazıldı.',
+          'AccountAnonymizedException, SECURITY.md §1\'in "IsAnonymized → 403" kuralının somut kod karşılığı; Bölüm 7\'deki LoginCompletionService tarafından fırlatılacak.',
+          'ExceptionHandlingMiddleware\'e TEK bir genel catch (AppException) kolu eklemek, ileride onlarca YENİ iş hatası için middleware\'in HİÇ değişmemesini sağlıyor.',
+          'ErrorMessages sözlüğüne yeni bir Code eklemek, exception sınıflarına DOKUNMADAN yalnızca iki satır (tr/de) eklemekle oluyor — CLAUDE.md §1\'in dil genişletme kuralıyla AYNI desen.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

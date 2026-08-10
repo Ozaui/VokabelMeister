@@ -12,11 +12,13 @@ public static class ErrorMessages
         {
             ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
             ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
+            ["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",
         },
         ["de"] = new()
         {
             ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
             ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
+            ["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",
         },
     };
 

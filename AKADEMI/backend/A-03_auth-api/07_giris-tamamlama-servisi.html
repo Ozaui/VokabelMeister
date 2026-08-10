@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — ILoginCompletionService: Dört Girişin Ortak Son Adımı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'giris-tamamlama-servisi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '06_uygulama-istisnalari.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'ILoginCompletionService: OTP/Google/Apple/QR\'ın Ortak Son Adımı',
+        altBaslik: 'Dört farklı giriş yöntemi, kimliği FARKLI şekillerde kanıtlıyor (şifre+OTP, Google token, Apple token, QR onayı) — ama hepsi AYNI son adımda buluşuyor: hesap durumu kontrolü + access/refresh token üretimi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden "Login Tamamlama" Ayrı Bir Servis? Her Giriş Yöntemi Kendi Token\'ını Üretemez mi?',
+        aciklama: 'SECURITY.md §1.3: "QR ile giriş... Onaylanınca normal login\'deki AYNI ITokenService/RefreshTokens akışı çalışır." Bu cümledeki "AYNI akış", yalnızca token ÜRETİMİNİ değil, hesap durumu KONTROLÜNÜ de kapsıyor: bir kullanıcı ister şifre+OTP ile, ister Google ile, ister QR ile giriş yapsın — hesabı kalıcı SİLİNMİŞSE (IsAnonymized) reddedilmeli, grace period içinde SİLİNMİŞSE otomatik kurtarılmalı. Bu kararı DÖRT ayrı Handler\'a (Login, Google, Apple, QR-Confirm) kopyalamak yerine `ILoginCompletionService` TEK bir yerde topluyor.',
+        neden: 'Hesap durumu kontrolü bir GÜVENLİK kararı — `IOtpService`\'teki "3 yanlış deneme" kuralı gibi (Bölüm 5), ne kadar AZ yerde tekrarlanırsa o kadar AZ yerde YANLIŞ/eksik yazılma riski taşır. Örneğin QR-Confirm Handler\'ı bu kontrolü YAZMAYI unutursa, kalıcı silinmiş bir hesap QR ile arka kapıdan giriş YAPABİLİRDİ.',
+        olmasaydi: 'Ayrı bir servis olmasaydı, "IsAnonymized kontrolü" ve "grace period kurtarma" mantığı dört Handler\'a AYRI AYRI yazılırdı — ileride biri (SECURITY.md güncellenip) değişirse (ör. grace period 30 günden 60 güne çıkarılırsa), DÖRT dosyanın DÖRDÜ de bulunup güncellenmesi gerekirdi; birinin unutulması kolay, sessiz bir güvenlik AÇIĞI doğururdu.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden IsAnonymized Kontrolü, SECURITY.md\'deki Sıralamanın AKSİNE, Grace-Period Kurtarmadan ÖNCE Yapılıyor?',
+        aciklama: 'SECURITY.md §1\'in ADIM 2 akışı, maddeleri "Grace period kurtar" → "IsAnonymized → 403" sırasıyla LİSTELİYOR. Ama bu SUNUM sırası, ZORUNLU YÜRÜTME sırası değil: `AccountCleanupBackgroundService` (A-20, henüz yazılmadı) bir hesabı anonimleştirdiğinde `IsDeleted` alanını `true` bırakıyor (zaten silinmiş bir hesabı anonimleştiriyor) — yani anonimleştirilmiş bir hesapta HEM `IsAnonymized=true` HEM `IsDeleted=true` birlikte bulunur. `IsDeleted` kontrolü ÖNCE yapılsaydı, kalıcı silinmiş (PII\'si TEMİZLENMİŞ) bir hesap "grace period içindeyim" sanılıp YANLIŞLIKLA geri aktifleştirilirdi.',
+        neden: 'Bu, dokümandaki SUNUM sırasını harfiyen İZLEMEK yerine, iki alanın (IsAnonymized/IsDeleted) BİRLİKTE nasıl davrandığını (state machine\'i) ANLAYIP doğru güvenlik sonucuna varan bir karar — kod yorumunda (`LoginCompletionService.cs`, aşağıda) bu sapmanın NEDENİ açıkça belirtiliyor ki gelecekteki bir okuyucu "SECURITY.md\'deki sırayla UYUŞMUYOR, hata mı?" diye SORMASIN.',
+        olmasaydi: 'IsDeleted kontrolü IsAnonymized\'dan ÖNCE yapılsaydı: PII\'si SİLİNMİŞ (DisplayName="Silindi", Email="deleted_...@deleted.invalid") bir hesap `IsDeleted=false` yapılıp "aktif" duruma DÖNDÜRÜLÜRDÜ — kullanıcı GERÇEKTE var olmayan, yarı-silinmiş bir hesapla sisteme GİREBİLİRDİ; bu hem GDPR/KVKK açısından hem de veri BÜTÜNLÜĞÜ açısından ciddi bir hata olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ILoginCompletionService.cs — Sözleşme ve Sonuç Kaydı',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/ILoginCompletionService.cs',
+        nedenBuKlasor: '`IOtpService` (Bölüm 5) ile AYNI klasör — `ITokenService.cs`\'teki (Bölüm 4) `RefreshTokenResult` record\'u gibi, küçük bir DÖNÜŞ tipi (`LoginCompletionResult`) arayüzle AYNI dosyada; bu bir `enum` DEĞİL (Bölüm 5\'teki `OtpVerificationResult`\'ın aksine ayrı dosyaya ÇIKARILMADI), çünkü kural yalnızca enum\'lar için: bir arayüzün kendi dönüş `record`\'unu YANINDA taşıması `ITokenService`\'te ZATEN kurulmuş bir emsal.',
+        kod: `using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+// RefreshTokenEntity henüz PERSIST EDİLMEMİŞ — çağıran Handler kendi repository'siyle kaydeder
+// (OtpService ile aynı desen: servis User'ı mutasyona uğratır, DB yazımı Handler'ın sorumluluğu).
+public record LoginCompletionResult(
+    string AccessToken,
+    string RefreshTokenValue,
+    RefreshToken RefreshTokenEntity,
+    bool AccountWasRecovered);
+
+// OTP/Google/Apple/QR girişlerinin ortak son adımı: hesap durumu kontrolü (anonimleştirilmiş →
+// reddet, grace period içindeyse kurtar) + access/refresh token üretimi.
+public interface ILoginCompletionService
+{
+    LoginCompletionResult Complete(User user, string? deviceInfo, string? ipAddress);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`/`RefreshToken` sınıflarını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `IOtpService` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// RefreshTokenEntity henüz PERSIST EDİLMEMİŞ — çağıran Handler kendi repository\'siyle kaydeder',
+            aciklama: '`LoginCompletionResult` üstü yorumun 1. satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// (OtpService ile aynı desen: servis User\'ı mutasyona uğratır, DB yazımı Handler\'ın sorumluluğu).',
+            aciklama: 'Yorumun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginCompletionResult(',
+            aciklama: '`RefreshTokenResult(string Token, DateTime ExpiresAt)` (Bölüm 4) ile AYNI desen: değişmez (immutable), yalnızca veri taşıyan bir `record`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string AccessToken,',
+            aciklama: 'İstemciye DÖNECEK, imzalı JWT — `ITokenService.GenerateAccessToken` (Bölüm 4) çıktısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string RefreshTokenValue,',
+            aciklama: 'İstemciye DÖNECEK HAM (hash\'lenmemiş) refresh token — `RefreshTokenEntity.TokenHash` alanıyla İSİM ÇAKIŞMASINI önlemek için `Value` soneki eklendi (aşağıdaki satıra bkz.).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RefreshToken RefreshTokenEntity,',
+            aciklama: 'DB\'ye YAZILACAK (ama bu serviste henüz YAZILMAYAN) entity — `Domain.Entities.Auth.RefreshToken` (Bölüm 1); property adı `RefreshTokenEntity` (yalnızca `RefreshToken` DEĞİL) çünkü tip adı (`RefreshToken`) ile property adı AYNI olsaydı okunabilirlik AZALIRDI (C#\'ta derlenirdi ama isim çakışması KAFA KARIŞTIRICI olurdu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'bool AccountWasRecovered);',
+            aciklama: 'API_ENDPOINTS.md §3\'teki `POST /auth/login/verify-otp` yanıtındaki `accountWasRecovered` alanının BİREBİR kaynağı — grace period içinde silinmiş bir hesap bu girişte kurtarıldıysa `true`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// OTP/Google/Apple/QR girişlerinin ortak son adımı: hesap durumu kontrolü (anonimleştirilmiş →',
+            aciklama: '`ILoginCompletionService` üstü yorumun 1. satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// reddet, grace period içindeyse kurtar) + access/refresh token üretimi.',
+            aciklama: 'Yorumun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ILoginCompletionService',
+            aciklama: '`IOtpService` (Bölüm 5) ile AYNI desen: tek metotlu bir sözleşme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Arayüz gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LoginCompletionResult Complete(User user, string? deviceInfo, string? ipAddress);',
+            aciklama: '`user` — ÇAĞIRAN Handler tarafından ZATEN yüklenmiş (repository\'den okunmuş) kullanıcı; `deviceInfo`/`ipAddress` — `RefreshToken.DeviceInfo`/`IpAddress` (Bölüm 1) alanlarına yazılacak, HTTP isteğinden (User-Agent header, `HttpContext.Connection.RemoteIpAddress`) çıkarılan bilgiler; ikisi de `nullable` çünkü QR akışında (Bölüm 3.1, SECURITY.md) bu bilgiler HER zaman garanti değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Arayüz gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionService.cs — Hesap Durumu Kontrolü',
+        dosyaYolu: 'backend/WordLearner.Application/Services/LoginCompletionService.cs',
+        nedenBuKlasor: '`OtpService`/`JwtTokenService`/`PasswordService` (Bölüm 3-5) ile AYNI klasör — `Application/Services/`.',
+        kod: `using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Services;
+
+public class LoginCompletionService : ILoginCompletionService
+{
+    private readonly ITokenService _tokenService;
+    private readonly IPasswordService _passwordService;
+
+    public LoginCompletionService(ITokenService tokenService, IPasswordService passwordService)
+    {
+        _tokenService = tokenService;
+        _passwordService = passwordService;
+    }
+
+    public LoginCompletionResult Complete(User user, string? deviceInfo, string? ipAddress)
+    {
+        // IsAnonymized kontrolü grace-period kurtarmadan ÖNCE yapılır: aksi halde kalıcı silinmiş
+        // (PII temizlenmiş) bir hesap da IsDeleted=true olduğu için yanlışlıkla geri aktifleştirilir.
+        if (user.IsAnonymized)
+            throw new AccountAnonymizedException();
+
+        var accountWasRecovered = user.IsDeleted;
+        if (accountWasRecovered)
+        {
+            user.IsDeleted = false;
+            user.DeletedAt = null;
+            user.ScheduledDeletionAt = null;
+            user.IsActive = true;
+        }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        user.LastLoginIP = ipAddress;
+        user.LoginCount++;`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Bölüm 6\'da yazılan `AccountAnonymizedException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`ITokenService`/`IPasswordService`/`ILoginCompletionService` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`/`RefreshToken` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `OtpService`/`JwtTokenService`/`PasswordService` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LoginCompletionService : ILoginCompletionService',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf/metot/blok gövdelerinin açılışları (bu dosyada birden fazla iç içe blok AYNI karakterle açılır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ITokenService _tokenService;',
+            aciklama: 'Access/refresh token ÜRETİMİ için (Bölüm 4).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Refresh token\'ı DB\'ye yazmadan ÖNCE hash\'lemek için (`HashToken`, Bölüm 3) — `RefreshToken.TokenHash` alanına ham DEĞİL, hash yazılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginCompletionService(ITokenService tokenService, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık, constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_tokenService = tokenService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginCompletionResult Complete(User user, string? deviceInfo, string? ipAddress)',
+            aciklama: '`ILoginCompletionService.Complete` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// IsAnonymized kontrolü grace-period kurtarmadan ÖNCE yapılır: aksi halde kalıcı silinmiş',
+            aciklama: 'Metot içi yorumun 1. satırı — yukarıdaki kavram slaytında AÇIKLANAN sıralama kararının kod içindeki KISA hatırlatıcısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// (PII temizlenmiş) bir hesap da IsDeleted=true olduğu için yanlışlıkla geri aktifleştirilir.',
+            aciklama: 'Yorumun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user.IsAnonymized)',
+            aciklama: 'SECURITY.md §1: "IsAnonymized → 403 (kalıcı silindi)" — bu METOTUN İLK kontrolü, yukarıdaki kavram slaytında açıklanan SIRALAMA kararı gereği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new AccountAnonymizedException();',
+            aciklama: 'Bölüm 6\'da yazılan istisna — `ExceptionHandlingMiddleware`\'in genel `catch (AppException ex)` kolu (Bölüm 6) bunu YAKALAYIP otomatik 403 + `ACCOUNT_ANONYMIZED` koduna çevirecek, bu servis HTTP\'den TAMAMEN habersiz kalıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var accountWasRecovered = user.IsDeleted;',
+            aciklama: 'Bu SATIRA ulaşıldıysa `IsAnonymized=false` GARANTİ (yukarıdaki `if` erken çıkış yapmadı) — bu yüzden `IsDeleted=true` olması TEK bir anlama gelebilir: grace period İÇİNDE, henüz anonimleştirilmemiş bir silme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (accountWasRecovered)',
+            aciklama: 'Yalnızca GERÇEKTEN silinmiş bir hesap için kurtarma ADIMLARI çalışır — normal (hiç silinmemiş) bir kullanıcı için bu blok ATLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: '`if` bloğunun açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsDeleted = false;',
+            aciklama: 'SECURITY.md §9\'daki soft-delete alanlarının TERSİNE çevrilmesi — "hesap silme" (DELETE /users/me) hangi alanları SET ediyorsa, kurtarma onları GERİ ALIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.DeletedAt = null;',
+            aciklama: 'Silinme zaman damgası temizlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.ScheduledDeletionAt = null;',
+            aciklama: '`AccountCleanupBackgroundService`\'in (A-20, henüz yazılmadı) "30 gün doldu mu?" kontrolü bu alana BAKACAK — `null` olduğunda o hesabı ARTIK anonimleştirme ADAYI olarak GÖRMEYECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsActive = true;',
+            aciklama: 'Silme sırasında (bu servisin kapsamı DIŞINDA, ileride yazılacak `DELETE /users/me` Handler\'ında) muhtemelen `false` yapılmış olan bu alan GERİ ÇEVRİLİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: '`if` bloğunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LastLoginAt = DateTime.UtcNow;',
+            aciklama: 'Kurtarma bloğunun DIŞINDA — HER başarılı girişte (kurtarma olsun ya da olmasın) çalışan üç satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LastLoginIP = ipAddress;',
+            aciklama: 'Metoda parametre olarak gelen IP, olduğu gibi kullanıcıya yazılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LoginCount++;',
+            aciklama: 'Auth.md şemasındaki `LoginCount` sütununun (istatistik amaçlı) artırıldığı TEK yer.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionService.cs — Token Üretimi',
+        dosyaYolu: 'backend/WordLearner.Application/Services/LoginCompletionService.cs',
+        nedenBuKlasor: 'Aynı `Complete` metodunun devamı ve kapanışı.',
+        kod: `        var accessToken = _tokenService.GenerateAccessToken(user);
+        var refresh = _tokenService.GenerateRefreshToken();
+        var refreshTokenEntity = new RefreshToken
+        {
+            UserId = user.Id,
+            TokenHash = _passwordService.HashToken(refresh.Token),
+            TokenFamily = Guid.NewGuid().ToString(),
+            ExpiresAt = refresh.ExpiresAt,
+            DeviceInfo = deviceInfo,
+            IpAddress = ipAddress,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        return new LoginCompletionResult(accessToken, refresh.Token, refreshTokenEntity, accountWasRecovered);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'var accessToken = _tokenService.GenerateAccessToken(user);',
+            aciklama: '`user`\'ın bu noktada GÜNCEL (kurtarılmış ise kurtarılmış hâliyle) olduğuna dikkat — JWT claim\'leri (Bölüm 4) bu güncel `user`\'dan üretiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var refresh = _tokenService.GenerateRefreshToken();',
+            aciklama: '`RefreshTokenResult(string Token, DateTime ExpiresAt)` (Bölüm 4) döner — `refresh.Token` HAM değer, DB\'ye bu hâliyle YAZILMAYACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var refreshTokenEntity = new RefreshToken',
+            aciklama: 'Bölüm 1\'de tanımlanan entity — burada `new` ile OLUŞTURULUYOR ama `SaveChangesAsync` HİÇ çağrılmıyor; bu nesne yalnızca DÖNÜŞ değerinin bir PARÇASI, DB\'ye yazma sorumluluğu çağıran Handler\'da.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Nesne başlatıcının (object initializer) açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserId = user.Id,',
+            aciklama: 'Hangi kullanıcıya AİT olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenHash = _passwordService.HashToken(refresh.Token),',
+            aciklama: 'HAM refresh token DEĞİL, SHA-256 hash\'i DB entity\'sine yazılıyor — Bölüm 3\'teki "token\'lar DB\'de hash\'li saklanır" ilkesinin AYNISI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenFamily = Guid.NewGuid().ToString(),',
+            aciklama: 'SECURITY.md §1: "Token Family Pattern" — HER yeni giriş (Login/Google/Apple/QR fark etmez) YENİ bir aile başlatır; bu aile kimliği, sonraki `POST /auth/refresh` (ileride yazılacak) rotation zincirini TAKİP etmek için kullanılacak.',
+            neden: 'Refresh yapıldıkça (ileride yazılacak Refresh Handler\'da) AYNI `TokenFamily` korunacak, yalnızca `TokenHash` DEĞİŞECEK — aynı aileden İKİNCİ bir kullanım denemesi (eski, zaten kullanılmış bir refresh token\'ın TEKRAR kullanılması) tüm AİLENİN iptal edilmesini TETİKLEYECEK (replay tespiti).',
+            olmasaydi: null
+          },
+          {
+            satir: 'ExpiresAt = refresh.ExpiresAt,',
+            aciklama: '`GenerateRefreshToken`\'ın (Bölüm 4) döndürdüğü son geçerlilik anı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'DeviceInfo = deviceInfo,',
+            aciklama: 'Metoda PARAMETRE olarak gelen değer, olduğu gibi entity\'ye AKTARILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IpAddress = ipAddress,',
+            aciklama: 'Metoda PARAMETRE olarak gelen değer, olduğu gibi entity\'ye AKTARILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CreatedAt = DateTime.UtcNow',
+            aciklama: 'Entity\'nin oluşturulma anı — nesne başlatıcının SON alanı olduğu için sonunda virgül YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: 'Nesne başlatıcının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new LoginCompletionResult(accessToken, refresh.Token, refreshTokenEntity, accountWasRecovered);',
+            aciklama: 'Dördü de TEK bir sonuç nesnesinde birleştiriliyor — `refresh.Token` (HAM değer, istemciye GİDECEK) ile `refreshTokenEntity.TokenHash` (hash, DB\'ye GİDECEK) AYNI kaynaktan (`refresh.Token`) türedi ama farklı AMAÇLARLA farklı alanlara yerleşti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: '`Complete` metodunun ve sınıfın kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — İki Yeni Servis Kaydı',
+        dosyaYolu: 'backend/WordLearner.Application/DependencyInjection.cs',
+        neden: 'Bölüm 4\'te TAM öğretilmiş bu dosyaya, bu bölümde yazılan `IOtpService`/`ILoginCompletionService`\'i DI konteynerine kaydeden iki yeni `AddScoped` satırı eklendi — usings\'e dokunulmadı çünkü her iki arayüz/implementasyon de ZATEN import edilmiş `Application.Interfaces.Services`/`Application.Services` ad alanlarında yaşıyor.',
+        diff: ` using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Application.Services;
+
+ namespace WordLearner.Application;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+     {
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
++        services.AddScoped<IOtpService, OtpService>();
++        services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IOtpService, OtpService>();',
+            aciklama: 'Bölüm 5\'te yazılan servis — `IPasswordService`/`ITokenService` (Bölüm 3-4) ile AYNI `AddScoped` deseni: her HTTP isteği için bir örnek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<ILoginCompletionService, LoginCompletionService>();',
+            aciklama: 'Bu bölümde yazılan servis — DI kaydı olmadan, `Program.cs`\'in `AddApplicationServices()` çağırdığı DI konteynerinden `ILoginCompletionService` istenen HERHANGİ bir Handler constructor\'ında ÇÖZÜLEMEZDİ, uygulama BAŞLAMAZDI (runtime hatası).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionServiceTests.cs — Kurulum ve Anonimleştirilmiş Hesap Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/LoginCompletionServiceTests.cs',
+        nedenBuKlasor: '`OtpServiceTests`/`JwtTokenServiceTests` (Bölüm 4-5) ile AYNI klasör.',
+        kod: `using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Services;
+
+public class LoginCompletionServiceTests
+{
+    private static LoginCompletionService CreateService()
+    {
+        var tokenService = new JwtTokenService(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:SecretKey"] = "test-icin-en-az-32-karakter-uzunlugunda-bir-anahtar",
+            ["Jwt:Issuer"] = "WordLearnerApp",
+            ["Jwt:Audience"] = "WordLearnerApp",
+            ["Jwt:RefreshTokenExpirationDays"] = "7"
+        }).Build());
+        return new LoginCompletionService(tokenService, new PasswordService());
+    }
+
+    private static User CreateUser() => new()
+    {
+        Id = 7,
+        Email = "test@example.com",
+        FirstName = "Ada",
+        Role = "User"
+    };
+
+    [Fact]
+    public void Complete_AnonymizedUser_ThrowsAccountAnonymizedException()
+    {
+        // ARRANGE — SECURITY.md §1: IsAnonymized → 403 (kalıcı silindi)
+        var service = CreateService();
+        var user = CreateUser();
+        user.IsAnonymized = true;
+
+        // ACT
+        var act = () => service.Complete(user, deviceInfo: null, ipAddress: null);
+
+        // ASSERT
+        act.Should().Throw<AccountAnonymizedException>();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` uzantı metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`ConfigurationBuilder` — `JwtTokenService`\'i gerçek konfigürasyonla kurmak için (Bölüm 4\'teki `JwtTokenServiceTests` ile AYNI desen).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AccountAnonymizedException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `LoginCompletionService` ve bağımlılıkları (`JwtTokenService`, `PasswordService`) için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LoginCompletionServiceTests',
+            aciklama: '`{TestEdilenSınıf}Tests` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf/metot/blok gövdelerinin açılışları (bu dosyada birden fazla iç içe blok AYNI karakterle açılır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static LoginCompletionService CreateService()',
+            aciklama: '`JwtTokenServiceTests.CreateService()` (Bölüm 4) ile BİREBİR aynı `IConfiguration` kurulumu — `LoginCompletionService`\'in bağımlılığı olan `ITokenService`, GERÇEK `JwtTokenService` ile (mock\'lanmadan) kuruluyor; sebep AYNI: her iki servis de saf/bağımlılıksız, mock\'lamanın FAYDASI yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tokenService = new JwtTokenService(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>',
+            aciklama: '`JwtTokenServiceTests.CreateService()` (Bölüm 4) ile BİREBİR aynı in-memory konfigürasyon kurulumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:SecretKey"] = "test-icin-en-az-32-karakter-uzunlugunda-bir-anahtar",',
+            aciklama: 'JWT imzalama anahtarı — Bölüm 4\'teki testlerle AYNI sabit değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:Issuer"] = "WordLearnerApp",',
+            aciklama: 'Bölüm 4\'teki testlerle AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:Audience"] = "WordLearnerApp",',
+            aciklama: 'Bölüm 4\'teki testlerle AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["Jwt:RefreshTokenExpirationDays"] = "7"',
+            aciklama: 'Bir sonraki slaytta `ExpiresAt` doğrulamasının 7 gün TOLERANSININ kaynağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}).Build());',
+            aciklama: 'In-memory konfigürasyon inşasının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new LoginCompletionService(tokenService, new PasswordService());',
+            aciklama: 'İKİ bağımlılık da GERÇEK implementasyonlarıyla veriliyor — bu, testin `LoginCompletionService`\'in KENDİ mantığını mı yoksa `JwtTokenService`/`PasswordService`\'in davranışını mı test ettiği konusunda BİLİNÇLİ bir tercih: burada asıl ilgi `Complete`\'in İŞ KURALLARI (anonim red, kurtarma, sayaç artırma), token\'ların GERÇEKTEN geçerli JWT olup OLMADIĞI zaten Bölüm 4\'ün testlerinde ayrıca doğrulanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static User CreateUser() => new()',
+            aciklama: 'Testler arasında TEKRARLANAN kullanıcı oluşturma kodu, tek bir yardımcı metoda ÇIKARILDI — `OtpServiceTests`/`JwtTokenServiceTests` ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Id = 7,',
+            aciklama: 'Sabit, keyfi bir test kullanıcı Id\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Email = "test@example.com",',
+            aciklama: 'Sabit test e-postası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'FirstName = "Ada",',
+            aciklama: 'Sabit test adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Role = "User"',
+            aciklama: 'Nesne başlatıcının SON alanı, sonunda virgül YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: '`CreateUser()`\'ın nesne başlatıcısının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği — bu dosyada BİRDEN ÇOK kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Complete_AnonymizedUser_ThrowsAccountAnonymizedException()',
+            aciklama: 'SECURITY.md §1: "IsAnonymized → 403" kuralının test karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE — SECURITY.md §1: IsAnonymized → 403 (kalıcı silindi)',
+            aciklama: 'Hazırlık adımı, hangi kurala karşılık geldiğini işaret ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService();',
+            aciklama: 'Yardımcı metottan GERÇEK bağımlılıklarla kurulmuş bir servis örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsAnonymized = true;',
+            aciklama: 'Testin ARRANGE adımı — `CreateUser()`\'ın varsayılan (anonimleştirilmemiş) hâli ÜZERİNE tek bir alan değiştiriliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var act = () => service.Complete(user, deviceInfo: null, ipAddress: null);',
+            aciklama: 'FluentAssertions\'ın exception test deseni: metot HEMEN çağrılmaz, bir `Action`\'a SARILIR — `Should().Throw<T>()` bu action\'ı KENDİSİ çalıştırıp fırlatılan istisnayı YAKALAR.',
+            neden: 'Doğrudan `service.Complete(...)` çağrılıp `try/catch` ile SARILSAYDI, FluentAssertions\'ın okunabilir "hangi tip fırlatıldı, mesajı neydi" ASSERTION\'ları KULLANILAMAZDI — bu desen (Action + Should().Throw) exception testlerinin YAYGIN, standart yazım şekli.',
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Doğrulama adımı — bu dosyada BİRDEN ÇOK kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'act.Should().Throw<AccountAnonymizedException>();',
+            aciklama: 'Bölüm 6\'da yazılan istisnanın GERÇEKTEN fırlatıldığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu ve sınıfın gövde kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionServiceTests.cs — Normal Giriş ve Grace-Period Kurtarma',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/LoginCompletionServiceTests.cs',
+        nedenBuKlasor: 'Aynı sınıfın devamı.',
+        kod: `    [Fact]
+    public void Complete_ActiveUser_ReturnsTokensAndUpdatesLoginMetadata()
+    {
+        // ARRANGE
+        var service = CreateService();
+        var user = CreateUser();
+
+        // ACT
+        var result = service.Complete(user, deviceInfo: "Chrome/Mac", ipAddress: "1.2.3.4");
+
+        // ASSERT
+        result.AccessToken.Should().NotBeNullOrWhiteSpace();
+        result.RefreshTokenValue.Should().NotBeNullOrWhiteSpace();
+        result.AccountWasRecovered.Should().BeFalse();
+        user.LastLoginIP.Should().Be("1.2.3.4");
+        user.LoginCount.Should().Be(1);
+        user.LastLoginAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Complete_SoftDeletedUser_RecoversAccountAndReturnsAccountWasRecoveredTrue()
+    {
+        // ARRANGE — grace period içinde (IsAnonymized=false) silinmiş hesap otomatik kurtarılır
+        var service = CreateService();
+        var user = CreateUser();
+        user.IsDeleted = true;
+        user.DeletedAt = DateTime.UtcNow.AddDays(-2);
+        user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(28);
+        user.IsActive = false;
+
+        // ACT
+        var result = service.Complete(user, deviceInfo: null, ipAddress: null);
+
+        // ASSERT
+        result.AccountWasRecovered.Should().BeTrue();
+        user.IsDeleted.Should().BeFalse();
+        user.DeletedAt.Should().BeNull();
+        user.ScheduledDeletionAt.Should().BeNull();
+        user.IsActive.Should().BeTrue();
+    }`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği — bu slaytta İKİ kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Complete_ActiveUser_ReturnsTokensAndUpdatesLoginMetadata()',
+            aciklama: 'Happy-path senaryosu — normal (silinmemiş, anonimleştirilmemiş) bir kullanıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metotlarının gövde açılışları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Hazırlık adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService();',
+            aciklama: 'Yardımcı metottan GERÇEK bağımlılıklarla kurulmuş bir servis örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = service.Complete(user, deviceInfo: "Chrome/Mac", ipAddress: "1.2.3.4");',
+            aciklama: 'Gerçekçi `deviceInfo`/`ipAddress` değerleriyle çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Doğrulama adımı — bu slaytta İKİ kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.AccessToken.Should().NotBeNullOrWhiteSpace();',
+            aciklama: 'Bir access token GERÇEKTEN üretildiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenValue.Should().NotBeNullOrWhiteSpace();',
+            aciklama: 'Bir refresh token GERÇEKTEN üretildiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.AccountWasRecovered.Should().BeFalse();',
+            aciklama: 'Hiç silinmemiş, sıradan bir kullanıcı için kurtarma bayrağının `false` KALDIĞININ kontrolü — bir sonraki testteki `true` durumuyla TEZAT oluşturuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LastLoginIP.Should().Be("1.2.3.4");',
+            aciklama: '`Complete`\'e geçilen `ipAddress`\'in `user.LastLoginIP`\'e GERÇEKTEN yazıldığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LoginCount.Should().Be(1);',
+            aciklama: '`CreateUser()`\'ın varsayılan `LoginCount` değeri (C#\'ın `int` varsayılanı) `0` — TEK bir `Complete` çağrısından sonra `1`\'e ÇIKTIĞININ kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.LastLoginAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));',
+            aciklama: '`LastLoginAt`\'in GÜNCEL zamana yakın bir değere set edildiğinin, "yaklaşık zaman" toleransıyla kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Complete_SoftDeletedUser_RecoversAccountAndReturnsAccountWasRecoveredTrue()',
+            aciklama: 'Grace-period kurtarma senaryosu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE — grace period içinde (IsAnonymized=false) silinmiş hesap otomatik kurtarılır',
+            aciklama: 'Hazırlık adımı, senaryoyu özetliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsDeleted = true;',
+            aciklama: 'Silinmiş bir hesabın (ileride yazılacak silme Handler\'ının SET ETMESİ beklenen) tipik durumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.DeletedAt = DateTime.UtcNow.AddDays(-2);',
+            aciklama: '"2 gün önce silinmiş" senaryosu — 30 günlük grace period\'un (SECURITY.md §9) İÇİNDE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.ScheduledDeletionAt = DateTime.UtcNow.AddDays(28);',
+            aciklama: '"28 gün SONRA anonimleştirilecek" — `DeletedAt`\'tan 30 gün sonrasına denk düşen tutarlı bir tarih (test verisinin GERÇEKÇİLİĞİ için, servis bu alanı OKUMUYOR bile, yalnızca kurtarma anında `null`a ÇEVİRİYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsActive = false;',
+            aciklama: 'Silinmiş bir hesabın (ileride yazılacak silme Handler\'ının SET ETMESİ beklenen) tipik durumu — kurtarma bu alanı `true`\'ya GERİ ÇEVİRECEK mi diye test ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = service.Complete(user, deviceInfo: null, ipAddress: null);',
+            aciklama: 'Bu testte `deviceInfo`/`ipAddress` ÖNEMLİ değil (yalnızca kurtarma mantığı test ediliyor), bu yüzden `null` geçiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.AccountWasRecovered.Should().BeTrue();',
+            aciklama: 'Kurtarma bayrağının `true` DÖNDÜĞÜNÜN kanıtı — bir önceki testteki `false` durumuyla TEZAT.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsDeleted.Should().BeFalse();',
+            aciklama: 'DÖRT ayrı alanın (`IsDeleted`/`DeletedAt`/`ScheduledDeletionAt`/`IsActive`) HEPSİNİN doğru kurtarıldığının tek tek kanıtı — yalnızca `AccountWasRecovered.Should().BeTrue()` yeterli OLMAZDI, çünkü bayrak doğru olsa bile ALTINDAKİ alanlardan biri unutulmuş OLABİLİRDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.DeletedAt.Should().BeNull();',
+            aciklama: 'Silinme zaman damgasının TEMİZLENDİĞİNİN kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.ScheduledDeletionAt.Should().BeNull();',
+            aciklama: 'Zamanlanmış silmenin İPTAL edildiğinin kanıtı — `AccountCleanupBackgroundService` bu kullanıcıyı ARTIK anonimleştirme adayı olarak görmeyecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.IsActive.Should().BeTrue();',
+            aciklama: 'Hesabın tekrar AKTİF olduğunun kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metotlarının gövde kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCompletionServiceTests.cs — Refresh Token Entity\'sinin Doğruluğu',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/LoginCompletionServiceTests.cs',
+        nedenBuKlasor: 'Aynı sınıfın SON testi.',
+        kod: `    [Fact]
+    public void Complete_ValidUser_ReturnsRefreshTokenEntityWithHashedTokenNotRawValue()
+    {
+        // ARRANGE — ham refresh token asla RefreshTokens tablosuna yazılmaz, yalnızca SHA-256 hash'i
+        var service = CreateService();
+        var user = CreateUser();
+
+        // ACT
+        var result = service.Complete(user, deviceInfo: "iOS App", ipAddress: "5.6.7.8");
+
+        // ASSERT
+        result.RefreshTokenEntity.UserId.Should().Be(user.Id);
+        result.RefreshTokenEntity.TokenHash.Should().NotBe(result.RefreshTokenValue);
+        result.RefreshTokenEntity.TokenFamily.Should().NotBeNullOrWhiteSpace();
+        result.RefreshTokenEntity.DeviceInfo.Should().Be("iOS App");
+        result.RefreshTokenEntity.IpAddress.Should().Be("5.6.7.8");
+        result.RefreshTokenEntity.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromMinutes(1));
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Complete_ValidUser_ReturnsRefreshTokenEntityWithHashedTokenNotRawValue()',
+            aciklama: 'Testin İSMİ, doğrulanan İKİ ayrı iddiayı (RefreshTokenEntity doğru dolduruluyor + ham değer DEĞİL hash yazılıyor) BİRLİKTE özetliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metodu gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE — ham refresh token asla RefreshTokens tablosuna yazılmaz, yalnızca SHA-256 hash\'i',
+            aciklama: 'Hazırlık adımı, testin asıl İDDİASINI özetliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService();',
+            aciklama: 'Yardımcı metottan GERÇEK bağımlılıklarla kurulmuş bir servis örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = service.Complete(user, deviceInfo: "iOS App", ipAddress: "5.6.7.8");',
+            aciklama: 'Gerçekçi `deviceInfo`/`ipAddress` değerleriyle çağrı — bunların `RefreshTokenEntity`\'ye DOĞRU aktarıldığı aşağıda ayrı ayrı doğrulanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Doğrulama adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenEntity.UserId.Should().Be(user.Id);',
+            aciklama: 'Entity\'nin DOĞRU kullanıcıya bağlandığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenEntity.TokenHash.Should().NotBe(result.RefreshTokenValue);',
+            aciklama: 'Testin EN KRİTİK satırı: DB\'ye yazılacak `TokenHash`\'in, istemciye dönecek `RefreshTokenValue` (ham token) ile AYNI OLMADIĞININ kanıtı — `PasswordServiceTests.Hash_ValidPassword_ProducesHashThatVerifiesCorrectly`\'deki (Bölüm 3) "hash\'i ham değerle KARŞILAŞTIRMA" deseninin AYNISI, burada refresh token için.',
+            neden: 'Bu satır OLMASAYDI ve bir geliştirici yanlışlıkla `TokenHash = refresh.Token` (hash\'lemeden, HAM değeri) yazsaydı, hiçbir DERLEME hatası ALINMAZDI (ikisi de `string`) — yalnızca bu test bu hatayı YAKALAR; DB sızıntısında TÜM refresh token\'lar açık metin olarak SIZARDI.',
+            olmasaydi: 'Bu kontrol olmasaydı, `TokenHash` alanına yanlışlıkla ham token yazılan bir REGRESYON hiçbir testte KIRILMAZDI, yalnızca güvenlik denetimi (code review) ya da GERÇEK bir sızıntıda fark edilirdi.'
+          },
+          {
+            satir: 'result.RefreshTokenEntity.TokenFamily.Should().NotBeNullOrWhiteSpace();',
+            aciklama: 'Token family GUID\'inin GERÇEKTEN üretildiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenEntity.DeviceInfo.Should().Be("iOS App");',
+            aciklama: '`deviceInfo` parametresinin entity\'ye DOĞRU aktarıldığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenEntity.IpAddress.Should().Be("5.6.7.8");',
+            aciklama: '`ipAddress` parametresinin entity\'ye DOĞRU aktarıldığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.RefreshTokenEntity.ExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(7), TimeSpan.FromMinutes(1));',
+            aciklama: '`JwtTokenServiceTests.GenerateRefreshToken_ReturnsTokenWithFutureExpiry` (Bölüm 4) ile AYNI 7-gün/tolerans deseni — `CreateService()`\'teki `"Jwt:RefreshTokenExpirationDays"] = "7"` konfigürasyonuyla TUTARLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu ve sınıfın gövde kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Grace Period (Kurtarma Süresi)', tanim: 'Bir hesap silindikten sonra KALICI olarak anonimleştirilmeden önce tanınan süre (30 gün) — bu süre içinde giriş yapan kullanıcı otomatik olarak kurtarılır.' },
+          { terim: 'Token Family Pattern', tanim: 'Her yeni girişte YENİ bir "aile" kimliği (GUID) üretilip refresh token\'a damgalanması — aynı aileden bir token İKİNCİ kez kullanılırsa (replay), TÜM aile iptal edilir.' },
+          { terim: 'Action (FluentAssertions)', tanim: 'Bir metodu HEMEN çağırmak yerine bir `() => ...` lambda\'sına SARIP `Should().Throw<T>()` ile test etme deseni — exception fırlatan kodun standart test YAZIM şekli.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ILoginCompletionService, OTP/Google/Apple/QR girişlerinin ORTAK son adımını (hesap durumu kontrolü + token üretimi) tek bir yerde topluyor.',
+          'IsAnonymized kontrolü, SECURITY.md\'nin SUNUM sırasının AKSİNE grace-period kurtarmadan ÖNCE yapılıyor — iki alanın (IsAnonymized/IsDeleted) BİRLİKTE nasıl davrandığı anlaşılmadan doğru sıralama bulunamazdı.',
+          'Servis, RefreshToken entity\'sini OLUŞTURUYOR ama PERSIST ETMİYOR — OtpService (Bölüm 5) ile AYNI "saf mantık, DB yazımı Handler\'ın işi" deseni.',
+          'Ham refresh token (istemciye giden) ile hash\'i (DB\'ye giden) birbirine KARIŞTIRILMIYOR — bu ayrımın GERÇEKTEN doğru çalıştığı, testte açıkça doğrulanan bir kural.',
+          'Bu bölümle A-03\'ün servis katmanı tamamlandı — sıradaki adım (13 Auth Command+Handler) bu servisleri (IOtpService, ILoginCompletionService, ITokenService, IPasswordService) BİRLEŞTİREREK gerçek endpoint mantığını yazacak.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

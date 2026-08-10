@@ -80,41 +80,46 @@ CLAUDE.md §3 adım 13 notuna bak (Backend Akademi'ye işlerken zorunlu adım). 
 `kod` metnindeki satırla **karakter karakter (trim edilmiş) eşleşmeli**, yoksa motor o satırı
 tıklanabilir işaretlemez (sessizce atlar, hata vermez).
 
-### 3.1 `kod-degisiklik` — daha önce öğretilmiş bir kod SONRADAN değiştiğinde
+### 3.1 `kod-degisiklik` — daha önce TAM olarak öğretilmiş bir dosyaya SONRADAN dokunulduğunda
 
-Yazılım bir süreçtir: bir görev bitip akademiye işlendikten SONRA, BAŞKA bir görev o dosyaya geri
-dönüp **var olan bir satırı/imzayı/metodu değiştirebilir** (ör. A-04, A-03'te yazılmış bir Handler'a
-`ISecurityLogger` parametresi ekledi). Bu durumda:
+Yazılım bir süreçtir: bir dosya ÖNCEKİ bir bölümde bir `kod` slaytıyla (o zamanki) TAM haliyle
+öğretildikten SONRA, BAŞKA bir görev/bölüm o dosyaya geri dönüp bir şey ekleyebilir ya da var olan
+bir satırı/imzayı/metodu değiştirebilir (ör. A-04, A-03'te yazılmış bir Handler'a `ISecurityLogger`
+parametresi ekledi; ya da `store.ts`'e tek bir yeni reducer satırı eklendi). **Bu ayrım —
+"saf ekleme mi, gerçek bir değişiklik mi" — SONUCU ETKİLEMEZ: ikisi de aynı kuralla işlenir.**
+Gerçek akademi verisinde (`AKADEMI/admin/B-01_kurulum/`, `store.ts`/`App.tsx`/`main.tsx`/
+`Topbar.tsx` dosyalarının her biri BİRDEN ÇOK bölümde tekrar dokunulmuş örnekleri) bunun istisnası
+YOKTUR — tek bir yeni `import` satırı ya da tek bir yeni obje alanı eklenmesi bile normal bir `kod`
+slaytına İNDİRGENMEZ:
 
-- **Eski bölüm SESSİZCE bırakılmaz, güncellenmez de** (bkz. §3.2 "yalnızca ekleme" kuralı) — onun
-  yerine bu değişikliğin işlendiği bölüme (genelde değişikliği yapan görevin kendi klasörüne) bir
-  `kod-degisiklik` slaytı eklenir; o slayt hem ESKİ hem YENİ hâli git-diff tarzı TEK blokta gösterir.
-- `diff` alanı gerçek bir unified diff gibi yazılır — HER satırın İLK karakteri `+` (eklendi),
-  `-` (silindi) veya ` ` (boşluk — değişmedi/bağlam) olmalı, ikinci karakterden itibaren kodun
-  kendisi gelir (girinti dahil). Motor kırmızı/üstü-çizili (silinen) ve yeşil (eklenen) olarak
-  render eder.
+- **Eski bölüm SESSİZCE bırakılmaz, güncellenmez de** — onun yerine bu değişikliğin işlendiği
+  bölüme (genelde değişikliği yapan görevin kendi klasörüne) bir `kod-degisiklik` slaytı eklenir;
+  o slayt hem ESKİ hem YENİ hâli git-diff tarzı TEK blokta gösterir.
+- `diff` alanı dosyanın **O ANA KADAR ULAŞTIĞI TÜM içeriğini** gösterir — yalnızca değişen birkaç
+  satır değil. Önceki bölümlerde zaten eklenmiş satırlar (BU değişiklikten ÖNCEKİ deltalar dahil)
+  ` ` (context) olarak, YALNIZCA bu bölümde eklenen/silinen satırlar `+`/`-` olarak işaretlenir.
+  HER satırın İLK karakteri `+` (eklendi), `-` (silindi) veya ` ` (boşluk — değişmedi/bağlam)
+  olmalı, ikinci karakterden itibaren kodun kendisi gelir (girinti dahil). Motor context satırları
+  **turuncu**, silinenleri kırmızı/üstü-çizili, eklenenleri **yeşil** render eder — okuyucu "bu
+  satırlar DAHA ÖNCE yazılmıştı" (turuncu) ile "bu satır BU bölümde yeni" (yeşil) ayrımını
+  bakar bakmaz görür. Bir dosya üçüncü kez değişiyorsa (ör. `store.ts` önce auth, sonra language,
+  sonra theme reducer'ı aldıysa), ÜÇÜNCÜ `kod-degisiklik`'in diff'i language reducer'ını da
+  context (turuncu) olarak gösterir — yalnızca theme reducer'ı `+`'dır.
 - `neden` **zorunlu** — bir kod değişikliği asla sebepsiz olmaz (yeni bir görev, yeni bir
   gereksinim); bu alan o olayı adıyla anar (ör. "A-04'te SecurityLog entegrasyonu gerektiği için").
 - `satirlar[]` opsiyonel ama önerilir — özellikle YENİ eklenen satırlar için `{ satir, aciklama,
-  neden, olmasaydi }` üçlüsü, `kod` slaytındaki AYNI kuralla eklenir.
+  neden, olmasaydi }` üçlüsü eklenir; `satir` alanı diff'teki `+`/`-`/` ` ÖNEKİ OLMADAN, yalnızca
+  kodun kendisiyle (trim edilmiş) eşleşmeli — motor eşleştirmeyi önek çıkarıldıktan sonra yapar.
 - Bu slayt, DEĞİŞEN dosyanın SONRAKİ görevine (değişikliği yapan göreve) ait bölümde yer alır —
   eski görevin kendi `kod` slaytına dokunulmaz, yalnızca yeni görev "bak, bu dosyaya önceki bir
   görevde yazdığımız X metodu değişti" diye bu slaytla işaret eder.
 
-### 3.2 Var olan bir dosyaya SAF EKLEME yapıldığında (değişiklik değil) — ne kadarı gösterilir
+### 3.2 Yeni bir dosya İLK kez öğretiliyorsa
 
-Bir görev, var olan bir dosyaya davranışı DEĞİŞTİRMEDEN yeni, bağımsız bir şey ekliyorsa (yeni bir
-DbSet property'si, yeni bir DI kaydı satırı, yeni bir standalone metot/sınıf) bu bir `kod-degisiklik`
-DEĞİLDİR — normal bir `kod` slaytıdır, ama TÜM dosyayı göstermeye gerek YOKTUR:
-
-- **Tek başına çalışabilen ekleme** (yeni bir metot, yeni bir DI satırı, yeni bir property) →
-  yalnızca eklenen kod + öncesindeki 3-4 satır + sonrasındaki 3-4 satır gösterilir. Amaç, okuyucunun
-  "bu YENİ satır dosyanın neresine, hangi bağlama eklendi" sorusuna cevap bulması — dosyanın tamamı
-  gerekmez.
-- **Var olan bir FONKSİYONUN/metodun İÇİNE ekleme** (var olan bir metodun gövdesine yeni satır(lar)
-  eklendi) → bu durumda o metodun **TAMAMI** gösterilir, yalnızca eklenen kısım değil — kısmi bir
-  metot gövdesi okuyucuyu metodun geri kalanını tahmin etmeye zorlar, bu kabul edilemez. Dosyanın
-  GERİ KALANI (metodun dışındaki diğer metotlar) yine de gösterilmeyebilir.
+Yukarıdaki §3.1 yalnızca DAHA ÖNCE bir `kod` slaytıyla tam öğretilmiş bir dosya için geçerli. Bir
+dosya bu görevde ilk kez yazılıyorsa (önceki hiçbir bölümde `dosyaYolu` olarak geçmiyorsa), normal
+bir `kod` slaytı kullanılır ve dosyanın TAMAMI gösterilir — henüz "eski"/"yeni" ayrımı yapılacak bir
+geçmişi yok.
 
 ## 4. Değişmez yazım kuralları (CLAUDE.md ile tutarlı)
 

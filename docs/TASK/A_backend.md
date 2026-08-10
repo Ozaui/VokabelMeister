@@ -75,7 +75,17 @@
       refresh, algorithm-confusion önlemi, claim'ler: NameIdentifier/Email/Role/firstName —
       Theme/LanguagePreference JWT'ye GİRMEZ, yalnızca yetki taşınır)
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IOtpService`/`OtpService` (Register/Login/ResetPassword/AccountDeletion ortak OTP üretimi/
+> **OtpService/LoginCompletionService sırasında verilen iki tasarım kararı:** (1) SECURITY.md §1'deki
+> "3 yanlış → kod geçersiz" kuralı denemeleri isteğe göre saymak için kalıcı bir sayaç gerektiriyordu —
+> `Users.PendingOtpCodeAttempts` (`INT DEFAULT 0`) eklendi, `DATABASE_SCHEMA/Auth.md` ve
+> `AddOtpAttemptsToUser` migration'ıyla senkron. (2) `LoginCompletionService`'in `IsAnonymized` hesabı
+> reddetmesi için ilk gerçek `AppException` alt sınıfı gerekti — `Application/Common/Exceptions/AppException.cs`
+> (Code + HttpStatusCode, SECURITY.md §1.4) ve `AccountAnonymizedException` bu adımda yazıldı,
+> `ExceptionHandlingMiddleware` genel bir `catch (AppException)` koluyla güncellendi (gelecekteki tüm
+> `AppException` alt sınıfları — ör. 13 Auth Handler'ın `InvalidCredentialsException`'ı — middleware'e
+> dokunmadan otomatik yakalanır). Her iki servis de OtpPurpose/User'ı mutasyona uğratır, DB'ye YAZMAZ —
+> persist çağıran Handler'ın işi (`ITokenService`/`IPasswordService` ile aynı "saf mantık" deseni).
+- [x] `IOtpService`/`OtpService` (Register/Login/ResetPassword/AccountDeletion ortak OTP üretimi/
       doğrulaması), `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple/QR
       girişlerinin ortak son adımı: grace period kurtarma, token üretimi)
 - [ ] ➜ **AKADEMI/backend'ye işle**

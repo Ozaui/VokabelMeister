@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — IOtpService: Ortak OTP Mantığı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'otp-servisi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '04_token-servisi.html',
+    sonrakiBolum: '06_uygulama-istisnalari.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'IOtpService: Dört Akışın Ortak OTP Mantığı',
+        altBaslik: 'Register, Login, ResetPassword, AccountDeletion — dördü de AYNI 6 haneli kod üretim/doğrulama/deneme-sayma akışını kullanıyor; bu mantık TEK bir serviste toplanıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ayrı Bir OtpService? Her Handler Kendi OTP\'sini Üretemez mi?',
+        aciklama: 'Register (e-posta doğrulama), Login (2. adım), ResetPassword ve AccountDeletion — dördü de "6 haneli kod üret, hash\'le, 5 dakika geçerli kıl, sonra doğrula" ADIMLARINI birebir aynı şekilde yapıyor; tek fark hangi `OtpPurpose` değeriyle çalıştıkları. `IOtpService`, bu ORTAK mantığı `Application/Services/` altında TEK bir yerde topluyor — CLAUDE.md §3\'ün "paylaşılan mantık birden çok Handler\'da gerekiyorsa küçük bir arayüz+impl\'e çıkarılır" kuralının BİREBİR uygulaması.',
+        neden: 'Dört ayrı Handler\'a bu mantığı KOPYALAMAK yerine tek serviste toplamak, "3 yanlış denemede kod geçersiz" gibi bir GÜVENLİK kuralının TEK bir yerde doğru yazılıp dört yerde de OTOMATİK olarak doğru çalışmasını sağlıyor — güvenlik mantığı ne kadar AZ yerde tekrarlanırsa, o kadar AZ yerde YANLIŞ yazılma riski olur.',
+        olmasaydi: 'Ayrı bir servis olmasaydı, aynı 15-20 satırlık kod (kod üretimi + hash\'leme + süre + deneme sayacı) dört Handler\'a KOPYALANIRDI; birinde "5 dakika" yazılırken diğerinde yanlışlıkla "10 dakika" yazılabilir, ya da "3 yanlış" kuralı bir Handler\'da UNUTULABİLİRDİ — bu tutarsızlıklar dört ayrı dosyaya dağıldığı için code review\'da fark edilmesi ZORLAŞIRDI.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Servis DB\'ye Yazmıyor, Yalnızca User\'ı Mutasyona Uğratıyor?',
+        aciklama: '`IOtpService.Generate`/`Verify`, parametre olarak aldığı `User` nesnesinin `Pending*` alanlarını bellekte GÜNCELLER ama hiçbir zaman `SaveChangesAsync` ÇAĞIRMAZ, hatta bir `DbContext`/repository bağımlılığı bile ALMAZ.',
+        neden: 'Bu, `ITokenService`/`IPasswordService` (Bölüm 3-4) ile AYNI "servis saf mantık taşır, persist etmez" deseni — servis SENKRON, hızlı ve DB\'siz test edilebilir kalıyor; `User`\'ı DB\'ye YAZMA sorumluluğu, zaten o `User`\'ı kendi `IUserRepository`\'siyle YÖNETEN çağıran Handler\'da (ileride yazılacak Register/Login Handler\'ları) toplanıyor — tek bir yerde İKİ farklı sorumluluk (iş kuralı + persist) KARIŞMIYOR.',
+        olmasaydi: 'Servis kendi içinde bir `DbContext`\'e bağımlı olsaydı, `OtpServiceTests`\'in HER testi bir InMemory veritabanı KURMAK zorunda kalırdı ve testler saniyeler sürerdi; şu an servis saf CLR nesneleriyle çalıştığı için 7 testin TAMAMI milisaniyeler içinde çalışıyor (bkz. bu bölümün sonundaki `OtpServiceTests`).'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'User.cs — Yeni Alan: PendingOtpCodeAttempts',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Auth/User.cs',
+        neden: 'SECURITY.md §1\'deki "3 yanlış → kod geçersiz" kuralı, denemeleri isteğe göre değil KALICI olarak saymak için `User` satırında yeni bir sayaç gerektirdi (bkz. bir önceki kavram slaytı) — Bölüm 1\'de TAM öğretilmiş bu dosyaya STANDART.md §3.1 gereği bir `kod-degisiklik` slaytıyla dönülüyor: turuncu (context) satırlar Bölüm 1\'de ZATEN yazılmıştı, yeşil TEK satır bu bölümde YENİ.',
+        diff: ` using WordLearner.Domain.Enums.Auth;
+
+ namespace WordLearner.Domain.Entities.Auth;
+
+ // BaseEntity'den BİLİNÇLİ olarak türemez — "kim yaptı" alanları (CreatedByUserId vb.) self-servis
+ // kayıtta anlamsız (bir User'ı başka biri "oluşturmaz"); DATABASE_SCHEMA/Auth.md'deki Users
+ // tablosuyla birebir eşleşir.
+ public class User
+ {
+     public int Id { get; set; }
+     public string Email { get; set; } = string.Empty;
+     public string? PasswordHash { get; set; }
+     public string? GoogleId { get; set; }
+     public string? AppleId { get; set; }
+     public string AuthProvider { get; set; } = "Local";
+     public string FirstName { get; set; } = string.Empty;
+     public string LastName { get; set; } = string.Empty;
+     public string? DisplayName { get; set; }
+     public string? AvatarUrl { get; set; }
+
+     public int DailyWordGoal { get; set; } = 10;
+     public int DailyNewWordLimit { get; set; } = 5;
+
+     public string CurrentLevel { get; set; } = "A1";
+     public string ThemePreference { get; set; } = "System";
+     public string LanguagePreference { get; set; } = "tr";
+     public int TotalXP { get; set; }
+     public int LifetimeXP { get; set; }
+     public int StreakDays { get; set; }
+     public DateTime? LastStreakDate { get; set; }
+
+     public string? PendingOtpCodeHash { get; set; }
+     public DateTime? PendingOtpCodeExpiresAt { get; set; }
+     public OtpPurpose? PendingOtpCodePurpose { get; set; }
++    public int PendingOtpCodeAttempts { get; set; }
+
+     public bool IsOnboardingCompleted { get; set; }
+     public bool IsActive { get; set; } = true;
+     public bool IsEmailVerified { get; set; }
+     public DateTime? EmailVerifiedAt { get; set; }
+     public DateTime? LastLoginAt { get; set; }
+     public string? LastLoginIP { get; set; }
+     public int LoginCount { get; set; }
+
+     public DateTime? ScheduledDeletionAt { get; set; }
+     public bool IsAnonymized { get; set; }
+     public string? OriginalEmailHash { get; set; }
+     public string? OneSignalPlayerId { get; set; }
+
+     public string Role { get; set; } = "User";
+
+     public bool IsDeleted { get; set; }
+     public DateTime? DeletedAt { get; set; }
+     public DateTime CreatedAt { get; set; }
+     public DateTime UpdatedAt { get; set; }
+ }`,
+        satirlar: [
+          {
+            satir: 'public int PendingOtpCodeAttempts { get; set; }',
+            aciklama: 'SECURITY.md §1\'deki "3 yanlış → kod geçersiz" kuralı için EKLENEN sayaç — `OtpService.Generate` bunu 0\'a sıfırlar, her yanlış `Verify` çağrısında bir artırır, 3\'e ulaşınca (veya doğru kod girilince) tekrar 0\'a döner.',
+            neden: 'Bu sayaç HTTP isteği başına DEĞİL, `User` satırında KALICI olmalı — aksi halde her istek KENDİ hafızasında sıfırdan başlar ve "3 yanlış" kuralı hiç ÇALIŞMAZ; kullanıcı sınırsız deneme yapabilirdi.',
+            olmasaydi: 'Bu alan eklenmeseydi `OtpService.Verify`, kaçıncı yanlış denemede OLDUĞUMUZU hiç BİLEMEZDİ — "3 yanlış" kuralı ya hiç uygulanamaz ya da yalnızca TEK bir istek içinde (anlamsız) sayılabilirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserConfiguration.cs — Yeni Sütun Konfigürasyonu',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Auth/UserConfiguration.cs',
+        neden: '`User.cs`\'e eklenen `PendingOtpCodeAttempts` alanının EF Core sütun ayarı — Bölüm 2\'de TAM öğretilmiş bu dosyaya, AYNI §3.1 kuralıyla dönülüyor.',
+        diff: ` public class UserConfiguration : IEntityTypeConfiguration<User>
+ {
+     public void Configure(EntityTypeBuilder<User> builder)
+     {
+         builder.ToTable("Users", tb =>
+         {
+             tb.HasCheckConstraint("CK_Users_Level", "CurrentLevel IN ('A1','A2','B1','B2','C1','C2')");
+             tb.HasCheckConstraint("CK_Users_ThemePreference", "ThemePreference IN ('Light','Dark','System')");
+             tb.HasCheckConstraint("CK_Users_LanguagePreference", "LanguagePreference IN ('tr','de')");
+             tb.HasCheckConstraint("CK_Users_Role", "Role IN ('User','Admin')");
+             tb.HasCheckConstraint("CK_Users_AuthProvider", "AuthProvider IN ('Local','Google','Apple')");
+         });
+
+         builder.HasKey(x => x.Id);
+
+         builder.Property(x => x.Email).HasMaxLength(254).IsRequired();
+         builder.HasIndex(x => x.Email).IsUnique();
+
+         builder.Property(x => x.PasswordHash).HasMaxLength(60).IsUnicode(false);
+         builder.Property(x => x.GoogleId).HasMaxLength(255);
+         builder.HasIndex(x => x.GoogleId);
+         builder.Property(x => x.AppleId).HasMaxLength(255);
+         builder.HasIndex(x => x.AppleId);
+         builder.Property(x => x.AuthProvider).HasMaxLength(20).IsRequired().HasDefaultValue("Local");
+         builder.Property(x => x.FirstName).HasMaxLength(50).IsRequired();
+         builder.Property(x => x.LastName).HasMaxLength(50).IsRequired();
+         builder.Property(x => x.DisplayName).HasMaxLength(100);
+         builder.Property(x => x.AvatarUrl).HasMaxLength(500);
+
+         builder.Property(x => x.DailyWordGoal).HasDefaultValue(10);
+         builder.Property(x => x.DailyNewWordLimit).HasDefaultValue(5);
+
+         builder.Property(x => x.CurrentLevel).HasMaxLength(2).IsRequired().HasDefaultValue("A1");
+         builder.Property(x => x.ThemePreference).HasMaxLength(10).IsRequired().HasDefaultValue("System");
+         builder.Property(x => x.LanguagePreference).HasMaxLength(2).IsRequired().HasDefaultValue("tr");
+         builder.Property(x => x.TotalXP).HasDefaultValue(0);
+         builder.Property(x => x.LifetimeXP).HasDefaultValue(0);
+         builder.Property(x => x.StreakDays).HasDefaultValue(0);
+
+         builder.Property(x => x.PendingOtpCodeHash).HasMaxLength(44).IsUnicode(false);
+         builder.Property(x => x.PendingOtpCodePurpose).HasConversion<string>().HasMaxLength(20);
++        builder.Property(x => x.PendingOtpCodeAttempts).HasDefaultValue(0);
+
+         builder.Property(x => x.IsOnboardingCompleted).HasDefaultValue(false);
+         builder.Property(x => x.IsActive).HasDefaultValue(true);
+         builder.Property(x => x.IsEmailVerified).HasDefaultValue(false);
+         builder.Property(x => x.LastLoginIP).HasMaxLength(45).IsUnicode(false);
+         builder.Property(x => x.LoginCount).HasDefaultValue(0);
+
+         builder.Property(x => x.IsAnonymized).HasDefaultValue(false);
+         builder.Property(x => x.OriginalEmailHash).HasMaxLength(44).IsUnicode(false);
+         builder.Property(x => x.OneSignalPlayerId).HasMaxLength(100);
+
+         builder.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue("User");
+         builder.HasIndex(x => x.Role);
+
+         builder.Property(x => x.IsDeleted).HasDefaultValue(false);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'builder.Property(x => x.PendingOtpCodeAttempts).HasDefaultValue(0);',
+            aciklama: 'EF Core\'a bu sütunun VARSAYILAN değerinin `0` olduğunu söyler — `User.cs`\'teki (bir önceki slayt) `int` property zaten C# tarafında `0` varsayılanı taşıyor, bu satır aynı varsayılanı VERİTABANI şemasına da yazdırır.',
+            neden: 'DB tarafında da bir `DEFAULT 0` olması, ileride SQL\'den DOĞRUDAN (EF Core\'u atlayarak) yapılacak bir `INSERT`\'te bile bu sütunun `NULL` değil `0` olmasını GARANTİ eder.',
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: DATABASE_SCHEMA.md ile Kod Neden Senkron Tutuluyor?',
+        aciklama: 'Bu alan eklenirken `docs/DATABASE_SCHEMA/Auth.md`\'deki `Users` tablosu SQL taslağı da güncellendi (`PendingOtpCodeAttempts INT NOT NULL DEFAULT 0` satırı eklendi) — CLAUDE.md §2\'nin "bir tabloyu/entity\'yi yazacağım → DATABASE_SCHEMA.md" yönlendirmesi, bu dosyanın GERÇEK şemayla her zaman BİREBİR eşleşmesini varsayıyor.',
+        neden: 'DATABASE_SCHEMA.md, yeni bir görev başlarken "bu tabloda hangi sütunlar var" sorusunun TEK doğruluk kaynağı — kod ondan İLERİ giderse (yeni bir sütun eklenip doküman GÜNCELLENMEZSE) bir sonraki geliştirici (insan ya da AI) EKSİK bir şemaya göre plan yapar.',
+        olmasaydi: 'Doküman güncellenmeseydi, A-18\'deki (Admin API) gibi ileri bir task `Users` tablosunu DATABASE_SCHEMA.md\'den okuyup `PendingOtpCodeAttempts`\'ın VAR OLDUĞUNU bilmeden bir sorgu/DTO tasarlayabilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AddOtpAttemptsToUser Migration — dotnet ef migrations add',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Migrations/20260810112559_AddOtpAttemptsToUser.cs',
+        nedenBuKlasor: 'Bölüm 2\'deki `AddAuthEntities` migration\'ı ASLA elle değiştirilmez (zaten commit\'lenmiş, uygulanmış olabilir) — yeni bir sütun için YENİ, bağımsız bir migration dosyası üretilir (`dotnet ef migrations add`).',
+        kod: `using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace WordLearner.Infrastructure.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddOtpAttemptsToUser : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<int>(
+                name: "PendingOtpCodeAttempts",
+                table: "Users",
+                type: "int",
+                nullable: false,
+                defaultValue: 0);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "PendingOtpCodeAttempts",
+                table: "Users");
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Migrations;',
+            aciklama: '`Migration`/`MigrationBuilder` sınıfları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '#nullable disable',
+            aciklama: 'EF Core\'un migration üreticisinin standart çıktısı — migration dosyaları elle yazılmadığı için nullable-reference uyarılarıyla UĞRAŞILMASINA gerek görülmez, bu direktif dosya genelinde onları KAPATIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Migrations',
+            aciklama: 'Bölüm 2\'deki `AddAuthEntities` migration\'ıyla AYNI ad alanı — tüm migration\'lar tek bir klasörde/ad alanında toplanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Ad alanı gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '/// <inheritdoc />',
+            aciklama: 'EF Core\'un otomatik ürettiği XML doküman yorumu — `Migration` temel sınıfındaki metodun dokümantasyonunu MİRAS ALIR, elle yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public partial class AddOtpAttemptsToUser : Migration',
+            aciklama: 'Migration adı, komutta verilen isimle (`AddOtpAttemptsToUser`) BİREBİR aynı — dosya adının başındaki zaman damgası (`20260810112559_`) EF Core\'un migration\'ları SIRALAMAK için kullandığı otomatik önek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected override void Up(MigrationBuilder migrationBuilder)',
+            aciklama: '`dotnet ef database update` çalıştırıldığında ÇALIŞAN yön — şemayı İLERİ taşır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'migrationBuilder.AddColumn<int>(',
+            aciklama: 'Bölüm 2\'deki `CreateTable` (yeni TABLO) çağrısından FARKLI olarak, bu migration VAR OLAN bir tabloya (`Users`) TEK bir sütun ekliyor — EF Core bu farkı, `UserConfiguration.cs`\'teki değişikliği önceki migration snapshot\'ıyla KARŞILAŞTIRARAK otomatik tespit etti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'name: "PendingOtpCodeAttempts",',
+            aciklama: 'Sütun adı — `Up`\'ta EKLENEN, `Down`\'da KALDIRILAN sütunun ismi, ikisinde de BİREBİR aynı olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'table: "Users",',
+            aciklama: 'Hedef tablo.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'type: "int",',
+            aciklama: '`User.cs`\'teki `int` property\'siyle eşleşen SQL Server veri tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'nullable: false,',
+            aciklama: '`User.cs`\'teki `int` (nullable OLMAYAN) property ile BİREBİR eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'defaultValue: 0);',
+            aciklama: 'VAR OLAN kullanıcı satırları için bu sütun eklenirken `NULL` yerine `0` yazılır — `nullable: false` ile birlikte bu, migration\'ın MEVCUT verili bir tabloda hatasız çalışmasını sağlar.',
+            neden: 'Eğer bir varsayılan değer verilmeseydi ve sütun `NOT NULL` olsaydı, `Users` tablosunda ZATEN kayıt varken migration ÇALIŞAMAZDI (var olan satırlar için hangi değerin yazılacağı belirsiz kalırdı).',
+            olmasaydi: null
+          },
+          {
+            satir: 'protected override void Down(MigrationBuilder migrationBuilder)',
+            aciklama: 'Migration\'ı GERİ ALMA (rollback) yönü — `dotnet ef database update` bir önceki migration\'a döndürülmek istendiğinde bu metot çalışır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'migrationBuilder.DropColumn(',
+            aciklama: '`Up`\'ın TERSİ: sütunu tamamen kaldırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'table: "Users");',
+            aciklama: '`DropColumn` çağrısının son parametresi ve kapanışı — `Up`\'taki `table: "Users",`\'in AYNISI, yalnızca bu çağrının SON parametresi olduğu için virgül yerine kapanış parantezi var.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Metot/sınıf/ad alanı gövdelerinin kapanışları (birden fazla iç içe blok AYNI karakterle biter).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpVerificationResult.cs — Doğrulama Sonucu, Ayrı Bir Enum Dosyasında',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/OtpVerificationResult.cs',
+        nedenBuKlasor: 'Enum, `IOtpService` ARAYÜZÜYLE AYNI dosyada DEĞİL, ayrı bir dosyada yaşıyor — `RefreshTokenResult` (Bölüm 4) gibi küçük bir `record`\'un aksine, bir `enum`\'un kendi dosyası olması `Domain/Enums/Auth/`\'daki `OtpPurpose`/`QrLoginStatus` (Bölüm 1) ile AYNI, tutarlı desen; bu enum DB\'ye YAZILMADIĞI (persist edilmediği) için `Domain/Enums/` yerine Application katmanında, ama YİNE DE arayüzden ayrı bir dosyada duruyor.',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public enum OtpVerificationResult
+{
+    Success,
+    InvalidCode,
+    Expired
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IOtpService` ile AYNI ad alanı — ayrı dosyada olsa da aynı klasörde/namespace\'te yaşıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum OtpVerificationResult',
+            aciklama: '`Verify` metodunun tek bir `bool` yerine bu enum\'u DÖNDÜRMESİNİN sebebi: "başarısız" tek bir durum DEĞİL — kod yanlış, süresi dolmuş ya da hiç kod yok, ÜÇÜ de farklı senaryolar ve ileride (13 Auth Handler task\'ında) farklı hata mesajlarına (ör. `OTP_EXPIRED` vs `OTP_INVALID`) dönüşebilir.',
+            neden: 'Bir `bool` dönseydi, `Verify`\'ı çağıran Handler "neden başarısız oldu"yu HİÇ bilemezdi — kullanıcıya her zaman AYNI genel hata mesajını göstermek zorunda kalırdı, hâlbuki "kodun süresi doldu, yeni kod iste" ile "yanlış kod girdin" farklı KULLANICI aksiyonları gerektirir.',
+            olmasaydi: 'Yalnızca `Success`/`InvalidCode` iki değerli bir enum kullanılsaydı, süresi dolmuş bir kod ile GERÇEKTEN yanlış girilen bir kod AYNI hata olarak GÖRÜNÜRDÜ — kullanıcı deneyimi bakımından kayıp, teknik bakımdan BİLGİ kaybı.',
+          },
+          {
+            satir: 'Success,',
+            aciklama: 'Kod doğru, süresi dolmamış, purpose eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'InvalidCode,',
+            aciklama: 'Kod yanlış, hiç kod yok, ya da purpose UYUŞMUYOR (ör. PasswordReset için üretilen kod, LoginOtp akışında kullanılmaya çalışıldı) — üçü de kullanıcıya aynı sonucu VERİR: "kod geçersiz".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Expired',
+            aciklama: 'Kod doğru olsa BİLE süresi (5 dakika) geçmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Enum gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Enum gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IOtpService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IOtpService.cs',
+        nedenBuKlasor: '`IPasswordService`/`ITokenService` (Bölüm 3-4) ile AYNI klasör — `Application/Interfaces/Services/` paylaşılan servis arayüzlerinin toplandığı yer.',
+        kod: `using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+// Register/Login/ResetPassword/AccountDeletion'ın ortak OTP üretim/doğrulama mantığı — User'ın
+// Pending* alanlarını mutasyona uğratır, DB'ye YAZMAZ (persist çağıran Handler'ın işi, ITokenService/
+// IPasswordService ile aynı "servis saf mantık taşır" deseni).
+public interface IOtpService
+{
+    string Generate(User user, OtpPurpose purpose);
+    OtpVerificationResult Verify(User user, string code, OtpPurpose purpose);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfını PARAMETRE olarak alabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose` enum\'unu (Bölüm 1) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `IPasswordService`/`ITokenService`/`OtpVerificationResult` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Register/Login/ResetPassword/AccountDeletion\'ın ortak OTP üretim/doğrulama mantığı — User\'ın',
+            aciklama: 'Sınıf/arayüz üstü yorumun 1. satırı — bu servisin dört akış tarafından PAYLAŞILDIĞINI özetler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Pending* alanlarını mutasyona uğratır, DB\'ye YAZMAZ (persist çağıran Handler\'ın işi, ITokenService/',
+            aciklama: 'Yorumun devamı — servisin DB\'ye YAZMADIĞI, yalnızca mutasyona uğrattığı ilkesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// IPasswordService ile aynı "servis saf mantık taşır" deseni).',
+            aciklama: 'Yorumun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IOtpService',
+            aciklama: 'Handler\'lar (ileride yazılacak Register/Login gibi) yalnızca bu SÖZLEŞMEYİ bilecek — `IPasswordService`/`ITokenService` (Bölüm 3-4) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Arayüz gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Arayüz gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string Generate(User user, OtpPurpose purpose);',
+            aciklama: 'Kullanıcı nesnesini ve HANGİ amaçla (Register mi, PasswordReset mi) kod üretildiğini alır; DÖNÜŞ değeri ham (plaintext) kod — çağıran Handler bu kodu e-postayla GÖNDERECEK, `IOtpService` e-posta göndermekle İLGİLENMEZ (o `IEmailService`\'in işi, ayrı bir sorumluluk).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'OtpVerificationResult Verify(User user, string code, OtpPurpose purpose);',
+            aciklama: 'Kullanıcının girdiği kodu, `user.PendingOtpCodeHash`\'teki SAKLI hash ile karşılaştırır — `purpose` parametresi de eşleşmeli, aksi halde (ör. bir PasswordReset kodu Login akışında denenirse) `InvalidCode` döner.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpService.cs — Implementasyon: Üretim',
+        dosyaYolu: 'backend/WordLearner.Application/Services/OtpService.cs',
+        nedenBuKlasor: '`PasswordService`/`JwtTokenService` (Bölüm 3-4) ile AYNI klasör — `Application/Services/`, flat tutulan paylaşılan servis implementasyonları.',
+        kod: `using System.Security.Cryptography;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Services;
+
+public class OtpService : IOtpService
+{
+    private const int CodeLength = 6;
+    private const int ExpirationMinutes = 5;
+    private const int MaxAttempts = 3;
+
+    private readonly IPasswordService _passwordService;
+
+    public OtpService(IPasswordService passwordService) => _passwordService = passwordService;
+
+    public string Generate(User user, OtpPurpose purpose)
+    {
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString($"D{CodeLength}");
+
+        user.PendingOtpCodeHash = _passwordService.HashToken(code);
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(ExpirationMinutes);
+        user.PendingOtpCodePurpose = purpose;
+        user.PendingOtpCodeAttempts = 0;
+
+        return code;
+    }`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Cryptography;',
+            aciklama: '`RandomNumberGenerator` — kriptografik olarak GÜVENLİ rastgele sayı üretimi için.',
+            neden: 'OTP kodu bir GÜVENLİK değeri — `System.Random` (kriptografik olarak GÜVENSİZ, tahmin edilebilir bir algoritma kullanır) yerine `RandomNumberGenerator` kullanılması bcrypt\'in salt üretiminde olduğu gibi TESADÜFEN değil, BİLİNÇLİ bir güvenlik kararı.',
+            olmasaydi: '`System.Random` kullanılsaydı, seed değeri (genelde sistem saati) tahmin edilebildiği için TEORİK olarak bir saldırgan üretilecek OTP kodlarını ÖNCEDEN tahmin edebilirdi.'
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IOtpService`/`OtpVerificationResult` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfını kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose` enum\'unu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `PasswordService`/`JwtTokenService` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class OtpService : IOtpService',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int CodeLength = 6;',
+            aciklama: 'SECURITY.md §1\'deki "OTP (6 hane, 5dk)" kuralının kod karşılığı — sihirli sayı olarak DAĞITILMAK yerine tek bir sabitte toplanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int ExpirationMinutes = 5;',
+            aciklama: 'Aynı satırdaki "5dk" kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int MaxAttempts = 3;',
+            aciklama: 'SECURITY.md §1\'deki "3 yanlış → kod geçersiz" kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: '`HashToken` (Bölüm 3, SHA-256) metodunu kullanmak için — OTP kodu da tıpkı refresh token gibi RASTGELE üretildiği için (tahmin edilemez), bcrypt\'in KASITLI yavaşlığına gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public OtpService(IPasswordService passwordService) => _passwordService = passwordService;',
+            aciklama: 'Tek bağımlılık, constructor injection — `PasswordService` (Bölüm 3) gibi expression-bodied kısa constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Generate(User user, OtpPurpose purpose)',
+            aciklama: '`IOtpService.Generate` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString($"D{CodeLength}");',
+            aciklama: '0-999999 arası rastgele bir tam sayı üretir, `"D6"` format string\'iyle HER ZAMAN 6 haneli bir metne çevirir (ör. `42` → `"000042"`) — baştaki sıfırlar KAYBOLMAZ.',
+            neden: '`ToString("D6")` kullanılmasaydı, `42` gibi küçük bir sayı `"42"` (2 haneli) olarak KALIRDI — kullanıcıya HER ZAMAN 6 haneli bir kod gösterme garantisi bozulurdu.',
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = _passwordService.HashToken(code);',
+            aciklama: 'Ham kodun KENDİSİ DEĞİL, SHA-256 hash\'i saklanır — DB sızıntısında ham OTP kodları HİÇBİR ZAMAN açığa çıkmaz (RefreshToken\'daki `TokenHash` ile AYNI ilke, Bölüm 3).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(ExpirationMinutes);',
+            aciklama: '`DateTime.UtcNow` — SUNUCU saat dilimi ne olursa olsun tutarlı, `Verify`\'daki karşılaştırma da AYNI şekilde UTC kullanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose = purpose;',
+            aciklama: 'Kodun HANGİ akış için üretildiği kaydedilir — `Verify` bu değeri, doğrulama sırasında istenen `purpose` ile KARŞILAŞTIRACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts = 0;',
+            aciklama: 'Yeni bir kod üretilince deneme sayacı SIFIRLANIR — kullanıcı önceki kod için 2 yanlış deneme yapmış olsa bile, YENİ bir kod istediğinde temiz bir 3 hakla başlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return code;',
+            aciklama: 'HAM (hash\'lenmemiş) kod döner — bu değer DB\'YE YAZILMAZ, yalnızca çağıran Handler\'ın e-postaya KOYMASI için üretilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: '`Generate` metodunun kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpService.cs — Implementasyon: Doğrulama',
+        dosyaYolu: 'backend/WordLearner.Application/Services/OtpService.cs',
+        nedenBuKlasor: 'Aynı dosyanın devamı — `Verify` metodu ve özel `ClearPendingOtp` yardımcı metodu.',
+        kod: `    public OtpVerificationResult Verify(User user, string code, OtpPurpose purpose)
+    {
+        if (user.PendingOtpCodeHash is null || user.PendingOtpCodePurpose != purpose)
+            return OtpVerificationResult.InvalidCode;
+
+        if (user.PendingOtpCodeExpiresAt is null || user.PendingOtpCodeExpiresAt < DateTime.UtcNow)
+        {
+            ClearPendingOtp(user);
+            return OtpVerificationResult.Expired;
+        }
+
+        if (user.PendingOtpCodeHash != _passwordService.HashToken(code))
+        {
+            user.PendingOtpCodeAttempts++;
+            // 3. yanlış denemede kod tamamen temizlenir — kullanıcı doğru kodu bilse bile artık geçersiz.
+            if (user.PendingOtpCodeAttempts >= MaxAttempts)
+                ClearPendingOtp(user);
+
+            return OtpVerificationResult.InvalidCode;
+        }
+
+        ClearPendingOtp(user);
+        return OtpVerificationResult.Success;
+    }
+
+    private static void ClearPendingOtp(User user)
+    {
+        user.PendingOtpCodeHash = null;
+        user.PendingOtpCodeExpiresAt = null;
+        user.PendingOtpCodePurpose = null;
+        user.PendingOtpCodeAttempts = 0;
+    }`,
+        satirlar: [
+          {
+            satir: 'public OtpVerificationResult Verify(User user, string code, OtpPurpose purpose)',
+            aciklama: '`IOtpService.Verify` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Metot/blok gövdelerinin açılışı (bu dosyada birden fazla iç içe blok AYNI karakterle açılır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user.PendingOtpCodeHash is null || user.PendingOtpCodePurpose != purpose)',
+            aciklama: 'İki durumu TEK kontrolde birleştirir: hiç bekleyen kod yoksa (`null`) YA DA kod BAŞKA bir amaç için üretilmişse (ör. saklı kod `PasswordReset` için ama `LoginOtp` doğrulanmaya çalışılıyor) — ikisi de kullanıcı açısından "bu kod burada geçersiz" anlamına gelir.',
+            neden: 'Purpose kontrolü OLMASAYDI, bir kullanıcı şifre sıfırlama için aldığı OTP kodunu (bilerek ya da yanlışlıkla) e-posta doğrulama endpoint\'inde DENEYEBİLİR ve BAŞARILI olabilirdi — iki farklı güvenlik akışı birbirine SIZARDI.',
+            olmasaydi: null
+          },
+          {
+            satir: 'return OtpVerificationResult.InvalidCode;',
+            aciklama: 'Erken çıkış (guard clause) — bu durumda deneme sayacı ARTIRILMAZ, çünkü ortada zaten "aktif" bir kod YOK; artırmak anlamsız olurdu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user.PendingOtpCodeExpiresAt is null || user.PendingOtpCodeExpiresAt < DateTime.UtcNow)',
+            aciklama: 'Süre kontrolü — `is null` kontrolü teorik olarak yukarıdaki `PendingOtpCodeHash is null` kontrolünden SONRA hiç `null` olamaz (ikisi BİRLİKTE set/temizlenir) ama C#\'ın nullable analizi için AÇIK kontrol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ClearPendingOtp(user);',
+            aciklama: 'Süresi dolmuş bir kod, doğru girilse BİLE artık İŞE YARAMAZ — bu yüzden hemen TEMİZLENİR, kullanıcı yeni bir kod İSTEMEK zorunda kalır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return OtpVerificationResult.Expired;',
+            aciklama: 'Yanlış kod ile AYRI bir sonuç — çağıran Handler ileride kullanıcıya "kodun süresi doldu, yeni kod iste" gibi daha NET bir mesaj gösterebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user.PendingOtpCodeHash != _passwordService.HashToken(code))',
+            aciklama: 'Kullanıcının girdiği ham kodu AYNI `HashToken` ile hash\'ler ve saklı hash\'le KARŞILAŞTIRIR — SHA-256 deterministik olduğu için (Bölüm 3) aynı girdi HER ZAMAN aynı hash\'i üretir, bu karşılaştırma güvenilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts++;',
+            aciklama: 'Yanlış deneme SAYACI bir artırılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// 3. yanlış denemede kod tamamen temizlenir — kullanıcı doğru kodu bilse bile artık geçersiz.',
+            aciklama: 'Aşağıdaki `if` bloğunun NEDENİNİ özetleyen yorum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user.PendingOtpCodeAttempts >= MaxAttempts)',
+            aciklama: '3. (veya daha fazla, teorik olarak) yanlış denemede kilit devreye girer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ClearPendingOtp(user);',
+            aciklama: 'Kod TAMAMEN temizlenir — bundan sonra kullanıcı DOĞRU kodu girse bile `PendingOtpCodeHash is null` kontrolüne TAKILIR, çünkü artık ortada karşılaştırılacak bir hash YOK.',
+            neden: 'Sayaç sıfırlanmadan sadece bir "kilitli" bayrağı tutulsaydı, kilit durumunu AYRI bir alanda saklamak gerekirdi — `ClearPendingOtp` ile aynı temizleme mekanizmasını (başarılı doğrulamada da kullanılan) yeniden kullanmak, İKİ farklı "geçersiz kod" durumunu (kilitli / hiç yok) TEK bir kontrolde birleştiriyor.',
+            olmasaydi: null
+          },
+          {
+            satir: 'ClearPendingOtp(user);',
+            aciklama: 'Başarılı doğrulamadan SONRA da kod temizlenir — AYNI kod İKİNCİ kez kullanılamaz (replay önlemi, `RefreshToken`\'ın `IsUsed` mantığıyla AYNI ilke, Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return OtpVerificationResult.Success;',
+            aciklama: 'Tek başarı yolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static void ClearPendingOtp(User user)',
+            aciklama: '`static` — `this`\'e (instance state\'e) ihtiyaç duymayan, yalnızca parametre üzerinde çalışan bir yardımcı metot; üç farklı yerden (expired/lockout/success) çağrıldığı için tekrar YAZILMAK yerine tek bir metoda ÇIKARILDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash = null;',
+            aciklama: 'Hash temizlenir — bu satır OLMADAN `Verify` bir sonraki çağrıda hâlâ ESKİ (kullanılmış/süresi geçmiş) hash\'i BULURDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = null;',
+            aciklama: 'Süre alanı temizlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose = null;',
+            aciklama: 'Amaç alanı temizlenir — dördü BİRLİKTE temizlenir, biri unutulursa `Verify`\'ın `is null` kontrolleri tutarsız DAVRANABİLİRDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts = 0;',
+            aciklama: 'Deneme sayacı da sıfırlanır — bir SONRAKİ `Generate` çağrısı zaten bunu sıfırlar ama `ClearPendingOtp` KENDİ başına da tutarlı bir "boş" durum bırakmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Metot/blok gövdelerinin kapanışı (bu dosyada birden fazla iç içe blok AYNI karakterle kapanır).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpServiceTests.cs — Yardımcılar ve Üretim Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/OtpServiceTests.cs',
+        nedenBuKlasor: '`PasswordServiceTests`/`JwtTokenServiceTests` (Bölüm 3-4) ile AYNI klasör — `Tests/Services/`.',
+        kod: `using FluentAssertions;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Services;
+
+public class OtpServiceTests
+{
+    private readonly OtpService _service = new(new PasswordService());
+
+    private static User CreateUser() => new() { Id = 1, Email = "test@example.com" };
+
+    [Fact]
+    public void Generate_ValidPurpose_SetsPendingFieldsAndReturnsSixDigitCode()
+    {
+        // ARRANGE
+        var user = CreateUser();
+
+        // ACT
+        var code = _service.Generate(user, OtpPurpose.LoginOtp);
+
+        // ASSERT — kod 6 haneli, User'ın Pending alanları set edilmiş (hash — ham kod DB'ye YAZILMAZ)
+        code.Should().MatchRegex("^[0-9]{6}$");
+        user.PendingOtpCodeHash.Should().NotBeNullOrEmpty().And.NotBe(code);
+        user.PendingOtpCodePurpose.Should().Be(OtpPurpose.LoginOtp);
+        user.PendingOtpCodeExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(5), TimeSpan.FromSeconds(5));
+        user.PendingOtpCodeAttempts.Should().Be(0);
+    }`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` uzantı metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IOtpService`/`OtpVerificationResult` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `OtpService` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose` enum\'u için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class OtpServiceTests',
+            aciklama: '`{TestEdilenSınıf}Tests` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Sınıf/metot/blok gövdelerinin açılışı (bu dosyada birden fazla iç içe blok AYNI karakterle açılır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly OtpService _service = new(new PasswordService());',
+            aciklama: '`PasswordServiceTests`\'teki desenin AYNISI: `OtpService`\'in TEK bağımlılığı olan `IPasswordService`, mock\'lanmak yerine GERÇEK `PasswordService` ile kuruluyor — `PasswordService` de bağımlılıksız/saf olduğu için mock\'lamanın hiçbir FAYDASI yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static User CreateUser() => new() { Id = 1, Email = "test@example.com" };',
+            aciklama: 'Testler arasında TEKRARLANAN kullanıcı oluşturma kodu, tek bir yardımcı metoda ÇIKARILDI — `JwtTokenServiceTests`\'teki `CreateUser()` ile AYNI desen (Bölüm 4).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği — dosyada BİRDEN ÇOK kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Generate_ValidPurpose_SetsPendingFieldsAndReturnsSixDigitCode()',
+            aciklama: 'Happy-path senaryosu — `Generate`\'in ürettiği tüm yan etkileri tek testte doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Test metodunun hazırlık adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = _service.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Test edilen metodun ÇAĞRISI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT — kod 6 haneli, User\'ın Pending alanları set edilmiş (hash — ham kod DB\'ye YAZILMAZ)',
+            aciklama: 'Doğrulama adımının NE\'yi kanıtladığını özetleyen yorum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'code.Should().MatchRegex("^[0-9]{6}$");',
+            aciklama: 'Dönen kodun TAM 6 rakamdan oluştuğunu doğrular — `"D6"` format string\'inin (bkz. `OtpService.Generate`) baştaki sıfırları KORUDUĞUNUN kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash.Should().NotBeNullOrEmpty().And.NotBe(code);',
+            aciklama: 'İki ayrı iddia BİRLEŞTİRİLDİ: hash boş DEĞİL VE ham kodun KENDİSİYLE aynı DEĞİL — ikinci kontrol, `HashToken`\'ın GERÇEKTEN çağrıldığının (kodun olduğu gibi SAKLANMADIĞININ) kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(5), TimeSpan.FromSeconds(5));',
+            aciklama: '`JwtTokenServiceTests.GenerateRefreshToken_ReturnsTokenWithFutureExpiry` (Bölüm 4) ile AYNI "yaklaşık zaman" karşılaştırma deseni — test ÇALIŞMA anı ile `Generate` çağrısı arasındaki mikrosaniyelik farkı TOLERE eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose.Should().Be(OtpPurpose.LoginOtp);',
+            aciklama: 'Doğru `OtpPurpose` değerinin kaydedildiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts.Should().Be(0);',
+            aciklama: 'Yeni üretilen bir kodun deneme sayacının SIFIR başladığının kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Sınıf/metot gövdelerinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpServiceTests.cs — Doğru Kod ve Yanlış Kod Senaryoları',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/OtpServiceTests.cs',
+        nedenBuKlasor: 'Aynı dosyanın devamı.',
+        kod: `    [Fact]
+    public void Verify_CorrectCode_ReturnsSuccessAndClearsPendingFields()
+    {
+        // ARRANGE
+        var user = CreateUser();
+        var code = _service.Generate(user, OtpPurpose.LoginOtp);
+
+        // ACT
+        var result = _service.Verify(user, code, OtpPurpose.LoginOtp);
+
+        // ASSERT — doğrulama sonrası kod tekrar kullanılamasın diye alanlar temizlenir
+        result.Should().Be(OtpVerificationResult.Success);
+        user.PendingOtpCodeHash.Should().BeNull();
+        user.PendingOtpCodePurpose.Should().BeNull();
+    }
+
+    [Fact]
+    public void Verify_WrongCode_ReturnsInvalidCodeAndIncrementsAttempts()
+    {
+        // ARRANGE
+        var user = CreateUser();
+        _service.Generate(user, OtpPurpose.LoginOtp);
+
+        // ACT
+        var result = _service.Verify(user, "000000", OtpPurpose.LoginOtp);
+
+        // ASSERT — kod henüz temizlenmedi (1. yanlış deneme), tekrar denemeye izin var
+        result.Should().Be(OtpVerificationResult.InvalidCode);
+        user.PendingOtpCodeAttempts.Should().Be(1);
+        user.PendingOtpCodeHash.Should().NotBeNull();
+    }`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_CorrectCode_ReturnsSuccessAndClearsPendingFields()',
+            aciklama: 'Happy-path doğrulama senaryosu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metotlarının gövde açılışları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Hazırlık adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = _service.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Bu testte `Generate`, üretim MANTIĞINI test etmek için değil, `Verify`\'a geçerli bir GİRDİ hazırlamak için kullanılıyor (ARRANGE adımının bir parçası).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify(user, code, OtpPurpose.LoginOtp);',
+            aciklama: 'Az önce ÜRETİLEN doğru kodun KENDİSİYLE doğrulanması — happy path.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT — doğrulama sonrası kod tekrar kullanılamasın diye alanlar temizlenir',
+            aciklama: 'Doğrulama adımının NE\'yi kanıtladığını özetleyen yorum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().Be(OtpVerificationResult.Success);',
+            aciklama: 'Enum karşılaştırması — `OtpVerificationResult` bir `bool` olsaydı bu satır yalnızca `result.Should().BeTrue()` olurdu, enum kullanımı burada "NEDEN başarılı" bilgisini de TAŞIDIĞINI gösteriyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash.Should().BeNull();',
+            aciklama: '`ClearPendingOtp`\'un GERÇEKTEN çağrıldığının kanıtı — bu satır olmasaydı, `Verify` başarı DÖNDÜRSE bile kodun arkada TEMİZLENMEDİĞİ (replay\'e açık kaldığı) fark edilmezdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodePurpose.Should().BeNull();',
+            aciklama: '`ClearPendingOtp`\'un `PendingOtpCodePurpose`\'u da temizlediğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_WrongCode_ReturnsInvalidCodeAndIncrementsAttempts()',
+            aciklama: 'Sınır/uç durum senaryosu: YANLIŞ kodla doğrulama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_service.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Bu testte kod DEĞERİ önemli değil (yanlış kod zaten deneniyor), yalnızca bir bekleyen OTP\'nin VAR OLMASI yeterli — dönüş değeri kullanılmıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify(user, "000000", OtpPurpose.LoginOtp);',
+            aciklama: '`"000000"`\'ın gerçek üretilen kodla eşleşme ihtimali pratikte SIFIR (1/1.000.000) — testin GÜVENİLİRLİĞİNİ etkilemez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT — kod henüz temizlenmedi (1. yanlış deneme), tekrar denemeye izin var',
+            aciklama: 'Doğrulama adımının NE\'yi kanıtladığını özetleyen yorum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().Be(OtpVerificationResult.InvalidCode);',
+            aciklama: 'Yanlış kodun REDDEDİLDİĞİNİN kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts.Should().Be(1);',
+            aciklama: 'Sayacın GERÇEKTEN arttığının kanıtı — bir sonraki testte (3. yanlış deneme) bu davranışın ÜZERİNE inşa edilecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash.Should().NotBeNull();',
+            aciklama: '1. yanlış denemede kodun HENÜZ temizlenmediğini, kullanıcının TEKRAR deneyebileceğini doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metotlarının/sınıfın gövde kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpServiceTests.cs — 3. Yanlış Deneme ve Kilit Testi',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/OtpServiceTests.cs',
+        nedenBuKlasor: 'Aynı dosyanın devamı — SECURITY.md §1\'deki "3 yanlış → kod geçersiz" kuralının UÇTAN UCA kanıtı.',
+        kod: `    [Fact]
+    public void Verify_ThirdWrongAttempt_ClearsPendingOtpSoCorrectCodeNoLongerWorks()
+    {
+        // ARRANGE — SECURITY.md §1: 3 yanlış → kod geçersiz
+        var user = CreateUser();
+        var code = _service.Generate(user, OtpPurpose.LoginOtp);
+        _service.Verify(user, "000000", OtpPurpose.LoginOtp);
+        _service.Verify(user, "000000", OtpPurpose.LoginOtp);
+
+        // ACT — 3. yanlış deneme
+        var thirdAttemptResult = _service.Verify(user, "000000", OtpPurpose.LoginOtp);
+        // artık doğru kodu girse bile (kod DB'de temizlendiği için) başarısız olmalı
+        var correctCodeAfterLockout = _service.Verify(user, code, OtpPurpose.LoginOtp);
+
+        // ASSERT
+        thirdAttemptResult.Should().Be(OtpVerificationResult.InvalidCode);
+        correctCodeAfterLockout.Should().Be(OtpVerificationResult.InvalidCode);
+        user.PendingOtpCodeAttempts.Should().Be(0);
+        user.PendingOtpCodeHash.Should().BeNull();
+    }`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_ThirdWrongAttempt_ClearsPendingOtpSoCorrectCodeNoLongerWorks()',
+            aciklama: 'Test adı, testin BEKLENEN sonucunu (kilit devreye girer, doğru kod bile işe yaramaz) doğrudan İSMİNE yazıyor — okuyucu test gövdesini okumadan bile ne doğrulandığını anlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metodu gövdesinin açılışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE — SECURITY.md §1: 3 yanlış → kod geçersiz',
+            aciklama: 'Hazırlık adımı, hangi kurala karşılık geldiğini işaret ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = _service.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Gerçek (doğru) kod, testin SONUNDA "kilitliyken doğru kod bile işe yaramıyor" iddiasını kanıtlamak için SAKLANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_service.Verify(user, "000000", OtpPurpose.LoginOtp);',
+            aciklama: 'İki kez ART ARDA çağrılıyor (1. ve 2. yanlış deneme) — ARRANGE adımının parçası, sayaç bu noktada 2\'ye ULAŞMIŞ olur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT — 3. yanlış deneme',
+            aciklama: 'Test edilen asıl çağrının başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var thirdAttemptResult = _service.Verify(user, "000000", OtpPurpose.LoginOtp);',
+            aciklama: '3. (ve `MaxAttempts`\'e ulaşan) yanlış deneme — bu çağrı SIRASINDA `ClearPendingOtp` tetiklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// artık doğru kodu girse bile (kod DB\'de temizlendiği için) başarısız olmalı',
+            aciklama: 'Bir sonraki satırın NEDEN önemli olduğunu açıklayan yorum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var correctCodeAfterLockout = _service.Verify(user, code, OtpPurpose.LoginOtp);',
+            aciklama: 'Testin EN KRİTİK satırı: bu sefer DOĞRU kod (`code`, `Generate`\'in gerçekten döndürdüğü değer) deneniyor — kilitlenmemiş bir sistemde bu BAŞARILI olurdu.',
+            neden: 'Bu satır OLMASAYDI, test yalnızca "3. yanlış deneme de InvalidCode döner" (zaten beklenen, sıradan bir sonuç) doğrulardı — asıl İDDİA olan "kilitlenince DOĞRU kod bile artık işe YARAMAZ" hiç TEST EDİLMEMİŞ olurdu.',
+            olmasaydi: 'Bu satır (ve altındaki assertion) olmasaydı, `MaxAttempts` sayacı YANLIŞLIKLA silinse veya kontrol tersine (`<=` yerine `<`) yazılsa bile hiçbir test bunu YAKALAMAZDI.'
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Doğrulama adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'thirdAttemptResult.Should().Be(OtpVerificationResult.InvalidCode);',
+            aciklama: '3. yanlış denemenin de (beklendiği gibi) reddedildiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'correctCodeAfterLockout.Should().Be(OtpVerificationResult.InvalidCode);',
+            aciklama: '3 yanlış denemeden SONRA, doğru kodun bile REDDEDİLDİĞİNİN kanıtı — bu, testin asıl AMACI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeAttempts.Should().Be(0);',
+            aciklama: 'Kilitlenince sayacın da (bir sonraki `Generate`\'e temiz bir başlangıç için) SIFIRLANDIĞININ kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash.Should().BeNull();',
+            aciklama: 'Kilitlenince hash\'in de TAMAMEN temizlendiğinin kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metodu gövdesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'OtpServiceTests.cs — Süre, Amaç Uyuşmazlığı ve Boş Durum',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/OtpServiceTests.cs',
+        nedenBuKlasor: 'Aynı dosyanın devamı — sınıfın son üç testi.',
+        kod: `    [Fact]
+    public void Verify_ExpiredCode_ReturnsExpiredAndClearsPendingFields()
+    {
+        // ARRANGE
+        var user = CreateUser();
+        var code = _service.Generate(user, OtpPurpose.LoginOtp);
+        user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+
+        // ACT
+        var result = _service.Verify(user, code, OtpPurpose.LoginOtp);
+
+        // ASSERT
+        result.Should().Be(OtpVerificationResult.Expired);
+        user.PendingOtpCodeHash.Should().BeNull();
+    }
+
+    [Fact]
+    public void Verify_MismatchedPurpose_ReturnsInvalidCode()
+    {
+        // ARRANGE — PasswordReset için üretilen kod, LoginOtp akışında kullanılamaz
+        var user = CreateUser();
+        var code = _service.Generate(user, OtpPurpose.PasswordReset);
+
+        // ACT
+        var result = _service.Verify(user, code, OtpPurpose.LoginOtp);
+
+        // ASSERT
+        result.Should().Be(OtpVerificationResult.InvalidCode);
+    }
+
+    [Fact]
+    public void Verify_NoPendingCode_ReturnsInvalidCode()
+    {
+        // ARRANGE
+        var user = CreateUser();
+
+        // ACT
+        var result = _service.Verify(user, "123456", OtpPurpose.LoginOtp);
+
+        // ASSERT
+        result.Should().Be(OtpVerificationResult.InvalidCode);
+    }
+}`,
+        satirlar: [
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test özniteliği — bu slaytta ÜÇ kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_ExpiredCode_ReturnsExpiredAndClearsPendingFields()',
+            aciklama: 'Süre dolumu senaryosu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '{',
+            aciklama: 'Test metotlarının gövde açılışları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE',
+            aciklama: 'Hazırlık adımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = _service.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Geçerli bir kod üretilir — asıl SINANAN şey kodun DOĞRULUĞU değil, süresinin DOLMUŞ olması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeExpiresAt = DateTime.UtcNow.AddMinutes(-1);',
+            aciklama: '5 dakikalık GERÇEK süreyi test içinde BEKLEMEK yerine, süre alanı DOĞRUDAN geçmişe alınıyor — testin milisaniyeler içinde çalışmasını sağlayan, yaygın bir "zamanı simüle et" tekniği.',
+            neden: 'Gerçek bir 5 dakika BEKLEMEK, bu testi (ve tüm test SÜİTİNİ) pratik olarak ÇALIŞTIRILAMAZ hale getirirdi — `DateTime.UtcNow` enjekte edilebilir bir servis OLMADIĞI için (`OtpService` basitliği için `IClock` gibi bir soyutlama KULLANMIYOR), testin kendisi durumu doğrudan MANİPÜLE ediyor.',
+            olmasaydi: null
+          },
+          {
+            satir: '// ACT',
+            aciklama: 'Test edilen asıl çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify(user, code, OtpPurpose.LoginOtp);',
+            aciklama: 'DOĞRU kod deneniyor — süresi dolmuş olmasına rağmen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ASSERT',
+            aciklama: 'Doğrulama adımı — bu slaytta ÜÇ kez geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().Be(OtpVerificationResult.Expired);',
+            aciklama: 'Doğru kodun bile süre dolduğu için REDDEDİLDİĞİNİN kanıtı — `InvalidCode` DEĞİL, ayrı `Expired` sonucu döndüğü doğrulanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.PendingOtpCodeHash.Should().BeNull();',
+            aciklama: 'Süresi dolan kodun da (başarılı doğrulamada olduğu gibi) TEMİZLENDİĞİNİN kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_MismatchedPurpose_ReturnsInvalidCode()',
+            aciklama: 'Amaç uyuşmazlığı senaryosu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ARRANGE — PasswordReset için üretilen kod, LoginOtp akışında kullanılamaz',
+            aciklama: 'Hazırlık adımı, senaryoyu özetliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var code = _service.Generate(user, OtpPurpose.PasswordReset);',
+            aciklama: 'Kod BİR amaç (`PasswordReset`) için üretiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify(user, code, OtpPurpose.LoginOtp);',
+            aciklama: '...ama BAŞKA bir amaçla (`LoginOtp`) doğrulanmaya çalışılıyor — kod DOĞRU olsa bile bu BAŞARISIZ olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().Be(OtpVerificationResult.InvalidCode);',
+            aciklama: 'Amaç uyuşmazlığının `InvalidCode` ile SONUÇLANDIĞININ kanıtı — bu satır, dosyanın SON testinde de (boş durum) AYNI metinle tekrar geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Verify_NoPendingCode_ReturnsInvalidCode()',
+            aciklama: 'En temel sınır durumu: hiç OTP üretilmemiş bir kullanıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = CreateUser();',
+            aciklama: 'Yardımcı metottan taze bir kullanıcı örneği — `Generate` HİÇ çağrılmıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _service.Verify(user, "123456", OtpPurpose.LoginOtp);',
+            aciklama: 'Hiç `Generate` çağrılmadan DOĞRUDAN `Verify` çağrılıyor — `user.PendingOtpCodeHash` başlangıçta `null`, bu en TEMEL sınır durumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}',
+            aciklama: 'Test metotlarının ve sınıfın gövde kapanışları.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Guard Clause', tanim: 'Bir metodun BAŞINDA, geçersiz bir durumu erken tespit edip HEMEN çıkan `if` bloğu — geri kalan kodun "iç içe" (nested) if\'lerle karmaşıklaşmasını ÖNLER.' },
+          { terim: 'RandomNumberGenerator', tanim: '.NET\'in kriptografik olarak GÜVENLİ rastgele sayı üreteci — `System.Random`\'ın aksine tahmin EDİLEMEZ, güvenlik değerleri (OTP, token) için kullanılır.' },
+          { terim: 'Replay Önlemi', tanim: 'Aynı değerin (OTP kodu, refresh token) İKİNCİ kez kullanılmasını engelleme — burada başarılı doğrulamadan SONRA kodun temizlenmesiyle sağlanıyor.' },
+          { terim: 'Deneme Sayacı (Attempt Counter)', tanim: 'Bir güvenlik değerinin kaç kez YANLIŞ denendiğini DB\'de kalıcı olarak tutan alan — HTTP isteği başına DEĞİL, kullanıcı satırında saklanmalı ki sınır GERÇEKTEN uygulanabilsin.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IOtpService, Register/Login/ResetPassword/AccountDeletion\'ın ORTAK OTP mantığını tek bir yerde topluyor — CLAUDE.md §3\'ün "paylaşılan mantık" kuralının somut uygulaması.',
+          'Servis, User\'ı bellekte MUTASYONA uğratıyor ama DB\'ye YAZMIYOR — ITokenService/IPasswordService ile aynı "saf mantık" deseni, persist Handler\'ın sorumluluğu.',
+          '"3 yanlış → kod geçersiz" kuralı, HTTP isteği başına DEĞİL User satırında KALICI bir PendingOtpCodeAttempts sayacı gerektirdi — yeni bir migration (AddOtpAttemptsToUser) bu ihtiyaçtan doğdu.',
+          'OtpVerificationResult enum\'u, "başarısız"ın TEK bir durum olmadığını (yanlış kod / süresi dolmuş / hiç yok) modelliyor — bir bool bu bilgiyi taşıyamazdı.',
+          '7 testin her biri FARKLI bir senaryoyu (üretim, doğru kod, yanlış kod, 3. yanlış deneme kilidi, süre dolumu, amaç uyuşmazlığı, boş durum) uçtan uca doğruluyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
