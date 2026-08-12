@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API Versiyonlama: /api/v1 Öneki</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'route-versiyonlama',
+    bolumBaslik: 'A-01 — Proje İskeleti',
+    oncekiBolum: '01_katmanli-mimari-ve-projeler.html',
+    sonrakiBolum: '03_yapilandirma-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'API Versiyonlama: Baştan /api/v1',
+        altBaslik: 'Henüz TEK bir controller yazılmadı, ama TÜM controller\'ların route\'u en baştan bir versiyon numarası taşıyacak — bu, A-01\'den A-03+\'a kadar her endpoint\'i geriye dönük etkileyen bir karar (2026-08-12 gözden geçirmesinde eklendi).'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden URL\'e Versiyon Numarası Koyulur?',
+        aciklama: 'Bir API yayına girdikten sonra client\'lar (admin panel, web, mobil) onun response ŞEKLİNE bağımlı hale gelir. Bir gün o şekli BREAKING bir şekilde değiştirmek gerekebilir (bir alanı silmek, tipini değiştirmek). URL\'de versiyon YOKSA, bu değişiklik yapıldığı AN tüm eski client\'lar aynı anda KIRILIR. URL\'de `v1` varsa, `v2` AYRI bir yol olarak açılır — eski client\'lar `v1`\'i kullanmaya devam eder, yeni client\'lar `v2`\'ye geçer, geçiş KADEMELİ olur.',
+        neden: 'Mobil uygulamalarda bu özellikle KRİTİK: bir kullanıcı app store güncellemesini haftalarca/aylarca ERTELEYEBİLİR. Backend `/user-cards` yanıtının şeklini büyük bir SRS algoritma değişikliğiyle değiştirirse, eski mobil sürüm hâlâ `v1`\'i çağırıyor olur, yeni sürüm `v2`\'yi — ikisi de AYNI ANDA çalışabilir.',
+        olmasaydi: 'URL versiyonsuz yayınlansaydı (`/api/words`), yarın `/api/v1/words`\'e taşımak (client\'ların URL\'ini DEĞİŞTİRMESİNİ istemek) tam da önlemeye çalıştığımız kırılmanın KENDİSİ olurdu — bu yüzden versiyon numarası GERİYE DÖNÜK eklenemez, ilk günden konması gerekir.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Bu Sadece Altyapı — Gerçek Çoklu-Versiyon Yönlendirmesi Değil',
+        aciklama: 'Bu görevde eklenen `RoutePrefixConvention`, TEK bir sabit prefix\'i (`"api/v1"`) TÜM controller\'lara koşulsuz ekler. Yani şu an v1 VE v2\'yi YAN YANA çalıştırma yeteneği YOK — bu convention\'ın kendisi "hangi controller hangi versiyona ait" ayrımını BİLMİYOR. Kazanılan şey: bugün yazılan hiçbir client, versiyonsuz bir URL\'e bağımlı OLMAYACAK.',
+        neden: '`Asp.Versioning` gibi tam teşekküllü bir kütüphane (controller/action başına versiyon seçimi, header/query-string tabanlı versiyonlama vb.) şu an YAGNI — tek versiyon varken bu karmaşıklığın hiçbir FAYDASI yok, yalnızca bakım YÜKÜ eklerdi.',
+        olmasaydi: 'v2 gerçekten açılması gerektiğinde (ör. bir controller v1\'de kalıp yeni bir controller v2\'de sunulacaksa), bu convention\'ın GENİŞLETİLMESİ gerekecek — ör. controller başına bir versiyon attribute\'u okuyup ona göre prefix seçen bir mantık. Bu, o gün gelince küçük bir ek görev olarak yazılır, şimdiden SPEKÜLATİF olarak eklenmez.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RoutePrefixConvention.cs — Tüm Controller\'lara Tek Yerden Önek',
+        dosyaYolu: 'backend/WordLearner.API/Conventions/RoutePrefixConvention.cs',
+        nedenBuKlasor: '`WordLearner.API/Conventions/` — ASP.NET Core MVC\'nin "controller modelini nasıl inşa edeceğini" özelleştiren sınıflar (`IApplicationModelConvention`) için standart, `Middleware/` klasörüyle KARDEŞ bir klasör; middleware HTTP isteğini işlerken, convention controller\'lar DAHA UYGULAMA BAŞLARKEN (route\'lar inşa edilirken) çalışır — ikisi FARKLI aşamalar.',
+        kod: `using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
+
+namespace WordLearner.API.Conventions;
+
+// Tüm controller'lara "api/v1" önekini TEK yerden ekler (AddControllers'a kayıt anında) —
+// TASK/A_backend.md A-01 versiyonlama kararı: v2 ileride açılabilsin diye URL prefix'i baştan
+// konur, Asp.Versioning gibi bir kütüphane henüz eklenmez (tek versiyon var, YAGNI).
+public class RoutePrefixConvention : IApplicationModelConvention
+{
+    private readonly AttributeRouteModel _prefix;
+
+    public RoutePrefixConvention(string prefix)
+    {
+        _prefix = new AttributeRouteModel(new RouteAttribute(prefix));
+    }
+
+    public void Apply(ApplicationModel application)
+    {
+        foreach (var controller in application.Controllers)
+        foreach (var selector in controller.Selectors)
+        {
+            selector.AttributeRouteModel = selector.AttributeRouteModel is null
+                ? _prefix
+                : AttributeRouteModel.CombineAttributeRouteModel(_prefix, selector.AttributeRouteModel);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.AspNetCore.Mvc;',
+            aciklama: '`RouteAttribute` sınıfı bu ad alanında tanımlı — aşağıda `_prefix` alanını üretmek için kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Mvc.ApplicationModels;',
+            aciklama: '`IApplicationModelConvention`, `ApplicationModel`, `AttributeRouteModel` — ASP.NET Core\'un controller/route METADATA modelini temsil eden türler bu ad alanında.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RoutePrefixConvention : IApplicationModelConvention',
+            aciklama: '`IApplicationModelConvention`, ASP.NET Core\'un uygulama BAŞLARKEN (bir kez) çalıştırdığı, TÜM controller\'ların route/metadata modelini GÖREBİLEN ve DEĞİŞTİREBİLEN bir arayüz.',
+            neden: 'Her controller\'a elle `[Route("api/v1/[controller]")]` yazmak yerine bu arayüzü uygulamak, prefix\'i TEK bir yerde (bu dosyada) tutar — yarın `v1` → `v2` değişse bile 20\'den fazla controller dosyasının HİÇBİRİNE dokunulmaz.',
+            olmasaydi: 'Bu convention olmasaydı, ileride yazılacak HER controller sınıfının başına elle aynı `[Route("api/v1/...")]` attribute\'u YAZILMASI gerekirdi — biri unutursa, o controller SESSİZCE versiyonsuz bir URL\'de yayınlanmış olurdu.'
+          },
+          {
+            satir: 'private readonly AttributeRouteModel _prefix;',
+            aciklama: '`RouteAttribute`\'un çalışma-zamanı KARŞILIĞI — bir route şablonunu (`"api/v1"`) taşıyan, ASP.NET Core\'un route inşa mekanizmasının ANLADIĞI bir nesne.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public RoutePrefixConvention(string prefix)',
+            aciklama: 'Prefix STRING olarak (constructor parametresiyle) dışarıdan verilir — `Program.cs`\'te `new RoutePrefixConvention("api/v1")` şeklinde ÇAĞRILACAK.',
+            neden: 'Prefix\'i sabit kodlamak (hardcode) yerine constructor parametresi yapmak, bu sınıfı TEST EDİLEBİLİR ve yeniden kullanılabilir tutar — ileride farklı bir prefix\'le (ör. test ortamında) de örneklenebilir.',
+            olmasaydi: null
+          },
+          {
+            satir: '_prefix = new AttributeRouteModel(new RouteAttribute(prefix));',
+            aciklama: 'Ham string\'i (`"api/v1"`), ASP.NET Core\'un route modelinin ANLADIĞI bir `AttributeRouteModel` nesnesine sarar — bu dönüşüm yalnızca BİR KEZ, constructor\'da yapılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Apply(ApplicationModel application)',
+            aciklama: 'ASP.NET Core, `AddControllers` sırasında bu metodu TÜM controller\'lar keşfedildikten sonra, TEK sefer çağırır — `application` parametresi UYGULAMADAKİ HER controller\'ı içerir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var controller in application.Controllers)',
+            aciklama: 'Uygulamadaki HER controller sınıfı (ileride yazılacak `AuthController`, `WordsController`... hepsi) TEK TEK gezilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var selector in controller.Selectors)',
+            aciklama: 'Bir controller\'ın BİRDEN FAZLA route seçici (selector) tanımı olabilir (nadir ama mümkün) — hepsi güvenli şekilde kapsanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'selector.AttributeRouteModel = selector.AttributeRouteModel is null',
+            aciklama: 'Controller\'ın KENDİ `[Route(...)]` attribute\'u varsa onunla BİRLEŞTİRİLİR, yoksa (henüz hiçbir controller `[Route]` yazmıyor olsa bile) doğrudan prefix ATANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '? _prefix',
+            aciklama: 'Controller\'ın kendi route\'u YOKSA, yalnızca prefix (`"api/v1"`) kullanılır — controller\'ın kendi `[HttpGet]`/`[HttpPost]` metot bazlı route\'ları bu prefix\'in ÜZERİNE bindirilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': AttributeRouteModel.CombineAttributeRouteModel(_prefix, selector.AttributeRouteModel);',
+            aciklama: 'Controller\'ın KENDİ `[Route("words")]` gibi bir şablonu VARSA, ASP.NET Core\'un kendi birleştirme mantığıyla (`CombineAttributeRouteModel`) prefix + o şablon TEK bir route\'a birleştirilir (`api/v1/words`).',
+            neden: 'Elle string birleştirme (`prefix + "/" + controllerRoute`) yerine ASP.NET Core\'un KENDİ birleştirme metodu kullanılır — başta/sonda fazladan `/` gibi ince HATALARA düşülmez, framework\'ün kendi kuralları AYNEN uygulanır.',
+            olmasaydi: 'Elle string birleştirme yapılsaydı, bir controller`[Route("/words")]` gibi baştan `/` ile başlayan bir şablon yazarsa (mutlak yol anlamına gelir) birleştirme YANLIŞ bir URL üretebilirdi — framework\'ün kendi metodu bu köşe durumları zaten ÇÖZÜYOR.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — AddControllers\'a Convention Bağlanıyor',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'A-02 Bölüm 6\'da TAM öğretilen ve A-03 Bölüm 4\'te (`AddApplicationServices` eklenmesiyle) bir kez daha değişen bu dosyada, şimdi `builder.Services.AddControllers();` çağrısının KENDİSİ değişiyor — yukarıda yazılan `RoutePrefixConvention`\'ı DI\'a kaydeden bir `options` lambda\'sı alıyor. Turuncu (context) satırlar önceki iki bölümden değişmeden kalanlar, yeşil olan bu bölümde YENİ/DEĞİŞEN.',
+        diff: ` using System.Text;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
++using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Infrastructure;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+ builder.Host.UseSerilog((context, configuration) => configuration
+     .MinimumLevel.Information()
+     .Enrich.FromLogContext()
+     .WriteTo.Console()
+     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+-builder.Services.AddControllers();
++builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
+ app.MapControllers();
+
+ app.Run();`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.API.Conventions;',
+            aciklama: 'Bu bölümde yazılan `RoutePrefixConvention` sınıfını `Program.cs`\'te kullanabilmek için EKLENEN yeni using.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));',
+            aciklama: 'A-01/A-02\'den DEĞİŞEN satır — parametresiz `AddControllers()` çağrısı, `RoutePrefixConvention`\'ı MVC\'nin convention listesine ekleyen bir `options` lambda\'sı ALDI. Bu, "tek yerden, `MapControllers` öncesi ayarlanır" kararının TAM KARŞILIĞI: prefix, controller\'lar HENÜZ inşa edilmeden ÖNCE (servis kaydı anında) tanımlanıyor.',
+            neden: 'Bu satır `builder.Build()`\'dan (ve dolayısıyla `app.MapControllers()`\'dan) ÖNCE çalışması gerektiği için burada, `AddControllers` çağrısının İÇİNDE duruyor — convention, controller modeli inşa EDİLİRKEN uygulanan bir kural, sonradan (route\'lar zaten map\'lendikten sonra) eklenemez.',
+            olmasaydi: 'Bu değişiklik olmadan, ileride yazılacak `AuthController` gibi bir controller `[HttpPost("register")]` yazsa, gerçek URL\'i `/register` OLURDU — `/api/v1/auth/register` değil; her client\'ın KENDİ URL sabitlerini elle güncellemesi gerekirdi, versiyon numarası HİÇBİR yerde olmazdı.'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'IApplicationModelConvention', tanim: 'ASP.NET Core\'un, uygulama başlarken TÜM controller\'ların route/metadata modelini toplu olarak değiştirmeye izin veren arayüzü.' },
+          { terim: 'AttributeRouteModel', tanim: 'Bir `[Route(...)]` attribute\'unun çalışma-zamanı karşılığı — ASP.NET Core\'un route inşa mekanizmasının okuyabildiği nesne biçimi.' },
+          { terim: 'Route Prefix', tanim: 'Bir uygulamadaki TÜM (veya bir grup) endpoint\'in URL\'inin başına eklenen, ortak sabit bir yol parçası (`api/v1`).' },
+          { terim: 'Breaking Change', tanim: 'Var olan bir client\'ın kod değiştirmeden ÇALIŞMAYA devam edemeyeceği bir API değişikliği (alan silme, tip değiştirme, zorunlu yeni alan).' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'URL\'e versiyon numarası koymak GERİYE DÖNÜK yapılamaz — bu yüzden hiç v2 ihtiyacı yokken bile A-01\'e (ilk task) eklendi, bedeli sıfıra yakın, riski büyük bir gelecek migrasyonunu önlüyor.',
+          '`RoutePrefixConvention` (`IApplicationModelConvention`) TÜM controller\'lara `"api/v1"` önekini TEK yerden ekliyor — ileride yazılacak HİÇBİR controller\'ın kendi `[Route]`\'una elle prefix eklemesi GEREKMEYECEK.',
+          'Bu convention şu an yalnızca TEK bir sabit prefix uyguluyor — v1/v2\'yi YAN YANA çalıştırma yeteneği YOK, bu bilinçli bir YAGNI kararı; gerçek versiyon dallanması v2 gerçekten gerektiğinde ayrı bir görev olarak eklenecek.',
+          '`Program.cs`\'teki DEĞİŞİKLİK tek satır: `AddControllers()` → `AddControllers(options => ...)` — convention `builder.Build()`\'dan ÖNCE, controller\'lar HENÜZ inşa edilmeden kaydedilmeli.',
+          'GET /health (bir sonraki bölüm, A-02 retrofit\'i) BİLEREK bu prefix\'in DIŞINDA kalacak — Controller değil, minimal API endpoint\'i olduğu için `RoutePrefixConvention`\'dan hiç etkilenmiyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

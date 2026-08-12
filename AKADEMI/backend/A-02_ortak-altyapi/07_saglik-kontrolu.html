@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GET /health — Deployment ve İzleme İçin Sağlık Kontrolü</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'saglik-kontrolu',
+    bolumBaslik: 'A-02 — Ortak Altyapı',
+    oncekiBolum: '06_program-cs.html',
+    sonrakiBolum: '08_ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'GET /health: Uygulama Gerçekten Ayakta mı?',
+        altBaslik: 'Henüz tek bir feature endpoint\'i yok, ama deployment\'tan ilk gün itibaren bir load balancer/uptime monitoring aracının sorabileceği tek bir soru gerekiyor: "Bu uygulama çalışıyor mu, veritabanına bağlanabiliyor mu?" (2026-08-12 gözden geçirmesinde eklenen retrofit karar.)'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bir Health Check Endpoint\'i?',
+        aciklama: 'Bir uygulama "ayakta" (process çalışıyor, HTTP isteklerine 200 dönüyor) olabilir ama YİNE DE gerçekte bozuk olabilir — ör. veritabanı sunucusu düşmüş, connection string yanlış. `GET /health`, bu iki durumu AYIRT eden basit bir uç nokta: yalnızca process\'in çalıştığını değil, KRİTİK bir bağımlılığın (veritabanı) da erişilebilir olduğunu doğrular.',
+        neden: 'Prod ortamında bir load balancer (veya Kubernetes gibi bir orkestratör), bu endpoint\'i düzenli aralıklarla ÇAĞIRIR — 503 dönerse o instance\'ı trafikten ÇIKARIR (ya da yeniden başlatır). Bu endpoint olmadan, veritabanına bağlanamayan bir instance yine de "sağlıklı" sanılıp trafik almaya DEVAM ederdi — kullanıcılar sürekli 500 hatası ALIRDI.',
+        olmasaydi: 'Bu endpoint olmasaydı, bir DB kesintisi ancak KULLANICI şikayetleriyle ya da uygulama loglarını ELLE tarayarak fark edilirdi — otomatik izleme/alarm sistemleri "her şey yolunda" SANMAYA devam ederdi.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — AddHealthChecks ve GET /health',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'A-02 Bölüm 6\'da TAM öğretilen, A-03 Bölüm 4\'te (`AddApplicationServices`) ve bu bölümün BİR ÖNCEKİSİNDE (route versiyonlama, A-01 Bölüm 2) art arda değişen bu dosyaya, şimdi DB bağlantısını kontrol eden bir health check servisi + `/health` endpoint\'i eklendi — turuncu (context) satırlar önceki üç bölümden değişmeden kalanlar, yeşil olan bu bölümde YENİ.',
+        diff: ` using System.Text;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Diagnostics.HealthChecks;
++using Microsoft.Extensions.Diagnostics.HealthChecks;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
+ using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Infrastructure;
++using WordLearner.Infrastructure.Data;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+ builder.Host.UseSerilog((context, configuration) => configuration
+     .MinimumLevel.Information()
+     .Enrich.FromLogContext()
+     .WriteTo.Console()
+     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+ builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
++builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
+ app.MapControllers();
++app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
+ app.Run();
++
++static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
++{
++    context.Response.ContentType = "application/json";
++    return context.Response.WriteAsJsonAsync(new
++    {
++        status = report.Status.ToString(),
++        databaseConnected = report.Status == HealthStatus.Healthy,
++        timestampUtc = DateTime.UtcNow
++    });
++}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.AspNetCore.Diagnostics.HealthChecks;',
+            aciklama: '`HealthCheckOptions` (aşağıda `MapHealthChecks`\'e verilen özelleştirme nesnesi) bu ad alanında.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Diagnostics.HealthChecks;',
+            aciklama: '`HealthReport`/`HealthStatus` — bir health check turunun SONUCUNU taşıyan türler bu ad alanında.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`AddDbContextCheck<WordLearnerDbContext>` çağrısı için `WordLearnerDbContext` türünü kullanabilmek gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();',
+            aciklama: '`AddHealthChecks()` boş bir health check KOLEKSİYONU başlatır, `AddDbContextCheck<T>` ona TEK bir kontrol ekler: `WordLearnerDbContext.Database.CanConnectAsync()` çağırıp veritabanına GERÇEKTEN bağlanılabiliyor mu diye bakar.',
+            neden: '`Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` paketinin hazır sağladığı bu metot, elle bir `IHealthCheck` sınıfı YAZMAKTAN (constructor\'da DbContext enjekte edip `CanConnectAsync` çağıran birkaç satırlık tekrar eden kod) daha AZ kod, daha az BAKIM.',
+            olmasaydi: 'Bu satır olmadan `/health` yalnızca "process çalışıyor mu" sorusuna cevap verirdi — DB sunucusu tamamen DÜŞSE bile, bu endpoint hâlâ 200 dönerdi; load balancer bozuk bir instance\'ı SAĞLIKLI sanmaya devam ederdi.'
+          },
+          {
+            satir: 'app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });',
+            aciklama: '`/health` yolunu, yukarıda kaydedilen health check\'leri ÇALIŞTIRAN bir minimal API endpoint\'ine bağlar — `MapControllers()`\'ın HEMEN yanında ama bir Controller DEĞİL, bu yüzden `RoutePrefixConvention` (Bölüm 2, A-01) bu endpoint\'i HİÇ ETKİLEMEZ: URL tam olarak `/health`, `/api/v1/health` DEĞİL.',
+            neden: 'API_ENDPOINTS.md §2 açıkça `/health`\'in versiyon prefix\'inden ve auth\'tan BAĞIMSIZ olmasını istiyor — bir monitoring aracı, uygulamanın API versiyonunu ya da kimlik doğrulama durumunu BİLMEDEN bu adrese sorabilmeli.',
+            olmasaydi: 'Bu satır olmadan `AddHealthChecks()` ile kaydedilen kontroller hiçbir HTTP adresine BAĞLANMAZ, hiçbir dış araç onlara erişemezdi — `AddHealthChecks` yalnızca DI kaydı yapar, endpoint\'i AYRICA map\'lemek gerekir.'
+          },
+          {
+            satir: 'static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)',
+            aciklama: 'ASP.NET Core\'un VARSAYILAN health check yanıtı yalnızca düz metin ("Healthy"/"Unhealthy") döner — bu yerel (top-level statements dosyasının SONUNDA tanımlı) fonksiyon, `HealthCheckOptions.ResponseWriter`\'a verilerek YANIT şeklini API_ENDPOINTS.md §2\'nin istediği `{ status, databaseConnected, timestampUtc }` JSON\'una ÇEVİRİR.',
+            neden: '`static` — bu fonksiyon `builder`/`app` gibi ÜST kapsamdaki hiçbir değişkeni YAKALAMIYOR (yalnızca kendi parametreleriyle çalışıyor); bunu belirtmek, gereksiz bir closure/kapanış OLUŞTURULMADIĞINI derleyiciye ve okuyucuya AÇIKÇA gösterir.',
+            olmasaydi: 'Bu özel yazıcı olmadan, `/health`\'i çağıran bir monitoring aracı yalnızca ham "Healthy"/"Unhealthy" metni ALIRDI — `databaseConnected` gibi YAPISAL bir alanı otomatik olarak PARSE edip dashboard\'a işleyemezdi.'
+          },
+          {
+            satir: 'context.Response.ContentType = "application/json";',
+            aciklama: 'Varsayılan health check yanıtı `text/plain` döner — bu satır Content-Type\'ı, aşağıda gerçekten YAZILAN JSON gövdesiyle TUTARLI hale getirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return context.Response.WriteAsJsonAsync(new',
+            aciklama: 'Anonim bir nesneyi doğrudan JSON olarak HTTP yanıt gövdesine YAZAR — `ExceptionHandlingMiddleware`\'in (Bölüm 5) `ApiErrorResponse` yazarken kullandığı AYNI `WriteAsJsonAsync` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'status = report.Status.ToString(),',
+            aciklama: '`HealthStatus` enum\'ının (`Healthy`/`Degraded`/`Unhealthy`) metin karşılığı — API_ENDPOINTS.md §2\'nin `{ status, ... }` alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'databaseConnected = report.Status == HealthStatus.Healthy,',
+            aciklama: 'Şu an TEK bir kontrol (`AddDbContextCheck`) kayıtlı olduğu için raporun GENEL durumu doğrudan DB bağlantısının durumuna EŞİT — ileride başka kontroller eklenirse (ör. Redis, dış bir servis) bu satırın `report.Entries["WordLearnerDbContext"].Status` gibi SPESİFİK bir girdiye bakacak şekilde İNCELTİLMESİ gerekecek.',
+            neden: 'API_ENDPOINTS.md §2 `databaseConnected` alanını AÇIKÇA istiyor — genel `status` alanı yeterli olsa da, DB\'ye özel bir alan monitoring dashboard\'larının "hangi bağımlılık ÇÖKTÜ" sorusunu tek bakışta cevaplamasını KOLAYLAŞTIRIYOR.',
+            olmasaydi: null
+          },
+          {
+            satir: 'timestampUtc = DateTime.UtcNow',
+            aciklama: 'Yanıtın ÜRETİLDİĞİ an — bir monitoring aracının, aldığı yanıtın NE KADAR taze olduğunu doğrulaması için.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordLearner.API.csproj — Health Checks Paketi',
+        dosyaYolu: 'backend/WordLearner.API/WordLearner.API.csproj',
+        neden: '`AddDbContextCheck<T>` uzantı metodu ASP.NET Core\'un ÇEKİRDEĞinde değil, ayrı bir pakette (`Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore`) — bu paket A-01 Bölüm 1\'de TAM öğretilen dosyaya, ALFABETİK sırayı BOZMADAN eklendi.',
+        diff: ` <Project Sdk="Microsoft.NET.Sdk.Web">
+
+   <PropertyGroup>
+     <TargetFramework>net9.0</TargetFramework>
+     <Nullable>enable</Nullable>
+     <ImplicitUsings>enable</ImplicitUsings>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+       <PrivateAssets>all</PrivateAssets>
+     </PackageReference>
++    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.0" />
+     <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
+     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
+     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+     <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="6.6.0" />
+     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\\WordLearner.Application\\WordLearner.Application.csproj" />
+     <ProjectReference Include="..\\WordLearner.Infrastructure\\WordLearner.Infrastructure.csproj" />
+   </ItemGroup>
+
+ </Project>`,
+        satirlar: [
+          {
+            satir: '<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.0" />',
+            aciklama: '`AddDbContextCheck<TContext>` uzantı metodunu ve `WordLearnerDbContext.Database.CanConnectAsync()`\'i çağıran dahili kontrol mantığını sağlayan resmi Microsoft paketi — diğer EF Core paketleriyle AYNI `9.0.0` sürümünde tutuluyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /health — Canlı Doğrulama',
+        yontem: 'GET',
+        url: 'http://localhost:5001/health',
+        aciklama: 'Versiyon prefix\'inden BAĞIMSIZ olduğu için `/api/v1/health` DEĞİL, doğrudan `/health` — bir monitoring aracı kimlik doğrulaması ya da API versiyonu bilmeden bu adrese sorabilmeli.',
+        yanit: {
+          durum: '200 OK (DB erişilebilirse) — { "status": "Healthy", "databaseConnected": true, "timestampUtc": "2026-08-12T23:07:49.1023Z" }\n503 Service Unavailable (DB erişilemezse) — { "status": "Unhealthy", "databaseConnected": false, "timestampUtc": "2026-08-12T23:07:49.1023Z" }',
+          govde: null
+        },
+        notlar: [
+          'Yerel makinede SQL Server ÇALIŞMIYORSA (ör. henüz `docker compose up` yapılmadıysa), bu istek GERÇEKTEN 503 döner — bu bir hata DEĞİL, health check\'in TAM da yapması gereken şey; bu davranış geliştirme sırasında canlı DOĞRULANDI.',
+          'Auth header GEREKMİYOR — `[Authorize]` ile korunan hiçbir endpoint DEĞİL, Controller bile değil (minimal API endpoint\'i).'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Health Check', tanim: 'Bir uygulamanın (ve kritik bağımlılıklarının) çalışır durumda olup olmadığını doğrulayan, genelde bir monitoring aracı tarafından düzenli aralıklarla çağrılan uç nokta.' },
+          { terim: 'HealthReport / HealthStatus', tanim: 'Bir health check turunun sonucunu taşıyan .NET türleri — `HealthStatus` üç değer alır: Healthy, Degraded, Unhealthy.' },
+          { terim: 'ResponseWriter', tanim: '`MapHealthChecks`\'in, health check sonucunu HTTP yanıt gövdesine NASIL yazacağını özelleştirmeye yarayan delege.' },
+          { terim: 'Minimal API Endpoint', tanim: 'Bir Controller sınıfı YAZMADAN, doğrudan `app.MapGet/MapPost/MapHealthChecks` ile tanımlanan uç nokta — `RoutePrefixConvention` gibi Controller-odaklı convention\'lardan ETKİLENMEZ.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`GET /health`, deployment/monitoring için ilk günden GEREKLİ — spekülatif değil, bu yüzden A-02\'ye (ortak altyapı) eklendi.',
+          '`AddDbContextCheck<WordLearnerDbContext>`, veritabanına GERÇEKTEN bağlanılabiliyor mu diye `CanConnectAsync` ile kontrol eder — process\'in çalışması TEK BAŞINA yeterli SAYILMAZ.',
+          'Özel bir `ResponseWriter`, varsayılan düz-metin yanıtı yerine `{ status, databaseConnected, timestampUtc }` JSON\'u üretir — API_ENDPOINTS.md §2\'nin şekliyle BİREBİR.',
+          '`/health` bir Controller DEĞİL, minimal API endpoint\'i — bu yüzden A-01\'in `RoutePrefixConvention`\'ından (Bölüm 2) hiç ETKİLENMEZ, URL her zaman `/health` kalır.',
+          'Davranış GERÇEKTEN çalıştırılıp doğrulandı: DB erişilemezken 503 + `databaseConnected: false` döndüğü CANLI gözlemlendi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

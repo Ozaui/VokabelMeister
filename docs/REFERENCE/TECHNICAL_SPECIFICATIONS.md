@@ -7,6 +7,7 @@
 ```xml
 <!-- WordLearner.API -->
 <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.0" />   <!-- GET /health (A-02) -->
 <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
 <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
 <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />

@@ -35,12 +35,14 @@
 - [x] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
 - [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/` (2 bölüm)
-- [ ] ⚠️ **[2026-08-12] API versiyonlama kararı:** Route prefix `/api/v1/...` olarak baştan
+- [x] ⚠️ **[2026-08-12] API versiyonlama kararı:** Route prefix `/api/v1/...` olarak baştan
       sabitlenir (`Program.cs`'te tek yerden `MapControllers` öncesi ayarlanır). Şimdilik tek versiyon
       var — `Asp.Versioning` gibi bir kütüphane eklenmez (YAGNI), yalnızca URL prefix'i ileride
       `v2` açılabilecek şekilde baştan konur. Bu karar geriye dönük A-03+ tüm controller'ları etkiler,
-      bu yüzden A-01'e (ilk task) eklendi.
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      bu yüzden A-01'e (ilk task) eklendi. → `RoutePrefixConvention` (`WordLearner.API/Conventions/`,
+      `IApplicationModelConvention`) tüm controller'lara `"api/v1"` önekini ekler; `Program.cs`'te
+      `AddControllers(options => options.Conventions.Add(...))` ile TEK yerden bağlanır.
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/02_route-versiyonlama.html`
 
 ### A-02 — Ortak Altyapı ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
@@ -72,11 +74,14 @@
       koşullu — CLAUDE.md §3 "AutoMapper Profile yalnızca" kuralı, ilk gerçek Entity→DTO dönüşümünde eklenir)
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] ⚠️ **[2026-08-12] Health check endpoint'i:** `GET /health` (`[AllowAnonymous]`, auth'tan ve
+- [x] ⚠️ **[2026-08-12] Health check endpoint'i:** `GET /health` (`[AllowAnonymous]`, auth'tan ve
       versiyon prefix'inden BAĞIMSIZ — yani `/health`, `/api/v1/health` değil) — `AddHealthChecks()` +
       DB bağlantı kontrolü (`AddDbContextCheck<WordLearnerDbContext>`). Deployment/monitoring için
       gerekli, spekülatif değil — ilk günden ihtiyaç duyulur, bu yüzden A-02'ye (ortak altyapı) eklendi.
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      → `MapHealthChecks("/health", ...)` minimal API endpoint'i olarak (Controller DEĞİL, bu yüzden
+      `RoutePrefixConvention`'dan hiç etkilenmiyor) — özel `ResponseWriter` `{ status, databaseConnected,
+      timestampUtc }` şeklini üretir, sağlıksızsa (DB bağlanamıyorsa) 503 döner (canlı doğrulandı).
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-02_ortak-altyapi/07_saglik-kontrolu.html`
 
 ### A-03 — Auth API 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6

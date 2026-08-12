@@ -2,12 +2,16 @@ using System.Text;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using WordLearner.API.Conventions;
 using WordLearner.API.Middleware;
 using WordLearner.Application;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Infrastructure;
+using WordLearner.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,12 +21,13 @@ builder.Host.UseSerilog((context, configuration) => configuration
     .WriteTo.Console()
     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddApplicationServices();
+builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
 
 // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
 // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
@@ -63,5 +68,17 @@ app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
 
 app.Run();
+
+static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+    return context.Response.WriteAsJsonAsync(new
+    {
+        status = report.Status.ToString(),
+        databaseConnected = report.Status == HealthStatus.Healthy,
+        timestampUtc = DateTime.UtcNow
+    });
+}
