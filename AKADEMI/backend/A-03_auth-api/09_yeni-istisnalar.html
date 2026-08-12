@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — 13 Handler'ın Yeni İş Hataları</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'yeni-istisnalar',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '08_repository-katmani.html',
+    sonrakiBolum: '10_email-ve-sosyal-giris-servisleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 9',
+        baslik: '7 Yeni AppException Alt Sınıfı',
+        altBaslik: 'Bölüm 6\'da yazılan AppException\'ın ikinci gerçek dalgası — 13 Handler\'ın ihtiyaç duyduğu, birbirine yapısal olarak çok benzeyen yedi iş hatası.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Yedisi de Aynı Kalıpta — Neden Ayrı Ayrı Sınıflar, Tek Bir Genel "BusinessException" Değil?',
+        aciklama: 'Her biri parametresiz bir constructor\'da sabit bir `Code` + `HttpStatusCode` + İngilizce log mesajı taşıyor — bu yüzden gövdeleri neredeyse BİREBİR aynı görünüyor. Buna rağmen 7 AYRI sınıf açıldı, tek bir `throw new BusinessException("EMAIL_ALREADY_REGISTERED", ...)` çağrısı YAZILMADI.',
+        neden: 'Ayrı bir sınıf, bir Handler\'da `catch (EmailAlreadyRegisteredException)` yazmayı MÜMKÜN kılar — tek bir genel sınıf olsaydı, hangi hatanın hangi durumda fırlatıldığını ayırt etmek için `Code` string\'ini KARŞILAŞTIRMAK gerekirdi (`if (ex.Code == "EMAIL_ALREADY_REGISTERED")`), bu da C#\'ın tip sistemine (derleme zamanı kontrolüne) sırtını dönmek anlamına gelirdi.',
+        olmasaydi: 'Tek bir `BusinessException(string code, ...)` kullanılsaydı, "Register\'da bu Code\'u fırlat" ile "VerifyEmail\'de BAŞKA bir Code\'u fırlat" arasındaki fark, yalnızca bir STRING sabiti olurdu — yazım hatası (`"EMAIL_ALREADY_REGISTRED"` gibi) derleme zamanında hiç YAKALANMAZDI, yalnızca çalışma zamanında (ya da hiç) fark edilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'EmailAlreadyRegisteredException.cs — Temsili Örnek',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/EmailAlreadyRegisteredException.cs',
+        nedenBuKlasor: '`AppException`/`AccountAnonymizedException` (Bölüm 6) ile AYNI klasör — `Common/Exceptions/`, TÜM iş hatalarının toplandığı tek yer.',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+public class EmailAlreadyRegisteredException : AppException
+{
+    public EmailAlreadyRegisteredException()
+        : base("EMAIL_ALREADY_REGISTERED", HttpStatusCode.Conflict, "Email is already registered.")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AppException` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class EmailAlreadyRegisteredException : AppException',
+            aciklama: 'Register akışında, `IUserRepository.GetByEmailAsync` zaten bir kullanıcı BULURSA fırlatılacak (Bölüm 11).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public EmailAlreadyRegisteredException()',
+            aciklama: 'Parametresiz constructor — `AccountAnonymizedException` (Bölüm 6) ile AYNI desen, dinamik bir veri TAŞIMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("EMAIL_ALREADY_REGISTERED", HttpStatusCode.Conflict, "Email is already registered.")',
+            aciklama: '`HttpStatusCode.Conflict` (409) — "girdiğin veri GEÇERSİZ" (400) değil, "sunucudaki MEVCUT bir kayıtla ÇAKIŞIYOR" anlamı taşıyan, HTTP\'nin BUNUN İÇİN özel olarak ayırdığı durum kodu.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'InvalidRefreshTokenException.cs — Bilerek "Az Konuşan" Bir Hata',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/InvalidRefreshTokenException.cs',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+// Bulunamadı/süresi dolmuş/iptal edilmiş/tekrar kullanılmış (replay) — hepsi istemciye AYNI
+// genel koddan döner; hangisi olduğunu ayırt etmek saldırgana bilgi sızdırır (SECURITY.md §1).
+public class InvalidRefreshTokenException : AppException
+{
+    public InvalidRefreshTokenException()
+        : base("INVALID_REFRESH_TOKEN", HttpStatusCode.Unauthorized, "Refresh token is invalid, expired or already used.")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AppException` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class InvalidRefreshTokenException : AppException',
+            aciklama: 'Bu sınıf, ileride yazılacak `RefreshCommandHandler`\'ın (Bölüm 14) DÖRT farklı başarısızlık senaryosunda (token hiç yok / süresi dolmuş / zaten iptal edilmiş / replay tespit edildi) HEPSİNDE aynı şekilde fırlatılacak — bilerek "az konuşan" bir hata; yeniden kullanım (rotation sonrası eski token, ya da replay) senaryosunda da AYNI sınıf fırlatılır, istemci tarafında tek bir davranış yeterli: kullanıcıyı tekrar giriş ekranına yönlendir.',
+            neden: 'Bir saldırgan çaldığı bir refresh token\'ı denediğinde "bu token SÜRESİ DOLMUŞ" ile "bu token REPLAY olarak tespit edildi, ailesi iptal edildi" arasındaki farkı GÖRÜRSE, hangi saldırı tekniğinin fark edildiğini/edilmediğini ÖĞRENİR — bu bilgi saldırganın işine yarar, savunmacının değil.',
+            olmasaydi: 'Dört ayrı durum için dört ayrı Code (`REFRESH_TOKEN_NOT_FOUND`, `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REVOKED`, `REFRESH_TOKEN_REPLAY_DETECTED`) dönseydi, istemci tarafı KOD olarak daha "doğru" görünürdü ama güvenlik açısından bir saldırgana ÜCRETSİZ bir keşif aracı verilmiş olurdu.'
+          },
+          {
+            satir: 'public InvalidRefreshTokenException()',
+            aciklama: 'Parametresiz constructor — dinamik bir veri TAŞIMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("INVALID_REFRESH_TOKEN", HttpStatusCode.Unauthorized, "Refresh token is invalid, expired or already used.")',
+            aciklama: '`HttpStatusCode.Unauthorized` (401) — "kimliğini kanıtlayamadın, tekrar dene" anlamı, `InvalidCredentialsException` ile AYNI HTTP kodu ama farklı `Code`.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Kalan 5 İstisna — Aynı Kalıp, Farklı Code/HTTP',
+        terimler: [
+          { terim: 'InvalidCredentialsException', tanim: '401 Unauthorized, `INVALID_CREDENTIALS` — Login (adım 1) e-posta/şifre yanlışsa; PasswordHash null olan (yalnızca sosyal giriş yapmış) bir hesapta şifreyle giriş denenirse de AYNI hata döner, "bu hesap sosyal girişli" bilgisi SIZDIRILMAZ.' },
+          { terim: 'AccountInactiveException', tanim: '403 Forbidden, `ACCOUNT_INACTIVE` — bir yönetici hesabı dondurmuşsa (IsActive=false); AccountAnonymizedException\'dan (Bölüm 6) FARKLI bir durum: bu hesap SİLİNMEMİŞ, yalnızca geçici olarak devre dışı.' },
+          { terim: 'InvalidOtpException', tanim: '400 Bad Request, `INVALID_OTP` — girilen OTP kodu yanlışsa, ya da (enumerasyon önlemi için) o e-postayla kayıtlı bir kullanıcı hiç yoksa AYNI hata döner.' },
+          { terim: 'OtpExpiredException', tanim: '400 Bad Request, `OTP_EXPIRED` — kod doğru ama süresi (5 dakika) geçmişse; InvalidOtpException\'dan BİLEREK AYRI bir Code, kullanıcıya "yanlış girdin" yerine "yeni kod iste" mesajı gösterilebilsin diye.' },
+          { terim: 'InvalidSocialTokenException', tanim: '401 Unauthorized, `INVALID_SOCIAL_TOKEN` — Google/Apple kimlik doğrulaması (Bölüm 10\'daki IGoogleTokenValidator/IAppleTokenValidator) başarısız olursa.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ErrorMessages.cs — 7 Yeni Code için tr/de Metinleri',
+        dosyaYolu: 'backend/WordLearner.Application/Common/ErrorMessages.cs',
+        neden: 'Bölüm 6\'da `ACCOUNT_ANONYMIZED` ile açılan sözlüğe, bu bölümün 7 yeni Code\'u için tr/de metinleri eklendi — desen AYNI: exception sınıflarına DOKUNMADAN yalnızca sözlüğe satır eklemek.',
+        diff: ` namespace WordLearner.Application.Common;
+
+ // Yeni dil eklemek yalnızca bu sözlüğe yeni bir üst-seviye anahtar (ör. "en") eklemekle olur —
+ // var olan Code'lara veya exception sınıflarına dokunulmaz (CLAUDE.md §1).
+ public static class ErrorMessages
+ {
+     private const string DefaultLanguage = "tr";
+
+     private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
+     {
+         [DefaultLanguage] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
+             ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
+             ["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",
++            ["EMAIL_ALREADY_REGISTERED"] = "Bu e-posta adresi zaten kayıtlı.",
++            ["INVALID_CREDENTIALS"] = "E-posta veya şifre hatalı.",
++            ["ACCOUNT_INACTIVE"] = "Hesabınız yönetici tarafından dondurulmuş.",
++            ["INVALID_OTP"] = "Kod geçersiz.",
++            ["OTP_EXPIRED"] = "Kodun süresi dolmuş.",
++            ["INVALID_REFRESH_TOKEN"] = "Oturum geçersiz, lütfen tekrar giriş yapın.",
++            ["INVALID_SOCIAL_TOKEN"] = "Google/Apple ile giriş doğrulanamadı.",
+         },
+         ["de"] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
+             ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
+             ["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",
++            ["EMAIL_ALREADY_REGISTERED"] = "Diese E-Mail-Adresse ist bereits registriert.",
++            ["INVALID_CREDENTIALS"] = "E-Mail oder Passwort ist falsch.",
++            ["ACCOUNT_INACTIVE"] = "Ihr Konto wurde von einem Administrator deaktiviert.",
++            ["INVALID_OTP"] = "Der Code ist ungültig.",
++            ["OTP_EXPIRED"] = "Der Code ist abgelaufen.",
++            ["INVALID_REFRESH_TOKEN"] = "Sitzung ungültig, bitte melden Sie sich erneut an.",
++            ["INVALID_SOCIAL_TOKEN"] = "Die Anmeldung mit Google/Apple konnte nicht verifiziert werden.",
+         },
+     };
+
+     public static string Resolve(string code, string? language)
+     {
+         var resolvedLanguage = language is not null && Messages.ContainsKey(language)
+             ? language
+             : DefaultLanguage;
+
+         return Messages[resolvedLanguage].TryGetValue(code, out var message) ? message : code;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: '["EMAIL_ALREADY_REGISTERED"] = "Bu e-posta adresi zaten kayıtlı.",',
+            aciklama: 'Yedi yeni satırdan ilki — `EmailAlreadyRegisteredException.Code`\'la BİREBİR aynı Code.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_CREDENTIALS"] = "E-posta veya şifre hatalı.",',
+            aciklama: 'Yedi yeni satırdan biri — kullanıcıya HANGİ alanın (e-posta mı şifre mi) yanlış olduğunu SÖYLEMEZ, ikisini BİRLEŞTİRİR; ayrı ayrı söylemek bir saldırgana "bu e-posta kayıtlı ama şifre yanlış" gibi bir keşif imkânı verirdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["ACCOUNT_INACTIVE"] = "Hesabınız yönetici tarafından dondurulmuş.",',
+            aciklama: 'Yedi yeni satırdan biri — `AccountInactiveException.Code`\'la eşleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_OTP"] = "Kod geçersiz.",',
+            aciklama: 'Yedi yeni satırdan biri — `InvalidOtpException.Code`\'la eşleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["OTP_EXPIRED"] = "Kodun süresi dolmuş.",',
+            aciklama: '`INVALID_OTP`\'den (bir üstteki satır) BİLEREK farklı bir metin — kullanıcı "yanlış girdim" ile "kodun süresi geçmiş, yeni kod istemem lazım" arasındaki farkı ANLAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_REFRESH_TOKEN"] = "Oturum geçersiz, lütfen tekrar giriş yapın.",',
+            aciklama: 'Yedi yeni satırdan biri — `InvalidRefreshTokenException.Code`\'la eşleşir, "az konuşan" hatanın kullanıcıya giden metni de aynı ilkeyi taşıyor: hangi başarısızlık nedeni olduğunu AYIRT ETMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_SOCIAL_TOKEN"] = "Google/Apple ile giriş doğrulanamadı.",',
+            aciklama: 'Yedi yeni satırdan sonuncusu — `InvalidSocialTokenException.Code`\'la eşleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["EMAIL_ALREADY_REGISTERED"] = "Diese E-Mail-Adresse ist bereits registriert.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_CREDENTIALS"] = "E-Mail oder Passwort ist falsch.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı — burada da hangi alanın yanlış olduğu BELİRTİLMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["ACCOUNT_INACTIVE"] = "Ihr Konto wurde von einem Administrator deaktiviert.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_OTP"] = "Der Code ist ungültig.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["OTP_EXPIRED"] = "Der Code ist abgelaufen.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_REFRESH_TOKEN"] = "Sitzung ungültig, bitte melden Sie sich erneut an.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INVALID_SOCIAL_TOKEN"] = "Die Anmeldung mit Google/Apple konnte nicht verifiziert werden.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '7 yeni AppException alt sınıfı — hepsi Bölüm 6\'nın kalıbını izliyor: parametresiz constructor, sabit Code + HttpStatusCode + İngilizce log mesajı.',
+          'Ayrı sınıflar (tek bir genel "BusinessException" değil) yazım hatalarını derleme zamanında yakalar ve gelecekte `catch (SpesifikException)` yazılabilmesini sağlar.',
+          'InvalidRefreshTokenException bilerek "az konuşuyor" — dört farklı başarısızlık nedenini (bulunamadı/süresi dolmuş/iptal/replay) TEK bir genel koda indirgemek, bir saldırgana bilgi sızdırmamak içindi.',
+          'ErrorMessages sözlüğüne 7 yeni Code için tr/de satırı eklendi — exception sınıflarının kendisine dokunulmadı, aynı "Code önce, metin sonra sözlükten" deseni tekrarlandı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

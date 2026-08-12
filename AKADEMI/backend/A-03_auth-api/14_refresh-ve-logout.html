@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Refresh Rotation ve Logout</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'refresh-ve-logout',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '13_sosyal-giris.html',
+    sonrakiBolum: '15_sifre-sifirlama-ve-hesap-silme.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 14',
+        baslik: 'RefreshCommand ve LogoutCommand',
+        altBaslik: 'Bölüm 1\'de tasarlanan Token Family Pattern\'in ilk gerçek kod karşılığı — token rotasyonu ve replay tespiti.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Token Family Pattern — Bir Refresh Token Neden Yalnızca BİR Kez Kullanılabiliyor?',
+        aciklama: 'Her `POST /auth/refresh` çağrısı, GELEN refresh token\'ı `IsUsed=true` işaretler ve AYNI `TokenFamily` kimliğiyle YENİ bir refresh token üretir — eski token bir DAHA asla kabul EDİLMEZ. Bir istemci (ya da bir saldırgan) o ESKİ token\'ı TEKRAR kullanmaya çalışırsa, bu bir "replay" (tekrar oynatma) olarak YORUMLANIR.',
+        neden: 'Refresh token\'lar 7 gün (uzun ömürlü) geçerli — bu süre içinde çalınma riski, 15 dakikalık access token\'a göre ÇOK daha yüksek. Tek kullanımlık yapmak, ÇALINTI bir token\'ın GERÇEK sahibi tarafından fark edilmesini sağlar: gerçek kullanıcı normal şekilde refresh ettiğinde, saldırganın ELİNDEKİ (artık ESKİ) token\'la yapacağı bir sonraki deneme REPLAY olarak YAKALANIR.',
+        olmasaydi: 'Refresh token\'lar TEKRAR TEKRAR kullanılabilseydi (rotasyon YOKSA), çalınmış bir token süresi DOLANA kadar (7 gün) sınırsız sayıda YENİ access token üretmek için kullanılabilirdi — ne gerçek kullanıcı ne de sistem bu çalınmayı fark EDEBİLİRDİ, çünkü hem gerçek kullanıcının hem saldırganın kullanımı sistemde AYNI GÖRÜNÜRDÜ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RefreshCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Features.Auth;
+
+public record RefreshCommand(string RefreshToken, string? DeviceInfo, string? IpAddress) : IRequest<RefreshResponse>;
+
+public class RefreshCommandHandler : IRequestHandler<RefreshCommand, RefreshResponse>
+{
+    private const int AccessTokenExpiresInSeconds = 900;
+
+    private readonly IUserRepository _userRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly ITokenService _tokenService;
+    private readonly IPasswordService _passwordService;
+
+    public RefreshCommandHandler(
+        IUserRepository userRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        ITokenService tokenService,
+        IPasswordService passwordService)
+    {
+        _userRepository = userRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _tokenService = tokenService;
+        _passwordService = passwordService;
+    }
+
+    public async Task<RefreshResponse> Handle(RefreshCommand request, CancellationToken cancellationToken)
+    {
+        var tokenHash = _passwordService.HashToken(request.RefreshToken);
+        var existingToken = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken)
+            ?? throw new InvalidRefreshTokenException();
+
+        if (existingToken.IsUsed)
+        {
+            // Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış
+            // olabilir, family'deki TÜM token'lar iptal edilir (SecurityLog: TokenReplay, A-04'te eklenecek).
+            await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, cancellationToken);
+            await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+            throw new InvalidRefreshTokenException();
+        }
+
+        if (existingToken.RevokedAt is not null || existingToken.ExpiresAt < DateTime.UtcNow)
+            throw new InvalidRefreshTokenException();
+
+        var user = await _userRepository.GetByIdAsync(existingToken.UserId, cancellationToken);
+        if (user is null || !user.IsActive || user.IsDeleted || user.IsAnonymized)
+            throw new InvalidRefreshTokenException();
+
+        existingToken.IsUsed = true;
+
+        var accessToken = _tokenService.GenerateAccessToken(user);
+        var newRefresh = _tokenService.GenerateRefreshToken();
+        var newRefreshTokenEntity = new RefreshToken
+        {
+            UserId = user.Id,
+            TokenHash = _passwordService.HashToken(newRefresh.Token),
+            TokenFamily = existingToken.TokenFamily,
+            ExpiresAt = newRefresh.ExpiresAt,
+            DeviceInfo = request.DeviceInfo,
+            IpAddress = request.IpAddress,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _refreshTokenRepository.AddAsync(newRefreshTokenEntity, cancellationToken);
+        await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+
+        return new RefreshResponse(accessToken, newRefresh.Token, AccessTokenExpiresInSeconds);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequestHandler<TRequest, TResponse>` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Bölüm 9\'un `InvalidRefreshTokenException`\'ı için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`RefreshResponse` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`ITokenService` (Bölüm 4) ve `IPasswordService`\'in (Bölüm 3) `HashToken` metodu için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`RefreshToken` entity\'si (Bölüm 1) için — yeni rotasyon kaydı burada `new RefreshToken` ile OLUŞTURULACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: 'Önceki bölümlerin (11-13) TÜM Handler\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record RefreshCommand(string RefreshToken, string? DeviceInfo, string? IpAddress) : IRequest<RefreshResponse>;',
+            aciklama: '`Language` parametresi YOK — bu Command hiçbir e-posta GÖNDERMİYOR, `IEmailService`\'e hiç BAĞIMLI değil (constructor\'da yok).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RefreshCommandHandler : IRequestHandler<RefreshCommand, RefreshResponse>',
+            aciklama: 'Bu bölümün kavram slaydında açıklanan Token Family Pattern\'in kod karşılığı bu Handler\'da yaşıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int AccessTokenExpiresInSeconds = 900;',
+            aciklama: '`VerifyLoginOtpCommandHandler`/`LoginWithGoogleCommandHandler`/`LoginWithAppleCommandHandler`\'daki (Bölüm 12-13) AYNI sabit — dördüncü tekrarı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: '`GetByIdAsync` ile refresh token\'ın sahibi kullanıcıyı ÇEKMEK için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: '`GetByTokenHashAsync`/`RevokeFamilyAsync`/`AddAsync` — bu Handler\'ın en çok kullandığı repository.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ITokenService _tokenService;',
+            aciklama: 'Bölüm 4\'ün servisi — YENİ access/refresh token ÇİFTİNİN üretimi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Şifre hash\'leme İÇİN DEĞİL, `HashToken` metodunun (Bölüm 3) refresh token hash\'lemesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public RefreshCommandHandler(',
+            aciklama: 'Dört bağımlılık — `LoginWithGoogleCommandHandler`\'daki gibi (Bölüm 13) çok satırlı imza.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: '`_userRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: '`_refreshTokenRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ITokenService tokenService,',
+            aciklama: '`_tokenService` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IPasswordService passwordService)',
+            aciklama: '`_passwordService` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_tokenService = tokenService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<RefreshResponse> Handle(RefreshCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağıracağı asıl metot — Token Family Pattern\'in TÜM adımları burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tokenHash = _passwordService.HashToken(request.RefreshToken);',
+            aciklama: 'İstemciden gelen HAM token, DB\'de arama YAPMADAN önce hash\'lenir — `RefreshTokens.TokenHash` sütununda (Bölüm 1) yalnızca hash SAKLANIYOR, ham token asla DB\'ye YAZILMADI zaten (Bölüm 7\'nin `LoginCompletionService`\'i).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var existingToken = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken)',
+            aciklama: 'Bölüm 8\'in repository metodu — bu bölümdeki İLK kullanımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new InvalidRefreshTokenException();',
+            aciklama: 'Hiç BULUNAMAYAN bir token (uydurma, ya da çok eski/temizlenmiş) — Bölüm 9\'un "az konuşan" hatası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (existingToken.IsUsed)',
+            aciklama: 'REPLAY tespiti — bu token DAHA ÖNCE bir `Refresh` çağrısında zaten `IsUsed=true` yapılmıştı, şimdi TEKRAR geliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, cancellationToken);',
+            aciklama: 'Bölüm 8\'in TOPLU iptal metodu — yalnızca BU token değil, AYNI family\'deki (aynı ilk girişten türeyen ZİNCİRİN TAMAMI) tüm token\'lar iptal edilir.',
+            neden: 'Replay tespit edildiğinde HANGİ token\'ın (gerçek kullanıcının mı, saldırganın mı ELİNDEKİ) meşru olduğu ARTIK bilinemez — güvenli taraf, ZİNCİRİN TAMAMINI iptal edip GERÇEK kullanıcıyı yeniden giriş yapmaya ZORLAMAKTIR.',
+            olmasaydi: 'Yalnızca BU token iptal edilseydi (family\'nin geri kalanı DEĞİL), saldırganın ELİNDEKİ daha yeni bir token (rotasyon zincirinde İLERİDE üretilmiş) hâlâ GEÇERLİ kalabilirdi.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'İptal işlemi HEMEN persist edilir — bu satırdan SONRA `throw` ile akış SONLANACAK, bu yüzden `SaveChangesAsync` metodun EN SONUNA değil, burada ÇAĞRILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new InvalidRefreshTokenException();',
+            aciklama: 'İptal SONRASI istemciye dönen hata, üstteki "bulunamadı" hatasıyla AYNI Code — istemci replay\'in TESPİT EDİLDİĞİNİ ayrı bir sinyalle ÖĞRENMEZ (Bölüm 9\'daki tasarım kararı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (existingToken.RevokedAt is not null || existingToken.ExpiresAt < DateTime.UtcNow)',
+            aciklama: 'İki AYRI geçersizlik nedeni (elle iptal edilmiş — ör. Logout, ya da süresi dolmuş) TEK kontrolde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = await _userRepository.GetByIdAsync(existingToken.UserId, cancellationToken);',
+            aciklama: '`RefreshToken.UserId` (Bölüm 1) ile ilişkili kullanıcı ÇEKİLİR — Refresh isteği bir `Authorization` header TAŞIMAZ (access token zaten SÜRESİ DOLMUŞ olabilir, bu yüzden refresh ediliyor), kullanıcı kimliği YALNIZCA refresh token\'ın KENDİSİNDEN elde edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user is null || !user.IsActive || user.IsDeleted || user.IsAnonymized)',
+            aciklama: 'Dört ayrı "bu kullanıcı ARTIK token yenileyemez" durumu TEK kontrolde — `LoginCommand`/`VerifyLoginOtpCommand`\'daki (Bölüm 12) `AccountInactiveException` gibi AYRI bir Code YOK, hepsi genel `InvalidRefreshTokenException`\'a düşüyor çünkü bu SESSİZ, arka planda çalışan bir istek (kullanıcı doğrudan ETKİLEŞMİYOR), ayrım gösterecek bir arayüz zaten YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'existingToken.IsUsed = true;',
+            aciklama: 'ROTASYONUN kalbi — bu satırdan SONRA, bu HAM token değeri bir DAHA asla GEÇERLİ token üretmeyecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var accessToken = _tokenService.GenerateAccessToken(user);',
+            aciklama: 'Bölüm 4\'ün servisi — YENİ bir 15 dakikalık access token.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var newRefresh = _tokenService.GenerateRefreshToken();',
+            aciklama: 'YENİ bir HAM refresh token değeri + 7 günlük son kullanma tarihi (Bölüm 4).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var newRefreshTokenEntity = new RefreshToken',
+            aciklama: 'Bölüm 7\'nin `ILoginCompletionService.Complete`\'i BURADA KULLANILMIYOR — o servis her zaman YENİ bir `TokenFamily` (`Guid.NewGuid()`) başlatıyordu, oysa rotasyonda family\'nin AYNI kalması gerekiyor; bu yüzden `RefreshCommandHandler` `RefreshToken` entity\'sini KENDİSİ, elle inşa ediyor.',
+            neden: '`ILoginCompletionService` yeniden kullanılsaydı, TokenFamily\'nin KORUNMASI gereken bu TEK durumu desteklemek için o servise ek bir parametre/dallanma ("hangi family kullanılacak") EKLEMEK gerekirdi — bu, servisin arayüzünü yalnızca TEK bir çağıran (`RefreshCommandHandler`) için KARMAŞIKLAŞTIRırdı.',
+            olmasaydi: '`ILoginCompletionService` KULLANILSAYDI ve family\'yi HER zaman YENİDEN üretseydi, her refresh isteği farklı bir family BAŞLATIRDI — "aynı zincirdeki TÜM token\'lar" kavramı hiç OLUŞMAZDI ve replay tespiti (kavram slaydı) ETKİSİZ kalırdı.'
+          },
+          {
+            satir: 'UserId = user.Id,',
+            aciklama: 'Yeni token, AYNI kullanıcıya bağlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenHash = _passwordService.HashToken(newRefresh.Token),',
+            aciklama: '`existingToken.TokenHash`\'in (üstte arama yapılan) AYNI hash\'leme yöntemi — ham `newRefresh.Token` asla DB\'ye yazılmaz, yalnızca yanıtta (return satırında) döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenFamily = existingToken.TokenFamily,',
+            aciklama: 'BURASI kritik: YENİ `Guid.NewGuid()` DEĞİL, ESKİ token\'ın family\'si KORUNUYOR — Bölüm 7\'nin `LoginCompletionService.Complete`\'i yalnızca İLK girişte YENİ bir family başlatıyordu; rotasyon zinciri BOYUNCA family AYNI kalır, bu sayede replay tespiti (yukarıda) ZİNCİRİN TAMAMINI bulabiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ExpiresAt = newRefresh.ExpiresAt,',
+            aciklama: 'Bölüm 4\'ün ürettiği 7 günlük son kullanma tarihi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'DeviceInfo = request.DeviceInfo,',
+            aciklama: 'İstemciden gelen cihaz bilgisi — `RefreshTokens` tablosunda (Bölüm 1) her rotasyonun HANGİ cihazdan geldiğini izlemek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IpAddress = request.IpAddress,',
+            aciklama: '`DeviceInfo` ile AYNI amaç, istemcinin IP adresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CreatedAt = DateTime.UtcNow',
+            aciklama: '`RefreshToken` entity\'si Bölüm 1\'in `BaseEntity`\'sinden BİLİNÇLİ olarak TÜREMİYOR (kendi `IsUsed`/`RevokedAt` geçersizleştirme deseni var) — bu yüzden `CreatedAt`, `BaseEntity` türeyen entity\'lerdeki gibi DbContext\'in otomatik doldurduğu bir alan DEĞİL, burada ELLE set ediliyor.',
+            neden: '`RefreshToken`, `BaseEntity`\'nin soft-delete/`UpdatedAt` gibi alanlarının ÇOĞUNU hiç kullanmaz (bir refresh token "güncellenmez", ya KULLANILIR ya İPTAL edilir) — ama bu tasarım, `CreatedAt` gibi TEK bir faydalı alanın burada MANUEL olarak yeniden yazılması BEDELİYLE geliyor.',
+            olmasaydi: 'Bu satır UNUTULSAYDI, `CreatedAt` C#\'ın varsayılan `DateTime` değeriyle (`0001-01-01`) DB\'ye yazılırdı — `DbContext.SaveChangesAsync`\'in (A-02) `CreatedAt`/`UpdatedAt`\'i OTOMATİK dolduran geçersiz kılması yalnızca `ChangeTracker.Entries<BaseEntity>()` üzerinde ÇALIŞIYOR, `BaseEntity`\'den türemeyen `RefreshToken`\'a hiç UĞRAMAZ.'
+          },
+          {
+            satir: 'await _refreshTokenRepository.AddAsync(newRefreshTokenEntity, cancellationToken);',
+            aciklama: 'Yeni token EKLENİR — eski token SİLİNMEZ (`existingToken.IsUsed = true` olarak KALIR, audit/replay tespiti için DB\'de kalıcı iz).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new RefreshResponse(accessToken, newRefresh.Token, AccessTokenExpiresInSeconds);',
+            aciklama: '`LoginResponse`\'dan (Bölüm 12) FARKLI — `User`/`AccountWasRecovered` alanları YOK, istemci zaten oturum AÇIK, yalnızca YENİ token çiftine ihtiyacı var.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshResponse.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/RefreshResponse.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// Refresh, User nesnesini yeniden döndürmez — istemci zaten oturum açık, yalnızca yeni token çifti gerekir.
+public record RefreshResponse(string AccessToken, string RefreshToken, int ExpiresIn);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`AuthUserDto`/`LoginResponse`/`RegisterResponse`\'la (Bölüm 11-12) AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record RefreshResponse(string AccessToken, string RefreshToken, int ExpiresIn);',
+            aciklama: '`LoginResponse`\'un (Bölüm 12) küçük bir alt kümesi gibi görünse de AutoMapper\'la ya da kalıtımla İLİŞKİLENDİRİLMİYOR — iki ayrı DTO, iki ayrı response şekli, bilinçli olarak BASİT tutuldu.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Logout Neden "Tüm Cihazlardan Çıkış" Değil, Yalnızca Tek Bir Token\'ı İptal Ediyor?',
+        aciklama: '`LogoutCommand` yalnızca isteğin İÇİNDEKİ TEK bir refresh token\'ı `RevokedAt` ile işaretler — `ResetPasswordCommand`/`ConfirmAccountDeletionCommand`\'ın (Bölüm 15) `RevokeAllForUserAsync` (Bölüm 8) ile yaptığı TOPLU iptalin AKSİNE.',
+        neden: 'Bir kullanıcının AYNI ANDA birden fazla cihazda (telefon + web) oturumu AÇIK olabilir — telefondan "çıkış yap" demesi, web\'deki oturumunu da SONLANDIRMAMALI; bu yalnızca kullanıcı BİLEREK bir güvenlik olayı bildirdiğinde (şifre sıfırlama, hesap silme) GEREKLİ bir davranış.',
+        olmasaydi: 'Logout TÜM cihazlardan çıkış YAPSAYDI, bir kullanıcı telefonunda uygulamayı kapatıp AÇTIĞINDA (bu da bir "logout" tetikleyebilir) web tarayıcısındaki oturumu da BEKLENMEDİK şekilde SONLANMIŞ bulurdu — kötü bir kullanıcı deneyimi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogoutCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LogoutCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Features.Auth;
+
+public record LogoutCommand(int UserId, string RefreshToken) : IRequest<Unit>;
+
+public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>
+{
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IPasswordService _passwordService;
+
+    public LogoutCommandHandler(IRefreshTokenRepository refreshTokenRepository, IPasswordService passwordService)
+    {
+        _refreshTokenRepository = refreshTokenRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<Unit> Handle(LogoutCommand request, CancellationToken cancellationToken)
+    {
+        var tokenHash = _passwordService.HashToken(request.RefreshToken);
+        var token = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken);
+
+        // Bulunamazsa veya başka bir kullanıcıya aitse SESSİZCE başarı — logout idempotent olmalı,
+        // başkasının token'ını manipüle etmeye çalışıldığını da ayrı bir hatayla belli etmemeli.
+        if (token is null || token.UserId != request.UserId || token.RevokedAt is not null)
+            return Unit.Value;
+
+        token.RevokedAt = DateTime.UtcNow;
+        await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequestHandler<TRequest, TResponse>` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IRefreshTokenRepository` (Bölüm 8) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`\'in `HashToken` metodu (Bölüm 3) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: 'Bu bölümün diğer Handler\'ıyla (`RefreshCommandHandler`) AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LogoutCommand(int UserId, string RefreshToken) : IRequest<Unit>;',
+            aciklama: '`UserId` — ileride yazılacak `AuthController`\'da bu Command, endpoint\'in `[Authorize]` OLMASI sayesinde JWT\'nin İÇİNDEKİ `NameIdentifier` claim\'inden (Bölüm 4) doldurulacak, istemci bunu KENDİSİ göndermez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LogoutCommandHandler : IRequestHandler<LogoutCommand, Unit>',
+            aciklama: '`VerifyEmailCommandHandler`\'daki (Bölüm 11) gibi `Unit` dönen bir Handler — istemciye özel bir veri DÖNMÜYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: '`GetByTokenHashAsync` ile token\'ı bulmak, sonra `RevokedAt`\'i set etmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: '`RefreshCommandHandler`\'daki (bu bölüm) gibi yalnızca `HashToken` metodu için — şifre hash\'leme burada KULLANILMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LogoutCommandHandler(IRefreshTokenRepository refreshTokenRepository, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık — `RegisterCommandHandler`\'daki (Bölüm 11) gibi tek satırlık constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Unit> Handle(LogoutCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağıracağı asıl metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tokenHash = _passwordService.HashToken(request.RefreshToken);',
+            aciklama: '`RefreshCommandHandler`\'daki AYNI satır — arama HER ZAMAN hash üzerinden yapılır, ham token DB\'de asla ARANMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var token = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken);',
+            aciklama: '`RefreshCommandHandler`\'daki (bu bölüm) `?? throw` deseninin AKSİNE burada `token` null OLABİLİR ve akış DEVAM eder — Logout\'un "az konuşan" değil, "hiç konuşmayan" bir hata felsefesi var.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (token is null || token.UserId != request.UserId || token.RevokedAt is not null)',
+            aciklama: '`token.UserId != request.UserId` — kimlik doğrulanmış bir kullanıcı, BAŞKA birinin refresh token\'ının HASH\'İNİ (bir şekilde ele geçirmişse) bu endpoint\'e gönderip onu İPTAL ETTİRMEYE çalışabilir; bu kontrol bunu SESSİZCE engeller (hata FIRLATMAZ, yalnızca hiçbir şey YAPMAZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: 'Erken çıkış — İDEMPOTENT davranış: AYNI Logout isteği birden fazla kez GÖNDERİLSE bile (ör. çift tıklama, ağ tekrar denemesi) sonuç HER ZAMAN "başarılı".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'token.RevokedAt = DateTime.UtcNow;',
+            aciklama: 'TEK bir token iptal edilir — `RevokeAllForUserAsync`/`RevokeFamilyAsync`\'in (Bölüm 8) TOPLU işleyişinden farklı, doğrudan TEK bir entity üzerinde mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'TEK alan (`RevokedAt`) güncellemesi DB\'ye yazılır.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Refresh Token Rotation', tanim: 'Her refresh isteğinde ESKİ token\'ı geçersiz kılıp YENİ bir token üretme — tek kullanımlık refresh token\'lar, çalıntı bir token\'ın fark edilmeden sınırsız kullanılmasını önler.' },
+          { terim: 'İdempotent (İşlem)', tanim: 'Aynı işlem birden fazla kez tekrarlansa bile SONUCUN değişmemesi — Logout\'u iki kez çağırmak, bir kez çağırmakla AYNI sonucu (oturum kapalı) verir, ikinci çağrı bir HATA üretmez.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'RefreshCommand her başarılı refresh\'te ESKİ token\'ı IsUsed=true yapar ve AYNI TokenFamily ile YENİ bir token üretir — bu rotasyon, replay tespitinin temelini oluşturuyor.',
+          'IsUsed=true bir token TEKRAR geldiğinde (replay), yalnızca o token değil, TÜM family iptal edilir — hangi token\'ın meşru olduğu artık bilinemediği için güvenli taraf zincirin tamamını kapatmaktır.',
+          'LogoutCommand yalnızca TEK bir refresh token\'ı iptal eder, "tüm cihazlardan çıkış" DEĞİL — bu davranış yalnızca şifre sıfırlama/hesap silme gibi güvenlik olaylarında (Bölüm 15) kullanılıyor.',
+          'Logout, bulunamayan/başkasına ait/zaten iptal edilmiş token\'larda SESSİZCE başarı döner — idempotent ve bilgi sızdırmayan bir tasarım.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

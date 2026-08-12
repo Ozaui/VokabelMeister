@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Auth Repository Katmanı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-katmani',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '07_giris-tamamlama-servisi.html',
+    sonrakiBolum: '09_yeni-istisnalar.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 8',
+        baslik: 'IUserRepository / IRefreshTokenRepository',
+        altBaslik: '13 Auth Handler\'ının ilk somut ihtiyacı: User ve RefreshToken\'ı okuyup yazan, generic Repository<T>\'ye SIĞMAYAN iki dar arayüz.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden IRepository<T> Kullanılamıyor?',
+        aciklama: 'A-02\'de yazılan `IRepository<T>` (`GetByIdAsync`, `AddAsync`, `UpdateAsync`, `SoftDeleteAsync`...) `where T : BaseEntity` KISITINI taşıyor. A-03 Bölüm 1\'de bilinçli bir tasarım kararı verilmişti: `User` ve `RefreshToken` BaseEntity\'den TÜREMİYOR (User\'ın "kim yaptı" alanları anlamsız, RefreshToken kendi IsUsed/RevokedAt deseniyle geçersizleşiyor). Bu, generic repository\'nin bu iki entity için KULLANILAMAYACAĞI anlamına geliyor — Register/Login/Refresh handler\'ları yazılırken bu ihtiyaç ilk kez SOMUTLAŞTI.',
+        neden: 'YAGNI ilkesi burada da işliyor: bu iki dar arayüz A-03\'ün entity bölümünde DEĞİL, onları GERÇEKTEN kullanan ilk Handler (RegisterCommand) yazılırken açıldı.',
+        olmasaydi: 'IRepository<T>\'nin kısıtı gevşetilip User/RefreshToken\'a BaseEntity\'nin "kim yaptı" alanları zorla EKLENSEYDİ, DATABASE_SCHEMA/Auth.md\'deki gerçek Users/RefreshTokens şemasıyla UYUŞMAYAN, hiç kullanılmayacak sütunlar DOĞARDI — A-03 Bölüm 1\'in kararı tam da bunu ÖNLEMEK içindi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Auth/IUserRepository.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/Auth/` — A-02\'nin flat `Interfaces/Repositories/IRepository.cs`\'inin YANINA değil, `Entities/Auth`/`Configurations/Auth` ile AYNI desende bir alt klasöre: bu arayüz TÜM domain\'lerde değil, yalnızca Auth\'a özel.',
+        kod: `using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Repositories.Auth;
+
+// User BaseEntity'den türemediği için generic IRepository<T> kullanılamıyor (A-03 tasarım kararı,
+// CLAUDE.md §1) — Auth'a özel, dar kapsamlı arayüz. Update için ayrı bir metot YOK: çağıran Handler
+// entity'yi bu arayüzden çekip mutasyona uğratır, EF change tracking zaten izliyor, SaveChangesAsync
+// yeterli (OtpService/ILoginCompletionService ile aynı "servis saf mantık taşır" deseni).
+public interface IUserRepository
+{
+    Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
+    Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken cancellationToken = default);
+    Task<User?> GetByAppleIdAsync(string appleId, CancellationToken cancellationToken = default);
+    Task AddAsync(User user, CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfını (Bölüm 1) parametre/dönüş tipi olarak kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IUserRepository',
+            aciklama: 'Arayüz bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default);',
+            aciklama: '`RequestAccountDeletionCommand`/`ConfirmAccountDeletionCommand`/`RefreshCommand` (Bölüm 14-15) — kimliği zaten JWT/refresh token\'dan BİLİNEN kullanıcıyı Id ile çekmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);',
+            aciklama: 'Register (duplikat kontrolü), Login/VerifyLoginOtp/ForgotPassword/ResetPassword/VerifyEmail/ResendVerification (kullanıcıyı e-postadan bulma) — 13 handler\'ın EN çok kullandığı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken cancellationToken = default);',
+            aciklama: 'LoginWithGoogleCommandHandler\'ın (Bölüm 13) daha önce bu Google hesabıyla giriş yapılmış mı sorusu için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<User?> GetByAppleIdAsync(string appleId, CancellationToken cancellationToken = default);',
+            aciklama: 'GetByGoogleIdAsync ile birebir aynı amaç, Apple için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddAsync(User user, CancellationToken cancellationToken = default);',
+            aciklama: 'RegisterCommandHandler/LoginWithGoogleCommandHandler/LoginWithAppleCommandHandler (Bölüm 11/13) — yeni bir User oluşturulduğunda change tracking\'e eklemek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'DB\'ye gerçek yazımı yapan metot — dönüş tipi `int` (etkilenen satır sayısı), generic `IRepository<T>.SaveChangesAsync` ile AYNI imza.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Auth/UserRepository.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Auth;
+
+public class UserRepository : IUserRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public UserRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>
+        await _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+
+    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        await _context.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+
+    public async Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken cancellationToken = default) =>
+        await _context.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId, cancellationToken);
+
+    public async Task<User?> GetByAppleIdAsync(string appleId, CancellationToken cancellationToken = default) =>
+        await _context.Users.FirstOrDefaultAsync(u => u.AppleId == appleId, cancellationToken);
+
+    public async Task AddAsync(User user, CancellationToken cancellationToken = default) =>
+        await _context.Users.AddAsync(user, cancellationToken);
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`FirstOrDefaultAsync` LINQ uzantı metodu için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'İmplemente edilecek `IUserRepository` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Auth;',
+            aciklama: 'Generic `Repository<T>`\'nin (A-02) yaşadığı `Infrastructure/Repositories/` klasörünün ALTINDA, `Auth/` alt klasörü — arayüz tarafındaki (`Interfaces/Repositories/Auth/`) desenle SİMETRİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class UserRepository : IUserRepository',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: 'Generic `Repository<T>`\'nin (A-02) TEK bağımlılığıyla AYNI — DbContext\'in kendisi, ayrı bir `DbSet<T>` alanı SAKLANMIYOR (aşağıdaki metotlarda her seferinde `_context.Users` üzerinden erişiliyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public UserRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Constructor injection — DI konteyner (Infrastructure/DependencyInjection.cs, aşağıdaki kod-degisiklik slaytı) bu bağımlılığı OTOMATİK sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Generic `Repository<T>.GetByIdAsync` (A-02) ile AYNI imza/stil — expression-bodied, tek satırlık gövde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);',
+            aciklama: '`_context.Users` — bu bölümde `WordLearnerDbContext`\'e YENİ eklenen `DbSet<User>` (aşağıdaki kod-degisiklik slaytı) üzerinden EF LINQ ile parametreli sorgu; string birleştirme YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>',
+            aciklama: '`GetByIdAsync` ile AYNI kalıp, farklı bir alana göre arama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);',
+            aciklama: '`Users.Email`\'in (Bölüm 1) UNIQUE olması sayesinde en fazla BİR sonuç döner — `FirstOrDefaultAsync` bu garanti OLMASAYDI bile ilk eşleşeni döndürürdü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Aynı kalıp, `GoogleId` alanına göre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId, cancellationToken);',
+            aciklama: '`GoogleId` nullable bir alan (Bölüm 1) — bu sorgu yalnızca `GoogleId` DOLU olan satırlarla eşleşir, `null == googleId` durumu pratikte oluşmaz (parametre olarak `null` GEÇİRİLMEZ, çağıran taraf her zaman gerçek bir Google `sub` değeri verir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<User?> GetByAppleIdAsync(string appleId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Aynı kalıp, `AppleId` alanına göre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Users.FirstOrDefaultAsync(u => u.AppleId == appleId, cancellationToken);',
+            aciklama: '`GetByGoogleIdAsync` ile BİREBİR simetrik, yalnızca sütun farklı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync(User user, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Dönüş tipi `Task` (değer YOK) — generic `Repository<T>.AddAsync`\'in (A-02) AKSİNE `userId` parametresi YOK, çünkü User\'da `CreatedByUserId` gibi bir alan zaten yok (Bölüm 1\'in tasarım kararı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Users.AddAsync(user, cancellationToken);',
+            aciklama: 'Entity\'yi EF Core\'un değişiklik izlemesine EKLER — henüz DB\'ye YAZMAZ, `SaveChangesAsync` çağrılana kadar bekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: '`async`/`await` YOK — `_context.SaveChangesAsync`\'in döndürdüğü `Task<int>` doğrudan geri döndürülüyor (gereksiz bir `async` state machine\'e gerek yok).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Bu çağrı, `AddAsync`/`GetByIdAsync` gibi AYNI `_context` üzerinden yapılan TÜM bekleyen değişiklikleri (yalnızca bu repo\'dan değil, AYNI DbContext\'i paylaşan `RefreshTokenRepository`\'den de) TEK bir DB round-trip\'te yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IRefreshTokenRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Auth/IRefreshTokenRepository.cs',
+        kod: `using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Repositories.Auth;
+
+public interface IRefreshTokenRepository
+{
+    Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default);
+    Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default);
+
+    // Şifre sıfırlama/hesap silme onayı sonrası "tüm cihazlardan çıkış" (SECURITY.md §7/§9).
+    Task RevokeAllForUserAsync(int userId, CancellationToken cancellationToken = default);
+
+    // Token Family Pattern: bir refresh token replay edilirse (zaten kullanılmış tekrar gelirse)
+    // aynı family'deki TÜM token'lar iptal edilir (SECURITY.md §1).
+    Task RevokeFamilyAsync(string tokenFamily, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`RefreshToken` sınıfı (Bölüm 1) için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository` ile AYNI ad alanı — ikisi de bu bölümde AYNI klasörde yaşıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IRefreshTokenRepository',
+            aciklama: 'Arayüz bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default);',
+            aciklama: 'RefreshCommandHandler (Bölüm 14) ham token\'ı DEĞİL, `IPasswordService.HashToken` ile ÜRETİLEN hash\'i bu metoda geçirir — `RefreshTokens.TokenHash` sütunu DB\'de ham token\'ı hiç SAKLAMAZ (DATABASE_SCHEMA/Auth.md).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 7\'nin `ILoginCompletionService.Complete`\'inin ürettiği (ama PERSIST ETMEDİĞİ) `RefreshTokenEntity`\'i change tracking\'e eklemek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task RevokeAllForUserAsync(int userId, CancellationToken cancellationToken = default);',
+            aciklama: 'ResetPasswordCommandHandler VE ConfirmAccountDeletionCommandHandler (Bölüm 15) tarafından çağrılan TOPLU iptal — SaveChanges YAPMAZ, yalnızca bulduğu aktif token\'ları BELLEKTE işaretler; nihai kaydı çağıran Handler\'ın TEK `SaveChangesAsync` çağrısı yapar (aşağıdaki RefreshTokenRepository.cs\'te görülüyor).',
+            neden: 'Eğer bu metot kendi içinde SaveChanges ÇAĞIRSAYDI, onu bir User güncellemesiyle (ör. yeni şifre hash\'i) BİRLİKTE tek transaction\'da yazmak isteyen bir Handler, İKİ ayrı DB round-trip\'e MECBUR kalırdı — ResetPasswordCommandHandler\'ın "şifre + tüm token iptali" AYNI SaveChangesAsync çağrısında ATOMİK yazılabilmesi bu tasarımla mümkün.',
+            olmasaydi: 'Metot kendi içinde SaveChanges ÇAĞIRSAYDI ve arada bir hata OLUŞSAYDI (ör. şifre hash\'i üretilirken), token\'lar İPTAL EDİLMİŞ ama şifre DEĞİŞMEMİŞ YARI-TUTARSIZ bir durumda KALINABİLİRDİ.'
+          },
+          {
+            satir: 'Task RevokeFamilyAsync(string tokenFamily, CancellationToken cancellationToken = default);',
+            aciklama: 'RefreshCommandHandler (Bölüm 14) tarafından, YALNIZCA replay tespit edildiğinde çağrılır — `RevokeAllForUserAsync`\'ten FARKLI, `UserId` değil `TokenFamily` bazlı filtre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: '`IUserRepository.SaveChangesAsync` ile AYNI imza — hangi repo üzerinden çağrılırsa çağrılsın, AYNI paylaşılan DbContext\'i yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshTokenRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Auth/RefreshTokenRepository.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Auth;
+
+public class RefreshTokenRepository : IRefreshTokenRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public RefreshTokenRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+        await _context.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
+
+    public async Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default) =>
+        await _context.RefreshTokens.AddAsync(refreshToken, cancellationToken);
+
+    public async Task RevokeAllForUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var activeTokens = await _context.RefreshTokens
+            .Where(t => t.UserId == userId && t.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in activeTokens)
+            token.RevokedAt = DateTime.UtcNow;
+    }
+
+    public async Task RevokeFamilyAsync(string tokenFamily, CancellationToken cancellationToken = default)
+    {
+        var familyTokens = await _context.RefreshTokens
+            .Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in familyTokens)
+            token.RevokedAt = DateTime.UtcNow;
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`FirstOrDefaultAsync`/`ToListAsync` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'İmplemente edilecek `IRefreshTokenRepository` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`RefreshToken` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Auth;',
+            aciklama: '`UserRepository` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class RefreshTokenRepository : IRefreshTokenRepository',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: '`UserRepository` ile AYNI TEK bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public RefreshTokenRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Constructor injection — `UserRepository` ile BİREBİR aynı desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository.GetByEmailAsync` ile AYNI stil — tek satırlık expression-bodied gövde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);',
+            aciklama: '`RefreshTokens.TokenHash` üzerinde index VAR (Bölüm 2\'nin EF config\'i) — bu sorgu tabloyu TARAMAZ, doğrudan index\'ten arar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository.AddAsync` ile AYNI kalıp.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.RefreshTokens.AddAsync(refreshToken, cancellationToken);',
+            aciklama: 'Change tracking\'e ekler, henüz DB\'ye YAZMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task RevokeAllForUserAsync(int userId, CancellationToken cancellationToken = default)',
+            aciklama: 'Bu metot artık tek satıra SIĞMIYOR (bir sorgu + bir döngü) — expression-bodied DEĞİL, açık gövdeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var activeTokens = await _context.RefreshTokens',
+            aciklama: '"Toplu güncelleme" EF\'in `ExecuteUpdateAsync`\'i (ham SQL UPDATE) ile DEĞİL, önce ÇEKİP sonra döngüyle mutasyona UĞRATARAK yapılıyor.',
+            neden: 'Bir kullanıcının aktif refresh token sayısı pratikte ÇOK küçük (aynı anda birkaç cihaz) — `ExecuteUpdateAsync`\'in performans avantajı burada ÖLÇÜLEMEZ, buna karşılık normal change-tracking yolu Repository\'nin GERİ KALANIYLA (GetByEmailAsync, AddAsync...) AYNI, tek tip bir zihinsel modeli KORUYOR.',
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(t => t.UserId == userId && t.RevokedAt == null)',
+            aciklama: '`RevokedAt == null` filtresi — zaten iptal edilmiş (`RevokedAt` dolu) bir token TEKRAR "iptal edildi" olarak İŞARETLENMEZ (gereksiz UPDATE\'in önüne geçer).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToListAsync(cancellationToken);',
+            aciklama: 'Sonuçları BELLEĞE (bir `List<RefreshToken>`\'a) çeker — döngüde mutasyona uğratılabilmesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var token in activeTokens)',
+            aciklama: 'RevokeAllForUserAsync ile RevokeFamilyAsync BİREBİR aynı örüntüyü izliyor, yalnızca filtre farklı (`UserId` vs `TokenFamily`) — bu görevde daha fazla bir "toplu iptal" ihtiyacı DOĞARSA aynı örüntü tekrarlanır, ayrı bir yardımcı metoda ÇIKARILMADI çünkü şu an yalnızca İKİ çağıran var (YAGNI).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'token.RevokedAt = DateTime.UtcNow;',
+            aciklama: 'Her token TEK TEK, `foreach` içinde mutasyona uğratılır — EF change tracking bu değişiklikleri OTOMATİK izler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task RevokeFamilyAsync(string tokenFamily, CancellationToken cancellationToken = default)',
+            aciklama: '`RevokeAllForUserAsync` ile YAPISAL olarak BİREBİR aynı — RefreshCommandHandler\'ın (Bölüm 14) replay tespitinde çağıracağı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var familyTokens = await _context.RefreshTokens',
+            aciklama: '`activeTokens` ile AYNI kalıp, farklı bir değişken adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(t => t.TokenFamily == tokenFamily && t.RevokedAt == null)',
+            aciklama: 'Tek fark: filtre `UserId` DEĞİL `TokenFamily` — AYNI aileden gelen TÜM token\'lar (kullanıcının BAŞKA ailelerdeki, farklı cihazlardaki token\'ları ETKİLENMEZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var token in familyTokens)',
+            aciklama: '`activeTokens` döngüsüyle BİREBİR aynı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository.SaveChangesAsync` ile BİREBİR aynı — `async` YOK, `Task<int>` doğrudan geri döndürülüyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Bu çağrı da, `UserRepository`\'ninki gibi, AYNI paylaşılan DbContext üzerindeki TÜM bekleyen değişiklikleri (User + RefreshToken, hangisinden çağrılırsa çağrılsın) TEK round-trip\'te yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordLearnerDbContext.cs — İlk DbSet Property\'leri',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        neden: 'A-02 Bölüm 2\'de TAM öğretilen bu dosya o zamana kadar HİÇBİR `DbSet<T>` property\'si TANIMLAMIYORDU — `ApplyConfigurationsFromAssembly` entity\'leri modele DAHİL etmek için yeterliydi, ama LINQ sorgusu yazabilmek (`_context.Users...`) için bir `DbSet<T>` property GEREKİYOR. Bu bölümdeki UserRepository/RefreshTokenRepository bu property\'lere ihtiyaç duyan İLK kod, bu yüzden burada eklendi.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using WordLearner.Domain.Entities;
++using WordLearner.Domain.Entities.Auth;
+
+ namespace WordLearner.Infrastructure.Data;
+
+ public class WordLearnerDbContext : DbContext
+ {
+     public WordLearnerDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
++    public DbSet<User> Users => Set<User>();
++    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(WordLearnerDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: 'YENİ eklenen satır — aşağıdaki `User`/`RefreshToken` DbSet\'leri için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<User> Users => Set<User>();',
+            aciklama: '`=>` (expression-bodied property) — her erişimde `Set<User>()` çağrılır, EF Core bunu İÇERİDE zaten CACHE\'liyor, ekstra bir alan (`private DbSet<User> _users;`) TUTMAYA gerek yok.',
+            neden: 'User BaseEntity\'den TÜREMEDİĞİ için `ApplySoftDeleteFilter`\'ın döngüsü (`GetEntityTypes()` + `IsAssignableFrom(BaseEntity)`) bu iki DbSet\'i HİÇ görmez/filtrelemez — bu KASITLI: User kendi `IsDeleted` alanını TAŞIYOR ama otomatik global filtre yalnızca BaseEntity türevlerine UYGULANIYOR, UserRepository sorgularının hangi satırları göreceğine KENDİSİ karar veriyor (ör. Register\'da soft-delete edilmiş bir e-postayı da BULMASI gerekiyor, bkz. Bölüm 11).',
+            olmasaydi: 'Bu iki property EKLENMESEYDİ, `_context.Users`/`_context.RefreshTokens` yazan bu bölümdeki Repository\'ler DERLENMEZDİ — `Set<User>()`\'i HER repository metodunda elle çağırmak GEREKİRDİ.'
+          },
+          {
+            satir: 'public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();',
+            aciklama: '`Users` property\'siyle BİREBİR aynı desen, `RefreshToken` için.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Infrastructure/DependencyInjection.cs — Yeni Repository Kayıtları',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        neden: 'A-02\'de TAM öğretilen bu dosyaya bu bölümün iki yeni repository\'si eklendi.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Repositories;
++using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Infrastructure.Data;
+ using WordLearner.Infrastructure.Repositories;
++using WordLearner.Infrastructure.Repositories.Auth;
+
+ namespace WordLearner.Infrastructure;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<WordLearnerDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
++        services.AddScoped<IUserRepository, UserRepository>();
++        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'YENİ satır — `IUserRepository`/`IRefreshTokenRepository` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories.Auth;',
+            aciklama: 'YENİ satır — `UserRepository`/`RefreshTokenRepository` implementasyonları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IUserRepository, UserRepository>();',
+            aciklama: 'Generic `AddScoped(typeof(IRepository<>), typeof(Repository<>))` satırının (A-02) tek bir kayıtla TÜM entity\'leri kapsamasının AKSİNE, User/RefreshToken generic OLMADIĞI için her biri KENDİ, isim bazlı kaydını gerektiriyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();',
+            aciklama: '`IUserRepository` ile AYNI ömür (`AddScoped`) — her HTTP isteği için bir örnek, AYNI `WordLearnerDbContext` örneğini PAYLAŞIYOR (ikisi de scoped olduğu için).',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'DbSet<T>', tanim: 'EF Core\'da bir entity tipinin veritabanı tablosuna karşılık gelen, LINQ sorgusu yazılabilen koleksiyon — `DbContext` üzerinde bir property olarak tanımlanır.' },
+          { terim: 'Change Tracking', tanim: 'EF Core\'un, `DbContext` üzerinden ÇEKİLEN bir entity\'nin alanlarındaki değişiklikleri OTOMATİK izlemesi — `SaveChangesAsync` çağrıldığında hangi alanların UPDATE edileceğini bu izlemeden çıkarır, elle `Update()` çağırmaya gerek kalmaz.' },
+          { terim: 'Token Family Pattern', tanim: 'Bir refresh token zincirindeki (rotation ile üretilen) TÜM token\'ları ortak bir `TokenFamily` (GUID) ile işaretleme — biri replay edilirse zincirin TAMAMI iptal edilebilir.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'User/RefreshToken BaseEntity\'den türemediği için generic IRepository<T> kullanılamıyor — Auth\'a özel, dar IUserRepository/IRefreshTokenRepository yazıldı, ilk gerçek TÜKETİCİLERİ (13 Handler) ortaya çıkınca.',
+          'Update metodu YOK: EF change tracking + Handler\'ın TEK SaveChangesAsync çağrısı yeterli — OtpService/ILoginCompletionService\'in "servis saf mantık taşır, persist Handler\'ın işi" deseniyle aynı.',
+          'RevokeAllForUserAsync/RevokeFamilyAsync kendi içinde SaveChanges ÇAĞIRMAZ — çağıran Handler\'ın diğer değişikliklerle (ör. yeni şifre) AYNI transaction\'da, TEK round-trip\'te yazılabilmesi için.',
+          'WordLearnerDbContext\'e bu bölümde İLK KEZ DbSet<User>/DbSet<RefreshToken> eklendi (A-02\'de yalnızca ApplyConfigurationsFromAssembly ile örtük tanımlıydı) — soft-delete filtresi bu ikisine UYGULANMAZ, User kendi IsDeleted mantığını taşıyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -12,6 +12,10 @@ public static class DependencyInjection
         services.AddScoped<ITokenService, JwtTokenService>();
         services.AddScoped<IOtpService, OtpService>();
         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+        services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20'de SmtpEmailService
+        services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+        services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
+        services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
 
         return services;
     }

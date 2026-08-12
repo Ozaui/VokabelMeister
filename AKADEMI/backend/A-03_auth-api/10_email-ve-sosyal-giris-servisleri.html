@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — E-posta ve Sosyal Giriş Doğrulama Servisleri</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'email-ve-sosyal-giris-servisleri',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '09_yeni-istisnalar.html',
+    sonrakiBolum: '11_kayit-ve-eposta-dogrulama.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 10',
+        baslik: 'IEmailService, IGoogleTokenValidator, IAppleTokenValidator',
+        altBaslik: '13 Handler\'ın dış dünyayla konuştuğu üç arayüz — e-posta gönderimi ve iki sosyal kimlik doğrulama sağlayıcısı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'IEmailService — Neden Şimdi 6 Metotlu, Yalnızca 4\'ü Kullanılacakken?',
+        aciklama: 'Bu bölümde yazılacak Handler\'lar `IEmailService`\'in yalnızca 4 metodunu çağıracak (doğrulama, login OTP, şifre sıfırlama, hesap silme onayı). Ama arayüz baştan 6 metotlu tasarlandı — 2 metot (şifre değişti / hesap kurtarıldı BİLDİRİMİ) bu bölümdeki Handler\'lar tarafından da kullanılacak, yalnızca farklı bir bölümde (15\'te ResetPassword, 12\'de VerifyLoginOtp) çağrılacaklar.',
+        neden: 'Altı e-posta şablonunun TÜMÜ zaten tasarlanmış durumda (kayıt doğrulama, login OTP, şifre sıfırlama, şifre değişti bildirimi, hesap silme onayı, hesap kurtarıldı bildirimi) — bu, spekülatif bir "ileride lazım olur" tahmini DEĞİL, bu bölümün 13 Handler\'ının TAMAMI plana zaten dahil, yalnızca hangi Handler\'ın hangi metodu çağıracağı bu dosyada henüz YAZILMADI.',
+        olmasaydi: 'Arayüz yalnızca "şu an kullanılan" 4 metotla açılsaydı, 2 bölüm sonra (Bölüm 12/15) BAŞKA bir metot eklemek gerekecekti — bu da `IEmailService`\'i implemente eden `DevEmailService`\'e (ve ileride SmtpEmailService\'e) HER seferinde yeni bir metot yazmak anlamına gelirdi; arayüz TEK seferde tam tasarlandığı için bu bölünme YOK.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IEmailService.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IEmailService.cs',
+        nedenBuKlasor: '`IOtpService`/`ITokenService`/`IPasswordService` (Bölüm 3-5) ile AYNI klasör.',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+// A-20'nin 6 e-posta şablonuyla (doğrulama, login OTP, şifre sıfırlama, şifre değişti, hesap silme
+// onayı, hesap kurtarıldı) birebir eşleşir — A-03 yalnızca sözleşmeyi ve dev ortamı için DevEmailService'i
+// yazar, gerçek SMTP gönderimi (SmtpEmailService) A-20'de gelir. Her metot zorunlu \`string? language\`
+// alır (SECURITY.md §1.4 ile aynı dil çözme prensibi, e-posta gövdesi de Accept-Language'a göre tr/de).
+public interface IEmailService
+{
+    Task SendEmailVerificationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);
+    Task SendLoginOtpAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);
+    Task SendPasswordResetAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);
+    Task SendPasswordChangedNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default);
+    Task SendAccountDeletionConfirmationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);
+    Task SendAccountRecoveredNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IOtpService`/`ITokenService`/`IPasswordService` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IEmailService',
+            aciklama: '`ITokenService`/`IOtpService` ile AYNI desen: Handler\'lar yalnızca bu sözleşmeyi bilir, GERÇEK gönderimin nasıl yapıldığını (dev ortamında konsola log, prod\'da SMTP) hiç BİLMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendEmailVerificationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'Register (Bölüm 11) ve ResendVerification (Bölüm 11) — e-posta doğrulama kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendLoginOtpAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'Login (Bölüm 12, adım 1) — 2. adımda doğrulanacak OTP kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendPasswordResetAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'ForgotPassword (Bölüm 15) — şifre sıfırlama kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendPasswordChangedNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'ResetPassword (Bölüm 15) — şifre BAŞARIYLA değiştirildikten SONRA, kullanıcının kendisi yapmadıysa fark etmesi için bir bilgilendirme; OTP kodu TAŞIMAZ (`otpCode` parametresi YOK) çünkü doğrulanacak bir şey değil, yalnızca bir bildirim.',
+            neden: 'Bu metodun imzasında `otpCode` OLMAMASI bilinçli — üstteki dört metot (kullanıcının BİR ŞEYİ doğrulaması gereken akışlar) ile bu ikisinin (yalnızca BİLGİLENDİRME) yapısal olarak FARKLI olduğunu, isim + imza okuyarak anlaşılabilir kılıyor.',
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendAccountDeletionConfirmationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'RequestAccountDeletion (Bölüm 15) — hesap silme isteğini onaylamak için OTP kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SendAccountRecoveredNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default);',
+            aciklama: 'VerifyLoginOtp/LoginWithGoogle/LoginWithApple (Bölüm 12/13) — grace period içinde silinmiş bir hesap bu girişte OTOMATİK kurtarıldıysa (`AccountWasRecovered=true`, Bölüm 7\'nin `ILoginCompletionService`\'i) kullanıcıyı BİLGİLENDİRMEK için; şifre değişti bildirimiyle AYNI yapıda (`otpCode` yok).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DevEmailService.cs — Konsola Loglayan Geçici İmplementasyon',
+        dosyaYolu: 'backend/WordLearner.Application/Services/DevEmailService.cs',
+        nedenBuKlasor: '`OtpService`/`JwtTokenService`/`PasswordService` (Bölüm 3-5) ile AYNI klasör — `Application/Services/`.',
+        kod: `using Microsoft.Extensions.Logging;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+// Dev ortamında SMTP kurulmadan Auth akışlarının uçtan uca test edilebilmesi için — e-posta hiç
+// gönderilmez, OTP kodu [DEV EMAIL] etiketiyle loglanır. Prod'da DI, A-20'nin SmtpEmailService'ine döner.
+public class DevEmailService : IEmailService
+{
+    private readonly ILogger<DevEmailService> _logger;
+
+    public DevEmailService(ILogger<DevEmailService> logger) => _logger = logger;
+
+    public Task SendEmailVerificationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>
+        Log("EmailVerification", email, otpCode);
+
+    public Task SendLoginOtpAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>
+        Log("LoginOtp", email, otpCode);
+
+    public Task SendPasswordResetAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>
+        Log("PasswordReset", email, otpCode);
+
+    public Task SendPasswordChangedNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default) =>
+        Log("PasswordChanged", email, otpCode: null);
+
+    public Task SendAccountDeletionConfirmationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>
+        Log("AccountDeletionConfirmation", email, otpCode);
+
+    public Task SendAccountRecoveredNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default) =>
+        Log("AccountRecovered", email, otpCode: null);
+
+    private Task Log(string template, string email, string? otpCode)
+    {
+        _logger.LogInformation("[DEV EMAIL] {Template} -> {Email} | code={Code}", template, email, otpCode ?? "-");
+        return Task.CompletedTask;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.Extensions.Logging;',
+            aciklama: '`ILogger<T>` için gerekli — bu paket bu bölümde İLK kez `Application` projesine eklendi (aşağıdaki `.csproj` kod-degisiklik slaytı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IEmailService` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: '`OtpService`/`JwtTokenService`/`PasswordService` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class DevEmailService : IEmailService',
+            aciklama: '"Dev" öneki — bu sınıf yalnızca YEREL geliştirme/test ortamında kullanılacak, prod\'da DI kaydı `SmtpEmailService`\'e (A-20, henüz yazılmadı) DEĞİŞECEK; `IEmailService`\'e bağımlı olan HİÇBİR Handler kodu bu değişiklikten ETKİLENMEYECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILogger<DevEmailService> _logger;',
+            aciklama: 'ASP.NET Core\'un standart loglama soyutlaması — `Program.cs`\'teki Serilog entegrasyonu (A-02) sayesinde bu log satırları hem konsola hem dosyaya YAZILACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DevEmailService(ILogger<DevEmailService> logger) => _logger = logger;',
+            aciklama: 'Tek bağımlılık, constructor injection — `PasswordService`/`OtpService` gibi expression-bodied kısa constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendEmailVerificationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Altı metodun HER biri, gövdesi tek satıra sığan bir expression-bodied üye — hepsi ortak `Log` yardımcısına DELEGE ediyor, yalnızca hangi "template" adıyla ve OTP kodu VAR/YOK bilgisiyle çağırdıkları farklı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("EmailVerification", email, otpCode);',
+            aciklama: '`firstName`/`language` parametreleri bu dev implementasyonda KULLANILMIYOR (yalnızca konsola log yazılıyor, gerçek bir e-posta şablonu YOK) — ama arayüz sözleşmesi gereği yine de ALINMALI, ileride `SmtpEmailService` bunları KULLANACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendLoginOtpAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: '`SendEmailVerificationAsync` ile AYNI kalıp, farklı bir template adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("LoginOtp", email, otpCode);',
+            aciklama: 'Login (Bölüm 12) adım 1\'in ürettiği OTP kodu için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendPasswordResetAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Aynı kalıp, ForgotPassword (Bölüm 15) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("PasswordReset", email, otpCode);',
+            aciklama: 'Şifre sıfırlama kodu için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendPasswordChangedNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Bildirim metotlarının (otpCode almayan iki metot) implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("PasswordChanged", email, otpCode: null);',
+            aciklama: '`otpCode: null` — adlandırılmış argüman (named argument), `Log`\'un ikinci `string?` parametresinin BU çağrıda bilerek boş geçildiğini okuyucuya AÇIKÇA gösteriyor (yalnızca `null` yazılsaydı hangi parametrenin boş bırakıldığı belirsiz KALABİLİRDİ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendAccountDeletionConfirmationAsync(string email, string firstName, string otpCode, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: 'RequestAccountDeletion (Bölüm 15) için — hesap silme onay kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("AccountDeletionConfirmation", email, otpCode);',
+            aciklama: 'Hesap silme onay kodu için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task SendAccountRecoveredNotificationAsync(string email, string firstName, string? language, CancellationToken cancellationToken = default) =>',
+            aciklama: 'İkinci bildirim metodu — VerifyLoginOtp/LoginWithGoogle/LoginWithApple (Bölüm 12-13) `AccountWasRecovered=true` olduğunda çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Log("AccountRecovered", email, otpCode: null);',
+            aciklama: '`SendPasswordChangedNotificationAsync` ile AYNI `otpCode: null` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private Task Log(string template, string email, string? otpCode)',
+            aciklama: 'Altı metodun ORTAK gövdesi — `private`, yalnızca bu sınıf İÇİNDEN çağrılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogInformation("[DEV EMAIL] {Template} -> {Email} | code={Code}", template, email, otpCode ?? "-");',
+            aciklama: '`[DEV EMAIL]` ETİKETİ — geliştiricinin konsol/log dosyasında bu satırları KOLAYCA arayabilmesi için (ör. `grep "[DEV EMAIL]"`); OTP kodu (varsa) doğrudan burada GÖRÜNÜR, e-posta kurulumu OLMADAN uçtan uca test yapılabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Task.CompletedTask;',
+            aciklama: 'Gerçek bir I/O işlemi (ağ isteği) OLMADIĞI için tamamlanmış bir `Task` döndürülür — `async`/`await` kullanılmasına GEREK yok.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ayrı Bir IGoogleTokenValidator? Google.Apis.Auth Zaten Hazır Bir Fonksiyon Sunmuyor mu?',
+        aciklama: '`Google.Apis.Auth` paketi `GoogleJsonWebSignature.ValidateAsync(idToken, settings)` adında STATİK bir metot sunuyor — teorik olarak `LoginWithGoogleCommandHandler` (Bölüm 13) bu metodu DOĞRUDAN çağırabilirdi, ekstra bir arayüze gerek KALMAZDI.',
+        neden: 'Statik bir metot, test yazılırken SAHTE (mock) bir davranışla DEĞİŞTİRİLEMEZ — `LoginWithGoogleCommandHandlerTests` (ileride yazılacak) "geçersiz bir Google token\'ında InvalidSocialTokenException fırlatılır" gibi bir senaryoyu, GERÇEKTEN Google\'ın sunucusuna İSTEK ATMADAN test edebilmeli; bu yalnızca bir ARAYÜZ arkasına alınmış bir bağımlılıkla mümkün.',
+        olmasaydi: 'Arayüz olmasaydı, `LoginWithGoogleCommandHandler`\'ın testleri ya GERÇEK bir Google ID token\'ına ihtiyaç duyardı (pratik değil, ağa bağımlı, yavaş) ya da o test SENARYOSU hiç yazılamazdı — birim testlerin "hızlı ve DB/ağ\'sız" olması ilkesi (Bölüm 3-9\'daki her serviste izlenen desen) burada da geçerli.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IGoogleTokenValidator.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IGoogleTokenValidator.cs',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public record GoogleTokenPayload(string Subject, string Email, string? FirstName, string? LastName);
+
+// Google.Apis.Auth'un GoogleJsonWebSignature.ValidateAsync'ini (statik, mock'lanamaz) bir arayüz
+// arkasına alır — CODING_STANDARDS.md §6.4 "dış servisler (Google/Apple) her zaman mock" kuralı.
+public interface IGoogleTokenValidator
+{
+    Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IEmailService` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record GoogleTokenPayload(string Subject, string Email, string? FirstName, string? LastName);',
+            aciklama: '`RefreshTokenResult` (Bölüm 4) ile AYNI desen: küçük, değişmez (immutable) bir sonuç taşıyıcısı — `Subject`, Google\'ın kullanıcıya verdiği BENZERSİZ, hiç değişmeyen kimlik (`User.GoogleId` alanına yazılacak); `FirstName`/`LastName` nullable çünkü Google HER zaman bunları döndürmeyebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IGoogleTokenValidator',
+            aciklama: 'Arayüz bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken cancellationToken = default);',
+            aciklama: 'Dönüş tipi `GoogleTokenPayload?` (nullable) — token GEÇERSİZSE `null` döner, bir exception FIRLATMAZ; exception fırlatma kararı (hangi durumda `InvalidSocialTokenException`\'a çevrileceği) ÇAĞIRAN Handler\'a bırakılıyor, bu servis yalnızca "geçerli mi değil mi" sorusuna cevap veriyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GoogleTokenValidator.cs — Implementasyon',
+        dosyaYolu: 'backend/WordLearner.Application/Services/GoogleTokenValidator.cs',
+        kod: `using Google.Apis.Auth;
+using Microsoft.Extensions.Configuration;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+public class GoogleTokenValidator : IGoogleTokenValidator
+{
+    private readonly IConfiguration _cfg;
+
+    public GoogleTokenValidator(IConfiguration cfg) => _cfg = cfg;
+
+    public async Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
+            {
+                Audience = [_cfg["Google:ClientId"]!]
+            });
+            return new GoogleTokenPayload(payload.Subject, payload.Email, payload.GivenName, payload.FamilyName);
+        }
+        catch (InvalidJwtException)
+        {
+            return null;
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Google.Apis.Auth;',
+            aciklama: '`GoogleJsonWebSignature`/`InvalidJwtException` için — projenin `Application` katmanına baştan eklenmiş bir paket, `JwtTokenService`\'in (Bölüm 4) `System.IdentityModel.Tokens.Jwt`\'ye bağımlı olması gibi bu servis de KENDİ dış paketine bağımlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`IConfiguration` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IGoogleTokenValidator`/`GoogleTokenPayload` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: '`OtpService`/`JwtTokenService`/`DevEmailService` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class GoogleTokenValidator : IGoogleTokenValidator',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IConfiguration _cfg;',
+            aciklama: '`Google:ClientId` ayarını okumak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public GoogleTokenValidator(IConfiguration cfg) => _cfg = cfg;',
+            aciklama: '`JwtTokenService` (Bölüm 4) ile AYNI desen: `IConfiguration` doğrudan enjekte edilir, `Google:ClientId` gibi bir ayar için ayrı bir "Options" sınıfı AÇILMAZ (tek bir değer için gereksiz bir soyutlama olurdu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<GoogleTokenPayload?> ValidateAsync(string idToken, CancellationToken cancellationToken = default)',
+            aciklama: '`IGoogleTokenValidator.ValidateAsync` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'try',
+            aciklama: 'Google kütüphanesinin fırlatabileceği `InvalidJwtException`\'ı yakalamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings',
+            aciklama: 'Kütüphanenin asıl işi: token\'ın imzasını Google\'ın YAYIMLADIĞI genel anahtarlarla (arka planda otomatik indirilir/önbelleklenir) doğrular VE `Audience` eşleşmesini kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Audience = [_cfg["Google:ClientId"]!]',
+            aciklama: 'Bu doğrulama OLMASAYDI, mobil uygulamanın BAŞKA bir Google projesi için üretilmiş (farklı ClientId\'li) GEÇERLİ bir token\'ı bile bu API\'ye kabul ETTİRİLEBİLİRDİ — `Audience` kontrolü, token\'ın GERÇEKTEN bu uygulama için üretildiğini garanti eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '});',
+            aciklama: '`GoogleJsonWebSignature.ValidateAsync` çağrısının parametre listesinin kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new GoogleTokenPayload(payload.Subject, payload.Email, payload.GivenName, payload.FamilyName);',
+            aciklama: 'Google\'ın kendi `Payload` tipinden, bu projenin KENDİ `GoogleTokenPayload` record\'una dönüştürülür — çağıran Handler, `Google.Apis.Auth`\'un tipine hiç BAĞIMLI olmaz (yalnızca `Application.Interfaces.Services`\'i bilir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch (InvalidJwtException)',
+            aciklama: 'Kütüphane geçersiz/süresi dolmuş/imzası bozuk bir token\'da bu exception\'ı FIRLATIR — burada YAKALANIP `null`\'a çevrilir, çağıran Handler\'ın exception türünü BİLMESİNE gerek kalmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: '`IGoogleTokenValidator.ValidateAsync`\'in sözleşmesindeki "geçersizse null döner" davranışı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Apple İçin Ayrı Bir JWKS İndirme Mantığı Gerekiyor?',
+        aciklama: 'Google için kullanılan `Google.Apis.Auth` paketinin Apple karşılığı YOK — Apple kimlik doğrulaması JWKS (JSON Web Key Set) adı verilen, Apple\'ın kendi genel anahtarlarını yayımladığı bir uç noktadan (`https://appleid.apple.com/auth/keys`) manuel olarak indirip token imzasını KENDİ elimizle doğrulamayı gerektiriyor.',
+        neden: 'Bu "eksiklik" aslında OIDC (OpenID Connect) standardının GENEL çalışma şekli — JWKS indirip imza doğrulamak, `System.IdentityModel.Tokens.Jwt` paketinin (zaten Bölüm 4\'te JWT üretmek için kullanılıyor) `JsonWebKeySet` sınıfıyla ZATEN desteklediği, hazır bir yetenek; Google\'ın kendi paketi bu genel akışı SARMALAYIP kolaylaştırıyor, Apple için bu sarmalayıcı YOK diye standardın kendisi eksik değil.',
+        olmasaydi: 'JWKS indirip imza doğrulama adımı ATLANSAYDI (yalnızca token\'ın İÇİNDEKİ `sub` claim\'i OKUNSAYDI), bir saldırgan Apple\'ın ASLA imzalamadığı, uydurma bir token\'ı KENDİ `sub`\'ıyla göndererek BAŞKA birinin hesabına giriş yapabilirdi — imza doğrulaması, token\'ın GERÇEKTEN Apple tarafından üretildiğinin TEK kanıtı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IAppleTokenValidator.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IAppleTokenValidator.cs',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public record AppleTokenPayload(string Subject, string? Email);
+
+public interface IAppleTokenValidator
+{
+    Task<AppleTokenPayload?> ValidateAsync(string identityToken, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IGoogleTokenValidator` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record AppleTokenPayload(string Subject, string? Email);',
+            aciklama: '`GoogleTokenPayload`\'dan (bu bölüm) DAHA DAR — `FirstName`/`LastName` YOK, çünkü Apple bu bilgiyi yalnızca kullanıcının BİR CİHAZDA İLK kez izin verdiği anda, TOKEN\'IN İÇİNDE DEĞİL ayrı bir alanda gönderir (Bölüm 13\'te `LoginWithAppleCommand`\'ın kendi `FirstName`/`LastName` parametreleri bunun içindir); `Email` nullable çünkü Apple\'ın relay e-postası her zaman garanti değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IAppleTokenValidator',
+            aciklama: 'Arayüz bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<AppleTokenPayload?> ValidateAsync(string identityToken, CancellationToken cancellationToken = default);',
+            aciklama: '`IGoogleTokenValidator.ValidateAsync` ile AYNI imza deseni (`?` dönüş, exception yerine `null`) — iki sağlayıcı arasında TUTARLI bir sözleşme, `LoginWithGoogleCommandHandler`/`LoginWithAppleCommandHandler` (Bölüm 13) BİRBİRİNE çok benzer şekilde yazılabilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AppleTokenValidator.cs — JWKS İndirme ve İmza Doğrulama',
+        dosyaYolu: 'backend/WordLearner.Application/Services/AppleTokenValidator.cs',
+        kod: `using System.IdentityModel.Tokens.Jwt;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using WordLearner.Application.Interfaces.Services;
+
+namespace WordLearner.Application.Services;
+
+// Apple'ın Google.Apis.Auth'a denk resmi bir .NET doğrulama SDK'sı yok — JWKS'i (Apple'ın imzalama
+// anahtar seti) kendimiz çekip imzayı JwtSecurityTokenHandler ile elle doğruluyoruz (SECURITY.md §1.2).
+public class AppleTokenValidator : IAppleTokenValidator
+{
+    private const string Issuer = "https://appleid.apple.com";
+    private const string JwksUrl = "https://appleid.apple.com/auth/keys";
+
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _cfg;
+
+    public AppleTokenValidator(HttpClient httpClient, IConfiguration cfg)
+    {
+        _httpClient = httpClient;
+        _cfg = cfg;
+    }
+
+    public async Task<AppleTokenPayload?> ValidateAsync(string identityToken, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var jwksJson = await _httpClient.GetStringAsync(JwksUrl, cancellationToken);
+            var signingKeys = new JsonWebKeySet(jwksJson).GetSigningKeys();
+
+            var principal = new JwtSecurityTokenHandler().ValidateToken(identityToken, new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKeys = signingKeys,
+                ValidateIssuer = true,
+                ValidIssuer = Issuer,
+                ValidateAudience = true,
+                ValidAudience = _cfg["Apple:BundleId"],
+                ValidateLifetime = true
+            }, out _);
+
+            var subject = principal.FindFirst("sub")?.Value;
+            return subject is null ? null : new AppleTokenPayload(subject, principal.FindFirst("email")?.Value);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.IdentityModel.Tokens.Jwt;',
+            aciklama: '`JwtSecurityTokenHandler` için — `JwtTokenService`\'in (Bölüm 4) KENDİ token üretiminde kullandığı AYNI paket, burada BAŞKA bir sistemin token\'ını doğrulamak için kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`IConfiguration` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.IdentityModel.Tokens;',
+            aciklama: '`JsonWebKeySet`/`TokenValidationParameters` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IAppleTokenValidator`/`AppleTokenPayload` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: '`GoogleTokenValidator` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class AppleTokenValidator : IAppleTokenValidator',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string Issuer = "https://appleid.apple.com";',
+            aciklama: 'Token\'ın GERÇEKTEN Apple tarafından üretildiğinin ikinci kanıtı (birincisi imza) — `iss` (issuer) claim\'i bu değerle EŞLEŞMELİ, aksi halde token BAŞKA bir sistem tarafından üretilmiş olabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string JwksUrl = "https://appleid.apple.com/auth/keys";',
+            aciklama: 'Apple\'ın genel anahtarlarını (private değil, imza DOĞRULAMAK için kullanılan public anahtarlar) yayımladığı SABİT, herkese açık uç nokta.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly HttpClient _httpClient;',
+            aciklama: 'JWKS\'i İNDİRMEK için — `IHttpClientFactory` yerine doğrudan bir `HttpClient` enjekte ediliyor, DI kaydında (aşağıdaki kod-degisiklik slaytı) `AddSingleton<HttpClient>()` ile TEK bir örnek paylaşılıyor.',
+            neden: 'Uygulamanın ömrü boyunca `new HttpClient()` her istekte YENİDEN oluşturulsaydı, altta yatan soket kaynakları TÜKENEBİLİRDİ (bilinen bir .NET tuzağı) — bu servis Apple\'a sık istek ATMADIĞI (yalnızca sosyal giriş anında) için `IHttpClientFactory`\'nin bağlantı havuzu YÖNETİMİ gibi ekstra bir karmaşıklığa gerek yok, tek bir paylaşılan örnek yeterli.',
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IConfiguration _cfg;',
+            aciklama: '`Apple:BundleId` ayarını okumak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public AppleTokenValidator(HttpClient httpClient, IConfiguration cfg)',
+            aciklama: 'İki bağımlılık — `GoogleTokenValidator`\'ın AKSİNE tek satıra SIĞMIYOR, açık gövdeli constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_httpClient = httpClient;',
+            aciklama: 'Parametrenin alana atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_cfg = cfg;',
+            aciklama: 'Parametrenin alana atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<AppleTokenPayload?> ValidateAsync(string identityToken, CancellationToken cancellationToken = default)',
+            aciklama: '`IAppleTokenValidator.ValidateAsync` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'try',
+            aciklama: 'JWKS indirme (ağ hatası), imza doğrulama gibi birden fazla hata türünü tek bir `catch`\'te (aşağıda) toplamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var jwksJson = await _httpClient.GetStringAsync(JwksUrl, cancellationToken);',
+            aciklama: 'Apple\'ın imzalama anahtarlarını JSON olarak İNDİRİR — bu anahtarlar zaman içinde DEĞİŞEBİLİR (Apple periyodik olarak döndürür), bu yüzden ÖNBELLEKLENMEZ, her doğrulamada TAZE indirilir (YAGNI: bu servis sık çağrılmadığı için önbellekleme KARMAŞIKLIĞI şimdilik gerekmiyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var signingKeys = new JsonWebKeySet(jwksJson).GetSigningKeys();',
+            aciklama: '`Microsoft.IdentityModel.Tokens`\'in (Bölüm 4\'ün `System.IdentityModel.Tokens.Jwt` paketiyle GELEN bir bağımlılık) JWKS JSON\'unu ayrıştırıp imza doğrulamada kullanılabilir `SecurityKey` nesnelerine ÇEVİREN hazır yardımcısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var principal = new JwtSecurityTokenHandler().ValidateToken(identityToken, new TokenValidationParameters',
+            aciklama: '`JwtTokenService.GetPrincipalFromExpiredToken`\'daki (Bölüm 4) AYNI sınıf (`JwtSecurityTokenHandler`) — ama orada kendi ÜRETTİĞİMİZ token\'ı, burada BAŞKA bir sistemin (Apple) ürettiği token\'ı doğruluyoruz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateIssuerSigningKey = true,',
+            aciklama: 'İmza doğrulamasının AÇIK olduğunu belirtir — `false` olsaydı, kütüphane imzayı hiç KONTROL ETMEZDİ (bu, imza doğrulamasını TAMAMEN devre dışı bırakan bilinen bir güvenlik açığı deseni).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IssuerSigningKeys = signingKeys,',
+            aciklama: '`JwtTokenService`\'teki `IssuerSigningKey` (TEKİL, kendi sabit `SecretKey`\'imiz) ile FARKLI: burada `IssuerSigningKeys` (ÇOĞUL) — Apple aynı anda BİRDEN FAZLA anahtar yayımlayabilir (rotasyon sırasında eskisi/yenisi bir arada), doğrulama bunların HERHANGİ biriyle eşleşirse başarılı sayılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateIssuer = true,',
+            aciklama: '`iss` claim\'inin `ValidIssuer`\'la eşleşmesini ZORUNLU kılar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidIssuer = Issuer,',
+            aciklama: 'Yukarıdaki `Issuer` sabitiyle karşılaştırılacak değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateAudience = true,',
+            aciklama: '`aud` claim\'inin `ValidAudience`\'la eşleşmesini ZORUNLU kılar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidAudience = _cfg["Apple:BundleId"],',
+            aciklama: 'Google\'ın `ClientId`\'sine denk gelen alan — token\'ın BU uygulama (mobil Bundle ID) için üretildiğini doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ValidateLifetime = true',
+            aciklama: 'Token\'ın süresi dolmuşsa REDDEDİLİR — `JwtTokenService.GetPrincipalFromExpiredToken`\'daki (Bölüm 4) `ValidateLifetime = false` ile TERSİ: orada BİLEREK süresi dolmuş kendi token\'ımızı okuyorduk, burada Apple\'ın token\'ının hâlâ GEÇERLİ olması gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}, out _);',
+            aciklama: '`ValidateToken`\'ın `out` parametresi (doğrulanmış ham token nesnesi) burada KULLANILMIYOR, `_` ile atlanıyor — yalnızca `principal` (claim\'lere erişim) ilgi alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var subject = principal.FindFirst("sub")?.Value;',
+            aciklama: 'Apple\'ın kullanıcıya verdiği BENZERSİZ, hiç değişmeyen kimlik — `User.AppleId` alanına yazılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return subject is null ? null : new AppleTokenPayload(subject, principal.FindFirst("email")?.Value);',
+            aciklama: '`sub` claim\'i yoksa (teorik olarak, geçerli bir Apple token\'ında OLMAMASI beklenmez ama yine de kontrol edilir) `null` döner — `IGoogleTokenValidator` ile AYNI "geçersizse null" sözleşmesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch',
+            aciklama: 'Tipsiz genel `catch` — JWKS indirilirken ağ hatası, JSON ayrıştırma hatası, imza doğrulama hatası (`SecurityTokenException` ve türevleri) gibi BİRDEN FAZLA farklı istisna türü OLABİLİR; hepsi AYNI sonuca (`null`, "doğrulanamadı") indirgeniyor, çağıran Handler için fark ETMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Herhangi bir doğrulama hatasında `null`.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application.csproj — ILogger Paketi',
+        dosyaYolu: 'backend/WordLearner.Application/WordLearner.Application.csproj',
+        neden: '`DevEmailService`\'in `ILogger<DevEmailService>` kullanabilmesi için `Microsoft.Extensions.Logging.Abstractions` paketi eklendi — `Application` projesi ASP.NET Core\'un TAMAMINA (Sdk.Web) değil, yalnızca ihtiyaç duyduğu soyutlama paketlerine bağımlı kalmaya devam ediyor (`Microsoft.Extensions.Configuration.Abstractions` ile AYNI desen, Bölüm 4).',
+        diff: ` <Project Sdk="Microsoft.NET.Sdk">
+
+   <ItemGroup>
+     <ProjectReference Include="..\\WordLearner.Domain\\WordLearner.Domain.csproj" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <PackageReference Include="AutoMapper" Version="13.0.1" />
+     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+     <PackageReference Include="FluentValidation" Version="11.9.2" />
+     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.9.2" />
+     <PackageReference Include="Google.Apis.Auth" Version="1.67.0" />
+     <PackageReference Include="MediatR" Version="12.1.1" />
+     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.0" />
+     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
++    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.0" />
+   </ItemGroup>
+
+   <PropertyGroup>
+     <TargetFramework>net9.0</TargetFramework>
+     <ImplicitUsings>enable</ImplicitUsings>
+     <Nullable>enable</Nullable>
+   </PropertyGroup>
+
+ </Project>`,
+        satirlar: [
+          {
+            satir: '<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />',
+            aciklama: '"Abstractions" paketi — `Serilog.AspNetCore` gibi GERÇEK bir loglama SAĞLAYICISI değil, yalnızca `ILogger<T>` ARAYÜZÜNÜ taşıyan minimal paket; gerçek log yazımını hangi kütüphanenin yapacağı (`API` projesindeki Serilog) `Application` katmanının UMURUNDA değil. Listedeki diğer paketler ALFABETİK sırada — yeni paket de bu sırayı BOZMADAN, "Configuration.Binder" ile "System.IdentityModel" arasına eklendi.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — Dört Yeni Servis Kaydı',
+        dosyaYolu: 'backend/WordLearner.Application/DependencyInjection.cs',
+        neden: 'Bölüm 7\'de `IOtpService`/`ILoginCompletionService` ile genişletilen bu dosyaya, bu bölümün üç yeni servisi + bir yardımcı (`HttpClient`) eklendi.',
+        diff: ` using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Application.Services;
+
+ namespace WordLearner.Application;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+     {
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
+         services.AddScoped<IOtpService, OtpService>();
+         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
++        services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20'de SmtpEmailService
++        services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
++        services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
++        services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20\'de SmtpEmailService',
+            aciklama: 'DI kaydı SATIR İÇİ bir yorumla, bu kaydın GEÇİCİ (yalnızca dev/prod ayrımı henüz yazılmadığı için) olduğunu işaret ediyor — A-20\'de bu satır `builder.Environment.IsDevelopment()` gibi bir dallanmaya GÖRE `DevEmailService`/`SmtpEmailService` arasında SEÇİM yapacak şekilde değişecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();',
+            aciklama: 'Diğer TÜM servislerle (`IPasswordService`, `ITokenService`...) AYNI `AddScoped` ömrü — her HTTP isteği için bir örnek, isteğe özel bir DURUM tutmuyor zaten (`IConfiguration` dışında bağımlılığı yok).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddSingleton<HttpClient>(); // AppleTokenValidator\'ın JWKS isteği için',
+            aciklama: 'Bu dosyadaki İLK `AddSingleton` kaydı — diğer TÜM servisler `AddScoped`; `HttpClient`\'ın (yukarıdaki `AppleTokenValidator.cs` kod slaytındaki `neden` alanında açıklandığı gibi) UYGULAMA ÖMRÜ boyunca TEK bir örnek olarak paylaşılması BİLİNÇLİ bir tercih.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();',
+            aciklama: '`AppleTokenValidator`\'ın constructor\'ı hem `HttpClient` (yukarıdaki singleton) hem `IConfiguration` alıyor — DI konteyner bu ikisini OTOMATİK olarak bulup enjekte edecek, bu satırda AYRICA belirtmeye gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'JWKS (JSON Web Key Set)', tanim: 'Bir kimlik sağlayıcının (Apple, Google, herhangi bir OIDC sağlayıcı) imzalama için kullandığı genel (public) anahtarları JSON formatında yayımladığı, herkese açık bir uç nokta — token doğrulayan taraf bu anahtarları indirip imzayı kontrol eder.' },
+          { terim: 'Issuer / Audience', tanim: 'Bir JWT\'nin standart claim\'leri — Issuer (`iss`) "bu token\'ı kim ÜRETTİ" (ör. Apple), Audience (`aud`) "bu token HANGİ uygulama için ÜRETİLDİ" (ör. bizim Bundle ID\'imiz) sorularına cevap verir; ikisi de doğrulanmazsa BAŞKA bir sistem/uygulama için üretilmiş geçerli bir token bile KABUL EDİLEBİLİR.' },
+          { terim: 'Singleton (DI ömrü)', tanim: 'Uygulama başlatıldığında BİR KEZ oluşturulan, tüm istekler arasında PAYLAŞILAN bağımlılık — `Scoped` (her HTTP isteği için yeni) ve `Transient`\'in (her istekte yeni) AKSİNE, durumu isteğe özel OLMAYAN, "ağır" nesneler (ör. HttpClient) için tercih edilir.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IEmailService baştan 6 metotlu tasarlandı — bu bölümdeki Handler\'lar 4\'ünü çağıracak, kalan 2\'si (bildirim metotları) sonraki bölümlerde kullanılacak; DevEmailService hepsini konsola loglayan GEÇİCİ bir implementasyon.',
+          'IGoogleTokenValidator, Google.Apis.Auth\'un statik ValidateAsync\'ini bir arayüz arkasına alıyor — statik bir metot mock\'lanamaz, testler bu soyutlama OLMADAN yazılamaz.',
+          'IAppleTokenValidator kendi JWKS indirme + imza doğrulama mantığını taşıyor — Apple için Google.Apis.Auth\'a denk hazır bir SDK yok, ama gereken tüm altyapı (JsonWebKeySet, JwtSecurityTokenHandler) zaten JWT paketinde var.',
+          'HttpClient bu dosyada İLK kez AddSingleton olarak kaydedildi — diğer tüm servisler AddScoped, ama HttpClient\'ın uygulama ömrü boyunca TEK örnek olması bilinçli bir tercih (soket tükenmesini önler).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

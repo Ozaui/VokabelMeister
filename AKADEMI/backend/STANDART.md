@@ -80,6 +80,13 @@ CLAUDE.md §3 adım 13 notuna bak (Backend Akademi'ye işlerken zorunlu adım). 
 `kod` metnindeki satırla **karakter karakter (trim edilmiş) eşleşmeli**, yoksa motor o satırı
 tıklanabilir işaretlemez (sessizce atlar, hata vermez).
 
+- **Kapsam — TÜM anlamlı satırlar:** `kod` bloğunda görünen HER anlamlı satır (`using` direktifi,
+  namespace bildirimi, alan/property/metot bildirimi, metot gövdesindeki her ifade — atama, çağrı,
+  `return`, `if`/`foreach` koşulu vb.) `satirlar[]`'da kendi girdisiyle eşleşmeli — yalnızca
+  "ilginç" birkaç satır değil, TÜMÜ.
+- **İstisna (satır AÇILMAZ):** (a) boş satırlar, (b) yalnızca `{` veya `}` olan satırlar,
+  (c) `//` ya da `///` ile başlayan yorum satırları.
+
 ### 3.1 `kod-degisiklik` — daha önce TAM olarak öğretilmiş bir dosyaya SONRADAN dokunulduğunda
 
 Yazılım bir süreçtir: bir dosya ÖNCEKİ bir bölümde bir `kod` slaytıyla (o zamanki) TAM haliyle
@@ -110,6 +117,15 @@ slaytına İNDİRGENMEZ:
 - `satirlar[]` opsiyonel ama önerilir — özellikle YENİ eklenen satırlar için `{ satir, aciklama,
   neden, olmasaydi }` üçlüsü eklenir; `satir` alanı diff'teki `+`/`-`/` ` ÖNEKİ OLMADAN, yalnızca
   kodun kendisiyle (trim edilmiş) eşleşmeli — motor eşleştirmeyi önek çıkarıldıktan sonra yapar.
+  `satirlar[]` yazılıyorsa §3'teki kapsam kuralı (TÜM anlamlı satırlar + üç istisna) SADECE
+  `+`/`-` satırlar için önek çıkarıldıktan SONRA burada da aynen geçerlidir.
+- **CONTEXT (` ` önekli, turuncu) satırlara `satirlar[]` girdisi YAZILMAZ — hiç, kısa bir not
+  bile değil.** Context satır zaten ÖNCEKİ bir bölümde `kod` slaytıyla TAM açıklanmış — burada
+  "değişmeden kalan satır" gibi bir tekrar notu bile okuyucuya yeni bir bilgi vermez, yalnızca
+  aynı açıklamayı iki yerde bakımı gereken bir kopyaya çevirir. Bu, comment/brace satırlarının
+  hiç açıklanmaması kuralıyla (§3, üçüncü istisna) AYNI mantık — motor zaten context'i turuncu
+  render ederek "bu zaten biliniyor" sinyalini VERİYOR, `satirlar[]` bunu tekrar etmez. Yalnızca
+  `+`/`-` satırlar `satirlar[]` girdisi alır.
 - Bu slayt, DEĞİŞEN dosyanın SONRAKİ görevine (değişikliği yapan göreve) ait bölümde yer alır —
   eski görevin kendi `kod` slaytına dokunulmaz, yalnızca yeni görev "bak, bu dosyaya önceki bir
   görevde yazdığımız X metodu değişti" diye bu slaytla işaret eder.

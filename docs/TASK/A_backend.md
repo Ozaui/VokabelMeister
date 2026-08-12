@@ -17,11 +17,30 @@
 > sonradan **A-07.1** retrofit'ine ertelenmişti — burada **Admin API**, Kişisel Kart API'sinden
 > SONRAYA alındı, moderasyon ilk seferde tam yazılır, ayrı bir retrofit task'ı gerekmez.
 
+> **2026-08-12 — Gözden geçirme notu:** Aşağıdaki 9 madde, tüm task listesi üzerinden yapılan bir
+> denetimde tespit edildi ve ilgili task'lara işlendi. Her biri task'ın içinde `⚠️ [2026-08-12]`
+> etiketiyle işaretli, böylece nereden geldikleri kaybolmuyor:
+> 1. **İlk admin hesabı oluşturma eksik** (A-03 → yeni **A-03.2**)
+> 2. **A-06 "orphan terfi" testi ile silme koruması çelişiyor** (A-06)
+> 3. **`UserCardUserCategories`/`UserCardUserCategory` isim tutarsızlığı** (A-08, A-10)
+> 4. **Süresi geçmiş token/session/OTP temizliği planlanmamış** (A-17)
+> 5. **A-14 Paylaşım API'nin neyi paylaştığı belirsiz** (A-14)
+> 6. **A-15 `ClassWord`'ün sistem kelimesiyle FK'i ve `UserProgress` yansıması belirsiz** (A-15)
+> 7. **A-18 toplu import'ta kategori ataması yok** (A-18)
+> 8. **Health check endpoint'i yok** (A-02)
+> 9. **API versiyonlama stratejisi belirtilmemiş** (A-01)
+
 ### A-01 — Proje İskeleti ✅
 **Referans:** REFERENCE/DEVELOPMENT_SETUP.md §3, REFERENCE/ENV.md
 - [x] Solution + 4 proje (API, Application, Infrastructure, Domain) + Tests + referanslar (Domain ← Infra ← App ← API)
 - [x] NuGet paketleri (REFERENCE/TECHNICAL_SPECIFICATIONS.md §1), `appsettings*.json`, `Program.cs` temel yapı
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/` (2 bölüm)
+- [ ] ⚠️ **[2026-08-12] API versiyonlama kararı:** Route prefix `/api/v1/...` olarak baştan
+      sabitlenir (`Program.cs`'te tek yerden `MapControllers` öncesi ayarlanır). Şimdilik tek versiyon
+      var — `Asp.Versioning` gibi bir kütüphane eklenmez (YAGNI), yalnızca URL prefix'i ileride
+      `v2` açılabilecek şekilde baştan konur. Bu karar geriye dönük A-03+ tüm controller'ları etkiler,
+      bu yüzden A-01'e (ilk task) eklendi.
+- [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-02 — Ortak Altyapı ✅
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
@@ -53,6 +72,11 @@
       koşullu — CLAUDE.md §3 "AutoMapper Profile yalnızca" kuralı, ilk gerçek Entity→DTO dönüşümünde eklenir)
 - [x] **Birim testleri:** `RepositoryTests` + `EntityNotFoundExceptionTests` (in-memory DB, CRUD + soft delete filtresi + exception mesaj formatı)
 - [x] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-12] Health check endpoint'i:** `GET /health` (`[AllowAnonymous]`, auth'tan ve
+      versiyon prefix'inden BAĞIMSIZ — yani `/health`, `/api/v1/health` değil) — `AddHealthChecks()` +
+      DB bağlantı kontrolü (`AddDbContextCheck<WordLearnerDbContext>`). Deployment/monitoring için
+      gerekli, spekülatif değil — ilk günden ihtiyaç duyulur, bu yüzden A-02'ye (ortak altyapı) eklendi.
+- [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-03 — Auth API 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
@@ -88,12 +112,31 @@
 - [x] `IOtpService`/`OtpService` (Register/Login/ResetPassword/AccountDeletion ortak OTP üretimi/
       doğrulaması), `ILoginCompletionService`/`LoginCompletionService` (OTP/Google/Apple/QR
       girişlerinin ortak son adımı: grace period kurtarma, token üretimi)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] 13 Auth Command+Handler (`Application/Features/Auth/`): Register, VerifyEmail,
+- [x] ➜ **AKADEMI/backend'ye işle**
+> **13 Handler sırasında verilen tasarım kararları:** (1) `User`/`RefreshToken` BaseEntity'den
+> türemediği için generic `IRepository<T>` kullanılamıyor — `IUserRepository`/`UserRepository` ve
+> `IRefreshTokenRepository`/`RefreshTokenRepository` (Auth'a özel, dar arayüz; Update metodu YOK,
+> EF change tracking + tek `SaveChangesAsync` yeterli, OtpService/LoginCompletionService'in "servis
+> saf mantık taşır" deseniyle aynı). `WordLearnerDbContext`'e de bu adımda ilk kez `DbSet<User>`/
+> `DbSet<RefreshToken>` eklendi (önceden yalnızca `ApplyConfigurationsFromAssembly` ile örtük
+> tanımlıydı). (2) Task metninde yalnızca `IAppleTokenValidator` anılmış olsa da `IGoogleTokenValidator`
+> da eklendi — `GoogleJsonWebSignature.ValidateAsync` statik bir çağrı, arkasına bir arayüz konmazsa
+> `LoginWithGoogleCommandHandler` testi CODING_STANDARDS.md §6.4'ün "Google/Apple her zaman mock"
+> kuralına uyamaz. (3) `IEmailService` A-20'nin 6 şablonunu (doğrulama/login OTP/şifre sıfırlama/
+> şifre değişti/hesap silme onayı/hesap kurtarıldı) baştan tanımlıyor — A-03 yalnızca konsola loglayan
+> `DevEmailService`'i sağlıyor. (4) Başarı mesajı gerektiren uçlar (Login adım 1, ResendVerification,
+> VerifyEmail, Logout, ForgotPassword, ResetPassword, RequestAccountDeletion, ConfirmAccountDeletion)
+> `MediatR.Unit` döner — hardcoded Türkçe metin YAZILMADI (CLAUDE.md §1), localize edilmiş `message`
+> alanı `SuccessMessages.cs` + `AuthController` yazılınca (bu dosyanın birkaç madde altındaki ayrı
+> checkbox'ları) eklenecek, `ErrorMessages`/`ExceptionHandlingMiddleware` ile simetrik.
+- [x] 13 Auth Command+Handler (`Application/Features/Auth/`): Register, VerifyEmail,
       ResendVerification, Login, VerifyLoginOtp, LoginWithGoogle, LoginWithApple, Refresh, Logout,
       ForgotPassword, ResetPassword, RequestAccountDeletion, ConfirmAccountDeletion + `IEmailService`
       sözleşmesi + `DevEmailService` (gerçek SMTP gönderimi A-20'de) + `IAppleTokenValidator`
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 08-15. bölümler (repository
+      katmanı, yeni istisnalar, e-posta/sosyal giriş servisleri, 13 Handler); `postman` slaytları
+      henüz YOK — `AuthController` yazılana kadar bilerek eklenmiyor (STANDART.md kuralı, endpoint
+      bir controller'a bağlanınca eklenir)
 - [ ] 5 QR Login Command+Handler (`Application/Features/QrLogin/`): Generate/Scan/Confirm/Deny/
       GetStatus (Confirmed'de `ILoginCompletionService` ile tek seferlik token) +
       `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403)
@@ -108,6 +151,24 @@
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **Birim testleri:** 13+5 Command Handler testi, `OtpServiceTests`, `LoginCompletionServiceTests`,
       `JwtTokenServiceTests`, `PasswordServiceTests`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-03.2 — İlk Admin Hesabı ⬜ ⚠️ **[2026-08-12 — yeni task, tespit edilen boşluk]**
+**Neden gerekli:** `AdminController` (A-18) ve tüm `[Authorize(Roles="Admin")]` uçları, sistemde
+zaten bir Admin olmasını şart koşuyor. `UpdateUserRoleCommand` (A-18) bir kullanıcıyı Admin yapabilir
+ama bunu çağırmak için de zaten Admin olmak gerekiyor — döngüsel bir bağımlılık. Register akışı
+(A-03) varsayılan olarak yalnızca `User` rolüyle kayıt açıyor, hiçbir task ilk Admin'i oluşturmuyordu.
+Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları test edilebilsin diye) gelir.
+- [ ] `DbSeeder`/`AdminSeedService` — `Program.cs` başlangıcında (`app.Run()`'dan önce) çalışır,
+      `appsettings.json`/ortam değişkeninden okunan `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`
+      ile, yalnızca **o e-posta hiç yoksa** bir `User` (Role=Admin, IsActive=true, EmailVerifiedAt=now)
+      oluşturur — idempotent, her `Program.cs` başlangıcında güvenle tekrar çalışabilir
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `REFERENCE/ENV.md`'ye `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` eklenir (yalnızca
+      geliştirme/staging'de `appsettings.Development.json`'da; prod'da secret olarak verilir, ilk
+      girişten sonra şifre değiştirilmesi önerilir — dokümantasyon notu, kod zorlaması değil)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `AdminSeedServiceTests` (yoksa oluşturur, varsa dokunmaz/idempotent, yanlış env değişkeni formatında sessizce atlar)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-04 — Loglama Sistemi ⬜
@@ -169,6 +230,14 @@
 ### A-06 — Kategori API (Categories) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin), C-06 (Web), D-08 (Mobil)
+> ⚠️ **[2026-08-12] Silme koruması ↔ "orphan terfi" çelişkisi çözüldü:** Eski task metninde hem
+> "çocuğu olan kategori silinemez" (`CategoryHasChildrenException`) hem de birim testi listesinde
+> "orphan terfi" birlikte anılıyordu — bu iki davranış aynı anda var olamaz (çocuğu olan kategori
+> hiç silinemiyorsa öksüz çocuk senaryosu oluşmaz). **Karar:** silme koruması KALIR (çocuğu olan
+> kategori silinemez, 409) — bu daha güvenli ve DATABASE_SCHEMA.md'deki self-ref FK Restrict
+> kısıtıyla tutarlı. "Orphan terfi" ifadesi kaldırıldı, yerine gerçekte test edilmesi gereken
+> senaryo yazıldı: **kategori taşıma** (`UPDATE`'te `ParentCategoryId` değişimi — bir kategori başka
+> bir üst kategorinin altına taşınabilir, çocukları kendisiyle birlikte gelir, döngü kontrolü burada devreye girer).
 - [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation`, `WordCategory` ara tablo
       (`WordConceptId`↔`CategoryId` — kategori dilden bağımsız) + EF config (CHECK MinLevel/MaxLevel,
       self-ref FK Restrict) + migration (12 kategori + 24 çeviri seed, `DATABASE_SCHEMA.md` sırasıyla)
@@ -182,7 +251,7 @@
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **`IActivityLogger`:** `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** hiyerarşik liste + orphan terfi, silme koruması, döngü koruması, `categoryId` filtresi
+- [ ] **Birim testleri:** hiyerarşik liste, **kategori taşıma** (üst kategori değişimi + döngü koruması), silme koruması (çocuk/aktif kelime), `categoryId` filtresi
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-07 — Medya / Dosya Yükleme API ⬜
@@ -207,8 +276,10 @@
 ### A-08 — Kişisel Kategori API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §8
 **Frontend karşılığı:** C-06 (Web — Kategoriler Sayfası, kişisel sekme), D-08 (Mobil — Kategoriler Ekranı)
-> A-10'daki (Kişisel Kart) `UserCardUserCategories` ara tablosunun FK verdiği `UserCategory`
+> A-10'daki (Kişisel Kart) `UserCardUserCategory` ara tablosunun FK verdiği `UserCategory`
 > entity'si önce hazır olmalı — dikey dilim bütünlüğü için Kişisel Kart'tan ÖNCE gelir.
+> ⚠️ **[2026-08-12]** Ara tablo adı `UserCardUserCategory` (tekil) olarak standartlaştırıldı — A-10'daki
+> entity listesiyle birebir eşleşsin diye (önceki sürümde burada yanlışlıkla çoğul `UserCardUserCategories` yazılıydı).
 - [ ] **Entity:** `UserCategory` + migration, `IUserCategoryService`/`UserCategoryController` (yalnızca sahibi, `UserId` filtresi zorunlu)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **`IActivityLogger`:** `CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`
@@ -298,23 +369,40 @@
 ### A-14 — Paylaşım API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §14
 **Frontend karşılığı:** C-10 (Web — Paylaşım Linki Sayfası), D-12 (Mobil — Paylaşım Linki Ekranı)
-- [ ] **Entity:** `SharedContent`, `SharedContentImport` + migration
+> ⚠️ **[2026-08-12] Netleştirme:** `SharedContent` neyi paylaşıyor, task metninde belirsizdi.
+> Karar: paylaşılabilen içerik **`UserCard` (tekil kart) ve `UserCategory` (kart koleksiyonu olarak
+> kategori)** — sistem kelimeleri (`Word`/`WordConcept`) zaten herkese açık olduğu için paylaşıma
+> gerek yok. `SharedContent.ContentType` enum'ı (`UserCard`|`UserCategory`) + `ContentId` (polymorphic
+> FK, ilişkisel FK yerine — iki farklı tabloya işaret edebildiği için) bu ayrımı taşır.
+- [ ] **Entity:** `SharedContent` (`ContentType` enum: UserCard|UserCategory, `ContentId`), `SharedContentImport` + migration
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IShareService`/`ShareService` (UUID link, anonim önizleme, listene kopyala, sil), `SharedContentController`
+- [ ] `IShareService`/`ShareService` (UUID link, anonim önizleme, listene kopyala, sil — `ContentType`'a
+      göre `UserCard` mı yoksa `UserCategory`'nin içindeki tüm kartlar mı kopyalanacağını dallandırır), `SharedContentController`
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** link üretimi, `expiresAt` kontrolü, anonim önizleme
+- [ ] **Birim testleri:** link üretimi, `expiresAt` kontrolü, anonim önizleme, **her iki `ContentType` için** kopyalama
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-15 — Sınıf API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §12
 **Frontend karşılığı:** C-08 (Web — Sınıf Sayfası), D-10 (Mobil — Sınıf Ekranı)
-- [ ] **Entity:** `Class`, `ClassMembership`, `ClassWord`, `ClassCategory`, `ClassUserCategory` + migration
+> ⚠️ **[2026-08-12] Netleştirme:** `ClassWord`'ün `Word`/`WordConcept`'e (A-05) FK'i olduğu ve
+> `UserProgress`'e (A-09) OTOMATİK yansımadığı açıkça belirtildi (önceki sürümde belirsizdi).
+- [ ] **Entity:** `Class`, `ClassMembership`, `ClassWord` (`WordConceptId` FK → A-05 `WordConcept`,
+      sınıfa özel not/öncelik taşıyabilir ama kendi başına öğrenme kaydı DEĞİLDİR), `ClassCategory`,
+      `ClassUserCategory` + migration
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IClassService`/`ClassService` (oluştur+davet kodu, katıl, kategori ekle, istatistik, ayrıl/sil)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IClassWordService`/`ClassWordService` (yalnızca sahibi ekler/düzenler/siler, üyeler görür — duplikat + sistem uyarısı), `ClassController`
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** davet kodu, katılım, sahiplik, üye görünürlüğü
+- [ ] **Öğrenmeye bağlanma:** Bir öğrenci sınıf kelimesini "öğrenmeye" başladığında bu OTOMATİK
+      olmaz — üye, A-10'daki `POST /user-cards/learn-system-word` uç noktasını (`ClassWord`'ün işaret
+      ettiği `WordConceptId` ile) KENDİSİ çağırır, böylece `UserProgress` her zaman kullanıcının
+      kendi bilinçli eylemiyle açılır (CLAUDE.md'nin "sürpriz yan etki yok" ilkesiyle tutarlı);
+      `ClassController`'a bu akışı kolaylaştıran bir yardımcı endpoint (`POST /classes/{id}/words/{wordConceptId}/learn`,
+      dahili olarak aynı `UserProgress` açma mantığını çağırır) eklenir
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** davet kodu, katılım, sahiplik, üye görünürlüğü, sınıf kelimesinden `UserProgress` açma akışı
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-16 — Arkadaş API ⬜
@@ -325,7 +413,7 @@
 - [ ] **Birim testleri:** istek/kabul/reddet, self-friendship engeli
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
-### A-17 — Push Notification (OneSignal) ⬜
+### A-17 — Push Notification (OneSignal) + Bakım Görevleri ⬜
 **Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire)
 **Frontend karşılığı:** D-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok)
 - [ ] `INotificationService`/`OneSignalNotificationService`, `User.OneSignalPlayerId` + migration, `PUT /users/me/device-token`
@@ -334,14 +422,23 @@
       tamamlanmadıysa), due hatırlatması (eşik geçince günde 1), streak riski (gün sonuna
       yaklaşırken hedef eksikse); achievement bildirimi event-driven (A-09'un `AchievementService`'i tetikleyince anlık)
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock), `NotificationTriggerJobTests` (her tetikleyici koşulu)
+- [ ] ⚠️ **[2026-08-12] Süresi geçmiş kayıt temizliği:** `ExpiredTokenCleanupJob` — Hangfire'a eklenen
+      günlük recurring job, üç tabloyu temizler: (1) `RefreshTokens` — `ExpiresAt` geçmiş VE
+      (`IsRevoked=true` OR `ExpiresAt` üzerinden 30+ gün geçmiş) kayıtlar hard-delete edilir (soft
+      delete yok, zaten audit amaçlı tutulmuyorlar); (2) `QrLoginSessions` — `ExpiresAt` geçmiş ve
+      `Status` terminal (Confirmed/Denied/Expired) olanlar hard-delete; (3) `Users.PendingOtp*` alanları
+      — `PendingOtpExpiresAt` geçmiş kayıtlarda OTP alanları NULL'lanır (kullanıcı satırı silinmez).
+      Bu iş A-17'ye eklendi çünkü zaten Hangfire altyapısını kuran task bu.
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock), `NotificationTriggerJobTests` (her tetikleyici koşulu), `ExpiredTokenCleanupJobTests` (üç tablo için ayrı senaryo)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-18 — Admin API (Kullanıcı Yönetimi + İstatistik + Toplu Import + Log Görüntüleme + İçerik Moderasyonu) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §11, §11.1
 **Frontend karşılığı:** B-05 (Kullanıcı Yönetimi), B-06 (İçerik Moderasyonu), B-07 (İstatistik Paneli), B-08 (Log Görüntüleme Paneli)
 > A-10'dan (Kişisel Kart) SONRA geliyor — `UserCard` moderasyonu (liste/sil) ilk turda tam yazılır,
-> eski turdaki gibi ayrı bir "A-07.1 ertelendi" retrofit'i açılmaz.
+> eski turdaki gibi ayrı bir "A-07.1 ertelendi" retrofit'i açılmaz. A-03.2'den (İlk Admin) de SONRA
+> gelir — bu uçların test edilebilmesi için önce en az bir Admin'in var olması gerekir.
 - [ ] Kullanıcı yönetimi: `IUserRepository`'ye admin sorguları + `GetUsersQuery`/`GetUserByIdQuery`/
       `UpdateUserRoleCommand`/`UpdateUserStatusCommand` — her ikisi **hem** `IActivityLogger` **hem**
       `ISecurityLogger`'a (`AdminAction`) yazar; **self-lockout koruması**
@@ -356,6 +453,12 @@
       bırakılır), A-05'in `WordGrammarValidator`'ı yeniden kullanılır, best-effort
       (`BulkImportResultDto.Results[]` satır bazlı hata raporu), TEK `BULK_IMPORT_WORDS` ActivityLog kaydı
 - [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-12] Import'ta kategori ataması:** `BulkImportWordsCommand`'ın satır formatına
+      isteğe bağlı `categoryIds: Guid[]` alanı eklenir — verilirse A-06'nın `WordCategory` ara
+      tablosuna aynı transaction içinde yazılır, verilmezse kelime kategorisiz kalır (bilinçli
+      varsayılan, admin sonradan A-06 uçlarından atayabilir). Bu, önceki sürümde belirtilmemiş
+      bilinçsiz bir boşluktu; artık açık bir tasarım kararı.
+- [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] Log görüntüleme: `GetActivityLogsQuery`/`GetApplicationLogsQuery`/`GetSecurityLogsQuery`
       (filtre+sayfa) + `LogMessages.cs` (yalnızca `SecurityLog.Detail` Code→mesaj çözer,
       `ActivityLog.Action`/`OldValue`/`NewValue` sabit kalır/ham JSON döner — CLAUDE.md §1)
@@ -365,7 +468,8 @@
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `AdminController` (`[Authorize(Roles="Admin")]`) — kullanıcı(4) + istatistik(1) + import(1) + log(3) + moderasyon(2) = 11 endpoint
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** her Command/Query Handler için ayrı test dosyası (self-lockout, best-effort import, log filtreleme, moderasyon liste+silme+audit)
+- [ ] **Birim testleri:** her Command/Query Handler için ayrı test dosyası (self-lockout, best-effort
+      import + **kategori ataması dahil**, log filtreleme, moderasyon liste+silme+audit)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-19 — SMTP Ayarları API ⬜

@@ -13,12 +13,26 @@ public static class ErrorMessages
             ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
             ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
             ["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",
+            ["EMAIL_ALREADY_REGISTERED"] = "Bu e-posta adresi zaten kayıtlı.",
+            ["INVALID_CREDENTIALS"] = "E-posta veya şifre hatalı.",
+            ["ACCOUNT_INACTIVE"] = "Hesabınız yönetici tarafından dondurulmuş.",
+            ["INVALID_OTP"] = "Kod geçersiz.",
+            ["OTP_EXPIRED"] = "Kodun süresi dolmuş.",
+            ["INVALID_REFRESH_TOKEN"] = "Oturum geçersiz, lütfen tekrar giriş yapın.",
+            ["INVALID_SOCIAL_TOKEN"] = "Google/Apple ile giriş doğrulanamadı.",
         },
         ["de"] = new()
         {
             ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
             ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
             ["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",
+            ["EMAIL_ALREADY_REGISTERED"] = "Diese E-Mail-Adresse ist bereits registriert.",
+            ["INVALID_CREDENTIALS"] = "E-Mail oder Passwort ist falsch.",
+            ["ACCOUNT_INACTIVE"] = "Ihr Konto wurde von einem Administrator deaktiviert.",
+            ["INVALID_OTP"] = "Der Code ist ungültig.",
+            ["OTP_EXPIRED"] = "Der Code ist abgelaufen.",
+            ["INVALID_REFRESH_TOKEN"] = "Sitzung ungültig, bitte melden Sie sich erneut an.",
+            ["INVALID_SOCIAL_TOKEN"] = "Die Anmeldung mit Google/Apple konnte nicht verifiziert werden.",
         },
     };
 

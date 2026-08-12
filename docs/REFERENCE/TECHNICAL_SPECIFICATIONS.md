@@ -20,6 +20,7 @@
 <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.0" />
 <PackageReference Include="Google.Apis.Auth" Version="1.67.0" />
+<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />   <!-- DevEmailService'in ILogger'ı için (A-03) -->
 
 <!-- WordLearner.Infrastructure -->
 <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />

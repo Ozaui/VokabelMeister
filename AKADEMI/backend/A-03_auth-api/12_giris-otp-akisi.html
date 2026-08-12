@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — İki Adımlı Giriş (Şifre + OTP)</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'giris-otp-akisi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '11_kayit-ve-eposta-dogrulama.html',
+    sonrakiBolum: '13_sosyal-giris.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 12',
+        baslik: 'LoginCommand ve VerifyLoginOtpCommand',
+        altBaslik: 'İki adımlı giriş: şifre doğrulanır ama token DÖNMEZ (adım 1), OTP doğrulanınca token üretilir (adım 2) — Bölüm 7\'nin ILoginCompletionService\'i ilk gerçek tüketicisine kavuşuyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden İki Ayrı Adım? Şifre Doğruysa Neden Direkt Token Dönmüyor?',
+        aciklama: '`LoginCommand` (adım 1) şifreyi doğrular ama access/refresh token ÜRETMEZ — yalnızca bir OTP kodu üretip e-postayla gönderir. Token yalnızca `VerifyLoginOtpCommand` (adım 2) BAŞARILI olduğunda üretilir.',
+        neden: 'Bu, iki faktörlü kimlik doğrulamanın (2FA) temel mantığı: şifre "bildiğin bir şey", e-postaya gelen kod "eriştiğin bir şey" — bir saldırgan çalınmış/tahmin edilmiş bir şifreyle giriş yapmaya çalışsa bile, kurbanın e-posta kutusuna ERİŞEMEDİĞİ sürece hesaba giremiyor.',
+        olmasaydi: 'Tek adımlı bir giriş olsaydı (şifre doğru → direkt token), sızdırılmış bir şifre listesiyle (başka bir sitede yaşanan bir veri ihlalinden, kullanıcılar şifrelerini TEKRAR kullandığı için) saldırganlar doğrudan hesaplara ERİŞEBİLİRDİ — OTP adımı bu riski önemli ölçüde azaltıyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Features.Auth;
+
+public record LoginCommand(string Email, string Password, string? Language) : IRequest<Unit>;
+
+public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>
+{
+    // Kullanıcı bulunamadığında da bcrypt karşılaştırması ÇALIŞTIRILIR (sabit süre) — aksi halde
+    // "kayıtlı e-posta" ile "kayıtsız e-posta" yanıt süresinden ayırt edilebilir (SECURITY.md §1).
+    private const string DummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO4vTvHKp2FTa9DKAdKrdBvfsjnPZDe1i";
+
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IOtpService _otpService;
+    private readonly IEmailService _emailService;
+
+    public LoginCommandHandler(IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService, IEmailService emailService)
+    {
+        _userRepository = userRepository;
+        _passwordService = passwordService;
+        _otpService = otpService;
+        _emailService = emailService;
+    }
+
+    public async Task<Unit> Handle(LoginCommand request, CancellationToken cancellationToken)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+
+        // PasswordHash null → sosyal-yalnızca hesap, şifre ile giriş edilemez (aynı hata, sızıntı yok).
+        var hashToVerify = user?.PasswordHash ?? DummyHash;
+        var passwordMatches = _passwordService.Verify(request.Password, hashToVerify);
+
+        if (user is null || user.PasswordHash is null || !passwordMatches)
+            throw new InvalidCredentialsException();
+
+        if (!user.IsActive)
+            throw new AccountInactiveException();
+
+        var otpCode = _otpService.Generate(user, OtpPurpose.LoginOtp);
+        await _userRepository.SaveChangesAsync(cancellationToken);
+
+        await _emailService.SendLoginOtpAsync(user.Email, user.FirstName, otpCode, request.Language, cancellationToken);
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<Unit>`/`IRequestHandler<TRequest, TResponse>` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`InvalidCredentialsException`/`AccountInactiveException` (Bölüm 9) buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'Bölüm 8\'in `IUserRepository` arayüzü buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`/`IOtpService`/`IEmailService` buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose` enum\'u buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: 'Bölüm 11\'in Handler\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginCommand(string Email, string Password, string? Language) : IRequest<Unit>;',
+            aciklama: '`IRequest<Unit>` — bu Command TOKEN döndürmüyor (`LoginResponse` gibi bir DTO YOK), yalnızca "OTP gönderildi" yan etkisi var; token yalnızca `VerifyLoginOtpCommand` (adım 2) başarılı olunca üretiliyor.',
+            neden: 'Bu, yukarıdaki kavram slaytının kod karşılığı — dönüş TİPİ bile iki adımlı akışın TASARIM kararını yansıtıyor: adım 1 hiçbir şekilde bir token ÜRETEMEZ, çünkü tipi buna izin VERMİYOR.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>',
+            aciklama: 'Dört bağımlılıklı — RegisterCommandHandler ile AYNI servis seti (Bölüm 11), farklı SIRADA/amaçla kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string DummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO4vTvHKp2FTa9DKAdKrdBvfsjnPZDe1i";',
+            aciklama: 'Rastgele bir şifrenin ÖNCEDEN hesaplanmış bcrypt hash\'i (workFactor=12, Bölüm 3\'ün `IPasswordService.Hash` ile AYNI maliyet) — bu hash\'in HANGİ şifreye ait olduğu ÖNEMSİZ, hiçbir gerçek kullanıcıya bağlı DEĞİL, yalnızca `BCrypt.Verify`\'ı ÇALIŞTIRMAK için bir "kukla" değer.',
+            neden: 'Bcrypt KASITLI olarak yavaş (Bölüm 3) — bu yavaşlık, kullanıcı BULUNAMADIĞINDA da AYNI SÜRE harcanmasını sağlamak için burada TERSİNE çevrilip kullanılıyor: gerçek kullanıcı yoksa bile bir bcrypt karşılaştırması YİNE DE çalıştırılıyor, böylece "kullanıcı var, şifre yanlış" ile "kullanıcı hiç yok" durumları YANIT SÜRESİNDEN ayırt EDİLEMİYOR.',
+            olmasaydi: 'Kullanıcı bulunamadığında `_passwordService.Verify` çağrısı hiç YAPILMASAYDI (doğrudan erken dönülseydi), bu yol MİLİSANİYELER içinde tamamlanırdı — bcrypt\'in yavaşlığını İÇEREN "gerçek kullanıcı" yolu ise onlarca milisaniye sürerdi; bu SÜRE FARKI, bir saldırganın binlerce e-posta deneyip yanıt sürelerini ÖLÇEREK hangi e-postaların KAYITLI olduğunu tespit etmesine (timing attack) izin verirdi.'
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı e-postayla bulmak ve OTP alanlarını kaydetmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Girilen şifreyi (gerçek ya da dummy hash\'e karşı) doğrulamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Giriş OTP kodu üretmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Üretilen OTP kodunu kullanıcıya göndermek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginCommandHandler(IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService, IEmailService emailService)',
+            aciklama: 'Constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Unit> Handle(LoginCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağıracağı asıl metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);',
+            aciklama: '`user` burada `null` OLABİLİR — RegisterCommandHandler\'daki gibi `?? throw` ile erken ÇIKILMIYOR, çünkü dummy-hash karşılaştırması `user`\'ın null OLUP OLMADIĞINDAN BAĞIMSIZ çalışmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var hashToVerify = user?.PasswordHash ?? DummyHash;',
+            aciklama: '`user?.PasswordHash` — `user` null ise ya da `user.PasswordHash` null ise (sosyal-yalnızca hesap) sonuç null olur, `?? DummyHash` bu üç durumun (kullanıcı yok / şifre yok / gerçek şifre var) İLK İKİSİNDE aynı kukla hash\'e DÜŞMESİNİ sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var passwordMatches = _passwordService.Verify(request.Password, hashToVerify);',
+            aciklama: 'Bu satır HER ZAMAN çalışır (kullanıcı olsun olmasın) — dummy hash\'e karşı karşılaştırıldığında SONUÇ zaten `false` olacak (kullanıcının girdiği şifre, o rastgele hash\'in şifresiyle EŞLEŞMEYECEK), ama HARCANAN SÜRE gerçek karşılaştırmayla AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user is null || user.PasswordHash is null || !passwordMatches)',
+            aciklama: 'Üç ayrı başarısızlık nedeni (kullanıcı yok / sosyal-yalnızca hesap / yanlış şifre) TEK bir kontrolde, TEK bir exception\'a indirgeniyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new InvalidCredentialsException();',
+            aciklama: 'Bölüm 9\'un genel, "az konuşan" hatası — "e-posta veya şifre hatalı" (hangisi olduğunu SÖYLEMEYEN) mesajının kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: 'Bu satıra gelindiyse `user` KESİNLİKLE null DEĞİL (üstteki kontrolden geçti) — C#\'ın null-analizi bunu takip EDEBİLİYOR, ayrı bir `!` (null-forgiving) operatörüne gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new AccountInactiveException();',
+            aciklama: 'Bir yönetici bu hesabı DONDURMUŞSA (A-18\'de yazılacak admin akışı) — `InvalidCredentialsException`\'dan FARKLI bir Code, kullanıcı "şifrem mi yanlış?" yerine "hesabım neden donduruldu?" sorusunu SORABİLSİN diye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var otpCode = _otpService.Generate(user, OtpPurpose.LoginOtp);',
+            aciklama: 'Bölüm 5\'in `Generate`\'i — bu sefer `OtpPurpose.LoginOtp`, `RegisterCommandHandler`\'daki `EmailVerification`\'dan FARKLI bir amaç; `VerifyLoginOtpCommand` (bu bölümün ikinci Handler\'ı) doğrulama sırasında AYNI purpose\'ı bekleyecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: '`Generate`\'in `user` üzerinde bellekte yaptığı OTP alanı mutasyonlarını DB\'ye yazar — RegisterCommandHandler\'daki (Bölüm 11) AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _emailService.SendLoginOtpAsync(user.Email, user.FirstName, otpCode, request.Language, cancellationToken);',
+            aciklama: 'Bölüm 10\'un giriş-OTP\'sine özel gövde şablonu — `SendEmailVerificationAsync`\'ten AYRI bir metot, kullanıcı hangi işlemi yaptığını e-posta İÇERİĞİNDEN de anlayabilsin diye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: 'Token DÖNMÜYOR — bu yanıt yalnızca "OTP gönderildi" bir MESAJ, hiçbir hassas veri TAŞIMIYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginResponse.cs ve AuthUserDto.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/LoginResponse.cs',
+        nedenBuKlasor: 'İki küçük DTO — biri (`AuthUserDto`) diğerinin (`LoginResponse`) İÇİNDE kullanılıyor ama YİNE DE ayrı dosyalarda, çünkü `AuthUserDto` bu bölümden SONRA da (Bölüm 13\'ün Google/Apple girişinde) tek başına yeniden kullanılacak.',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// API_ENDPOINTS.md §3 login yanıtındaki "user" alanıyla birebir — JWT claim'lerinden FAZLASINI
+// taşımaz (Theme/LanguagePreference JWT'ye hiç girmez, yalnızca bu DTO'dan okunur).
+public record AuthUserDto(int Id, string CurrentLevel, string ThemePreference, string LanguagePreference);
+
+// VerifyLoginOtp/LoginWithGoogle/LoginWithApple ortak yanıt şekli — hepsi aynı ILoginCompletionService
+// akışından geçer (SECURITY.md §1.3).
+public record LoginResponse(string AccessToken, string RefreshToken, int ExpiresIn, AuthUserDto User, bool AccountWasRecovered);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Bölüm 11\'in `RegisterResponse`\'ıyla AYNI DTO ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record AuthUserDto(int Id, string CurrentLevel, string ThemePreference, string LanguagePreference);',
+            aciklama: '`Email`/`Role`/`FirstName` gibi alanlar BİLEREK YOK — yanıt şekli, projenin API sözleşmesindeki ÖRNEKLE birebir eşleşecek şekilde MİNİMAL tutuluyor; istemci bu bilgilerin çoğunu zaten JWT\'nin İÇİNDEN (Bölüm 4\'ün claim\'lerinden) okuyabiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginResponse(string AccessToken, string RefreshToken, int ExpiresIn, AuthUserDto User, bool AccountWasRecovered);',
+            aciklama: '`AccountWasRecovered` — Bölüm 7\'nin `LoginCompletionResult.AccountWasRecovered`\'ından DOĞRUDAN geliyor; istemci bu `true` ise (grace period\'dan otomatik kurtarılmış bir hesap) kullanıcıya "hesabınız geri getirildi" gibi bir bildirim GÖSTEREBİLİR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyLoginOtpCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/VerifyLoginOtpCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Features.Auth;
+
+public record VerifyLoginOtpCommand(string Email, string OtpCode, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;
+
+public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpCommand, LoginResponse>
+{
+    // JwtTokenService.GenerateAccessToken 15dk'yı sabit üretiyor — yanıt bunu yansıtır.
+    private const int AccessTokenExpiresInSeconds = 900;
+
+    private readonly IUserRepository _userRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IOtpService _otpService;
+    private readonly ILoginCompletionService _loginCompletionService;
+    private readonly IEmailService _emailService;
+
+    public VerifyLoginOtpCommandHandler(
+        IUserRepository userRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        IOtpService otpService,
+        ILoginCompletionService loginCompletionService,
+        IEmailService emailService)
+    {
+        _userRepository = userRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _otpService = otpService;
+        _loginCompletionService = loginCompletionService;
+        _emailService = emailService;
+    }
+
+    public async Task<LoginResponse> Handle(VerifyLoginOtpCommand request, CancellationToken cancellationToken)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken)
+            ?? throw new InvalidOtpException();
+
+        if (!user.IsActive)
+            throw new AccountInactiveException();
+
+        var result = _otpService.Verify(user, request.OtpCode, OtpPurpose.LoginOtp);
+        if (result == OtpVerificationResult.Expired)
+            throw new OtpExpiredException();
+        if (result == OtpVerificationResult.InvalidCode)
+            throw new InvalidOtpException();
+
+        var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);
+
+        await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);
+        await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+
+        if (completion.AccountWasRecovered)
+            await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);
+
+        var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);
+        return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<LoginResponse>`/`IRequestHandler<TRequest, TResponse>` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`InvalidOtpException`/`OtpExpiredException`/`AccountInactiveException` (Bölüm 9) buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`LoginResponse`/`AuthUserDto` (yukarıda yazılan DTO\'lar) buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository` (Bölüm 8) VE `IRefreshTokenRepository` (Bölüm 8) buradan gelir — bu Handler İKİ farklı repository kullanan İLK Handler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IOtpService`/`ILoginCompletionService`/`IEmailService` buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`OtpPurpose`/`OtpVerificationResult` enum\'ları buradan gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: 'Bu bölümün diğer Handler\'ıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record VerifyLoginOtpCommand(string Email, string OtpCode, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;',
+            aciklama: '`LoginCommand`\'dan FARKLI olarak `DeviceInfo`/`IpAddress` alanları da VAR — bunlar `ILoginCompletionService.Complete`\'e (Bölüm 7) geçirilip yeni `RefreshToken` entity\'sinin `DeviceInfo`/`IpAddress` sütunlarına yazılacak, yani hangi cihaz/IP\'nin token aldığının KAYDI burada başlıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpCommand, LoginResponse>',
+            aciklama: 'Beş bağımlılıklı — bu bölümün İKİNCİ ve SON Handler\'ı, `LoginResponse` (token\'lı yanıt) DÖNDÜREN tek Handler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Kullanıcıyı e-postayla bulmak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: 'Bölüm 7\'nin ürettiği yeni `RefreshToken` entity\'sini DB\'ye yazmak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IOtpService _otpService;',
+            aciklama: 'Girilen OTP kodunu doğrulamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: 'Bölüm 7\'de yazılan, hesap kurtarma + token üretimini TEK yerde toplayan servis.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Hesap kurtarıldıysa (grace period) bildirim e-postası göndermek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public VerifyLoginOtpCommandHandler(',
+            aciklama: 'Beş parametreli constructor — okunabilirlik için her parametre KENDİ satırında (tek satıra sığdırılmıyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Constructor parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: 'Constructor parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IOtpService otpService,',
+            aciklama: 'Constructor parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService,',
+            aciklama: 'Constructor parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IEmailService emailService)',
+            aciklama: 'Son parametre — kapanış parantezi bu satırda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_otpService = otpService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'Enjekte edilen parametre alana atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<LoginResponse> Handle(VerifyLoginOtpCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağıracağı asıl metot — bu sefer `LoginResponse` DÖNDÜRÜYOR (Bölüm 12\'nin ilk Handler\'ının aksine).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int AccessTokenExpiresInSeconds = 900;',
+            aciklama: 'Bölüm 4\'ün `JwtTokenService.GenerateAccessToken`\'ı süreyi (15 dakika) KENDİ içinde sabit üretiyor ve dışarı bir "kaç saniye" bilgisi DÖNDÜRMÜYOR — bu yüzden yanıt DTO\'sundaki `ExpiresIn` alanı, o sabitle SENKRON tutulması gereken AYRI bir sabit.',
+            neden: 'İki sabit (`JwtTokenService`\'in İÇİNDEKİ 15 dakika ve buradaki 900 saniye) birbirinden BAĞIMSIZ, derleyici bunların SENKRON kalmasını GARANTİ ETMİYOR — biri değişip diğeri UNUTULURSA, istemci token\'ın GERÇEKTEN ne zaman süresi dolacağını YANLIŞ bilir.',
+            olmasaydi: '`GenerateAccessToken` süre bilgisini de döndürseydi (`GenerateRefreshToken`\'ın zaten `RefreshTokenResult.ExpiresAt` ile yaptığı gibi), bu iki sabitin SENKRON kalması gerekliliği tamamen ORTADAN kalkardı — ama bu, Bölüm 4\'te ZATEN öğretilmiş `ITokenService` arayüzünü DEĞİŞTİRMEK anlamına gelirdi, bu görevin kapsamı DIŞINDA.'
+          },
+          {
+            satir: 'var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken)',
+            aciklama: '`LoginCommand`\'ın (bu bölümün ilk Handler\'ı) AKSİNE burada timing-attack ÖNLEMİ YOK — bu adım YALNIZCA, adım 1\'i ZATEN geçmiş (doğru şifreyi bilen) bir istemci tarafından çağrılabilir, e-posta ENUMERASYONU riski adım 1\'de zaten ELE ALINDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new InvalidOtpException();',
+            aciklama: '`??` (null-coalescing) operatörü ile tek satırda "bul, yoksa fırlat" — Bölüm 11\'in `VerifyEmailCommand`\'ıyla AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: 'Adım 1\'de ZATEN kontrol edildi ama burada TEKRAR kontrol ediliyor — bir yönetici, kullanıcı adım 1 ile adım 2 ARASINDA (birkaç dakika içinde) hesabı DONDURMUŞ olabilir; savunma amaçlı (defensive) bir ikinci kontrol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new AccountInactiveException();',
+            aciklama: 'Adım 1\'deki (`LoginCommand`) AYNI istisna — hesap durumu iki adımda da AYNI Code ile raporlanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = _otpService.Verify(user, request.OtpCode, OtpPurpose.LoginOtp);',
+            aciklama: 'Bölüm 11\'in `VerifyEmailCommand`\'ıyla AYNI çağrı deseni — burada `OtpPurpose.LoginOtp`, `LoginCommand`\'ın `Generate` çağrısıyla AYNI amaç, birbirini DOĞRULUYORLAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (result == OtpVerificationResult.Expired)',
+            aciklama: 'Bölüm 11\'deki `VerifyEmailCommand` ile AYNI üç yollu (Success/Expired/InvalidCode) triyaj.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new OtpExpiredException();',
+            aciklama: 'Kodun süresi dolduğunda fırlatılan, `InvalidOtpException`\'dan FARKLI Code.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (result == OtpVerificationResult.InvalidCode)',
+            aciklama: 'Üçüncü dal — `Success` dışındaki İKİNCİ olası sonuç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new InvalidOtpException();',
+            aciklama: 'Yanlış kod girildiğinde fırlatılan istisna — dosyanın başındaki "kullanıcı bulunamadı" durumuyla AYNI Code (bu adımda enumerasyon riski zaten yok, ama Bölüm 11\'deki `VerifyEmailCommand` ile TUTARLI bir Code kullanmak, istemci tarafında TEK bir hata işleme mantığı yeterli olsun diye tercih edildi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);',
+            aciklama: 'Bölüm 7\'de yazılan `ILoginCompletionService`\'in İLK gerçek çağrısı — `IsAnonymized` kontrolü, grace-period kurtarma, access/refresh token üretimi TEK bu satırda gerçekleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);',
+            aciklama: '`Complete` metodu `RefreshTokenEntity`\'i ÜRETİR ama PERSIST ETMEZ (Bölüm 7\'nin tasarımı) — bu satır onu DB\'ye yazılacak şekilde işaretler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Bu çağrı AYNI ZAMANDA `OtpService.Verify`\'ın (yukarıda) `user` üzerinde yaptığı mutasyonları (Pending* alanlarının temizlenmesi) ve `ILoginCompletionService.Complete`\'in `user.LastLoginAt`/`LoginCount` güncellemelerini de PERSIST eder — HEPSİ AYNI DbContext\'te (Bölüm 8), TEK bir round-trip.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (completion.AccountWasRecovered)',
+            aciklama: 'Yalnızca hesap GERÇEKTEN kurtarıldıysa bildirim e-postası gönderilir — normal (silinmemiş) bir hesabın HER girişinde bu e-posta GÖNDERİLMEZ, yalnızca istisnai bir durumda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);',
+            aciklama: 'Bölüm 10\'un, kullanıcıya "hesabınız silinme sürecindeyken bu girişle otomatik kurtarıldı" bilgisini veren e-postası — kullanıcı, KENDİSİ fark etmeden gerçekleşen bir durumdan (grace period) HABERDAR olur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);',
+            aciklama: 'Bu Handler\'da AutoMapper Profile YAZILMADI — dört alanlık, basit bir entity→DTO dönüşümü için AutoMapper\'ın konfigürasyon YÜKÜ (bir Profile sınıfı + DI kaydı) gereksiz, elle inşa etmek DAHA AZ kod.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);',
+            aciklama: '`completion.RefreshTokenValue` — HAM (hash\'lenmemiş) refresh token, istemciye DÖNEN tek yer; `completion.RefreshTokenEntity.TokenHash` (yukarıda DB\'ye yazılan) bu değerin SHA-256 hash\'i, birbirinden FARKLI string\'ler.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Timing Attack', tanim: 'Bir sistemin farklı girdilere farklı SÜRELERDE yanıt vermesinden yola çıkarak, dışarıdan gözlenemeyen bir bilgiyi (ör. "bu e-posta kayıtlı mı") tahmin etmeye çalışan saldırı türü.' },
+          { terim: 'İki Faktörlü Kimlik Doğrulama (2FA)', tanim: 'Kimlik doğrulamayı İKİ bağımsız kanıta (bu projede: şifre + e-postaya gelen OTP kodu) dayandırma — tek bir kanıtın (yalnızca şifre) ELE GEÇİRİLMESİ tek başına yetmez.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'LoginCommand şifreyi doğrular ama token ÜRETMEZ, yalnızca OTP gönderir — VerifyLoginOtpCommand OTP\'yi doğrulayınca token üretilir; iki adımlı akış 2FA\'nın temel mantığı.',
+          'Kullanıcı bulunamadığında da dummy bir hash\'e karşı bcrypt karşılaştırması ÇALIŞTIRILIR — yanıt süresi farkının bir timing attack\'e dönüşmesini önler.',
+          'VerifyLoginOtpCommandHandler, Bölüm 7\'nin ILoginCompletionService\'ini İLK KEZ gerçekten kullanıyor — hesap durumu kontrolü + token üretimi TEK bir çağrıda.',
+          'AccessTokenExpiresInSeconds sabiti, JwtTokenService\'in İÇİNDEKİ (Bölüm 4) 15 dakikayla elle SENKRON tutulması gereken ayrı bir değer — arayüz değiştirilmediği sürece bu ikili senkronizasyon devam edecek.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

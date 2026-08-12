@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Google ve Apple ile Giriş</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'sosyal-giris',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '12_giris-otp-akisi.html',
+    sonrakiBolum: '14_refresh-ve-logout.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 13',
+        baslik: 'LoginWithGoogleCommand ve LoginWithAppleCommand',
+        altBaslik: 'Bölüm 10\'un iki token doğrulayıcısı ilk kez kullanılıyor — ve iki YENİ bir problem: hesap "bağlama" (linking).'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Hesap Bağlama (Account Linking) — Neden Sadece GoogleId ile Aramak Yetmiyor?',
+        aciklama: 'Bir kullanıcı ÖNCE e-posta+şifre ile kayıt olmuş, SONRA aynı e-postayla Google ile giriş yapmaya çalışıyor olabilir. `LoginWithGoogleCommandHandler` yalnızca `GetByGoogleIdAsync` ile arasaydı, bu kullanıcıyı BULAMAZ ve YANLIŞLIKLA ikinci, YİNELENEN bir hesap OLUŞTURURDU.',
+        neden: 'Aynı kişinin İKİ ayrı hesabı olması hem KAFA KARIŞTIRICI (hangi hesapta hangi kelimeler kayıtlı?) hem de kullanıcı deneyimi açısından KÖTÜ — bu yüzden `GoogleId` ile bulunamazsa, İKİNCİ bir adım olarak `Email` ile ARANIYOR; bulunursa o VAR OLAN hesaba `GoogleId` "bağlanıyor" (set ediliyor), yeni bir hesap AÇILMIYOR.',
+        olmasaydi: 'Bağlama mantığı OLMASAYDI, bir kullanıcı `ayse@example.com` ile şifreli kayıt olup SONRA `ayse@example.com` Google hesabıyla giriş yapmaya çalıştığında, sistemin `Users.Email` UNIQUE kısıtına (Bölüm 1) TAKILIP bir SQL hatası verirdi (yeni kullanıcı oluşturmaya çalışırken AYNI e-posta zaten VARDI) — kullanıcıya "bir hata oluştu" gibi anlamsız bir sonuç dönerdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithGoogleCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginWithGoogleCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Features.Auth;
+
+public record LoginWithGoogleCommand(string IdToken, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;
+
+public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleCommand, LoginResponse>
+{
+    private const int AccessTokenExpiresInSeconds = 900;
+
+    private readonly IUserRepository _userRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IGoogleTokenValidator _googleTokenValidator;
+    private readonly ILoginCompletionService _loginCompletionService;
+    private readonly IEmailService _emailService;
+
+    public LoginWithGoogleCommandHandler(
+        IUserRepository userRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        IGoogleTokenValidator googleTokenValidator,
+        ILoginCompletionService loginCompletionService,
+        IEmailService emailService)
+    {
+        _userRepository = userRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _googleTokenValidator = googleTokenValidator;
+        _loginCompletionService = loginCompletionService;
+        _emailService = emailService;
+    }
+
+    public async Task<LoginResponse> Handle(LoginWithGoogleCommand request, CancellationToken cancellationToken)
+    {
+        var payload = await _googleTokenValidator.ValidateAsync(request.IdToken, cancellationToken)
+            ?? throw new InvalidSocialTokenException();
+
+        var user = await _userRepository.GetByGoogleIdAsync(payload.Subject, cancellationToken);
+        if (user is null)
+        {
+            // Aynı e-postayla daha önce Local/Apple kayıt açılmışsa hesabı BİRLEŞTİR — iki ayrı
+            // hesap yerine kullanıcı artık ikinci bir yöntemle de aynı hesaba girebilir.
+            user = await _userRepository.GetByEmailAsync(payload.Email, cancellationToken);
+            if (user is null)
+            {
+                user = new User
+                {
+                    Email = payload.Email,
+                    GoogleId = payload.Subject,
+                    AuthProvider = "Google",
+                    FirstName = payload.FirstName ?? "Google",
+                    LastName = payload.LastName ?? "User",
+                    IsEmailVerified = true,
+                    EmailVerifiedAt = DateTime.UtcNow
+                };
+                await _userRepository.AddAsync(user, cancellationToken);
+            }
+            else
+            {
+                user.GoogleId = payload.Subject;
+            }
+        }
+
+        if (!user.IsActive)
+            throw new AccountInactiveException();
+
+        var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);
+
+        await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);
+        // İki repo AYNI DbContext'i paylaşıyor (scoped) — tek SaveChanges hem User hem RefreshToken'ı yazar.
+        await _userRepository.SaveChangesAsync(cancellationToken);
+
+        if (completion.AccountWasRecovered)
+            await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);
+
+        var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);
+        return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequestHandler<TRequest, TResponse>` için — Bölüm 11\'den beri her Handler dosyasında aynı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Bölüm 9\'un `InvalidSocialTokenException`/`AccountInactiveException`\'ı için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`LoginResponse`/`AuthUserDto` (Bölüm 12) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IGoogleTokenValidator` (Bölüm 10), `ILoginCompletionService` (Bölüm 7) ve `IEmailService` (Bölüm 10) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` entity\'si (Bölüm 1) için — yeni kullanıcı burada `new User` ile OLUŞTURULACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: '`LoginCommand`/`VerifyLoginOtpCommand`\'la (Bölüm 12) AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginWithGoogleCommand(string IdToken, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;',
+            aciklama: '`IdToken` — Google\'ın mobil/web SDK\'sının istemci tarafında ÜRETTİĞİ, kullanıcının kimliğini KANITLAYAN imzalı bir JWT; bu Command şifre/OTP TAŞIMAZ, kimlik kanıtı TAMAMEN bu token\'ın içinde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LoginWithGoogleCommandHandler : IRequestHandler<LoginWithGoogleCommand, LoginResponse>',
+            aciklama: 'Bölüm 12\'nin `VerifyLoginOtpCommandHandler`\'ıyla AYNI dönüş tipi (`LoginResponse`) — farklı giriş YÖNTEMİ, aynı sonuç sözleşmesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int AccessTokenExpiresInSeconds = 900;',
+            aciklama: 'Bölüm 12\'de açıklanan `JwtTokenService` sabitiyle elle SENKRON tutulması gereken AYNI değer — bu Handler\'da TEKRAR tanımlanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Bölüm 8\'in repository\'si — `GetByGoogleIdAsync`/`GetByEmailAsync`/`AddAsync` bu Handler\'da kullanılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: 'Bölüm 8\'in ikinci repository\'si — üretilen refresh token\'ı DB\'ye yazmak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IGoogleTokenValidator _googleTokenValidator;',
+            aciklama: 'Bölüm 10\'da yazılan doğrulayıcının bu Handler\'daki İLK gerçek çağrısı birazdan yapılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: 'Bölüm 7\'nin servisi — access/refresh token üretimi ve hesap kurtarma mantığı bu Handler\'da YAŞAMIYOR, oraya DELEGE ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: 'Hesap kurtarma bildirimini göndermek için (Bölüm 10).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginWithGoogleCommandHandler(',
+            aciklama: 'Beş bağımlılık — imza `RegisterCommandHandler`\'ın (Bölüm 11) tek satırlık constructor\'ından FARKLI olarak birden çok satıra YAYILDI, beş parametre tek satırda okunaksız olurdu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: '`_userRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: '`_refreshTokenRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IGoogleTokenValidator googleTokenValidator,',
+            aciklama: '`_googleTokenValidator` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService,',
+            aciklama: '`_loginCompletionService` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IEmailService emailService)',
+            aciklama: '`_emailService` alanına atanacak parametre — DI container (A-02\'nin Program.cs\'i) bu beş arayüzü çalışma anında ENJEKTE eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_googleTokenValidator = googleTokenValidator;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<LoginResponse> Handle(LoginWithGoogleCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağıracağı asıl metot — ileride yazılacak `AuthController` yalnızca `_mediator.Send(command, ct)` çağıracak, iş mantığının TAMAMI burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var payload = await _googleTokenValidator.ValidateAsync(request.IdToken, cancellationToken)',
+            aciklama: 'Bölüm 10\'un `IGoogleTokenValidator`\'ının İLK gerçek çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new InvalidSocialTokenException();',
+            aciklama: 'Token geçersizse (imza bozuk, süresi dolmuş, yanlış audience) Bölüm 9\'un genel sosyal-giriş hatası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = await _userRepository.GetByGoogleIdAsync(payload.Subject, cancellationToken);',
+            aciklama: 'İLK arama — bu Google hesabıyla DAHA ÖNCE giriş yapılmış mı?',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user is null)',
+            aciklama: 'İki kademeli arama zincirinin HER İKİ kontrolü de bu satırla yazılıyor: dıştaki blok `GetByGoogleIdAsync`\'in, içteki blok `GetByEmailAsync`\'in SONUÇSUZ kaldığını kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user = await _userRepository.GetByEmailAsync(payload.Email, cancellationToken);',
+            aciklama: 'İKİNCİ arama — yalnızca BİRİNCİ arama (GoogleId) SONUÇSUZ kalırsa çalışır (iç içe `if` bloğu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user = new User',
+            aciklama: 'Her İKİ arama da SONUÇSUZSA — bu GERÇEKTEN yeni bir kullanıcı, `RegisterCommandHandler`\'daki (Bölüm 11) `new User` ile BENZER ama farklı alanlar set ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Email = payload.Email,',
+            aciklama: 'Google\'ın token payload\'ından gelen DOĞRULANMIŞ e-posta — bu Command\'ın (`IdToken` dışında) bir `Email` parametresi YOK, kullanıcı isteğe kendi seçtiği bir e-postayı EKLEYEMEZ.',
+            neden: 'E-posta bir form alanından DEĞİL Google\'ın İMZALADIĞI token\'dan okunuyor — bu, bir saldırganın kendi geçerli Google token\'ıyla BAŞKASININ e-postasını isteğe yazıp o hesaba `GoogleId` BAĞLAMASINI engeller.',
+            olmasaydi: '`Email` istemciden serbest bir alan olarak alınsaydı, geçerli bir Google token\'ı olan HERKES, `payload.Email` yerine BAŞKA bir e-posta göndererek o e-postanın hesabına Google girişini BAĞLAYABİLİRDİ.'
+          },
+          {
+            satir: 'GoogleId = payload.Subject,',
+            aciklama: '`Subject` — Google\'ın bu hesaba verdiği DEĞİŞMEZ kimlik; e-postanın AKSİNE kullanıcı bunu DEĞİŞTİREMEZ, bu yüzden `GetByGoogleIdAsync`\'in birincil arama anahtarı bu alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AuthProvider = "Google",',
+            aciklama: '`RegisterCommandHandler`\'ın AKSİNE burada AÇIKÇA set ediliyor — entity\'nin C# varsayılanı `"Local"` (Bölüm 1), ama bu kullanıcı Google\'la kayıt oluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'FirstName = payload.FirstName ?? "Google",',
+            aciklama: 'Google\'ın DÖNDÜRMEDİĞİ (nullable) bir durumda makul bir varsayılan — `User.FirstName` NOT NULL bir alan (Bölüm 1), boş BIRAKILAMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LastName = payload.LastName ?? "User",',
+            aciklama: '`FirstName` satırındaki (yukarıda açıklanan) mantığın AYNISI — Google `LastName` döndürmezse yer tutucu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IsEmailVerified = true,',
+            aciklama: 'Google zaten kendi tarafında e-posta sahipliğini DOĞRULAMIŞ — bu kullanıcının `RegisterCommandHandler`\'daki gibi AYRI bir OTP e-posta doğrulama akışından GEÇMESİNE gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EmailVerifiedAt = DateTime.UtcNow',
+            aciklama: '`IsEmailVerified = true` ile BİRLİKTE set edilen zaman damgası — `RegisterCommandHandler`\'daki (Bölüm 11) gibi AYRI bir OTP doğrulama ADIMI beklenmiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.AddAsync(user, cancellationToken);',
+            aciklama: '`RegisterCommandHandler`\'daki (Bölüm 11) ile AYNI desen — entity change tracking\'e eklenir, DB\'ye HENÜZ yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else',
+            aciklama: 'E-postayla kullanıcı BULUNDUYSA (yeni hesap değil) bu dal çalışır — hemen altındaki `user.GoogleId = payload.Subject;` satırı bağlamayı yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.GoogleId = payload.Subject;',
+            aciklama: 'BAĞLAMA adımının kendisi — var olan (e-postayla bulunan) kullanıcıya Google kimliği EKLENİYOR, yeni bir kullanıcı OLUŞTURULMUYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: '`LoginCommand`/`VerifyLoginOtpCommand` (Bölüm 12) ile AYNI kontrol — hangi giriş YÖNTEMİYLE gelirse gelsin, dondurulmuş bir hesap GİREMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new AccountInactiveException();',
+            aciklama: '`LoginCommand`/`VerifyLoginOtpCommand`\'la (Bölüm 12) AYNI istisna — giriş yöntemi ne olursa olsun dondurulmuş hesap kuralı ORTAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);',
+            aciklama: 'Bölüm 7\'nin `ILoginCompletionService`\'inin İKİNCİ tüketicisi — `VerifyLoginOtpCommandHandler` (Bölüm 12) ile TAMAMEN AYNI çağrı, kimlik doğrulama YÖNTEMİ farklı olsa da bu adımdan sonrası BİREBİR aynı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);',
+            aciklama: '`VerifyLoginOtpCommandHandler`\'la (Bölüm 12) BİREBİR aynı satır — `completion.RefreshTokenEntity` DB\'ye yazılacak şekilde işaretlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'İki repo AYNI DbContext\'i paylaşıyor (scoped, Bölüm 8) — bu tek çağrı hem yeni/güncellenmiş `User` satırını hem `AddAsync` ile işaretlenen yeni `RefreshToken` satırını TEK round-trip\'te yazar.',
+            neden: '`VerifyLoginOtpCommandHandler`\'daki (Bölüm 12) `_refreshTokenRepository.SaveChangesAsync` çağrısından FARKLI bir repo üzerinden tetikleniyor ama SONUÇ birebir aynı — hangi repo\'nun SaveChanges\'i çağrıldığı ÖNEMSİZ, ikisi de AYNI DbContext örneğini (scoped lifetime) paylaşıyor.',
+            olmasaydi: null
+          },
+          {
+            satir: 'if (completion.AccountWasRecovered)',
+            aciklama: '`VerifyLoginOtpCommandHandler` ile BİREBİR aynı bildirim mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);',
+            aciklama: '`VerifyLoginOtpCommandHandler`\'la (Bölüm 12) BİREBİR aynı bildirim çağrısı — grace period\'dan otomatik kurtarılan hesap için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);',
+            aciklama: 'Bölüm 12\'de tanıtılan `AuthUserDto`\'nun İKİNCİ inşası — yine elle, AutoMapper OLMADAN.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);',
+            aciklama: '`VerifyLoginOtpCommandHandler`\'ın (Bölüm 12) return satırıyla BİREBİR aynı yapı — giriş yöntemi (şifre+OTP vs Google) farklı olsa da yanıt ŞEKLİ tek.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithAppleCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginWithAppleCommand.cs',
+        nedenBuKlasor: '`LoginWithGoogleCommand`\'la (bu bölüm) İSKELET olarak neredeyse AYNI — farklar satır satır açıklanıyor.',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Features.Auth;
+
+// FirstName/LastName opsiyonel: Apple bu bilgiyi yalnızca kullanıcının O CİHAZDA İLK kez izin
+// verdiği anda gönderir, istemci onu yakalayıp bu isteğe eklemek zorunda — sonraki girişlerde boş gelir.
+public record LoginWithAppleCommand(string IdentityToken, string? FirstName, string? LastName, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;
+
+public class LoginWithAppleCommandHandler : IRequestHandler<LoginWithAppleCommand, LoginResponse>
+{
+    private const int AccessTokenExpiresInSeconds = 900;
+
+    private readonly IUserRepository _userRepository;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IAppleTokenValidator _appleTokenValidator;
+    private readonly ILoginCompletionService _loginCompletionService;
+    private readonly IEmailService _emailService;
+
+    public LoginWithAppleCommandHandler(
+        IUserRepository userRepository,
+        IRefreshTokenRepository refreshTokenRepository,
+        IAppleTokenValidator appleTokenValidator,
+        ILoginCompletionService loginCompletionService,
+        IEmailService emailService)
+    {
+        _userRepository = userRepository;
+        _refreshTokenRepository = refreshTokenRepository;
+        _appleTokenValidator = appleTokenValidator;
+        _loginCompletionService = loginCompletionService;
+        _emailService = emailService;
+    }
+
+    public async Task<LoginResponse> Handle(LoginWithAppleCommand request, CancellationToken cancellationToken)
+    {
+        var payload = await _appleTokenValidator.ValidateAsync(request.IdentityToken, cancellationToken)
+            ?? throw new InvalidSocialTokenException();
+
+        var user = await _userRepository.GetByAppleIdAsync(payload.Subject, cancellationToken);
+        if (user is null)
+        {
+            user = payload.Email is not null ? await _userRepository.GetByEmailAsync(payload.Email, cancellationToken) : null;
+            if (user is null)
+            {
+                user = new User
+                {
+                    // Apple relay e-postası da olsa Email NOT NULL alan — token'da e-posta yoksa
+                    // (nadiren, tekrar giriş) sub tabanlı bir yer tutucu üretilir.
+                    Email = payload.Email ?? $"{payload.Subject}@privaterelay.appleid.com",
+                    AppleId = payload.Subject,
+                    AuthProvider = "Apple",
+                    FirstName = request.FirstName ?? "Apple",
+                    LastName = request.LastName ?? "User",
+                    IsEmailVerified = true,
+                    EmailVerifiedAt = DateTime.UtcNow
+                };
+                await _userRepository.AddAsync(user, cancellationToken);
+            }
+            else
+            {
+                user.AppleId = payload.Subject;
+            }
+        }
+
+        if (!user.IsActive)
+            throw new AccountInactiveException();
+
+        var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);
+
+        await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);
+        await _userRepository.SaveChangesAsync(cancellationToken);
+
+        if (completion.AccountWasRecovered)
+            await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);
+
+        var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);
+        return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`LoginWithGoogleCommand.cs`\'deki (bu bölüm) AYNI import.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: 'Aynı gerekçe — `InvalidSocialTokenException`/`AccountInactiveException`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`LoginResponse`/`AuthUserDto` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Bölüm 10\'un `IAppleTokenValidator`\'ı dahil — `LoginWithGoogleCommand.cs`\'deki TEK satır farkı `IGoogleTokenValidator` yerine bu arayüz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` entity\'si için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Auth;',
+            aciklama: '`LoginWithGoogleCommand` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginWithAppleCommand(string IdentityToken, string? FirstName, string? LastName, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<LoginResponse>;',
+            aciklama: '`LoginWithGoogleCommand`\'dan EN BÜYÜK yapısal fark: Google\'ın `payload.FirstName`/`LastName`\'i HER seferinde token\'ın İÇİNDE gelirken, Apple bu bilgiyi yalnızca İLK yetkilendirmede, token\'ın DIŞINDA, istemci SDK\'sının AYRI bir alanında verir — bu yüzden `FirstName`/`LastName` `IAppleTokenValidator`\'ın DÖNDÜRDÜĞÜ `AppleTokenPayload`\'da DEĞİL, bu Command\'ın KENDİ parametrelerinde.',
+            neden: 'İstemci (mobil uygulama) bu bilgiyi Apple\'dan aldığı İLK anda YAKALAYIP kendi tarafında SAKLAMALI (ör. güvenli depoya) ve HER giriş isteğinde bu Command\'a EKLEMELİ — Apple\'ın kendisi bu bilgiyi İKİNCİ bir girişte BİR DAHA vermez.',
+            olmasaydi: 'Bu parametreler OLMASAYDI, Apple ile İLK kez giriş yapan bir kullanıcının adı/soyadı asla ÖĞRENİLEMEZDİ — `User.FirstName`/`LastName` (NOT NULL alanlar, Bölüm 1) her zaman "Apple"/"User" yer tutucusuyla KALIRDI.'
+          },
+          {
+            satir: 'public class LoginWithAppleCommandHandler : IRequestHandler<LoginWithAppleCommand, LoginResponse>',
+            aciklama: '`LoginWithGoogleCommandHandler`\'la (bu bölüm) AYNI dönüş tipi — yapı BİREBİR paralel.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int AccessTokenExpiresInSeconds = 900;',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI sabit, üçüncü kez TEKRARLANIYOR (Bölüm 12 + bu bölümün iki Handler\'ı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: '`LoginWithGoogleCommandHandler` ile AYNI alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IRefreshTokenRepository _refreshTokenRepository;',
+            aciklama: '`LoginWithGoogleCommandHandler` ile AYNI alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IAppleTokenValidator _appleTokenValidator;',
+            aciklama: 'Bölüm 10\'un Apple doğrulayıcısı — `IGoogleTokenValidator`\'ın Apple karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILoginCompletionService _loginCompletionService;',
+            aciklama: '`LoginWithGoogleCommandHandler` ile AYNI alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IEmailService _emailService;',
+            aciklama: '`LoginWithGoogleCommandHandler` ile AYNI alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginWithAppleCommandHandler(',
+            aciklama: '`LoginWithGoogleCommandHandler`\'ın constructor\'ıyla AYNI yapıda — tek fark üçüncü parametrenin tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: '`_userRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IRefreshTokenRepository refreshTokenRepository,',
+            aciklama: '`_refreshTokenRepository` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IAppleTokenValidator appleTokenValidator,',
+            aciklama: '`_appleTokenValidator` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ILoginCompletionService loginCompletionService,',
+            aciklama: '`_loginCompletionService` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IEmailService emailService)',
+            aciklama: '`_emailService` alanına atanacak parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_refreshTokenRepository = refreshTokenRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_appleTokenValidator = appleTokenValidator;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_loginCompletionService = loginCompletionService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_emailService = emailService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<LoginResponse> Handle(LoginWithAppleCommand request, CancellationToken cancellationToken)',
+            aciklama: '`LoginWithGoogleCommandHandler.Handle`\'la AYNI imza şekli, farklı Command tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var payload = await _appleTokenValidator.ValidateAsync(request.IdentityToken, cancellationToken)',
+            aciklama: '`_googleTokenValidator.ValidateAsync`\'in Apple karşılığı — Bölüm 10\'un `IAppleTokenValidator`\'ının İLK gerçek çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new InvalidSocialTokenException();',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI hata — token doğrulama BAŞARISIZSA aynı genel sosyal-giriş istisnası fırlatılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user is null)',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI iki kademeli null kontrolü — dıştaki blok AppleId aramasının, içteki blok e-posta aramasının SONUÇSUZ kaldığını kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var user = await _userRepository.GetByAppleIdAsync(payload.Subject, cancellationToken);',
+            aciklama: '`GetByGoogleIdAsync`\'in Apple karşılığı — YAPISAL olarak BİREBİR aynı arama sırası (önce sağlayıcı kimliği, sonra e-posta).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user = payload.Email is not null ? await _userRepository.GetByEmailAsync(payload.Email, cancellationToken) : null;',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki KOŞULSUZ `GetByEmailAsync(payload.Email, ...)` çağrısından FARKLI: burada ÖNCE `payload.Email is not null` kontrol ediliyor, çünkü Apple\'ın `Email`\'i (Google\'ın AKSİNE) nullable — `null` bir e-postayla arama YAPMANIN anlamı yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user = new User',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki `new User` ile AYNI amaç, sağlayıcıya özel farklı alanlar set ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Email = payload.Email ?? $"{payload.Subject}@privaterelay.appleid.com",',
+            aciklama: '`payload.Email` `null` ise (nadiren, YALNIZCA tekrar giriş senaryolarında OLABİLİR), `AppleId`\'ye DAYALI, GERÇEK bir e-posta formatında ama GERÇEK bir adrese GÖNDERİLEMEYEN bir yer tutucu üretilir — `Users.Email` (Bölüm 1) NOT NULL VE UNIQUE, boş BIRAKILAMAZ ve her kullanıcı için FARKLI olmalı (`Subject` benzersiz olduğu için bu garanti edilir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AppleId = payload.Subject,',
+            aciklama: '`GoogleId = payload.Subject,`\'in Apple karşılığı — `Subject` burada da DEĞİŞMEZ, `GetByAppleIdAsync`\'in birincil arama anahtarı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AuthProvider = "Apple",',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki `"Google"` sabitinin Apple karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'FirstName = request.FirstName ?? "Apple",',
+            aciklama: '`payload.FirstName` DEĞİL `request.FirstName` — bu Command\'ın KENDİ parametresi (yukarıdaki İLK satırın açıkladığı fark).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LastName = request.LastName ?? "User",',
+            aciklama: '`payload.LastName` DEĞİL `request.LastName` — aynı fark `FirstName` için de geçerli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IsEmailVerified = true,',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI varsayım — Apple da kendi tarafında e-posta sahipliğini DOĞRULAMIŞ sayılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EmailVerifiedAt = DateTime.UtcNow',
+            aciklama: '`IsEmailVerified = true` ile BİRLİKTE set edilen zaman damgası — Google Handler\'ındaki AYNI mantık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.AddAsync(user, cancellationToken);',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI desen — entity change tracking\'e eklenir, DB\'ye HENÜZ yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else',
+            aciklama: 'E-postayla (ya da e-posta yoksa hiç) kullanıcı BULUNDUYSA bu dal çalışır — altındaki `user.AppleId = payload.Subject;` bağlamayı yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'user.AppleId = payload.Subject;',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki `user.GoogleId = payload.Subject;` ile BİREBİR aynı bağlama mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!user.IsActive)',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI kontrol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new AccountInactiveException();',
+            aciklama: '`LoginCommand`/`VerifyLoginOtpCommand`\'la (Bölüm 12) ve `LoginWithGoogleCommandHandler`\'la AYNI istisna.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);',
+            aciklama: 'Bölüm 7\'nin `ILoginCompletionService`\'inin ÜÇÜNCÜ tüketicisi (Bölüm 12\'nin `VerifyLoginOtpCommandHandler`\'ı + bu bölümün Google Handler\'ı + bu satır) — giriş yöntemi ne olursa olsun bu adımdan sonrası TEK bir yerden yönetiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.AddAsync(completion.RefreshTokenEntity, cancellationToken);',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'İki repo AYNI DbContext\'i paylaşıyor (scoped, Bölüm 8) — `LoginWithGoogleCommandHandler`\'daki AYNI satırla BİREBİR aynı gerekçe: TEK çağrı hem `User` hem `RefreshToken` satırını yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (completion.AccountWasRecovered)',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI kontrol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _emailService.SendAccountRecoveredNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI bildirim çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var userDto = new AuthUserDto(user.Id, user.CurrentLevel, user.ThemePreference, user.LanguagePreference);',
+            aciklama: '`LoginWithGoogleCommandHandler`\'daki AYNI DTO inşası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new LoginResponse(completion.AccessToken, completion.RefreshTokenValue, AccessTokenExpiresInSeconds, userDto, completion.AccountWasRecovered);',
+            aciklama: '`LoginWithGoogleCommandHandler`\'ın return satırıyla BİREBİR aynı — sağlayıcı (Google/Apple) farkı bu noktada TAMAMEN ORTADAN kalkıyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Hesap Bağlama (Account Linking)', tanim: 'Farklı bir kimlik doğrulama yöntemiyle (ör. Google) gelen bir kullanıcıyı, AYNI e-postaya sahip VAR OLAN bir hesaba bağlama — yeni bir hesap açmak yerine mevcut hesaba ikinci bir giriş yöntemi EKLEME.' },
+          { terim: 'Private Relay E-posta', tanim: 'Apple\'ın kullanıcıya sunduğu, GERÇEK e-postasını sitelerle PAYLAŞMADAN bir vekil (relay) adres üretme özelliği — bu projede token\'daki `email` claim\'i bu relay adresi OLABİLİR, gerçek adres DEĞİL.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'LoginWithGoogle/LoginWithApple, önce sağlayıcı kimliğiyle (GoogleId/AppleId), bulunamazsa e-postayla ARAR — bu ikinci arama, aynı kişinin İKİ ayrı hesap AÇMASINI önleyen "hesap bağlama" mantığı.',
+          'Google token\'ı FirstName/LastName\'i HER seferinde taşırken, Apple bunu yalnızca İLK yetkilendirmede VERİR — bu yüzden LoginWithAppleCommand bu bilgiyi kendi parametrelerinde taşır, token payload\'ında DEĞİL.',
+          'Her iki Handler da Bölüm 7\'nin ILoginCompletionService\'ini, Bölüm 12\'nin VerifyLoginOtpCommandHandler\'ıyla BİREBİR aynı şekilde çağırıyor — kimlik doğrulama yöntemi ne olursa olsun, "giriş TAMAMLAMA" adımı TEK bir yerde.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

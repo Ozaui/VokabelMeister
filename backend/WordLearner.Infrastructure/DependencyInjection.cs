@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Infrastructure.Data;
 using WordLearner.Infrastructure.Repositories;
+using WordLearner.Infrastructure.Repositories.Auth;
 
 namespace WordLearner.Infrastructure;
 
@@ -18,6 +20,8 @@ public static class DependencyInjection
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         return services;
     }
