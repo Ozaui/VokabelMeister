@@ -142,10 +142,20 @@
       katmanı, yeni istisnalar, e-posta/sosyal giriş servisleri, 13 Handler); `postman` slaytları
       henüz YOK — `AuthController` yazılana kadar bilerek eklenmiyor (STANDART.md kuralı, endpoint
       bir controller'a bağlanınca eklenir)
-- [ ] 5 QR Login Command+Handler (`Application/Features/QrLogin/`): Generate/Scan/Confirm/Deny/
+- [x] 5 QR Login Command+Handler (`Application/Features/QrLogin/`): Generate/Scan/Confirm/Deny/
       GetStatus (Confirmed'de `ILoginCompletionService` ile tek seferlik token) +
       `QrSessionGoneException`(410)/`QrSessionForbiddenException`(403)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+> **QR Login sırasında verilen 2 tasarım kararı:** (1) `QrLoginSession` `BaseEntity`'den türese de
+> token-hash'e göre arama generic `IRepository<T>`'de yok — `IUserRepository`/`IRefreshTokenRepository`
+> ile aynı dar-arayüz deseni: `IQrLoginSessionRepository` (Update metodu yok, EF change tracking
+> yeterli). (2) Süre dolumu yorumu iki yerde farklı davranır: Scan/Confirm/Deny (aksiyon uçları)
+> süresi geçmiş bir session'ı sessizce `QrSessionGoneException`'a çevirir, DB'ye ayrıca yazmaz (zaten
+> hiçbir mutasyon olmamış); `GetQrLoginStatusQuery` (polling ucu) ise `Expired`'ı gerçek, DB'ye
+> yazılan bir durum olarak üretir — hem UI'a "süresi doldu" diye ayrı bir durum döner hem de A-17'nin
+> `ExpiredTokenCleanupJob`'unun `Status` filtresine (Confirmed/Denied/Expired) veri sağlar.
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 16-20. bölümler (repository
+      katmanı, 2 yeni istisna + 3 DTO, 5 Handler); `postman` slaytları henüz YOK — `QrLoginController`
+      yazılana kadar bilerek eklenmiyor (STANDART.md kuralı, endpoint bir controller'a bağlanınca eklenir)
 - [ ] Başarı mesajları (`MessageResponse` döndüren Command'lar) — `ErrorMessages.cs` deseniyle
       simetrik bir `SuccessMessages.cs` (Code + `Accept-Language`'a göre tr/de çözümü), hardcode
       Türkçe metin **yazılmaz**

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QR Login: Generate ve Scan</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-generate-ve-scan',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '17_qr-istisnalar-ve-dto.html',
+    sonrakiBolum: '19_qr-confirm-ve-deny.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 18',
+        baslik: 'GenerateQrLoginCommand ve ScanQrLoginCommand',
+        altBaslik: 'QR akışının ilk iki adımı: Anonim bir tarayıcı bir oturum İSTER, mobildeki kimliği doğrulanmış kullanıcı onu OKUTUR — ikisi de henüz hiçbir şeyi ONAYLAMAZ.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ham Token 64 Byte, Pairing Code Yalnızca 4 Hane?',
+        aciklama: '`GenerateQrLoginCommandHandler` iki farklı RASTGELE değer üretir: 64 byte\'lık kriptografik bir token (QR/deep-link\'in İÇİNE gömülecek, DB\'de yalnızca hash\'i saklanacak — Bölüm 16\'nın `IQrLoginSessionRepository`\'sinin arama anahtarı) ve 4 haneli bir `pairingCode` (hem web hem mobil ekranında GÖRÜNECEK, bir İNSAN tarafından gözle karşılaştırılacak). İkisinin boyutu bilerek ÇOK farklı.',
+        neden: '64 byte\'lık token, brute-force için pratikte İMKANSIZ bir arama uzayı sağlar — zaten bir MAKİNE tahmin eder, bir İNSAN onu asla görüp elle YAZMAZ. `pairingCode` ise TAM TERSİNE bir insanın GÖZLE okuyup karşılaştıracağı bir değer; 4 hane (10.000 olasılık) bu amaç için YETERLİ, çünkü onun güvenlik görevi "tahmin edilemez olmak" değil — mobildeki kullanıcı, web ekranındaki kodla KENDİ ekranındaki kodun eşleştiğini görüp relay/phishing girişimini FARK EDEBİLMELİ.',
+        olmasaydi: '`pairingCode` de 64 byte OLSAYDI, hiçbir kullanıcı iki ekrandaki değeri gözle KARŞILAŞTIRAMAZDI — kod okunamaz hale gelir, relay savunması İŞLEVSİZ kalırdı. Token 4 haneye İNSEYDİ, bir saldırgan makul bir sürede TÜM olası token\'ları deneyip GEÇERLİ bir oturum BULABİLİRDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GenerateQrLoginCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/GenerateQrLoginCommand.cs',
+        nedenBuKlasor: 'İlk kez YENİ bir klasör: `Features/QrLogin/` — 13 Auth Handler\'ının yaşadığı `Features/Auth/`\'ın YANINA, ayrı bir alt klasör; QR akışı kavramsal olarak Auth\'un bir PARÇASI ama kendi 5 Handler\'ıyla ayrı bir feature grubu.',
+        kod: `using System.Security.Cryptography;
+using MediatR;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Features.QrLogin;
+
+public record GenerateQrLoginCommand(string? IpAddress, string? DeviceInfo) : IRequest<QrLoginGenerateResponse>;
+
+public class GenerateQrLoginCommandHandler : IRequestHandler<GenerateQrLoginCommand, QrLoginGenerateResponse>
+{
+    private const int TokenByteLength = 64;
+    private const int PairingCodeLength = 4;
+    private const int ExpirationMinutes = 2;
+
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+
+    public GenerateQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<QrLoginGenerateResponse> Handle(GenerateQrLoginCommand request, CancellationToken cancellationToken)
+    {
+        var tokenBytes = new byte[TokenByteLength];
+        RandomNumberGenerator.Fill(tokenBytes);
+        var token = Convert.ToBase64String(tokenBytes);
+
+        var pairingCode = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, PairingCodeLength)).ToString($"D{PairingCodeLength}");
+
+        var session = new QrLoginSession
+        {
+            QrTokenHash = _passwordService.HashToken(token),
+            PairingCode = pairingCode,
+            RequesterIp = request.IpAddress,
+            RequesterDeviceInfo = request.DeviceInfo,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(ExpirationMinutes)
+        };
+
+        await _qrLoginSessionRepository.AddAsync(session, cancellationToken);
+        await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
+
+        return new QrLoginGenerateResponse(token, pairingCode, ExpirationMinutes * 60);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Cryptography;',
+            aciklama: '`RandomNumberGenerator` için gerekli — `IOtpService`\'in (Bölüm 5) kullandığı AYNI sınıf, burada doğrudan Handler içinde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için — 13 Auth Handler\'ından (Bölüm 11-15) beri her Handler dosyasında geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`QrLoginGenerateResponse`\'u (Bölüm 17) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IQrLoginSessionRepository`\'yi (Bölüm 16) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`\'i (Bölüm 3) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`QrLoginSession` sınıfını (Bölüm 1) oluşturabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.QrLogin;',
+            aciklama: '`Features.Auth`\'tan (Bölüm 11-15) FARKLI, YENİ bir ad alanı — bu bölümün 5 Handler\'ının TAMAMI burada yaşayacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record GenerateQrLoginCommand(string? IpAddress, string? DeviceInfo) : IRequest<QrLoginGenerateResponse>;',
+            aciklama: 'İkisi de nullable — bu akış Anonim (`[AllowAnonymous]`, ileride yazılacak `QrLoginController`), bir istemci bu bilgiyi HER ZAMAN göndermeyebilir. Bu iki alan, aşağıda `session.RequesterIp`/`RequesterDeviceInfo`\'ya AYNEN kopyalanıp Bölüm 19\'un `QrLoginScanResponse`\'unda mobil ekrana GERİ dönecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class GenerateQrLoginCommandHandler : IRequestHandler<GenerateQrLoginCommand, QrLoginGenerateResponse>',
+            aciklama: 'Bu bölümün 5 Handler\'ının İLKİ — QR akışının BAŞLANGIÇ noktası, hiçbir kimlik doğrulama gerektirmiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int TokenByteLength = 64;',
+            aciklama: 'Üstteki kavram slaytının 64 byte\'lık boyutu — büyük bir sabit, isimle KENDİNİ anlatıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int PairingCodeLength = 4;',
+            aciklama: 'Üstteki kavram slaytının 4 haneli pairing code\'u.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const int ExpirationMinutes = 2;',
+            aciklama: 'Bir QR session\'ın ömrü — `IOtpService`\'in (Bölüm 5) 5 dakikalık OTP süresinden BİLEREK daha KISA: bir kullanıcının telefonuyla QR\'ı okutması saniyeler SÜRER, uzun bir pencere yalnızca RİSK ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: 'Yeni session\'ı KAYDETMEK için (Bölüm 16).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Token\'ı hash\'lemek için (Bölüm 3) — `OtpService`/`ITokenService`\'in (Bölüm 3, 5) kullandığı AYNI `HashToken` metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public GenerateQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık, constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<QrLoginGenerateResponse> Handle(GenerateQrLoginCommand request, CancellationToken cancellationToken)',
+            aciklama: '`IRequestHandler<GenerateQrLoginCommand, QrLoginGenerateResponse>` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tokenBytes = new byte[TokenByteLength];',
+            aciklama: '64 byte\'lık boş bir dizi ayrılır — aşağıdaki satırda kriptografik rastgelelikle DOLDURULACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RandomNumberGenerator.Fill(tokenBytes);',
+            aciklama: '`System.Random` DEĞİL — `RandomNumberGenerator`, işletim sisteminin kriptografik olarak güvenli rastgele sayı ÜRETECİNİ kullanır (`ITokenService.GenerateRefreshToken`\'ın, Bölüm 4, kullandığı AYNI API).',
+            neden: '`System.Random` TAHMİN EDİLEBİLİR bir algoritma (seed bilinirse SONRAKİ tüm değerler hesaplanabilir) — bir oturum token\'ı için bu KABUL EDİLEMEZ, bir saldırganın SIRADAKİ token\'ı tahmin edebilmesi tüm QR akışını ANLAMSIZ kılardı.',
+            olmasaydi: '`System.Random` kullanılsaydı, yeterince örnek TOPLAYAN bir saldırgan üretecin İÇ durumunu ÇÖZÜP gelecekteki token\'ları ÖNCEDEN tahmin edebilirdi.'
+          },
+          {
+            satir: 'var token = Convert.ToBase64String(tokenBytes);',
+            aciklama: 'Ham byte dizisi, QR/deep-link\'e GÖMÜLEBİLECEK, URL-güvenli\'ye YAKIN bir metin temsiline çevrilir — `ITokenService.GenerateRefreshToken`\'ın (Bölüm 4) AYNI dönüşümü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var pairingCode = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, PairingCodeLength)).ToString($"D{PairingCodeLength}");',
+            aciklama: '`IOtpService.Generate`\'in (Bölüm 5) 6 haneli OTP kodu ürettiği AYNI `RandomNumberGenerator.GetInt32` + `"D{n}"` biçimlendirme deseni — `PairingCodeLength` sabitine göre `0000`-`9999` arası, BAŞTAKİ sıfırlar korunarak (ör. `42` değil `0042`) 4 haneli bir metne çevrilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var session = new QrLoginSession',
+            aciklama: 'Bölüm 1\'in entity\'si — object initializer sözdizimiyle TÜM alanları TEK ifadede dolduruluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'QrTokenHash = _passwordService.HashToken(token),',
+            aciklama: 'HAM `token` DEĞİL, hash\'i DB\'ye YAZILIR — üstteki kavram slaytının "ham token yalnızca QR\'ın içinde yaşar" ilkesi burada UYGULANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PairingCode = pairingCode,',
+            aciklama: 'Pairing code, token\'ın AKSİNE HAM haliyle DB\'ye yazılır — o zaten insan gözüyle GÖRÜNMESİ GEREKEN bir değer, gizlenmesinin bir anlamı YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RequesterIp = request.IpAddress,',
+            aciklama: 'İleride yazılacak `QrLoginController`\'ın `HttpContext`\'ten okuyup Command\'a taşıyacağı değer — bu Handler kendisi HttpContext\'e ERİŞMEZ (Controller ince kalır kuralı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RequesterDeviceInfo = request.DeviceInfo,',
+            aciklama: '`RequesterIp` ile AYNI kaynak — `User-Agent` header\'ından.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ExpiresAt = DateTime.UtcNow.AddMinutes(ExpirationMinutes)',
+            aciklama: 'Bölüm 16-20\'nin TÜM diğer Handler\'larının kontrol ettiği alan (`session.ExpiresAt < DateTime.UtcNow`) burada BAŞLATILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '};',
+            aciklama: 'Object initializer\'ın kapanışı — `new QrLoginSession { ... };` ifadesinin SONU, `session` değişkeni bu satırdan sonra TAM dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.AddAsync(session, cancellationToken);',
+            aciklama: 'Change tracking\'e ekler, henüz DB\'ye YAZMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Session\'ı gerçekten DB\'ye yazan çağrı — bundan SONRA Scan/Confirm/Deny/GetQrLoginStatus (Bölüm 19-20) bu kaydı hash\'iyle BULABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new QrLoginGenerateResponse(token, pairingCode, ExpirationMinutes * 60);',
+            aciklama: 'HAM `token` (hash DEĞİL) burada istemciye DÖNÜYOR — Bölüm 17\'nin notu: bu satırdan SONRA ham değer hiçbir yerde saklı DEĞİL, yalnızca istemcinin ÜRETTİĞİ QR görselinin/deep-link\'in İÇİNDE yaşıyor. `ExpirationMinutes * 60` — saniyeye çevrim, `QrLoginGenerateResponse.ExpiresIn`\'in (Bölüm 17) birimi saniye.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Scan Neden Tek Başına Bir Adım — Neden Doğrudan Confirm\'e Gitmiyor?',
+        aciklama: '`ScanQrLoginCommandHandler` yalnızca session\'ı `Pending`\'den `Scanned`\'e taşır ve `UserId`\'yi doldurur — GİRİŞİ TAMAMLAMAZ, hesaba erişim TOKEN\'I ÜRETMEZ. Confirm (Bölüm 19), AYRI ve BİLİNÇLİ bir SONRAKİ adımdır.',
+        neden: 'Mobil kullanıcı QR\'ı okuttuğu ANDA, ekranında henüz o QR\'ın hangi cihazdan/IP\'den geldiğini GÖRMEMİŞTİR. Scan bu bilgiyi (Bölüm 17\'nin `QrLoginScanResponse`\'u — `requesterDeviceInfo`/`requesterIp`/`pairingCode`) DÖNDÜRÜR ki kullanıcı Confirm\'e basmadan ÖNCE "bu gerçekten BENİM az önce açtığım oturum mu" diye BİLİNÇLİ karar verebilsin.',
+        olmasaydi: 'Scan otomatik olarak Confirm de YAPSAYDI (tek adımda giriş tamamlansaydı), bir saldırganın kurbana KENDİ QR\'ını okutması TEK bir eylemle (kurbanın telefonunu QR\'a doğrultmasıyla) hesabı ELE GEÇİRMESİ için YETERLİ olurdu — kullanıcının cihaz/IP bilgisini GÖRÜP bilinçli onaylaması aradaki TEK engel olurdu, o da hiç OLMAZDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ScanQrLoginCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/ScanQrLoginCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Features.QrLogin;
+
+public record ScanQrLoginCommand(string QrToken, int UserId) : IRequest<QrLoginScanResponse>;
+
+public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrLoginScanResponse>
+{
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+
+    public ScanQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<QrLoginScanResponse> Handle(ScanQrLoginCommand request, CancellationToken cancellationToken)
+    {
+        var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)
+            ?? throw new QrSessionGoneException();
+
+        if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Pending)
+            throw new QrSessionGoneException();
+
+        session.Status = QrLoginStatus.Scanned;
+        session.UserId = request.UserId;
+        session.ScannedAt = DateTime.UtcNow;
+        await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
+
+        return new QrLoginScanResponse(session.RequesterDeviceInfo, session.RequesterIp, session.PairingCode);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`QrSessionGoneException`\'ı (Bölüm 17) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`QrLoginScanResponse`\'u (Bölüm 17) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IQrLoginSessionRepository`\'yi (Bölüm 16) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`\'i kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`QrLoginStatus` enum\'unu (Bölüm 1) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.QrLogin;',
+            aciklama: '`GenerateQrLoginCommand` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ScanQrLoginCommand(string QrToken, int UserId) : IRequest<QrLoginScanResponse>;',
+            aciklama: '`QrToken` HAM değeri (Bölüm 18\'in `GenerateQrLoginCommand`\'ının döndürdüğü) — bu Command\'ı `[Authorize]` bir Controller çağıracağı için `UserId` istemciden GELMEZ, JWT\'nin İÇİNDEN (ileride yazılacak `QrLoginController`) doldurulur; `RequestAccountDeletionCommand`\'daki (Bölüm 15) AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ScanQrLoginCommandHandler : IRequestHandler<ScanQrLoginCommand, QrLoginScanResponse>',
+            aciklama: 'Bu bölümün ikinci Handler\'ı — QR akışının İLK kimliği doğrulanmış (mobil) dokunuşu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: 'Session\'ı hash\'iyle bulmak ve durumunu GÜNCELLEMEK için (Bölüm 16).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Gelen HAM `QrToken`\'ı hash\'e çevirip aramak için — `GenerateQrLoginCommandHandler`\'ın (bu bölüm) DB\'ye yazdığı hash\'le KARŞILAŞTIRILACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ScanQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık, constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<QrLoginScanResponse> Handle(ScanQrLoginCommand request, CancellationToken cancellationToken)',
+            aciklama: '`IRequestHandler<ScanQrLoginCommand, QrLoginScanResponse>` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)',
+            aciklama: 'HAM token BURADA hash\'e çevrilip aranıyor — `ResetPasswordCommandHandler`\'ın (Bölüm 15) `GetByEmailAsync` çağrısıyla YAPISAL olarak AYNI "bul, yoksa fırlat" deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new QrSessionGoneException();',
+            aciklama: 'Bölüm 17\'nin "az konuşan" istisnası — hash eşleşmiyorsa (session hiç YOK ya da yanlış token) bu fırlatılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Pending)',
+            aciklama: '`RefreshCommandHandler`\'ın (Bölüm 14) `existingToken.RevokedAt is not null || existingToken.ExpiresAt < DateTime.UtcNow` kontrolüyle AYNI stil — süre/durum kontrolü ayrı bir yardımcı metoda ÇIKARILMADAN doğrudan inline yazılıyor. `QrLoginStatus.Pending` DIŞINDAKİ her durum (zaten `Scanned`/`Confirmed`/`Denied`/`Consumed`) burada REDDEDİLİR — bir QR yalnızca BİR kez taranabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new QrSessionGoneException();',
+            aciklama: 'Süre geçmiş ya da yanlış aşamadaki bir session için de AYNI istisna — bu Handler, süresi geçmiş bir session\'ı `Expired`\'a çevirip DB\'ye YAZMAZ (Bölüm 20\'nin `GetQrLoginStatusQuery`\'sinden FARKLI davranış, aşağıdaki kapanış özetinde tekrar geçiyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.Status = QrLoginStatus.Scanned;',
+            aciklama: 'Bölüm 1\'in `QrLoginSession.Status`\'u — `GetByTokenHashAsync`\'in DÖNDÜRDÜĞÜ entity zaten `WordLearnerDbContext`\'in change tracking\'ine DAHİL, doğrudan mutasyona uğratmak yeterli (Bölüm 16\'nın "Update metodu YOK" notu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.UserId = request.UserId;',
+            aciklama: 'Session\'ı TARAYAN kullanıcının kimliği burada KAYDEDİLİYOR — Bölüm 19\'un `ConfirmQrLoginCommandHandler`\'ı Confirm\'i ÇAĞIRANIN AYNI kullanıcı olup OLMADIĞINI bu alana göre doğrulayacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.ScannedAt = DateTime.UtcNow;',
+            aciklama: 'Bölüm 1\'in zaman damgası alanı — audit amaçlı, hiçbir Handler bunu SONRADAN OKUYUP bir karara BAĞLAMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Üç alanlık mutasyonu (Status/UserId/ScannedAt) DB\'ye yazan TEK çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new QrLoginScanResponse(session.RequesterDeviceInfo, session.RequesterIp, session.PairingCode);',
+            aciklama: 'Bölüm 18\'in (bu bölüm) `GenerateQrLoginCommandHandler`\'ının session oluştururken KAYDETTİĞİ üç değer — burada ÜRETİLMİYOR, yalnızca OKUNUP mobile GERİ dönüyor (üstteki kavram slaytının "kullanıcı bilinçli karar verebilsin" gerekçesi).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Generate, iki farklı boyutta rastgele değer üretiyor — 64 byte\'lık token (makineye karşı tahmin edilemez) ve 4 haneli pairing code (insana karşı okunabilir/karşılaştırılabilir).',
+          'Ham token yalnızca Generate\'in yanıtında bir kez döner; DB\'ye her zaman hash\'i yazılır — Scan/Confirm/Deny/GetQrLoginStatus (Bölüm 19-20) hep bu hash üzerinden arar.',
+          'Scan, girişi TAMAMLAMAZ — yalnızca session\'ı Pending\'den Scanned\'e taşır ve session\'ı hangi kullanıcının taradığını kaydeder; Confirm (Bölüm 19) AYRI, bilinçli bir sonraki adımdır.',
+          'Scan yanıtı (requesterDeviceInfo/requesterIp/pairingCode) mobil kullanıcıya "bu gerçekten benim oturumum mu" diye gözle doğrulama imkânı verir — relay/phishing savunmasının insana bağlı kısmı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

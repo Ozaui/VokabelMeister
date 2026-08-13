@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QR Login Repository Katmanı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-repository-katmani',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '15_sifre-sifirlama-ve-hesap-silme.html',
+    sonrakiBolum: '17_qr-istisnalar-ve-dto.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 16',
+        baslik: 'IQrLoginSessionRepository',
+        altBaslik: '13 Handler tamamlandıktan sonra Bölüm 1\'in üçüncü entity\'si (QrLoginSession) ilk kez GERÇEK bir tüketiciye kavuşuyor — Steam benzeri QR ile giriş akışının 5 Handler\'ı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'QrLoginSession BaseEntity\'den Türüyor — Neden Yine de Generic IRepository<T> Yetmiyor?',
+        aciklama: 'Bölüm 1\'de verilen tasarım kararına göre `QrLoginSession`, `User`/`RefreshToken`\'ın AKSİNE `BaseEntity`\'den TÜRÜYOR — teorik olarak A-02\'nin generic `IRepository<T>`\'si (`GetByIdAsync(int id)`, `AddAsync`, `UpdateAsync`, `SoftDeleteAsync`) burada KULLANILABİLİR görünüyor. Ama bu bölümün 5 Handler\'ından (Generate hariç) HİÇBİRİ session\'ı `Id` (int) ile ARAMIYOR — hepsi istemcinin elindeki HAM QR token\'ın hash\'iyle (`QrTokenHash` sütunu) arıyor. Generic arayüz yalnızca Id bazlı `GetByIdAsync` sunuyor, hash bazlı bir sorgu yolu YOK.',
+        neden: 'Bu, Bölüm 8\'in `IUserRepository`\'ye `GetByEmailAsync`/`GetByGoogleIdAsync` gibi metotlar EKLEMESİYLE AYNI gerekçe — yalnızca tetikleyen sebep orada `BaseEntity`\'den türememekti, burada ise türese bile arama ANAHTARININ Id olmamasıdır. Generic repository yalnızca TÜM entity\'lerin ortak paydası (Id bazlı CRUD) için tasarlandı; QR akışının gerçek ihtiyacı bunun dışında.',
+        olmasaydi: 'Generic `IRepository<QrLoginSession>` kullanılmaya ZORLANSAYDI, her Handler kendi `_context.Set<QrLoginSession>()` sorgusunu (hash\'e göre `Where`) TEKRAR TEKRAR yazardı — repository soyutlamasının asıl amacı (sorgu mantığını TEK yerde toplamak) BOZULURDU, dört Handler\'ın hepsi AYNI hash-arama ifadesini kopyalardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IQrLoginSessionRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Auth/IQrLoginSessionRepository.cs',
+        nedenBuKlasor: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) ile AYNI klasör — `Interfaces/Repositories/Auth/`, Auth domain\'ine özel TÜM dar arayüzlerin toplandığı yer.',
+        kod: `using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Interfaces.Repositories.Auth;
+
+// QrLoginSession BaseEntity'den türüyor ama token-hash'e göre arama generic IRepository<T>'de yok —
+// User/RefreshToken repository'leriyle aynı dar-arayüz deseni (Update metodu yok, EF change tracking
+// zaten izliyor; Scan/Confirm/Deny/GetStatus fetch ettiği entity'yi mutasyona uğratır, SaveChangesAsync yeterli).
+public interface IQrLoginSessionRepository
+{
+    Task<QrLoginSession?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default);
+    Task AddAsync(QrLoginSession session, CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`QrLoginSession` sınıfını (Bölüm 1) parametre/dönüş tipi olarak kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IQrLoginSessionRepository',
+            aciklama: 'Arayüz bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<QrLoginSession?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default);',
+            aciklama: 'Bu bölümün Scan/Confirm/Deny/GetQrLoginStatus (Bölüm 18-20) Handler\'larının DÖRDÜ de session\'ı BUNUNLA bulur — parametre HAM `qrToken` DEĞİL, çağıran Handler\'ın `IPasswordService.HashToken` (Bölüm 3) ile ürettiği hash.',
+            neden: '`RefreshTokens.TokenHash`\'in (Bölüm 8) AYNI gerekçesi — DB bir şekilde SIZARSA bile, saklanan yalnızca hash olduğu için sızan veriyle QR oturumu ÇALINAMAZ; ham token yalnızca QR/deep-link\'in İÇİNDE, tek seferlik olarak var olur.',
+            olmasaydi: 'Ham token DOĞRUDAN `QrTokenHash` sütununda saklansaydı, bu tabloya erişimi olan HERKES (bir DB yedeği, bir SQL injection, bir iç tehdit) o an geçerli TÜM QR oturumlarını ELE GEÇİREBİLİRDİ.'
+          },
+          {
+            satir: 'Task AddAsync(QrLoginSession session, CancellationToken cancellationToken = default);',
+            aciklama: '`GenerateQrLoginCommandHandler`\'ın (Bölüm 18) yeni oluşturduğu session\'ı change tracking\'e eklemek için — `IUserRepository.AddAsync` (Bölüm 8) ile AYNI kalıp, ama `userId` parametresi YOK: bu akış Anonim başlıyor, session\'ı oluşturan kimliği belli bir kullanıcı yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) ile BİREBİR aynı imza — Update metodu YOK, Scan/Confirm/Deny/GetQrLoginStatus `GetByTokenHashAsync`\'le ÇEKTİĞİ entity\'yi doğrudan mutasyona uğratıp bu metodu çağırır.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginSessionRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Auth/QrLoginSessionRepository.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Auth;
+
+public class QrLoginSessionRepository : IQrLoginSessionRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public QrLoginSessionRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<QrLoginSession?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
+        await _context.QrLoginSessions.FirstOrDefaultAsync(x => x.QrTokenHash == tokenHash, cancellationToken);
+
+    public async Task AddAsync(QrLoginSession session, CancellationToken cancellationToken = default) =>
+        await _context.QrLoginSessions.AddAsync(session, cancellationToken);
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`FirstOrDefaultAsync` LINQ uzantı metodu için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: 'İmplemente edilecek `IQrLoginSessionRepository` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`QrLoginSession` sınıfı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Auth;',
+            aciklama: '`UserRepository`/`RefreshTokenRepository` (Bölüm 8) ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrLoginSessionRepository : IQrLoginSessionRepository',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: '`UserRepository`/`RefreshTokenRepository` (Bölüm 8) ile AYNI TEK bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public QrLoginSessionRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Constructor injection — Bölüm 8\'in iki repository\'siyle BİREBİR aynı desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<QrLoginSession?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository.GetByEmailAsync` (Bölüm 8) ile AYNI stil — expression-bodied, tek satırlık gövde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.QrLoginSessions.FirstOrDefaultAsync(x => x.QrTokenHash == tokenHash, cancellationToken);',
+            aciklama: '`_context.QrLoginSessions` — aşağıdaki `WordLearnerDbContext` kod-degisiklik slaytında eklenen `DbSet<QrLoginSession>` üzerinden, parametreli EF LINQ ile arama; string birleştirme YOK. `QrLoginSession` `BaseEntity`\'den TÜREDİĞİ için (Bölüm 1) bu sorgu, A-02\'nin OTOMATİK soft-delete filtresinden de GEÇER — süresi dolmuş/tüketilmiş bir session soft-delete EDİLMEZ (Bölüm 1\'in notu, "audit için silinmez") ama bu satır zaten yalnızca `IsDeleted=false` kayıtları arıyor OLDUĞUNDAN bu bölüm için pratikte bir fark YARATMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync(QrLoginSession session, CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository.AddAsync` (Bölüm 8) ile AYNI kalıp.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.QrLoginSessions.AddAsync(session, cancellationToken);',
+            aciklama: 'Change tracking\'e ekler, henüz DB\'ye YAZMAZ — `SaveChangesAsync` çağrılana kadar bekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: '`UserRepository`/`RefreshTokenRepository` (Bölüm 8) ile BİREBİR aynı — `async` YOK, `Task<int>` doğrudan geri döndürülüyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Bu çağrı, AYNI `_context`\'i paylaşan `UserRepository`/`RefreshTokenRepository`\'nin BEKLEYEN değişikliklerini de (ör. Bölüm 20\'nin `GetQrLoginStatusQueryHandler`\'ında AYNI istek içinde eklenen bir `RefreshToken`) TEK round-trip\'te yazabilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordLearnerDbContext.cs — Üçüncü DbSet Property\'si',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        neden: 'Bölüm 8\'de `DbSet<User>`/`DbSet<RefreshToken>` ile AÇILAN dosyaya, yukarıdaki `QrLoginSessionRepository`\'nin `_context.QrLoginSessions` çağrısının derlenmesi için üçüncü bir `DbSet<T>` property\'si eklendi.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using WordLearner.Domain.Entities;
+ using WordLearner.Domain.Entities.Auth;
+
+ namespace WordLearner.Infrastructure.Data;
+
+ public class WordLearnerDbContext : DbContext
+ {
+     public WordLearnerDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
++    public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(WordLearnerDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();',
+            aciklama: '`Users`/`RefreshTokens` property\'leriyle (Bölüm 8) BİREBİR aynı desen — TEK fark, `QrLoginSession` `BaseEntity`\'den TÜREDİĞİ için (Bölüm 1) bu satır aynı zamanda `ApplySoftDeleteFilter`\'ın (aşağıdaki döngü) OTOMATİK olarak kapsadığı bir entity — `Users`/`RefreshTokens`\'ın AKSİNE (ikisi de BaseEntity\'den türemediği için filtreye HİÇ girmiyordu, Bölüm 8\'in notu).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Infrastructure/DependencyInjection.cs — Üçüncü Repository Kaydı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        neden: 'Bölüm 8\'de `IUserRepository`/`IRefreshTokenRepository` ile AÇILAN kayıt listesine bu bölümün repository\'si eklendi — DI konteyner olmadan `QrLoginSessionRepository` hiçbir Handler\'a ENJEKTE EDİLEMEZ.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Infrastructure.Data;
+ using WordLearner.Infrastructure.Repositories;
+ using WordLearner.Infrastructure.Repositories.Auth;
+
+ namespace WordLearner.Infrastructure;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<WordLearnerDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
++        services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();',
+            aciklama: '`IUserRepository`/`IRefreshTokenRepository` kayıtlarıyla (Bölüm 8) BİREBİR aynı ömür (`AddScoped`) — AYNI HTTP isteği içinde, AYNI `WordLearnerDbContext` örneğini paylaşır (üstteki `QrLoginSessionRepository.cs`\'in son satırındaki "tek round-trip" notunun sebebi budur).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrLoginSession BaseEntity\'den türese de, arama anahtarı Id değil token-hash olduğu için generic IRepository<T> yetmiyor — IUserRepository/IRefreshTokenRepository ile AYNI "dar arayüz" deseni burada üçüncü kez tekrarlandı.',
+          'GetByTokenHashAsync her zaman HAM token değil, hash alır — DB sızıntısına karşı RefreshTokens.TokenHash ile AYNI savunma.',
+          'Update metodu YOK: Scan/Confirm/Deny/GetQrLoginStatus (Bölüm 18-20) GetByTokenHashAsync ile çektiği entity\'yi doğrudan mutasyona uğratır, EF change tracking + tek SaveChangesAsync yeterli.',
+          'WordLearnerDbContext üçüncü DbSet\'ini aldı — QrLoginSession, User/RefreshToken\'ın AKSİNE otomatik soft-delete filtresine TABİ (BaseEntity\'den türediği için).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

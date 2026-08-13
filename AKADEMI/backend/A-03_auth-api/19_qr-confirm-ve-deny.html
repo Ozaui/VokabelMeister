@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QR Login: Confirm ve Deny</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-confirm-ve-deny',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '18_qr-generate-ve-scan.html',
+    sonrakiBolum: '20_qr-durum-sorgusu.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 19',
+        baslik: 'ConfirmQrLoginCommand ve DenyQrLoginCommand',
+        altBaslik: 'Bölüm 18\'in Scanned bıraktığı bir session\'ın İKİ olası sonu — YAPISAL olarak neredeyse BİREBİR aynı iki Handler, tek bir alan farkıyla.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Sahiplik Kontrolü Neden Confirm KADAR Deny\'de de Gerekli?',
+        aciklama: '`ConfirmQrLoginCommandHandler` ve `DenyQrLoginCommandHandler`\'ın İKİSİ de AYNI üç kontrolü yapıyor: session\'ı hash\'iyle bul, süre/durum doğrula (`Status == Scanned` olmalı), ÇAĞIRANIN kimliğinin session\'ı TARAYAN kullanıcıyla AYNI olduğunu doğrula (`QrSessionForbiddenException`, Bölüm 17). Bu ÜÇÜNCÜ kontrol, ilk bakışta yalnızca Confirm için gerekli GİBİ görünebilir ("onaylama" hassas bir işlem) — ama Deny\'ye de AYNEN uygulandı.',
+        neden: 'Bir üçüncü taraf, session\'ın `qrToken`\'ını bir şekilde ELE GEÇİRİP (session\'ı KENDİSİ hiç TARAMADAN) `/deny`\'ye istek ATABİLİRDİ — sahiplik kontrolü OLMASAYDI bu, meşru kullanıcının HENÜZ onaylamadığı bir oturumu SESSİZCE reddedip bir tür hizmet ENGELLEME (DoS) yapmanın yolunu AÇARDI: kullanıcı QR\'ı taradıktan hemen sonra oturumun "reddedilmiş" GÖRÜNMESİNE şaşırırdı, sebebini asla ANLAYAMAZDI.',
+        olmasaydi: 'Yalnızca Confirm\'e sahiplik kontrolü EKLENSEYDİ, Deny hâlâ HERKESE açık bir "bu session\'ı iptal et" düğmesi olarak KALIRDI — `qrToken`\'ı bilen (session\'ın `UserId`\'sini bilmesine bile GEREK KALMADAN) herhangi biri meşru kullanıcının giriş akışını KESİNTİYE uğratabilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmQrLoginCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/ConfirmQrLoginCommand.cs',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Features.QrLogin;
+
+public record ConfirmQrLoginCommand(string QrToken, int UserId) : IRequest<Unit>;
+
+public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginCommand, Unit>
+{
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+
+    public ConfirmQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken cancellationToken)
+    {
+        var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)
+            ?? throw new QrSessionGoneException();
+
+        if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Scanned)
+            throw new QrSessionGoneException();
+
+        // Yalnızca session'ı tarayan (Scanned'de UserId'yi dolduran) kullanıcı onaylayabilir.
+        if (session.UserId != request.UserId)
+            throw new QrSessionForbiddenException();
+
+        session.Status = QrLoginStatus.Confirmed;
+        session.ConfirmedAt = DateTime.UtcNow;
+        await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
+
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`QrSessionGoneException`/`QrSessionForbiddenException`\'ı (Bölüm 17) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IQrLoginSessionRepository`\'yi (Bölüm 16) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IPasswordService`\'i kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`QrLoginStatus` enum\'unu kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.QrLogin;',
+            aciklama: 'Bölüm 18\'in iki Handler\'ıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ConfirmQrLoginCommand(string QrToken, int UserId) : IRequest<Unit>;',
+            aciklama: '`ScanQrLoginCommand`\'daki (Bölüm 18) AYNI iki alan — `QrToken` HAM, `UserId` `[Authorize]` JWT\'sinden. Dönüş tipi `QrLoginScanResponse` DEĞİL `Unit` — 13 Auth Handler\'ının (Bölüm 11-15) "başarı mesajı gerektiren uçlar `Unit` döner" desenindeki AYNI YAKLAŞIM: istemciye özel bir VERİ yok, yalnızca "onaylandı" anlamına gelen bir başarı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginCommand, Unit>',
+            aciklama: 'Bu bölümün İLK Handler\'ı — QR akışının OLUMLU sonucu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: 'Session\'ı bulmak ve durumunu GÜNCELLEMEK için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Gelen HAM `QrToken`\'ı hash\'e çevirip aramak için — Bölüm 18\'in iki Handler\'ıyla AYNI amaç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ConfirmQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık, constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken cancellationToken)',
+            aciklama: '`IRequestHandler<ConfirmQrLoginCommand, Unit>` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)',
+            aciklama: '`ScanQrLoginCommandHandler`\'daki (Bölüm 18) BİREBİR AYNI arama satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new QrSessionGoneException();',
+            aciklama: 'Hash eşleşmiyorsa (session hiç yok) — Bölüm 18 ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Scanned)',
+            aciklama: '`ScanQrLoginCommandHandler`\'daki (Bölüm 18) kontrolle AYNI YAPIDA, ama beklenen durum FARKLI: Scan `QrLoginStatus.Pending` bekliyordu, Confirm `QrLoginStatus.Scanned` bekliyor — bir session Confirm\'e gelmeden ÖNCE mutlaka Scan\'den GEÇMİŞ olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new QrSessionGoneException();',
+            aciklama: 'Süre geçmiş ya da yanlış aşamadaki (ör. henüz `Pending`, hiç taranmamış) bir session için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (session.UserId != request.UserId)',
+            aciklama: 'Üstteki kavram slaytının sahiplik kontrolü — `session.UserId`, `ScanQrLoginCommandHandler`\'ın (Bölüm 18) o session\'ı TARAYAN kullanıcının kimliğiyle doldurduğu ALAN.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new QrSessionForbiddenException();',
+            aciklama: 'Bölüm 17\'nin ikinci istisnası — `QrSessionGoneException`\'dan (410) FARKLI olarak 403: session GEÇERLİ ve doğru aşamada, yalnızca ÇAĞIRAN kişi YANLIŞ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.Status = QrLoginStatus.Confirmed;',
+            aciklama: 'Bölüm 20\'nin `GetQrLoginStatusQueryHandler`\'ının polling sırasında ARADIĞI durum — bu satırdan SONRA web/admin tarafı BİR SONRAKİ `GetQrLoginStatus` isteğinde token\'larını ALABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.ConfirmedAt = DateTime.UtcNow;',
+            aciklama: '`ScannedAt` (Bölüm 18) ile AYNI amaçta bir audit zaman damgası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'İki alanlık mutasyonu (Status/ConfirmedAt) DB\'ye yazan çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: '13 Auth Handler\'ının (Bölüm 11-15) `Unit.Value` desenindeki AYNI yaklaşım.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DenyQrLoginCommand.cs — Confirm\'in Neredeyse Birebir Aynısı',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/DenyQrLoginCommand.cs',
+        nedenBuKlasor: '`ConfirmQrLoginCommand.cs` (bu bölüm) ile AYNI klasör, AYNI ad alanı — YAPISAL olarak İKİSİ de üç kontrol + tek alan mutasyonu.',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Application.Features.QrLogin;
+
+public record DenyQrLoginCommand(string QrToken, int UserId) : IRequest<Unit>;
+
+public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Unit>
+{
+    private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+    private readonly IPasswordService _passwordService;
+
+    public DenyQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+    {
+        _qrLoginSessionRepository = qrLoginSessionRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task<Unit> Handle(DenyQrLoginCommand request, CancellationToken cancellationToken)
+    {
+        var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)
+            ?? throw new QrSessionGoneException();
+
+        if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Scanned)
+            throw new QrSessionGoneException();
+
+        if (session.UserId != request.UserId)
+            throw new QrSessionForbiddenException();
+
+        session.Status = QrLoginStatus.Denied;
+        await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
+
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki (bu bölüm) AYNI using.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki AYNI using — `QrSessionGoneException`/`QrSessionForbiddenException` (Bölüm 17) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki AYNI using.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki AYNI using.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Auth;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki AYNI using.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.QrLogin;',
+            aciklama: '`ConfirmQrLoginCommand.cs`\'teki AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record DenyQrLoginCommand(string QrToken, int UserId) : IRequest<Unit>;',
+            aciklama: '`ConfirmQrLoginCommand`\'la (bu bölüm) BİREBİR aynı iki alan/dönüş tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class DenyQrLoginCommandHandler : IRequestHandler<DenyQrLoginCommand, Unit>',
+            aciklama: 'Bu bölümün ikinci Handler\'ı — QR akışının OLUMSUZ sonucu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IQrLoginSessionRepository _qrLoginSessionRepository;',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DenyQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile BİREBİR aynı constructor imzası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_qrLoginSessionRepository = qrLoginSessionRepository;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Constructor injection ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Unit> Handle(DenyQrLoginCommand request, CancellationToken cancellationToken)',
+            aciklama: '`IRequestHandler<DenyQrLoginCommand, Unit>` implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var session = await _qrLoginSessionRepository.GetByTokenHashAsync(_passwordService.HashToken(request.QrToken), cancellationToken)',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile BİREBİR aynı arama satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new QrSessionGoneException();',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (session.ExpiresAt < DateTime.UtcNow || session.Status != QrLoginStatus.Scanned)',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile BİREBİR AYNI kontrol — Deny de, tıpkı Confirm gibi, yalnızca `Scanned` aşamasındaki bir session için geçerli (henüz TARANMAMIŞ bir session\'ı "reddetmek" anlamsız, zaten hiçbir işlem BAŞLAMADI).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new QrSessionGoneException();',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (session.UserId != request.UserId)',
+            aciklama: '`ConfirmQrLoginCommandHandler`\'daki AYNI sahiplik kontrolü — üstteki kavram slaytının açıkladığı gibi, bu satırın Deny\'de de BULUNMASI bilinçli bir karar, "kopyala-yapıştır unutkanlığı" DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new QrSessionForbiddenException();',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'session.Status = QrLoginStatus.Denied;',
+            aciklama: 'TEK gerçek fark BURADAN başlıyor — `Confirm`\'in `session.Status = QrLoginStatus.Confirmed;` satırının karşılığı, farklı bir enum değeriyle.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Confirm\'in AKSİNE burada `session.ConfirmedAt` gibi bir zaman damgası SATIRI YOK — Bölüm 1\'in `QrLoginSession` entity\'sinde zaten `DeniedAt` diye ayrı bir alan TANIMLANMAMIŞTI (yalnızca `ScannedAt`/`ConfirmedAt` var), reddedilme anı yalnızca `UpdatedAt`\'in (BaseEntity, `WordLearnerDbContext.SaveChangesAsync` override\'ının OTOMATİK güncellediği alan, Bölüm 2) örtük değerinden ÇIKARILABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: '`ConfirmQrLoginCommandHandler` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Confirm ile Deny Arasındaki TEK Fark',
+        terimler: [
+          { terim: 'session.Status = QrLoginStatus.Confirmed / Denied', tanim: 'İki Handler\'ın davranışsal olarak AYRILDIĞI TEK satır — geri kalan HER şey (arama, süre/durum kontrolü, sahiplik kontrolü, SaveChangesAsync, dönüş değeri) BİREBİR aynı.' },
+          { terim: 'session.ConfirmedAt', tanim: 'Yalnızca Confirm\'de set edilir — Deny\'de bu alanın karşılığı bir `DeniedAt` DEĞİL, çünkü Bölüm 1\'in entity\'si böyle bir alan hiç TANIMLAMADI (reddedilme anı `UpdatedAt`\'ten çıkarılabilir).' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Confirm ve Deny, üç AYNI kontrolü (bul, süre/durum, sahiplik) paylaşıyor — tek gerçek fark, session.Status\'a hangi enum değerinin yazıldığı.',
+          'Sahiplik kontrolü (QrSessionForbiddenException) Deny\'ye de BİLİNÇLİ olarak eklendi — yalnızca Confirm\'e eklenseydi, session\'ın qrToken\'ını bilen HERKES meşru kullanıcının oturumunu reddedebilirdi.',
+          'İkisi de Unit döner — 13 Auth Handler\'ının (Bölüm 11-15) "istemciye özel veri yok, yalnızca başarı" deseniyle AYNI.',
+          'Deny\'nin kendi bir DeniedAt zaman damgası YOK — entity tasarımı (Bölüm 1) bunu baştan öngörmedi, gerekirse UpdatedAt yeterli.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

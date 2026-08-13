@@ -20,6 +20,8 @@ public static class ErrorMessages
             ["OTP_EXPIRED"] = "Kodun süresi dolmuş.",
             ["INVALID_REFRESH_TOKEN"] = "Oturum geçersiz, lütfen tekrar giriş yapın.",
             ["INVALID_SOCIAL_TOKEN"] = "Google/Apple ile giriş doğrulanamadı.",
+            ["QR_SESSION_GONE"] = "QR kodun süresi dolmuş veya zaten kullanılmış, lütfen yeniden oluşturun.",
+            ["QR_SESSION_FORBIDDEN"] = "Bu QR kod başka bir kullanıcı tarafından okutulmuş.",
         },
         ["de"] = new()
         {
@@ -33,6 +35,8 @@ public static class ErrorMessages
             ["OTP_EXPIRED"] = "Der Code ist abgelaufen.",
             ["INVALID_REFRESH_TOKEN"] = "Sitzung ungültig, bitte melden Sie sich erneut an.",
             ["INVALID_SOCIAL_TOKEN"] = "Die Anmeldung mit Google/Apple konnte nicht verifiziert werden.",
+            ["QR_SESSION_GONE"] = "Der QR-Code ist abgelaufen oder wurde bereits verwendet, bitte neu erstellen.",
+            ["QR_SESSION_FORBIDDEN"] = "Dieser QR-Code wurde von einem anderen Benutzer gescannt.",
         },
     };
 

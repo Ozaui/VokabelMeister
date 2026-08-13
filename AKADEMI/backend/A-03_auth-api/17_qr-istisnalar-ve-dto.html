@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QR Login İstisnaları ve DTO'ları</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-istisnalar-ve-dto',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '16_qr-repository-katmani.html',
+    sonrakiBolum: '18_qr-generate-ve-scan.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 17',
+        baslik: 'QrSessionGoneException / QrSessionForbiddenException',
+        altBaslik: 'Bölüm 9\'un 7 istisnasından sonra 8. ve 9. AppException alt sınıfı — ve QR akışının 3 yanıt DTO\'su.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'QR_SESSION_GONE Neden Dört Farklı Durumu TEK Koda İndiriyor?',
+        aciklama: '`QrSessionGoneException`, Scan/Confirm/Deny/GetQrLoginStatus\'ta (Bölüm 18-20) DÖRT farklı gerçek nedenden fırlatılır: session hiç bulunamadı, süresi geçmiş, YANLIŞ aşamada (ör. henüz taranmamış bir session\'ı onaylamaya çalışmak) veya zaten tüketilmiş (`Consumed`). Hepsi istemciye AYNI `QR_SESSION_GONE` koduyla, HTTP `410 Gone` ile döner — `InvalidRefreshTokenException`\'ın (Bölüm 9) "az konuşan hata" deseninin QR akışındaki karşılığı.',
+        neden: 'Bir istemci (kötü niyetli ya da değil) rastgele/eski bir QR token deneyip "bulunamadı" ile "süresi doldu" ile "zaten kullanıldı" cevapları arasındaki farkı GÖREBİLSEYDİ, hangi token formatlarının GEÇERLİ olduğunu ya da bir session\'ın ne kadar süre önce OLUŞTURULDUĞUNU (timing) çıkarabilirdi — QR akışı özellikle KISA ömürlü (2 dakika) ve `pairingCode` gibi ek bir tahmin YÜZEYİ taşıdığı için bu bilgi sızıntısı normal login akışından daha DEĞERLİ bir keşif aracı olurdu.',
+        olmasaydi: 'Dört ayrı Code (`QR_SESSION_NOT_FOUND`, `QR_SESSION_EXPIRED`, `QR_SESSION_WRONG_STATE`, `QR_SESSION_CONSUMED`) dönseydi, istemci tarafı "daha doğru" görünürdü ama GetQrLoginStatus\'un ~2 saniyede bir POLLING yapan doğası (Bölüm 20), bir saldırgana bir session\'ın DURUM GEÇİŞLERİNİ (ne zaman Scanned oldu, ne zaman Confirmed oldu) ZAMANLAMA imkânı verirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrSessionGoneException.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/QrSessionGoneException.cs',
+        nedenBuKlasor: '`AppException`/`InvalidRefreshTokenException` (Bölüm 6, 9) ile AYNI klasör — `Common/Exceptions/`, TÜM iş hatalarının toplandığı tek yer.',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+// Bulunamadı/süresi dolmuş/yanlış aşamada/tüketilmiş — hepsi istemciye AYNI genel koddan döner
+// (InvalidRefreshTokenException ile aynı gerekçe: hangisi olduğunu ayırt etmek saldırgana bilgi sızdırır).
+public class QrSessionGoneException : AppException
+{
+    public QrSessionGoneException()
+        : base("QR_SESSION_GONE", HttpStatusCode.Gone, "QR login session not found, expired or already used.")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AppException` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrSessionGoneException : AppException',
+            aciklama: 'Bölüm 18-20\'nin dört Handler\'ının HEPSİNDE, "session kullanılabilir DEĞİL" anlamına gelen her durumda fırlatılacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public QrSessionGoneException()',
+            aciklama: 'Parametresiz constructor — `InvalidRefreshTokenException` (Bölüm 9) ile AYNI desen, dinamik bir veri TAŞIMIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("QR_SESSION_GONE", HttpStatusCode.Gone, "QR login session not found, expired or already used.")',
+            aciklama: '`HttpStatusCode.Gone` (410) — `EntityNotFoundException`\'ın (Bölüm 1) kullandığı 404\'ten BİLEREK farklı bir durum kodu: 404 "burada hiçbir zaman bir şey yoktu" derken, 410 "buradaki kaynak VARDI ama artık kalıcı olarak KULLANILAMAZ" anlamına gelir — bir QR session gerçekten VAR OLMUŞ (generate edilmiş), yalnızca ömrünü TAMAMLAMIŞTIR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrSessionForbiddenException.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Exceptions/QrSessionForbiddenException.cs',
+        kod: `using System.Net;
+
+namespace WordLearner.Application.Common.Exceptions;
+
+// Confirm/Deny çağıran kullanıcı, session'ı tarayan (Scanned aşamasında UserId'yi dolduran)
+// kullanıcı değilse — başkasının taradığı bir QR'ı onaylamaya/reddetmeye çalışma.
+public class QrSessionForbiddenException : AppException
+{
+    public QrSessionForbiddenException()
+        : base("QR_SESSION_FORBIDDEN", HttpStatusCode.Forbidden, "QR login session belongs to a different user.")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Exceptions;',
+            aciklama: '`AppException` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrSessionForbiddenException : AppException',
+            aciklama: '`QrSessionGoneException`\'dan FARKLI bir senaryo: session BULUNDU, doğru aşamada (`Scanned`), ama Confirm/Deny\'yi ÇAĞIRAN kullanıcı, o session\'ı TARAYAN kullanıcıyla AYNI değil (Bölüm 19).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public QrSessionForbiddenException()',
+            aciklama: 'Parametresiz constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("QR_SESSION_FORBIDDEN", HttpStatusCode.Forbidden, "QR login session belongs to a different user.")',
+            aciklama: '`HttpStatusCode.Forbidden` (403) — `QrSessionGoneException`\'ın (410) AKSİNE: istemcinin KİMLİĞİ (JWT) geçerli, session da GEÇERLİ, ama bu ikisi BİRBİRİNE ait DEĞİL. "Kimliğini kanıtlayamadın" (401) değil, "kimliğini kanıtladın ama bu KAYNAK sana AİT değil" anlamı — `AccountInactiveException`\'ın (Bölüm 9) 403 kullanmasıyla AYNI HTTP semantiği.',
+            neden: 'Bu kontrol OLMASAYDI, bir kullanıcı BAŞKA birinin `qrToken`\'ını (ör. paylaşılan bir ekran görüntüsünden, ya da bir ağ trafiği İZLEMESİNDEN) ELE GEÇİRİP, o session\'ı KENDİSİ hiç TARAMADAN doğrudan `/confirm`\'e istek ATABİLİRDİ.',
+            olmasaydi: '`UserId` kontrolü YAPILMASAYDI, `Scanned` aşamasındaki HERHANGİ bir geçerli JWT\'ye sahip kullanıcı, session\'ı KENDİSİ taramamış olsa bile onu onaylayıp BAŞKASININ hesabına giriş token\'ı ÜRETTİREBİLİRDİ (Bölüm 20\'nin `GetQrLoginStatusQuery`\'si `session.UserId`\'yi, yani TARAYAN kullanıcıyı, temel alarak token üretir).'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ErrorMessages.cs — 2 Yeni Code için tr/de Metinleri',
+        dosyaYolu: 'backend/WordLearner.Application/Common/ErrorMessages.cs',
+        neden: 'Bölüm 9\'da 7 Code ile GENİŞLETİLEN sözlüğe, bu bölümün 2 yeni Code\'u için tr/de metinleri eklendi — desen AYNI: exception sınıflarına DOKUNMADAN yalnızca sözlüğe satır eklemek.',
+        diff: ` namespace WordLearner.Application.Common;
+
+ // Yeni dil eklemek yalnızca bu sözlüğe yeni bir üst-seviye anahtar (ör. "en") eklemekle olur —
+ // var olan Code'lara veya exception sınıflarına dokunulmaz (CLAUDE.md §1).
+ public static class ErrorMessages
+ {
+     private const string DefaultLanguage = "tr";
+
+     private static readonly Dictionary<string, Dictionary<string, string>> Messages = new()
+     {
+         [DefaultLanguage] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Kayıt bulunamadı.",
+             ["INTERNAL_SERVER_ERROR"] = "Beklenmeyen bir hata oluştu.",
+             ["ACCOUNT_ANONYMIZED"] = "Bu hesap kalıcı olarak silinmiş.",
+             ["EMAIL_ALREADY_REGISTERED"] = "Bu e-posta adresi zaten kayıtlı.",
+             ["INVALID_CREDENTIALS"] = "E-posta veya şifre hatalı.",
+             ["ACCOUNT_INACTIVE"] = "Hesabınız yönetici tarafından dondurulmuş.",
+             ["INVALID_OTP"] = "Kod geçersiz.",
+             ["OTP_EXPIRED"] = "Kodun süresi dolmuş.",
+             ["INVALID_REFRESH_TOKEN"] = "Oturum geçersiz, lütfen tekrar giriş yapın.",
+             ["INVALID_SOCIAL_TOKEN"] = "Google/Apple ile giriş doğrulanamadı.",
++            ["QR_SESSION_GONE"] = "QR kodun süresi dolmuş veya zaten kullanılmış, lütfen yeniden oluşturun.",
++            ["QR_SESSION_FORBIDDEN"] = "Bu QR kod başka bir kullanıcı tarafından okutulmuş.",
+         },
+         ["de"] = new()
+         {
+             ["ENTITY_NOT_FOUND"] = "Eintrag nicht gefunden.",
+             ["INTERNAL_SERVER_ERROR"] = "Ein unerwarteter Fehler ist aufgetreten.",
+             ["ACCOUNT_ANONYMIZED"] = "Dieses Konto wurde dauerhaft anonymisiert.",
+             ["EMAIL_ALREADY_REGISTERED"] = "Diese E-Mail-Adresse ist bereits registriert.",
+             ["INVALID_CREDENTIALS"] = "E-Mail oder Passwort ist falsch.",
+             ["ACCOUNT_INACTIVE"] = "Ihr Konto wurde von einem Administrator deaktiviert.",
+             ["INVALID_OTP"] = "Der Code ist ungültig.",
+             ["OTP_EXPIRED"] = "Der Code ist abgelaufen.",
+             ["INVALID_REFRESH_TOKEN"] = "Sitzung ungültig, bitte melden Sie sich erneut an.",
+             ["INVALID_SOCIAL_TOKEN"] = "Die Anmeldung mit Google/Apple konnte nicht verifiziert werden.",
++            ["QR_SESSION_GONE"] = "Der QR-Code ist abgelaufen oder wurde bereits verwendet, bitte neu erstellen.",
++            ["QR_SESSION_FORBIDDEN"] = "Dieser QR-Code wurde von einem anderen Benutzer gescannt.",
+         },
+     };
+
+     public static string Resolve(string code, string? language)
+     {
+         var resolvedLanguage = language is not null && Messages.ContainsKey(language)
+             ? language
+             : DefaultLanguage;
+
+         return Messages[resolvedLanguage].TryGetValue(code, out var message) ? message : code;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: '["QR_SESSION_GONE"] = "QR kodun süresi dolmuş veya zaten kullanılmış, lütfen yeniden oluşturun.",',
+            aciklama: '`QrSessionGoneException.Code`\'la BİREBİR aynı Code — metin, dört olası gerçek nedenden en SIK karşılaşılan ikisini ("süresi dolmuş", "zaten kullanılmış") örnek verip kullanıcıya somut bir SONRAKİ ADIM ("yeniden oluşturun") gösteriyor, ama HANGİSİNİN olduğunu kesin olarak AYIRT ETMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["QR_SESSION_FORBIDDEN"] = "Bu QR kod başka bir kullanıcı tarafından okutulmuş.",',
+            aciklama: '`QrSessionForbiddenException.Code`\'la eşleşir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["QR_SESSION_GONE"] = "Der QR-Code ist abgelaufen oder wurde bereits verwendet, bitte neu erstellen.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["QR_SESSION_FORBIDDEN"] = "Dieser QR-Code wurde von einem anderen Benutzer gescannt.",',
+            aciklama: 'tr satırıyla AYNI Code, Almanca karşılığı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden 3 Ayrı Yanıt DTO\'su — LoginResponse (Bölüm 12) Neden Yeniden Kullanılmıyor?',
+        aciklama: 'QR akışının 5 Handler\'ından yalnızca SONUNCUSU (GetQrLoginStatus, Bölüm 20) gerçek bir token üretiyor — o da yalnızca `Status` alanı `"Confirmed"` İKEN. Generate\'in yanıtı (`qrToken`/`pairingCode`) ile Scan\'in yanıtı (`requesterDeviceInfo`/`requesterIp`/`pairingCode`) `LoginResponse`\'un (Bölüm 12) hiçbir alanına BENZEMİYOR; GetQrLoginStatus\'un yanıtı ise `LoginResponse`\'un TÜM alanlarını taşıyor AMA hepsi `Confirmed` DIŞINDA `null` olabilmeli (`Pending`/`Scanned`/`Denied`/`Expired` durumlarında yalnızca `status` doludur) — bu yüzden `LoginResponse`\'u OLDUĞU gibi kullanmak yerine kendi nullable alanlarına sahip AYRI bir DTO (`QrLoginStatusResponse`) yazıldı.',
+        neden: 'Her DTO, kendi endpoint\'inin GERÇEKTE döndürdüğü JSON şeklini birebir YANSITMALI — bir DTO\'yu "belki bir gün ihtiyaç olur" diye BAŞKA bir endpoint\'in alanlarıyla ŞİŞİRMEK, o endpoint\'i çağıran istemciye hiç dolmayacak/anlamsız alanlar GÖSTERİR.',
+        olmasaydi: '`LoginResponse` doğrudan GetQrLoginStatus\'ta kullanılsaydı, `AccessToken`/`RefreshToken`/`User` gibi alanlar `Pending`/`Scanned` durumlarında hep `null` DÖNERDİ ama TİP SİSTEMİ bunu `string`/`AuthUserDto` (non-nullable) olarak İŞARETLERDİ — ya sahte bir boş `AuthUserDto` ÜRETMEK ya da tip güvenliğini BOZMAK gerekirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginGenerateResponse.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/QrLoginGenerateResponse.cs',
+        nedenBuKlasor: '`AuthUserDto`/`LoginResponse`/`RegisterResponse` (Bölüm 11-12) ile AYNI klasör — `DTOs/Auth/`.',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// qrToken ham değeri yalnızca BURADA döner (DB'de yalnızca hash'i var) — QR/deep-link içine gömülür.
+public record QrLoginGenerateResponse(string QrToken, string PairingCode, int ExpiresIn);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`AuthUserDto`/`LoginResponse` (Bölüm 11-12) ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record QrLoginGenerateResponse(string QrToken, string PairingCode, int ExpiresIn);',
+            aciklama: '`RegisterResponse`/`LoginResponse` (Bölüm 11-12) ile AYNI stil — pozisyonel `record`. `QrToken` burada dönen tek yer: Bölüm 18\'in `GenerateQrLoginCommandHandler`\'ı ham token\'ı ÜRETİR ÜRETMEZ hash\'ler, DB\'ye yalnızca hash yazar (Bölüm 16\'nın notu) — bu satırdan SONRA ham değer hiçbir yerde SAKLANMAZ.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginScanResponse.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/QrLoginScanResponse.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// Mobilde gösterilir — kullanıcı requesterDeviceInfo/requesterIp'i kendi web/admin oturumuyla
+// gözle karşılaştırıp onaylar (SECURITY.md §1.3, relay/phishing önlemi).
+public record QrLoginScanResponse(string? RequesterDeviceInfo, string? RequesterIp, string PairingCode);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record QrLoginScanResponse(string? RequesterDeviceInfo, string? RequesterIp, string PairingCode);',
+            aciklama: 'Üç alanın hepsi Bölüm 18\'in `GenerateQrLoginCommandHandler`\'ının o session için DAHA ÖNCE kaydettiği değerler — Scan (Bölüm 19) BUNLARI üretmiyor, yalnızca OKUYUP geri döndürüyor. `RequesterDeviceInfo`/`RequesterIp` nullable (istemci bu bilgiyi HER ZAMAN göndermeyebilir), `PairingCode` DEĞİL — o her session\'da ZORUNLU üretilir.',
+            neden: 'Mobil kullanıcı bu üç alanı görüp "evet, bu benim az önce web\'de açtığım oturum" diye GÖZLE doğrulayabilsin diye — relay/phishing saldırısında saldırganın KENDİ cihazından açtığı bir QR\'ı kurbana okutmaya çalışması, kurbanın ekranında YABANCI bir IP/cihaz/kod GÖRÜP fark etmesiyle ENGELLENİR.',
+            olmasaydi: 'Scan yanıtı yalnızca `{ "success": true }` gibi bir onay DÖNSEYDİ, mobil kullanıcı NEYİ onayladığını GÖRMEDEN Confirm\'e basardı — bir saldırganın KENDİ QR\'ını kurbana okutup HEMEN onaylatması çok daha KOLAY olurdu.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginStatusResponse.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/QrLoginStatusResponse.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// Web/Admin'in ~2sn'de bir sorguladığı polling yanıtı. Status Confirmed dışında yalnızca "status"
+// doludur; Confirmed İLK okunduğunda (tek seferlik) token alanları da doldurulur — SECURITY.md §1.3 ADIM 4.
+public record QrLoginStatusResponse(
+    string Status,
+    string? AccessToken = null,
+    string? RefreshToken = null,
+    int? ExpiresIn = null,
+    AuthUserDto? User = null,
+    bool? AccountWasRecovered = null);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record QrLoginStatusResponse(',
+            aciklama: 'Parametre listesi tek satıra sığmadığı için (bu bölümde İLK KEZ bir DTO için) alt satırlara bölündü — `ResetPasswordCommandHandler`\'ın (Bölüm 15) constructor\'ında görülen AYNI biçimlendirme tercihi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string Status,',
+            aciklama: 'TEK zorunlu (varsayılansız) alan — `Pending`/`Scanned`/`Confirmed`/`Denied`/`Expired` değerlerinden biri (Bölüm 1\'in `QrLoginStatus` enum\'u, burada `string`\'e çevrilerek taşınıyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? AccessToken = null,',
+            aciklama: 'Yalnızca `Status == "Confirmed"` iken DOLU (Bölüm 20) — `LoginResponse.AccessToken`\'la (Bölüm 12) AYNI değer, farklı bir DTO\'da taşınıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? RefreshToken = null,',
+            aciklama: '`AccessToken` ile AYNI koşul.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? ExpiresIn = null,',
+            aciklama: '`AccessToken` ile AYNI koşul — dolu olduğunda `LoginResponse.ExpiresIn` (Bölüm 12) ile AYNI sabit değeri (900) taşır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AuthUserDto? User = null,',
+            aciklama: '`AuthUserDto` (Bölüm 11) — diğer TÜM login-tamamlama DTO\'larıyla (`LoginResponse`, `RegisterResponse`) AYNI kullanıcı özet tipi, burada nullable.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'bool? AccountWasRecovered = null);',
+            aciklama: '`LoginResponse.AccountWasRecovered`\'la (Bölüm 12) AYNI amaç — grace period içindeki bir hesap QR ile giriş yaparken de kurtarılabilir (Bölüm 7\'nin `ILoginCompletionService`\'i her giriş yolunda AYNI mantığı çalıştırıyor), bu yüzden burada da taşınıyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'QrSessionGoneException (410) dört farklı gerçek nedeni TEK koda indiriyor — InvalidRefreshTokenException\'ın (Bölüm 9) "az konuşan hata" deseninin QR akışındaki karşılığı, zamanlama/keşif saldırılarına karşı.',
+          'QrSessionForbiddenException (403) BAMBAŞKA bir senaryo: session geçerli ama çağıran kullanıcı onu TARAYAN kullanıcıyla aynı değil — kimlik doğru, yetki yanlış.',
+          'ErrorMessages sözlüğüne 2 yeni Code için tr/de satırı eklendi — exception sınıflarının kendisine dokunulmadı, Bölüm 9\'daki AYNI "Code önce, metin sonra sözlükten" deseni tekrarlandı.',
+          '3 yeni DTO, LoginResponse\'u (Bölüm 12) yeniden kullanmak yerine kendi şekillerini taşıyor — QrLoginStatusResponse özellikle, Confirmed DIŞINDAKİ durumlarda token alanlarının nullable kalabilmesi için ayrı yazıldı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
