@@ -156,10 +156,16 @@
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 16-20. bölümler (repository
       katmanı, 2 yeni istisna + 3 DTO, 5 Handler); `postman` slaytları henüz YOK — `QrLoginController`
       yazılana kadar bilerek eklenmiyor (STANDART.md kuralı, endpoint bir controller'a bağlanınca eklenir)
-- [ ] Başarı mesajları (`MessageResponse` döndüren Command'lar) — `ErrorMessages.cs` deseniyle
+- [x] Başarı mesajları (`MessageResponse` döndüren Command'lar) — `ErrorMessages.cs` deseniyle
       simetrik bir `SuccessMessages.cs` (Code + `Accept-Language`'a göre tr/de çözümü), hardcode
       Türkçe metin **yazılmaz**
-- [ ] ➜ **AKADEMI/backend'ye işle**
+> **Not:** Code seçimi Handler'da DEĞİL, Controller'da yapılacak (Handler `Unit` dönmeye devam
+> eder) — 10 Code tanımlandı: 8 Auth (`LOGIN_OTP_SENT`, `VERIFICATION_RESENT`, `EMAIL_VERIFIED`,
+> `LOGGED_OUT`, `PASSWORD_RESET_OTP_SENT`, `PASSWORD_RESET`, `ACCOUNT_DELETION_OTP_SENT`,
+> `ACCOUNT_DELETED`) + 2 QR (`QR_LOGIN_CONFIRMED`, `QR_LOGIN_DENIED`). `MessageResponse`
+> (`Application/DTOs/MessageResponse.cs`) `ApiErrorResponse`'un başarı karşılığı — flat `DTOs/`
+> klasöründe, Auth'a özel değil.
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/21_basari-mesajlari.html`
 - [ ] `AuthController` (13 endpoint) + `QrLoginController` (4 endpoint) + FluentValidation
       (ThemePreference/LanguagePreference dahil) + rate limiting (100/dk genel, 10/dk anonim, QR
       generate IP başına partitioned)
