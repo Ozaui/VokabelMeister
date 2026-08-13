@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — 13 Auth Handler Testi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'auth-handler-testleri',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '39_birim-testi-nasil-yazilir.html',
+    sonrakiBolum: '41_qr-handler-testleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 40',
+        baslik: '13 Auth Command Handler Testi',
+        altBaslik: 'Register\'dan ConfirmAccountDeletion\'a — her Handler kendi kod slaytında, ok tuşlarıyla/ilerleme çubuğuyla art arda geçilir.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RegisterCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class RegisterCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private RegisterCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_EmailAlreadyRegistered_ThrowsEmailAlreadyRegisteredException()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Email = "ada@test.de" });
+        var handler = CreateHandler();
+        var command = new RegisterCommand("ada@test.de", "Sifre123!", "Ada", "Lovelace", "tr");
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EmailAlreadyRegisteredException>();
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_NewEmail_CreatesUserAndSendsVerificationEmail()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        _passwordService.Setup(p => p.Hash("Sifre123!")).Returns("hashed-sifre");
+        _otpService.Setup(o => o.Generate(It.IsAny<User>(), OtpPurpose.EmailVerification)).Returns("123456");
+        var handler = CreateHandler();
+        var command = new RegisterCommand("ada@test.de", "Sifre123!", "Ada", "Lovelace", "tr");
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT — DB'ye eklenen User doğru alanlarla kuruldu, OTP e-postayla gönderildi
+        _userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>
+            u.Email == "ada@test.de" && u.PasswordHash == "hashed-sifre" && u.FirstName == "Ada" && u.LastName == "Lovelace"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendEmailVerificationAsync("ada@test.de", "Ada", "123456", "tr", It.IsAny<CancellationToken>()), Times.Once);
+        result.Email.Should().Be("ada@test.de");
+        result.FirstName.Should().Be("Ada");
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'Mock<T> ve It./Times. yardımcıları buradan gelir.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: '`.Should()` uzantı metotları — `Should().Be(...)`, `Should().ThrowAsync<T>()`.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`EmailAlreadyRegisteredException` (Bölüm 9) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `RegisterCommand`/`RegisterCommandHandler` (Bölüm 11) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` (Bölüm 8) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IPasswordService`/`IOtpService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` entity\'si (Bölüm 1) — mock dönüş değeri kurarken gerçek nesne örneği gerekir.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.EmailVerification` (Bölüm 1) için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'Test projesindeki klasör yapısı, `Application/Features/Auth`\'u BİREBİR yansıtıyor.', neden: null, olmasaydi: null },
+          { satir: 'public class RegisterCommandHandlerTests', aciklama: 'Dosya adı deseni: `{TestEdilenSınıf}Tests` — `RegisterCommandHandler` test ediliyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'private readonly Mock<IUserRepository> _userRepository = new();',
+            aciklama: '`RegisterCommandHandler`\'ın constructor\'ına giren `IUserRepository` (Bölüm 8) için sahte alan — aşağıdaki 3 satırda AYNI desen üç farklı arayüz için tekrarlanıyor.',
+            neden: 'Bölüm 39\'da anlatılan mock kuralı: Handler\'ın bağımlılıklarının HİÇBİRİ gerçek implementasyon olarak çalıştırılmaz.',
+            olmasaydi: 'Gerçek `UserRepository` kullanılsaydı, testin çalışması için GERÇEK bir veritabanı bağlantısı gerekirdi — bu artık bir birim testi değil, bir entegrasyon testi olurdu.'
+          },
+          {
+            satir: 'private readonly Mock<IPasswordService> _passwordService = new();',
+            aciklama: 'Bir üstteki satırla AYNI desen, `IPasswordService` (Bölüm 3) için.',
+            neden: null,
+            olmasaydi: 'Gerçek `PasswordService` kullanılsaydı test her çalıştığında GERÇEK bcrypt hash\'i üretirdi — hem yavaş (bcrypt bilerek yavaş, work factor 12) hem de bu testin amacı bcrypt\'i değil Handler\'ın akışını doğrulamak.'
+          },
+          {
+            satir: 'private readonly Mock<IOtpService> _otpService = new();',
+            aciklama: 'AYNI desen, `IOtpService` (Bölüm 5) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<IEmailService> _emailService = new();',
+            aciklama: 'AYNI desen, `IEmailService` (Bölüm 10) için — dört mock alanı, `RegisterCommandHandler`\'ın constructor imzasındaki dört parametreyle BİREBİR eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private RegisterCommandHandler CreateHandler() =>',
+            aciklama: 'Her test kendi `handler`\'ını bu factory metotla kurar — mock\'lar sınıf alanı olduğu için (xUnit her `[Fact]` için YENİ bir sınıf örneği oluşturur) testler arasında state SIZMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object);', aciklama: '`Mock<T>.Object` — Handler\'a GERÇEK arayüz referansı bu şekilde geçirilir, `Mock<T>`\'in kendisi değil.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 2 kez geçiyor — xUnit\'e "bu metot parametresiz, tek senaryolu bir test" der (parametreli senaryo ailesi gerekiyorsa `[Theory]`/`[InlineData]` kullanılır, bkz. Bölüm 47).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_EmailAlreadyRegistered_ThrowsEmailAlreadyRegisteredException()', aciklama: 'Bölüm 39\'daki adlandırma deseni: `Handle` (test edilen metot) + `EmailAlreadyRegistered` (senaryo) + `ThrowsEmailAlreadyRegisteredException` (beklenen sonuç).', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>()))',
+            aciklama: '`It.IsAny<CancellationToken>()` — bu parametrenin DEĞERİ testin konusu değil, hangi `CancellationToken` geçirilirse geçirilsin Setup eşleşsin diye joker kullanılır.',
+            neden: null,
+            olmasaydi: 'Joker yerine `default` yazılsaydı ve Handler gerçek çağrıda FARKLI bir token geçirseydi (ör. middleware\'den gelen bir token), Setup HİÇ eşleşmez, mock `null` yerine varsayılan (bu durumda yine `null`) dönerdi ama daha karmaşık dönüş tiplerinde testler SESSİZCE yanlış pozitif verir.'
+          },
+          { satir: '.ReturnsAsync(new User { Email = "ada@test.de" });', aciklama: 'Bu satır bu senaryonun KALBİ: e-posta zaten kayıtlı — repository `null` DEĞİL, dolu bir `User` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 2 kez geçiyor — her testte AYNI factory çağrısı.', neden: null, olmasaydi: null },
+          { satir: 'var command = new RegisterCommand("ada@test.de", "Sifre123!", "Ada", "Lovelace", "tr");', aciklama: 'Bu satır 2 kez geçiyor (aynı değerlerle) — Command\'ın kendisi `record`, mock\'lardan bağımsız gerçek bir nesne.', neden: null, olmasaydi: null },
+          {
+            satir: 'var act = () => handler.Handle(command, default);',
+            aciklama: 'ACT bölümünde `Handle` DOĞRUDAN çağrılıp `await` EDİLMEZ — bir lambda\'ya SARILIR. Bu, FluentAssertions\'ın `ThrowAsync` deseni: exception fırlatan bir çağrının kendisi test edilecekse, çağrı bir delege olarak GECİKTİRİLİR.',
+            neden: '`await handler.Handle(...)` doğrudan yazılsaydı, fırlatılan exception ASSERT bloğuna ULAŞAMADAN test metodunun kendisini PATLATIRDI — xUnit bunu "beklenmeyen exception" olarak görür, "beklenen doğru exception" olarak DEĞİL.',
+            olmasaydi: 'Lambda\'sız yazılsaydı `Handle_EmailAlreadyRegistered_ThrowsEmailAlreadyRegisteredException` testi kırmızı (fail) çıkardı — ama YANLIŞ sebeple: "beklenmeyen exception" hatasıyla, exception\'ın DOĞRU tipte olup olmadığı hiç kontrol edilmeden.'
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<EmailAlreadyRegisteredException>();',
+            aciklama: 'Bir önceki satırdaki lambda ŞİMDİ çalıştırılır ve fırlatılan exception\'ın TAM OLARAK `EmailAlreadyRegisteredException` (Bölüm 9) tipinde olduğu doğrulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Negatif doğrulama: exception fırlatıldıktan SONRA `AddAsync`\'in HİÇ çağrılmadığını kanıtlar — Handler\'ın erken-çıkış (`throw`) mantığının GERÇEKTEN yeni bir kullanıcı OLUŞTURMADIĞINI garanti eder.',
+            neden: 'Yalnızca exception tipini doğrulamak, Handler\'ın exception\'dan ÖNCE yanlışlıkla bir yan etki (DB\'ye yazma) yapmadığını KANITLAMAZ.',
+            olmasaydi: '`Times.Never` doğrulaması olmasaydı, biri Handler\'a "önce ekle, sonra kontrol et" gibi YANLIŞ bir sıralama yazsa bile bu test YEŞİL kalırdı — ikinci bir kullanıcı sessizce oluşturulmuş olurdu.'
+          },
+          { satir: 'public async Task Handle_NewEmail_CreatesUserAndSendsVerificationEmail()', aciklama: 'İkinci senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'Bu kez repository `null` döndürüyor — e-posta KAYITLI DEĞİL, akış devam edebilir.', neden: null, olmasaydi: null },
+          { satir: '_passwordService.Setup(p => p.Hash("Sifre123!")).Returns("hashed-sifre");', aciklama: 'Senkron bir metot olduğu için `Returns` (ReturnsAsync DEĞİL) — `IPasswordService.Hash` `Task` DÖNMEZ.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Generate(It.IsAny<User>(), OtpPurpose.EmailVerification)).Returns("123456");', aciklama: 'İlk parametrede `It.IsAny<User>()` — Handler\'ın oluşturacağı `User` nesnesi test kodunun ELİNDE OLMADIĞI (henüz yaratılmadığı) için referans eşitliğiyle eşleştirilemez, yalnızca `OtpPurpose` sabit tutulur.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'Bu kez exception BEKLENMİYOR — `Handle` doğrudan `await` edilip dönüş değeri (`RegisterResponse`) `result`\'a alınır.', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>',
+            aciklama: '`It.IsAny<User>()` DEĞİL, `It.Is<User>(u => ...)` — bir sonraki satırdaki koşulu SAĞLAYAN bir `User` ile çağrılıp çağrılmadığı doğrulanıyor.',
+            neden: 'Yalnızca `AddAsync`\'in çağrıldığını doğrulamak yeterli değil — Handler\'ın `User` nesnesini DOĞRU alanlarla (hash\'lenmiş şifre, doğru isim) kurduğunu da kanıtlamak gerekir.',
+            olmasaydi: '`It.IsAny<User>()` kullanılsaydı, Handler yanlışlıkla `FirstName`/`LastName`\'i TERSİNE atasa bile (bir "kopyala-yapıştır" hatası) bu test YEŞİL kalırdı.'
+          },
+          { satir: 'u.Email == "ada@test.de" && u.PasswordHash == "hashed-sifre" && u.FirstName == "Ada" && u.LastName == "Lovelace"),', aciklama: 'Dört alan birden kontrol ediliyor — `PasswordHash == "hashed-sifre"`, bir üstteki `_passwordService.Setup`\'ın SAHTE dönüş değeriyle eşleşiyor (gerçek bcrypt hash\'i DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`Times.Once` — pozitif doğrulama, `AddAsync`\'in TAM OLARAK bir kez çağrıldığını garanti eder (iki kez çağrılsa da test hata verir).', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'DB\'ye YAZMANIN gerçekten tetiklendiğini doğrular — `AddAsync` yalnızca EF change tracker\'a EKLER, gerçek INSERT `SaveChangesAsync`\'te olur.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendEmailVerificationAsync("ada@test.de", "Ada", "123456", "tr", It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`"123456"` — bir üstteki `_otpService.Setup`\'ın döndürdüğü SAHTE kodun, e-posta servisine DOĞRU parametre olarak GEÇTİĞİNİ doğrular.', neden: null, olmasaydi: null },
+          { satir: 'result.Email.Should().Be("ada@test.de");', aciklama: 'Dönüş DTO\'sunun (`RegisterResponse`) alanları da ayrıca doğrulanıyor, yalnızca mock çağrıları DEĞİL — bir alttaki satırda `FirstName` de aynı şekilde kontrol ediliyor.', neden: null, olmasaydi: null },
+          { satir: 'result.FirstName.Should().Be("Ada");', aciklama: '`RegisterResponse`\'ın ikinci alanı — `Handle` metodunun `new RegisterResponse(user.Id, user.Email, user.FirstName, ...)` çağrısında Command\'daki `FirstName`\'i DOĞRU taşıdığını kanıtlar.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyEmailCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/VerifyEmailCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class VerifyEmailCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+
+    private VerifyEmailCommandHandler CreateHandler() => new(_userRepository.Object, _otpService.Object);
+
+    [Fact]
+    public async Task Handle_EmailNotFound_ThrowsInvalidOtpException()
+    {
+        // ARRANGE — hangi e-postanın kayıtlı olduğunu sızdırmamak için VerifyEmail ile aynı hata
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyEmailCommand("yok@test.de", "123456"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_OtpExpired_ThrowsOtpExpiredException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.Expired);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<OtpExpiredException>();
+    }
+
+    [Fact]
+    public async Task Handle_InvalidCode_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.InvalidCode);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "000000"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidCode_MarksEmailVerifiedAndSaves()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", IsEmailVerified = false };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.Success);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);
+
+        // ASSERT
+        user.IsEmailVerified.Should().BeTrue();
+        user.EmailVerifiedAt.Should().NotBeNull();
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'Bölüm 40\'ın ilk slaytındaki AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidOtpException`/`OtpExpiredException` (Bölüm 9) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `VerifyEmailCommand`/`VerifyEmailCommandHandler` (Bölüm 11) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` entity\'si için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.EmailVerification` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'Bölüm 40\'ın ilk slaytındaki AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class VerifyEmailCommandHandlerTests', aciklama: '`VerifyEmailCommandHandler` test ediliyor — bu Handler yalnızca 2 bağımlılığa sahip (`RegisterCommandHandler`\'ın 4\'üne kıyasla), bu yüzden yalnızca 2 mock alanı var.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen, `IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen, `IOtpService` için.', neden: null, olmasaydi: null },
+          { satir: 'private VerifyEmailCommandHandler CreateHandler() => new(_userRepository.Object, _otpService.Object);', aciklama: 'Tek satıra sığdı (yalnızca 2 parametre) — Register\'ın (Bölüm 40, ilk slayt) 2 satırlık factory\'sinden farklı görünse de AYNI amaç.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 4 kez geçiyor — dosyada 4 senaryo var, hepsi parametresiz.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_EmailNotFound_ThrowsInvalidOtpException()', aciklama: 'İlk senaryo: `GetByEmailAsync` `null` döndürüyor.', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);',
+            aciklama: 'Bu kez e-posta parametresi de `It.IsAny<string>()` — Handler HANGİ e-postayla çağrılırsa çağrılsın `null` dönsün diye (Register\'daki gibi sabit bir e-posta değeri BEKLENMİYOR).',
+            neden: 'Handler kaynak kodu (`VerifyEmailCommand.cs`) hem bulunamayan hem YANLIŞ kod girilen durumda AYNI `InvalidOtpException`\'ı fırlatıyor — e-posta enumerasyonunu önlemek için (bkz. Bölüm 9\'un `InvalidOtpException` notu). Test de bu tasarımı yansıtıyor.',
+            olmasaydi: null
+          },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 4 kez geçiyor — Bölüm 40\'ın ilk slaytındaki AYNI factory çağrısı.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyEmailCommand("yok@test.de", "123456"), default);', aciklama: 'Bölüm 40\'taki AYNI `ThrowAsync` deseni — çağrı bir lambda\'ya sarılıyor.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidOtpException>();', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`) — bulunamayan e-posta İLE geçersiz kod AYNI exception\'ı fırlatıyor, kasıtlı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_OtpExpired_ThrowsOtpExpiredException()', aciklama: 'İkinci senaryo: kullanıcı bulunuyor ama OTP süresi dolmuş.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de" };', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`) — `_otpService.Verify`\'ın Setup\'ında REFERANS eşitliğiyle eşleşecek somut bir `User` nesnesi gerekiyor (`It.IsAny<User>()` DEĞİL, çünkü `Verify` çağrısının kendisi de AYNI referansla doğrulanacak).', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 3 kez geçiyor (bu testin ve alttaki 2 testin AYNI kurulumu) — bu kez repository somut `user` nesnesini döndürüyor, `null` DEĞİL.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.Expired);', aciklama: '`IOtpService.Verify` (Bölüm 5) `OtpVerificationResult` enum\'ından `Expired` döndürüyor — Handler bu değere göre `OtpExpiredException` fırlatacak.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);', aciklama: 'Bir üstteki testten FARKLI: e-posta artık "ada@test.de" (kayıtlı kullanıcı).', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<OtpExpiredException>();', aciklama: '`OtpVerificationResult.Expired` → `OtpExpiredException` eşlemesi doğrulanıyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidCode_ThrowsInvalidOtpException()', aciklama: 'Üçüncü senaryo: kullanıcı bulunuyor ama girilen kod yanlış.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.InvalidCode);', aciklama: 'Bu kez `Verify` `InvalidCode` döndürüyor — kod parametresi de "000000" (bilerek yanlış bir değer).', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "000000"), default);', aciklama: 'Bir üstteki `_otpService.Setup`\'la AYNI "000000" kodu geçiyor — Setup ile Act\'in parametreleri EŞLEŞMEZSE Moq varsayılan (`default`) döner, test YANLIŞ senaryoyu doğrulamış olur.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidCode_MarksEmailVerifiedAndSaves()', aciklama: 'Dördüncü senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", IsEmailVerified = false };', aciklama: 'Bu kez `IsEmailVerified = false` AÇIKÇA kuruluyor — Handler\'ın bu alanı `true`\'ya çevirdiğini kanıtlayabilmek için başlangıç durumunun `false` olduğu NET olmalı.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.Success);', aciklama: '`OtpVerificationResult.Success` — bu kez Handler exception FIRLATMAYACAK, akış devam edecek.', neden: null, olmasaydi: null },
+          {
+            satir: 'await handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);',
+            aciklama: 'Bu testte `var act = () => ...` YOK — `Handle` DOĞRUDAN `await` ediliyor, çünkü exception BEKLENMİYOR (Bölüm 40\'ın ikinci senaryosuyla AYNI desen).',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'user.IsEmailVerified.Should().BeTrue();', aciklama: 'Handler\'ın `user` nesnesini MUTASYONA uğrattığını doğrudan doğrular — `user` değişkeni test kodunda TUTULDUĞU için (mock\'un içine gizlenmedi), Handler\'ın YAN ETKİSİ doğrudan okunabilir.', neden: null, olmasaydi: null },
+          { satir: 'user.EmailVerifiedAt.Should().NotBeNull();', aciklama: 'İkinci alan da ayrıca doğrulanıyor.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Mutasyonun GERÇEKTEN DB\'ye yazıldığını (ya da en azından yazma çağrısının tetiklendiğini) doğrular.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ResendVerificationCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/ResendVerificationCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class ResendVerificationCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private ResendVerificationCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _otpService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ReturnsUnitWithoutSendingEmail()
+    {
+        // ARRANGE — enumeration önleme: kayıtsız e-postada da sessizce 200
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ResendVerificationCommand("yok@test.de", "tr"), default);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendEmailVerificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_AlreadyVerified_ReturnsUnitWithoutSendingEmail()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", IsEmailVerified = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ResendVerificationCommand("ada@test.de", "tr"), default);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendEmailVerificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_UnverifiedUser_GeneratesOtpAndSendsEmail()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", FirstName = "Ada", IsEmailVerified = false };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Generate(user, OtpPurpose.EmailVerification)).Returns("654321");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ResendVerificationCommand("ada@test.de", "de"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendEmailVerificationAsync("ada@test.de", "Ada", "654321", "de", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'Bölüm 40\'ın ilk slaytındaki AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `ResendVerificationCommand`/Handler (Bölüm 11) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` entity\'si için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.EmailVerification` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class ResendVerificationCommandHandlerTests', aciklama: '`ResendVerificationCommandHandler`\'ı test eder — bu Command\'ın hiç `Exception` fırlatmadığına (yalnızca `Unit` döndürdüğüne) dikkat: 3 senaryosunun hepsi `ThrowsAsync` DEĞİL, doğrudan `await` + `Verify` kullanıyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private ResendVerificationCommandHandler CreateHandler() =>', aciklama: 'Bölüm 40\'ın ilk slaytındaki AYNI iki-satırlı factory deseni (3 parametre sığmadığı için satır kırıldı).', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _otpService.Object, _emailService.Object);', aciklama: 'AYNI `.Object` deseni.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 3 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotFound_ReturnsUnitWithoutSendingEmail()', aciklama: 'İlk senaryo: kayıtsız e-posta — Bölüm 39\'un enumeration-önleme notuyla AYNI ilke.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'VerifyEmail\'daki AYNI joker e-posta deseni.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 3 kez geçiyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'await handler.Handle(new ResendVerificationCommand("yok@test.de", "tr"), default);',
+            aciklama: 'Bu dosyanın 3 testinde de exception BEKLENMEDİĞİ için `var act = ...` deseni YOK, hepsi doğrudan `await`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_emailService.Verify(e => e.SendEmailVerificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_AlreadyVerified`) — TÜM parametreler `It.IsAny` çünkü test edilen şey hangi DEĞERLERLE çağrıldığı değil, HİÇ çağrılmadığı.',
+            neden: 'Register\'ın (Bölüm 40, ilk slayt) pozitif `Times.Once` doğrulamasının TERSİ — burada Handler\'ın erken çıkışının (kayıtsız/zaten doğrulanmış) GERÇEKTEN e-posta göndermediğini kanıtlamak gerekiyor.',
+            olmasaydi: 'Bu doğrulama olmasaydı, Handler\'daki `if (user is null || user.IsEmailVerified) return Unit.Value;` erken-çıkışı yanlışlıkla silinse bile (herkese YENİDEN doğrulama e-postası gitse) test bunu YAKALAYAMAZDI.'
+          },
+          { satir: 'public async Task Handle_AlreadyVerified_ReturnsUnitWithoutSendingEmail()', aciklama: 'İkinci senaryo: kullanıcı var ama `IsEmailVerified = true`.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", IsEmailVerified = true };', aciklama: 'Bu senaryonun KALBİ: `IsEmailVerified = true` — Handler bu bayrağa göre erken ÇIKACAK.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_UnverifiedUser`) — sabit e-postayla dolu bir `user` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ResendVerificationCommand("ada@test.de", "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UnverifiedUser_GeneratesOtpAndSendsEmail()', aciklama: 'Üçüncü senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", FirstName = "Ada", IsEmailVerified = false };', aciklama: '`IsEmailVerified = false` AÇIKÇA kuruluyor — bu kez erken çıkış OLMAYACAK.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Generate(user, OtpPurpose.EmailVerification)).Returns("654321");', aciklama: '`It.IsAny<User>()` DEĞİL, somut `user` referansı — bu Handler `User`\'ı BAŞTAN oluşturmuyor (Register\'ın aksine), var olan `user`\'ı REPOSITORY\'DEN alıyor, referansı test kodunda ELDE VAR.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ResendVerificationCommand("ada@test.de", "de"), default);', aciklama: 'Dil parametresi bu kez "de" — e-posta servisine DOĞRU dilin GEÇTİĞİNİ aşağıdaki Verify kanıtlayacak.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Yalnızca bu (üçüncü) senaryoda DB\'ye yazma BEKLENİYOR — ilk ikisinde `SaveChangesAsync` hiç çağrılmıyor bile (Handler erken `return` ediyor), o yüzden onlarda bu Verify YOK.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendEmailVerificationAsync("ada@test.de", "Ada", "654321", "de", It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Bu kez SOMUT parametrelerle `Times.Once` — Setup\'ın SAHTE OTP kodunun ("654321") ve "de" dilinin e-posta servisine DOĞRU geçtiği doğrulanıyor.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/LoginCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class LoginCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private LoginCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_StillVerifiesDummyHashAndThrowsInvalidCredentialsException()
+    {
+        // ARRANGE — SECURITY.md §1: kayıtsız e-postada da bcrypt karşılaştırması sabit süre için ÇALIŞTIRILIR
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        _passwordService.Setup(p => p.Verify("Sifre123!", It.IsAny<string>())).Returns(false);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginCommand("yok@test.de", "Sifre123!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+        _passwordService.Verify(p => p.Verify("Sifre123!", It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WrongPassword_ThrowsInvalidCredentialsException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", PasswordHash = "gercek-hash" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("YanlisSifre", "gercek-hash")).Returns(false);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "YanlisSifre", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+    }
+
+    [Fact]
+    public async Task Handle_SocialOnlyAccount_ThrowsInvalidCredentialsException()
+    {
+        // ARRANGE — PasswordHash null: sosyal-yalnızca hesap, şifreyle giriş yapılamaz
+        var user = new User { Email = "ada@test.de", PasswordHash = null };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidCredentialsException>();
+    }
+
+    [Fact]
+    public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", PasswordHash = "gercek-hash", IsActive = false };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("Sifre123!", "gercek-hash")).Returns(true);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountInactiveException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidCredentials_GeneratesOtpAndSendsLoginEmail()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", FirstName = "Ada", PasswordHash = "gercek-hash", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _passwordService.Setup(p => p.Verify("Sifre123!", "gercek-hash")).Returns(true);
+        _otpService.Setup(o => o.Generate(user, OtpPurpose.LoginOtp)).Returns("111222");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendLoginOtpAsync("ada@test.de", "Ada", "111222", "tr", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidCredentialsException`/`AccountInactiveException` (Bölüm 9) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `LoginCommand`/Handler (Bölüm 12) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IPasswordService`/`IOtpService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` entity\'si için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.LoginOtp` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LoginCommandHandlerTests', aciklama: '`LoginCommandHandler`\'ı test eder — 5 senaryo, Auth handler testleri içindeki en yoğun dallanmalardan biri (SECURITY.md §1\'in sabit-süre karşılaştırma tasarımı dahil).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IPasswordService> _passwordService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private LoginCommandHandler CreateHandler() =>', aciklama: 'AYNI iki-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object);', aciklama: 'AYNI `.Object` deseni.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'public async Task Handle_UserNotFound_StillVerifiesDummyHashAndThrowsInvalidCredentialsException()',
+            aciklama: 'Test adı bu kez "Senaryo" kısmında bir DAVRANIŞ da belirtiyor ("StillVerifiesDummyHash") — yalnızca sonucu değil, Handler\'ın GÜVENLİK açısından ÖNEMLİ bir ADIMI atlamadığını da isimden görünür kılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);',
+            aciklama: 'VerifyEmail/ResendVerification\'daki AYNI joker e-posta deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService.Setup(p => p.Verify("Sifre123!", It.IsAny<string>())).Returns(false);',
+            aciklama: 'Handler kaynak kodundaki `DummyHash` sabiti (bkz. `LoginCommand.cs`) TAM OLARAK ne olduğu bu testte ÖNEMLİ DEĞİL — `It.IsAny<string>()` ile "hangi hash ile karşılaştırılırsa karşılaştırılsın, sonuç `false` olsun" deniyor; asıl doğrulanan şey ALTTAKİ `Verify` çağrısının GERÇEKTEN yapıldığı.',
+            neden: 'Handler\'ın kaynak kodu `user?.PasswordHash ?? DummyHash` ifadesiyle, kullanıcı bulunamasa BİLE bir hash karşılaştırması ÇALIŞTIRIYOR — bu SECURITY.md §1\'in "zamanlama saldırısı" (timing attack) savunması: kayıtlı/kayıtsız e-postalar arasında yanıt SÜRESİ farkı OLMAMALI.',
+            olmasaydi: null
+          },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginCommand("yok@test.de", "Sifre123!", "tr"), default);', aciklama: 'Bölüm 40\'taki AYNI `ThrowAsync` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidCredentialsException>();', aciklama: 'Bu satır 3 kez geçiyor (bu test, `Handle_WrongPassword`, `Handle_SocialOnlyAccount`) — ÜÇ farklı sebep AYNI genel hatayı üretiyor, SECURITY.md §1\'in "az konuşan hata" ilkesiyle AYNI mantık (Bölüm 9\'un `InvalidRefreshTokenException` notuna bak).', neden: null, olmasaydi: null },
+          {
+            satir: '_passwordService.Verify(p => p.Verify("Sifre123!", It.IsAny<string>()), Times.Once);',
+            aciklama: 'Bu testin ASIL amacı — yalnızca exception fırlatıldığını DEĞİL, `PasswordService.Verify`\'ın GERÇEKTEN çağrıldığını (dummy hash\'e karşı bile) kanıtlar.',
+            neden: 'Biri Handler\'a "kullanıcı bulunamazsa Verify\'ı hiç ÇAĞIRMADAN direkt exception fırlat" gibi bir KISAYOL yazarsa, önceki testler (yalnızca exception tipini kontrol eden) bunu YAKALAYAMAZ — timing-attack savunması sessizce KAYBOLUR.',
+            olmasaydi: 'Bu `Verify` doğrulaması olmasaydı, `Handle_UserNotFound...` testinin adı "hâlâ dummy hash doğruluyor" dese bile GERÇEKTEN doğrulamadığı bir regresyon fark EDİLMEZDİ.'
+          },
+          { satir: 'public async Task Handle_WrongPassword_ThrowsInvalidCredentialsException()', aciklama: 'İkinci senaryo: kullanıcı var, şifre yanlış.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", PasswordHash = "gercek-hash" };', aciklama: 'Bu kez GERÇEK (test için sahte ama dolu) bir `PasswordHash` var.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 4 kez geçiyor (`Handle_WrongPassword`, `Handle_SocialOnlyAccount`, `Handle_InactiveAccount`, `Handle_ValidCredentials`) — sabit e-postayla dolu `user` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: '_passwordService.Setup(p => p.Verify("YanlisSifre", "gercek-hash")).Returns(false);', aciklama: 'Bu kez HEM girilen şifre HEM hash somut — `Verify` `false` döndürüyor, şifre EŞLEŞMİYOR.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginCommand("ada@test.de", "YanlisSifre", "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_SocialOnlyAccount_ThrowsInvalidCredentialsException()', aciklama: 'Üçüncü senaryo: `PasswordHash` `null` — sosyal-yalnızca hesap.', neden: null, olmasaydi: null },
+          {
+            satir: 'var user = new User { Email = "ada@test.de", PasswordHash = null };',
+            aciklama: '`PasswordHash = null` AÇIKÇA kuruluyor — Google/Apple ile açılmış, hiç şifre belirlememiş bir hesabı temsil ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService.Setup(p => p.Verify(It.IsAny<string>(), It.IsAny<string>())).Returns(false);',
+            aciklama: 'Handler kaynak kodu `PasswordHash` `null` olsa BİLE `DummyHash`\'e karşı bir Verify ÇALIŞTIRIR (yine timing-attack savunması) — bu yüzden mock burada da bir `Verify` çağrısı BEKLİYOR, joker parametrelerle.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()', aciklama: 'Dördüncü senaryo: şifre DOĞRU ama hesap `IsActive = false`.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", PasswordHash = "gercek-hash", IsActive = false };', aciklama: 'Bu kez şifre doğrulaması GEÇECEK, hesap durumu engelleyecek.', neden: null, olmasaydi: null },
+          { satir: '_passwordService.Setup(p => p.Verify("Sifre123!", "gercek-hash")).Returns(true);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_ValidCredentials`) — bu kez `Verify` `true` döndürüyor, şifre DOĞRU.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<AccountInactiveException>();', aciklama: 'Şifre doğru olsa bile pasif hesabın GİRİŞ YAPAMADIĞINI kanıtlar — sıralama önemli: önce kimlik doğrulama, SONRA hesap durumu kontrolü.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidCredentials_GeneratesOtpAndSendsLoginEmail()', aciklama: 'Beşinci senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", FirstName = "Ada", PasswordHash = "gercek-hash", IsActive = true };', aciklama: '`IsActive = true` AÇIKÇA kuruluyor — bir üstteki testten FARKLI olarak akış devam edecek.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Generate(user, OtpPurpose.LoginOtp)).Returns("111222");', aciklama: 'Register\'daki `OtpPurpose.EmailVerification`\'dan FARKLI amaç: `OtpPurpose.LoginOtp` — Login iki adımlı akışın İLK adımı, henüz token DÖNMÜYOR (Bölüm 12).', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);', aciklama: 'Exception beklenmiyor — doğrudan `await`.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'OTP\'nin `User.PendingOtpCodeHash` alanına (Bölüm 5) yazıldığını, bu yazının DB\'ye gittiğini doğrular.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendLoginOtpAsync("ada@test.de", "Ada", "111222", "tr", It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`SendEmailVerificationAsync` DEĞİL, `SendLoginOtpAsync` — Register\'dan FARKLI e-posta şablonu (Bölüm 10\'un `IEmailService` sözleşmesindeki 6 metottan biri).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyLoginOtpCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/VerifyLoginOtpCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class VerifyLoginOtpCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private VerifyLoginOtpCommandHandler CreateHandler() => new(
+        _userRepository.Object, _refreshTokenRepository.Object, _otpService.Object,
+        _loginCompletionService.Object, _emailService.Object);
+
+    private static LoginCompletionResult CreateCompletion(bool recovered = false) =>
+        new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyLoginOtpCommand("yok@test.de", "123456", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", IsActive = false };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountInactiveException>();
+    }
+
+    [Fact]
+    public async Task Handle_OtpExpired_ThrowsOtpExpiredException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.Expired);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<OtpExpiredException>();
+    }
+
+    [Fact]
+    public async Task Handle_InvalidCode_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.InvalidCode);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "000000", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidCode_ReturnsLoginResponseAndPersistsRefreshToken()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "ada@test.de", IsActive = true, CurrentLevel = "A1", ThemePreference = "System", LanguagePreference = "tr" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.Success);
+        var completion = CreateCompletion();
+        _loginCompletionService.Setup(l => l.Complete(user, "Chrome", "1.2.3.4")).Returns(completion);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", "Chrome", "1.2.3.4", "tr"), default);
+
+        // ASSERT
+        _refreshTokenRepository.Verify(r => r.AddAsync(completion.RefreshTokenEntity, It.IsAny<CancellationToken>()), Times.Once);
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        result.AccessToken.Should().Be("access-token");
+        result.User.Id.Should().Be(1);
+        _emailService.Verify(e => e.SendAccountRecoveredNotificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_AccountWasRecovered_SendsAccountRecoveredNotification()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.Success);
+        _loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(CreateCompletion(recovered: true));
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", null, null, "de"), default);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendAccountRecoveredNotificationAsync("ada@test.de", "Ada", "de", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidOtpException`/`OtpExpiredException`/`AccountInactiveException` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `VerifyLoginOtpCommand`/Handler (Bölüm 12) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` (Bölüm 8) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService`/`ILoginCompletionService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User`/`RefreshToken` entity\'leri için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.LoginOtp` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class VerifyLoginOtpCommandHandlerTests', aciklama: '`VerifyLoginOtpCommandHandler`\'ı test eder — bu, `ILoginCompletionService`\'i (Bölüm 7) kullanan İLK handler testi, bu yüzden BİR yardımcı factory metodu DAHA var (`CreateCompletion`).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen — bu dosyada İLK kez görünüyor, çünkü `VerifyLoginOtpCommandHandler` ilk kez bir `RefreshToken` YARATIYOR.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<ILoginCompletionService> _loginCompletionService = new();', aciklama: 'AYNI desen — Bölüm 39\'daki mock kuralı burada da geçerli: `ILoginCompletionService`\'in KENDİ mantığı Bölüm 7\'de zaten test edildi, burada yalnızca SAHTE bir sonuç döndürüyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private VerifyLoginOtpCommandHandler CreateHandler() => new(', aciklama: '5 parametre bir satıra sığmadığı için AYRI bir satırda `new(` açılıyor.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Object, _refreshTokenRepository.Object, _otpService.Object,', aciklama: 'Parametrelerin İLK üçü.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Object, _emailService.Object);', aciklama: 'Kalan iki parametre — `Handler`\'ın constructor imzasındaki SIRAYLA BİREBİR eşleşmeli, yoksa DI değil ama test kodunda YANLIŞ mock YANLIŞ yere geçmiş olur.', neden: null, olmasaydi: null },
+          {
+            satir: 'private static LoginCompletionResult CreateCompletion(bool recovered = false) =>',
+            aciklama: 'İKİNCİ bir factory metodu — `ILoginCompletionService.Complete`\'in dönüş tipini (Bölüm 7\'nin `LoginCompletionResult` record\'ı) her testte elle YAZMAK yerine tek yerden üretiyor.',
+            neden: 'Beş testin DÖRDÜ `_loginCompletionService.Setup(...).Returns(...)` çağırıyor — her birinde `new LoginCompletionResult(...)` alanlarını TEKRAR TEKRAR yazmak yerine, yalnızca "kurtarıldı mı" (`recovered`) parametresi değişen bir yardımcı yeterli.',
+            olmasaydi: 'Yardımcı olmasaydı, bu dosyadaki her `Setup` çağrısı 4 alanlı bir `LoginCompletionResult` literal\'i TEKRAR EDERDİ — biri `AccessToken` değerini bir yerde "access-token", başka bir testte yanlışlıkla "accessToken" yazsa (yazım farkı), testler SESSİZCE tutarsız verilerle çalışırdı.'
+          },
+          { satir: 'new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);', aciklama: 'Sabit `"access-token"`/`"refresh-token"` string\'leri — Handler bu DEĞERLERİ üretmiyor, ÜRETİLMİŞ gibi davranıyor (mock).', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 6 kez geçiyor — bu dosyada 6 senaryo var (Auth handler testleri içinde en çok senaryolu dosyalardan biri).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotFound_ThrowsInvalidOtpException()', aciklama: 'İlk senaryo: kayıtsız e-posta.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'AYNI joker e-posta deseni.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 6 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyLoginOtpCommand("yok@test.de", "123456", null, null, "tr"), default);', aciklama: 'AYNI `ThrowAsync` deseni — `DeviceInfo`/`IpAddress` bu senaryoda `null`, önemsiz.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidOtpException>();', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()', aciklama: 'İkinci senaryo — Login\'den (Bölüm 40) FARKLI: burada hesap durumu OTP DOĞRULANMADAN ÖNCE kontrol ediliyor.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", IsActive = false };', aciklama: 'Bu senaryonun KALBİ.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 5 kez geçiyor (kalan 5 testin hepsinde AYNI kurulum) — sabit e-postayla dolu `user` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", null, null, "tr"), default);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_OtpExpired`) — AYNI parametrelerle çağrı, farklı mock kurulumu farklı sonuç üretiyor.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<AccountInactiveException>();', aciklama: 'Login\'in (Bölüm 40) AYNI exception tipi, farklı Handler.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_OtpExpired_ThrowsOtpExpiredException()', aciklama: 'Üçüncü senaryo.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de", IsActive = true };', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`) — `IsActive = true`, bu kez hesap durumu ENGEL OLMAYACAK, OTP kontrolüne geçilecek.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.Expired);', aciklama: 'VerifyEmail\'daki AYNI desen, `OtpPurpose.LoginOtp` ile.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<OtpExpiredException>();', aciklama: 'AYNI exception tipi, farklı Handler.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidCode_ThrowsInvalidOtpException()', aciklama: 'Dördüncü senaryo.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.InvalidCode);', aciklama: 'AYNI desen, yanlış kod "000000".', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "000000", null, null, "tr"), default);', aciklama: 'Setup\'taki AYNI "000000" koduyla çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidCode_ReturnsLoginResponseAndPersistsRefreshToken()', aciklama: 'Beşinci senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", IsActive = true, CurrentLevel = "A1", ThemePreference = "System", LanguagePreference = "tr" };', aciklama: 'Bu kez `Id`/`CurrentLevel`/`ThemePreference`/`LanguagePreference` de dolduruluyor — bunlar `LoginResponse`\'un içindeki `AuthUserDto`\'ya (Bölüm 1) TAŞINACAK, testte doğrulanabilmesi için ÖNCEDEN somut değer gerekiyor.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.LoginOtp)).Returns(OtpVerificationResult.Success);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_AccountWasRecovered`).', neden: null, olmasaydi: null },
+          { satir: 'var completion = CreateCompletion();', aciklama: '`recovered` parametresi verilmedi → varsayılan `false` — normal (kurtarma OLMAYAN) giriş.', neden: null, olmasaydi: null },
+          {
+            satir: '_loginCompletionService.Setup(l => l.Complete(user, "Chrome", "1.2.3.4")).Returns(completion);',
+            aciklama: '`It.IsAny` DEĞİL, somut `user`/`"Chrome"`/`"1.2.3.4"` — Handler\'ın `DeviceInfo`/`IpAddress`\'i Command\'dan `ILoginCompletionService.Complete`\'e DOĞRU AKTARDIĞINI da bu Setup\'ın eşleşmesi kanıtlıyor (yanlış aktarılsaydı Setup eşleşmez, mock varsayılan/null dönerdi).',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'var result = await handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", "Chrome", "1.2.3.4", "tr"), default);', aciklama: 'Bu kez `DeviceInfo`/`IpAddress` DOLU — bir üstteki `Setup`\'ın beklediği DEĞERLERLE eşleşiyor.', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Verify(r => r.AddAsync(completion.RefreshTokenEntity, It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`CreateCompletion`\'ın ürettiği `RefreshTokenEntity`\'nin (henüz DB\'ye YAZILMAMIŞ, yalnızca bellekte) `AddAsync`\'e GEÇTİĞİNİ doğrular — Bölüm 7\'nin notu: bu entity Handler\'ın SORUMLULUĞUNDA persist edilir.', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Bu kez `_userRepository.SaveChangesAsync` DEĞİL, `_refreshTokenRepository.SaveChangesAsync` çağrılıyor — ikisi AYNI DbContext\'i paylaştığı için pratikte fark etmez ama Handler kodu HANGİSİNİ çağırıyorsa test DE onu doğrular.', neden: null, olmasaydi: null },
+          { satir: 'result.AccessToken.Should().Be("access-token");', aciklama: '`CreateCompletion`\'ın sabit döndürdüğü SAHTE token\'ın `LoginResponse`\'a DOĞRU taşındığını doğrular.', neden: null, olmasaydi: null },
+          { satir: 'result.User.Id.Should().Be(1);', aciklama: '`AuthUserDto`\'nun `Id` alanı — `user.Id`\'nin (yukarıda `1` olarak kurulan) DTO\'ya DOĞRU aktarıldığını kanıtlar.', neden: null, olmasaydi: null },
+          {
+            satir: '_emailService.Verify(e => e.SendAccountRecoveredNotificationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Negatif doğrulama: `recovered = false` olduğu için kurtarma e-postası HİÇ gönderilmemeli — bir sonraki teste (`Handle_AccountWasRecovered`) doğrudan KONTRAST oluşturuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'public async Task Handle_AccountWasRecovered_SendsAccountRecoveredNotification()', aciklama: 'Altıncı senaryo — bir üstteki testin TAM TERSİ dalı.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada", IsActive = true };', aciklama: 'Bu senaryoda `CurrentLevel`/`ThemePreference` gerekmiyor — yalnızca e-posta bildirimi test ediliyor, DTO alanları DEĞİL.', neden: null, olmasaydi: null },
+          {
+            satir: '_loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(CreateCompletion(recovered: true));',
+            aciklama: '`CreateCompletion(recovered: true)` — factory\'nin İKİNCİ parametresi burada devreye giriyor; `AccountWasRecovered = true` olan bir sonuç üretiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'await handler.Handle(new VerifyLoginOtpCommand("ada@test.de", "123456", null, null, "de"), default);', aciklama: 'Dil "de" — aşağıdaki Verify\'ın DOĞRU dile GEÇTİĞİNİ kanıtlaması için bilerek "tr" DEĞİL.', neden: null, olmasaydi: null },
+          {
+            satir: '_emailService.Verify(e => e.SendAccountRecoveredNotificationAsync("ada@test.de", "Ada", "de", It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: 'Pozitif doğrulama: `AccountWasRecovered = true` olduğunda Handler\'ın `if (completion.AccountWasRecovered) await _emailService.SendAccountRecoveredNotificationAsync(...)` dalına GERÇEKTEN girdiğini kanıtlar.',
+            neden: 'Bir önceki testin `Times.Never`\'ı İLE bu testin `Times.Once`\'ı BİRLİKTE, Handler\'daki `if` koşulunun HER İKİ yönünü de (true/false) kapsıyor — yalnızca biri yazılsaydı dallanmanın YARISI test DIŞI kalırdı.',
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithGoogleCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/LoginWithGoogleCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class LoginWithGoogleCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IGoogleTokenValidator> _googleTokenValidator = new();
+    private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private LoginWithGoogleCommandHandler CreateHandler() => new(
+        _userRepository.Object, _refreshTokenRepository.Object, _googleTokenValidator.Object,
+        _loginCompletionService.Object, _emailService.Object);
+
+    private static LoginCompletionResult CreateCompletion(bool recovered = false) =>
+        new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);
+
+    [Fact]
+    public async Task Handle_InvalidToken_ThrowsInvalidSocialTokenException()
+    {
+        // ARRANGE
+        _googleTokenValidator.Setup(v => v.ValidateAsync("kotu-token", It.IsAny<CancellationToken>())).ReturnsAsync((GoogleTokenPayload?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginWithGoogleCommand("kotu-token", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidSocialTokenException>();
+    }
+
+    [Fact]
+    public async Task Handle_ExistingGoogleUser_ReturnsLoginResponseWithoutCreatingUser()
+    {
+        // ARRANGE
+        var payload = new GoogleTokenPayload("google-sub-1", "ada@test.de", "Ada", "Lovelace");
+        _googleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        var user = new User { Id = 1, Email = "ada@test.de", GoogleId = "google-sub-1", IsActive = true };
+        _userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var completion = CreateCompletion();
+        _loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(completion);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.AccessToken.Should().Be("access-token");
+    }
+
+    [Fact]
+    public async Task Handle_ExistingEmailDifferentProvider_LinksGoogleIdToExistingAccount()
+    {
+        // ARRANGE — daha önce Local kayıt açılmış aynı e-posta, Google hesabı BİRLEŞTİRİLİR
+        var payload = new GoogleTokenPayload("google-sub-1", "ada@test.de", "Ada", "Lovelace");
+        _googleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        _userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var existingLocalUser = new User { Id = 5, Email = "ada@test.de", AuthProvider = "Local", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(existingLocalUser);
+        _loginCompletionService.Setup(l => l.Complete(existingLocalUser, null, null)).Returns(CreateCompletion());
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);
+
+        // ASSERT
+        existingLocalUser.GoogleId.Should().Be("google-sub-1");
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_NoExistingUser_CreatesNewGoogleUser()
+    {
+        // ARRANGE
+        var payload = new GoogleTokenPayload("google-sub-1", "yeni@test.de", "Yeni", "Kullanici");
+        _googleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        _userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        _userRepository.Setup(r => r.GetByEmailAsync("yeni@test.de", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        _loginCompletionService.Setup(l => l.Complete(It.IsAny<User>(), null, null)).Returns(CreateCompletion());
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>
+            u.Email == "yeni@test.de" && u.GoogleId == "google-sub-1" && u.AuthProvider == "Google" && u.IsEmailVerified),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()
+    {
+        // ARRANGE
+        var payload = new GoogleTokenPayload("google-sub-1", "ada@test.de", "Ada", "Lovelace");
+        _googleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        var user = new User { Id = 1, Email = "ada@test.de", GoogleId = "google-sub-1", IsActive = false };
+        _userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountInactiveException>();
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidSocialTokenException`/`AccountInactiveException` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `LoginWithGoogleCommand`/Handler (Bölüm 13) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IGoogleTokenValidator`/`ILoginCompletionService`/`IEmailService` için — `GoogleTokenPayload` record\'ı da bu ad alanında (Bölüm 10).', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User`/`RefreshToken` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LoginWithGoogleCommandHandlerTests', aciklama: '`LoginWithGoogleCommandHandler`\'ı test eder — Bölüm 39\'un "dış servisler her zaman mock" kuralının EN NET örneği: `IGoogleTokenValidator`, gerçek Google sunucusuna hiç gitmeden test ediliyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IGoogleTokenValidator> _googleTokenValidator = new();', aciklama: 'Bu dosyada İLK kez — Bölüm 13\'ün notu: `GoogleJsonWebSignature.ValidateAsync` statik bir çağrı olduğu için ARKASINA bir arayüz konmasaydı bu Handler HİÇ test EDİLEMEZDİ.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<ILoginCompletionService> _loginCompletionService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private LoginWithGoogleCommandHandler CreateHandler() => new(', aciklama: 'AYNI çok-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Object, _refreshTokenRepository.Object, _googleTokenValidator.Object,', aciklama: 'İlk üç parametre.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Object, _emailService.Object);', aciklama: 'Kalan iki parametre.', neden: null, olmasaydi: null },
+          { satir: 'private static LoginCompletionResult CreateCompletion(bool recovered = false) =>', aciklama: 'VerifyLoginOtp\'daki (bu bölüm) AYNI yardımcı — sosyal girişler de `ILoginCompletionService`\'i kullandığı için TEKRAR gerekiyor (dosyalar birbirinden BAĞIMSIZ derlenir, paylaşılan bir taban sınıf YOK).', neden: null, olmasaydi: null },
+          { satir: 'new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);', aciklama: 'AYNI sabit değerler.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidToken_ThrowsInvalidSocialTokenException()', aciklama: 'İlk senaryo: Google token doğrulanamıyor.', neden: null, olmasaydi: null },
+          { satir: '_googleTokenValidator.Setup(v => v.ValidateAsync("kotu-token", It.IsAny<CancellationToken>())).ReturnsAsync((GoogleTokenPayload?)null);', aciklama: 'Doğrulayıcı `null` döndürüyor — Handler kaynak kodu bunu `InvalidSocialTokenException`\'a çeviriyor.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginWithGoogleCommand("kotu-token", null, null, "tr"), default);', aciklama: 'AYNI `ThrowAsync` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidSocialTokenException>();', aciklama: 'Google/Apple ortak exception tipi — LoginWithApple testinde de AYNI tip görünecek.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ExistingGoogleUser_ReturnsLoginResponseWithoutCreatingUser()', aciklama: 'İkinci senaryo: `GoogleId`\'si zaten kayıtlı kullanıcı.', neden: null, olmasaydi: null },
+          { satir: 'var payload = new GoogleTokenPayload("google-sub-1", "ada@test.de", "Ada", "Lovelace");', aciklama: 'Bu satır 3 kez geçiyor (bu test, `Handle_ExistingEmailDifferentProvider`, `Handle_InactiveAccount`) — AYNI sahte Google payload\'ı, Handler\'ın `Subject`\'e göre kullanıcı ARADIĞINI test etmek için sabit tutuluyor.', neden: null, olmasaydi: null },
+          { satir: '_googleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);', aciklama: 'Bu satır 4 kez geçiyor (kalan 4 testin hepsi) — bu kez token GEÇERLİ, `payload` dönüyor.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", GoogleId = "google-sub-1", IsActive = true };', aciklama: '`GoogleId` payload\'daki `Subject` ile AYNI ("google-sub-1") — repository bu eşleşmeyle kullanıcıyı BULACAK.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Kullanıcı BULUNUYOR — Handler `GetByEmailAsync`\'e hiç GİTMEYECEK, yeni kullanıcı da OLUŞTURMAYACAK.', neden: null, olmasaydi: null },
+          { satir: 'var completion = CreateCompletion();', aciklama: '`recovered` parametresi verilmedi → varsayılan `false`. Diğer iki testte (`ExistingEmailDifferentProvider`/`NoExistingUser`) aynı çağrı DEĞİŞKENE atanmadan doğrudan `Setup(...).Returns(CreateCompletion())` şeklinde satır içinde kullanılıyor.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(completion);', aciklama: 'VerifyLoginOtp\'daki (bu bölüm) AYNI desen — somut `user` referansı, `DeviceInfo`/`IpAddress` bu senaryoda `null`.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_ExistingEmailDifferentProvider`) — negatif doğrulama: var olan kullanıcı için YENİ bir `User` OLUŞTURULMADIĞINI kanıtlar.',
+            neden: 'Google girişinin İKİ farklı "var olan kullanıcı" dalı var (GoogleId ile bulunan, e-posta ile bulunup BİRLEŞTİRİLEN) — ikisinde de `AddAsync` ÇAĞRILMAMALI, yalnızca ÜÇÜNCÜ dalda (`Handle_NoExistingUser`) çağrılmalı.',
+            olmasaydi: null
+          },
+          { satir: 'result.AccessToken.Should().Be("access-token");', aciklama: 'Happy path\'in dönüş değeri doğrulanıyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ExistingEmailDifferentProvider_LinksGoogleIdToExistingAccount()', aciklama: 'Üçüncü senaryo: hesap BİRLEŞTİRME (account linking) — Bölüm 13\'ün en önemli tasarım kararı.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByGoogleIdAsync("google-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_NoExistingUser`) — `GoogleId`\'YLE kimse BULUNAMIYOR, Handler bir SONRAKİ adıma (e-postayla arama) geçecek.', neden: null, olmasaydi: null },
+          { satir: 'var existingLocalUser = new User { Id = 5, Email = "ada@test.de", AuthProvider = "Local", IsActive = true };', aciklama: '`AuthProvider = "Local"` — bu kullanıcı DAHA ÖNCE e-posta+şifreyle (Register, bu bölüm) kayıt olmuş, `GoogleId`\'si HENÜZ yok.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(existingLocalUser);', aciklama: 'Bu kez e-postayla ARAMA yapılıyor ve kullanıcı BULUNUYOR.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(existingLocalUser, null, null)).Returns(CreateCompletion());', aciklama: 'Somut `existingLocalUser` referansı — Handler\'ın BULUNAN kullanıcıyla (yeni bir nesne DEĞİL) devam ettiğini kanıtlar.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_NoExistingUser`) — exception beklenmiyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'existingLocalUser.GoogleId.Should().Be("google-sub-1");',
+            aciklama: 'Bu testin ASIL iddiası: `existingLocalUser` nesnesi (mock\'un İÇİNDE DEĞİL, test kodunda TUTULAN somut referans) Handler tarafından MUTASYONA uğratılıp `GoogleId`\'si dolduruldu mu?',
+            neden: 'Handler\'ın kaynak kodu `user.GoogleId = payload.Subject;` satırıyla var olan nesneyi DEĞİŞTİRİYOR (yeni `User` OLUŞTURMUYOR) — bu satır olmadan test yalnızca "exception fırlamadı"yı kanıtlar, asıl BİRLEŞTİRME davranışını DEĞİL.',
+            olmasaydi: 'Bu doğrulama olmasaydı, Handler `GoogleId`\'yi ATAMAYI unutsa bile (o kullanıcı bir SONRAKİ Google girişinde YİNE e-postayla arama YOLUNA düşse) hiçbir test bunu YAKALAMAZDI.'
+          },
+          { satir: 'public async Task Handle_NoExistingUser_CreatesNewGoogleUser()', aciklama: 'Dördüncü senaryo: HİÇ eşleşme yok, yeni kullanıcı oluşturuluyor.', neden: null, olmasaydi: null },
+          { satir: 'var payload = new GoogleTokenPayload("google-sub-1", "yeni@test.de", "Yeni", "Kullanici");', aciklama: 'Bu kez FARKLI bir e-posta ("yeni@test.de") — sistemde eşleşen HİÇBİR kayıt yok.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("yeni@test.de", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'E-postayla arama da SONUÇSUZ — Handler artık YENİ bir `User` OLUŞTURMAK ZORUNDA.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(It.IsAny<User>(), null, null)).Returns(CreateCompletion());', aciklama: 'Bu kez `It.IsAny<User>()` — Handler\'ın OLUŞTURACAĞI `User` nesnesi test kodunun ELİNDE OLMADIĞI için somut referans VERİLEMEZ (ResendVerification\'ın `_otpService.Generate` Setup\'ıyla AYNI kısıt).', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>',
+            aciklama: 'Register\'daki (Bölüm 40, ilk slayt) AYNI `It.Is<User>(predicate)` deseni — bu kez DÖRT alan birden kontrol ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'u.Email == "yeni@test.de" && u.GoogleId == "google-sub-1" && u.AuthProvider == "Google" && u.IsEmailVerified),', aciklama: '`IsEmailVerified` (bool, `== true` YAZMADAN) — Handler kaynak kodu Google\'dan gelen kullanıcıları OTOMATİK doğrulanmış SAYIYOR (e-posta doğrulama OTP\'si GEREKMİYOR, Google zaten doğruladı).', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Register\'daki AYNI kapanış.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()', aciklama: 'Beşinci senaryo.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", GoogleId = "google-sub-1", IsActive = false };', aciklama: '`IsActive = false` — kullanıcı BULUNUYOR (GoogleId eşleşiyor) ama hesap pasif.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginWithGoogleCommand("iyi-token", null, null, "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<AccountInactiveException>();', aciklama: 'Login/VerifyLoginOtp\'daki (bu bölüm) AYNI exception tipi — hesap durumu kontrolü giriş YÖNTEMİNDEN BAĞIMSIZ, her yolda AYNI kural.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithAppleCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/LoginWithAppleCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class LoginWithAppleCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IAppleTokenValidator> _appleTokenValidator = new();
+    private readonly Mock<ILoginCompletionService> _loginCompletionService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private LoginWithAppleCommandHandler CreateHandler() => new(
+        _userRepository.Object, _refreshTokenRepository.Object, _appleTokenValidator.Object,
+        _loginCompletionService.Object, _emailService.Object);
+
+    private static LoginCompletionResult CreateCompletion(bool recovered = false) =>
+        new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);
+
+    [Fact]
+    public async Task Handle_InvalidToken_ThrowsInvalidSocialTokenException()
+    {
+        // ARRANGE
+        _appleTokenValidator.Setup(v => v.ValidateAsync("kotu-token", It.IsAny<CancellationToken>())).ReturnsAsync((AppleTokenPayload?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginWithAppleCommand("kotu-token", null, null, null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidSocialTokenException>();
+    }
+
+    [Fact]
+    public async Task Handle_NoEmailInToken_CreatesUserWithPrivateRelayPlaceholderEmail()
+    {
+        // ARRANGE — token'da e-posta yoksa (nadiren, tekrar giriş) sub tabanlı yer tutucu üretilir
+        var payload = new AppleTokenPayload("apple-sub-1", Email: null);
+        _appleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        _userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        _loginCompletionService.Setup(l => l.Complete(It.IsAny<User>(), null, null)).Returns(CreateCompletion());
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginWithAppleCommand("iyi-token", "Ada", "Lovelace", null, null, "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>
+            u.Email == "apple-sub-1@privaterelay.appleid.com" && u.AppleId == "apple-sub-1" && u.FirstName == "Ada"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _userRepository.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ExistingEmailDifferentProvider_LinksAppleIdToExistingAccount()
+    {
+        // ARRANGE
+        var payload = new AppleTokenPayload("apple-sub-1", "ada@test.de");
+        _appleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        _userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var existingUser = new User { Id = 5, Email = "ada@test.de", AuthProvider = "Local", IsActive = true };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(existingUser);
+        _loginCompletionService.Setup(l => l.Complete(existingUser, null, null)).Returns(CreateCompletion());
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "tr"), default);
+
+        // ASSERT
+        existingUser.AppleId.Should().Be("apple-sub-1");
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()
+    {
+        // ARRANGE
+        var payload = new AppleTokenPayload("apple-sub-1", "ada@test.de");
+        _appleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        var user = new User { Id = 1, Email = "ada@test.de", AppleId = "apple-sub-1", IsActive = false };
+        _userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<AccountInactiveException>();
+    }
+
+    [Fact]
+    public async Task Handle_AccountWasRecovered_SendsAccountRecoveredNotification()
+    {
+        // ARRANGE
+        var payload = new AppleTokenPayload("apple-sub-1", "ada@test.de");
+        _appleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);
+        var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada", AppleId = "apple-sub-1", IsActive = true };
+        _userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(CreateCompletion(recovered: true));
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "de"), default);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendAccountRecoveredNotificationAsync("ada@test.de", "Ada", "de", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidSocialTokenException`/`AccountInactiveException` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `LoginWithAppleCommand`/Handler (Bölüm 13) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IAppleTokenValidator`/`ILoginCompletionService`/`IEmailService` — `AppleTokenPayload` record\'ı da bu ad alanında.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User`/`RefreshToken` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LoginWithAppleCommandHandlerTests', aciklama: 'LoginWithGoogle\'daki (bu bölüm) AYNI yapı, `IAppleTokenValidator` ile.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IAppleTokenValidator> _appleTokenValidator = new();', aciklama: 'LoginWithGoogle\'daki `IGoogleTokenValidator` ile AYNI gerekçe — Apple\'ın imza doğrulaması da statik/karmaşık, arayüz arkasına ALINDI.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<ILoginCompletionService> _loginCompletionService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private LoginWithAppleCommandHandler CreateHandler() => new(', aciklama: 'AYNI çok-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Object, _refreshTokenRepository.Object, _appleTokenValidator.Object,', aciklama: 'İlk üç parametre.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Object, _emailService.Object);', aciklama: 'Kalan iki parametre.', neden: null, olmasaydi: null },
+          { satir: 'private static LoginCompletionResult CreateCompletion(bool recovered = false) =>', aciklama: 'AYNI yardımcı, TEKRAR (dosyalar bağımsız).', neden: null, olmasaydi: null },
+          { satir: 'new("access-token", "refresh-token", new RefreshToken { UserId = 1 }, recovered);', aciklama: 'AYNI sabit değerler.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidToken_ThrowsInvalidSocialTokenException()', aciklama: 'LoginWithGoogle\'daki (bu bölüm) BİREBİR AYNI senaryo, `IAppleTokenValidator` ile.', neden: null, olmasaydi: null },
+          { satir: '_appleTokenValidator.Setup(v => v.ValidateAsync("kotu-token", It.IsAny<CancellationToken>())).ReturnsAsync((AppleTokenPayload?)null);', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 5 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginWithAppleCommand("kotu-token", null, null, null, null, "tr"), default);', aciklama: 'Command\'ın 6 parametresi var (Google\'ın 4\'üne kıyasla) — `FirstName`/`LastName` Apple\'a özgü (bkz. Bölüm 13\'ün notu: Apple bu bilgiyi yalnızca CİHAZDA İLK izin anında gönderir).', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidSocialTokenException>();', aciklama: 'LoginWithGoogle\'daki (bu bölüm) AYNI exception tipi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_NoEmailInToken_CreatesUserWithPrivateRelayPlaceholderEmail()', aciklama: 'İkinci senaryo — Apple\'a ÖZGÜ, Google\'da karşılığı YOK: token\'da e-posta hiç gelmeyebilir.', neden: null, olmasaydi: null },
+          {
+            satir: 'var payload = new AppleTokenPayload("apple-sub-1", Email: null);',
+            aciklama: '`Email: null` — adlandırılmış argüman (named argument) kullanılıyor, `AppleTokenPayload(string Subject, string? Email)` record\'ının İKİNCİ alanı `null`.',
+            neden: 'Apple bu senaryoyu GERÇEKTEN üretiyor: kullanıcı cihazda İKİNCİ kez "Apple ile Giriş"i seçtiğinde, Apple artık e-postayı TEKRAR GÖNDERMEZ (yalnızca `Subject`/sub değişmez kimlik döner) — bu Handler bu durumu da GÜVENLİ ele almalı.',
+            olmasaydi: 'Bu test yazılmasaydı, `Email = payload.Email ?? $"{payload.Subject}@privaterelay.appleid.com"` satırındaki null-coalescing bir gün YANLIŞLIKLA silinse (`payload.Email!` gibi zorlama bir cast\'e çevrilse) test SUITE\'İ bunu YAKALAMAZDI, üretimde bir `NullReferenceException` ile ortaya çıkardı.'
+          },
+          { satir: '_appleTokenValidator.Setup(v => v.ValidateAsync("iyi-token", It.IsAny<CancellationToken>())).ReturnsAsync(payload);', aciklama: 'Bu satır 4 kez geçiyor (kalan 4 testin hepsi).', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_ExistingEmailDifferentProvider`) — `AppleId`\'yle kimse BULUNAMIYOR.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(It.IsAny<User>(), null, null)).Returns(CreateCompletion());', aciklama: 'LoginWithGoogle\'ın `Handle_NoExistingUser`\'ındaki AYNI `It.IsAny<User>()` gerekçesi.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LoginWithAppleCommand("iyi-token", "Ada", "Lovelace", null, null, "tr"), default);', aciklama: 'Bu kez `FirstName`/`LastName` DOLU ("Ada"/"Lovelace") — cihazın İLK izin anını temsil ediyor.', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>',
+            aciklama: 'AYNI `It.Is<User>(predicate)` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.Email == "apple-sub-1@privaterelay.appleid.com" && u.AppleId == "apple-sub-1" && u.FirstName == "Ada"),',
+            aciklama: 'Bu testin ASIL iddiası: `Email` alanı `payload.Email` (null) DEĞİL, `"{Subject}@privaterelay.appleid.com"` yer tutucu formatında.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'AYNI kapanış.', neden: null, olmasaydi: null },
+          {
+            satir: '_userRepository.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Bu dosyaya ÖZGÜ ek bir negatif doğrulama: Handler kaynak kodunda `payload.Email is not null ? await _userRepository.GetByEmailAsync(...) : null` — `Email` `null` olduğunda bu dal HİÇ ÇALIŞMAMALI, e-postasız kısa-devre.',
+            neden: 'LoginWithGoogle\'da HER ZAMAN bir e-posta vardır (Google zorunlu tutar), bu yüzden orada böyle bir dal/test YOK — bu satır, iki sosyal giriş Handler\'ı arasındaki GERÇEK bir davranış FARKINI kanıtlıyor.',
+            olmasaydi: null
+          },
+          { satir: 'public async Task Handle_ExistingEmailDifferentProvider_LinksAppleIdToExistingAccount()', aciklama: 'LoginWithGoogle\'daki (bu bölüm) AYNI hesap-birleştirme senaryosu, Apple için.', neden: null, olmasaydi: null },
+          { satir: 'var payload = new AppleTokenPayload("apple-sub-1", "ada@test.de");', aciklama: 'Bu satır 3 kez geçiyor (bu test ve kalan 2 test) — bu kez `Email` DOLU.', neden: null, olmasaydi: null },
+          { satir: 'var existingUser = new User { Id = 5, Email = "ada@test.de", AuthProvider = "Local", IsActive = true };', aciklama: 'LoginWithGoogle\'daki `existingLocalUser` ile AYNI kurgu.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(existingUser);', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(existingUser, null, null)).Returns(CreateCompletion());', aciklama: 'Somut `existingUser` referansı.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "tr"), default);', aciklama: '`FirstName`/`LastName` `null` — kullanıcı zaten var, Apple bu bilgiyi TEKRAR göndermiyor (bir üstteki senaryonun "İLK izin" durumuyla KONTRAST).', neden: null, olmasaydi: null },
+          { satir: 'existingUser.AppleId.Should().Be("apple-sub-1");', aciklama: 'LoginWithGoogle\'ın `existingLocalUser.GoogleId` doğrulamasıyla AYNI mantık — mutasyonun GERÇEKTEN uygulandığını kanıtlar.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'AYNI negatif doğrulama.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InactiveAccount_ThrowsAccountInactiveException()', aciklama: 'LoginWithGoogle\'daki AYNI senaryo.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", AppleId = "apple-sub-1", IsActive = false };', aciklama: '`IsActive = false` — kullanıcı BULUNUYOR (AppleId eşleşiyor) ama hesap pasif.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByAppleIdAsync("apple-sub-1", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_AccountWasRecovered`).', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<AccountInactiveException>();', aciklama: 'AYNI exception tipi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_AccountWasRecovered_SendsAccountRecoveredNotification()', aciklama: 'VerifyLoginOtp\'daki (bu bölüm) AYNI senaryo, Apple girişi için TEKRARLANIYOR — her giriş yönteminin `ILoginCompletionService`\'in kurtarma DALINI KENDİ testiyle doğrulaması gerekiyor.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada", AppleId = "apple-sub-1", IsActive = true };', aciklama: '`FirstName = "Ada"` — aşağıdaki e-posta bildirimi Verify\'ında bu değerin DOĞRU geçtiği kontrol edilecek.', neden: null, olmasaydi: null },
+          { satir: '_loginCompletionService.Setup(l => l.Complete(user, null, null)).Returns(CreateCompletion(recovered: true));', aciklama: 'AYNI `recovered: true` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LoginWithAppleCommand("iyi-token", null, null, null, null, "de"), default);', aciklama: 'Dil "de" — VerifyLoginOtp\'daki AYNI dil-doğrulama gerekçesi.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendAccountRecoveredNotificationAsync("ada@test.de", "Ada", "de", It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'AYNI pozitif doğrulama.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RefreshCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class RefreshCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<ITokenService> _tokenService = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+
+    public RefreshCommandHandlerTests()
+    {
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns<string>(t => $"hash-of-{t}");
+    }
+
+    private RefreshCommandHandler CreateHandler() => new(
+        _userRepository.Object, _refreshTokenRepository.Object, _tokenService.Object, _passwordService.Object);
+
+    [Fact]
+    public async Task Handle_TokenNotFound_ThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((RefreshToken?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    [Fact]
+    public async Task Handle_TokenAlreadyUsed_RevokesFamilyAndThrowsInvalidRefreshTokenException()
+    {
+        // ARRANGE — Token Family Pattern: replay algılanınca TÜM family iptal edilir
+        var token = new RefreshToken { TokenFamily = "family-1", IsUsed = true };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+        _refreshTokenRepository.Verify(r => r.RevokeFamilyAsync("family-1", It.IsAny<CancellationToken>()), Times.Once);
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true, false)]  // revoked
+    [InlineData(false, true)]  // expired
+    public async Task Handle_RevokedOrExpiredToken_ThrowsInvalidRefreshTokenException(bool revoked, bool expired)
+    {
+        // ARRANGE
+        var token = new RefreshToken
+        {
+            IsUsed = false,
+            RevokedAt = revoked ? DateTime.UtcNow : null,
+            ExpiresAt = expired ? DateTime.UtcNow.AddDays(-1) : DateTime.UtcNow.AddDays(1)
+        };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    [Theory]
+    [InlineData(false, false, false)] // inactive
+    [InlineData(true, true, false)]   // deleted
+    [InlineData(true, false, true)]   // anonymized
+    public async Task Handle_UserNotUsable_ThrowsInvalidRefreshTokenException(bool isActive, bool isDeleted, bool isAnonymized)
+    {
+        // ARRANGE
+        var token = new RefreshToken { UserId = 1, IsUsed = false, ExpiresAt = DateTime.UtcNow.AddDays(1) };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var user = new User { Id = 1, IsActive = isActive, IsDeleted = isDeleted, IsAnonymized = isAnonymized };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidRefreshTokenException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidToken_RotatesTokenAndKeepsFamily()
+    {
+        // ARRANGE
+        var token = new RefreshToken { UserId = 1, TokenFamily = "family-1", IsUsed = false, ExpiresAt = DateTime.UtcNow.AddDays(1) };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var user = new User { Id = 1, IsActive = true };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _tokenService.Setup(t => t.GenerateAccessToken(user)).Returns("yeni-access");
+        _tokenService.Setup(t => t.GenerateRefreshToken()).Returns(new RefreshTokenResult("yeni-refresh", DateTime.UtcNow.AddDays(7)));
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new RefreshCommand("ham-token", "Chrome", "1.2.3.4"), default);
+
+        // ASSERT
+        token.IsUsed.Should().BeTrue();
+        result.AccessToken.Should().Be("yeni-access");
+        result.RefreshToken.Should().Be("yeni-refresh");
+        _refreshTokenRepository.Verify(r => r.AddAsync(It.Is<RefreshToken>(t =>
+            t.UserId == 1 && t.TokenFamily == "family-1" && t.DeviceInfo == "Chrome" && t.IpAddress == "1.2.3.4"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidRefreshTokenException` (Bölüm 9) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `RefreshCommand`/Handler (Bölüm 14) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`ITokenService`/`IPasswordService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`RefreshToken`/`User` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class RefreshCommandHandlerTests', aciklama: '`RefreshCommandHandler`\'ı test eder — Token Family Pattern\'in (Bölüm 14) BEŞ dalını (yok/replay/iptal/süresi-dolmuş/kullanıcı-uygunsuz) kapsayan en yoğun dallanmalı Auth handler testi; ilk kez `[Theory]` kullanılıyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<ITokenService> _tokenService = new();', aciklama: 'Bu dosyada İLK kez — `RefreshCommandHandler` yeni bir JWT çifti üretmek için `ITokenService`\'i (Bölüm 4) doğrudan kullanan tek Handler (diğerleri `ILoginCompletionService` üzerinden dolaylı kullanıyor).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IPasswordService> _passwordService = new();', aciklama: 'AYNI desen — bu kez `Hash`/`Verify` DEĞİL, yalnızca `HashToken` (SHA-256) kullanılacak.', neden: null, olmasaydi: null },
+          {
+            satir: 'public RefreshCommandHandlerTests()',
+            aciklama: 'Bu dosyada İLK kez bir CONSTRUCTOR var — xUnit her `[Fact]`/`[Theory]` çalıştırmadan ÖNCE test sınıfının constructor\'ını çağırır, yani bu kod HER testten önce çalışır (Bölüm 39\'un "her test kendi handler\'ını kurar" ilkesiyle AYNI, yalnızca burada PAYLAŞILAN bir mock davranışı olduğu için factory yerine constructor tercih edildi).',
+            neden: 'Testlerin NEREDEYSE hepsi `_passwordService.HashToken(...)` çağrısına ihtiyaç duyuyor (Handler token\'ı HASH\'leyip repository\'de ARIYOR) — bunu her `[Fact]` içinde AYRI AYRI `Setup` etmek yerine, ORTAK bir davranış olarak constructor\'a taşımak tekrarı azaltıyor.',
+            olmasaydi: 'Constructor olmasaydı, 5 test metodunun HER BİRİNE AYNI `_passwordService.Setup(p => p.HashToken(...))` satırı KOPYALANIRDI — bir gün bu davranış değişse (ör. hash formatı), 5 yerde birden güncelleme gerekirdi.'
+          },
+          {
+            satir: '_passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns<string>(t => $"hash-of-{t}");',
+            aciklama: '`Returns<string>(t => ...)` — Moq\'un DAHA ÖNCE görülmemiş bir özelliği: sabit bir değer DEĞİL, GİRDİYE göre HESAPLANAN bir dönüş değeri. `t` parametresi `HashToken`\'a geçirilen GERÇEK token metnidir, `$"hash-of-{t}"` onun SAHTE hash\'ini üretir.',
+            neden: 'Handler bir token\'ı HEM `Setup`\'ta (ARRANGE, "hash-of-ham-token" bekleniyor) HEM ACT\'te farklı token\'larla (ör. `Handle_ValidToken`\'da YENİ üretilen `"yeni-refresh"`) çağırabiliyor — sabit bir `Returns("tek-bir-hash")` yazılsaydı, TÜM token\'lar AYNI sahte hash\'e eşlenirdi, bu da `AddAsync` doğrulamasındaki `TokenHash` alanını ANLAMSIZ kılardı.',
+            olmasaydi: 'Sabit bir dönüş değeri kullanılsaydı, `Handle_ValidToken_RotatesTokenAndKeepsFamily` testindeki YENİ refresh token\'ın hash\'i de ESKİ token\'ınkiyle AYNI çıkardı — bu, gerçek `PasswordService.HashToken`\'ın (her girdi için FARKLI SHA-256 üretmesi gereken) davranışını YANLIŞ TEMSİL ederdi.'
+          },
+          { satir: 'private RefreshCommandHandler CreateHandler() => new(', aciklama: 'AYNI çok-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Object, _refreshTokenRepository.Object, _tokenService.Object, _passwordService.Object);', aciklama: 'AYNI `.Object` deseni, 4 parametre.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 3 kez geçiyor (2 basit senaryo + happy path) — kalan 2 senaryo ailesi `[Theory]` kullanıyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_TokenNotFound_ThrowsInvalidRefreshTokenException()', aciklama: 'İlk senaryo: token repository\'de HİÇ yok.', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Setup(r => r.GetByTokenHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((RefreshToken?)null);', aciklama: 'Joker token parametresi — hangi hash\'le aranırsa aransın `null` dönsün.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 5 kez geçiyor (dosyadaki 5 test metodunun HEPSİNDE) — `[Theory]` metotları kaynak kodda yalnızca BİR KEZ yazılır, xUnit her `[InlineData]` için AYNI kodu farklı parametrelerle ÇALIŞTIRIR (kod tekrarı DEĞİL, çalıştırma tekrarı).', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);', aciklama: 'Bu satır 4 kez geçiyor (bu test + 2 Theory senaryo ailesi) — AYNI parametrelerle çağrı, farklı mock kurulumları farklı hata SEBEBİNİ üretiyor.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidRefreshTokenException>();', aciklama: 'Bu satır 4 kez geçiyor (bu test + 2 Theory senaryo ailesi) — Bölüm 9\'un "az konuşan hata" ilkesi: 5 farklı SEBEP (yok/replay/iptal/süresi-dolmuş/kullanıcı-uygunsuz) AYNI genel exception\'ı üretiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_TokenAlreadyUsed_RevokesFamilyAndThrowsInvalidRefreshTokenException()', aciklama: 'İkinci senaryo: Token Family Pattern\'in KALBİ — replay tespiti.', neden: null, olmasaydi: null },
+          { satir: 'var token = new RefreshToken { TokenFamily = "family-1", IsUsed = true };', aciklama: '`IsUsed = true` — bu token DAHA ÖNCE bir refresh işleminde KULLANILMIŞ, şimdi TEKRAR geliyor (replay).', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);', aciklama: 'Bu satır 4 kez geçiyor (bu test ve kalan 3 test/Theory) — constructor\'daki `HashToken` mock\'unun ÜRETTİĞİ "hash-of-ham-token" DEĞERİYLE eşleşiyor.', neden: null, olmasaydi: null },
+          {
+            satir: '_refreshTokenRepository.Verify(r => r.RevokeFamilyAsync("family-1", It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: 'Bu testin ASIL iddiası: yalnızca exception fırlatılması YETMEZ, AYNI zamanda `RevokeFamilyAsync`\'in (Bölüm 8) DOĞRU family ID\'siyle ÇAĞRILDIĞI da kanıtlanmalı — bu, ÇALINMIŞ bir token\'ın AİLESİNDEKİ TÜM diğer token\'ları da geçersiz kılan güvenlik davranışı.',
+            neden: 'Handler\'ın kaynak kodu `RevokeFamilyAsync` çağrısından SONRA exception fırlatıyor — yalnızca `ThrowsAsync` doğrulaması olsaydı, biri YANLIŞLIKLA `RevokeFamilyAsync` çağrısını SİLSE bile (yalnızca exception\'ı bıraksa) bu test YEŞİL kalırdı, ama replay SALDIRISINA karşı GERÇEK savunma KAYBOLURDU.',
+            olmasaydi: null
+          },
+          { satir: '_refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`RevokeFamilyAsync`\'in DB değişikliklerinin GERÇEKTEN kaydedildiğini doğrular.', neden: null, olmasaydi: null },
+          { satir: '[Theory]', aciklama: 'Bu satır 2 kez geçiyor — xUnit\'e "bu metot PARAMETRELİ, birden çok girdiyle ÇALIŞTIRILACAK" der.', neden: 'Bölüm 39\'daki `[Theory]`/`[InlineData]` tanımı burada İLK kez UYGULANIYOR: "iptal edilmiş" ve "süresi dolmuş" senaryoları neredeyse AYNI kod yolunu izliyor (`if (existingToken.RevokedAt is not null || existingToken.ExpiresAt < DateTime.UtcNow)`), tek fark HANGİ koşulun `true` olduğu.', olmasaydi: 'İki AYRI `[Fact]` yazılsaydı, ARRANGE/ACT/ASSERT bloklarının NEREDEYSE TAMAMI birebir KOPYALANIRDI — yalnızca bir alan (`RevokedAt` ya da `ExpiresAt`) değişirdi.' },
+          { satir: '[InlineData(true, false)]  // revoked', aciklama: '`revoked=true, expired=false` — token İPTAL EDİLMİŞ ama SÜRESİ henüz dolmamış.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(false, true)]  // expired', aciklama: '`revoked=false, expired=true` — token İPTAL EDİLMEMİŞ ama SÜRESİ dolmuş.', neden: null, olmasaydi: null },
+          {
+            satir: 'public async Task Handle_RevokedOrExpiredToken_ThrowsInvalidRefreshTokenException(bool revoked, bool expired)',
+            aciklama: 'Metot artık PARAMETRE alıyor (`bool revoked, bool expired`) — her `[InlineData]` satırı bu parametrelere SIRAYLA denk gelir, xUnit metodu İKİ KEZ (2 ayrı test olarak) ÇALIŞTIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'var token = new RefreshToken', aciklama: 'Nesne başlatıcı (object initializer) BİRDEN FAZLA satıra YAYILIYOR — 3 alan PARAMETRE\'YE göre KOŞULLU dolduruluyor.', neden: null, olmasaydi: null },
+          { satir: 'IsUsed = false,', aciklama: 'Bu senaryoda `IsUsed` HER ZAMAN `false` — bir üstteki testten (`TokenAlreadyUsed`) FARKLI dal test ediliyor, ikisi BİRLİKTE `true` olamaz.', neden: null, olmasaydi: null },
+          { satir: 'RevokedAt = revoked ? DateTime.UtcNow : null,', aciklama: 'Üçlü operatör (ternary) — `revoked` parametresi `true`sa ŞİMDİKİ zaman (iptal edilmiş SAYILIR), değilse `null`.', neden: null, olmasaydi: null },
+          { satir: 'ExpiresAt = expired ? DateTime.UtcNow.AddDays(-1) : DateTime.UtcNow.AddDays(1)', aciklama: '`expired` `true`sa GEÇMİŞTE bir tarih (SÜRESİ DOLMUŞ), değilse GELECEKTE (henüz GEÇERLİ).', neden: null, olmasaydi: null },
+          { satir: '};', aciklama: 'Nesne başlatıcının kapanışı — birden çok satıra yayılan `token` tanımının SON satırı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotUsable_ThrowsInvalidRefreshTokenException(bool isActive, bool isDeleted, bool isAnonymized)', aciklama: 'İkinci `[Theory]` — bu kez ÜÇ bool parametre, kullanıcının UYGUNSUZ olduğu 3 farklı kombinasyon.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(false, false, false)] // inactive', aciklama: '`isActive=false` — hesap PASİF, en BASİT uygunsuzluk hali.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(true, true, false)]   // deleted', aciklama: '`isActive=true` AMA `isDeleted=true` — hesap AKTİF görünse de SOFT-DELETE edilmiş, yine reddedilmeli.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(true, false, true)]   // anonymized', aciklama: '`isActive=true` AMA `isAnonymized=true` — kalıcı olarak anonimleştirilmiş hesap, GERİ DÖNÜŞÜ yok.', neden: 'Bu üç kombinasyon, Handler kaynak kodundaki `if (user is null || !user.IsActive || user.IsDeleted || user.IsAnonymized)` koşulunun DÖRT ayrı OR dalından ÜÇÜNÜ (dördüncüsü `user is null` zaten `Handle_TokenNotFound`\'a BENZER bir başka testte örtük) TEK TEK doğruluyor — herhangi biri YANLIŞLIKLA silinse, o SPESİFİK `[InlineData]` KIRMIZI olur.', olmasaydi: 'Yalnızca `isActive=false` test edilseydi, `IsDeleted`/`IsAnonymized` kontrollerinden biri Handler\'dan YANLIŞLIKLA silinse (ör. bir refactor sırasında) HİÇBİR TEST bunu YAKALAMAZDI — soft-delete edilmiş bir hesap YANLIŞLIKLA token YENİLEYEBİLİRDİ.' },
+          { satir: 'var token = new RefreshToken { UserId = 1, IsUsed = false, ExpiresAt = DateTime.UtcNow.AddDays(1) };', aciklama: 'Token\'ın KENDİSİ geçerli (kullanılmamış, süresi dolmamış), SORUN kullanıcı TARAFINDA — `Handle_ValidToken`\'daki BENZER satırdan farkı: orada AYRICA `TokenFamily = "family-1"` da kuruluyor (rotasyon sonrası family\'nin KORUNDUĞUNU doğrulamak için gerekli).', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, IsActive = isActive, IsDeleted = isDeleted, IsAnonymized = isAnonymized };', aciklama: 'Üç alan da PARAMETRELERDEN geliyor — `[InlineData]`\'nın hangi kombinasyonu geçtiğine göre FARKLI bir `User` kurulur.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 2 kez geçiyor (bu Theory ve `Handle_ValidToken`) — Refresh akışında kullanıcı `Email` DEĞİL, `Id` ile ARANIYOR (token\'ın `UserId` alanından).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidToken_RotatesTokenAndKeepsFamily()', aciklama: 'Beşinci (son) senaryo: happy path — token ROTASYONU.', neden: null, olmasaydi: null },
+          { satir: 'var token = new RefreshToken { UserId = 1, TokenFamily = "family-1", IsUsed = false, ExpiresAt = DateTime.UtcNow.AddDays(1) };', aciklama: 'Bu kez `TokenFamily = "family-1"` AÇIKÇA kuruluyor — aşağıda YENİ token\'ın AYNI family\'yi KORUDUĞU doğrulanacak.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, IsActive = true };', aciklama: '`IsActive = true` — bu kez kullanıcı UYGUN, akış devam edecek.', neden: null, olmasaydi: null },
+          { satir: '_tokenService.Setup(t => t.GenerateAccessToken(user)).Returns("yeni-access");', aciklama: '`ITokenService.GenerateAccessToken` (Bölüm 4) — somut `user` referansıyla eşleşiyor.', neden: null, olmasaydi: null },
+          { satir: '_tokenService.Setup(t => t.GenerateRefreshToken()).Returns(new RefreshTokenResult("yeni-refresh", DateTime.UtcNow.AddDays(7)));', aciklama: '`RefreshTokenResult` (Bölüm 4\'ün `ITokenService` sözleşmesindeki record) — SAHTE bir yeni token+süre çifti.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(new RefreshCommand("ham-token", "Chrome", "1.2.3.4"), default);', aciklama: 'Bu kez `DeviceInfo`/`IpAddress` DOLU — YENİ `RefreshToken` entity\'sine bu bilgilerin DOĞRU aktarıldığı aşağıda doğrulanacak.', neden: null, olmasaydi: null },
+          { satir: 'token.IsUsed.Should().BeTrue();', aciklama: 'ESKİ token\'ın (mock\'un İÇİNDE DEĞİL, test kodunda TUTULAN somut referans) `IsUsed` bayrağının Handler tarafından `true`\'ya çevrildiğini doğrular — bu, AYNI token\'ın İKİNCİ KEZ kullanılmaya çalışılmasını (replay) bir SONRAKİ istekte YAKALAYACAK mekanizma.', neden: null, olmasaydi: null },
+          { satir: 'result.AccessToken.Should().Be("yeni-access");', aciklama: 'Mock\'un ÜRETTİĞİ SAHTE access token\'ın `RefreshResponse`\'a DOĞRU taşındığını doğrular.', neden: null, olmasaydi: null },
+          { satir: 'result.RefreshToken.Should().Be("yeni-refresh");', aciklama: 'AYNI şekilde, YENİ ham refresh token\'ın (HASH\'i DEĞİL, istemciye dönecek HAM DEĞER) doğru taşındığını doğrular.', neden: null, olmasaydi: null },
+          {
+            satir: '_refreshTokenRepository.Verify(r => r.AddAsync(It.Is<RefreshToken>(t =>',
+            aciklama: 'Register\'daki (Bölüm 40, ilk slayt) AYNI `It.Is<T>(predicate)` deseni — bu kez YENİ oluşturulan `RefreshToken` entity\'sinin alanları kontrol ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 't.UserId == 1 && t.TokenFamily == "family-1" && t.DeviceInfo == "Chrome" && t.IpAddress == "1.2.3.4"),',
+            aciklama: 'Bu testin ASIL iddiası: `TokenFamily == "family-1"` — YENİ token, ESKİ token\'la AYNI aileyi KORUYOR (Bölüm 14\'ün notu: "Token Family Pattern" bu SAYEDE çalışıyor, her rotasyon YENİ bir aile BAŞLATMIYOR).',
+            neden: 'Family korunmasaydı, bir replay tespitinde `RevokeFamilyAsync` GEÇMİŞTEKİ token\'ları iptal EDEBİLİRDİ ama GELECEKTEKİ (rotasyondan sonraki) token\'lar FARKLI bir family\'de olduğu için ETKİLENMEZDİ — güvenlik mekanizması İŞLEVSİZ kalırdı.',
+            olmasaydi: 'Bu doğrulama olmasaydı, biri Handler\'da `TokenFamily = existingToken.TokenFamily` yerine YANLIŞLIKLA `TokenFamily = Guid.NewGuid().ToString()` (HER rotasyonda YENİ aile) yazsa bile, yalnızca `AccessToken`/`RefreshToken` string\'lerini kontrol eden testler bunu YAKALAMAZDI.'
+          },
+          { satir: 'It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'AYNI kapanış.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogoutCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/LogoutCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class LogoutCommandHandlerTests
+{
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+
+    public LogoutCommandHandlerTests()
+    {
+        _passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns<string>(t => $"hash-of-{t}");
+    }
+
+    private LogoutCommandHandler CreateHandler() => new(_refreshTokenRepository.Object, _passwordService.Object);
+
+    [Fact]
+    public async Task Handle_TokenNotFound_ReturnsUnitIdempotently()
+    {
+        // ARRANGE — logout idempotent olmalı, bulunamayan token'da da başarı döner
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((RefreshToken?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LogoutCommand(1, "ham-token"), default);
+
+        // ASSERT
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_TokenBelongsToOtherUser_ReturnsUnitWithoutRevoking()
+    {
+        // ARRANGE — başkasının token'ını manipüle etmeye çalışıldığı ayrı bir hatayla belli edilmez
+        var token = new RefreshToken { UserId = 99, RevokedAt = null };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LogoutCommand(1, "ham-token"), default);
+
+        // ASSERT
+        token.RevokedAt.Should().BeNull();
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_AlreadyRevoked_ReturnsUnitIdempotently()
+    {
+        // ARRANGE
+        var token = new RefreshToken { UserId = 1, RevokedAt = DateTime.UtcNow.AddMinutes(-5) };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LogoutCommand(1, "ham-token"), default);
+
+        // ASSERT
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ValidToken_RevokesTokenAndSaves()
+    {
+        // ARRANGE
+        var token = new RefreshToken { UserId = 1, RevokedAt = null };
+        _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new LogoutCommand(1, "ham-token"), default);
+
+        // ASSERT
+        token.RevokedAt.Should().NotBeNull();
+        _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `LogoutCommand`/Handler (Bölüm 14) için — bu Handler hiç `Exception` fırlatmıyor, `using Common.Exceptions` bu yüzden YOK.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IRefreshTokenRepository` için — `IUserRepository` bu Handler\'a hiç GİRMİYOR.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IPasswordService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`RefreshToken` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LogoutCommandHandlerTests', aciklama: '`LogoutCommandHandler`\'ı test eder — 13 Auth Handler\'ının EN küçüğü (2 bağımlılık), ama "idempotent olmalı" kuralı YÜZÜNDEN 4 senaryosu var.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IPasswordService> _passwordService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'public LogoutCommandHandlerTests()', aciklama: 'Refresh\'teki (bu bölüm) AYNI constructor deseni — `HashToken` davranışı burada da PAYLAŞILAN.', neden: null, olmasaydi: null },
+          { satir: '_passwordService.Setup(p => p.HashToken(It.IsAny<string>())).Returns<string>(t => $"hash-of-{t}");', aciklama: 'AYNI girdiye-göre-hesaplama deseni.', neden: null, olmasaydi: null },
+          { satir: 'private LogoutCommandHandler CreateHandler() => new(_refreshTokenRepository.Object, _passwordService.Object);', aciklama: 'Yalnızca 2 parametre olduğu için TEK satıra sığıyor.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'public async Task Handle_TokenNotFound_ReturnsUnitIdempotently()',
+            aciklama: 'İlk senaryo — test adının "Idempotently" kelimesi ÖNEMLİ: logout işlemi, AYNI (veya geçersiz) token\'la kaç kez çağrılırsa çağrılsın AYNI (başarılı) sonucu vermeli, hata FIRLATMAMALI.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: '_refreshTokenRepository.Setup(r => r.GetByTokenHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((RefreshToken?)null);', aciklama: 'Joker token deseni.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new LogoutCommand(1, "ham-token"), default);', aciklama: 'Bu satır 4 kez geçiyor — bu dosyanın 4 testinde de exception BEKLENMEDİĞİ için hepsi doğrudan `await`.', neden: null, olmasaydi: null },
+          {
+            satir: '_refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: 'Bu satır 3 kez geçiyor (bu test, `Handle_TokenBelongsToOtherUser`, `Handle_AlreadyRevoked`) — bu ÜÇ "sessizce başarı" dalının HİÇBİRİNDE DB\'ye yazma OLMAMALI (zaten değiştirilecek bir şey YOK).',
+            neden: 'Bu satır olmasaydı, Handler\'ın erken-çıkış mantığı (`if (token is null || ...) return Unit.Value;`) YANLIŞLIKLA silinse bile (her durumda `SaveChangesAsync` çağrılsa), yalnızca "exception FIRLAMADI" testleri bunu FARK ETMEZDİ — gereksiz DB round-trip\'leri sessizce EKLENEBİLİRDİ.',
+            olmasaydi: null
+          },
+          { satir: 'public async Task Handle_TokenBelongsToOtherUser_ReturnsUnitWithoutRevoking()', aciklama: 'İkinci senaryo — SECURITY.md\'nin "az konuşan hata" ilkesinin BİR ADIM ÖTESİ: burada hata bile YOK, sessizce HİÇBİR ŞEY YAPILMIYOR.', neden: null, olmasaydi: null },
+          { satir: 'var token = new RefreshToken { UserId = 99, RevokedAt = null };', aciklama: '`UserId = 99` — Command\'daki `UserId` (1) İLE UYUŞMUYOR, BAŞKASININ token\'ı.', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);', aciklama: 'Bu satır 3 kez geçiyor (bu test ve kalan 2 test) — bu kez SOMUT bir token dönüyor, `null` DEĞİL.', neden: null, olmasaydi: null },
+          {
+            satir: 'token.RevokedAt.Should().BeNull();',
+            aciklama: 'Başkasının token\'ının İPTAL EDİLMEDİĞİNİ doğrudan kanıtlar — yalnızca `SaveChangesAsync`\'in çağrılmadığını kontrol etmek YETMEZDİ, çünkü Handler `token.RevokedAt`\'ı BELLEKTE değiştirip SaveChanges\'i unutmuş OLABİLİRDİ (mock ortamında bu ihtimal DB\'de görünmez, ama nesnenin KENDİSİ üzerinde GÖRÜNÜR).',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'public async Task Handle_AlreadyRevoked_ReturnsUnitIdempotently()', aciklama: 'Üçüncü senaryo: token AYNI kullanıcıya ait ama ZATEN iptal edilmiş.', neden: null, olmasaydi: null },
+          { satir: 'var token = new RefreshToken { UserId = 1, RevokedAt = DateTime.UtcNow.AddMinutes(-5) };', aciklama: '`UserId = 1` Command\'la EŞLEŞİYOR ama `RevokedAt` DOLU — bu kez sorun SAHİPLİK DEĞİL, token zaten GEÇERSİZ.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidToken_RevokesTokenAndSaves()', aciklama: 'Dördüncü senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var token = new RefreshToken { UserId = 1, RevokedAt = null };', aciklama: 'Hem SAHİPLİK doğru (`UserId = 1`) hem token HENÜZ iptal edilmemiş (`RevokedAt = null`) — bu kez GERÇEKTEN iptal İŞLEMİ gerçekleşecek.', neden: null, olmasaydi: null },
+          { satir: 'token.RevokedAt.Should().NotBeNull();', aciklama: 'Bu kez POZİTİF doğrulama — bir önceki iki testin `BeNull()`\'ıyla DOĞRUDAN kontrast oluşturuyor.', neden: null, olmasaydi: null },
+          { satir: '_refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Yalnızca BU (dördüncü) senaryoda `Times.Once` — kalan 3 senaryonun HEPSİNDE `Times.Never` idi.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ForgotPasswordCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/ForgotPasswordCommandHandlerTests.cs',
+        kod: `using Moq;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class ForgotPasswordCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private ForgotPasswordCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _otpService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ReturnsUnitWithoutSendingEmail()
+    {
+        // ARRANGE — SECURITY.md §7: e-posta enumerasyonu önlenir, kayıtsız e-postada da 200
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ForgotPasswordCommand("yok@test.de", "tr"), default);
+
+        // ASSERT
+        _emailService.Verify(e => e.SendPasswordResetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ExistingUser_GeneratesOtpAndSendsPasswordResetEmail()
+    {
+        // ARRANGE — sosyal-yalnızca hesap da (PasswordHash null) OTP ile şifre belirleyebilir
+        var user = new User { Email = "ada@test.de", FirstName = "Ada", PasswordHash = null };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Generate(user, OtpPurpose.PasswordReset)).Returns("999888");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ForgotPasswordCommand("ada@test.de", "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendPasswordResetAsync("ada@test.de", "Ada", "999888", "tr", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import — bu dosyada `FluentAssertions` YOK, çünkü hiçbir `.Should()` çağrısı yok (yalnızca `Verify` kullanılıyor).', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `ForgotPasswordCommand`/Handler (Bölüm 15) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.PasswordReset` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class ForgotPasswordCommandHandlerTests', aciklama: '`ForgotPasswordCommandHandler`\'ı test eder — ResendVerification\'daki (bu bölüm) AYNI enumeration-önleme YAPISI, farklı OTP amacı.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private ForgotPasswordCommandHandler CreateHandler() =>', aciklama: 'ResendVerification\'daki AYNI iki-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _otpService.Object, _emailService.Object);', aciklama: 'AYNI `.Object` deseni.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 2 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotFound_ReturnsUnitWithoutSendingEmail()', aciklama: 'ResendVerification\'daki AYNI enumeration-önleme senaryosu.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'AYNI joker e-posta deseni.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 2 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ForgotPasswordCommand("yok@test.de", "tr"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendPasswordResetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'ResendVerification\'daki AYNI negatif doğrulama deseni, farklı e-posta metodu.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ExistingUser_GeneratesOtpAndSendsPasswordResetEmail()', aciklama: 'İkinci senaryo: happy path.', neden: null, olmasaydi: null },
+          {
+            satir: 'var user = new User { Email = "ada@test.de", FirstName = "Ada", PasswordHash = null };',
+            aciklama: '`PasswordHash = null` BİLEREK kuruluyor — bu Handler\'ın CLAUDE.md ile kayıt altına alınmış bir tasarım kararını test ediyor: sosyal-yalnızca (Google/Apple) bir hesap da ForgotPassword akışıyla bir şifre BELİRLEYEBİLİR.',
+            neden: 'Handler kaynak kodu `AuthProvider`/`PasswordHash`\'e BAKMADAN her kullanıcıya OTP gönderiyor — bu satır olmasaydı, biri Handler\'a "yalnızca `PasswordHash` DOLU kullanıcılara gönder" gibi YANLIŞ bir kısıt eklese bile hiçbir test bunu YAKALAMAZDI, sosyal hesaplı kullanıcılar sessizce şifre BELİRLEYEMEZ hale gelirdi.',
+            olmasaydi: null
+          },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Sabit e-postayla dolu `user` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Generate(user, OtpPurpose.PasswordReset)).Returns("999888");', aciklama: '`OtpPurpose.PasswordReset` — Register\'ın `EmailVerification`\'ından, Login\'in `LoginOtp`\'undan FARKLI üçüncü amaç.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ForgotPasswordCommand("ada@test.de", "tr"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'OTP\'nin DB\'ye yazıldığını doğrular.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendPasswordResetAsync("ada@test.de", "Ada", "999888", "tr", It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`SendPasswordResetAsync` — Bölüm 10\'un 6 e-posta şablonundan bir DİĞERİ.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ResetPasswordCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/ResetPasswordCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class ResetPasswordCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private ResetPasswordCommandHandler CreateHandler() => new(
+        _userRepository.Object, _refreshTokenRepository.Object, _otpService.Object, _passwordService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ResetPasswordCommand("yok@test.de", "123456", "YeniSifre1!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_OtpExpired_ThrowsOtpExpiredException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.Expired);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ResetPasswordCommand("ada@test.de", "123456", "YeniSifre1!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<OtpExpiredException>();
+    }
+
+    [Fact]
+    public async Task Handle_InvalidCode_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = new User { Email = "ada@test.de" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.InvalidCode);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ResetPasswordCommand("ada@test.de", "000000", "YeniSifre1!", "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidCode_UpdatesPasswordRevokesTokensAndNotifies()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada" };
+        _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.Success);
+        _passwordService.Setup(p => p.Hash("YeniSifre1!")).Returns("yeni-hash");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ResetPasswordCommand("ada@test.de", "123456", "YeniSifre1!", "tr"), default);
+
+        // ASSERT — SECURITY.md §7: şifre sıfırlanınca tüm cihazlardan çıkış
+        user.PasswordHash.Should().Be("yeni-hash");
+        _refreshTokenRepository.Verify(r => r.RevokeAllForUserAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendPasswordChangedNotificationAsync("ada@test.de", "Ada", "tr", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`InvalidOtpException`/`OtpExpiredException` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `ResetPasswordCommand`/Handler (Bölüm 15) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService`/`IPasswordService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.PasswordReset` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class ResetPasswordCommandHandlerTests', aciklama: '`ResetPasswordCommandHandler`\'ı test eder — VerifyEmail\'in (bu bölüm) OTP-doğrulama ÜÇLÜSÜNÜ (bulunamadı/süresi-dolmuş/geçersiz-kod) VE ResetPassword\'e ÖZGÜ "tüm cihazlardan çıkış" yan etkisini BİRLİKTE kapsıyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen — bu kez `AddAsync` DEĞİL, `RevokeAllForUserAsync` (Bölüm 8) için gerekiyor.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IPasswordService> _passwordService = new();', aciklama: 'AYNI desen — bu kez `HashToken` DEĞİL, `Hash` (bcrypt, YENİ şifre için).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private ResetPasswordCommandHandler CreateHandler() => new(', aciklama: 'AYNI çok-satırlı factory deseni, 5 parametre.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Object, _refreshTokenRepository.Object, _otpService.Object, _passwordService.Object, _emailService.Object);', aciklama: 'Bu kez 5 parametre TEK satıra sığdı (isimler kısa).', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotFound_ThrowsInvalidOtpException()', aciklama: 'VerifyEmail\'daki (bu bölüm) AYNI ilk senaryo.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'AYNI joker e-posta deseni.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ResetPasswordCommand("yok@test.de", "123456", "YeniSifre1!", "tr"), default);', aciklama: 'AYNI `ThrowAsync` deseni — bu Command 4 parametreli (Email/OtpCode/NewPassword/Language).', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidOtpException>();', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_OtpExpired_ThrowsOtpExpiredException()', aciklama: 'VerifyEmail\'daki AYNI ikinci senaryo.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Email = "ada@test.de" };', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`).', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 3 kez geçiyor (kalan 3 test).', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.Expired);', aciklama: '`OtpPurpose.PasswordReset` — ForgotPassword\'deki (bu bölüm) AYNI amaç.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ResetPasswordCommand("ada@test.de", "123456", "YeniSifre1!", "tr"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<OtpExpiredException>();', aciklama: 'AYNI exception tipi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidCode_ThrowsInvalidOtpException()', aciklama: 'VerifyEmail\'daki AYNI üçüncü senaryo.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.InvalidCode);', aciklama: 'AYNI desen, yanlış kod.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ResetPasswordCommand("ada@test.de", "000000", "YeniSifre1!", "tr"), default);', aciklama: 'Setup\'taki AYNI "000000" koduyla çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidCode_UpdatesPasswordRevokesTokensAndNotifies()', aciklama: 'Dördüncü senaryo: happy path — test adı ÜÇ ayrı yan etkiyi (şifre güncelleme, token iptali, bildirim) birden BELİRTİYOR.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada" };', aciklama: '`Id = 1` bu kez GEREKLİ — aşağıda `RevokeAllForUserAsync(1, ...)` çağrısında kullanılacak.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.PasswordReset)).Returns(OtpVerificationResult.Success);', aciklama: 'AYNI desen, bu kez `Success`.', neden: null, olmasaydi: null },
+          { satir: '_passwordService.Setup(p => p.Hash("YeniSifre1!")).Returns("yeni-hash");', aciklama: 'Register\'daki (Bölüm 40, ilk slayt) AYNI senkron `Hash`/`Returns` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ResetPasswordCommand("ada@test.de", "123456", "YeniSifre1!", "tr"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          { satir: 'user.PasswordHash.Should().Be("yeni-hash");', aciklama: '`user` nesnesinin (mock\'un İÇİNDE DEĞİL, test kodunda TUTULAN referans) `PasswordHash` alanının GERÇEKTEN güncellendiğini doğrudan doğrular.', neden: null, olmasaydi: null },
+          {
+            satir: '_refreshTokenRepository.Verify(r => r.RevokeAllForUserAsync(1, It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: 'Bu testin GÜVENLİK açısından en KRİTİK doğrulaması: `RevokeAllForUserAsync` (Bölüm 8) `1` (kullanıcı ID\'si) İLE çağrıldı mı?',
+            neden: 'SECURITY.md §7: şifre sıfırlandığında ÇALINMIŞ bir oturum (varsa) da KAPANMALI — yalnızca `PasswordHash`\'in güncellendiğini doğrulamak, bu GÜVENLİK YAN ETKİSİNİN GERÇEKLEŞTİĞİNİ KANITLAMAZ.',
+            olmasaydi: 'Bu Verify olmasaydı, biri Handler\'dan `RevokeAllForUserAsync` çağrısını YANLIŞLIKLA SİLSE (ör. bir refactor sırasında) bile test YEŞİL kalırdı — şifresi SIZAN bir kullanıcının ESKİ oturumu, yeni şifre BELİRLENDİKTEN SONRA bile AKTİF kalmaya DEVAM EDERDİ.'
+          },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Yeni şifrenin DB\'ye yazıldığını doğrular.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendPasswordChangedNotificationAsync("ada@test.de", "Ada", "tr", It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`SendPasswordChangedNotificationAsync` — Bölüm 10\'un 6 şablonundan BİR DİĞERİ; kullanıcı şifresi DEĞİŞTİĞİNDE haberdar EDİLİYOR (kendisi yapmadıysa fark etsin diye).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'RequestAccountDeletionCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/RequestAccountDeletionCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class RequestAccountDeletionCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<IEmailService> _emailService = new();
+
+    private RequestAccountDeletionCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _otpService.Object, _emailService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new RequestAccountDeletionCommand(99, "tr"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidUser_GeneratesOtpAndSendsDeletionConfirmationEmail()
+    {
+        // ARRANGE
+        var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada" };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Generate(user, OtpPurpose.AccountDeletion)).Returns("777666");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new RequestAccountDeletionCommand(1, "tr"), default);
+
+        // ASSERT
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _emailService.Verify(e => e.SendAccountDeletionConfirmationAsync("ada@test.de", "Ada", "777666", "tr", It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `RequestAccountDeletionCommand`/Handler (Bölüm 15) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService`/`IEmailService` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.AccountDeletion` için.', neden: null, olmasaydi: null },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: 'Bu dosyada İLK kez — `EntityNotFoundException` (Bölüm 2) `Application.Common.Exceptions` DEĞİL, `Domain.Exceptions` ad alanında (Bölüm 2\'nin notu: Domain katmanı Application\'a bağımlı OLAMAZ, bu yüzden `AppException`\'dan TÜREMEZ ama AYNI Code-önce-çöz ilkesini taşır).',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class RequestAccountDeletionCommandHandlerTests', aciklama: '`RequestAccountDeletionCommandHandler`\'ı test eder — kullanıcı `Id` ile ARANIYOR (`GetByIdAsync`), Auth handler testleri içinde e-posta yerine ID kullanan AZINLIKTAKİ handler\'lardan biri (diğeri: Refresh, bu bölüm).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IEmailService> _emailService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private RequestAccountDeletionCommandHandler CreateHandler() =>', aciklama: 'AYNI iki-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _otpService.Object, _emailService.Object);', aciklama: 'AYNI `.Object` deseni.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 2 kez geçiyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()',
+            aciklama: 'İlk senaryo — bu dosyada ForgotPassword/ResendVerification\'daki "sessizce 200" ENUMERATION-önleme deseni YOK: burada kullanıcı zaten KİMLİĞİ DOĞRULANMIŞ (JWT\'den gelen `UserId`), bu yüzden bulunamama GERÇEK bir hata durumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'Bu kez joker DEĞİL, somut `99` ID\'si — Command\'daki `UserId` (99) ile eşleşiyor.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 2 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new RequestAccountDeletionCommand(99, "tr"), default);', aciklama: 'AYNI `ThrowAsync` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();', aciklama: '`Application.Common.Exceptions.AppException` alt sınıflarından FARKLI bir tip — `Domain.Exceptions.EntityNotFoundException`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidUser_GeneratesOtpAndSendsDeletionConfirmationEmail()', aciklama: 'İkinci senaryo: happy path.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1, Email = "ada@test.de", FirstName = "Ada" };', aciklama: '`Id = 1` — bir alttaki `GetByIdAsync` Setup\'ıyla eşleşecek.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Somut `1` ID\'siyle dolu `user` döndürüyor.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Generate(user, OtpPurpose.AccountDeletion)).Returns("777666");', aciklama: '`OtpPurpose.AccountDeletion` — DÖRDÜNCÜ ve SON OTP amacı (EmailVerification/LoginOtp/PasswordReset\'ten sonra).', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new RequestAccountDeletionCommand(1, "tr"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'OTP\'nin DB\'ye yazıldığını doğrular.', neden: null, olmasaydi: null },
+          { satir: '_emailService.Verify(e => e.SendAccountDeletionConfirmationAsync("ada@test.de", "Ada", "777666", "tr", It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`SendAccountDeletionConfirmationAsync` — Bölüm 10\'un 6 şablonundan BİR DİĞERİ.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmAccountDeletionCommandHandlerTests.cs',
+        dosyaYolu: 'backend/WordLearner.Tests/Features/Auth/ConfirmAccountDeletionCommandHandlerTests.cs',
+        kod: `using Moq;
+using FluentAssertions;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.Features.Auth;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Tests.Features.Auth;
+
+public class ConfirmAccountDeletionCommandHandlerTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
+    private readonly Mock<IOtpService> _otpService = new();
+
+    private ConfirmAccountDeletionCommandHandler CreateHandler() =>
+        new(_userRepository.Object, _refreshTokenRepository.Object, _otpService.Object);
+
+    [Fact]
+    public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ConfirmAccountDeletionCommand(99, "123456"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Handle_OtpExpired_ThrowsOtpExpiredException()
+    {
+        // ARRANGE
+        var user = new User { Id = 1 };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.Expired);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ConfirmAccountDeletionCommand(1, "123456"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<OtpExpiredException>();
+    }
+
+    [Fact]
+    public async Task Handle_InvalidCode_ThrowsInvalidOtpException()
+    {
+        // ARRANGE
+        var user = new User { Id = 1 };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.InvalidCode);
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(new ConfirmAccountDeletionCommand(1, "000000"), default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<InvalidOtpException>();
+    }
+
+    [Fact]
+    public async Task Handle_ValidCode_StartsGracePeriodAndRevokesAllTokens()
+    {
+        // ARRANGE — kalıcı anonimleştirme DEĞİL, 30 gün grace period başlar (SECURITY.md §9)
+        var user = new User { Id = 1, IsActive = true };
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.Success);
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(new ConfirmAccountDeletionCommand(1, "123456"), default);
+
+        // ASSERT
+        user.IsDeleted.Should().BeTrue();
+        user.IsActive.Should().BeFalse();
+        user.ScheduledDeletionAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(30), TimeSpan.FromMinutes(1));
+        _refreshTokenRepository.Verify(r => r.RevokeAllForUserAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Moq;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: 'AYNI import.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Common.Exceptions;', aciklama: '`OtpExpiredException`/`InvalidOtpException` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Features.Auth;', aciklama: 'Test edilen `ConfirmAccountDeletionCommand`/Handler (Bölüm 15) için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`/`IRefreshTokenRepository` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Application.Interfaces.Services;', aciklama: '`IOtpService` için — bu Handler `IEmailService` KULLANMIYOR (silme onayı e-postası zaten RequestAccountDeletion, bu bölüm, adımında gönderildi).', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Entities.Auth;', aciklama: '`User` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Enums.Auth;', aciklama: '`OtpPurpose.AccountDeletion` için.', neden: null, olmasaydi: null },
+          { satir: 'using WordLearner.Domain.Exceptions;', aciklama: 'RequestAccountDeletion\'daki (bu bölüm) AYNI `EntityNotFoundException` için.', neden: null, olmasaydi: null },
+          { satir: 'namespace WordLearner.Tests.Features.Auth;', aciklama: 'AYNI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class ConfirmAccountDeletionCommandHandlerTests', aciklama: '13 Auth Handler testinin SONUNCUSU — VerifyEmail\'in OTP-doğrulama üçlüsü İLE ResetPassword\'ün "tüm cihazlardan çıkış" deseni BİR ARADA, ARTI bu Handler\'a ÖZGÜ soft-delete mutasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IOtpService> _otpService = new();', aciklama: 'AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'private ConfirmAccountDeletionCommandHandler CreateHandler() =>', aciklama: 'AYNI iki-satırlı factory deseni.', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _refreshTokenRepository.Object, _otpService.Object);', aciklama: 'AYNI `.Object` deseni.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_UserNotFound_ThrowsEntityNotFoundException()', aciklama: 'RequestAccountDeletion\'daki AYNI ilk senaryo.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((User?)null);', aciklama: 'AYNI desen, somut `99` ID\'si.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Bu satır 4 kez geçiyor.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ConfirmAccountDeletionCommand(99, "123456"), default);', aciklama: 'AYNI `ThrowAsync` deseni.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();', aciklama: 'AYNI exception tipi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_OtpExpired_ThrowsOtpExpiredException()', aciklama: 'VerifyEmail\'daki AYNI ikinci senaryo.', neden: null, olmasaydi: null },
+          { satir: 'var user = new User { Id = 1 };', aciklama: 'Bu satır 2 kez geçiyor (bu test ve `Handle_InvalidCode`) — yalnızca `Id` yeterli, OTP doğrulaması `User`\'ın diğer alanlarına BAKMIYOR.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);', aciklama: 'Bu satır 3 kez geçiyor (kalan 3 test).', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.Expired);', aciklama: '`OtpPurpose.AccountDeletion` — RequestAccountDeletion\'daki AYNI amaç, bu kez DOĞRULAMA tarafında.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ConfirmAccountDeletionCommand(1, "123456"), default);', aciklama: 'Bu senaryoya özgü çağrı.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<OtpExpiredException>();', aciklama: 'AYNI exception tipi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_InvalidCode_ThrowsInvalidOtpException()', aciklama: 'VerifyEmail\'daki AYNI üçüncü senaryo.', neden: null, olmasaydi: null },
+          { satir: '_otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.InvalidCode);', aciklama: 'AYNI desen, yanlış kod.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(new ConfirmAccountDeletionCommand(1, "000000"), default);', aciklama: 'Setup\'taki AYNI "000000" koduyla çağrı.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<InvalidOtpException>();', aciklama: 'VerifyEmail/ResetPassword\'daki AYNI exception tipi — yalnızca bu dosyada `Handle_InvalidCode`\'a özgü (`Handle_UserNotFound` FARKLI bir tip, `EntityNotFoundException`, fırlatıyor).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidCode_StartsGracePeriodAndRevokesAllTokens()', aciklama: '13 Auth Handler testinin SON senaryosu: happy path.', neden: null, olmasaydi: null },
+          {
+            satir: 'var user = new User { Id = 1, IsActive = true };',
+            aciklama: '`IsActive = true` AÇIKÇA kuruluyor — Handler\'ın bu alanı `false`\'a çevirdiğini kanıtlayabilmek için başlangıç durumunun NET olması gerekiyor (VerifyEmail\'in `IsEmailVerified = false` başlangıcıyla AYNI mantık).',
+            neden: null,
+            olmasaydi: null
+          },
+          { satir: '_otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.AccountDeletion)).Returns(OtpVerificationResult.Success);', aciklama: 'AYNI desen, bu kez `Success`.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(new ConfirmAccountDeletionCommand(1, "123456"), default);', aciklama: 'Exception beklenmiyor.', neden: null, olmasaydi: null },
+          { satir: 'user.IsDeleted.Should().BeTrue();', aciklama: 'Handler kaynak kodundaki notla AYNI: bu KALICI bir anonimleştirme DEĞİL, soft-delete bayrağı.', neden: null, olmasaydi: null },
+          { satir: 'user.IsActive.Should().BeFalse();', aciklama: 'Bir üstteki `IsActive = true` başlangıcıyla DOĞRUDAN kontrast — mutasyonun GERÇEKLEŞTİĞİNİ kanıtlıyor.', neden: null, olmasaydi: null },
+          {
+            satir: 'user.ScheduledDeletionAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(30), TimeSpan.FromMinutes(1));',
+            aciklama: '`BeCloseTo` — FluentAssertions\'ın YAKLAŞIK zaman karşılaştırma metodu, `Should().Be(...)` DEĞİL: test çalıştığı AN ile Handler\'ın çalıştığı an arasında birkaç MİLİSANİYE fark olabilir, `TimeSpan.FromMinutes(1)` tolerans olarak yeterli.',
+            neden: 'SECURITY.md §9: 30 günlük grace period — bu alan A-20\'nin `AccountCleanupBackgroundService`\'inin HANGİ hesapları KALICI olarak temizleyeceğine karar vereceği tarih, YANLIŞ hesaplanırsa kullanıcı verisi ya ÇOK ERKEN silinir ya da hiç silinmez.',
+            olmasaydi: 'Bu doğrulama olmasaydı, `GraceDays` sabiti (Handler\'da `30`) YANLIŞLIKLA `AddDays(30)` yerine `AddDays(3)` gibi bir değere değişse bile hiçbir test bunu YAKALAMAZDI — kullanıcılar hesaplarını GERİ ALMAK için beklediklerinden ÇOK DAHA AZ süreye sahip olurdu.'
+          },
+          { satir: '_refreshTokenRepository.Verify(r => r.RevokeAllForUserAsync(1, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'ResetPassword\'daki (bu bölüm) AYNI "tüm cihazlardan çıkış" doğrulaması.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Soft-delete mutasyonunun DB\'ye yazıldığını doğrular — 13 Auth Handler testinin SON satırı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm 40 — 13 Auth Handler Testi Tamamlandı',
+        maddeler: [
+          '13 Command Handler, ~55 test metodu — Register\'dan ConfirmAccountDeletion\'a, hepsi Bölüm 39\'un AAA + tam-mock + adlandırma + minimum-4-senaryo kurallarını izliyor.',
+          'Tekrarlayan iki desen bütün dosyalarda görüldü: OTP-doğrulama üçlüsü (bulunamadı/süresi-dolmuş/geçersiz-kod → VerifyEmail, ResetPassword, ConfirmAccountDeletion) ve enumeration-önleme (sessizce 200 → ForgotPassword, ResendVerification).',
+          '`ThrowAsync` (lambda + await), `It.Is<T>(predicate)`, `Returns<string>(girdi => ...)` (Refresh/Logout\'un token-hash mock\'u), `[Theory]`/`[InlineData]` (Refresh\'in 5 dallı Token Family testi) — Moq\'un ve xUnit\'in bu bölümde görülen TÜM araçları.',
+          'Sıradaki bölüm: 5 QR Login Handler testi (Generate/Scan/Confirm/Deny/GetStatus) — AYNI test standardı, farklı domain.'
+        ]
+      },
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

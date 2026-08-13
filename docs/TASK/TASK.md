@@ -38,8 +38,17 @@
 | D | D-01…D-14 | Mobil | ⬜ |
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 
-**Sıradaki task:** `A-03` ⬜ (Auth API) → `TASK/A_backend.md`.
+**Sıradaki task:** `A-03.2` ⬜ (İlk Admin Hesabı) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
+
+(`A-03 — Auth API` ✅ tamamlandı 2026-08-14: `User`/`RefreshToken`/`QrLoginSession` entity'leri,
+`IPasswordService`/`ITokenService`/`IOtpService`/`ILoginCompletionService`/`IEmailService` +
+Google/Apple doğrulayıcıları, Auth'a özel repository katmanı, 9 `AppException` alt sınıfı, 13 Auth +
+5 QR Login Command+Handler, `SuccessMessages`+`ValidationBehavior`+`ApiControllerBase`+15 validator+
+5 rate limiting policy'si, `AuthController`[13]+`QrLoginController`[5] = 18 endpoint [canlı test
+edildi, 1 gerçek bug bulunup düzeltildi — bkz. A-03 notu], 18 Handler'ın TAMAMI için birim testi
+[95/95 yeşil] — `AKADEMI/backend/A-03_auth-api/`e işlendi (43 bölüm). Sıradaki: A-03.2, ardından
+A-04 [Loglama Sistemi].)
 
 (`A-01 — Proje İskeleti` ✅ tamamlandı 2026-08-09: 5 proje [Domain/Application/Infrastructure/API/
 Tests], CLAUDE.md §5'teki tek yönlü bağımlılık zinciri, TECHNICAL_SPECIFICATIONS.md §1'deki NuGet

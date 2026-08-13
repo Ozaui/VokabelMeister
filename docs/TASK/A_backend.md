@@ -83,7 +83,7 @@
       timestampUtc }` şeklini üretir, sağlıksızsa (DB bağlanamıyorsa) 503 döner (canlı doğrulandı).
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-02_ortak-altyapi/07_saglik-kontrolu.html`
 
-### A-03 — Auth API 🔄
+### A-03 — Auth API ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §3, §3.1, REFERENCE/SECURITY.md §1.3/§2, REFERENCE/TECHNICAL_SPECIFICATIONS.md §5-6
 **Frontend karşılığı:** B-02/B-02.1 (Admin — sade giriş+OTP+QR), C-03/C-03.1 (Web — tam akış+Google+QR), D-05/D-05.1 (Mobil — tam akış+Google+Apple+QR tarayıcı)
 > Eski turda QR ile giriş / tema tercihi / dil tercihi / başarı mesajı lokalizasyonu dört ayrı
@@ -188,9 +188,21 @@
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 22-38. bölümler (ValidationBehavior,
       Details[]/HttpContextExtensions, ApiControllerBase, 15 validator, ErrorMessages diff, rate
       limiting, 18 endpoint kod+postman, URL-safe token bugfix)
-- [ ] **Birim testleri:** 13+5 Command Handler testi, `OtpServiceTests`, `LoginCompletionServiceTests`,
+- [x] **Birim testleri:** 13+5 Command Handler testi, `OtpServiceTests`, `LoginCompletionServiceTests`,
       `JwtTokenServiceTests`, `PasswordServiceTests`
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 39-43. bölümler (39: AAA/mock/
+      adlandırma/kapsam standardı — kullanıcı isteğiyle "nasıl yazılır" ayrı bir bölüm oldu; 40: 13
+      Auth handler testi TEK dosyada, her Handler kendi kod slaytında art arda — kullanıcı isteğiyle
+      temsili öğretim istisnası bu bölüm için BİLEREK kaldırıldı, 18 test dosyasının HEPSİ tam satır
+      kapsamıyla işlendi; 41: 5 QR handler testi, aynı desen; 42: `dotnet test` ile çalıştırma/filtreleme;
+      43: kapanış özet+sözlük). Süreçte 2 tur kalite sorunu bulunup düzeltildi: (1) `karsilastirma`/
+      `sozluk` slayt şeması yanlış kullanılmıştı (`iyi`/`kotu` düz string yerine `{baslik,maddeler[]}`
+      objesi, `tanim` yerine `aciklama` alanı) — motor kodundan doğru şema çıkarılıp düzeltildi;
+      (2) "bu satır N kez geçiyor" notlarının bir kısmı yanlış sayıyordu ve birkaç satır hiç
+      açıklanmamıştı (satirlar[] boşluğu, motor sessizce atlıyor) — bunu insan gözüyle tekrar tekrar
+      bulmak yerine `window.MODULE`'ü gerçekten çalıştırıp kod bloğuyla satirlar[]'ı karşılaştıran
+      iki script yazıldı (kapsam + sayım doğrulama), 43 dosyanın tamamı bu scriptlerden temiz geçene
+      kadar iterasyon yapıldı.
 
 ### A-03.2 — İlk Admin Hesabı ⬜ ⚠️ **[2026-08-12 — yeni task, tespit edilen boşluk]**
 **Neden gerekli:** `AdminController` (A-18) ve tüm `[Authorize(Roles="Admin")]` uçları, sistemde

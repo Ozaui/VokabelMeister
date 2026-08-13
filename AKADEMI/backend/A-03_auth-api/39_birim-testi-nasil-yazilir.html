@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Handler Birim Testi Nasıl Yazılır</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'birim-testi-nasil-yazilir',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '38_qr-confirm-deny-endpoint.html',
+    sonrakiBolum: '40_auth-handler-testleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 39',
+        baslik: 'Bir Handler Birim Testi Nasıl Yazılır?',
+        altBaslik: '18 Command Handler\'ın (13 Auth + 5 QR) birim testine geçmeden önce — hepsinde tekrar eden dört kural: AAA deseni, mock kapsamı, adlandırma, minimum senaryo sayısı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'AAA Deseni — Kurulum, Eylem, Doğrulama Üç Ayrı Blok',
+        aciklama: 'Her test metodu üç bölüme ayrılır: ARRANGE (mock\'ları ve test verisini kur), ACT (Handler\'ın `Handle` metodunu çağır), ASSERT (sonucu/mock çağrılarını doğrula). Bölümler Türkçe yorumla ayrılır, karışmaz.',
+        neden: 'Bir test okuyan kişi (junior dahil) "bu test NEYİ kanıtlıyor" sorusunun cevabını ARRANGE\'i atlayıp doğrudan ACT+ASSERT\'e bakarak bulabilmeli — kurulum kodu ile doğrulama kodu iç içe yazılırsa, testin asıl iddiası kod arasında kaybolur.',
+        olmasaydi: 'Mock kurulumu ile doğrulama aynı bloğa serpiştirilseydi, 6 ay sonra bu testi değiştirecek kişi hangi Verify\'ın hangi Setup\'a karşılık geldiğini satır satır takip etmek zorunda kalırdı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Mock Kuralı — Handler\'ın TÜM Bağımlılıkları Sahte',
+        aciklama: 'Bir Handler\'ın constructor\'ına giren HER arayüz (`IUserRepository`, `IOtpService`, `ILoginCompletionService`, `IEmailService`, `IGoogleTokenValidator`...) `Mock<T>` ile sahtelenir — gerçek `OtpService`/`PasswordService` implementasyonu ASLA burada çağrılmaz.',
+        neden: 'Bu servislerin KENDİ mantığı (bcrypt doğru mu karşılaştırıyor, OTP süresi doğru mu hesaplanıyor) zaten kendi test dosyalarında (Bölüm 3, 5, 7) ayrı ayrı doğrulanmış durumda. Handler testinin tek işi: Handler hangi koşulda hangi repository metodunu çağırıyor, hangi exception\'ı fırlatıyor, hangi DTO\'yu döndürüyor — bunu doğrulamak.',
+        olmasaydi: 'Gerçek `OtpService` kullanılsaydı, `OtpService` içinde bir regresyon çıktığında 13 Auth Handler testinden 6\'sı da AYNI ANDA kırılırdı — hatanın kaynağı OtpService mi yoksa Handler mı belli olmaz, hata ayıklama süresi katlanır.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Adlandırma — {Metot}_{Senaryo}_{BeklenenSonuç}',
+        aciklama: 'Test metodu adı İngilizce ve üç parçalı: hangi metot test ediliyor, hangi senaryo kuruldu, ne bekleniyor. Örnek: `Handle_InactiveAccount_ThrowsAccountInactiveException`.',
+        neden: 'Test çalıştırıcısının (dotnet test) başarısız test listesinde yalnızca bu isim görünür — isim yeterince açık değilse, hangi davranışın bozulduğunu anlamak için testin GÖVDESİNİ okumak gerekir.',
+        olmasaydi: '`Test1`/`LoginTest` gibi bir adla 40+ testlik bir handler dosyasında bir CI çıktısı okunduğunda, hangi testin hangi iş kuralını koruduğu tamamen kaybolur.'
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'İyi ve Kötü Test Adı',
+        iyi: {
+          baslik: 'Handle_TokenAlreadyUsed_RevokesFamilyAndThrowsInvalidRefreshTokenException',
+          maddeler: [
+            'Hangi metot test ediliyor (Handle) TEK bakışta belli.',
+            'Hangi senaryo kuruldu (TokenAlreadyUsed) belli — ARRANGE bloğuna bakmadan anlaşılır.',
+            'Beklenen sonuç (RevokesFamilyAndThrows...) belli — CI\'da bu test kırmızı olduğunda ne bozulduğu isimden okunur.'
+          ]
+        },
+        kotu: {
+          baslik: 'Handle_Test2',
+          maddeler: [
+            'Hangi metot/senaryo test ediliyor isimden ANLAŞILMIYOR.',
+            'CI\'da 40+ testlik bir dosyada "Test2" kırmızı olduğunda, testin GÖVDESİ okunmadan hangi iş kuralının bozulduğu bilinmez.',
+            'Dosyaya yeni bir test eklenirken "Test3" mü "Test17" mi olduğunu hatırlamak da ayrı bir yük.'
+          ]
+        }
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'Mock Kapsamı — Ne Sahtelenir, Ne Sahtelenmez',
+        iyi: {
+          baslik: 'Handler\'ın kendi bağımlılıkları mock',
+          maddeler: [
+            '`IUserRepository`, `IOtpService`, `ILoginCompletionService`, `IEmailService` — hepsi `Mock<T>`.',
+            'Command/Response/Entity nesneleri (`RegisterCommand`, `User`) GERÇEK — bunlar veri taşıyıcı, davranış içermiyor.',
+            'Mock\'un döndürdüğü değer testin ihtiyacına göre `Setup` ile bilinçli kurulur (ör. `GetByEmailAsync` `null` DÖNSÜN, e-posta kayıtlı değil senaryosu).'
+          ]
+        },
+        kotu: {
+          baslik: 'Servisin kendi iç mantığı yeniden mock\'lanır/test edilir',
+          maddeler: [
+            'Handler testinde `PasswordService.Verify`\'ın GERÇEK bcrypt karşılaştırmasını (yavaş, work factor 12) çalıştırmak — bu Bölüm 3\'ün işi, burada tekrar edilmez.',
+            '`EF Core InMemory` ile gerçek bir DbContext kurup repository\'yi ONUN üzerinden çalıştırmak — Handler testi repository\'nin SQL/EF davranışını değil, Handler\'ın KARAR mantığını doğrular.'
+          ]
+        }
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Minimum Kapsam — Her Handler İçin Dört Senaryo Ailesi',
+        aciklama: 'Bir Handler\'ın PUBLIC `Handle` metodu için en az şunlar yazılır: (1) happy path — her şey doğruyken beklenen sonuç, (2) bulunamadı/geçersiz giriş — repository `null` döndüğünde fırlatılan exception, (3) yetki/sahiplik ihlali — varsa (ör. QR session başka kullanıcıya aitse), (4) sınır/uç durum — OTP süresi dolmuş, hesap pasif, token zaten kullanılmış gibi iş kuralı dallanmaları.',
+        neden: 'Yalnızca happy path test edilirse, Handler\'ın asıl karmaşıklığı olan hata dallarındaki bir regresyon (ör. `AccountInactiveException` fırlatması gereken yerde artık fırlatmaması) hiçbir testte YAKALANMAZ.',
+        olmasaydi: 'Örneğin `RefreshCommandHandler`\'da yalnızca happy path test edilseydi, Token Family Pattern\'in replay tespiti (Bölüm 14) satır satır doğru çalışıyor MU bilinmezdi — bu, tüm SECURITY.md tasarımının test edilmeden kalması demektir.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'xUnit', tanim: 'Kullanılan test çatısı (framework) — `[Fact]`/`[Theory]` özniteliklerini, test keşfini ve `dotnet test` entegrasyonunu sağlar.' },
+          { terim: '[Fact]', tanim: 'Parametresiz, tek senaryolu bir test metodunu işaretler.' },
+          { terim: '[Theory] / [InlineData]', tanim: 'Aynı test gövdesini FARKLI girdi kombinasyonlarıyla birden çok kez çalıştırır — ör. Bölüm 47\'de "token iptal edilmiş" ve "token süresi dolmuş" iki durumu TEK metotla kapsar.' },
+          { terim: 'AAA', tanim: 'Arrange-Act-Assert — bir test metodunu üç mantıksal bloğa ayıran, hemen hemen tüm birim test kültürlerinde ortak yazım deseni.' },
+          { terim: 'Moq', tanim: 'Kullanılan mocking kütüphanesi — bir arayüzün (`interface`) sahte bir implementasyonunu kod yazmadan, `Mock<T>` ile üretir.' },
+          { terim: 'Mock<T>.Object', tanim: 'Moq\'un ürettiği sahte nesnenin GERÇEK arayüz referansı — Handler\'ın constructor\'ına bu geçirilir, `Mock<T>`\'in kendisi değil.' },
+          { terim: 'Setup', tanim: 'Sahte metodun belirli girdilerde ne döndüreceğini tanımlar — ör. `_userRepository.Setup(r => r.GetByIdAsync(1, ...)).ReturnsAsync(user)`.' },
+          { terim: 'It.IsAny<T>()', tanim: 'Setup/Verify\'da "bu parametrenin DEĞERİ önemsiz, herhangi bir T olabilir" anlamına gelen joker — genelde `CancellationToken` gibi teste konu olmayan parametrelerde kullanılır.' },
+          { terim: 'It.Is<T>(predicate)', tanim: '`It.IsAny<T>()`\'den farklı olarak, parametrenin belirli bir KOŞULU sağlamasını zorunlu kılar — ör. `It.Is<User>(u => u.Email == "ada@test.de")`.' },
+          { terim: 'Verify', tanim: 'Bir sahte metodun GERÇEKTEN çağrılıp çağrılmadığını (ve kaç kez) doğrular — ör. `Times.Once`/`Times.Never`.' },
+          { terim: 'Returns / ReturnsAsync', tanim: 'Bir sahte metodun dönüş değerini tanımlar — `Returns` senkron metotlar için (ör. `IPasswordService.Hash`), `ReturnsAsync` `async Task<T>` imzalı metotlar için (ör. repository metotları) kullanılır.' },
+          { terim: 'FluentAssertions', tanim: '`.Should()` uzantı metotlarıyla okunabilir doğrulama sağlayan kütüphane — ör. `result.Email.Should().Be(...)`, `act.Should().ThrowAsync<T>()`.' }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Test Dosyası Nereye Konur?',
+        aciklama: 'Her Handler testi, test edilen dosyanın `Application/Features/<Domain>/` yolunu BİREBİR yansıtan `Tests/Features/<Domain>/` altına konur — ör. `Application/Features/Auth/RegisterCommand.cs` → `Tests/Features/Auth/RegisterCommandHandlerTests.cs`. Dosya adı deseni: `{TestEdilenSınıf}Tests.cs`.',
+        neden: 'Klasör yapısı üretim koduyla BİREBİR eşleşince, bir Handler\'ı değiştiren kişi "bu Handler\'ın testi nerede?" sorusunu hiç sormadan, aynı göreli yolda test dosyasını bulur.',
+        olmasaydi: 'Tüm testler tek bir düz `Tests/` klasörüne yığılsaydı, 18 handler + 4 servis testinin arasından aranan dosyayı bulmak dosya adına güvenmek dışında bir yol bırakmazdı — proje büyüdükçe (100+ test dosyası) bu iyice zorlaşır.'
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm 39 — Kurallar Belli, Şimdi 18 Handler',
+        maddeler: [
+          'AAA deseni, mock kapsamı (tüm bağımlılıklar sahte), adlandırma (`{Metot}_{Senaryo}_{Sonuç}`) ve minimum dört senaryo ailesi — 18 handler testinin TAMAMINDA aynı dört kural geçerli.',
+          'Bölüm 40\'tan itibaren her Command Handler kendi bölümünde, gerçek test dosyasının BİREBİR kopyasıyla, satır satır işlenecek — kod tekrarını azaltmak için tekrar eden desenler ("AYNI mock kurulumu, bkz. Bölüm 40") önceki bölüme referansla kısaltılacak.',
+          'Servislerin (OtpService/LoginCompletionService/TokenService/PasswordService) kendi testleri zaten Bölüm 3/4/5/7\'de işlenmişti — bu bölümlerden itibaren yalnızca 13+5 Command Handler\'ın testleri kaldı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
