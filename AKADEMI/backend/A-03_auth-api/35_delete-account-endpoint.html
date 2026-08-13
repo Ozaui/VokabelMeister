@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AuthController: Hesap Silme</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'delete-account-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '34_forgot-reset-password-endpoint.html',
+    sonrakiBolum: '36_qr-generate-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 35',
+        baslik: 'AuthController — Hesap Silme, 13 Endpoint Tamamlandı',
+        altBaslik: 'Bölüm 15\'in iki-adımlı hesap silme akışı — AuthController\'ın SON iki action\'ı, ikisi de [Authorize].'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ConfirmAccountDeletionRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/ConfirmAccountDeletionRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record ConfirmAccountDeletionRequest(string OtpCode);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ConfirmAccountDeletionRequest(string OtpCode);',
+            aciklama: '`ConfirmAccountDeletionCommand`\'ın (Bölüm 15) TEK istemci alanı — `UserId` YOK, Controller (aşağıdaki `AuthController.ConfirmAccountDeletion`) onu `CurrentUserId`\'den EKLİYOR. `RequestAccountDeletionCommand`\'ın (Bölüm 15) HİÇ Request DTO\'su YOK — o Command\'ın TÜM alanları (`UserId`+`Language`) zaten Controller-KAYNAKLI, JSON gövdesi hiç GEREKMİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'RequestAccountDeletion Neden Hiç Request DTO\'su Yok?',
+        aciklama: '`AuthController`\'ın 13 action\'ından `RequestAccountDeletion` (aşağıdaki kod-degisiklik) TEK istisna — action parametresi YALNIZCA `CancellationToken`, HİÇBİR `Request` tipi almıyor.',
+        neden: '`RequestAccountDeletionCommand`\'ın (Bölüm 15) İKİ alanı (`UserId`, `Language`) da Controller\'ın KENDİSİNDEN geliyor — `UserId` `CurrentUserId`\'den ([Authorize] JWT\'sinden), `Language` `AcceptLanguage`\'dan (Accept-Language header\'ından). İstemcinin göndereceği HİÇBİR JSON alanı YOK, çünkü "hesabımı silmek istiyorum" isteğinin kendisi zaten TÜM bilgiyi taşıyor — kimin (JWT) hangi dilde (header) bildirim İSTEDİĞİ.',
+        olmasaydi: 'Boş bir Request DTO (`public record RequestAccountDeletionRequest();`) YAZILSAYDI, hem Controller\'da (`RequestAccountDeletion(RequestAccountDeletionRequest request, ...)`) hem istemci tarafında ANLAMSIZ bir boş JSON gövdesi (`{}`) GÖNDERME zorunluluğu DOĞARDI — bu DTO\'nun taşıyacağı hiçbir GERÇEK veri olmadığı için spekülatif bir tip AÇILMIŞ olurdu.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'AuthController.cs — Hesap Silme Eklendi, 13 Endpoint Tamamlandı',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        neden: 'Bölüm 30-34\'te 11 endpoint\'e ULAŞAN bu dosyaya Bölüm 15\'in iki hesap silme Handler\'ı EKLENDİ — bu, AuthController.cs\'in dosyanın GERÇEKTEN ULAŞTIĞI son hali (13/13 endpoint).',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.Auth;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth")]
+ public class AuthController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public AuthController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("register")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPost("verify-email")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
+     }
+
+     [HttpPost("resend-verification")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login")]
+     [AllowAnonymous]
+     [EnableRateLimiting("login")]
+     public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login/verify-otp")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> VerifyLoginOtp(VerifyLoginOtpRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new VerifyLoginOtpCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("google")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> LoginWithGoogle(LoginWithGoogleRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new LoginWithGoogleCommand(request.IdToken, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("apple")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> LoginWithApple(LoginWithAppleRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new LoginWithAppleCommand(request.IdentityToken, request.FirstName, request.LastName, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("refresh")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<RefreshResponse>> Refresh(RefreshRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new RefreshCommand(request.RefreshToken, DeviceInfo, ClientIpAddress), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("logout")]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<MessageResponse>> Logout(LogoutRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new LogoutCommand(CurrentUserId, request.RefreshToken), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("LOGGED_OUT", AcceptLanguage)));
+     }
+
+     [HttpPost("forgot-password")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ForgotPasswordCommand(request.Email, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("PASSWORD_RESET_OTP_SENT", AcceptLanguage)));
+     }
+
+     [HttpPost("reset-password")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ResetPasswordCommand(request.Email, request.OtpCode, request.NewPassword, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("PASSWORD_RESET", AcceptLanguage)));
+     }
+
++    [HttpPost("delete-account/request")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<MessageResponse>> RequestAccountDeletion(CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new RequestAccountDeletionCommand(CurrentUserId, AcceptLanguage), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", AcceptLanguage)));
++    }
++
++    [HttpPost("delete-account/confirm")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(ConfirmAccountDeletionRequest request, CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new ConfirmAccountDeletionCommand(CurrentUserId, request.OtpCode), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("ACCOUNT_DELETED", AcceptLanguage)));
++    }
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpPost("delete-account/request")]',
+            aciklama: '`api/v1/auth/delete-account/request`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: 'Bu satır İKİ kez geçiyor (request/confirm) — `Logout`\'taki (Bölüm 33) AYNI anlam: hesabını SİLMEK isteyen kullanıcının kimliği ZATEN JWT\'den BİLİNMELİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("general")]',
+            aciklama: 'Bu satır da İKİ kez geçiyor — `Logout` ile AYNI `"general"` policy (100/dk, kullanıcı bazlı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> RequestAccountDeletion(CancellationToken cancellationToken)',
+            aciklama: '13 action\'ın İÇİNDE TEK `Request` parametresi ALMAYAN metot — üstteki kavram slaytının açıkladığı gibi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new RequestAccountDeletionCommand(CurrentUserId, AcceptLanguage), cancellationToken);',
+            aciklama: 'Command\'ın İKİ alanı da (UserId, Language) Bölüm 24\'ün property\'lerinden — JSON gövdesinden HİÇBİR ŞEY okunmuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("ACCOUNT_DELETION_OTP_SENT", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `ACCOUNT_DELETION_OTP_SENT` Code\'u.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("delete-account/confirm")]',
+            aciklama: '`api/v1/auth/delete-account/confirm`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(ConfirmAccountDeletionRequest request, CancellationToken cancellationToken)',
+            aciklama: '13 action\'ın SON metodu — `RequestAccountDeletion`\'dan FARKLI olarak `ConfirmAccountDeletionRequest` (bu bölüm) ALIYOR, çünkü OTP kodu bir JSON alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new ConfirmAccountDeletionCommand(CurrentUserId, request.OtpCode), cancellationToken);',
+            aciklama: '`CurrentUserId` (JWT) + `request.OtpCode` (JSON gövdesi) — İKİ FARKLI kaynaktan BİRLEŞEN son Command inşası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("ACCOUNT_DELETED", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `ACCOUNT_DELETED` Code\'u — 13 endpoint\'in SON satırı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/delete-account/request',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/delete-account/request',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "Hesap silme onay kodu gönderildi." }'
+        },
+        notlar: [
+          'Gövde (body) YOK — üstteki kavram slaytının açıkladığı gibi, TÜM bilgi JWT\'den ve Accept-Language\'dan geliyor.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/delete-account/confirm',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/delete-account/confirm',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: '{ "otpCode": "205917" }',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "Hesabınız silindi." }'
+        },
+        notlar: [
+          'Bu istekten SONRA hesap SOFT-DELETE edilir + 30 gün grace period BAŞLAR (Bölüm 15) — TÜM cihazlardan çıkış YAPILIR, aynı accessToken\'la SONRAKİ [Authorize] istekleri (ör. Logout) artık ÇALIŞMAZ.',
+          '30 gün içinde AYNI e-postayla giriş yapılırsa hesap OTOMATİK kurtarılır (accountWasRecovered=true, Bölüm 7\'nin ILoginCompletionService\'i).'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm 30-35 — AuthController Tamamlandı (13/13 Endpoint)',
+        maddeler: [
+          'AuthController\'ın HER action\'ı AYNI üç adımı izliyor: Request\'ten Command inşa et, _mediator.Send çağır, sonucu döndür — hiçbir iş mantığı Controller\'da yaşamıyor (Bölüm 30\'un kavram slaytı).',
+          '5 endpoint MessageResponse (Unit döndüren Handler\'lar), 5 endpoint LoginResponse/RefreshResponse ailesi (token döndüren Handler\'lar), 1 endpoint RegisterResponse (201) — dönüş tipi HER ZAMAN Handler\'ın kendi DTO\'suna BAĞLI.',
+          'Rate limiting dağılımı: 8 endpoint "anonymous", 1 endpoint "login" (EN sıkı), 4 endpoint "general" (Logout + hesap silme, [Authorize]) — Bölüm 29\'un 5 policy\'sinden qrGenerate/qrStatus DIŞINDAKİ ÜÇÜ burada KULLANILDI.',
+          'RequestAccountDeletion, 13 action\'ın TEK Request-DTO\'suz olanı — Command\'ın TÜM alanları Controller-kaynaklı olduğunda spekülatif bir boş DTO AÇILMADI (YAGNI).',
+          'Sıradaki adım QrLoginController (Bölüm 36-38) — 5 QR Handler\'ının (Bölüm 16-20) HTTP karşılığı, ve canlı testte bulunan URL-safe token bugfix\'i.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

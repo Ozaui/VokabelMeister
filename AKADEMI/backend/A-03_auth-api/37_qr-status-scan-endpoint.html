@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QrLoginController: Status/Scan</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-status-scan-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '36_qr-generate-endpoint.html',
+    sonrakiBolum: '38_qr-confirm-deny-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 37',
+        baslik: 'QrLoginController — GetStatus ve Scan',
+        altBaslik: 'Polling yapan anonim uç ile QR akışının İLK kimliği doğrulanmış dokunuşu — biri GET, biri POST; biri qrStatus, biri general policy kullanıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'GetStatus Neden GET, Diğer TÜM QR Uçları Neden POST?',
+        aciklama: 'QrLoginController\'ın 5 action\'ından `GetStatus` (bu bölüm) `[HttpGet]`, DİĞER DÖRDÜ (Generate/Scan/Confirm/Deny) `[HttpPost]`.',
+        neden: 'HTTP\'nin KENDİ semantiği: GET, YAN ETKİSİZ (idempotent) bir OKUMA anlamına GELMELİ — web/admin ekranı `GetStatus`\'u ~2 saniyede bir POLLING ediyor (Bölüm 20\'nin tasarımı), bu TEKRARLI okuma deseni GET\'in TAM olarak var OLDUĞU senaryo. Generate/Scan/Confirm/Deny ise HER BİRİ bir DURUM DEĞİŞİKLİĞİ (yeni session/Scanned/Confirmed/Denied) TETİKLİYOR — POST bu tür "bir şeyi DEĞİŞTİREN" isteklerin standart YÖNTEMİ.',
+        olmasaydi: 'GetStatus da POST OLSAYDI, web ekranının açık kaldığı SÜRE boyunca ATILAN yüzlerce POLLING isteği, tarayıcı ARA BELLEĞİ (cache) ve vekil sunucular (proxy) TARAFINDAN "güvenli değil" VARSAYILIRDI — GET istekleri TARAYICI TARAFINDAN daha güvenle TEKRARLANABİLİR/ÖNBELLEKLENEBİLİR kabul edilir (bu uçta önbellekleme İSTENMESE de, semantik doğruluk ÖNEMLİ).'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'QrLoginController.cs — GetStatus ve Scan Eklendi',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/QrLoginController.cs',
+        neden: 'Bölüm 36\'da TEK action\'a (Generate) sahip bu dosyaya Bölüm 20\'nin polling Handler\'ı ve Bölüm 18\'in Scan Handler\'ı EKLENDİ.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.QrLogin;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth/qr")]
+ public class QrLoginController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public QrLoginController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("generate")]
+     [AllowAnonymous]
+     [EnableRateLimiting("qrGenerate")]
+     public async Task<ActionResult<QrLoginGenerateResponse>> Generate(CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GenerateQrLoginCommand(ClientIpAddress, DeviceInfo), cancellationToken);
+         return Ok(result);
+     }
+
++    [HttpGet("{token}/status")]
++    [AllowAnonymous]
++    [EnableRateLimiting("qrStatus")]
++    public async Task<ActionResult<QrLoginStatusResponse>> GetStatus(string token, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new GetQrLoginStatusQuery(token, AcceptLanguage), cancellationToken);
++        return Ok(result);
++    }
++
++    [HttpPost("{token}/scan")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<QrLoginScanResponse>> Scan(string token, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new ScanQrLoginCommand(token, CurrentUserId), cancellationToken);
++        return Ok(result);
++    }
++
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpGet("{token}/status")]',
+            aciklama: '`{token}` bir ROUTE parametresi — `api/v1/auth/qr/{token}/status`; `token`, `GenerateQrLoginCommand`\'ın (Bölüm 18, Bölüm 36\'nın bugfix\'iyle URL-safe) ÜRETTİĞİ ham değer, İSTEMCİ tarafından buraya YERLEŞTİRİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Bölüm 36\'nın Generate\'iyle AYNI anlam — polling yapan web/admin ekranının KENDİSİ kimliği doğrulanmış OLMAK ZORUNDA DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("qrStatus")]',
+            aciklama: 'Bölüm 29\'un ADANMIŞ polling policy\'si (40/dk, IP bazlı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<QrLoginStatusResponse>> GetStatus(string token, CancellationToken cancellationToken)',
+            aciklama: '`token` parametresi `[FromBody]` DEĞİL — `[ApiController]`\'ın (Bölüm 24) OTOMATİK çıkarımı, adı ROUTE şablonundaki (`{token}`) parametreyle EŞLEŞTİĞİ için bunu bir ROUTE değeri olarak BAĞLAR, ayrı bir Request DTO GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new GetQrLoginStatusQuery(token, AcceptLanguage), cancellationToken);',
+            aciklama: '`GetQrLoginStatusQuery`\'nin (Bölüm 20) İKİ alanı — `token` ROUTE\'tan, `AcceptLanguage` Bölüm 24\'ten; bu Query `Confirmed` durumda İSE (Bölüm 20\'nin tek-seferlik teslim mantığı) burada GERÇEK token\'ları ÜRETİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(result);',
+            aciklama: 'Bu satır İKİ kez geçiyor (GetStatus ve Scan\'de) — `AuthController`\'ın token-döndüren action\'larıyla (Bölüm 31-32, 36) AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("{token}/scan")]',
+            aciklama: '`api/v1/auth/qr/{token}/scan` — `GetStatus` ile AYNI route PARAMETRESİ deseni, farklı HTTP METODU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: 'QR akışının İLK `[Authorize]` action\'ı — mobildeki (zaten giriş yapmış) kullanıcının JWT\'si GEREKİR, tam da Bölüm 18\'in "QR ile giriş, AYRI bir kimlik doğrulama DEĞİL, zaten mobilde giriş yapmış OLMANIN kanıtlanması" tasarımının somut karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("general")]',
+            aciklama: '`AuthController`\'ın `[Authorize]` action\'larıyla (Logout, Bölüm 33) AYNI paylaşımlı policy.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<QrLoginScanResponse>> Scan(string token, CancellationToken cancellationToken)',
+            aciklama: '`GetStatus` ile AYNI route-parametreli imza deseni, farklı dönüş TİPİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new ScanQrLoginCommand(token, CurrentUserId), cancellationToken);',
+            aciklama: 'Bölüm 24\'ün `CurrentUserId`\'si QR akışında İLK KEZ kullanılıyor — `ScanQrLoginCommand`\'ın (Bölüm 18) `UserId` alanı, session\'ı TARAYAN kullanıcının kimliğini KAYDEDECEK (Bölüm 19\'un Confirm/Deny sahiplik kontrolünün DAYANDIĞI değer).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'GET /auth/qr/{token}/status',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/auth/qr/odUBA2zsT0Gq6vrOzPoCrBmuDwNkEhFMcgACaLj6nIopwEXO3zFJnkQdCt2G052VxQ-uUO1kj3lM6OHAaA5W_w/status',
+        yanit: {
+          durum: '200 OK (Confirmed durumda)',
+          govde: '{\n  "status": "Confirmed",\n  "accessToken": "eyJhbGciOiJIUzI1NiIs...",\n  "refreshToken": "cFevIzMXK+WlmtUMB7ei/...",\n  "expiresIn": 900,\n  "user": { "id": 1, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" },\n  "accountWasRecovered": false\n}'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ — mobil Confirm\'e BASTIKTAN sonraki İLK polling turunda BÖYLE döner.',
+          'Session HENÜZ `Pending`/`Scanned` İSE yanıt yalnızca `{ "status": "Pending" }` şeklindedir (token alanları `null`, JSON\'da hiç GÖRÜNMEZ).',
+          'AYNI token\'a İKİNCİ bir GET (Consumed olduktan SONRA) 410 (QR_SESSION_GONE) döner — bu da gerçek sunucuda DOĞRULANDI.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/qr/{token}/scan',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/odUBA2zsT0Gq6vrOzPoCrBmuDwNkEhFMcgACaLj6nIopwEXO3zFJnkQdCt2G052VxQ-uUO1kj3lM6OHAaA5W_w/scan',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "requesterDeviceInfo": "curl/8.7.1",\n  "requesterIp": "::1",\n  "pairingCode": "3385"\n}'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ.',
+          '`Authorization` header\'ındaki JWT, MOBİL uygulamanın (zaten giriş yapmış kullanıcının) token\'ı — Generate\'i (Bölüm 36) ÇAĞIRAN web/admin\'in JWT\'si DEĞİL.',
+          'Süresi geçmiş/zaten taranmış bir token 410 (QR_SESSION_GONE) döner.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'GetStatus GET, diğer 4 QR action POST — HTTP semantiği (yan etkisiz okuma vs durum değiştiren istek) BİLİNÇLİ olarak takip ediliyor.',
+          'Route parametreleri ({token}) [ApiController]\'ın otomatik çıkarımıyla bağlanıyor — ayrı bir Request DTO gerekmiyor, GetStatus/Scan/Confirm/Deny\'nin (Bölüm 38) DÖRDÜ de bu deseni paylaşıyor.',
+          'Scan, QR akışının İLK [Authorize] action\'ı — CurrentUserId burada QR bağlamında ilk kez kullanılıyor, Confirm/Deny\'nin (Bölüm 38) sahiplik kontrolünün temeli.',
+          'GetStatus, qrStatus (40/dk) ile Scan general (100/dk) FARKLI policy kullanıyor — polling deseni ile TEK seferlik bir aksiyon AYNI bütçeyi PAYLAŞMIYOR.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

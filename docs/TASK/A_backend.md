@@ -166,10 +166,28 @@
 > (`Application/DTOs/MessageResponse.cs`) `ApiErrorResponse`'un başarı karşılığı — flat `DTOs/`
 > klasöründe, Auth'a özel değil.
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/21_basari-mesajlari.html`
-- [ ] `AuthController` (13 endpoint) + `QrLoginController` (4 endpoint) + FluentValidation
-      (ThemePreference/LanguagePreference dahil) + rate limiting (100/dk genel, 10/dk anonim, QR
-      generate IP başına partitioned)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] `AuthController` (13 endpoint) + `QrLoginController` (5 endpoint — task metnindeki "4" API_ENDPOINTS.md
+      §3.1 tablosunun confirm+deny'yi TEK satırda göstermesinden kaynaklı bir sayım farkı, gerçekte
+      5 ayrı action) + FluentValidation + rate limiting (100/dk general, 10/dk anonymous, 5/15dk
+      login, 20/saat qrGenerate, 40/dk qrStatus)
+> **Controller katmanı sırasında verilen tasarım kararları:** (1) "(ThemePreference/LanguagePreference
+> dahil)" ibaresi bu task'ta YANLIŞ/eski bir kalıntıydı — A-03'ün hiçbir Command'ı bu iki alanı
+> INPUT olarak almıyor (A-12'nin `PUT /users/me`'sine ait), FluentValidation bu ikisi için hiç kural
+> içermiyor. (2) `ValidationBehavior` (MediatR pipeline) + `ApiErrorResponse.Details[]` (kullanıcıyla
+> netleştirildi: FluentValidation birden fazla kural aynı anda başarısız olursa TÜMÜ döner, yalnızca
+> `error.code`/`error.message` ilk kuralı taşımaya devam eder — geriye dönük uyumlu). (3) Request
+> DTO'ları Command'ların TÜM alanlarını yansıtmaz — Language/UserId/IpAddress/DeviceInfo gibi
+> HTTP-bağlamından gelen alanlar `ApiControllerBase`'den ayrıca eklenir (over-posting/JSON çakışması
+> önlemi). (4) **Canlı testte bulunan bug:** `GenerateQrLoginCommand`'ın standart Base64 token'ı
+> (`/`, `+` içerebilir) URL path segmentinde (`/auth/qr/{token}/...`) routing'i bozuyordu — gerçek
+> sunucu + gerçek HTTP isteğiyle test edilene kadar fark edilmedi, URL-safe Base64'e (`-`/`_`,
+> dolgusuz) çevrilerek düzeltildi. (5) Test sırasında `VokabelMeisterDB`'nin 2026-08-08'de silinen
+> eski backend'in artığı olduğu keşfedildi (Words/Categories/SmtpSettings gibi artık kod tabanında
+> olmayan tablolar + eksik migration geçmişi) — kullanıcı onayıyla DB sıfırlanıp güncel 2 migration
+> temiz uygulandı.
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03_auth-api/` 22-38. bölümler (ValidationBehavior,
+      Details[]/HttpContextExtensions, ApiControllerBase, 15 validator, ErrorMessages diff, rate
+      limiting, 18 endpoint kod+postman, URL-safe token bugfix)
 - [ ] **Birim testleri:** 13+5 Command Handler testi, `OtpServiceTests`, `LoginCompletionServiceTests`,
       `JwtTokenServiceTests`, `PasswordServiceTests`
 - [ ] ➜ **AKADEMI/backend'ye işle**

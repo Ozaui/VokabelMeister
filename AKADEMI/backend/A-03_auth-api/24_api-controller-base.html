@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — ApiControllerBase</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'api-controller-base',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '23_coklu-alan-hatasi.html',
+    sonrakiBolum: '25_register-validator.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 24',
+        baslik: 'ApiControllerBase — Controller\'ların Paylaştığı 4 Okuma',
+        altBaslik: 'AuthController/QrLoginController\'ın (Bölüm 30-38) İKİSİNİN de yazacağı 18 action\'ın HİÇBİRİNDE tekrarlanmayacak dört küçük okuma.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bir Ortak Taban Sınıf — Her Controller Kendi Kopyasını Yazamaz mıydı?',
+        aciklama: '`ApiControllerBase`, `AuthController` ile `QrLoginController`\'ın (Bölüm 30-38) İKİSİNİN de MİRAS alacağı soyut bir sınıf — dört `protected` property sunuyor: `CurrentUserId` (JWT\'den), `AcceptLanguage` (Bölüm 23\'ün `HttpContextExtensions.GetLanguage`\'inden), `ClientIpAddress`, `DeviceInfo`. 18 action\'ın YARIDAN FAZLASI bu dört değerden EN AZ birini kullanacak (ör. `LogoutCommand`\'a `CurrentUserId`, `GenerateQrLoginCommand`\'a `ClientIpAddress`/`DeviceInfo`).',
+        neden: 'Bu dört okuma AYNI mantığı (`User.FindFirstValue`, `HttpContext.Connection.RemoteIpAddress`, `Request.Headers.UserAgent`) HER Controller\'da AYRI AYRI yazmak, hem tekrar hem de İNCE bir tutarsızlık riski taşırdı (ör. bir Controller `ClaimTypes.NameIdentifier` yazarken diğeri yanlışlıkla `ClaimTypes.Sid` yazabilirdi) — Controller\'ın "yalnızca `_mediator.Send`i çağır" ilkesiyle de örtüşüyor, bu okumalar iş mantığı DEĞİL, saf HTTP bağlam okuma.',
+        olmasaydi: 'Ortak taban OLMASAYDI, `AuthController`\'ın Logout/RequestAccountDeletion/ConfirmAccountDeletion action\'ları (Bölüm 33/35) VE `QrLoginController`\'ın Scan/Confirm/Deny action\'ları (Bölüm 37-38) AYNI `int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` satırını YEDİ farklı yerde TEKRARLARDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApiControllerBase.cs',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/ApiControllerBase.cs',
+        nedenBuKlasor: 'İlk kez YENİ bir klasör: `WordLearner.API/Controllers/` — bu bölümden SONRA AuthController (Bölüm 30-35) ve QrLoginController (Bölüm 36-38) da BURADA yaşayacak.',
+        kod: `using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
+using WordLearner.API.Common;
+
+namespace WordLearner.API.Controllers;
+
+// AuthController/QrLoginController'ın PAYLAŞTIĞI dört küçük okuma — [Authorize] bir istekte JWT'den
+// kullanıcı kimliği, ve HER isteğin taşıdığı Accept-Language/IP/User-Agent. Handler'lara Command
+// inşa ederken geçirilir; Controller'ın kendisi bunların DIŞINDA hiçbir iş mantığı taşımaz.
+[ApiController]
+public abstract class ApiControllerBase : ControllerBase
+{
+    protected int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    protected string? AcceptLanguage => HttpContext.GetLanguage();
+
+    protected string? ClientIpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    protected string? DeviceInfo => Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null;
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Claims;',
+            aciklama: '`ClaimTypes.NameIdentifier` için gerekli — `JwtTokenService.GenerateAccessToken`\'ın (Bölüm 4) AYNI claim türü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Mvc;',
+            aciklama: '`ControllerBase`/`ApiController` özniteliği için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.API.Common;',
+            aciklama: '`HttpContextExtensions.GetLanguage`\'i (Bölüm 23) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.API.Controllers;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[ApiController]',
+            aciklama: 'ASP.NET\'in otomatik davranışlarını AÇAR — model binding hatalarında (ör. bozuk JSON) otomatik 400, `[FromBody]` gibi öznitelikleri BELİRTMEDEN çıkarım. Taban sınıfa konuldu, alt sınıflar (`AuthController`/`QrLoginController`) TEKRAR yazmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public abstract class ApiControllerBase : ControllerBase',
+            aciklama: '`abstract` — bu sınıf DOĞRUDAN bir route\'a bağlanmaz (kendi `[Route]`si YOK, bkz. `nedenBuKlasor`), yalnızca `AuthController`/`QrLoginController` tarafından MİRAS alınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);',
+            aciklama: '`JwtTokenService`\'in (Bölüm 4) `ClaimTypes.NameIdentifier`\'a `user.Id.ToString()` YAZDIĞI AYNI claim — `[Authorize]` bir action\'da bu değer HER ZAMAN vardır (`!` null-forgiving operatörü bunu YANSITIYOR), `[AllowAnonymous]` bir action\'da bu property HİÇ ÇAĞRILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected string? AcceptLanguage => HttpContext.GetLanguage();',
+            aciklama: 'Bölüm 23\'ün extension metodunu SARIYOR — `RegisterCommand`/`ForgotPasswordCommand` gibi `Language` alanı taşıyan HER Command\'a bu property GEÇİRİLECEK (Bölüm 30-35).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected string? ClientIpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();',
+            aciklama: '`VerifyLoginOtpCommand`/`LoginWithGoogleCommand`/`LoginWithAppleCommand`/`RefreshCommand`\'ın (Bölüm 12-14) `IpAddress` alanına, `GenerateQrLoginCommand`\'ın (Bölüm 18) `IpAddress` alanına GEÇİRİLECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'protected string? DeviceInfo => Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null;',
+            aciklama: '`ClientIpAddress` ile AYNI Command\'ların `DeviceInfo` alanına — `User-Agent` header\'ı BOŞ bir istekte (`Length: > 0` deseni EŞLEŞMEZSE) `""` DEĞİL `null` döner, DB\'de `RequesterDeviceInfo`/`DeviceInfo` sütunlarının (Bölüm 1, 18) nullable TASARIMINA UYUYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ApiControllerBase, AuthController/QrLoginController\'ın (Bölüm 30-38) İKİSİNİN de miras alacağı soyut taban — dört ortak HTTP-bağlam okuması TEK yerde.',
+          '[ApiController] özniteliği taban sınıfta — otomatik model binding doğrulaması, alt sınıflarda TEKRARLANMAZ.',
+          'CurrentUserId, JwtTokenService\'in (Bölüm 4) yazdığı AYNI ClaimTypes.NameIdentifier claim\'ini okuyor — token üretimi ile token okuma arasındaki sözleşme burada KAPANIYOR.',
+          'Bu dört property, Bölüm 22\'nin ValidationBehavior\'ı ÇALIŞTIKTAN SONRA (Command inşa edilirken) kullanılacak — Controller\'ın kendisi hiçbir doğrulama/iş mantığı TAŞIMIYOR.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

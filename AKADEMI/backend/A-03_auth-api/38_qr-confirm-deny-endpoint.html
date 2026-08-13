@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QrLoginController: Confirm/Deny</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-confirm-deny-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '37_qr-status-scan-endpoint.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 38',
+        baslik: 'QrLoginController — Confirm ve Deny, Controller Katmanı Tamamlandı',
+        altBaslik: 'QR akışının SON iki action\'ı — AuthController (13) + QrLoginController (5) = 18 endpoint, uçtan uca CANLI test edildi.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'QrLoginController.cs — Confirm ve Deny Eklendi, 5 Endpoint Tamamlandı',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/QrLoginController.cs',
+        neden: 'Bölüm 36-37\'de 3 endpoint\'e ULAŞAN bu dosyaya Bölüm 19\'un Confirm/Deny Handler\'ları EKLENDİ — bu, dosyanın GERÇEKTEN ulaştığı SON hali (5/5 endpoint).',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.QrLogin;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth/qr")]
+ public class QrLoginController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public QrLoginController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("generate")]
+     [AllowAnonymous]
+     [EnableRateLimiting("qrGenerate")]
+     public async Task<ActionResult<QrLoginGenerateResponse>> Generate(CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GenerateQrLoginCommand(ClientIpAddress, DeviceInfo), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpGet("{token}/status")]
+     [AllowAnonymous]
+     [EnableRateLimiting("qrStatus")]
+     public async Task<ActionResult<QrLoginStatusResponse>> GetStatus(string token, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GetQrLoginStatusQuery(token, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("{token}/scan")]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<QrLoginScanResponse>> Scan(string token, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new ScanQrLoginCommand(token, CurrentUserId), cancellationToken);
+         return Ok(result);
+     }
+
++    [HttpPost("{token}/confirm")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<MessageResponse>> Confirm(string token, CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new ConfirmQrLoginCommand(token, CurrentUserId), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_CONFIRMED", AcceptLanguage)));
++    }
++
++    [HttpPost("{token}/deny")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<MessageResponse>> Deny(string token, CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new DenyQrLoginCommand(token, CurrentUserId), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_DENIED", AcceptLanguage)));
++    }
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpPost("{token}/confirm")]',
+            aciklama: '`api/v1/auth/qr/{token}/confirm` — `Scan`\'daki (Bölüm 37) AYNI route-parametreli desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: 'Bu satır İKİ kez geçiyor (Confirm/Deny\'de) — `Scan`\'daki (Bölüm 37) AYNI anlam: yalnızca kimliği doğrulanmış (ve Bölüm 19\'un sahiplik kontrolünden GEÇEN) kullanıcı onaylayabilir/reddedebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("general")]',
+            aciklama: 'Bu satır da İKİ kez geçiyor — `Scan` ile AYNI paylaşımlı policy.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> Confirm(string token, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `MessageResponse` — `ConfirmQrLoginCommand` (Bölüm 19) `Unit` döner, `Scan`\'ın (Bölüm 37) `QrLoginScanResponse`\'undan FARKLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new ConfirmQrLoginCommand(token, CurrentUserId), cancellationToken);',
+            aciklama: '`Scan`\'daki (Bölüm 37) AYNI iki-parametreli (`token`, `CurrentUserId`) Command inşası — Bölüm 19\'un Handler\'ı `CurrentUserId`\'yi session\'ı TARAYAN kullanıcıyla (Bölüm 18\'in Scan\'i doldurduğu alan) KARŞILAŞTIRACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_CONFIRMED", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `QR_LOGIN_CONFIRMED` Code\'u — `AuthController`\'ın `SuccessMessages.Resolve` desenini (Bölüm 30) `QrLoginController`\'a TAŞIYAN İLK satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("{token}/deny")]',
+            aciklama: '`api/v1/auth/qr/{token}/deny`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> Deny(string token, CancellationToken cancellationToken)',
+            aciklama: '`Confirm` ile AYNI dönüş tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new DenyQrLoginCommand(token, CurrentUserId), cancellationToken);',
+            aciklama: '`Confirm`\'daki AYNI desen, farklı Command tipi — Bölüm 19\'un `DenyQrLoginCommand`\'ı da AYNI sahiplik kontrolünü UYGULAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_DENIED", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `QR_LOGIN_DENIED` Code\'u — 5 QR endpoint\'in SON satırı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/qr/{token}/confirm',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/odUBA2zsT0Gq6vrOzPoCrBmuDwNkEhFMcgACaLj6nIopwEXO3zFJnkQdCt2G052VxQ-uUO1kj3lM6OHAaA5W_w/confirm',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "QR ile giriş onaylandı." }'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ.',
+          'Yalnızca AYNI `accessToken`\'ı (Scan\'i, Bölüm 37, ÇAĞIRAN kullanıcının) kullanan bir istek BAŞARILI olur — başka bir kullanıcının JWT\'siyle çağrılırsa 403 (QR_SESSION_FORBIDDEN, Bölüm 17) döner.',
+          'Bu adımdan HEMEN sonra web/admin tarafının bir SONRAKİ GetStatus (Bölüm 37) polling turu GERÇEK token\'ları ALIR.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/qr/{token}/deny',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/{token}/deny',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "QR ile giriş reddedildi." }'
+        },
+        notlar: [
+          'Confirm ile AYNI sahiplik kontrolüne TABİ — başka bir kullanıcının JWT\'siyle çağrılırsa 403.',
+          'Deny sonrası web/admin GetStatus\'u (Bölüm 37) `{ "status": "Denied" }` GÖRÜR, token ASLA üretilmez.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bölüm 22-38 — Controller Katmanı Tamamlandı, A-03 Neredeyse Bitti',
+        maddeler: [
+          'AuthController (13) + QrLoginController (5) = 18 endpoint, HEPSİ aynı üç-adımlı desen: Request\'ten Command inşa et, _mediator.Send çağır, sonucu döndür.',
+          'Bölüm 22\'nin ValidationBehavior\'ı + Bölüm 25-27\'nin 15 validator\'ı, hiçbir Controller kodunda GÖRÜNMEDEN 18 endpoint\'in TAMAMINI koruyor.',
+          'Bölüm 23\'ün Details[] tasarımı, Bölüm 29\'un 5 rate limiting policy\'si, Bölüm 21\'in SuccessMessages\'ı — hepsi Controller yazılırken İLK KEZ gerçek bir çağrı NOKTASI buldu.',
+          'Canlı test (gerçek DB + gerçek HTTP istekleri) BİR gerçek bug buldu ve düzeltti (Bölüm 36\'nın URL-safe token\'ı) — QR akışının generate→scan→confirm→status(token teslimi)→status(410 Gone) TAM DÖNGÜSÜ doğrulandı.',
+          'A-03\'te geriye yalnızca 13+5 Command Handler\'ının, OtpService/LoginCompletionService/JwtTokenService/PasswordService\'in birim testleri kaldı — bu, A-03\'ün roadmap\'teki SON checkbox\'ı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

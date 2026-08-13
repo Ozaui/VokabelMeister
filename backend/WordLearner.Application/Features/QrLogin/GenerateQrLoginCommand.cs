@@ -28,7 +28,9 @@ public class GenerateQrLoginCommandHandler : IRequestHandler<GenerateQrLoginComm
     {
         var tokenBytes = new byte[TokenByteLength];
         RandomNumberGenerator.Fill(tokenBytes);
-        var token = Convert.ToBase64String(tokenBytes);
+        // Standart Base64 DEĞİL — bu token URL path segmenti olarak kullanılıyor (/auth/qr/{token}/...),
+        // '+'/'/' route eşleşmesini bozar; '-'/'_' URL-güvenli, '=' dolgusu path'te gereksiz.
+        var token = Convert.ToBase64String(tokenBytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
 
         var pairingCode = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, PairingCodeLength)).ToString($"D{PairingCodeLength}");
 

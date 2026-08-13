@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AuthController: Login</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'login-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '30_register-endpoint.html',
+    sonrakiBolum: '32_google-apple-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 31',
+        baslik: 'AuthController — Login ve VerifyLoginOtp',
+        altBaslik: 'İki adımlı giriş akışının (Bölüm 12) HTTP karşılığı — biri Bölüm 29\'un EN SIKI policy\'sini (5/15dk), biri paylaşımlı `anonymous` bütçesini kullanıyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/LoginRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record LoginRequest(string Email, string Password);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginRequest(string Email, string Password);',
+            aciklama: '`LoginCommand`\'ın (Bölüm 12) `Language` DIŞINDAKİ İKİ alanı — `RegisterRequest`\'teki (Bölüm 30) AYNI `Email`/şifre ikilisi, farklı bir Command\'a bağlanıyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyLoginOtpRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/VerifyLoginOtpRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record VerifyLoginOtpRequest(string Email, string OtpCode);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`LoginRequest` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record VerifyLoginOtpRequest(string Email, string OtpCode);',
+            aciklama: '`VerifyEmailRequest`\'le (Bölüm 30) YAPISAL olarak BİREBİR aynı şekil — ama `VerifyLoginOtpCommand`\'a (Bölüm 12) bağlanıyor; `DeviceInfo`/`IpAddress`/`Language` alanları YOK, Controller (aşağıdaki `AuthController.VerifyLoginOtp`) bunları `ApiControllerBase`\'den (Bölüm 24) EKLİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Login Neden Bölüm 29\'un EN SIKI Policy\'sini Kullanıyor?',
+        aciklama: '`Login` action\'ı `[EnableRateLimiting("login")]` taşıyor (5/15dk) — `VerifyLoginOtp` ise (bu bölümün İKİNCİ endpoint\'i) diğer TÜM anonim uçlarla PAYLAŞILAN `"anonymous"` (10/dk) policy\'sini.',
+        neden: '`Login`, şifre TAHMİN etme (brute-force) saldırısının HEDEFİ — bir saldırgan aynı e-postaya karşı BİNLERCE şifre DENEYEBİLİR, bu yüzden Bölüm 29\'un EN SIKI bütçesi BURAYA ayrıldı. `VerifyLoginOtp` ise ZATEN doğru şifreyi BİLEN (adım 1\'i GEÇMİŞ) bir kullanıcının ikinci adımı — OTP\'nin KENDİSİ zaten Bölüm 5\'in `IOtpService`\'inde 3 yanlış denemede GEÇERSİZLEŞİYOR, ayrı bir SIKI rate limit\'e (Login kadar) gerek YOK.',
+        olmasaydi: 'Login de `"anonymous"` (10/dk) policy\'sini KULLANSAYDI, bir saldırgan dakikada 10 şifre DENEYEBİLİRDİ — 15 dakikada 5 yerine, 15 dakikada 150 deneme HAKKI olurdu, brute-force saldırısı 30 KAT daha HIZLI ilerlerdi.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'AuthController.cs — Login ve VerifyLoginOtp Eklendi',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        neden: 'Bölüm 30\'da İLK 3 endpoint\'iyle TAM öğretilen bu dosyaya, Bölüm 12\'nin iki-adımlı giriş akışının HTTP karşılığı EKLENDİ — hiçbir YENİ using GEREKMEDİ (LoginCommand/VerifyLoginOtpCommand zaten `Features.Auth`\'ta, LoginRequest/VerifyLoginOtpRequest zaten `DTOs.Auth`\'ta, ikisi de Bölüm 30\'dan beri İTHAL).',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.Auth;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth")]
+ public class AuthController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public AuthController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("register")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPost("verify-email")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
+     }
+
+     [HttpPost("resend-verification")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));
+     }
+
++    [HttpPost("login")]
++    [AllowAnonymous]
++    [EnableRateLimiting("login")]
++    public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));
++    }
++
++    [HttpPost("login/verify-otp")]
++    [AllowAnonymous]
++    [EnableRateLimiting("anonymous")]
++    public async Task<ActionResult<LoginResponse>> VerifyLoginOtp(VerifyLoginOtpRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new VerifyLoginOtpCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
++        return Ok(result);
++    }
++
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpPost("login")]',
+            aciklama: '`api/v1/auth/login` — API_ENDPOINTS\'in Login adım 1 uç noktası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Bu satır İKİ kez (Login ve VerifyLoginOtp\'ta) geçiyor — Bölüm 30\'un diğer üç endpoint\'iyle AYNI anlam, JWT gerekmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("login")]',
+            aciklama: 'Üstteki kavram slaytının EN SIKI policy\'si — `"login"` (5/15dk), yalnızca BU endpoint kullanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `MessageResponse` — `LoginCommand` (Bölüm 12) `Unit` döner, adım 1 TOKEN döndürmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);',
+            aciklama: '`RegisterCommand`\'daki (Bölüm 30) AYNI desen — `AcceptLanguage` Command\'a BURADA EKLENİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `LOGIN_OTP_SENT` Code\'u — API_ENDPOINTS\'in örnek yanıtındaki `"OTP gönderildi"` metniyle BİREBİR eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("login/verify-otp")]',
+            aciklama: '`api/v1/auth/login/verify-otp` — iç içe İKİ path SEGMENTİ, `[Route("auth")]` + BU satırın BİRLEŞİMİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("anonymous")]',
+            aciklama: 'Üstteki kavram slaytının AÇIKLADIĞI gibi — `Login`\'in AKSİNE paylaşımlı `"anonymous"` bütçesi YETERLİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<LoginResponse>> VerifyLoginOtp(VerifyLoginOtpRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `LoginResponse` (Bölüm 12) — bu adım GERÇEK token\'ları DÖNDÜRÜYOR, `MessageResponse` DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new VerifyLoginOtpCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);',
+            aciklama: 'Bölüm 24\'ün `DeviceInfo`/`ClientIpAddress`/`AcceptLanguage` ÜÇÜ BİRDEN burada KULLANILIYOR — bu bölümün İLK üç-parametreli Command inşası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(result);',
+            aciklama: 'Handler\'ın (Bölüm 12) döndürdüğü `LoginResponse` DOĞRUDAN `200 OK` içinde döner — üstünde bir DÖNÜŞÜM/SARMALAMA yok.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/login',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/login',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{\n  "email": "smoketest@example.com",\n  "password": "GucluSifre123!"\n}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "OTP gönderildi." }'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ.',
+          'Kullanıcı bulunamasa/şifre yanlış olsa bile Bölüm 12\'nin sabit-süreli bcrypt karşılaştırması ÇALIŞIR — yanıt SÜRESİNDEN kullanıcının var olup OLMADIĞI çıkarılamaz.',
+          '5. istekten SONRA (15 dakika içinde, AYNI IP) 429 (RATE_LIMIT_EXCEEDED) döner.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/login/verify-otp',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/login/verify-otp',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{\n  "email": "smoketest@example.com",\n  "otpCode": "178238"\n}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "accessToken": "eyJhbGciOiJIUzI1NiIs...",\n  "refreshToken": "K+TGH5/IVrn80hag...",\n  "expiresIn": 900,\n  "user": { "id": 1, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" },\n  "accountWasRecovered": false\n}'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ (accessToken/refreshToken KISALTILDI, gerçek değerler ÇOK daha uzun).',
+          'otpCode, backend konsolundaki `[DEV EMAIL] LoginOtp -> ... | code=...` satırından okunur.',
+          'accessToken\'ı, ileride [Authorize] uçlara `Authorization: Bearer <accessToken>` header\'ıyla TAŞI.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Login, Bölüm 29\'un EN SIKI policy\'sini (5/15dk) kullanıyor — brute-force saldırısına karşı EN kritik nokta.',
+          'VerifyLoginOtp paylaşımlı "anonymous" bütçesini kullanıyor — OTP\'nin kendi deneme sayacı (Bölüm 5) zaten ayrı bir savunma katmanı sağlıyor.',
+          'AuthController.cs\'e YENİ hiçbir using EKLENMEDİ — Features.Auth/DTOs.Auth zaten Bölüm 30\'dan beri İTHAL, tüm Auth Command/Request tipleri bu iki ad alanında yaşıyor.',
+          'VerifyLoginOtp, Bölüm 24\'ün üç property\'sini (DeviceInfo/ClientIpAddress/AcceptLanguage) BİRDEN kullanan İLK endpoint.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

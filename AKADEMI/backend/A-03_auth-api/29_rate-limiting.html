@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Rate Limiting</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'rate-limiting',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '28_errormessages-diff.html',
+    sonrakiBolum: '30_register-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 29',
+        baslik: '5 İsimli Rate Limiting Policy\'si',
+        altBaslik: 'AuthController/QrLoginController\'ı (Bölüm 30-38) yazmadan ÖNCEKİ SON altyapı parçası — her endpoint\'in hangi bütçeye TABİ olacağı burada TANIMLANIYOR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden 5 Ayrı Policy — Tek Bir Genel Limit Yeterli Olmaz mıydı?',
+        aciklama: '`general` (100/dk, kimliği doğrulanmış kullanıcı BAŞINA), `anonymous` (10/dk, IP BAŞINA), `login` (5/15dk, IP BAŞINA), `qrGenerate` (20/saat, IP BAŞINA), `qrStatus` (40/dk, IP BAŞINA) — beş AYRI pencere/limit/partition kombinasyonu, her biri KENDİ riskine göre BOYUTLANDIRILDI.',
+        neden: '`qrStatus`\'un 40/dk gibi YÜKSEK bir limiti VAR çünkü bu uç web/admin tarafından ~2 saniyede bir POLLING ediliyor (Bölüm 20\'nin `GetQrLoginStatusQuery`\'si) — `anonymous`\'un PAYLAŞIMLI 10/dk bütçesini kullansaydı, TEK bir QR ekranı AÇIK kalması bile o IP\'nin TÜM diğer anonim isteklerini (ör. aynı ağdaki başka bir kullanıcının `/auth/login`\'i) KİLİTLERDİ. `login`\'in 5/15dk gibi SIKI bir limiti var çünkü şifre TAHMİN etme (brute-force) saldırısına karşı BU uç en KRİTİK nokta.',
+        olmasaydi: 'TEK bir genel limit (ör. TÜM uçlara 10/dk) kullanılsaydı, ya `qrStatus`\'un polling\'i SÜREKLİ 429 (Too Many Requests) alırdı (limit ÇOK düşük o kullanım deseni için) ya da `login`\'e bir saldırgan dakikada 10 şifre DENEYEBİLİRDİ (limit ÇOK yüksek o risk için) — TEK boyut, HİÇBİR uca TAM oturmazdı.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — AddRateLimiter ve UseRateLimiter',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'Bölüm 22\'de `ValidationBehavior` kaydıyla GÜNCELLENEN bu dosyaya, Bölüm 30-38\'in Controller action\'larının `[EnableRateLimiting("...")]` ile REFERANS vereceği 5 policy TANIMLANIYOR.',
+        diff: `+using System.Security.Claims;
+ using System.Text;
++using System.Threading.RateLimiting;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
+ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
++using Microsoft.AspNetCore.RateLimiting;
+ using Microsoft.Extensions.Diagnostics.HealthChecks;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
++using WordLearner.API.Common;
+ using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
++using WordLearner.Application.Common;
+ using WordLearner.Application.Common.Behaviors;
++using WordLearner.Application.DTOs;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Infrastructure;
+ using WordLearner.Infrastructure.Data;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+ builder.Host.UseSerilog((context, configuration) => configuration
+     .MinimumLevel.Information()
+     .Enrich.FromLogContext()
+     .WriteTo.Console()
+     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+ builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+ builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+ builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
++// 5 isimli policy — her Controller action'ı [EnableRateLimiting("...")] ile hangisini kullanacağını
++// seçer; burada isimlendirilmeyen bir endpoint (ör. /health) HİÇ limitlenmez (global bir varsayılan
++// policy set edilmedi, bilerek — health check'in izlenebilir olması gerekiyor).
++builder.Services.AddRateLimiter(options =>
++{
++    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
++
++    options.AddPolicy("general", context => RateLimitPartition.GetFixedWindowLimiter(
++        GeneralPartitionKey(context),
++        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 100 }));
++
++    options.AddPolicy("anonymous", context => RateLimitPartition.GetFixedWindowLimiter(
++        ClientIp(context),
++        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 10 }));
++
++    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
++        ClientIp(context),
++        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(15), PermitLimit = 5 }));
++
++    options.AddPolicy("qrGenerate", context => RateLimitPartition.GetFixedWindowLimiter(
++        ClientIp(context),
++        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromHours(1), PermitLimit = 20 }));
++
++    options.AddPolicy("qrStatus", context => RateLimitPartition.GetFixedWindowLimiter(
++        ClientIp(context),
++        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 40 }));
++
++    options.OnRejected = async (rejectedContext, cancellationToken) =>
++    {
++        var httpContext = rejectedContext.HttpContext;
++        var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
++        httpContext.Response.ContentType = "application/json";
++        await httpContext.Response.WriteAsJsonAsync(
++            new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);
++    };
++});
++
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
++// Authorization'dan SONRA — "general" policy'nin partition anahtarı (aşağıdaki GeneralPartitionKey)
++// context.User'ın (JWT claim'leri) doldurulmuş olmasına bağlı.
++app.UseRateLimiter();
+ app.MapControllers();
+ app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
+ app.Run();
+
+ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+ {
+     context.Response.ContentType = "application/json";
+     return context.Response.WriteAsJsonAsync(new
+     {
+         status = report.Status.ToString(),
+         databaseConnected = report.Status == HealthStatus.Healthy,
+         timestampUtc = DateTime.UtcNow
+     });
+ }
++
++// "general" policy [Authorize] uçlarda kullanılıyor — kimliği doğrulanmış her kullanıcı KENDİ
++// bütçesini tüketir (IP DEĞİL, ör. aynı NAT arkasındaki iki kullanıcı birbirinin limitini YEMEZ).
++static string GeneralPartitionKey(HttpContext context) =>
++    context.User.Identity?.IsAuthenticated == true
++        ? context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ClientIp(context)
++        : ClientIp(context);
++
++static string ClientIp(HttpContext context) =>
++    context.Connection.RemoteIpAddress?.ToString() ?? "unknown";`,
+        satirlar: [
+          {
+            satir: 'using System.Security.Claims;',
+            aciklama: '`ClaimTypes.NameIdentifier`\'ı (aşağıdaki `GeneralPartitionKey`) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Threading.RateLimiting;',
+            aciklama: '`RateLimitPartition`/`FixedWindowRateLimiterOptions` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.RateLimiting;',
+            aciklama: '`AddRateLimiter`/`UseRateLimiter`/`EnableRateLimitingAttribute` için gerekli — .NET\'in KENDİ paylaşılan çerçevesinin bir parçası, AYRI bir NuGet paketi GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.API.Common;',
+            aciklama: '`HttpContextExtensions.GetLanguage`\'i (Bölüm 23) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common;',
+            aciklama: '`ErrorMessages`\'ı (Bölüm 6, 28) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`ApiErrorResponse`/`ApiErrorDetail`\'i (A-02, Bölüm 23) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddRateLimiter(options =>',
+            aciklama: '5 policy\'nin TANIMLANDIĞI blok — `var app = builder.Build();` SATIRINDAN önce, diğer TÜM `builder.Services.Add*` çağrılarıyla AYNI bölgede.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;',
+            aciklama: 'HTTP\'nin rate limiting için AYRILMIŞ standart durum kodu (429) — TÜM 5 policy\'nin ORTAK reddetme kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.AddPolicy("general", context => RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: '`"general"` — Bölüm 30-38\'in `[Authorize]` action\'larının (Logout/RequestAccountDeletion/ConfirmAccountDeletion/Scan/Confirm/Deny) kullanacağı policy adı; `[EnableRateLimiting("general")]` bu STRING\'le EŞLEŞECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'GeneralPartitionKey(context),',
+            aciklama: 'Sabit sayfanın ALTINDAKİ local fonksiyon — kimliği doğrulanmış kullanıcı BAŞINA (IP DEĞİL) BÜTÇE ayırıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 100 }));',
+            aciklama: 'Sabit pencere (fixed window): 1 dakikalık pencerede EN FAZLA 100 istek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.AddPolicy("anonymous", context => RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: '`"anonymous"` — Bölüm 30-35\'in Register/VerifyEmail/ResendVerification/VerifyLoginOtp/Google/Apple/Refresh/ForgotPassword/ResetPassword action\'larının (Login VE QR generate/status HARİÇ, onların KENDİ policy\'leri var) kullanacağı isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ClientIp(context),',
+            aciklama: 'Anonim istekte kimlik YOK — tek ayırt edici IP.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 10 }));',
+            aciklama: '1 dakikada 10 istek — `general`\'ın (100/dk) BEŞTE biri, anonim (kimliksiz) trafiğin daha KISITLI olması gerektiği ilkesiyle.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: '`"login"` — YALNIZCA Bölüm 31\'in `POST /auth/login` action\'ının kullanacağı, TÜM policy\'lerin EN SIKISI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(15), PermitLimit = 5 }));',
+            aciklama: '15 dakikada 5 istek — şifre TAHMİN etme (brute-force) saldırısına karşı EN kritik nokta, bu yüzden EN dar pencere.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.AddPolicy("qrGenerate", context => RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: '`"qrGenerate"` — YALNIZCA Bölüm 36\'nın `POST /auth/qr/generate` action\'ının kullanacağı isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromHours(1), PermitLimit = 20 }));',
+            aciklama: '1 SAATTE 20 istek — diğer dört policy dakika/15dk PENCERELİYKEN bu SAATLİK: QR session\'lar zaten 2 dakikada (Bölüm 18) SÜRESİ DOLUYOR, art arda ÇOK sayıda session ÜRETMEK normal kullanımda GEREKMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.AddPolicy("qrStatus", context => RateLimitPartition.GetFixedWindowLimiter(',
+            aciklama: '`"qrStatus"` — YALNIZCA Bölüm 36\'nın `GET /auth/qr/{token}/status` action\'ının kullanacağı isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 40 }));',
+            aciklama: '1 dakikada 40 istek — üstteki kavram slaytının gerekçesi: Bölüm 20\'nin ~2 saniyede bir POLLING deseni (dakikada ~30 istek) rahatça SIĞACAK bir bütçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'options.OnRejected = async (rejectedContext, cancellationToken) =>',
+            aciklama: 'Bir istek limiti AŞTIĞINDA çalışacak geri çağrı — ASP.NET\'in VARSAYILAN boş 429 yanıtı YERİNE, projenin KENDİ `ApiErrorResponse` şeklini KULLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var httpContext = rejectedContext.HttpContext;',
+            aciklama: '`OnRejected`\'ın parametre tipi `HttpContext` DEĞİL `OnRejectedContext` — gerçek `HttpContext`\'e bu ALT-ÖZELLİKTEN erişiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());',
+            aciklama: 'Bölüm 28\'in yeni Code\'u — `ErrorMessages`/`SuccessMessages`\'ın (Bölüm 6, 21, 23) TÜM diğer kullanım yerleriyle AYNI "Code + Accept-Language" deseni, rate limiting REDDİNDE bile.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'httpContext.Response.ContentType = "application/json";',
+            aciklama: '`ExceptionHandlingMiddleware`\'in (Bölüm 23) `WriteErrorAsync`\'iyle AYNI satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await httpContext.Response.WriteAsJsonAsync(',
+            aciklama: 'Yanıt gövdesi YAZILIYOR — `ExceptionHandlingMiddleware`\'in AYNI deseni, ama BURADA bir exception FIRLATILMIYOR (rate limiter kendi ara katmanında, `ExceptionHandlingMiddleware`\'in dışında/öncesinde ÇALIŞIYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);',
+            aciklama: 'Bölüm 23\'ün GENİŞLETİLMİŞ `ApiErrorDetail`\'i — `Details` alanı BURADA verilmiyor (rate limiting TEK bir genel hata, alan bazlı DEĞİL, varsayılan `null` kalıyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'app.UseRateLimiter();',
+            aciklama: '`UseAuthorization()`\'DAN SONRA, `MapControllers()`\'DAN ÖNCE — sıra ÖNEMLİ: `general` policy\'nin `GeneralPartitionKey`\'i `context.User`\'a (JWT claim\'leri) ihtiyaç DUYUYOR, bu da ancak Authentication+Authorization ÇALIŞTIKTAN sonra DOLU olur.',
+            neden: 'Rate limiter Authentication\'dan ÖNCE ÇALIŞSAYDI, `context.User.Identity.IsAuthenticated` HENÜZ set EDİLMEMİŞ olurdu — `GeneralPartitionKey` HER isteği (kimliği doğrulanmış OLSA bile) "anonim" SANIP IP bazlı PARTITIONLARDI, aynı NAT arkasındaki kullanıcılar BİRBİRİNİN bütçesini YERDİ.',
+            olmasaydi: null
+          },
+          {
+            satir: 'static string GeneralPartitionKey(HttpContext context) =>',
+            aciklama: 'Bu dosyanın (Program.cs, top-level statements) EN ALTINDA tanımlı bir local fonksiyon — `WriteHealthCheckResponseAsync`\'in (A-02) hemen ALTINA eklendi, C#\'ın top-level statement\'larda local fonksiyonların TANIMLANDIKLARI yerden ÖNCE de ÇAĞRILABİLDİĞİ kural sayesinde (yukarıdaki `AddRateLimiter` bloğu bu fonksiyonu, TANIMINDAN önceki bir satırda, sorunsuzca ÇAĞIRIYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.User.Identity?.IsAuthenticated == true',
+            aciklama: 'JWT doğrulanmış bir istek mi kontrol ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '? context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ClientIp(context)',
+            aciklama: 'Kimliği doğrulanmışsa `NameIdentifier` claim\'i (`ApiControllerBase.CurrentUserId`\'nin, Bölüm 24, OKUDUĞU AYNI claim) — `??`\'nin SAĞ tarafı TEORİK bir güvenlik AĞI, `IsAuthenticated=true` iken bu claim\'in eksik olması pratikte OLASI değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': ClientIp(context);',
+            aciklama: 'Kimliksizse IP\'ye DÜŞER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'static string ClientIp(HttpContext context) =>',
+            aciklama: 'Beş policy\'nin DÖRDÜNDE (`anonymous`/`login`/`qrGenerate`/`qrStatus`) ve `GeneralPartitionKey`\'in kimliksiz DALINDA kullanılan ORTAK yardımcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Connection.RemoteIpAddress?.ToString() ?? "unknown";',
+            aciklama: '`ApiControllerBase.ClientIpAddress`\'ın (Bölüm 24) OKUDUĞU AYNI `Connection.RemoteIpAddress` — ama BURASI Command\'a GEÇİRİLECEK bir DEĞER değil, rate limiter\'ın kendi PARTITION anahtarı; `IpAddress` `null` gelse bile (nadiren) `"unknown"` sabit bir anahtara DÜŞÜP HİÇ çökmez.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '5 isimli rate limiting policy — general (100/dk, kullanıcı bazlı), anonymous (10/dk, IP bazlı), login (5/15dk, EN sıkı), qrGenerate (20/saat), qrStatus (40/dk, polling\'e YETECEK kadar geniş).',
+          'UseRateLimiter() bilinçli olarak UseAuthorization()\'dan SONRA — general policy\'nin partition anahtarı context.User\'a (JWT claim\'leri) bağlı.',
+          'OnRejected geri çağrısı, ASP.NET\'in varsayılan boş 429 yanıtı YERİNE projenin KENDİ ApiErrorResponse şeklini kullanıyor — RATE_LIMIT_EXCEEDED Code\'u ErrorMessages/SuccessMessages\'ın (Bölüm 6, 21, 23) AYNI "Code + Accept-Language" desenini izliyor.',
+          'İsimlendirilmemiş endpoint\'ler (ör. /health) HİÇ limitlenmiyor — global bir varsayılan policy set EDİLMEDİ, bilerek.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

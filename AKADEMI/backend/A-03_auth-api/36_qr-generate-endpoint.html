@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — QrLoginController: Generate</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'qr-generate-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '35_delete-account-endpoint.html',
+    sonrakiBolum: '37_qr-status-scan-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 36',
+        baslik: 'QrLoginController — Generate ve Canlı Testte Bulunan Bug',
+        altBaslik: 'AuthController\'dan (Bölüm 30-35) sonra QR akışının (Bölüm 16-20) HTTP karşılığı — ve gerçek sunucuda çalıştırılınca ORTAYA ÇIKAN bir hatanın DÜZELTİLMESİ.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Testte Bulunan Bug — Neden Base64 Token URL\'de Kırılıyordu?',
+        aciklama: 'Bölüm 18\'in `GenerateQrLoginCommandHandler`\'ı token\'ı `Convert.ToBase64String(tokenBytes)` ile ÜRETİYORDU — standart Base64 alfabesi `+`, `/`, `=` karakterlerini İÇEREBİLİR. Bu Controller (aşağıda) token\'ı `/auth/qr/{token}/scan` gibi bir URL PATH SEGMENTİNE koyuyor — sunucu GERÇEKTEN çalıştırılıp `curl` ile TEST edilince, `/` içeren bir token\'ın route\'u BÖLDÜĞÜ (404 döndüğü) GÖRÜLDÜ.',
+        neden: 'Bu hata KOD İNCELEMESİNDE (statik okuma) fark EDİLMEZ — `Convert.ToBase64String` GEÇERLİ bir çağrı, derlenir, testte kullanılan RASTGELE 64 byte\'ın `/` İÇERMEME olasılığı da YÜKSEK görünebilir (aslında ~88 karakterlik bir dizide `/` çıkma OLASILIĞI pratikte ÇOK yüksek) — yalnızca GERÇEK bir HTTP isteği, GERÇEK bir route ile TEST edildiğinde ortaya ÇIKTI. Bu, projenin "Controller yazılınca canlı test ET" disiplininin TAM olarak NEDEN var olduğunun somut kanıtı.',
+        olmasaydi: 'Bu hata fark EDİLMESEYDİ, üretim ortamında QR ile giriş özelliği YAKLAŞIK her birkaç denemeden birinde (token\'ın `/` İÇERDİĞİ her seferde) SESSİZCE 404 verirdi — kullanıcı "QR kodu okutmuyor" diye ŞİKAYET ederdi, ama hata mesajı hiçbir İPUCU vermezdi (404, "route bulunamadı", token\'ın kendisiyle İLGİLİ görünmezdi).'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'GenerateQrLoginCommand.cs — URL-Safe Token',
+        dosyaYolu: 'backend/WordLearner.Application/Features/QrLogin/GenerateQrLoginCommand.cs',
+        neden: 'Bölüm 18\'de TAM öğretilen bu dosyanın token üretim satırı, üstteki kavram slaytının AÇIKLADIĞI canlı test bulgusuyla DÜZELTİLDİ.',
+        diff: ` using System.Security.Cryptography;
+ using MediatR;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Domain.Entities.Auth;
+
+ namespace WordLearner.Application.Features.QrLogin;
+
+ public record GenerateQrLoginCommand(string? IpAddress, string? DeviceInfo) : IRequest<QrLoginGenerateResponse>;
+
+ public class GenerateQrLoginCommandHandler : IRequestHandler<GenerateQrLoginCommand, QrLoginGenerateResponse>
+ {
+     private const int TokenByteLength = 64;
+     private const int PairingCodeLength = 4;
+     private const int ExpirationMinutes = 2;
+
+     private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
+     private readonly IPasswordService _passwordService;
+
+     public GenerateQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+     {
+         _qrLoginSessionRepository = qrLoginSessionRepository;
+         _passwordService = passwordService;
+     }
+
+     public async Task<QrLoginGenerateResponse> Handle(GenerateQrLoginCommand request, CancellationToken cancellationToken)
+     {
+         var tokenBytes = new byte[TokenByteLength];
+         RandomNumberGenerator.Fill(tokenBytes);
+-        var token = Convert.ToBase64String(tokenBytes);
++        // Standart Base64 DEĞİL — bu token URL path segmenti olarak kullanılıyor (/auth/qr/{token}/...),
++        // '+'/'/' route eşleşmesini bozar; '-'/'_' URL-güvenli, '=' dolgusu path'te gereksiz.
++        var token = Convert.ToBase64String(tokenBytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+         var pairingCode = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, PairingCodeLength)).ToString($"D{PairingCodeLength}");
+
+         var session = new QrLoginSession
+         {
+             QrTokenHash = _passwordService.HashToken(token),
+             PairingCode = pairingCode,
+             RequesterIp = request.IpAddress,
+             RequesterDeviceInfo = request.DeviceInfo,
+             ExpiresAt = DateTime.UtcNow.AddMinutes(ExpirationMinutes)
+         };
+
+         await _qrLoginSessionRepository.AddAsync(session, cancellationToken);
+         await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
+
+         return new QrLoginGenerateResponse(token, pairingCode, ExpirationMinutes * 60);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'var token = Convert.ToBase64String(tokenBytes);',
+            aciklama: 'Bölüm 18\'in orijinal satırı — standart Base64, `+`/`/`/`=` karakterleri İÇEREBİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var token = Convert.ToBase64String(tokenBytes).Replace(\'+\', \'-\').Replace(\'/\', \'_\').TrimEnd(\'=\');',
+            aciklama: '`Replace(\'+\', \'-\')` ve `Replace(\'/\', \'_\')` — Base64URL alfabesinin İKİ farklı karakteri, `TrimEnd(\'=\')` — dolgu (padding) karakterleri, path segmentinde gereksiz. Sonuç: yalnızca `A-Z`, `a-z`, `0-9`, `-`, `_` içeren, HERHANGİ bir URL path\'inde GÜVENLE kullanılabilen bir dize.',
+            neden: 'Bu dönüşüm token\'ın GÜVENLİK özelliklerini (rastgelelik, uzunluk, hash\'lenerek saklanması) HİÇ ETKİLEMİYOR — yalnızca karakter KÜMESİNİ değiştiriyor; `IPasswordService.HashToken` (Bölüm 3) hangi karakterlerden OLUŞTUĞUNA BAKMAKSIZIN aynı şekilde çalışır.',
+            olmasaydi: 'Bu satır DÜZELTİLMESEYDİ, üretimde QR ile giriş özelliği rastgele token\'ların YAKLAŞIK bir kısmında SESSİZCE 404 verirdi — Bölüm 17\'nin `QrSessionGoneException`\'ı bile DEVREYE GİRMEDEN, çünkü istek Controller\'a hiç ULAŞMAZDI (route eşleşmediği için).'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'QrLoginController.cs — Generate',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/QrLoginController.cs',
+        nedenBuKlasor: '`AuthController` (Bölüm 30) ile AYNI klasör — `WordLearner.API/Controllers/`.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using WordLearner.Application.Common;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.QrLogin;
+
+namespace WordLearner.API.Controllers;
+
+[Route("auth/qr")]
+public class QrLoginController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public QrLoginController(IMediator mediator) => _mediator = mediator;
+
+    [HttpPost("generate")]
+    [AllowAnonymous]
+    [EnableRateLimiting("qrGenerate")]
+    public async Task<ActionResult<QrLoginGenerateResponse>> Generate(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GenerateQrLoginCommand(ClientIpAddress, DeviceInfo), cancellationToken);
+        return Ok(result);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`AuthController`\'daki (Bölüm 30) AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Authorization;',
+            aciklama: '`[AllowAnonymous]`/(ileride) `[Authorize]` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Mvc;',
+            aciklama: '`[Route]`/`[HttpPost]`/`[HttpGet]`/`ActionResult<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.RateLimiting;',
+            aciklama: '`[EnableRateLimiting]` için gerekli — Bölüm 29\'un `qrGenerate`/`qrStatus` policy\'leri İLK KEZ burada KULLANILACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common;',
+            aciklama: '`SuccessMessages`\'ı (ileride Confirm/Deny\'de, Bölüm 38) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`MessageResponse`\'u (ileride Confirm/Deny\'de) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`QrLoginGenerateResponse`\'u (Bölüm 17) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Features.QrLogin;',
+            aciklama: '`GenerateQrLoginCommand`\'ı (Bölüm 18) kullanabilmek için gerekli — `AuthController`\'ın `Features.Auth`\'undan FARKLI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.API.Controllers;',
+            aciklama: '`AuthController` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Route("auth/qr")]',
+            aciklama: '`AuthController`\'ın `[Route("auth")]`\'undan (Bölüm 30) FARKLI — `"auth/qr"`, RoutePrefixConvention (A-01) ile BİRLEŞİNCE `api/v1/auth/qr` OLUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class QrLoginController : ApiControllerBase',
+            aciklama: '`AuthController` ile AYNI soyut taban — `CurrentUserId`/`AcceptLanguage`/`ClientIpAddress`/`DeviceInfo`\'nun (Bölüm 24) İKİNCİ tüketicisi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IMediator _mediator;',
+            aciklama: '`AuthController` ile AYNI TEK bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public QrLoginController(IMediator mediator) => _mediator = mediator;',
+            aciklama: '`AuthController` ile BİREBİR aynı constructor deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("generate")]',
+            aciklama: '`api/v1/auth/qr/generate`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Bölüm 16-20\'nin tasarımının ADIM 1\'i — Generate anonim: kimliği doğrulanmamış bir tarayıcı/admin panel bu QR\'ı BAŞLATIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("qrGenerate")]',
+            aciklama: 'Bölüm 29\'un ADANMIŞ policy\'si (20/saat, IP bazlı) — paylaşımlı `"anonymous"` (10/dk) bütçesini KULLANMAZ (Bölüm 29\'un kavram slaytı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<QrLoginGenerateResponse>> Generate(CancellationToken cancellationToken)',
+            aciklama: 'Parametre listesinde `Request` DTO YOK — `RequestAccountDeletion`\'daki (Bölüm 35) AYNI durum: `GenerateQrLoginCommand`\'ın (Bölüm 18) İKİ alanı da (`IpAddress`, `DeviceInfo`) Controller-KAYNAKLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new GenerateQrLoginCommand(ClientIpAddress, DeviceInfo), cancellationToken);',
+            aciklama: 'Bölüm 24\'ün `ClientIpAddress`/`DeviceInfo` property\'leri BURADA Command\'a AKTARILIYOR — bunlar QR session\'ın `RequesterIp`/`RequesterDeviceInfo` alanlarına (Bölüm 16) yazılacak, Bölüm 37\'nin Scan yanıtında mobil kullanıcıya GÖSTERİLECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(result);',
+            aciklama: '`AuthController`\'ın token-döndüren action\'larıyla (Bölüm 31-32) AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/qr/generate',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/qr/generate',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "qrToken": "odUBA2zsT0Gq6vrOzPoCrBmuDwNkEhFMcgACaLj6nIopwEXO3zFJnkQdCt2G052VxQ-uUO1kj3lM6OHAaA5W_w",\n  "pairingCode": "3385",\n  "expiresIn": 120\n}'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda, DÜZELTİLMİŞ token üretimiyle TEST EDİLDİ — `qrToken`\'da `-`/`_` VAR ama `/`/`+` YOK, tam da üstteki bugfix\'in ürettiği şekil.',
+          'Bu `qrToken`, bir QR koda/deep-link\'e GÖMÜLÜR — Web/Admin ekranı bunu bir QR görseline ÇEVİRİR.',
+          '`pairingCode`, hem bu ekranda hem mobilin Scan yanıtında (Bölüm 37) GÖSTERİLİR — kullanıcı ikisini GÖZLE karşılaştırır.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Canlı test (gerçek sunucu + gerçek HTTP isteği), kod incelemesinin YAKALAYAMADIĞI bir bug\'ı (Base64 token URL\'de kırılıyor) ortaya ÇIKARDI — Bölüm 18\'in Convert.ToBase64String\'i URL-safe bir dönüşümle DÜZELTİLDİ.',
+          'QrLoginController, AuthController ile AYNI iskeleti (ApiControllerBase, tek IMediator bağımlılığı, üç-satırlık action deseni) paylaşıyor.',
+          'Generate, qrGenerate policy\'sini (20/saat/IP) kullanıyor — Bölüm 29\'un paylaşımlı anonymous bütçesinden AYRI, çünkü QR generate\'in kullanım deseni (nadiren, session başına bir kez) farklı.',
+          'Sıradaki iki bölüm (37-38) QrLoginController\'ın kalan 4 action\'ını (status/scan/confirm/deny) tamamlayacak.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

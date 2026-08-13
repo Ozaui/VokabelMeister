@@ -1,14 +1,21 @@
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using WordLearner.API.Common;
 using WordLearner.API.Conventions;
 using WordLearner.API.Middleware;
 using WordLearner.Application;
+using WordLearner.Application.Common;
+using WordLearner.Application.Common.Behaviors;
+using WordLearner.Application.DTOs;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Infrastructure;
 using WordLearner.Infrastructure.Data;
@@ -33,6 +40,7 @@ builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
 // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
 builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
     options.TokenValidationParameters = new TokenValidationParameters
@@ -52,6 +60,43 @@ builder.Services.AddCors(options => options.AddPolicy("Default", policy => polic
     .AllowAnyMethod()
     .AllowAnyHeader()));
 
+// 5 isimli policy — her Controller action'ı [EnableRateLimiting("...")] ile hangisini kullanacağını
+// seçer; burada isimlendirilmeyen bir endpoint (ör. /health) HİÇ limitlenmez (global bir varsayılan
+// policy set edilmedi, bilerek — health check'in izlenebilir olması gerekiyor).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("general", context => RateLimitPartition.GetFixedWindowLimiter(
+        GeneralPartitionKey(context),
+        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 100 }));
+
+    options.AddPolicy("anonymous", context => RateLimitPartition.GetFixedWindowLimiter(
+        ClientIp(context),
+        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 10 }));
+
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        ClientIp(context),
+        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(15), PermitLimit = 5 }));
+
+    options.AddPolicy("qrGenerate", context => RateLimitPartition.GetFixedWindowLimiter(
+        ClientIp(context),
+        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromHours(1), PermitLimit = 20 }));
+
+    options.AddPolicy("qrStatus", context => RateLimitPartition.GetFixedWindowLimiter(
+        ClientIp(context),
+        _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 40 }));
+
+    options.OnRejected = async (rejectedContext, cancellationToken) =>
+    {
+        var httpContext = rejectedContext.HttpContext;
+        var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
+        httpContext.Response.ContentType = "application/json";
+        await httpContext.Response.WriteAsJsonAsync(
+            new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);
+    };
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -67,6 +112,9 @@ app.UseHttpsRedirection();
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();
+// Authorization'dan SONRA — "general" policy'nin partition anahtarı (aşağıdaki GeneralPartitionKey)
+// context.User'ın (JWT claim'leri) doldurulmuş olmasına bağlı.
+app.UseRateLimiter();
 app.MapControllers();
 app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
 
@@ -82,3 +130,13 @@ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport repo
         timestampUtc = DateTime.UtcNow
     });
 }
+
+// "general" policy [Authorize] uçlarda kullanılıyor — kimliği doğrulanmış her kullanıcı KENDİ
+// bütçesini tüketir (IP DEĞİL, ör. aynı NAT arkasındaki iki kullanıcı birbirinin limitini YEMEZ).
+static string GeneralPartitionKey(HttpContext context) =>
+    context.User.Identity?.IsAuthenticated == true
+        ? context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ClientIp(context)
+        : ClientIp(context);
+
+static string ClientIp(HttpContext context) =>
+    context.Connection.RemoteIpAddress?.ToString() ?? "unknown";

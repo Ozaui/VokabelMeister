@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AuthController: Google/Apple</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'google-apple-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '31_login-endpoint.html',
+    sonrakiBolum: '33_refresh-logout-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 32',
+        baslik: 'AuthController — Google ve Apple',
+        altBaslik: 'Bölüm 13\'ün sosyal giriş Handler\'ları HTTP\'ye BAĞLANIYOR — ikisi de TEK adımda LoginResponse döner, OTP YOK.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithGoogleRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/LoginWithGoogleRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record LoginWithGoogleRequest(string IdToken);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginWithGoogleRequest(string IdToken);',
+            aciklama: '`LoginWithGoogleCommand`\'ın (Bölüm 13) TEK istemci-sağladığı alanı — `DeviceInfo`/`IpAddress`/`Language` Controller tarafından (Bölüm 24) EKLENİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LoginWithAppleRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/LoginWithAppleRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// FirstName/LastName opsiyonel — Apple bunu yalnızca cihazda İLK izin anında gönderir (LoginWithAppleCommand'ın notu).
+public record LoginWithAppleRequest(string IdentityToken, string? FirstName, string? LastName);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`LoginWithGoogleRequest` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginWithAppleRequest(string IdentityToken, string? FirstName, string? LastName);',
+            aciklama: '`LoginWithAppleCommand`\'ın (Bölüm 13) `DeviceInfo`/`IpAddress`/`Language` DIŞINDAKİ ÜÇ alanı — `FirstName`/`LastName` nullable, Apple\'ın davranışını (yalnızca ilk izinde gönderir) BİREBİR yansıtıyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'AuthController.cs — Google ve Apple Eklendi',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        neden: 'Bölüm 30-31\'de 5 endpoint\'e ULAŞAN bu dosyaya, Bölüm 13\'ün iki sosyal giriş Handler\'ı EKLENDİ — yeni using YOK.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.Auth;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth")]
+ public class AuthController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public AuthController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("register")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPost("verify-email")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
+     }
+
+     [HttpPost("resend-verification")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login")]
+     [AllowAnonymous]
+     [EnableRateLimiting("login")]
+     public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login/verify-otp")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> VerifyLoginOtp(VerifyLoginOtpRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new VerifyLoginOtpCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
++    [HttpPost("google")]
++    [AllowAnonymous]
++    [EnableRateLimiting("anonymous")]
++    public async Task<ActionResult<LoginResponse>> LoginWithGoogle(LoginWithGoogleRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new LoginWithGoogleCommand(request.IdToken, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
++        return Ok(result);
++    }
++
++    [HttpPost("apple")]
++    [AllowAnonymous]
++    [EnableRateLimiting("anonymous")]
++    public async Task<ActionResult<LoginResponse>> LoginWithApple(LoginWithAppleRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new LoginWithAppleCommand(request.IdentityToken, request.FirstName, request.LastName, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
++        return Ok(result);
++    }
++
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpPost("google")]',
+            aciklama: '`api/v1/auth/google` — API_ENDPOINTS\'in sosyal giriş uç noktalarından İLKİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Bu satır İKİ kez (Google ve Apple\'da) geçiyor — Bölüm 30-31\'in diğer beş endpoint\'iyle AYNI anlam, JWT gerekmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("anonymous")]',
+            aciklama: 'Bu satır da İKİ kez geçiyor — Login\'in (Bölüm 31) AKSİNE sosyal giriş token\'ı bir SDK tarafından üretiliyor, TAHMİN edilemez; paylaşımlı `"anonymous"` (10/dk) bütçesi YETERLİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<LoginResponse>> LoginWithGoogle(LoginWithGoogleRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `LoginResponse` (Bölüm 12\'nin, `VerifyLoginOtp` ile AYNI DTO) — sosyal giriş TEK adımda token DÖNDÜRÜR, OTP adımı YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new LoginWithGoogleCommand(request.IdToken, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);',
+            aciklama: '`VerifyLoginOtp`\'taki (Bölüm 31) AYNI üç-parametreli (`DeviceInfo`/`ClientIpAddress`/`AcceptLanguage`) desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("apple")]',
+            aciklama: '`api/v1/auth/apple`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<LoginResponse>> LoginWithApple(LoginWithAppleRequest request, CancellationToken cancellationToken)',
+            aciklama: '`LoginWithGoogle` ile AYNI dönüş tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new LoginWithAppleCommand(request.IdentityToken, request.FirstName, request.LastName, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);',
+            aciklama: '`LoginWithGoogle`\'dan FARKLI olarak `request.FirstName`/`request.LastName` de Command\'a GEÇİYOR — `LoginWithAppleRequest`\'in (bu bölüm) nullable üçüncü/dördüncü alanları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(result);',
+            aciklama: 'Bu satır İKİ kez geçiyor (Google ve Apple\'da) — `VerifyLoginOtp`\'taki (Bölüm 31) AYNI desen, Handler\'ın döndürdüğü `LoginResponse` doğrudan `200 OK` içinde döner.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/google',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/google',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{ "idToken": "<Google Sign-In\'in döndürdüğü ID token>" }',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "accessToken": "eyJhbGciOiJIUzI1NiIs...",\n  "refreshToken": "...",\n  "expiresIn": 900,\n  "user": { "id": 2, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" },\n  "accountWasRecovered": false\n}'
+        },
+        notlar: [
+          '`idToken`, istemci tarafında (Web/Mobil) Google Sign-In SDK\'sından ALINIR — backend bunu ASLA üretmez, yalnızca DOĞRULAR (Bölüm 10\'un IGoogleTokenValidator\'ı).',
+          'Geçersiz/süresi dolmuş token 401 (INVALID_SOCIAL_TOKEN) döner.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/apple',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/apple',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{\n  "identityToken": "<Sign in with Apple\'ın döndürdüğü identity token>",\n  "firstName": "Ayşe",\n  "lastName": "Yılmaz"\n}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "accessToken": "eyJhbGciOiJIUzI1NiIs...",\n  "refreshToken": "...",\n  "expiresIn": 900,\n  "user": { "id": 3, "currentLevel": "A1", "themePreference": "System", "languagePreference": "tr" },\n  "accountWasRecovered": false\n}'
+        },
+        notlar: [
+          '`firstName`/`lastName` yalnızca kullanıcının O CİHAZDA İLK kez izin verdiği istekte DOLU gelir — sonraki girişlerde bu iki alan gönderilmese de OLUR (LoginWithAppleRequest nullable).',
+          'Mobil dışında (Web) bu uç ŞU AN kullanılmıyor — Apple yalnızca mobilde, bilinçli bir kapsam kararı.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Google/Apple, VerifyLoginOtp ile AYNI LoginResponse dönüş tipini paylaşıyor — sosyal giriş TEK adımda tamamlanıyor, OTP akışı YOK.',
+          'İkisi de "anonymous" policy\'sini kullanıyor — Login\'in AKSİNE brute-force riski taşımıyorlar (token bir SDK tarafından üretiliyor, tahmin EDİLEMEZ).',
+          'LoginWithApple, Request DTO\'sunun nullable alanlarını (FirstName/LastName) doğrudan Command\'a AKTARIYOR — Controller bu farkı yalnızca parametre SAYISIYLA yansıtıyor, ekstra bir mantık YOK.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

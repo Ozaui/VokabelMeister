@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — ValidationBehavior</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'validation-behavior',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '21_basari-mesajlari.html',
+    sonrakiBolum: '23_coklu-alan-hatasi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 22',
+        baslik: 'ValidationBehavior — MediatR Pipeline\'ına Doğrulama Eklemek',
+        altBaslik: 'AuthController/QrLoginController\'ı yazmadan ÖNCE gereken son parça: 18 Command\'ın hiçbirinin kendi validasyon kodu TAŞIMADIĞI, tek bir merkezi mekanizma.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Handler\'ların İçine Değil, Bir Pipeline Behavior\'a?',
+        aciklama: '`ValidationBehavior`, MediatR\'ın her Handler\'dan ÖNCE devreye giren bir ara katmanı (pipeline behavior) — 13 Auth + 5 QR Handler\'ının HİÇBİRİ kendi içinde bir `IValidator.ValidateAsync` çağrısı İÇERMEZ. Bir Command için bir Validator KAYITLIYSA (ileride yazılacak 15 validator, Bölüm 25-27), doğrulama bu TEK sınıf üzerinden OTOMATİK çalışır.',
+        neden: '13+5 Handler\'ın HERBİRİNE aynı "validator\'ları çek, çalıştır, hata varsa fırlat" kodunu KOPYALAMAK yerine, bu mantık TEK bir yerde yaşıyor — yeni bir Handler yazıldığında (ör. gelecek A-05\'in Word Handler\'ları) validasyon OTOMATİK devreye girer, Handler yazarının "validasyonu çağırmayı unutmaması" gibi bir SORUMLULUĞU hiç OLMAZ.',
+        olmasaydi: 'Her Handler kendi başına `await _validator.ValidateAsync(request)` çağırıp hata fırlatsaydı, bu çağrıyı EKLEMEYİ unutan bir Handler SESSİZCE doğrulamasız KALIRDI — pipeline behavior\'da bu SENARYO imkânsız, çünkü doğrulama Handler\'ın kendi kontrolü DIŞINDA, MediatR\'ın altyapısı TARAFINDAN garanti ediliyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ValidationBehavior.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Common/Behaviors/ValidationBehavior.cs',
+        nedenBuKlasor: 'İlk kez YENİ bir alt klasör: `Common/Behaviors/` — `ErrorMessages`/`SuccessMessages`\'ın (Bölüm 6, 21) yaşadığı `Common/`\'ın ALTINDA, MediatR\'a özel ara katmanların toplanacağı yer.',
+        kod: `using FluentValidation;
+using MediatR;
+
+namespace WordLearner.Application.Common.Behaviors;
+
+// MediatR pipeline behavior — her Handler'dan ÖNCE çalışır, o Command/Query için kayıtlı TÜM
+// IValidator<T>'leri çalıştırır. Hiç validator yoksa (ör. GenerateQrLoginCommand) no-op, Handler
+// doğrudan çağrılır. Başarısızlık FluentValidation.ValidationException fırlatır — ExceptionHandlingMiddleware
+// bunu yakalayıp ilk kuralın WithErrorCode'unu ErrorMessages'tan çözer (400).
+public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    private readonly IEnumerable<IValidator<TRequest>> _validators;
+
+    public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators) => _validators = validators;
+
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        if (!_validators.Any())
+            return await next();
+
+        var context = new ValidationContext<TRequest>(request);
+        var failures = (await Task.WhenAll(_validators.Select(v => v.ValidateAsync(context, cancellationToken))))
+            .SelectMany(result => result.Errors)
+            .ToList();
+
+        if (failures.Count != 0)
+            throw new ValidationException(failures);
+
+        return await next();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`IValidator<T>`/`ValidationContext<T>`/`ValidationException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IPipelineBehavior<TRequest, TResponse>`/`RequestHandlerDelegate<TResponse>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Common.Behaviors;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>',
+            aciklama: 'MediatR\'ın kendi ara katman (pipeline behavior) sözleşmesini implemente eder — `TRequest`/`TResponse` generic, bu TEK sınıf sistemdeki HER Command/Query için çalışabilir (ör. `RegisterCommand`/`RegisterResponse` çifti İÇİN de, `GetQrLoginStatusQuery`/`QrLoginStatusResponse` çifti İÇİN de).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'where TRequest : notnull',
+            aciklama: 'MediatR\'ın `IPipelineBehavior<,>` arayüzünün KENDİ kısıtı — `record`/`class` tipler zaten bu kısıtı KARŞILAR, tüm Command/Query\'ler için sorunsuz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IEnumerable<IValidator<TRequest>> _validators;',
+            aciklama: '`IValidator<TRequest>` — TEKİL değil `IEnumerable`: bir Command için BİRDEN FAZLA validator KAYITLI olabilir (şu an her Command\'ın en fazla bir validator\'ı var ama arayüz bunu VARSAYMIYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators) => _validators = validators;',
+            aciklama: 'Constructor injection — DI konteyner (`AddValidatorsFromAssembly`, A-02\'nin `Program.cs`\'i) o `TRequest` tipi için KAYITLI TÜM validator\'ları burada OTOMATİK enjekte eder; hiç kayıtlı validator YOKSA boş bir koleksiyon gelir (hata FIRLAMAZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)',
+            aciklama: '`IPipelineBehavior<,>.Handle` implementasyonu — `next` parametresi, ZİNCİRDEKİ bir SONRAKİ adımı (başka bir behavior, ya da hiç YOKSA doğrudan Handler\'ın kendisi) TEMSİL eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!_validators.Any())',
+            aciklama: 'Bu Command için HİÇ validator KAYITLI DEĞİLSE (ör. `GenerateQrLoginCommand`/`RequestAccountDeletionCommand` — Bölüm 25-27\'de bilerek validator YAZILMAYACAK ikisi) doğrulama TAMAMEN atlanır.',
+            neden: 'Her Command için ZORUNLU bir validator dosyası AÇILSAYDI (boş bir `AbstractValidator<T>` gövdesiyle), bu hem gereksiz bir dosya ÇOĞALTIRDI hem de "bu Command\'ın GERÇEKTEN doğrulanacak bir alanı var mı" sorusunu okuyucudan GİZLERDİ — boş bir validator dosyasının VARLIĞI, "buraya bir kural EKLENMELİ mi diye düşünüldü ama YOK" mu yoksa "unutuldu" mu olduğunu AYIRT ETTİRMEZ.',
+            olmasaydi: 'Bu kontrol OLMASAYDI (`_validators.Any()` yerine doğrudan `Task.WhenAll` çağrılsaydı) davranış YİNE doğru olurdu (boş bir koleksiyonda `Task.WhenAll` anında TAMAMLANIR) — ama her Command için GEREKSİZ bir `ValidationContext` nesnesi ÜRETİLİRDİ, küçük ama gereksiz bir maliyet.'
+          },
+          {
+            satir: 'var context = new ValidationContext<TRequest>(request);',
+            aciklama: 'FluentValidation\'ın `ValidateAsync`\'in beklediği sarmalayıcı tip — gelen `request` (ör. bir `RegisterCommand` örneği) BUNUN İÇİNE sarılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var failures = (await Task.WhenAll(_validators.Select(v => v.ValidateAsync(context, cancellationToken))))',
+            aciklama: 'Birden fazla validator KAYITLI olsaydı (şu an yok ama arayüz İZİN veriyor), `Task.WhenAll` HEPSİNİ PARALEL çalıştırır — sırayla `await` etmek yerine, TÜM validator\'lar AYNI ANDA başlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.SelectMany(result => result.Errors)',
+            aciklama: 'Her validator\'ın döndürdüğü `ValidationResult.Errors` LİSTESİ tek bir DÜZ listeye BİRLEŞTİRİLİR — `RegisterCommandValidator`\'ın (Bölüm 25) TEK BAŞINA bile Email/Password/FirstName/LastName için BİRDEN FAZLA hata döndürebileceği unutulmamalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToList();',
+            aciklama: 'Lazy LINQ zincirini SOMUT bir listeye çevirir — aşağıda `.Count` ve `ValidationException`\'a geçirmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (failures.Count != 0)',
+            aciklama: 'En az BİR kural başarısız olduysa.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new ValidationException(failures);',
+            aciklama: 'FluentValidation\'ın KENDİ `ValidationException`\'ı — `AppException`\'dan (Bölüm 6) TÜREMEZ, kendi ayrı bir tip; `ExceptionHandlingMiddleware`\'e (Bölüm 23) bu yüzden AYRI bir `catch` kolu eklenecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return await next();',
+            aciklama: 'Bu satır kod bloğunda İKİ kez geçiyor — biri hiç validator YOKSA (erken çıkış), biri TÜM kurallar BAŞARILIYSA (metodun sonu); ikisi de AYNI anlama gelir: zincir NORMAL devam eder, Handler ÇAĞRILIR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — Pipeline Behavior Kaydı',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'A-02 Bölüm 6\'da TAM öğretilen, A-03 Bölüm 4\'te tek satırlık bir eklemeyle güncellenen bu dosyaya, `ValidationBehavior`\'ın MediatR zincirine KAYDEDİLMESİ gerekiyor — kayıt OLMADAN sınıf yazılmış olsa bile hiçbir Handler çağrısında ÇALIŞMAZ.',
+        diff: ` using System.Text;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
+ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+ using Microsoft.Extensions.Diagnostics.HealthChecks;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
+ using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
++using WordLearner.Application.Common.Behaviors;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Infrastructure;
+ using WordLearner.Infrastructure.Data;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+ builder.Host.UseSerilog((context, configuration) => configuration
+     .MinimumLevel.Information()
+     .Enrich.FromLogContext()
+     .WriteTo.Console()
+     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+ builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+ builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
++builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
+ app.MapControllers();
+ app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
+ app.Run();
+
+ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+ {
+     context.Response.ContentType = "application/json";
+     return context.Response.WriteAsJsonAsync(new
+     {
+         status = report.Status.ToString(),
+         databaseConnected = report.Status == HealthStatus.Healthy,
+         timestampUtc = DateTime.UtcNow
+     });
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Common.Behaviors;',
+            aciklama: '`ValidationBehavior<,>`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));',
+            aciklama: 'AÇIK generic kayıt (`typeof(IPipelineBehavior<,>)`) — TEK bir satırla, sistemdeki HER Command/Query çifti için `ValidationBehavior` MediatR zincirine EKLENİR; her yeni Command için AYRI bir kayıt YAZILMASI gerekmez. `AddTransient` — behavior durumsuz (stateless), her istekte YENİDEN oluşturulması SORUN değil.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ValidationBehavior, MediatR pipeline\'ına eklenen bir ara katman — 18 Command\'ın hiçbiri kendi validasyon kodunu TAŞIMIYOR, hepsi bu TEK sınıftan GEÇİYOR.',
+          'Validator kayıtlı olmayan Command\'lar (Generate/RequestAccountDeletion) için davranış no-op — boş validator dosyası AÇILMADI (YAGNI).',
+          'Açık generic DI kaydı (typeof(IPipelineBehavior<,>)) TEK satırla TÜM Command/Query\'leri kapsıyor.',
+          'FluentValidation.ValidationException, AppException\'dan TÜREMEZ — ExceptionHandlingMiddleware\'e (Bölüm 23) AYRI bir catch kolu gerekecek.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

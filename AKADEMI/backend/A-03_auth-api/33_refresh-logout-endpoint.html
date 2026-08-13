@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AuthController: Refresh/Logout</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'refresh-logout-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '32_google-apple-endpoint.html',
+    sonrakiBolum: '34_forgot-reset-password-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 33',
+        baslik: 'AuthController — Refresh ve Logout',
+        altBaslik: 'Bu bölümün Logout\'u, 13 endpoint\'in İLK [Authorize] action\'ı — Bölüm 24\'ün CurrentUserId\'si İLK KEZ gerçekten KULLANILIYOR.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RefreshRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/RefreshRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record RefreshRequest(string RefreshToken);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record RefreshRequest(string RefreshToken);',
+            aciklama: '`RefreshCommand`\'ın (Bölüm 14) `DeviceInfo`/`IpAddress` DIŞINDAKİ TEK istemci alanı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogoutRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/LogoutRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record LogoutRequest(string RefreshToken);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`RefreshRequest` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LogoutRequest(string RefreshToken);',
+            aciklama: '`RefreshRequest` ile YAPISAL olarak BİREBİR aynı — ama `LogoutCommand`\'ın (Bölüm 14) `UserId` alanı BURADA YOK, çünkü Controller (aşağıdaki `AuthController.Logout`) onu `CurrentUserId`\'den (Bölüm 24) EKLİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Logout Neden [Authorize] — Refresh Neden [AllowAnonymous]?',
+        aciklama: '`Refresh` `[AllowAnonymous]` taşırken `Logout` `[Authorize]` taşıyor — ikisi de bir `RefreshToken` ALIYOR, ama Logout\'un AYRICA geçerli bir JWT (`Authorization: Bearer ...` header\'ı) GEREKİYOR.',
+        neden: 'Refresh\'in AMACI zaten SÜRESİ DOLMUŞ (ya da dolmak üzere olan) bir access token\'ı YENİLEMEK — o AN geçerli bir JWT OLMAYABİLİR (tam da bu YÜZDEN refresh çağrılıyor), bu yüzden `[AllowAnonymous]` OLMAK ZORUNDA. Logout ise `CurrentUserId`\'nin (Bölüm 24, JWT\'den okunan) `LogoutCommand.UserId`\'ye EŞLEŞMESİ gerektiği için (Bölüm 14\'ün Handler\'ı "bulunamazsa VEYA BAŞKA bir kullanıcıya AİTSE sessizce başarı" der) geçerli bir JWT ZORUNLU.',
+        olmasaydi: 'Logout `[AllowAnonymous]` OLSAYDI, `CurrentUserId`\'yi (Bölüm 24) OKUYAN satır `[Authorize]` GARANTİSİ OLMADAN ÇALIŞIRDI — JWT claim\'i HİÇ olmayan bir istekte `int.Parse(User.FindFirstValue(...)!)` bir `NullReferenceException`\'a (beklenmeyen 500) DÜŞERDİ, kontrollü bir 401 YERİNE.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'AuthController.cs — Refresh ve Logout Eklendi',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        neden: 'Bölüm 30-32\'de 7 endpoint\'e ULAŞAN bu dosyaya Refresh (Bölüm 14) ve Logout (Bölüm 14) EKLENDİ — Logout, `[Authorize]`\'ın İLK KULLANIMI.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Features.Auth;
+
+ namespace WordLearner.API.Controllers;
+
+ [Route("auth")]
+ public class AuthController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public AuthController(IMediator mediator) => _mediator = mediator;
+
+     [HttpPost("register")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPost("verify-email")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
+     }
+
+     [HttpPost("resend-verification")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login")]
+     [AllowAnonymous]
+     [EnableRateLimiting("login")]
+     public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);
+         return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));
+     }
+
+     [HttpPost("login/verify-otp")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> VerifyLoginOtp(VerifyLoginOtpRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new VerifyLoginOtpCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("google")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> LoginWithGoogle(LoginWithGoogleRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new LoginWithGoogleCommand(request.IdToken, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("apple")]
+     [AllowAnonymous]
+     [EnableRateLimiting("anonymous")]
+     public async Task<ActionResult<LoginResponse>> LoginWithApple(LoginWithAppleRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new LoginWithAppleCommand(request.IdentityToken, request.FirstName, request.LastName, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
+         return Ok(result);
+     }
+
++    [HttpPost("refresh")]
++    [AllowAnonymous]
++    [EnableRateLimiting("anonymous")]
++    public async Task<ActionResult<RefreshResponse>> Refresh(RefreshRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new RefreshCommand(request.RefreshToken, DeviceInfo, ClientIpAddress), cancellationToken);
++        return Ok(result);
++    }
++
++    [HttpPost("logout")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<MessageResponse>> Logout(LogoutRequest request, CancellationToken cancellationToken)
++    {
++        await _mediator.Send(new LogoutCommand(CurrentUserId, request.RefreshToken), cancellationToken);
++        return Ok(new MessageResponse(SuccessMessages.Resolve("LOGGED_OUT", AcceptLanguage)));
++    }
++
+ }`,
+        satirlar: [
+          {
+            satir: '[HttpPost("refresh")]',
+            aciklama: '`api/v1/auth/refresh`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Üstteki kavram slaytının açıkladığı gibi — Refresh, geçerli bir JWT OLMADAN da ÇAĞRILABİLMELİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("anonymous")]',
+            aciklama: 'Bölüm 30-32\'nin diğer anonim uçlarıyla AYNI paylaşımlı bütçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<RefreshResponse>> Refresh(RefreshRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `RefreshResponse` (Bölüm 14) — `LoginResponse`\'tan (Bölüm 12) FARKLI, `user`/`accountWasRecovered` alanları YOK (Refresh bir KULLANICI PROFİLİ döndürmüyor, yalnızca YENİ token çifti).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new RefreshCommand(request.RefreshToken, DeviceInfo, ClientIpAddress), cancellationToken);',
+            aciklama: '`RefreshCommand`\'ın (Bölüm 14) `Language` alanı YOK — bu Handler bir e-posta GÖNDERMİYOR, `AcceptLanguage` burada GEÇİRİLMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(result);',
+            aciklama: '`VerifyLoginOtp`/`LoginWithGoogle`/`LoginWithApple`\'daki (Bölüm 31-32) AYNI desen — Handler\'ın döndürdüğü DTO doğrudan `200 OK` içinde döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("logout")]',
+            aciklama: '`api/v1/auth/logout`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Authorize]',
+            aciklama: '13 endpoint\'in İLK `[Authorize]` action\'ı — Bölüm 24\'ün `CurrentUserId`\'sini AŞAĞIDA gerçekten OKUYAN İLK yer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("general")]',
+            aciklama: 'Bölüm 29\'un `"general"` (100/dk, kullanıcı bazlı) policy\'sinin İLK KULLANIMI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> Logout(LogoutRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `MessageResponse` — `LogoutCommand` (Bölüm 14) `Unit` döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new LogoutCommand(CurrentUserId, request.RefreshToken), cancellationToken);',
+            aciklama: 'Bölüm 24\'ün `CurrentUserId`\'si BURADA İLK KEZ gerçekten KULLANILIYOR — JWT\'den okunan kullanıcı kimliği, `LogoutCommand`\'ın (Bölüm 14) sahiplik KONTROLÜNE (token BAŞKASINA aitse sessizce başarı) girdi olarak GEÇİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("LOGGED_OUT", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `LOGGED_OUT` Code\'u.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/refresh',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/refresh',
+        govde: '{ "refreshToken": "K+TGH5/IVrn80hagXf9pv6gpou3DZVXcMPSCIFhGQvQHJTtb939RcZgUBiN7yZKUMjE/NCqWKdH0e1mkXgx6yw==" }',
+        yanit: {
+          durum: '200 OK',
+          govde: '{\n  "accessToken": "eyJhbGciOiJIUzI1NiIs...",\n  "refreshToken": "<YENİ bir refresh token>",\n  "expiresIn": 900\n}'
+        },
+        notlar: [
+          'Bölüm 14\'ün Token Family Pattern\'i: bu refreshToken TEKRAR KULLANILAMAZ (rotation) — aynı token İKİNCİ kez gönderilirse (replay) TÜM aile iptal edilir, 401 (INVALID_REFRESH_TOKEN) döner.',
+          'Bu davranış gerçek sunucuda TEST EDİLDİ: logout SONRASI aynı refreshToken\'la refresh denemesi 401 döndü.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/logout',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/logout',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: '{ "refreshToken": "K+TGH5/IVrn80hagXf9pv6gpou3DZVXcMPSCIFhGQvQHJTtb939RcZgUBiN7yZKUMjE/NCqWKdH0e1mkXgx6yw==" }',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "Çıkış yapıldı." }'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda TEST EDİLDİ.',
+          '`Authorization` header\'ı OLMADAN istek 401 döner (JWT ara katmanı, [Authorize] tarafından).',
+          'Zaten iptal edilmiş/başkasına ait bir refreshToken ile de AYNI 200 döner (Bölüm 14\'ün idempotent tasarımı) — logout\'un başarısız GÖRÜNMESİ istenmiyor.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Refresh [AllowAnonymous] — geçerli bir JWT OLMADAN da çağrılabilmeli, tam da bu YÜZDEN var.',
+          'Logout, 13 endpoint\'in İLK [Authorize] action\'ı — Bölüm 24\'ün CurrentUserId\'si BURADA ilk kez GERÇEKTEN kullanılıyor.',
+          'general policy\'nin (Bölüm 29) İLK KULLANIMI — kullanıcı BAŞINA (IP DEĞİL) bütçe, [Authorize] uçların ORTAK deseni.',
+          'RefreshResponse, LoginResponse\'tan FARKLI bir şekil — user/accountWasRecovered TAŞIMIYOR.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

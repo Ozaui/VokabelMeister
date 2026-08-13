@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — Çoklu Alan Hatası</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'coklu-alan-hatasi',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '22_validation-behavior.html',
+    sonrakiBolum: '24_api-controller-base.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 23',
+        baslik: 'Çoklu Alan Hatası — ApiErrorResponse.Details',
+        altBaslik: 'Bir form aynı anda BİRDEN FAZLA kuralı ihlal edebilir — istemciye yalnızca İLK hatayı göstermek, kullanıcıyı "düzelt, gönder, bir sonraki hatayı gör" döngüsüne SOKAR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Yalnızca İlk Hata Yeterli Değildi?',
+        aciklama: 'Bölüm 22\'nin `ValidationBehavior`\'ı, bir Command\'ın İHLAL ETTİĞİ TÜM kuralları (ör. `RegisterCommand`\'da hem geçersiz e-posta HEM zayıf şifre HEM boş ad) `ValidationException.Errors`\'ta TOPLAR. Ama `ApiErrorResponse` (A-02) o ana kadar yalnızca TEK bir `Code`/`Message` taşıyordu — bu Bölüm, `ApiErrorDetail`\'e (A-02\'nin DTO\'su) opsiyonel bir `Details` LİSTESİ ekliyor.',
+        neden: 'Bir kayıt formunda kullanıcı e-postasını YANLIŞ yazmış, şifresi de zayıf, adını da BOŞ bırakmışsa — yalnızca "e-posta geçersiz" dönseydi, kullanıcı bunu DÜZELTİP TEKRAR gönderir, sonra "şifre zayıf" ile KARŞILAŞIR, DÜZELTİR, sonra "ad zorunlu" ile karşılaşır — ÜÇ ayrı gönderim, üç ayrı hayal KIRIKLIĞI.',
+        olmasaydi: '`Details` eklenmeseydi (yalnızca İLK hata dönseydi), form arayüzleri (Web/Mobil, Faz C/D) HER alanı AYRI AYRI, kullanıcı SIRAYLA düzeltip GÖNDERDİKÇE öğrenirdi — bir form kütüphanesinin (ör. Formik) "TÜM alan hatalarını AYNI ANDA göster" özelliği bu BACKEND kısıtı yüzünden hiç KULLANILAMAZDI.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ApiErrorResponse.cs — Details ve FieldError',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/ApiErrorResponse.cs',
+        neden: 'A-02\'de `{ Code, Message }` olarak TAM öğretilen bu DTO\'ya, çoklu doğrulama hatasını taşıyabilecek opsiyonel bir alan eklendi — mevcut TÜM tüketiciler (EntityNotFoundException/AppException/genel Exception, hepsi TEK hata üretir) hiçbir DEĞİŞİKLİK GEREKTİRMEDEN çalışmaya devam eder (`Details` varsayılan `null`).',
+        diff: ` namespace WordLearner.Application.DTOs;
+
+ public record ApiErrorResponse(bool Success, ApiErrorDetail Error);
+
+-public record ApiErrorDetail(string Code, string Message);
++// Details yalnızca FluentValidation birden fazla kuralı aynı anda ihlal ettiğinde dolar (null
++// olmayan diğer tüm exception tiplerinde Code/Message tek başına yeterli) — Code/Message HER
++// zaman details[0] ile aynı, tek-hata okuyan eski/basit istemciler details'i hiç görmeden çalışır.
++public record ApiErrorDetail(string Code, string Message, List<FieldError>? Details = null);
++
++// Field camelCase (JSON gövde alan adıyla aynı) — Message Accept-Language'a göre çözülmüş, tr/de
++// (CLAUDE.md §1 "kullanıcı/admin'in gördüğü her alan tr+de" ilkesiyle aynı, ErrorMessages sözlüğünden).
++public record FieldError(string Field, string Code, string Message);`,
+        satirlar: [
+          {
+            satir: 'public record ApiErrorDetail(string Code, string Message);',
+            aciklama: 'A-02\'nin İKİ alanlı orijinal hâli — SİLİNİP yerine aşağıdaki ÜÇ alanlı (Details eklenmiş) sürüm YAZILDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record ApiErrorDetail(string Code, string Message, List<FieldError>? Details = null);',
+            aciklama: '`Code`/`Message` alanları AYNEN KALDI (imza uyumluluğu KORUNDU, mevcut `new ApiErrorDetail(code, message)` çağrıları hâlâ DERLENİR) — yalnızca opsiyonel, varsayılanı `null` olan ÜÇÜNCÜ bir parametre EKLENDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record FieldError(string Field, string Code, string Message);',
+            aciklama: 'Her BİR başarısız kuralın kendi Field/Code/Message üçlüsü — `Field` FluentValidation\'ın `PropertyName`\'inden (Bölüm 22\'nin `failures`) TÜRETİLECEK (Bölüm 23\'ün ExceptionHandlingMiddleware güncellemesinde camelCase\'e çevrilerek).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'HttpContextExtensions.cs',
+        dosyaYolu: 'backend/WordLearner.API/Common/HttpContextExtensions.cs',
+        nedenBuKlasor: 'İlk kez YENİ bir klasör: `WordLearner.API/Common/` — API katmanının (Application\'ın `Common/`\'ından AYRI) kendi paylaşılan yardımcılarının toplanacağı yer; ilerideki `ApiControllerBase`\'in (Bölüm 24) de bu klasörü KULLANMASI beklenir.',
+        kod: `namespace WordLearner.API.Common;
+
+// ExceptionHandlingMiddleware VE Controller'ların (ApiControllerBase) İKİSİNİN de ihtiyaç duyduğu
+// "Accept-Language'dan dil çıkar" mantığı — tek yerde, tekrar yazılmaz.
+public static class HttpContextExtensions
+{
+    // "de-DE, tr;q=0.9" gibi bir header'dan yalnızca birincil dil alt etiketini (ilk "de") çıkarır.
+    public static string? GetLanguage(this HttpContext context)
+    {
+        var header = context.Request.Headers.AcceptLanguage.ToString();
+        if (string.IsNullOrWhiteSpace(header))
+            return null;
+
+        var primary = header.Split(',')[0].Split(';')[0].Trim();
+        return primary.Split('-')[0].ToLowerInvariant();
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.API.Common;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static class HttpContextExtensions',
+            aciklama: 'Statik bir extension metodu sınıfı — `this HttpContext` parametresi sayesinde `context.GetLanguage()` şeklinde, sanki `HttpContext`\'in KENDİ metoduymuş gibi ÇAĞRILABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public static string? GetLanguage(this HttpContext context)',
+            aciklama: '`ExceptionHandlingMiddleware`\'in (A-02) daha önce KENDİ İÇİNDE `private static ExtractLanguage` olarak taşıdığı AYNI mantık — buraya TAŞINDI çünkü Bölüm 24\'ün `ApiControllerBase`\'i de AYNI mantığa ihtiyaç DUYUYOR, iki kopya YERİNE tek extension metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var header = context.Request.Headers.AcceptLanguage.ToString();',
+            aciklama: 'ASP.NET\'in TİPLİ `AcceptLanguage` header erişimi — ham `"Accept-Language"` string anahtarıyla ARAMAK yerine.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(header))',
+            aciklama: 'İstemci hiç Accept-Language GÖNDERMEMİŞSE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: '`ErrorMessages`/`SuccessMessages`\'ın (Bölüm 6, 21) `Resolve` metodu `null` dili "varsayılan (tr)" olarak YORUMLUYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var primary = header.Split(\',\')[0].Split(\';\')[0].Trim();',
+            aciklama: '`"de-DE, tr;q=0.9"` gibi ÇOKLU bir değerden yalnızca İLK (en ÖNCELİKLİ) dili alır — virgülden ÖNCESİ, sonra `;q=...` kalite değerinden ÖNCESİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return primary.Split(\'-\')[0].ToLowerInvariant();',
+            aciklama: '`"de-DE"`\'den yalnızca `"de"` alt etiketini ÇIKARIR — `ErrorMessages`/`SuccessMessages` sözlükleri BÖLGE varyantı DEĞİL, yalnızca `"tr"`/`"de"` anahtarlıyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ExceptionHandlingMiddleware.cs — ValidationException Kolu',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/ExceptionHandlingMiddleware.cs',
+        neden: 'A-02\'de TAM öğretilen bu dosyaya üç değişiklik BİRDEN: (1) Bölüm 22\'nin `FluentValidation.ValidationException`\'ı için YENİ bir `catch` kolu, (2) dil çıkarma mantığı yukarıdaki `HttpContextExtensions.GetLanguage`\'e TAŞINDI (kendi kopyası SİLİNDİ), (3) çoklu hata yanıtını İNŞA eden yeni `WriteValidationErrorAsync`/`ToCamelCase` metotları.',
+        diff: `+using WordLearner.API.Common;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Domain.Exceptions;
+
+ namespace WordLearner.API.Middleware;
+
+ public class ExceptionHandlingMiddleware
+ {
+     private readonly RequestDelegate _next;
+     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+     public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+     {
+         _next = next;
+         _logger = logger;
+     }
+
+     public async Task InvokeAsync(HttpContext context)
+     {
+         try
+         {
+             await _next(context);
+         }
+         catch (EntityNotFoundException ex)
+         {
+             _logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);
+             await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);
+         }
++        catch (FluentValidation.ValidationException ex)
++        {
++            _logger.LogWarning(ex, "Validation failed: {Code}. Path: {Path}", ex.Errors.First().ErrorCode, context.Request.Path);
++            await WriteValidationErrorAsync(context, ex.Errors);
++        }
+         catch (AppException ex)
+         {
+             _logger.LogWarning(ex, "Application exception: {Code}. Path: {Path}", ex.Code, context.Request.Path);
+             await WriteErrorAsync(context, (int)ex.StatusCode, ex.Code);
+         }
+         catch (Exception ex)
+         {
+             _logger.LogError(ex, "Unhandled exception. Path: {Path}", context.Request.Path);
+             await WriteErrorAsync(context, StatusCodes.Status500InternalServerError, "INTERNAL_SERVER_ERROR");
+         }
+     }
+
+     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code)
+     {
+-        var message = ErrorMessages.Resolve(code, ExtractLanguage(context));
++        var message = ErrorMessages.Resolve(code, context.GetLanguage());
+
+         context.Response.ContentType = "application/json";
+         context.Response.StatusCode = statusCode;
+         await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(code, message)));
+     }
+
+-    // "de-DE, tr;q=0.9" gibi bir header'dan yalnızca birincil dil alt etiketini (ilk "de") çıkarır.
+-    private static string? ExtractLanguage(HttpContext context)
++    // Birden fazla FluentValidation kuralı aynı anda başarısız olabilir — Details TÜMÜNÜ taşır,
++    // Code/Message (ApiErrorDetail'in geri kalan istemcilerle PAYLAŞTIĞI alanlar) İLK kuralı taşır.
++    private static async Task WriteValidationErrorAsync(HttpContext context, IEnumerable<FluentValidation.Results.ValidationFailure> failures)
+     {
+-        var header = context.Request.Headers.AcceptLanguage.ToString();
+-        if (string.IsNullOrWhiteSpace(header))
+-            return null;
++        var language = context.GetLanguage();
++        var details = failures
++            .Select(f => new FieldError(ToCamelCase(f.PropertyName), f.ErrorCode, ErrorMessages.Resolve(f.ErrorCode, language)))
++            .ToList();
+
+-        var primary = header.Split(',')[0].Split(';')[0].Trim();
+-        return primary.Split('-')[0].ToLowerInvariant();
++        context.Response.ContentType = "application/json";
++        context.Response.StatusCode = StatusCodes.Status400BadRequest;
++        await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(details[0].Code, details[0].Message, details)));
+     }
++
++    private static string ToCamelCase(string propertyName) =>
++        propertyName.Length == 0 ? propertyName : char.ToLowerInvariant(propertyName[0]) + propertyName[1..];
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.API.Common;',
+            aciklama: '`HttpContextExtensions.GetLanguage`\'i (bu bölümün ilk kod slaytı) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'catch (FluentValidation.ValidationException ex)',
+            aciklama: 'TAM NİTELİKLİ isim (`FluentValidation.ValidationException`) — `using FluentValidation;` EKLENMEDİ, çünkü bu tek kullanım için tüm namespace\'i açmak GEREKSİZ; `System.ComponentModel.DataAnnotations.ValidationException` gibi BAŞKA bir `ValidationException`\'la KARIŞMASINI da önlüyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogWarning(ex, "Validation failed: {Code}. Path: {Path}", ex.Errors.First().ErrorCode, context.Request.Path);',
+            aciklama: 'Log satırı yalnızca İLK hatanın Code\'unu yazıyor — TÜM hataları loglamak (Details listesinin tamamı) gereksiz DETAY, ilk kural zaten HANGİ isteğin BAŞARISIZ olduğunu izlemeye YETERLİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await WriteValidationErrorAsync(context, ex.Errors);',
+            aciklama: 'Diğer `catch` kollarının kullandığı `WriteErrorAsync`\'ten FARKLI, YENİ bir metot — `WriteErrorAsync` tek bir `code` string\'i alırken, bu metot TÜM `failures` listesini alır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var message = ErrorMessages.Resolve(code, ExtractLanguage(context));',
+            aciklama: 'A-02\'nin orijinal satırı — kendi İÇİNDEKİ `ExtractLanguage` metodunu ÇAĞIRIYORDU, aşağıdaki satırla DEĞİŞTİRİLDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var message = ErrorMessages.Resolve(code, context.GetLanguage());',
+            aciklama: '`ExtractLanguage(context)` çağrısı `context.GetLanguage()` OLDU — davranış BİREBİR aynı, yalnızca mantığın yaşadığı YER değişti (bu dosyanın İÇİNDEN paylaşılan bir extension\'a).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string? ExtractLanguage(HttpContext context)',
+            aciklama: 'A-02\'nin orijinal metot imzası — SİLİNDİ, yerini yukarıdaki `WriteValidationErrorAsync` ALDI (mantığı HttpContextExtensions.GetLanguage\'e TAŞINDIĞI için burada artık GEREKSİZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var header = context.Request.Headers.AcceptLanguage.ToString();',
+            aciklama: 'SİLİNEN `ExtractLanguage`\'ın gövdesi — bu üç satır artık yalnızca `HttpContextExtensions.GetLanguage`\'de (bu bölümün kod slaytı) YAŞIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(header))',
+            aciklama: 'SİLİNEN `ExtractLanguage`\'ın gövdesinden.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'SİLİNEN `ExtractLanguage`\'ın gövdesinden.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var primary = header.Split(\',\')[0].Split(\';\')[0].Trim();',
+            aciklama: 'SİLİNEN `ExtractLanguage`\'ın gövdesinden.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return primary.Split(\'-\')[0].ToLowerInvariant();',
+            aciklama: 'SİLİNEN `ExtractLanguage`\'ın SON satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static async Task WriteValidationErrorAsync(HttpContext context, IEnumerable<FluentValidation.Results.ValidationFailure> failures)',
+            aciklama: 'Eski `ExtractLanguage` metodunun SİLİNDİĞİ yere YAZILAN yeni metot — imza `WriteErrorAsync`\'ten FARKLI: `int statusCode`/`string code` YERİNE `IEnumerable<ValidationFailure> failures` alıyor (durum kodu HER ZAMAN 400, dışarıdan PARAMETRE olarak verilmesine GEREK yok).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = context.GetLanguage();',
+            aciklama: 'Aşağıdaki `.Select` içinde HER `FieldError` için TEKRAR TEKRAR `context.GetLanguage()` ÇAĞRILMASIN diye BİR KEZ okunup değişkende TUTULUYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var details = failures',
+            aciklama: 'Bölüm 22\'nin `ValidationBehavior`\'ının fırlattığı TÜM `ValidationFailure`\'lar burada `FieldError` listesine ÇEVRİLİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Select(f => new FieldError(ToCamelCase(f.PropertyName), f.ErrorCode, ErrorMessages.Resolve(f.ErrorCode, language)))',
+            aciklama: 'Her hatanın `PropertyName`\'i (ör. `"Email"`) camelCase\'e (`"email"`) ÇEVRİLİYOR, `ErrorCode` (Bölüm 25-27\'nin `WithErrorCode` değerleri) `ErrorMessages` sözlüğünden AYNI dilde ÇÖZÜLÜYOR — Bölüm 6\'daki AYNI "Code\'dan sözlüğe" deseni, burada HER bir alan hatası için TEKRARLANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToList();',
+            aciklama: 'Aşağıda `details[0]` ile İNDEKSLİ erişim ve `ApiErrorDetail`\'e (Bölüm 23\'ün DTO güncellemesi) geçirmek için SOMUT bir liste gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.ContentType = "application/json";',
+            aciklama: '`WriteErrorAsync`\'teki AYNI satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.Response.StatusCode = StatusCodes.Status400BadRequest;',
+            aciklama: 'HER validasyon hatası 400 (Bad Request) — `WriteErrorAsync`\'in AKSİNE, durum kodu bir PARAMETRE olarak dışarıdan ALINMIYOR, çünkü validasyon hataları HER ZAMAN 400.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(details[0].Code, details[0].Message, details)));',
+            aciklama: '`ApiErrorDetail`\'in İLK iki alanı (`Code`/`Message`) İLK hatayı, ÜÇÜNCÜ alanı (`Details`) TÜMÜNÜ taşıyor — üstteki kavram slaytının tasarım kararının SOMUT karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string ToCamelCase(string propertyName) =>',
+            aciklama: 'FluentValidation\'ın `PropertyName`\'i PascalCase (`"Email"`, `"NewPassword"`) — JSON gövde alan adlarıyla (`"email"`, `"newPassword"`) EŞLEŞMESİ için camelCase\'e çevrilmesi gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'propertyName.Length == 0 ? propertyName : char.ToLowerInvariant(propertyName[0]) + propertyName[1..];',
+            aciklama: 'Boş bir isim OLASI değil (FluentValidation her zaman gerçek bir property adı verir) ama boş dizide `propertyName[0]` ERİŞİMİ çökerdi — bu kontrol bir GÜVENLİK AĞI; asıl dönüşüm ilk karakteri küçük harfe çevirip GERİ KALANIYLA birleştirmek.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'ApiErrorDetail\'e opsiyonel Details[] eklendi — mevcut TÜM tek-hata tüketiciler (EntityNotFoundException, AppException, genel Exception) değişmeden çalışmaya devam ediyor.',
+          'Dil çıkarma mantığı (ExtractLanguage) ExceptionHandlingMiddleware\'in İÇİNDEN paylaşılan bir extension metoduna (HttpContextExtensions.GetLanguage) TAŞINDI — Bölüm 24\'ün ApiControllerBase\'i de AYNI mantığı kullanacak.',
+          'FluentValidation.ValidationException, AppException\'dan AYRI bir catch koluyla yakalanıyor — TÜM başarısız kuralları Field/Code/Message üçlüsüne çevirip Details\'e yazıyor, Code/Message İLK kuralı taşıyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

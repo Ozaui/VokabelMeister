@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03 — AuthController: Register</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'register-endpoint',
+    bolumBaslik: 'A-03 — Auth API',
+    oncekiBolum: '29_rate-limiting.html',
+    sonrakiBolum: '31_login-endpoint.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 30',
+        baslik: 'AuthController — İlk 3 Endpoint',
+        altBaslik: 'Bölüm 11\'in Register/VerifyEmail/ResendVerification Handler\'ları İLK KEZ bir HTTP endpoint\'ine BAĞLANIYOR — AuthController\'ın (13 endpoint) ilk parçası.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Controller Neden İnce Kalıyor?',
+        aciklama: '`AuthController`\'ın HER metodu AYNI üç satırlık kalıbı izliyor: (1) `Request` DTO\'sundan bir Command İNŞA ET, (2) `_mediator.Send(command)` ÇAĞIR, (3) sonucu `Ok`/`StatusCode` ile DÖNDÜR. Hiçbir metotta `if`/`try-catch`/veri erişimi YOK — bunların HEPSİ Bölüm 11-20\'nin Handler\'larında, Bölüm 22\'nin `ValidationBehavior`\'ında, Bölüm 23\'ün `ExceptionHandlingMiddleware`\'inde YAŞIYOR.',
+        neden: 'Bir Controller metodu iş mantığı İÇERSEYDİ, o mantık yalnızca HTTP üzerinden ÇAĞRILABİLİR olurdu — Handler\'lar (Bölüm 11-20) MediatR üzerinden ÇAĞRILDIĞI için, ileride BAŞKA bir transport (ör. bir arka plan görevi, bir CLI aracı) AYNI `RegisterCommand`\'ı Controller\'a HİÇ UĞRAMADAN ÇALIŞTIRABİLİR.',
+        olmasaydi: 'Doğrulama/hata yönetimi Controller\'ın İÇİNE yazılsaydı, 13 metodun HER BİRİNDE `try-catch` + `ModelState.IsValid` gibi TEKRARLAYAN kod OLURDU — Bölüm 22\'nin `ValidationBehavior`\'ı ve Bölüm 23\'ün `ExceptionHandlingMiddleware`\'i TAM OLARAK bu tekrarı ÖNLEMEK için yazıldı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'RegisterRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/RegisterRequest.cs',
+        nedenBuKlasor: '`AuthUserDto`/`LoginResponse`/`RegisterResponse` (Bölüm 11-12) ile AYNI klasör — `DTOs/Auth/`, YANİ Request DTO\'ları da Response DTO\'larıyla AYNI yerde yaşıyor (API sözleşmesinin TAMAMI tek klasörde).',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+// RegisterCommand'ın istemciden gelen alanları — Language JSON'da YOK, Controller Accept-Language'dan okur.
+public record RegisterRequest(string Email, string Password, string FirstName, string LastName);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: 'Diğer Auth DTO\'larıyla AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record RegisterRequest(string Email, string Password, string FirstName, string LastName);',
+            aciklama: '`RegisterCommand`\'ın (Bölüm 11) BEŞ alanından DÖRDÜ — `Language` YOK, çünkü Controller (aşağıdaki `AuthController.Register`) onu JSON gövdesinden DEĞİL, `ApiControllerBase.AcceptLanguage`\'dan (Bölüm 24) okuyup Command\'a KENDİSİ EKLİYOR.',
+            neden: 'Command\'ın TÜM alanları (`Language` dahil) doğrudan JSON\'dan BAĞLANSAYDI, bir istemci `"language": "de"` göndermeseydi Command yine de İNŞA edilirdi ama Controller\'ın `AcceptLanguage`\'dan okuduğu GERÇEK header DEĞERİYLE hiç İLİŞKİLENDİRİLMEZDİ — ayrı bir Request DTO, "HTTP gövdesinden gelen" ile "HTTP bağlamından ÇIKARILAN" arasındaki sınırı NET tutuyor.',
+            olmasaydi: 'Controller `RegisterCommand`\'ı DOĞRUDAN action parametresi yapsaydı (Request DTO OLMASAYDI), istemci JSON gövdesine YANLIŞLIKLA (ya da KASITLI) bir `"language"` alanı EKLEYEBİLİR, bu da Controller\'ın `AcceptLanguage`\'dan okuduğu değerle ÇAKIŞIRDI — hangisinin GEÇERLİ olacağı BELİRSİZLEŞİRDİ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'VerifyEmailRequest.cs',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Auth/VerifyEmailRequest.cs',
+        kod: `namespace WordLearner.Application.DTOs.Auth;
+
+public record VerifyEmailRequest(string Email, string OtpCode);`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Auth;',
+            aciklama: '`RegisterRequest` ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record VerifyEmailRequest(string Email, string OtpCode);',
+            aciklama: '`VerifyEmailCommand`\'ın (Bölüm 11) İKİ alanı da — bu Command\'ın `Language` alanı YOK (Handler kendisi bir e-posta GÖNDERMİYOR), bu yüzden Request de TAM olarak Command\'ın alanlarını YANSITIYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AuthController.cs — İlk 3 Endpoint',
+        dosyaYolu: 'backend/WordLearner.API/Controllers/AuthController.cs',
+        nedenBuKlasor: '`ApiControllerBase`\'in (Bölüm 24) YANINDA — `WordLearner.API/Controllers/`, bu bölümde İLK KEZ somut bir Controller YAZILIYOR.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using WordLearner.Application.Common;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.DTOs.Auth;
+using WordLearner.Application.Features.Auth;
+
+namespace WordLearner.API.Controllers;
+
+[Route("auth")]
+public class AuthController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public AuthController(IMediator mediator) => _mediator = mediator;
+
+    [HttpPost("register")]
+    [AllowAnonymous]
+    [EnableRateLimiting("anonymous")]
+    public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    [EnableRateLimiting("anonymous")]
+    public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
+    {
+        await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+        return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
+    }
+
+    [HttpPost("resend-verification")]
+    [AllowAnonymous]
+    [EnableRateLimiting("anonymous")]
+    public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)
+    {
+        await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);
+        return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IMediator` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Authorization;',
+            aciklama: '`[AllowAnonymous]`/(ileride) `[Authorize]` öznitelikleri için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.Mvc;',
+            aciklama: '`[Route]`/`[HttpPost]`/`ActionResult<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.AspNetCore.RateLimiting;',
+            aciklama: '`[EnableRateLimiting]` için gerekli — Bölüm 29\'un 5 policy\'sinden BİRİNİ SEÇMEK için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common;',
+            aciklama: '`SuccessMessages`\'ı (Bölüm 21) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`MessageResponse`\'u (Bölüm 21) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Auth;',
+            aciklama: '`RegisterRequest`/`VerifyEmailRequest`/`ResendVerificationRequest` (bu bölüm) ve `RegisterResponse` (Bölüm 11) için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Features.Auth;',
+            aciklama: '`RegisterCommand`/`VerifyEmailCommand`/`ResendVerificationCommand`\'ı (Bölüm 11) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.API.Controllers;',
+            aciklama: '`ApiControllerBase` (Bölüm 24) ile AYNI ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Route("auth")]',
+            aciklama: 'A-01\'in `RoutePrefixConvention`\'ı bu route\'u OTOMATİK `"api/v1/auth"`\'a ÇEVİRİR — `[HttpPost("register")]` gibi metot-seviyesi rotalarla BİRLEŞTİĞİNDE nihai adres `api/v1/auth/register` OLUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class AuthController : ApiControllerBase',
+            aciklama: 'Bölüm 24\'ün soyut taban sınıfından TÜRER — `[ApiController]` özniteliği ORADAN miras ALINIR, burada TEKRAR yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IMediator _mediator;',
+            aciklama: 'MediatR\'ın GÖNDERİCİ arayüzü — 13 endpoint\'in HEPSİ bu TEK bağımlılığı kullanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public AuthController(IMediator mediator) => _mediator = mediator;',
+            aciklama: 'Constructor injection — `UserRepository`\'nin (Bölüm 8) tek-satırlık ATAMA deseniyle AYNI stil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("register")]',
+            aciklama: '`api/v1/auth/register` — API_ENDPOINTS\'in Register uç noktasıyla eşleşen METOT-seviyesi rota.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[AllowAnonymous]',
+            aciklama: 'Bu satır kod bloğunda ÜÇ kez geçiyor (Register/VerifyEmail/ResendVerification\'ın ÜÇÜ de) — hepsinde AYNI anlam: JWT GEREKMEZ, kimliksiz bir kullanıcının ÇAĞIRACAĞI uçlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[EnableRateLimiting("anonymous")]',
+            aciklama: 'Bu satır da ÜÇ kez geçiyor — Bölüm 29\'un `"anonymous"` policy\'si (10/dk, IP bazlı), üçü de AYNI bütçeyi PAYLAŞIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)',
+            aciklama: '`ActionResult<T>` — hem TİPLİ bir başarı yanıtı (`RegisterResponse`) hem de `StatusCode`/`NotFound` gibi ALTERNATİF sonuçlar DÖNDÜREBİLEN esnek bir dönüş tipi; `request` parametresi `[ApiController]`\'ın (Bölüm 24) OTOMATİK `[FromBody]` çıkarımıyla JSON gövdesinden BAĞLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.FirstName, request.LastName, AcceptLanguage), cancellationToken);',
+            aciklama: 'Bölüm 24\'ün `AcceptLanguage`\'ı burada Command\'a EKLENİYOR — `RegisterRequest`\'te (bu bölüm) OLMAYAN BEŞİNCİ alan tam BURADA TAMAMLANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return StatusCode(StatusCodes.Status201Created, result);',
+            aciklama: '201 (Created) — API_ENDPOINTS\'in Register yanıtıyla eşleşen durum kodu, `200 OK` DEĞİL: yeni bir KAYNAK (kullanıcı) OLUŞTURULDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("verify-email")]',
+            aciklama: '`api/v1/auth/verify-email`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)',
+            aciklama: 'Dönüş tipi `RegisterResponse` DEĞİL `MessageResponse` (Bölüm 21) — `VerifyEmailCommand` (Bölüm 11) `Unit` döner, istemciye özel bir VERİ yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);',
+            aciklama: '`VerifyEmailCommand`\'ın (Bölüm 11) `Language` alanı YOK — `Register`\'ın AKSİNE `AcceptLanguage` buraya GEÇİRİLMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `EMAIL_VERIFIED` Code\'u BURADA İLK KEZ gerçekten KULLANILIYOR — `SuccessMessages.Resolve` çağrısı, Controller katmanının "Code SEÇME" sorumluluğunun (Bölüm 21\'in kavram slaytı) somut KANITI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[HttpPost("resend-verification")]',
+            aciklama: '`api/v1/auth/resend-verification`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<ActionResult<MessageResponse>> ResendVerification(ResendVerificationRequest request, CancellationToken cancellationToken)',
+            aciklama: '`VerifyEmail` ile AYNI dönüş tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new ResendVerificationCommand(request.Email, AcceptLanguage), cancellationToken);',
+            aciklama: '`ResendVerificationCommand`\'ın (Bölüm 11) `Language` alanı VAR (e-posta GÖNDERDİĞİ için) — `AcceptLanguage` burada TEKRAR geçiriliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Ok(new MessageResponse(SuccessMessages.Resolve("VERIFICATION_RESENT", AcceptLanguage)));',
+            aciklama: 'Bölüm 21\'in `VERIFICATION_RESENT` Code\'u.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/register',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/register',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{\n  "email": "smoketest@example.com",\n  "password": "GucluSifre123!",\n  "firstName": "Test",\n  "lastName": "Kullanici"\n}',
+        yanit: {
+          durum: '201 Created',
+          govde: '{\n  "id": 1,\n  "email": "smoketest@example.com",\n  "firstName": "Test",\n  "currentLevel": "A1",\n  "themePreference": "System",\n  "languagePreference": "tr"\n}'
+        },
+        notlar: [
+          'Bu yanıt gerçek sunucuda (temiz bir DB\'ye karşı) TEST EDİLDİ — uydurma bir örnek DEĞİL.',
+          'Aynı e-posta ile İKİNCİ bir istek 409 (EMAIL_ALREADY_REGISTERED) döner.',
+          'Şifre Bölüm 25\'in 5 kuralını (min 12, büyük/küçük harf, rakam, özel karakter) karşılamıyorsa 400 + Details[] listesi döner (Bölüm 23).'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/verify-email',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/verify-email',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{\n  "email": "smoketest@example.com",\n  "otpCode": "712122"\n}',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "E-posta doğrulandı." }'
+        },
+        notlar: [
+          'otpCode, backend konsolundaki `[DEV EMAIL] EmailVerification -> ... | code=...` satırından okunur (DevEmailService, Bölüm 10) — gerçek SMTP A-20\'de gelecek.',
+          'Yanlış/süresi geçmiş kod 400 (INVALID_OTP/OTP_EXPIRED) döner.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /auth/resend-verification',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/auth/resend-verification',
+        headers: [{ anahtar: 'Accept-Language', deger: 'tr' }],
+        govde: '{ "email": "smoketest@example.com" }',
+        yanit: {
+          durum: '200 OK',
+          govde: '{ "message": "Doğrulama kodu tekrar gönderildi." }'
+        },
+        notlar: [
+          'Kayıtlı olmayan ya da ZATEN doğrulanmış bir e-posta için de AYNI 200 döner (Bölüm 11\'in enumerasyon-önleme deseni) — kod GERÇEKTE üretilmez/gönderilmez, istemci farkı ANLAYAMAZ.'
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'AuthController\'ın HER metodu AYNI üç adımı izliyor: Request\'ten Command inşa et, _mediator.Send çağır, sonucu döndür — hiçbir iş mantığı Controller\'da YAŞAMIYOR.',
+          'Request DTO\'ları Command\'ın TÜM alanlarını YANSITMIYOR — Language gibi HTTP-bağlamından gelen alanlar Controller tarafından (Bölüm 24\'ün ApiControllerBase\'inden) AYRICA ekleniyor.',
+          'SuccessMessages.Resolve (Bölüm 21) İLK KEZ burada GERÇEKTEN çağrılıyor — Code seçimi Controller\'ın sorumluluğu.',
+          'Register 201, VerifyEmail/ResendVerification 200 + MessageResponse döner — dönüş tipi Handler\'ın Unit mi yoksa somut bir DTO mu döndürdüğüne göre DEĞİŞİYOR.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

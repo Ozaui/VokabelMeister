@@ -1,3 +1,4 @@
+using WordLearner.API.Common;
 using WordLearner.Application.Common;
 using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.DTOs;
@@ -27,6 +28,11 @@ public class ExceptionHandlingMiddleware
             _logger.LogWarning(ex, "Entity not found. Path: {Path}", context.Request.Path);
             await WriteErrorAsync(context, StatusCodes.Status404NotFound, ex.Code);
         }
+        catch (FluentValidation.ValidationException ex)
+        {
+            _logger.LogWarning(ex, "Validation failed: {Code}. Path: {Path}", ex.Errors.First().ErrorCode, context.Request.Path);
+            await WriteValidationErrorAsync(context, ex.Errors);
+        }
         catch (AppException ex)
         {
             _logger.LogWarning(ex, "Application exception: {Code}. Path: {Path}", ex.Code, context.Request.Path);
@@ -41,21 +47,27 @@ public class ExceptionHandlingMiddleware
 
     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code)
     {
-        var message = ErrorMessages.Resolve(code, ExtractLanguage(context));
+        var message = ErrorMessages.Resolve(code, context.GetLanguage());
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = statusCode;
         await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(code, message)));
     }
 
-    // "de-DE, tr;q=0.9" gibi bir header'dan yalnızca birincil dil alt etiketini (ilk "de") çıkarır.
-    private static string? ExtractLanguage(HttpContext context)
+    // Birden fazla FluentValidation kuralı aynı anda başarısız olabilir — Details TÜMÜNÜ taşır,
+    // Code/Message (ApiErrorDetail'in geri kalan istemcilerle PAYLAŞTIĞI alanlar) İLK kuralı taşır.
+    private static async Task WriteValidationErrorAsync(HttpContext context, IEnumerable<FluentValidation.Results.ValidationFailure> failures)
     {
-        var header = context.Request.Headers.AcceptLanguage.ToString();
-        if (string.IsNullOrWhiteSpace(header))
-            return null;
+        var language = context.GetLanguage();
+        var details = failures
+            .Select(f => new FieldError(ToCamelCase(f.PropertyName), f.ErrorCode, ErrorMessages.Resolve(f.ErrorCode, language)))
+            .ToList();
 
-        var primary = header.Split(',')[0].Split(';')[0].Trim();
-        return primary.Split('-')[0].ToLowerInvariant();
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new ApiErrorResponse(false, new ApiErrorDetail(details[0].Code, details[0].Message, details)));
     }
+
+    private static string ToCamelCase(string propertyName) =>
+        propertyName.Length == 0 ? propertyName : char.ToLowerInvariant(propertyName[0]) + propertyName[1..];
 }
