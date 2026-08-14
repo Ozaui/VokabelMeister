@@ -204,23 +204,37 @@
       iki script yazıldı (kapsam + sayım doğrulama), 43 dosyanın tamamı bu scriptlerden temiz geçene
       kadar iterasyon yapıldı.
 
-### A-03.2 — İlk Admin Hesabı ⬜ ⚠️ **[2026-08-12 — yeni task, tespit edilen boşluk]**
+### A-03.2 — İlk Admin Hesabı ✅ ⚠️ **[2026-08-12 — yeni task, tespit edilen boşluk]**
 **Neden gerekli:** `AdminController` (A-18) ve tüm `[Authorize(Roles="Admin")]` uçları, sistemde
 zaten bir Admin olmasını şart koşuyor. `UpdateUserRoleCommand` (A-18) bir kullanıcıyı Admin yapabilir
 ama bunu çağırmak için de zaten Admin olmak gerekiyor — döngüsel bir bağımlılık. Register akışı
 (A-03) varsayılan olarak yalnızca `User` rolüyle kayıt açıyor, hiçbir task ilk Admin'i oluşturmuyordu.
 Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları test edilebilsin diye) gelir.
-- [ ] `DbSeeder`/`AdminSeedService` — `Program.cs` başlangıcında (`app.Run()`'dan önce) çalışır,
-      `appsettings.json`/ortam değişkeninden okunan `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`
-      ile, yalnızca **o e-posta hiç yoksa** bir `User` (Role=Admin, IsActive=true, EmailVerifiedAt=now)
-      oluşturur — idempotent, her `Program.cs` başlangıcında güvenle tekrar çalışabilir
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `REFERENCE/ENV.md`'ye `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` eklenir (yalnızca
-      geliştirme/staging'de `appsettings.Development.json`'da; prod'da secret olarak verilir, ilk
-      girişten sonra şifre değiştirilmesi önerilir — dokümantasyon notu, kod zorlaması değil)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `AdminSeedServiceTests` (yoksa oluşturur, varsa dokunmaz/idempotent, yanlış env değişkeni formatında sessizce atlar)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] `IAdminSeedService`/`AdminSeedService` (`Application/Interfaces/Services/`, `Application/Services/`
+      — flat, CLAUDE.md §3 "paylaşılan mantık" deseni) — `Program.cs`'te `app.Run()`'dan önce bir
+      scope içinde çağrılır, `IConfiguration`'dan okunan `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`
+      ile, yalnızca **o e-posta hiç yoksa** bir `User` (Role=Admin, IsActive=true, IsEmailVerified=true,
+      EmailVerifiedAt=now) oluşturur — idempotent, her `Program.cs` başlangıcında güvenle tekrar
+      çalışabilir; ikisi de tanımlı değilse veya e-posta formatı geçersizse (`MailAddress.TryCreate`)
+      sessizce atlar
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm)
+- [x] `REFERENCE/ENV.md`'ye `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` eklendi (§9) — yalnızca
+      geliştirme/staging'de `appsettings.Development.json`'da (yerel dosyaya da eklendi, `.gitignore`'da);
+      prod'da secret olarak verilir, ilk girişten sonra şifre değiştirilmesi önerilir — dokümantasyon
+      notu, kod zorlaması değil
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm)
+- [x] **Birim testleri:** `AdminSeedServiceTests` (yoksa oluşturur, varsa dokunmaz/idempotent, env
+      değişkenleri tanımsızsa/e-posta formatı geçersizse sessizce atlar) — 4/4 yeşil, tüm paket 99/99 yeşil
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm)
+
+> **Not (2026-08-14):** Kod+ENV+test tamamlandı, canlı doğrulama yapıldı — gerçek DB'ye karşı `dotnet run`
+> ile ilk çalıştırmada `admin@vokabelmeister.com` (Role=Admin) oluştuğu SQL loglarında görüldü
+> (`INSERT INTO [Users]... Initial admin account seeded for admin@vokabelmeister.com`), ikinci
+> çalıştırmada idempotent davrandığı doğrulandı (INSERT YOK, sessiz atlama — DB'de zaten var).
+> Akademi işleme de tamamlandı — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm: kavram,
+> `IAdminSeedService`/`AdminSeedService` kod, `DependencyInjection.cs`/`Program.cs` kod-değişiklik,
+> `AdminSeedServiceTests` — 4 senaryo, sözlük, özet). A-03'ün kök `AKADEMI/backend/index.html`
+> kartı da bu görevle birlikte "tamamlandı" olarak nihai hale getirildi. Task ✅.
 
 ### A-04 — Loglama Sistemi ⬜
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md

@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-03.2 — İlk Admin Hesabı</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'admin-seed-service',
+    bolumBaslik: 'A-03.2 — İlk Admin Hesabı',
+    oncekiBolum: '../A-03_auth-api/43_ozet-sozluk.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'İlk Admin Hesabı: Döngüsel Bağımlılığı Kırmak',
+        altBaslik: 'AdminController (A-18) Admin rolü ister, rol yükseltmenin TEK yolu da Admin olmayı ister — bu döngüyü kıracak TEK kişi Program.cs\'in kendisi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Ayrı Bir "Seed" Adımı — Register Zaten Kullanıcı Oluşturmuyor mu?',
+        aciklama: 'A-03\'ün `RegisterCommand`\'ı (Bölüm 11) HER zaman `Role="User"` ile kayıt açar — hiçbir public endpoint bir kullanıcıyı Admin yapamaz. İleride yazılacak `UpdateUserRoleCommand` (A-18) bir kullanıcıyı Admin\'e yükseltebilir, AMA bu komutu çağırmak için ZATEN Admin olmak gerekiyor. Sistemde HİÇ Admin yokken bu iki kural bir araya gelince kimse asla ilk Admin\'i oluşturamaz.',
+        neden: '`AdminSeedService`, bu döngüyü HTTP katmanının (Controller/endpoint) dışında, uygulamanın KENDİ başlangıcında (`Program.cs`, `app.Run()`\'dan önce) kırıyor — ortam değişkeninden okunan bir e-posta/şifreyle, veritabanına DOĞRUDAN bir `User` (Role=Admin) yazıyor. Bu bir public API değil, bir deployment/altyapı adımı.',
+        olmasaydi: 'Bu adım olmasaydı, A-18\'in `[Authorize(Roles="Admin")]` uçları YAZILSA bile hiçbir zaman TEST edilemezdi (çağıracak Admin token\'ı YOK) — geliştirici veritabanına ELLE bir SQL `UPDATE` atmak ZORUNDA kalırdı, bu da hem hataya AÇIK hem her ortamda (dev/staging/prod) TEKRARLANMASI gereken, dokümante edilmemiş bir manuel adım olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IAdminSeedService.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IAdminSeedService.cs',
+        nedenBuKlasor: '`Application/Interfaces/Services/` — `IPasswordService`/`IEmailService` (Bölüm 3, 10) ile AYNI, paylaşılan servis arayüzleri klasörü; bu mantık birden fazla yerden değil TEK bir yerden (Program.cs\'in başlangıç adımı) kullanılıyor olsa da, Repository katmanının yanına AYRI bir servis arayüzü olarak konumlanması AYNI ilkeyi izliyor.',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public interface IAdminSeedService
+{
+    Task SeedInitialAdminAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — diğer tüm servis arayüzleriyle (IPasswordService, IEmailService…) AYNI namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IAdminSeedService',
+            aciklama: 'Tek metotlu, dar bir sözleşme — `Program.cs` bu arayüzü DI konteynerinden çözer, `AdminSeedService`\'in bcrypt/repository detaylarını hiç bilmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SeedInitialAdminAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'Parametresiz çağrılabilir tek metot — `CancellationToken` varsayılan değeriyle, `Program.cs`\'te elde bir token OLMADIĞI için `default` ile çağrılacak.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminSeedService.cs — Implementasyon',
+        dosyaYolu: 'backend/WordLearner.Application/Services/AdminSeedService.cs',
+        nedenBuKlasor: '`Application/Services/` — implementasyon `PasswordService`/`OtpService` (Bölüm 3, 5) ile AYNI flat klasörde; bu bir Infrastructure/veritabanı teknolojisi değil, `IUserRepository`\'yi (Bölüm 8) KULLANAN bir iş kuralı.',
+        kod: `using System.Net.Mail;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Application.Services;
+
+// Program.cs'te app.Run()'dan önce, tek seferlik çağrılır — AdminController (A-18) ve
+// [Authorize(Roles="Admin")] uçları için döngüsel bağımlılığı kırar (ilk Admin'i kimse
+// Register+UpdateUserRole ile oluşturamaz, çünkü UpdateUserRole zaten Admin ister).
+public class AdminSeedService : IAdminSeedService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordService _passwordService;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<AdminSeedService> _logger;
+
+    public AdminSeedService(
+        IUserRepository userRepository,
+        IPasswordService passwordService,
+        IConfiguration configuration,
+        ILogger<AdminSeedService> logger)
+    {
+        _userRepository = userRepository;
+        _passwordService = passwordService;
+        _configuration = configuration;
+        _logger = logger;
+    }
+
+    public async Task SeedInitialAdminAsync(CancellationToken cancellationToken = default)
+    {
+        var email = _configuration["INITIAL_ADMIN_EMAIL"];
+        var password = _configuration["INITIAL_ADMIN_PASSWORD"];
+
+        // İkisi de tanımlı değilse (ör. prod'da bilinçli atlanmışsa) sessizce çık — zorunlu değil.
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            return;
+
+        if (!MailAddress.TryCreate(email, out _))
+        {
+            _logger.LogWarning("INITIAL_ADMIN_EMAIL is not a valid email address, skipping admin seed");
+            return;
+        }
+
+        if (await _userRepository.GetByEmailAsync(email, cancellationToken) is not null)
+            return;
+
+        var now = DateTime.UtcNow;
+        var admin = new User
+        {
+            Email = email,
+            PasswordHash = _passwordService.Hash(password),
+            FirstName = "Admin",
+            LastName = "Admin",
+            Role = "Admin",
+            IsActive = true,
+            IsEmailVerified = true,
+            EmailVerifiedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        await _userRepository.AddAsync(admin, cancellationToken);
+        await _userRepository.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Initial admin account seeded for {Email}", email);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net.Mail;',
+            aciklama: '`MailAddress.TryCreate` ile e-posta formatını doğrulamak için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`IConfiguration`\'ı (ortam değişkenlerini/appsettings\'i okuyan arayüz) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Logging;',
+            aciklama: '`ILogger<AdminSeedService>` için gerekli — diğer TÜM servislerle AYNI `_logger.Log*` deseni; log mesajları İngilizce yazılır çünkü bunlar geliştirici/operatöre yönelik, kullanıcının hiç görmeyeceği bir kanal.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`\'nin (Bölüm 8) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IAdminSeedService` ve kullanılan `IPasswordService`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` entity\'sinin (Bölüm 1) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class AdminSeedService : IAdminSeedService',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf — `Program.cs`\'in çağıracağı, DI\'dan çözülecek tür.',
+            neden: 'Mantık bir Handler\'a DEĞİL ayrı bir servise konuldu çünkü bu işlem hiçbir HTTP isteğine bağlı değil — MediatR pipeline\'ının dışında, doğrudan uygulama başlangıcında çalışan, kendi başına bir altyapı parçası.',
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IUserRepository _userRepository;',
+            aciklama: 'Admin\'in var olup olmadığını KONTROL etmek ve yeni kaydı EKLEMEK için — 13 Auth Handler\'ının (Bölüm 11-15) kullandığı AYNI repository.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'Ortam değişkeninden gelen HAM şifreyi bcrypt ile hash\'lemek için — `RegisterCommandHandler`\'ın (Bölüm 11) AYNI çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IConfiguration _configuration;',
+            aciklama: '`INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`\'ı okumak için — ortam değişkeni (ör. `.env`) veya `appsettings.Development.json` üzerinden sağlanan iki değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILogger<AdminSeedService> _logger;',
+            aciklama: 'Geçersiz e-posta formatı uyarısını ve başarılı seed\'i loglamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public AdminSeedService(',
+            aciklama: 'Dört bağımlılık — hepsi constructor injection ile, DI konteynerinin (Bölüm 10\'daki DependencyInjection.cs kaydı, aşağıda) otomatik dolduracağı standart desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository,',
+            aciklama: 'Parametre — alan adıyla aynı, `_userRepository`\'ye atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'Parametre — alan adıyla aynı, `_passwordService`\'e atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IConfiguration configuration,',
+            aciklama: 'Parametre — alan adıyla aynı, `_configuration`\'a atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ILogger<AdminSeedService> logger)',
+            aciklama: 'Parametre — alan adıyla aynı, `_logger`\'a atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository = userRepository;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_configuration = configuration;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger = logger;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SeedInitialAdminAsync(CancellationToken cancellationToken = default)',
+            aciklama: '`IAdminSeedService`\'in tek metodunun implementasyonu — `Program.cs` bu metodu `app.Run()`\'dan ÖNCE, bir kez çağıracak (aşağıdaki `kod-degisiklik` slaytı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var email = _configuration["INITIAL_ADMIN_EMAIL"];',
+            aciklama: '`IConfiguration`\'ın indeksleyicisi — ENV değişkenleri (`INITIAL_ADMIN_EMAIL=...`) ve `appsettings.Development.json`\'daki AYNI anahtar İKİSİNDEN de otomatik okunur, .NET\'in yerleşik configuration provider zinciri sayesinde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var password = _configuration["INITIAL_ADMIN_PASSWORD"];',
+            aciklama: 'Aynı okuma, şifre için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))',
+            aciklama: 'İkisi de TANIMLI DEĞİLSE (veya boşsa) erken çıkış kontrolü.',
+            neden: 'Bu seed ZORUNLU değil — ör. bir prod ortamı ilk Admin\'i BAŞKA bir bilinçli süreçle (ör. veritabanına elle, DBA eliyle) oluşturmayı tercih edebilir; env değişkenleri TANIMLANMAMIŞSA bu SESSİZCE atlanmalı, hata FIRLATILMAMALI.',
+            olmasaydi: 'Bu kontrol olmasaydı, env değişkenleri tanımsızken `email`/`password` `null` olur, aşağıdaki `MailAddress.TryCreate(null, ...)` ya da `_passwordService.Hash(null)` bir `NullReferenceException` ile UYGULAMA BAŞLANGICINI çökertirdi.'
+          },
+          {
+            satir: 'return;',
+            aciklama: 'Metotta ÜÇ kez geçen erken çıkış — bu satırın kod bloğundaki HER üç kopyası da (env eksik / e-posta geçersiz / admin zaten var) AYNI anlama gelir: "bu koşul sağlandıysa, metodun geri kalanı hiç çalışmasın".',
+            neden: 'Üçü de bir HATA değil, bir "yapılacak bir şey yok" durumunu temsil ediyor — bu yüzden bir istisna FIRLATMAK yerine sessizce dönüyorlar; projenin AppException\'ı yalnızca GERÇEK iş hataları için ayırdığı genel ayrımla TUTARLI.',
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!MailAddress.TryCreate(email, out _))',
+            aciklama: '.NET\'in yerleşik `System.Net.Mail.MailAddress.TryCreate` ile format doğrulaması — geçerli bir e-posta ŞEKLİNDE mi kontrol eder (gerçekten VAR olup olmadığını değil).',
+            neden: 'Elle bir regex yazmak yerine .NET\'in kendi, RFC uyumlu ayrıştırıcısı kullanılıyor — kendi regex\'imiz muhtemelen ya ÇOK katı (geçerli bazı e-postaları reddeder) ya da ÇOK gevşek (geçersiz bir string\'i kabul eder) olurdu.',
+            olmasaydi: 'Bu kontrol olmasaydı, `INITIAL_ADMIN_EMAIL` yanlışlıkla bozuk bir değerle (ör. bir kopyala-yapıştır hatasıyla) ayarlanırsa, aşağıdaki `GetByEmailAsync`/`AddAsync` bu BOZUK değeri sessizce veritabanına YAZARDI — ilk girişte fark edilecek bir hata yerine, sessizce oluşmuş kullanılamaz bir hesap.'
+          },
+          {
+            satir: '_logger.LogWarning("INITIAL_ADMIN_EMAIL is not a valid email address, skipping admin seed");',
+            aciklama: 'İngilizce log mesajı — bu geliştirici/operatöre yönelik bir UYARI, kullanıcıya giden bir mesaj değil, bu yüzden `ErrorMessages` sözlüğünden Çözülmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (await _userRepository.GetByEmailAsync(email, cancellationToken) is not null)',
+            aciklama: 'İDEMPOTENTLİK kontrolü — bu e-postayla ZATEN bir kullanıcı VARSA (ilk çalıştırmada oluşturulmuş olabilir) hiçbir şey yapma.',
+            neden: 'Bu metot `Program.cs`\'te HER uygulama başlangıcında (her `dotnet run`, her deployment restart\'ında) çağrılıyor — kontrol OLMASAYDI HER başlangıçta aynı e-postayla İKİNCİ bir `User` eklemeyi DENERDİ.',
+            olmasaydi: 'Kontrol olmasaydı, ikinci çalıştırmada `Users.Email` üzerindeki UNIQUE index (A-03, Bölüm 2 EF konfigürasyonu) bir veritabanı istisnası FIRLATIRDI — bu istisna `Program.cs`\'te YAKALANMADIĞI için UYGULAMA HİÇ AÇILAMAZDI, her restart\'ta çökerdi.'
+          },
+          {
+            satir: 'var now = DateTime.UtcNow;',
+            aciklama: '`CreatedAt`/`UpdatedAt`/`EmailVerifiedAt`\'in AYNI anı taşıması için tek bir değişkende sabitleniyor — üç ayrı `DateTime.UtcNow` çağrısı olsaydı milisaniyeler farklı olabilirdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var admin = new User',
+            aciklama: 'Yeni `User` entity\'si — nesne başlatıcı (object initializer) sözdizimiyle tüm alanlar tek seferde dolduruluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Email = email,',
+            aciklama: 'Ortam değişkeninden okunan, formatı doğrulanmış e-posta.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PasswordHash = _passwordService.Hash(password),',
+            aciklama: 'HAM şifre asla saklanmıyor — `RegisterCommandHandler`\'ın (Bölüm 11) AYNI bcrypt çağrısı, ham `password` değişkeni bu satırdan sonra bir daha hiç kullanılmıyor/loglanmıyor — şifreler/token\'lar hiçbir yerde ham hâlleriyle log\'a yazılmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'FirstName = "Admin",',
+            aciklama: '`User` entity\'sinde `FirstName`/`LastName` NOT NULL (Auth.md şeması) — seed\'in tek amacı sistemin İLK Admin hesabını açmak olduğu için sabit bir görünen ad kullanılıyor, ilk girişten sonra admin panelden değiştirilebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LastName = "Admin",',
+            aciklama: 'Aynı gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Role = "Admin",',
+            aciklama: 'Bu satır TÜM görevin amacı — sistemin İLK `Role="Admin"` kaydı, hiçbir public endpoint\'ten GEÇMEDEN, doğrudan burada yazılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IsActive = true,',
+            aciklama: 'Hesap hemen kullanılabilir — bir aktivasyon adımı beklemiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IsEmailVerified = true,',
+            aciklama: 'Normal kayıt akışının (Bölüm 11) OTP ile e-posta doğrulama adımı burada ATLANIYOR — bu bir insan tarafından, ENV değişkeniyle BİLEREK sağlanan bir hesap, sahte bir e-postayla kayıt riski yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EmailVerifiedAt = now,',
+            aciklama: '`IsEmailVerified=true` ile TUTARLI bir zaman damgası — `IsEmailVerified` true iken bu alanın `null` kalması veri bütünlüğü açısından TUTARSIZ olurdu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CreatedAt = now,',
+            aciklama: '`BaseEntity`\'den gelen standart bir alan — burada elle set ediliyor çünkü `AddAsync` bir `SaveChanges` interceptor\'ı ÇALIŞTIRMIYOR (A-02\'nin soft-delete filtresi OKUMA tarafında, otomatik zaman damgalama henüz YOK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UpdatedAt = now',
+            aciklama: 'Aynı gerekçe — ilk oluşturmada `CreatedAt` ile AYNI değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.AddAsync(admin, cancellationToken);',
+            aciklama: 'EF Core change tracker\'a ekler — henüz veritabanına YAZILMAZ (Bölüm 8\'in `IUserRepository` sözleşmesindeki AYNI iki-aşamalı desen: Add + SaveChanges).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _userRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Asıl `INSERT`\'i veritabanına gönderir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_logger.LogInformation("Initial admin account seeded for {Email}", email);',
+            aciklama: 'Yapısal loglama (`{Email}` placeholder\'ı) — operatöre "ilk Admin oluştu" bilgisini verir, canlı doğrulamada (2026-08-14) SQL loglarında bu satırın karşılığı görüldü.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'karsilastirma',
+        baslik: 'İdempotentlik: Var mı, Yok mu?',
+        iyi: {
+          baslik: 'Böyle yaz — önce kontrol et',
+          maddeler: [
+            '`GetByEmailAsync` ile ÖNCE var mı diye bak, yoksa ekle.',
+            'Her `dotnet run`/restart\'ta güvenle TEKRAR çalışabilir — ikinci çalıştırmada hiçbir şey OLMAZ.',
+            'Env değişkenleri tanımsızsa SESSİZCE atla — seed OPSİYONEL bir adım.'
+          ]
+        },
+        kotu: {
+          baslik: 'Böyle yazma — doğrudan ekle',
+          maddeler: [
+            'Kontrolsüz `AddAsync` + `SaveChangesAsync` — İKİNCİ çalıştırmada `Users.Email` UNIQUE index\'i istisna fırlatır.',
+            'Bu istisna `Program.cs`\'te (uygulama henüz `app.Run()`\'a bile ULAŞMADAN) yakalanmaz — uygulama HER restart\'ta çökerdi.',
+            'Sonuç: geliştirici bu seed\'i ELLE, yalnızca İLK çalıştırmada yorum satırına ALIP açıp kapatmak ZORUNDA kalırdı — tam da bu görevin ÖNLEMEYE çalıştığı manuel/hataya açık adım.'
+          ]
+        }
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — Beşinci Servis Kaydı',
+        dosyaYolu: 'backend/WordLearner.Application/DependencyInjection.cs',
+        neden: 'Bölüm 10\'da dört servisle (IEmailService/IGoogleTokenValidator/HttpClient/IAppleTokenValidator) genişletilen bu dosyaya, `IAdminSeedService`\'in DI kaydı eklendi — `Program.cs`\'in aşağıdaki `kod-degisiklik` slaytında `GetRequiredService<IAdminSeedService>()` ile çözebilmesi için ZORUNLU.',
+        diff: ` using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Application.Services;
+
+ namespace WordLearner.Application;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+     {
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
+         services.AddScoped<IOtpService, OtpService>();
+         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+         services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20'de SmtpEmailService
+         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+         services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
+         services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
++        services.AddScoped<IAdminSeedService, AdminSeedService>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IAdminSeedService, AdminSeedService>();',
+            aciklama: 'Diğer TÜM servislerle (IPasswordService, ITokenService…) AYNI `AddScoped` ömrü — `Program.cs`\'te KENDİ oluşturduğu bir scope İÇİNDE (aşağıdaki slayt) çözüleceği için zaten bu ömürle uyumlu.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — Başlangıçta Seed Çağrısı',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'Bölüm 29\'da rate limiting ile genişletilen bu dosyaya, `app.MapHealthChecks(...)`\'ten SONRA ama `app.Run()`\'dan ÖNCE, tek seferlik bir seed çağrısı eklendi — bu bir HTTP endpoint\'i DEĞİL, uygulamanın kendi başlangıcında çalışan bir startup adımı.',
+        diff: ` using System.Security.Claims;
+ using System.Text;
+ using System.Threading.RateLimiting;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
+ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+ using Microsoft.AspNetCore.RateLimiting;
+ using Microsoft.Extensions.Diagnostics.HealthChecks;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
+ using WordLearner.API.Common;
+ using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.Common.Behaviors;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.Interfaces.Repositories;
++using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Infrastructure;
+ using WordLearner.Infrastructure.Data;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+ builder.Host.UseSerilog((context, configuration) => configuration
+     .MinimumLevel.Information()
+     .Enrich.FromLogContext()
+     .WriteTo.Console()
+     .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+
+ builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+ builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+ builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
+ // 5 isimli policy — her Controller action'ı [EnableRateLimiting("...")] ile hangisini kullanacağını
+ // seçer; burada isimlendirilmeyen bir endpoint (ör. /health) HİÇ limitlenmez (global bir varsayılan
+ // policy set edilmedi, bilerek — health check'in izlenebilir olması gerekiyor).
+ builder.Services.AddRateLimiter(options =>
+ {
+     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+     options.AddPolicy("general", context => RateLimitPartition.GetFixedWindowLimiter(
+         GeneralPartitionKey(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 100 }));
+
+     options.AddPolicy("anonymous", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 10 }));
+
+     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(15), PermitLimit = 5 }));
+
+     options.AddPolicy("qrGenerate", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromHours(1), PermitLimit = 20 }));
+
+     options.AddPolicy("qrStatus", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 40 }));
+
+     options.OnRejected = async (rejectedContext, cancellationToken) =>
+     {
+         var httpContext = rejectedContext.HttpContext;
+         var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
+         httpContext.Response.ContentType = "application/json";
+         await httpContext.Response.WriteAsJsonAsync(
+             new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);
+     };
+ });
+
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
+ // Authorization'dan SONRA — "general" policy'nin partition anahtarı (aşağıdaki GeneralPartitionKey)
+ // context.User'ın (JWT claim'leri) doldurulmuş olmasına bağlı.
+ app.UseRateLimiter();
+ app.MapControllers();
+ app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
++// AdminController (A-18) ve [Authorize(Roles="Admin")] uçları için ilk Admin'i garantiler — idempotent,
++// her başlangıçta güvenle tekrar çalışır (INITIAL_ADMIN_EMAIL/PASSWORD tanımlı değilse sessizce atlar).
++using (var scope = app.Services.CreateScope())
++{
++    await scope.ServiceProvider.GetRequiredService<IAdminSeedService>().SeedInitialAdminAsync();
++}
++
+ app.Run();
+
+ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+ {
+     context.Response.ContentType = "application/json";
+     return context.Response.WriteAsJsonAsync(new
+     {
+         status = report.Status.ToString(),
+         databaseConnected = report.Status == HealthStatus.Healthy,
+         timestampUtc = DateTime.UtcNow
+     });
+ }
+
+ // "general" policy [Authorize] uçlarda kullanılıyor — kimliği doğrulanmış her kullanıcı KENDİ
+ // bütçesini tüketir (IP DEĞİL, ör. aynı NAT arkasındaki iki kullanıcı birbirinin limitini YEMEZ).
+ static string GeneralPartitionKey(HttpContext context) =>
+     context.User.Identity?.IsAuthenticated == true
+         ? context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ClientIp(context)
+         : ClientIp(context);
+
+ static string ClientIp(HttpContext context) =>
+     context.Connection.RemoteIpAddress?.ToString() ?? "unknown";`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: '`IAdminSeedService`\'i (`GetRequiredService<IAdminSeedService>()`\'te aşağıda kullanılıyor) bu dosyada tür olarak GÖREBİLMEK için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using (var scope = app.Services.CreateScope())',
+            aciklama: '`IAdminSeedService` `AddScoped` kaydedildiği (yukarıdaki DI slaytı) için, `app.Services`\'ten (KÖK/root container, singleton yaşam alanı) DOĞRUDAN çözülemez — KENDİ scope\'unu manuel açması gerekiyor.',
+            neden: 'Bir HTTP isteği OLMADIĞI için ASP.NET\'in normalde HER İSTEK için otomatik açtığı scope BURADA yok — `Program.cs`\'in bu tek satırlık çağrı için KENDİ, kısa ömürlü bir scope AÇIP KAPATMASI gerekiyor.',
+            olmasaydi: '`app.Services.GetRequiredService<IAdminSeedService>()` (scope AÇMADAN, doğrudan) çağrılsaydı, .NET DI konteyneri bir "Cannot resolve scoped service from root provider" istisnası FIRLATIRDI — uygulama `app.Run()`\'a hiç ULAŞAMADAN çökerdi.'
+          },
+          {
+            satir: 'await scope.ServiceProvider.GetRequiredService<IAdminSeedService>().SeedInitialAdminAsync();',
+            aciklama: 'Scope\'un KENDİ `ServiceProvider`\'ından (app\'in KÖK provider\'ından DEĞİL) `IAdminSeedService`\'i çözüp tek metodunu ÇAĞIRIYOR — `await` ile, uygulamanın `app.Run()`\'a GEÇMEDEN önce seed\'in TAMAMLANMASINI BEKLİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AdminSeedServiceTests.cs — Dört Senaryo',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/AdminSeedServiceTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/{Services|Features|Helpers|Repositories}/` (Bölüm 3) — bu bir SERVİS testi, `IUserRepository` MOCK\'lanıyor.',
+        kod: `using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Moq;
+using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Auth;
+
+namespace WordLearner.Tests.Services;
+
+public class AdminSeedServiceTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+
+    private AdminSeedService CreateService(string? email = "admin@vokabelmeister.com", string? password = "Admin123!") =>
+        new(_userRepository.Object, new PasswordService(),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["INITIAL_ADMIN_EMAIL"] = email,
+                ["INITIAL_ADMIN_PASSWORD"] = password
+            }).Build(),
+            Mock.Of<ILogger<AdminSeedService>>());
+
+    [Fact]
+    public async Task SeedInitialAdminAsync_EnvVarsNotConfigured_DoesNothing()
+    {
+        // ARRANGE
+        var service = CreateService(email: null, password: null);
+
+        // ACT
+        await service.SeedInitialAdminAsync();
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SeedInitialAdminAsync_EmailIsMalformed_DoesNothing()
+    {
+        // ARRANGE
+        var service = CreateService(email: "not-an-email");
+
+        // ACT
+        await service.SeedInitialAdminAsync();
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SeedInitialAdminAsync_AdminAlreadyExists_DoesNotCreateDuplicate()
+    {
+        // ARRANGE — idempotent: aynı e-posta zaten varsa dokunma
+        _userRepository.Setup(r => r.GetByEmailAsync("admin@vokabelmeister.com", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Email = "admin@vokabelmeister.com", Role = "Admin" });
+        var service = CreateService();
+
+        // ACT
+        await service.SeedInitialAdminAsync();
+
+        // ASSERT
+        _userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SeedInitialAdminAsync_NoExistingAdmin_CreatesAdminUser()
+    {
+        // ARRANGE
+        _userRepository.Setup(r => r.GetByEmailAsync("admin@vokabelmeister.com", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+        var service = CreateService();
+
+        // ACT
+        await service.SeedInitialAdminAsync();
+
+        // ASSERT — Role=Admin, hesap aktif+doğrulanmış, şifre bcrypt ile hash'lenmiş (ham metin DEĞİL)
+        _userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>
+            u.Email == "admin@vokabelmeister.com" &&
+            u.Role == "Admin" &&
+            u.IsActive &&
+            u.IsEmailVerified &&
+            u.PasswordHash != "Admin123!" &&
+            !string.IsNullOrEmpty(u.PasswordHash)),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: 'Bu test dosyasında AslındA `.Verify(...)` (Moq) kullanılıyor, `FluentAssertions`\'ın kendi `.Should()` sözdizimi burada ÇAĞRILMASA da, projenin diğer test dosyalarıyla TUTARLI referans olarak duruyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Configuration;',
+            aciklama: '`ConfigurationBuilder`/`AddInMemoryCollection` ile SAHTE bir `IConfiguration` kurmak için — gerçek bir `appsettings.json`/ENV değişkeni OKUMADAN, testin KENDİ verdiği değerlerle çalışır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.Extensions.Logging;',
+            aciklama: '`Mock.Of<ILogger<AdminSeedService>>()` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Moq;',
+            aciklama: '`Mock<T>`/`It.IsAny<T>` için gerekli — 13 Auth Handler testinin (Bölüm 40) AYNI mocking kütüphanesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Auth;',
+            aciklama: '`IUserRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `AdminSeedService` ve gerçek (mock DEĞİL) `PasswordService`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Test klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class AdminSeedServiceTests',
+            aciklama: 'Dört senaryo — Bölüm 39\'daki "minimum dört senaryo ailesi" kuralının bir servis testindeki karşılığı: (1) ön koşul eksik, (2) girdi geçersiz, (3) iş kuralı zaten sağlanmış (idempotentlik), (4) mutlu yol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit\'e bu metodun parametresiz, tek senaryolu bir test olduğunu SÖYLER — çalıştırıcı bu özniteliği taşıyan HER metodu (bu dosyada dördünü) otomatik bulup ÇALIŞTIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<IUserRepository> _userRepository = new();',
+            aciklama: 'TEK mock — `IPasswordService`/`IConfiguration`/`ILogger` MOCKLANMIYOR, aşağıdaki `CreateService`\'te gerçek/sahte-ama-basit türlerle veriliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private AdminSeedService CreateService(string? email = "admin@vokabelmeister.com", string? password = "Admin123!") =>',
+            aciklama: 'Dört testin TEKRARINI önleyen bir factory metodu — varsayılan parametreler "mutlu yol" değerleri, her test yalnızca FARKLILAŞTIĞI parametreyi ELLE geçiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new(_userRepository.Object, new PasswordService(),',
+            aciklama: '`IPasswordService` GERÇEK `PasswordService()` ile veriliyor (mock DEĞİL) — mutlu yol testinin (aşağıda) `PasswordHash != "Admin123!"` doğrulaması ANCAK gerçek bcrypt çalışırsa anlamlı olur.',
+            neden: 'Bir mock `Hash("Admin123!")` çağrısına HER ZAMAN aynı sahte değeri DÖNERDİ — bu, "şifre GERÇEKTEN hash\'leniyor mu" sorusunu test ETMEZ, yalnızca "Hash çağrıldı mı"yı test ederdi.',
+            olmasaydi: null
+          },
+          {
+            satir: 'new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>',
+            aciklama: '.NET\'in gerçek `IConfiguration` implementasyonu, bellek-içi bir sözlükle — `_configuration["INITIAL_ADMIN_EMAIL"]` gibi indeksleyici çağrıları GERÇEKTEN çalışır, mock GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INITIAL_ADMIN_EMAIL"] = email,',
+            aciklama: 'Test parametresinden gelen değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '["INITIAL_ADMIN_PASSWORD"] = password',
+            aciklama: 'Test parametresinden gelen değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}).Build(),',
+            aciklama: 'Sözlüğü gerçek bir `IConfiguration` örneğine dönüştürür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Mock.Of<ILogger<AdminSeedService>>());',
+            aciklama: '`_logger.LogWarning`/`LogInformation` çağrıları hiçbir yere YAZMAYAN, sessiz bir sahte logger — testler log İÇERİĞİNİ doğrulamıyor, yalnızca çağrının ÇÖKMEMESİNİ sağlıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SeedInitialAdminAsync_EnvVarsNotConfigured_DoesNothing()',
+            aciklama: 'Senaryo 1 — `Metot_Durum_BeklenenSonuç` adlandırması (Bölüm 39): env değişkenleri TANIMLI DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService(email: null, password: null);',
+            aciklama: 'İkisi de `null` — servisin `string.IsNullOrWhiteSpace` erken çıkışını (kod slaytındaki ilk `if`) TETİKLEYECEK girdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await service.SeedInitialAdminAsync();',
+            aciklama: 'ACT — istisna FIRLATMADAN sessizce dönmesi bekleniyor (bu satırın kendisi bir `try/catch` OLMADAN çökersek test zaten KIRMIZI olur).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);',
+            aciklama: '`AddAsync`\'in HİÇ çağrılmadığını doğrular — servis bir yan etki (veritabanına yazma) ÜRETMEMELİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SeedInitialAdminAsync_EmailIsMalformed_DoesNothing()',
+            aciklama: 'Senaryo 2 — e-posta TANIMLI ama GEÇERSİZ formatta.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService(email: "not-an-email");',
+            aciklama: '`@` işareti OLMAYAN bir string — `MailAddress.TryCreate`\'in `false` DÖNECEĞİ, ikinci `if`\'i tetikleyecek girdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SeedInitialAdminAsync_AdminAlreadyExists_DoesNotCreateDuplicate()',
+            aciklama: 'Senaryo 3 — İDEMPOTENTLİK: bu e-postayla bir kullanıcı ZATEN var.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Setup(r => r.GetByEmailAsync("admin@vokabelmeister.com", It.IsAny<CancellationToken>()))',
+            aciklama: 'Mock\'a, bu e-postayla sorgulandığında (üçüncü `if`) bir sonuç DÖNMESİNİ öğretiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync(new User { Email = "admin@vokabelmeister.com", Role = "Admin" });',
+            aciklama: 'Var olan bir Admin\'i TEMSİL eden minimal bir `User` — testin ilgilendiği tek şey "bu sonuç `null` DEĞİL" olduğu için diğer alanlar doldurulmuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var service = CreateService();',
+            aciklama: 'Bu metodun (ve mutlu yol testinin) İKİSİ de `CreateService`\'i PARAMETRESİZ çağırıyor — varsayılan "mutlu yol" e-posta/şifresiyle, çünkü senaryoyu ayıran şey burada servisin GİRDİSİ değil, mock\'un DÖNDÜRDÜĞÜ sonuç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SeedInitialAdminAsync_NoExistingAdmin_CreatesAdminUser()',
+            aciklama: 'Senaryo 4 — MUTLU YOL: env değişkenleri geçerli, e-posta henüz kayıtlı DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync((User?)null);',
+            aciklama: 'Bu e-postayla HENÜZ kimse yok — `GetByEmailAsync` `null` döner, dördüncü `if` GEÇİLİR, akış `User` oluşturma bloğuna DEVAM eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Verify(r => r.AddAsync(It.Is<User>(u =>',
+            aciklama: '`It.Is<User>(predicate)` — SADECE "çağrıldı mı" değil, `AddAsync`\'e geçilen `User` nesnesinin ALANLARINI da doğruluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.Email == "admin@vokabelmeister.com" &&',
+            aciklama: 'Doğru e-postayla oluşturulduğunu doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.Role == "Admin" &&',
+            aciklama: 'GÖREVİN ASIL amacının doğrulaması — `Role` gerçekten `"Admin"`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.IsActive &&',
+            aciklama: 'Hesap aktif oluşturulmuş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.IsEmailVerified &&',
+            aciklama: 'E-posta doğrulanmış işaretlenmiş — OTP adımı atlanmış.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'u.PasswordHash != "Admin123!" &&',
+            aciklama: 'HAM şifrenin OLDUĞU GİBİ saklanMADIĞINI doğrular — bu satır olmadan bir geliştirici yanlışlıkla `PasswordHash = password` (hash\'lemeden) yazsa bile test YEŞİL kalırdı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '!string.IsNullOrEmpty(u.PasswordHash)),',
+            aciklama: 'Hash alanının BOŞ olmadığını doğrular — gerçek `PasswordService` (mock değil) kullanıldığı için bu, bcrypt\'in GERÇEKTEN çalıştığının bir kanıtı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`AddAsync`\'in TAM OLARAK bir kez çağrıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`SaveChangesAsync`\'in de çağrıldığını doğrular — `AddAsync` TEK BAŞINA veritabanına yazmaz (EF Core change tracker deseni, Bölüm 8), bu ikinci çağrı OLMADAN veri asla KALICI olmaz.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'İdempotent', tanim: 'Bir işlemin birden çok kez çalıştırılmasının, bir kez çalıştırılmasıyla AYNI sonucu vermesi — burada "seed\'i iki kez çalıştırmak ikinci Admin oluşturmaz".' },
+          { terim: 'Seed', tanim: 'Bir veritabanına, uygulama başlangıcında programatik olarak başlangıç/temel veri yazma işlemi.' },
+          { terim: 'Döngüsel bağımlılık (circular dependency)', tanim: 'A\'nın B\'ye, B\'nin de A\'ya ihtiyaç duyması — burada "Admin olmak için Admin\'in var olması gerekmesi".' },
+          { terim: 'Scope (DI)', tanim: '.NET DI konteynerinin, `AddScoped` kayıtlı servisleri çözebilmek için gereken, elle açılıp kapatılabilen bir yaşam alanı — normalde her HTTP isteği için otomatik açılır.' },
+          { terim: 'MailAddress.TryCreate', tanim: '.NET\'in yerleşik, RFC uyumlu e-posta format doğrulayıcısı — `System.Net.Mail` içinde.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-03.2 Tamamlandı',
+        maddeler: [
+          'AdminController (A-18) ile Register (A-03) arasındaki döngüsel bağımlılık, HTTP katmanının dışında, Program.cs\'in kendi başlangıcında (app.Run()\'dan önce) kırıldı.',
+          'IAdminSeedService/AdminSeedService — INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_PASSWORD ortam değişkenleri tanımlı ve geçerliyse, o e-posta yoksa bir Role=Admin User oluşturur.',
+          'İdempotentlik GetByEmailAsync ile ÖNCE kontrol edilerek sağlandı — her restart\'ta güvenle tekrar çalışır, ikinci kez hiçbir şey yapmaz.',
+          'Program.cs, AddScoped kayıtlı bir servisi kök container\'dan DEĞİL, kendi açtığı bir scope üzerinden çözdü — DI\'ın HTTP-isteği-dışı bir kullanım örneği.',
+          '4/4 test yeşil (99/99 tüm paket) — canlı doğrulamada (2026-08-14) gerçek DB\'ye karşı ilk çalıştırmada admin@vokabelmeister.com oluştuğu, ikinci çalıştırmada idempotent davranıldığı SQL loglarında görüldü.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

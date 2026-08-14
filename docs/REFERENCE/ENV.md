@@ -56,6 +56,17 @@ Cors__AllowedOrigins__1=http://localhost:5173     # Admin panel
 Cors__AllowedOrigins__2=http://localhost:5174     # Web app
 ```
 
+## 9. İlk Admin Hesabı (A-03.2)
+```
+INITIAL_ADMIN_EMAIL=admin@vokabelmeister.com
+INITIAL_ADMIN_PASSWORD=...
+```
+`Program.cs` başlangıcında (`app.Run()`'dan önce) `AdminSeedService` bu ikisini okur — yalnızca o
+e-posta hiç yoksa bir `Admin` kullanıcısı oluşturur (idempotent). Yalnızca geliştirme/staging'de
+`appsettings.Development.json`'a yazılır; prod'da secret olarak verilir. İkisi de tanımlı değilse
+seed sessizce atlanır (zorunlu değil). İlk girişten sonra şifrenin değiştirilmesi önerilir —
+bu bir dokümantasyon notudur, kod zorlaması değil.
+
 ## appsettings.Development.json Şablonu (`.gitignore`'da)
 ```json
 {
@@ -63,6 +74,8 @@ Cors__AllowedOrigins__2=http://localhost:5174     # Web app
   "Jwt": { "SecretKey": "gelistirme-icin-en-az-32-karakter", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp", "RefreshTokenExpirationDays": "7" },
   "Google": { "ClientId": "..." },
   "Apple": { "BundleId": "com.vokabelmeister.app" },
+  "INITIAL_ADMIN_EMAIL": "admin@vokabelmeister.com",
+  "INITIAL_ADMIN_PASSWORD": "...",
   "OneSignal": { "AppId": "...", "RestApiKey": "..." },
   "FileStorage": { "UploadPath": "wwwroot/uploads", "BaseUrl": "https://localhost:7001/uploads" },
   "Cors": { "AllowedOrigins": ["http://localhost:8081", "http://localhost:5173", "http://localhost:5174"] }

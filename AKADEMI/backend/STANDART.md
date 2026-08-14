@@ -84,8 +84,22 @@ tıklanabilir işaretlemez (sessizce atlar, hata vermez).
   namespace bildirimi, alan/property/metot bildirimi, metot gövdesindeki her ifade — atama, çağrı,
   `return`, `if`/`foreach` koşulu vb.) `satirlar[]`'da kendi girdisiyle eşleşmeli — yalnızca
   "ilginç" birkaç satır değil, TÜMÜ.
-- **İstisna (satır AÇILMAZ):** (a) boş satırlar, (b) yalnızca `{` veya `}` olan satırlar,
-  (c) `//` ya da `///` ile başlayan yorum satırları.
+- **İstisna (satır AÇILMAZ):** (a) boş satırlar, (b) yalnızca yapısal kapanış/açılış
+  karakterlerinden oluşan satırlar (`{`, `}`, `};`, `},`, `)`, `);`, `),` gibi — başka hiçbir
+  tanımlayıcı/değer İÇERMİYORSA); satırda kapanışla birlikte GERÇEK bir ifade de varsa (ör. bir
+  constructor'ın son parametresi `ILogger<X> logger)` gibi kapanış parantezini taşıyorsa) o satır
+  YİNE kapsanır — ayrım "satır SADECE kapanış mı" (muaf) ile "kapanışın yanında gerçek bir ifade de
+  var mı" (kapsanmalı) arasında, (c) `//` ya da `///` ile başlayan yorum satırları.
+- **Tekrar eden BİREBİR AYNI satırlar — TEK girdi:** Motor `satirlar[]`'ı `satir` metnine göre bir
+  haritaya (Map) yazar; aynı `kod`/`diff` bloğunda birden fazla kez geçen, karakter karakter AYNI
+  bir satır (ör. `return;`, `[Fact]`, tekrarlayan bir `using service.Object` çağrısı) için BİRDEN
+  FAZLA `satirlar[]` girdisi yazılırsa, motor yalnızca SONUNCUSUNU kullanır — kaynak koddaki O
+  metnin TÜM tekrarları (ilk, ikinci, üçüncü...) tıklandığında AYNI (son yazılan) açıklamayı
+  gösterir, önceki girdiler SESSİZCE görünmez olur. Bu yüzden aynı metinden birden çok kez geçen
+  bir satır için TEK bir `satirlar[]` girdisi yazılır, `aciklama` bu satırın TÜM tekrarlarını
+  kapsayacak şekilde genel yazılır (ör. "üç ayrı erken çıkıştan biri — env eksik/format geçersiz/
+  kayıt zaten var, hangisi sağlanırsa buraya düşülür"). İki girdi yazıp "ilki bunun için, ikincisi
+  onun için" diye ayırmaya ÇALIŞMAK bir hatadır, motor bunu DESTEKLEMEZ.
 
 ### 3.1 `kod-degisiklik` — daha önce TAM olarak öğretilmiş bir dosyaya SONRADAN dokunulduğunda
 
@@ -156,6 +170,21 @@ geçmişi yok.
 - **Var olan bir kodun SATIRI/İMZASI DEĞİŞTİĞİNDE** (ekleme değil, değişiklik — bkz. §3.1) eski
   bölüm dokunulmadan bırakılır, değişikliği yapan görevin bölümüne bir `kod-degisiklik` slaytı
   eklenir.
+- **Proje meta-dokümanlarına (`CLAUDE.md`, `TASK.md`, `STANDART.md`'nin kendisi, `ENV.md`,
+  `SECURITY.md`, `API_ENDPOINTS.md`, `DATABASE_SCHEMA.md`, `TECHNICAL_SPECIFICATIONS.md`,
+  `CODING_STANDARDS.md`, `DEVELOPMENT_SETUP.md`) bir slaytın `aciklama`/`neden`/`olmasaydi`/
+  `nedenBuKlasor`/`baslik`/`postman.notlar[]` gibi ANLATI alanlarında "§X" şeklinde ATIF
+  YAPILMAZ** (ör. "CLAUDE.md §1'in zorunlu kıldığı..." YAZILMAZ) — akademiyi okuyan bir junior bu
+  iç meta-dokümanları hiç görmüyor/bilmiyor, bir kural "orada öyle yazıyor" diye değil, kendi
+  başına ayakta duran mühendislik gerekçesiyle anlatılmalı. Bu kuralın İKİ istisnası var: (1) bir
+  `kod:`/`diff:` bloğunun İÇİNDEKİ metin gerçek kaynak dosyanın birebir kopyası olduğu için (yukarı
+  bkz. "birebir kopya" kuralı) o metnin kendisi bir meta-doküman adı içerse bile (ör. gerçek bir
+  `.cs` dosyasının yorumu `// SECURITY.md §1.4` içeriyorsa) DOKUNULMAZ; (2) akademinin KENDİ görev
+  kodlarına (`A-02`, `B-08` gibi — akademinin gelecek/geçmiş bölümlerine işaret eder) atıf
+  YAPILABİLİR, bunlar dış meta-doküman değil. Yeni bir slayt yazdıktan HEMEN sonra
+  `grep -n "STANDART\.md\|CLAUDE\.md\|SECURITY\.md\|API_ENDPOINTS\.md\|DATABASE_SCHEMA\.md\|TECHNICAL_SPECIFICATIONS\.md\|CODING_STANDARDS\.md\|ENV\.md\|DEVELOPMENT_SETUP\.md"`
+  ile dosya taranır, `kod:`/`diff:` blokları İÇİNDEKİ eşleşmeler hariç kalan HER eşleşme
+  meta-doküman adı/bölüm numarası olmadan aynı gerekçeyi taşıyacak şekilde yeniden yazılır.
 
 ## 5. Kök `index.html`'e kart ekleme
 

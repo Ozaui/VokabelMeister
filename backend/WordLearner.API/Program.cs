@@ -17,6 +17,7 @@ using WordLearner.Application.Common;
 using WordLearner.Application.Common.Behaviors;
 using WordLearner.Application.DTOs;
 using WordLearner.Application.Interfaces.Repositories;
+using WordLearner.Application.Interfaces.Services;
 using WordLearner.Infrastructure;
 using WordLearner.Infrastructure.Data;
 
@@ -117,6 +118,13 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
 app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
+// AdminController (A-18) ve [Authorize(Roles="Admin")] uçları için ilk Admin'i garantiler — idempotent,
+// her başlangıçta güvenle tekrar çalışır (INITIAL_ADMIN_EMAIL/PASSWORD tanımlı değilse sessizce atlar).
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<IAdminSeedService>().SeedInitialAdminAsync();
+}
 
 app.Run();
 
