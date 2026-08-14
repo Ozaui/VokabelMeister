@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+        services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
 
         return services;
     }

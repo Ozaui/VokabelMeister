@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-04 — Loglama Sistemi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'paged-repository',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '03_activity-security-logger.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'PagedResult<T>: Sayfalamanın İlk Gerçek Tüketicisi',
+        altBaslik: 'Bölüm 3\'ün yazma-amaçlı repository\'leri, admin panelin (A-07) "son 50 kaydı göster" ihtiyacını karşılayacak filtreli/sayfalı okuma metotlarıyla genişliyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden PagedResult<T> Şimdiye Kadar Hiç Yazılmadı?',
+        aciklama: '`ActivityLogs`/`SecurityLogs`/`ApplicationLogs` tabloları zamanla YÜZLERCE, BİNLERCE satıra ulaşacak — bir admin ekranının bunların TAMAMINI TEK seferde çekmesi hem yavaş hem gereksiz. `PagedResult<T>` bir sorgunun "şu an istenen sayfa" + "toplam kaç satır var" bilgisini birlikte taşıyan ortak bir zarf.',
+        neden: 'Bu tip DAHA ÖNCE (A-01\'den bu yana) hiç açılmadı çünkü A-03\'e kadar hiçbir Handler GERÇEKTEN sayfalı bir liste DÖNDÜRMÜYORDU — "ileride lazım olur" diye önceden spekülatif bir DTO yazmak yerine, onu fiilen KULLANACAK ilk somut kod (bu bölümün üç repository\'si) yazılırken, o kodun PARÇASI olarak açılıyor.',
+        olmasaydi: 'Bu tip önceden, hiçbir gerçek kullanım OLMADAN yazılsaydı, şekli (`Items`/`TotalCount`/`Page`/`PageSize` mi, yoksa `Data`/`Count`/`PageNumber` mi?) TAHMİNE dayanırdı — gerçek bir tüketici OLMADAN yazılan bir sözleşme, ilk gerçek kullanım geldiğinde genelde YANLIŞ çıkar ve değiştirilmesi gerekir.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'PagedResult.cs — Ortak Sayfalama Zarfı',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/PagedResult.cs',
+        nedenBuKlasor: '`Application/DTOs/` — feature\'a özel olmayan, PAYLAŞILAN bir sözleşme; `Application/DTOs/Auth/` gibi bir alt klasöre KONMADI çünkü Auth\'a özgü değil, ileride Word/Category gibi başka listelenen kaynaklarda da kullanılacak.',
+        kod: `namespace WordLearner.Application.DTOs;
+
+public class PagedResult<T>
+{
+    public List<T> Items { get; set; } = [];
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.DTOs;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class PagedResult<T>',
+            aciklama: 'Jenerik — `ActivityLog`, `SecurityLog`, `ApplicationLog` gibi HERHANGİ bir tür için tekrar tekrar kullanılabilir, üç ayrı `PagedActivityLogResult`/`PagedSecurityLogResult`/... yazmaya gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public List<T> Items { get; set; } = [];',
+            aciklama: 'İstenen SAYFAYA denk düşen satırlar — TÜM tablo DEĞİL, `Skip`/`Take` uygulanmış alt küme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int TotalCount { get; set; }',
+            aciklama: 'FİLTRELERE uyan (ama sayfalanmamış) TOPLAM satır sayısı — admin panelinin "1-20 / 143 kayıt" gibi bir gösterge çizebilmesi için gerekli, `Items.Count` (o an gelen sayfanın boyutu, en fazla `PageSize`) bu bilgiyi VEREMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Page { get; set; }',
+            aciklama: 'İstenen sayfa numarası (1\'den başlar) — yanıtın kendisi isteği YANKILAR, admin panel "hangi sayfadayım" bilgisini AYRICA saklamak zorunda kalmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int PageSize { get; set; }',
+            aciklama: 'İstenen sayfa boyutu — AYNI gerekçe, yanıt isteği yankılar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IActivityLogRepository.cs — Yazma + Sayfalı Okuma',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Logging/IActivityLogRepository.cs',
+        nedenBuKlasor: '`Application/Interfaces/Repositories/Logging/` — `Interfaces/Repositories/Auth/` (Bölüm 8) ile AYNI desen, domain\'e özel bir repository arayüzleri alt klasörü.',
+        kod: `using WordLearner.Application.DTOs;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Application.Interfaces.Repositories.Logging;
+
+public interface IActivityLogRepository
+{
+    Task AddAsync(ActivityLog log, CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    Task<PagedResult<ActivityLog>> GetPagedAsync(
+        int? userId, string? action, string? entityType, DateTime? from, DateTime? to,
+        int page, int pageSize, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: 'Yukarıdaki `PagedResult<T>`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ActivityLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IActivityLogRepository',
+            aciklama: 'Bölüm 3\'te `ActivityLogger`\'ın yazma amacıyla kullandığı arayüz, şimdi bir okuma metoduyla GENİŞLİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddAsync(ActivityLog log, CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 3\'ten değişmedi — `ActivityLogger`\'ın kullandığı yazma metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 3\'ten değişmedi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<PagedResult<ActivityLog>> GetPagedAsync(',
+            aciklama: 'YENİ metot — `GET /admin/logs/activity`\'nin (A-07\'de yazılacak Controller) ihtiyaç duyacağı BEŞ filtre + iki sayfalama parametresini karşılar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId, string? action, string? entityType, DateTime? from, DateTime? to,',
+            aciklama: 'Beş filtre — HEPSİ nullable/opsiyonel; hiçbiri verilmezse sorgu TÜM (silinmemiş) satırları kapsar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default);',
+            aciklama: 'Sayfalama parametreleri ZORUNLU (varsayılan değeri YOK) — admin panelin HER zaman açıkça bir sayfa/boyut BELİRTMESİ gerekir, "sayfalama unutulursa TÜM tablo döner" gibi sessiz bir varsayılan davranış YOK.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLogRepository.cs — Filtre + Sayfalama İnşası',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Logging/ActivityLogRepository.cs',
+        nedenBuKlasor: '`Infrastructure/Repositories/Logging/` — Bölüm 3\'te açılan klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Logging;
+
+public class ActivityLogRepository : IActivityLogRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public ActivityLogRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task AddAsync(ActivityLog log, CancellationToken cancellationToken = default) =>
+        await _context.ActivityLogs.AddAsync(log, cancellationToken);
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+
+    public async Task<PagedResult<ActivityLog>> GetPagedAsync(
+        int? userId, string? action, string? entityType, DateTime? from, DateTime? to,
+        int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.ActivityLogs.AsQueryable();
+
+        if (userId is not null) query = query.Where(l => l.UserId == userId);
+        if (!string.IsNullOrWhiteSpace(action)) query = query.Where(l => l.Action == action);
+        if (!string.IsNullOrWhiteSpace(entityType)) query = query.Where(l => l.EntityType == entityType);
+        if (from is not null) query = query.Where(l => l.CreatedAt >= from);
+        if (to is not null) query = query.Where(l => l.CreatedAt <= to);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(l => l.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<ActivityLog> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`AsQueryable`/`CountAsync`/`ToListAsync` gibi LINQ-to-Entities uzantı metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'ın ad alanı — `GetPagedAsync`\'in dönüş türü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: 'İmplemente edilecek `IActivityLogRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ActivityLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLogRepository : IActivityLogRepository',
+            aciklama: 'Bölüm 3\'te yazma sorumluluğuyla açılan sınıf — bu bölümde `GetPagedAsync` implementasyonuyla GENİŞLİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: 'TEK bağımlılık — `UserRepository`/`RefreshTokenRepository` (Bölüm 8) ile AYNI, doğrudan `WordLearnerDbContext`\'e bağlı basit repository deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ActivityLogRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Standart constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddAsync(ActivityLog log, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Bölüm 3\'ten DEĞİŞMEDİ — `ActivityLogger`\'ın kullandığı yazma metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.ActivityLogs.AddAsync(log, cancellationToken);',
+            aciklama: 'Bölüm 1\'deki `DbSet<ActivityLog>`\'a change tracker üzerinden ekler — henüz veritabanına YAZMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: 'Bölüm 3\'ten DEĞİŞMEDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Asıl `INSERT`\'i veritabanına gönderir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<PagedResult<ActivityLog>> GetPagedAsync(',
+            aciklama: 'YENİ metot — bu bölümün asıl konusu, arayüzdeki imzayla BİREBİR aynı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId, string? action, string? entityType, DateTime? from, DateTime? to,',
+            aciklama: 'Beş filtre parametresi — aşağıdaki gövdede her biri KENDİ koşullu `Where`\'ine karşılık geliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default)',
+            aciklama: 'Sayfalama parametreleri ve iptal token\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var query = _context.ActivityLogs.AsQueryable();',
+            aciklama: 'Henüz veritabanına GİTMEYEN bir sorgu NESNESİ (IQueryable) — aşağıdaki `Where` çağrıları bu nesneye EKLENDİKÇE, oluşan TEK bir SQL sorgusunun parçası olur, ayrı ayrı veritabanı gidiş-dönüşü YAPMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (userId is not null) query = query.Where(l => l.UserId == userId);',
+            aciklama: 'KOŞULLU filtre — `userId` verilmediyse (`null`) bu `Where` HİÇ eklenmez, sorgu bu alana göre HİÇ kısıtlanmaz.',
+            neden: 'Admin panel filtrelerin HEPSİNİ AYNI ANDA doldurmak ZORUNDA değil — bir admin sadece "bu kullanıcının TÜM logları" isteyebilir (`action`/`entityType`/tarih aralığı boş), başka biri sadece "TÜM CREATE_WORD eylemleri" isteyebilir (`userId` boş).',
+            olmasaydi: 'Bu koşul OLMADAN her zaman `query.Where(l => l.UserId == userId)` çağrılsaydı, `userId` `null` olduğunda `l.UserId == null` koşulu yalnızca UserId\'si GERÇEKTEN `null` olan (anonim eylemler) satırları DÖNDÜRÜRDÜ — "filtreleme" ile "yalnızca boş UserId\'leri GETİR" birbirine KARIŞIRDI.'
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(action)) query = query.Where(l => l.Action == action);',
+            aciklama: 'Aynı KOŞULLU filtre deseni, `Action` için — `string.IsNullOrWhiteSpace` kontrolü boş STRING (`""`) ile hiç GÖNDERİLMEMİŞ (`null`) durumlarını AYNI şekilde "filtre yok" sayar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(entityType)) query = query.Where(l => l.EntityType == entityType);',
+            aciklama: 'Aynı desen, `EntityType` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (from is not null) query = query.Where(l => l.CreatedAt >= from);',
+            aciklama: 'Tarih aralığının BAŞLANGICI — `from` verilmişse, o TARİHTEN yeni (veya eşit) satırlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (to is not null) query = query.Where(l => l.CreatedAt <= to);',
+            aciklama: 'Tarih aralığının SONU — beş `if` bloğu BİRBİRİNDEN bağımsız, admin panel `from` ve `to`\'yu AYRI AYRI (biri OLMADAN diğeri) da gönderebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var totalCount = await query.CountAsync(cancellationToken);',
+            aciklama: 'TÜM `Where` filtreleri UYGULANMIŞ (ama `Skip`/`Take` UYGULANMAMIŞ) sorgunun toplam satır sayısı — bu satır veritabanına `SELECT COUNT(*) ...` şeklinde AYRI bir sorgu GÖNDERİR.',
+            neden: 'Sayfalama bilgisinin (`TotalCount`) DOĞRU olması için filtrelerden SONRA ama sayfalamadan ÖNCE sayılması gerekiyor — filtrelerden ÖNCE sayılsaydı yanlış (TÜM tablonun) sayısını, sayfalamadan SONRA sayılsaydı yalnızca O SAYFANIN boyutunu (en fazla `pageSize`) verirdi.',
+            olmasaydi: 'Bu satır `items.Count` ile DEĞİŞTİRİLSEYDİ (sayfalanmış listenin boyutu), admin panel HER ZAMAN `Count <= pageSize` bir değer görürdü — "toplam 143 kayıt var" gibi bir bilgi asla ELDE EDİLEMEZDİ, yalnızca "bu sayfada 20 kayıt var" bilinirdi.'
+          },
+          {
+            satir: 'var items = await query',
+            aciklama: 'Asıl SAYFA verisini getiren ikinci (ve son) veritabanı sorgusu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OrderByDescending(l => l.CreatedAt)',
+            aciklama: 'EN YENİ satır ÖNCE — Bölüm 1\'in `IX_ActivityLogs_CreatedAt` AZALAN index\'ini KULLANACAK şekilde, admin panelin doğal "en son ne oldu" okuma sırasıyla EŞLEŞİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Skip((page - 1) * pageSize)',
+            aciklama: '`page` 1\'den BAŞLADIĞI için (`Page = 1` İLK sayfa), 1. sayfada `Skip(0)`, 2. sayfada `Skip(pageSize)` uygulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Take(pageSize)',
+            aciklama: 'Yalnızca istenen SAYFA boyutu kadar satırı getirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToListAsync(cancellationToken);',
+            aciklama: 'Sorguyu GERÇEKTEN çalıştırıp sonuçları bir listeye MATERYALİZE eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new PagedResult<ActivityLog> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };',
+            aciklama: 'Sayfa verisini VE sayfalama meta-bilgisini TEK bir nesnede paketler.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ISecurityLogRepository.cs / SecurityLogRepository.cs — Enum Filtre',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Logging/ISecurityLogRepository.cs',
+        nedenBuKlasor: '`ActivityLogRepository` ile AYNI desen — TEK anlamlı fark aşağıda.',
+        kod: `using WordLearner.Application.DTOs;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Application.Interfaces.Repositories.Logging;
+
+public interface ISecurityLogRepository
+{
+    Task AddAsync(SecurityLog log, CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    Task<PagedResult<SecurityLog>> GetPagedAsync(
+        LogEventType? eventType, string? ipAddress, DateTime? from, DateTime? to,
+        int page, int pageSize, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`SecurityLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın ad alanı — bu satır `IActivityLogRepository`\'de YOK, çünkü oradaki eşdeğer filtre (`action`) bir `string`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: '`IActivityLogRepository` ile AYNI klasör/namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ISecurityLogRepository',
+            aciklama: 'Bölüm 3\'te `SecurityLogger`\'ın yazma amacıyla kullandığı arayüz, şimdi bir okuma metoduyla GENİŞLİYOR — `IActivityLogRepository` ile TAM aynı büyüme deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddAsync(SecurityLog log, CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 3\'ten değişmedi — `SecurityLogger`\'ın kullandığı yazma metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 3\'ten değişmedi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<PagedResult<SecurityLog>> GetPagedAsync(',
+            aciklama: 'YENİ metot — `GET /admin/logs/security`\'nin ihtiyaç duyacağı filtreleri karşılar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LogEventType? eventType, string? ipAddress, DateTime? from, DateTime? to,',
+            aciklama: 'DÖRT filtre (Activity\'nin BEŞİNE karşı — `SecurityLog`\'da `EntityType`\'ın karşılığı YOK) — TEK yapısal fark `eventType`\'ın bir `string?` DEĞİL `LogEventType?` (nullable enum) olması; implementasyondaki `Where` koşulu (`l.EventType == eventType`) AYNI kalıyor, EF Core enum karşılaştırmasını OTOMATİK ele alıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default);',
+            aciklama: '`IActivityLogRepository` ile BİREBİR aynı sayfalama imzası.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IApplicationLogRepository.cs / ApplicationLogRepository.cs — Serbest Metin Arama',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Logging/IApplicationLogRepository.cs',
+        nedenBuKlasor: 'AYNI klasör — ama bu arayüz `AddAsync`/`SaveChangesAsync` İÇERMİYOR (aşağıdaki kavram slaytı).',
+        kod: `using WordLearner.Application.DTOs;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Application.Interfaces.Repositories.Logging;
+
+public interface IApplicationLogRepository
+{
+    Task<PagedResult<ApplicationLog>> GetPagedAsync(
+        string? level, DateTime? from, DateTime? to, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ApplicationLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: 'Diğer iki repository arayüzüyle AYNI klasör/namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IApplicationLogRepository',
+            aciklama: '`IActivityLogRepository`/`ISecurityLogRepository`\'nin AKSİNE, bu arayüzde `AddAsync`/`SaveChangesAsync` YOK — YALNIZCA okuma.',
+            neden: 'Bölüm 2\'de kurulan Serilog MSSqlServer sink `ApplicationLogs`\'a KENDİ ADO.NET yazma yolundan, `WordLearnerDbContext`/repository katmanının HİÇ ÜZERİNDEN GEÇMEDEN yazıyor — bu tabloya UYGULAMA KODUNUN yazma ihtiyacı YOK, yalnızca admin panelin OKUMA ihtiyacı var.',
+            olmasaydi: 'Bir `AddAsync` metodu buraya eklenseydi, o metodun ASLA çağrılmayan, ölü bir kod parçası olarak kalması GÜÇLÜ bir ihtimaldi — sözleşme, GERÇEKTEN ihtiyaç duyulan davranışı yansıtmayan yanıltıcı bir arayüz sunardı.'
+          },
+          {
+            satir: 'Task<PagedResult<ApplicationLog>> GetPagedAsync(',
+            aciklama: 'Bu arayüzün TEK metodu — diğer iki repository\'nin AKSİNE bir yazma metoduyla BİRLİKTE değil, TEK BAŞINA.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? level, DateTime? from, DateTime? to, string? search,',
+            aciklama: 'DÖRT filtre — `search` DİĞER İKİ repository\'de YOK, `ApplicationLogs.Message` üzerinde serbest metin arama (aşağıdaki implementasyonda `Contains` ile) yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default);',
+            aciklama: 'Diğer iki repository ile BİREBİR aynı sayfalama imzası.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplicationLogRepository.cs — Contains ile Arama',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Logging/ApplicationLogRepository.cs',
+        nedenBuKlasor: '`ActivityLogRepository`/`SecurityLogRepository` ile AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Logging;
+
+public class ApplicationLogRepository : IApplicationLogRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public ApplicationLogRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<PagedResult<ApplicationLog>> GetPagedAsync(
+        string? level, DateTime? from, DateTime? to, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.ApplicationLogs.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(level)) query = query.Where(l => l.Level == level);
+        if (from is not null) query = query.Where(l => l.TimeStamp >= from);
+        if (to is not null) query = query.Where(l => l.TimeStamp <= to);
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(l => l.Message.Contains(search));
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(l => l.TimeStamp)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<ApplicationLog> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`AsQueryable`/`CountAsync`/`ToListAsync`/`Contains` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: 'İmplemente edilecek `IApplicationLogRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ApplicationLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Logging;',
+            aciklama: 'Diğer iki repository implementasyonuyla AYNI klasör/namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ApplicationLogRepository : IApplicationLogRepository',
+            aciklama: 'Bu bölümde İLK kez yazılan sınıf — diğer ikisinin AKSİNE önceki bir bölümde yazma sorumluluğu YOKTU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: '`ActivityLogRepository`/`SecurityLogRepository` ile AYNI TEK bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ApplicationLogRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Standart constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<PagedResult<ApplicationLog>> GetPagedAsync(',
+            aciklama: 'Arayüzün TEK metodunun implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? level, DateTime? from, DateTime? to, string? search,',
+            aciklama: 'Dört filtre parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default)',
+            aciklama: 'Sayfalama parametreleri ve iptal token\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var query = _context.ApplicationLogs.AsQueryable();',
+            aciklama: 'Diğer iki repository ile AYNI başlangıç — Bölüm 1\'in `DbSet<ApplicationLog>`\'undan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(level)) query = query.Where(l => l.Level == level);',
+            aciklama: '"Sadece Error" gibi seviye filtresi — Bölüm 1\'in `IX_ApplicationLogs_Level` index\'ini kullanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (from is not null) query = query.Where(l => l.TimeStamp >= from);',
+            aciklama: 'Diğer iki repository\'nin `CreatedAt` filtresiyle AYNI mantık — buradaki sütun adı `TimeStamp` (Bölüm 1\'in kavram slaytı: Serilog sink\'inin KENDİ sabit sütun adı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (to is not null) query = query.Where(l => l.TimeStamp <= to);',
+            aciklama: 'Aynı, aralığın SONU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(search)) query = query.Where(l => l.Message.Contains(search));',
+            aciklama: 'Bu repository\'ye ÖZGÜ dördüncü filtre — `Message` sütununda ALT DİZE arama; EF Core bunu SQL Server\'da bir `LIKE \'%...%\'` sorgusuna ÇEVİRİR.',
+            neden: '`ApplicationLogs.Message` serbest metin (hata mesajları, istek özetleri) taşıdığı için `==` eşitliği ANLAMSIZ olurdu — bir geliştirici "connection" geçen TÜM logları görmek ister, "connection" ile TAM eşleşen bir mesaj değil.',
+            olmasaydi: 'Bu filtre olmasaydı, admin panel `ApplicationLogs` içinde belirli bir hata metnini ARAMANIN tek yolu olarak TÜM logları çekip İSTEMCİ tarafında (tarayıcıda) filtrelemek ZORUNDA kalırdı — hem `PagedResult`\'ın TÜM amacını (sunucu tarafı sayfalama) BOŞA ÇIKARIRDI hem binlerce satırı ağdan geçirirdi.'
+          },
+          {
+            satir: 'var totalCount = await query.CountAsync(cancellationToken);',
+            aciklama: '`ActivityLogRepository` ile AYNI gerekçe — filtrelerden SONRA, sayfalamadan ÖNCE alınan toplam satır sayısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var items = await query',
+            aciklama: 'Asıl SAYFA verisini getiren sorgu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OrderByDescending(l => l.TimeStamp)',
+            aciklama: '`CreatedAt` yerine `TimeStamp` üzerinden azalan sıralama — Bölüm 1\'in `IX_ApplicationLogs_TimeStamp` index\'ini KULLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Skip((page - 1) * pageSize)',
+            aciklama: '`ActivityLogRepository` ile AYNI sayfa atlama formülü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Take(pageSize)',
+            aciklama: 'Yalnızca istenen sayfa boyutu kadar satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToListAsync(cancellationToken);',
+            aciklama: 'Sorguyu çalıştırıp sonuçları listeye MATERYALİZE eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new PagedResult<ApplicationLog> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };',
+            aciklama: 'Diğer iki repository ile AYNI paketleme deseni.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Infrastructure/DependencyInjection.cs — Üçüncü Log Repository Kaydı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        neden: 'Bölüm 3\'te iki yazma-amaçlı repository ile genişleyen bu dosyaya, salt-okunur `IApplicationLogRepository` kaydı eklendi.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Application.Interfaces.Repositories.Logging;
+ using WordLearner.Infrastructure.Data;
+ using WordLearner.Infrastructure.Repositories;
+ using WordLearner.Infrastructure.Repositories.Auth;
+ using WordLearner.Infrastructure.Repositories.Logging;
+
+ namespace WordLearner.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<WordLearnerDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
++        services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();',
+            aciklama: 'Diğer TÜM repository kayıtlarıyla AYNI `AddScoped` ömrü.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLogRepositoryTests.cs — Filtre + Sayfalama Doğrulaması',
+        dosyaYolu: 'backend/WordLearner.Tests/Repositories/ActivityLogRepositoryTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/Repositories/` — bu testler MOCK KULLANMAZ, A-02\'nin `RepositoryTests.cs`\'iyle AYNI `TestDbContext` + EF Core InMemory sağlayıcısı ÜZERİNDEN gerçek LINQ sorgularını çalıştırır (bir repository\'nin `Where`/`Skip`/`Take` mantığı MOCK\'lanarak test EDİLEMEZ, çünkü test edilen ŞEY tam olarak o sorgu mantığının kendisi).',
+        kod: `using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Infrastructure.Repositories.Logging;
+
+namespace WordLearner.Tests.Repositories;
+
+public class ActivityLogRepositoryTests
+{
+    private static TestDbContext CreateContext() =>
+        new(new DbContextOptionsBuilder<TestDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+
+    [Fact]
+    public async Task GetPagedAsync_UserIdFilterProvided_ReturnsOnlyThatUsersLogs()
+    {
+        // ARRANGE
+        await using var context = CreateContext();
+        context.ActivityLogs.AddRange(
+            new ActivityLog { UserId = 1, Action = "LOGIN", CreatedAt = DateTime.UtcNow },
+            new ActivityLog { UserId = 2, Action = "LOGIN", CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        var repository = new ActivityLogRepository(context);
+
+        // ACT
+        var result = await repository.GetPagedAsync(userId: 1, action: null, entityType: null, from: null, to: null, page: 1, pageSize: 10);
+
+        // ASSERT
+        result.Items.Should().ContainSingle().Which.UserId.Should().Be(1);
+        result.TotalCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_MoreRowsThanPageSize_ReturnsRequestedPageOrderedByNewestFirst()
+    {
+        // ARRANGE — üç satır, en yeniden en eskiye CreatedAt farklı
+        await using var context = CreateContext();
+        var now = DateTime.UtcNow;
+        context.ActivityLogs.AddRange(
+            new ActivityLog { Action = "A", CreatedAt = now.AddMinutes(-2) },
+            new ActivityLog { Action = "B", CreatedAt = now.AddMinutes(-1) },
+            new ActivityLog { Action = "C", CreatedAt = now });
+        await context.SaveChangesAsync();
+        var repository = new ActivityLogRepository(context);
+
+        // ACT — sayfa boyutu 2, toplam 3 satır olduğu için ikinci sayfada tek satır kalmalı
+        var firstPage = await repository.GetPagedAsync(null, null, null, null, null, page: 1, pageSize: 2);
+        var secondPage = await repository.GetPagedAsync(null, null, null, null, null, page: 2, pageSize: 2);
+
+        // ASSERT
+        firstPage.TotalCount.Should().Be(3);
+        firstPage.Items.Should().HaveCount(2);
+        firstPage.Items[0].Action.Should().Be("C"); // en yeni önce
+        firstPage.Items[1].Action.Should().Be("B");
+        secondPage.Items.Should().ContainSingle().Which.Action.Should().Be("A");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` sözdizimi için — bu dosya `ActivityLoggerTests`\'in (Bölüm 3) AKSİNE Moq DEĞİL, gerçek bir veritabanı (InMemory) kullandığı için doğrulamalar `.Verify` DEĞİL `.Should()` ile yapılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`UseInMemoryDatabase`/`DbContextOptionsBuilder` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ActivityLog` entity\'sinin ad alanı — test verisini DOĞRUDAN bu türden oluşturuyoruz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories.Logging;',
+            aciklama: 'Test edilen `ActivityLogRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Repositories;',
+            aciklama: '`RepositoryTests.cs`/`TestDbContext.cs` (A-02) ile AYNI klasör/namespace — `TestDbContext` bu dosyalar ARASINDA paylaşılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLogRepositoryTests',
+            aciklama: 'İki senaryo — (1) tek bir filtrenin ÇALIŞTIĞI, (2) sayfalamanın+sıralamanın DOĞRU olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static TestDbContext CreateContext() =>',
+            aciklama: '`RepositoryTests.cs`\'teki (A-02) BİREBİR aynı factory metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new(new DbContextOptionsBuilder<TestDbContext>()',
+            aciklama: 'EF Core\'un test amaçlı InMemory sağlayıcısını yapılandıran builder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.UseInMemoryDatabase(Guid.NewGuid().ToString())',
+            aciklama: 'HER test çalıştırmasında BENZERSİZ bir veritabanı adı — testler BİRBİRİNİN verisini GÖRMEZ, paralel çalışabilirler.',
+            neden: 'Sabit bir veritabanı adı kullanılsaydı, `ActivityLogRepositoryTests` içindeki İKİ test AYNI (paylaşılan) InMemory veritabanına yazardı — bir testin eklediği satırlar DİĞER testin `TotalCount` beklentisini BOZARDI.',
+            olmasaydi: null
+          },
+          {
+            satir: '.Options);',
+            aciklama: 'Builder\'ı `DbContextOptions<TestDbContext>`\'e dönüştürür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'Tek senaryolu test işareti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task GetPagedAsync_UserIdFilterProvided_ReturnsOnlyThatUsersLogs()',
+            aciklama: 'Senaryo 1 — `userId` filtresi VERİLDİĞİNDE yalnızca o kullanıcının satırlarının DÖNDÜĞÜ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await using var context = CreateContext();',
+            aciklama: 'Her test KENDİ izole context\'ini oluşturur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ActivityLog { UserId = 1, Action = "LOGIN", CreatedAt = DateTime.UtcNow },',
+            aciklama: 'ARANACAK satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ActivityLog { UserId = 2, Action = "LOGIN", CreatedAt = DateTime.UtcNow });',
+            aciklama: 'ELENMESİ GEREKEN satır — filtre YANLIŞ çalışsaydı (ör. `Where` hiç eklenmeseydi) bu satır da SONUÇTA görünürdü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await context.SaveChangesAsync();',
+            aciklama: 'Test verisini InMemory veritabanına YAZAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var repository = new ActivityLogRepository(context);',
+            aciklama: 'Test edilen nesne — GERÇEK implementasyon, mock DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await repository.GetPagedAsync(userId: 1, action: null, entityType: null, from: null, to: null, page: 1, pageSize: 10);',
+            aciklama: 'ACT — yalnızca `userId` doldurulmuş, geri kalan DÖRT filtre `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Items.Should().ContainSingle().Which.UserId.Should().Be(1);',
+            aciklama: 'BU SENARYONUN ASIL doğrulaması — dönen TEK satırın, `UserId=2` OLAN satır DEĞİL, `UserId=1` olan satır OLDUĞU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.TotalCount.Should().Be(1);',
+            aciklama: '`TotalCount`\'un FİLTRELENMİŞ (2 DEĞİL 1) sayıyı yansıttığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task GetPagedAsync_MoreRowsThanPageSize_ReturnsRequestedPageOrderedByNewestFirst()',
+            aciklama: 'Senaryo 2 — sayfalamanın (`Skip`/`Take`) VE sıralamanın (`OrderByDescending`) BİRLİKTE doğru çalıştığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var now = DateTime.UtcNow;',
+            aciklama: 'Üç satırın CreatedAt\'ini BİRBİRİNDEN farklı, BİLİNEN bir referans noktasına göre kurmak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.ActivityLogs.AddRange(',
+            aciklama: 'Bu dosyada İKİ kez geçen bir çağrı — ilk testte İKİ farklı kullanıcıya ait log (filtrenin ayırt edebildiğini göstermek için), bu testte ÜÇ farklı zamanlı log (sayfalama+sıralamayı sınamak için) toplu olarak ekliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ActivityLog { Action = "A", CreatedAt = now.AddMinutes(-2) },',
+            aciklama: 'EN ESKİ satır — beklenen sırada EN SONDA (ikinci sayfada) çıkmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ActivityLog { Action = "B", CreatedAt = now.AddMinutes(-1) },',
+            aciklama: 'ORTA satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new ActivityLog { Action = "C", CreatedAt = now });',
+            aciklama: 'EN YENİ satır — beklenen sırada İLK (birinci sayfanın İLK elemanı) çıkmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var firstPage = await repository.GetPagedAsync(null, null, null, null, null, page: 1, pageSize: 2);',
+            aciklama: 'ACT — filtresiz, 1. sayfa, boyut 2.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var secondPage = await repository.GetPagedAsync(null, null, null, null, null, page: 2, pageSize: 2);',
+            aciklama: 'ACT — AYNI filtresiz sorgu, 2. sayfa.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'firstPage.TotalCount.Should().Be(3);',
+            aciklama: '`TotalCount`\'un sayfalamadan BAĞIMSIZ olarak TOPLAM (3) satırı yansıttığını doğrular — 2 DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'firstPage.Items.Should().HaveCount(2);',
+            aciklama: '`Take(2)`\'nin GERÇEKTEN yalnızca iki satır DÖNDÜRDÜĞÜNÜ doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'firstPage.Items[0].Action.Should().Be("C"); // en yeni önce',
+            aciklama: 'BU SENARYONUN ASIL doğrulamalarından biri — `OrderByDescending`\'in GERÇEKTEN en YENİ satırı (`C`) İLK sıraya KOYDUĞU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'firstPage.Items[1].Action.Should().Be("B");',
+            aciklama: 'İkinci sıradaki satırın ORTA yaştaki (`B`) satır OLDUĞU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'secondPage.Items.Should().ContainSingle().Which.Action.Should().Be("A");',
+            aciklama: 'BU SENARYONUN ASIL doğrulamalarından diğeri — `Skip(2)`\'nin GERÇEKTEN ikinci sayfada YALNIZCA en ESKİ satırı (`A`) BIRAKTIĞI.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Diğer İki Repository\'nin Testleri — Aynı Desen',
+        aciklama: '`SecurityLogRepositoryTests.cs` (eventType filtresi + tarih aralığının dışında kalan satırların ELENDİĞİ) ve `ApplicationLogRepositoryTests.cs` (search alt-dize eşleşmesi + level filtresi) için de AYNI iki-senaryolu test ailesi yazıldı.',
+        neden: 'Doğrulama deseni (izole `TestDbContext` + GERÇEK repository nesnesi + `.Should()`) yukarıdaki `ActivityLogRepositoryTests.cs`\'i BİREBİR izliyor — TEK değişen şey hangi ALANIN filtrelendiği; aynı deseni ayrı slaytlarla TEKRAR etmek, okuyucuya YENİ bir bilgi vermeden dosya sayısını ikiye katlardı.',
+        olmasaydi: 'Her repository\'nin testi ayrı ayrı, TÜM detaylarıyla anlatılsaydı, üç neredeyse ÖZDEŞ test dosyası ÜÇ kez satır satır açıklanırdı — bu, "temsili bir kod ailesi TEK slaytla öğretilir" ilkesinin tam karşılığı bir durum.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'IQueryable<T>', tanim: 'Henüz veritabanına GÖNDERİLMEMİŞ, üzerine `Where`/`OrderBy` gibi operatörler EKLENEBİLEN bir LINQ sorgu nesnesi — `ToListAsync`/`CountAsync` çağrılana kadar veritabanına HİÇ gidilmez.' },
+          { terim: 'EF Core InMemory sağlayıcı', tanim: 'Gerçek bir SQL Server OLMADAN, bellekte çalışan bir DbContext test sağlayıcısı — repository\'nin LINQ sorgu mantığını GERÇEKTEN çalıştırarak test etmeyi sağlar, mock repository ile YAPILAMAZ.' },
+          { terim: 'Contains (LINQ)', tanim: 'Bir string sütununda ALT DİZE arama yapan LINQ metodu — SQL Server\'da bir `LIKE \'%...%\'` sorgusuna çevrilir.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'PagedResult<T> — projenin ilk sayfalama zarfı, Items/TotalCount/Page/PageSize ile hem sayfa verisini hem meta-bilgiyi taşır; YAGNI ilkesiyle onu fiilen kullanan ilk kod (bu bölüm) yazılırken açıldı.',
+          'IActivityLogRepository/ISecurityLogRepository, Bölüm 3\'ün yazma-amaçlı sözleşmelerine GetPagedAsync ile genişledi; IApplicationLogRepository ise YALNIZCA okuma (Serilog sink DbContext üzerinden yazmadığı için AddAsync hiç yok).',
+          'Üç repository de AYNI desen: koşullu Where filtreleri → CountAsync (toplam) → OrderByDescending + Skip/Take (sayfa) → ToListAsync.',
+          'ApplicationLogRepository, diğer ikisinden farklı olarak Message üzerinde Contains ile serbest metin araması yapıyor.',
+          '6 yeni repository testi (109/109 tüm paket) GERÇEK bir InMemory veritabanına karşı çalışıyor — mock ile test EDİLEMEYECEK filtre/sıralama/sayfalama mantığını doğruluyor.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

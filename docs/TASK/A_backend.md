@@ -254,8 +254,8 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       — yazma-amaçlı `IActivityLogRepository`/`ISecurityLogRepository` de bu adımda açıldı (okuma/sayfalama
       bir sonraki adımda eklenecek)
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/03_activity-security-logger.html`
-- [ ] `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` (sayfalı, filtreli — `PagedResult<T>`'in ilk gerçek tüketicisi)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` (sayfalı, filtreli — `PagedResult<T>`'in ilk gerçek tüketicisi)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/04_paged-repository.html`
 - [ ] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/
       QrLoginDenied + PasswordReset/AccountDeletion başarı olayları — `SecurityLog.Detail` serbest
       metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür)
