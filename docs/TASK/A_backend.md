@@ -249,9 +249,11 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [x] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLogs` (konsol+dosya+DB), `RequestResponseLoggingMiddleware`
       — canlı doğrulama yapıldı (`dotnet run` + `/health` isteği sonrası tabloda gerçek satırlar görüldü)
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/02_serilog-mssql-sink.html`
-- [ ] `IActivityLogger`/`ActivityLogger` (OldValue/NewValue JSON diff), `ISecurityLogger`/`SecurityLogger`
+- [x] `IActivityLogger`/`ActivityLogger` (OldValue/NewValue JSON diff), `ISecurityLogger`/`SecurityLogger`
       (e-posta `IPasswordService.HashToken` ile hash'lenip `EmailHash`'e yazılır — ham e-posta ASLA loglanmaz)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      — yazma-amaçlı `IActivityLogRepository`/`ISecurityLogRepository` de bu adımda açıldı (okuma/sayfalama
+      bir sonraki adımda eklenecek)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/03_activity-security-logger.html`
 - [ ] `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` (sayfalı, filtreli — `PagedResult<T>`'in ilk gerçek tüketicisi)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/

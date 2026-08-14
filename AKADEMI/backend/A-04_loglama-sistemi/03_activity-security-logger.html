@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-04 — Loglama Sistemi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'activity-security-logger',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '02_serilog-mssql-sink.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'IActivityLogger ve ISecurityLogger: Handler\'ların Loglama Kapısı',
+        altBaslik: 'Hiçbir Handler doğrudan ActivityLog/SecurityLog yazmaz — ikisi arasına, hassas alanları temizleyen ve e-postayı hash\'leyen iki dar servis giriyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Handler\'lar Doğrudan Repository\'yi Değil, Bir Logger Arayüzünü Çağırıyor?',
+        aciklama: 'Bir Handler\'ın "bir log satırı yaz" isteği ile "bu satırın veritabanına NASIL yazılacağı" arasına `IActivityLogger`/`ISecurityLogger` giriyor. Bu servisler `OldValue`/`NewValue`\'yu JSON\'a çeviriyor (`ActivityLogger`) ve e-postayı SHA-256 ile hash\'leyip `EmailHash`\'e yazıyor (`SecurityLogger`) — Handler bu DÖNÜŞÜM detaylarını hiç BİLMİYOR.',
+        neden: 'Bu dönüşüm mantığı (JSON serileştirme, e-posta hash\'leme) `IActivityLogRepository`/`ISecurityLogRepository`\'ye (Bölüm 4) KONSAYDI, repository "sadece veritabanına yaz" sorumluluğunun ÖTESİNE geçerdi; Handler\'a KONSAYDI, 18 Auth Handler\'ının (A-03.2\'ye retrofit edilecek olanlar dahil) HER biri AYNI `JsonSerializer.Serialize`/`HashToken` çağrısını TEKRAR ederdi.',
+        olmasaydi: 'Bu ara katman olmasaydı, ör. bir Handler yanlışlıkla ham e-postayı `SecurityLog.Detail`\'e veya `PasswordHash` alanını `ActivityLog.OldValue`\'ya YAZABİLİRDİ — hassas veri sızıntısı riski TEK bir merkezi noktada (logger) değil, HER çağrı noktasında ayrı ayrı ÖNLENMESİ gereken bir sorumluluk olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IActivityLogger.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/IActivityLogger.cs',
+        nedenBuKlasor: '`Application/Interfaces/Services/` — `IPasswordService`/`IAdminSeedService` (Bölüm 3, A-03.2) ile AYNI, paylaşılan servis arayüzleri klasörü.',
+        kod: `namespace WordLearner.Application.Interfaces.Services;
+
+public interface IActivityLogger
+{
+    Task LogAsync(
+        int? userId,
+        string? actorRole,
+        string action,
+        string? entityType = null,
+        int? entityId = null,
+        object? oldValue = null,
+        object? newValue = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IActivityLogger',
+            aciklama: 'Tek metotlu, dar bir sözleşme — Handler\'lar `ActivityLogger`\'ın JSON serileştirme detaylarını hiç bilmeden bu arayüzü DI\'dan çözer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task LogAsync(',
+            aciklama: 'Tek metot — `ActivityLogs` tablosunun (Bölüm 1) TÜM alanlarına birebir karşılık gelen parametreler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId,',
+            aciklama: '`ActivityLog.UserId` — anonim bir eylemse `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? actorRole,',
+            aciklama: '`ActivityLog.ActorRole` — çağıran Handler, kendi elindeki `User.Role`\'ü (kayıt anındaki değeriyle) buraya geçirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string action,',
+            aciklama: '`ActivityLog.Action` — tek ZORUNLU parametre (diğerleri `null` varsayılanlı OPSİYONEL), LOGIN/CREATE_WORD gibi eylem kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? entityType = null,',
+            aciklama: '`ActivityLog.EntityType` — bir entity\'ye bağlı olmayan eylemlerde (LOGIN gibi) VARSAYILAN `null` bırakılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? entityId = null,',
+            aciklama: '`ActivityLog.EntityId`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'object? oldValue = null,',
+            aciklama: 'Bir `string` DEĞİL, herhangi bir C# nesnesi — çağıran Handler HAM bir entity yerine, hassas alanları (şifre/hash) İÇERMEYEN küçük bir DTO/anonim nesne geçirir, JSON\'a çevirme işini bu servis yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'object? newValue = null,',
+            aciklama: 'Aynı gerekçe, değişiklik SONRASI hâl için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ipAddress = null,',
+            aciklama: '`ActivityLog.IpAddress` — `ApiControllerBase.ClientIpAddress` (A-03) ile AYNI kaynaktan, Controller→Command→Handler zincirinden geçirilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? userAgent = null,',
+            aciklama: '`ActivityLog.UserAgent` — `ApiControllerBase.DeviceInfo` ile AYNI kaynak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CancellationToken cancellationToken = default);',
+            aciklama: 'Projenin her I/O metodunda zorunlu `CancellationToken` deseni.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLogger.cs — JSON Diff İnşası',
+        dosyaYolu: 'backend/WordLearner.Application/Services/ActivityLogger.cs',
+        nedenBuKlasor: '`Application/Services/` — `AdminSeedService` (Bölüm 3, A-03.2) ile AYNI flat klasör.',
+        kod: `using System.Text.Json;
+using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Application.Services;
+
+public class ActivityLogger : IActivityLogger
+{
+    private readonly IActivityLogRepository _activityLogRepository;
+
+    public ActivityLogger(IActivityLogRepository activityLogRepository) => _activityLogRepository = activityLogRepository;
+
+    public async Task LogAsync(
+        int? userId,
+        string? actorRole,
+        string action,
+        string? entityType = null,
+        int? entityId = null,
+        object? oldValue = null,
+        object? newValue = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        var log = new ActivityLog
+        {
+            UserId = userId,
+            ActorRole = actorRole,
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            OldValue = oldValue is null ? null : JsonSerializer.Serialize(oldValue),
+            NewValue = newValue is null ? null : JsonSerializer.Serialize(newValue),
+            IpAddress = ipAddress,
+            UserAgent = userAgent
+        };
+
+        await _activityLogRepository.AddAsync(log, cancellationToken);
+        await _activityLogRepository.SaveChangesAsync(cancellationToken);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Text.Json;',
+            aciklama: '`JsonSerializer.Serialize` için gerekli — .NET\'in yerleşik JSON serileştiricisi, ek bir NuGet paketi GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: '`IActivityLogRepository`\'nin (Bölüm 4) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `IActivityLogger`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ActivityLog` entity\'sinin (Bölüm 1) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLogger : IActivityLogger',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogRepository _activityLogRepository;',
+            aciklama: 'TEK bağımlılık — bu servis başka HİÇBİR şeye (ör. `IPasswordService`) ihtiyaç DUYMUYOR, `SecurityLogger`\'ın (aşağıda) AKSİNE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ActivityLogger(IActivityLogRepository activityLogRepository) => _activityLogRepository = activityLogRepository;',
+            aciklama: 'Tek satırlık expression-bodied constructor — tek parametreli, basit atamalarda projede TEKRARLANAN bir kısaltma (ör. `UserRepository` constructor\'ı, Bölüm 8).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync(',
+            aciklama: 'Arayüzün implementasyonu — imza BİREBİR aynı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId,',
+            aciklama: 'Aşağıda `log.UserId`\'ye atanacak — eylemi yapan kullanıcının ID\'si, anonim bir eylemse (henüz giriş yapmamış biri) `null` gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? actorRole,',
+            aciklama: 'Aşağıda `log.ActorRole`\'e atanacak — çağıran Handler\'ın elindeki kullanıcının O ANKİ rolü ("User"/"Admin"), veritabanına bir JOIN ile SONRADAN bakılmıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string action,',
+            aciklama: 'Aşağıda `log.Action`\'a atanacak — TEK zorunlu parametre, hangi eylemin loglandığını (LOGIN, CREATE_WORD…) belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? entityType = null,',
+            aciklama: 'Aşağıda `log.EntityType`\'a atanacak — eylem bir entity\'ye (Word, UserCard…) bağlıysa dolu, LOGIN gibi bağlı olmayan eylemlerde `null` bırakılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? entityId = null,',
+            aciklama: 'Aşağıda `log.EntityId`\'ye atanacak — etkilenen kaydın ID\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'object? oldValue = null,',
+            aciklama: 'Çağıran Handler\'ın geçirdiği HAM C# nesnesi — bu satırın kendisi hiçbir şey YAPMIYOR, asıl dönüşüm (JSON\'a çevirme) aşağıdaki `OldValue = ...` satırında oluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'object? newValue = null,',
+            aciklama: 'Aynı, değişiklik SONRASI hâl için HAM nesne.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ipAddress = null,',
+            aciklama: 'Aşağıda `log.IpAddress`\'e atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? userAgent = null,',
+            aciklama: 'Aşağıda `log.UserAgent`\'a atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CancellationToken cancellationToken = default)',
+            aciklama: 'Aşağıdaki `AddAsync`/`SaveChangesAsync` çağrılarına iletilecek — istek iptal edilirse veritabanı yazma işlemi de YARIDA kesilebilsin diye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var log = new ActivityLog',
+            aciklama: 'Nesne başlatıcı sözdizimiyle entity\'yi TEK seferde inşa eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserId = userId,',
+            aciklama: 'Parametreden entity alanına DOĞRUDAN aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ActorRole = actorRole,',
+            aciklama: 'Aynı, doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Action = action,',
+            aciklama: 'Aynı, doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EntityType = entityType,',
+            aciklama: 'Aynı, doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EntityId = entityId,',
+            aciklama: 'Aynı, doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'OldValue = oldValue is null ? null : JsonSerializer.Serialize(oldValue),',
+            aciklama: 'Bu servisin TEK dönüşüm sorumluluğu — bir C# nesnesini `ActivityLogs.OldValue` (NVARCHAR(MAX)) sütununa yazılabilecek bir JSON metnine çevirir.',
+            neden: '`oldValue is null` kontrolü OLMADAN `JsonSerializer.Serialize(null)` çağrılsaydı sonuç `"null"` (dört karakterlik bir string) OLURDU — bu, "hiç değer verilmedi" (`NULL` sütun) ile "değer LİTERAL olarak null" (dört karakterlik bir metin) arasındaki anlamsal farkı SİLERDİ.',
+            olmasaydi: null
+          },
+          {
+            satir: 'NewValue = newValue is null ? null : JsonSerializer.Serialize(newValue),',
+            aciklama: 'Aynı dönüşüm, değişiklik SONRASI hâl için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IpAddress = ipAddress,',
+            aciklama: 'Aynı, doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserAgent = userAgent',
+            aciklama: 'Aynı, doğrudan aktarım — `CreatedAt` YOK, EF config\'in (Bölüm 1) `GETUTCDATE()` varsayılanı bunu veritabanı SEVİYESİNDE dolduracak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogRepository.AddAsync(log, cancellationToken);',
+            aciklama: 'EF Core change tracker\'a ekler — `IUserRepository`/`IQrLoginSessionRepository` (Bölüm 8, 15) ile AYNI iki-aşamalı desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Asıl `INSERT`\'i veritabanına gönderir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ISecurityLogger.cs — Sözleşme',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Services/ISecurityLogger.cs',
+        nedenBuKlasor: '`Application/Interfaces/Services/` — `IActivityLogger` ile AYNI klasör.',
+        kod: `using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Application.Interfaces.Services;
+
+public interface ISecurityLogger
+{
+    Task LogAsync(
+        LogEventType eventType,
+        int? userId = null,
+        string? email = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        string? detail = null,
+        CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın (Bölüm 1) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ISecurityLogger',
+            aciklama: '`IActivityLogger` ile AYNI desen, farklı olay ailesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task LogAsync(',
+            aciklama: 'Tek metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LogEventType eventType,',
+            aciklama: 'TEK zorunlu parametre — `IActivityLogger.LogAsync`\'in AKSİNE (orada `action` bir `string`), burada tür GÜVENLİ bir enum (Bölüm 1\'in kavram slaytındaki gerekçe: derleme zamanı + CHECK constraint çift güvencesi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId = null,',
+            aciklama: '`SecurityLog.UserId` — kimliği doğrulanmamış bir denemede (LoginFailed gibi) `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? email = null,',
+            aciklama: 'HAM e-posta — `IActivityLogger`\'da OLMAYAN bir parametre, çünkü YALNIZCA `SecurityLog`\'un `EmailHash` alanı bu bilgiyi (hash\'lenmiş olarak) tutuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ipAddress = null,',
+            aciklama: '`SecurityLog.IpAddress`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? userAgent = null,',
+            aciklama: '`SecurityLog.UserAgent`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? detail = null,',
+            aciklama: '`SecurityLog.Detail` — serbest metin DEĞİL bir Code (Bölüm 1\'in kavram slaytı) — çağıran Handler bu alana ör. `"INVALID_CREDENTIALS"` gibi bir Code geçirir, admin panel bunu KENDİ `Accept-Language`\'ıyla okurken çözer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CancellationToken cancellationToken = default);',
+            aciklama: 'Zorunlu desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityLogger.cs — E-posta Hash\'leme',
+        dosyaYolu: 'backend/WordLearner.Application/Services/SecurityLogger.cs',
+        nedenBuKlasor: '`Application/Services/` — `ActivityLogger` ile AYNI klasör.',
+        kod: `using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Application.Services;
+
+public class SecurityLogger : ISecurityLogger
+{
+    private readonly ISecurityLogRepository _securityLogRepository;
+    private readonly IPasswordService _passwordService;
+
+    public SecurityLogger(ISecurityLogRepository securityLogRepository, IPasswordService passwordService)
+    {
+        _securityLogRepository = securityLogRepository;
+        _passwordService = passwordService;
+    }
+
+    public async Task LogAsync(
+        LogEventType eventType,
+        int? userId = null,
+        string? email = null,
+        string? ipAddress = null,
+        string? userAgent = null,
+        string? detail = null,
+        CancellationToken cancellationToken = default)
+    {
+        var log = new SecurityLog
+        {
+            EventType = eventType,
+            UserId = userId,
+            EmailHash = string.IsNullOrWhiteSpace(email) ? null : _passwordService.HashToken(email),
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            Detail = detail
+        };
+
+        await _securityLogRepository.AddAsync(log, cancellationToken);
+        await _securityLogRepository.SaveChangesAsync(cancellationToken);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: '`ISecurityLogRepository`\'nin (Bölüm 4) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Services;',
+            aciklama: 'İmplemente edilecek `ISecurityLogger` ve kullanılan `IPasswordService`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`SecurityLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Services;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class SecurityLogger : ISecurityLogger',
+            aciklama: 'Sözleşmeyi implemente eden somut sınıf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ISecurityLogRepository _securityLogRepository;',
+            aciklama: 'Kaydı YAZMAK için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IPasswordService _passwordService;',
+            aciklama: 'HAM e-postayı hash\'lemek için — `RegisterCommandHandler`\'ın (A-03) `HashToken` çağrısıyla AYNI servis, farklı bir amaçla (şifre değil e-posta) kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public SecurityLogger(ISecurityLogRepository securityLogRepository, IPasswordService passwordService)',
+            aciklama: 'İki bağımlılık — `ActivityLogger`\'ın (yukarıda) TEK bağımlılığından FARKLI, çünkü burada bir dönüşüm (hash\'leme) için EK bir servis gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_securityLogRepository = securityLogRepository;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_passwordService = passwordService;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync(',
+            aciklama: 'Arayüzün implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LogEventType eventType,',
+            aciklama: 'Aşağıda `log.EventType`\'a atanacak — TEK zorunlu parametre, hangi güvenlik olayının loglandığını (LoginFailed, TokenReplay…) belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? userId = null,',
+            aciklama: 'Aşağıda `log.UserId`\'ye atanacak — kimliği doğrulanmış bir denemeyse dolu, LoginFailed gibi kimliği henüz BİLİNMEYEN bir denemede `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? email = null,',
+            aciklama: 'HAM e-posta — bu satırın kendisi hiçbir şey YAPMIYOR, asıl dönüşüm (hash\'leme) aşağıdaki `EmailHash = ...` satırında oluyor; bu değişken `LogAsync` metodunun DIŞINA hiçbir zaman çıkmıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ipAddress = null,',
+            aciklama: 'Aşağıda `log.IpAddress`\'e atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? userAgent = null,',
+            aciklama: 'Aşağıda `log.UserAgent`\'a atanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? detail = null,',
+            aciklama: 'Aşağıda `log.Detail`\'e atanacak — serbest metin DEĞİL, admin panelin okuma anında KENDİ diline çözeceği bir Code.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CancellationToken cancellationToken = default)',
+            aciklama: 'Aşağıdaki `AddAsync`/`SaveChangesAsync` çağrılarına iletilecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var log = new SecurityLog',
+            aciklama: 'Nesne başlatıcı sözdizimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EventType = eventType,',
+            aciklama: 'Doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserId = userId,',
+            aciklama: 'Doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'EmailHash = string.IsNullOrWhiteSpace(email) ? null : _passwordService.HashToken(email),',
+            aciklama: 'Bu servisin TEK dönüşüm sorumluluğu — Bölüm 1\'in kavram slaytında verilen sözü burada TUTAR: ham `email` parametresi bu satırdan sonra bir daha hiç KULLANILMAZ/loglanmaz, yalnızca SHA-256 hash\'i entity\'ye yazılır.',
+            neden: '`IsNullOrWhiteSpace` kontrolü, e-postanın bilinmediği olaylarda (ör. `TokenReplay` — bir refresh token\'a bağlı, e-postaya değil) `HashToken(null)`\'ın bir `NullReferenceException` FIRLATMASINI önler.',
+            olmasaydi: 'Bu kontrol olmasaydı, e-posta parametresi verilmeden çağrılan HER `LogAsync` (ör. TokenReplay/RateLimitHit olayları) bir istisnayla ÇÖKERDİ — güvenlik logunun KENDİSİ, loglamaya çalıştığı olayı KAYDETMEDEN önce hata verirdi.'
+          },
+          {
+            satir: 'IpAddress = ipAddress,',
+            aciklama: 'Doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UserAgent = userAgent,',
+            aciklama: 'Doğrudan aktarım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Detail = detail',
+            aciklama: 'Doğrudan aktarım — bir Code, serbest metin DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _securityLogRepository.AddAsync(log, cancellationToken);',
+            aciklama: '`ActivityLogger` ile AYNI iki-aşamalı desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _securityLogRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Asıl `INSERT`\'i veritabanına gönderir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Infrastructure/DependencyInjection.cs — İki Yazma-Amaçlı Repository',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        neden: 'Bölüm 15\'te (`IQrLoginSessionRepository` ile) üçüncü repository kaydına ulaşan bu dosyaya, `ActivityLogger`/`SecurityLogger`\'ın ihtiyaç duyduğu iki YAZMA-amaçlı repository (Bölüm 4\'te sayfalı/filtreli OKUMA metotlarıyla genişleyecek) eklendi.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
++using WordLearner.Application.Interfaces.Repositories.Logging;
+ using WordLearner.Infrastructure.Data;
+ using WordLearner.Infrastructure.Repositories;
+ using WordLearner.Infrastructure.Repositories.Auth;
++using WordLearner.Infrastructure.Repositories.Logging;
+
+ namespace WordLearner.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<WordLearnerDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
++        services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
++        services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: 'İki yeni repository arayüzünün ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories.Logging;',
+            aciklama: 'İki yeni repository implementasyonunun ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IActivityLogRepository, ActivityLogRepository>();',
+            aciklama: 'Diğer TÜM repository kayıtlarıyla AYNI `AddScoped` ömrü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();',
+            aciklama: 'Aynı desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — İki Logger Kaydı',
+        dosyaYolu: 'backend/WordLearner.Application/DependencyInjection.cs',
+        neden: 'Bölüm 44\'te (`IAdminSeedService` ile) beşinci servis kaydına ulaşan bu dosyaya, iki logger kaydı eklendi.',
+        diff: ` using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Application.Services;
+
+ namespace WordLearner.Application;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+     {
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
+         services.AddScoped<IOtpService, OtpService>();
+         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+         services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20'de SmtpEmailService
+         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+         services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
+         services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
+         services.AddScoped<IAdminSeedService, AdminSeedService>();
++        services.AddScoped<IActivityLogger, ActivityLogger>();
++        services.AddScoped<ISecurityLogger, SecurityLogger>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IActivityLogger, ActivityLogger>();',
+            aciklama: 'Diğer TÜM servis kayıtlarıyla AYNI `AddScoped` ömrü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<ISecurityLogger, SecurityLogger>();',
+            aciklama: 'Aynı desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLoggerTests.cs — İki Senaryo',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/ActivityLoggerTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/Services/` — `IActivityLogRepository` MOCK\'lanıyor.',
+        kod: `using FluentAssertions;
+using Moq;
+using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Tests.Services;
+
+public class ActivityLoggerTests
+{
+    private readonly Mock<IActivityLogRepository> _activityLogRepository = new();
+
+    private ActivityLogger CreateLogger() => new(_activityLogRepository.Object);
+
+    [Fact]
+    public async Task LogAsync_NoOldOrNewValue_SavesLogWithNullDiffColumns()
+    {
+        // ARRANGE
+        var logger = CreateLogger();
+
+        // ACT
+        await logger.LogAsync(userId: 5, actorRole: "User", action: "LOGIN");
+
+        // ASSERT
+        _activityLogRepository.Verify(r => r.AddAsync(It.Is<ActivityLog>(l =>
+            l.UserId == 5 &&
+            l.ActorRole == "User" &&
+            l.Action == "LOGIN" &&
+            l.OldValue == null &&
+            l.NewValue == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _activityLogRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LogAsync_OldAndNewValueProvided_SerializesBothAsJson()
+    {
+        // ARRANGE — çağıran taraf hassas alanları (şifre/hash) zaten dışarıda bırakmış bir DTO geçirir
+        var logger = CreateLogger();
+
+        // ACT
+        await logger.LogAsync(
+            userId: 5,
+            actorRole: "Admin",
+            action: "UPDATE_WORD",
+            entityType: "Word",
+            entityId: 42,
+            oldValue: new { Text = "eski" },
+            newValue: new { Text = "yeni" });
+
+        // ASSERT
+        _activityLogRepository.Verify(r => r.AddAsync(It.Is<ActivityLog>(l =>
+            l.EntityType == "Word" &&
+            l.EntityId == 42 &&
+            l.OldValue == "{\\"Text\\":\\"eski\\"}" &&
+            l.NewValue == "{\\"Text\\":\\"yeni\\"}"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: 'Bu dosyada `.Verify(...)` (Moq) kullanılıyor, `.Should()` çağrılmasa da projenin diğer test dosyalarıyla TUTARLI referans.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Moq;',
+            aciklama: '`Mock<T>`/`It.Is<T>`/`It.IsAny<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: '`IActivityLogRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `ActivityLogger`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`ActivityLog` entity\'sinin ad alanı — `It.Is<ActivityLog>` predicate\'inde kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Test klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLoggerTests',
+            aciklama: 'İki senaryo — (1) diff alanları OLMADAN mutlu yol, (2) diff alanları VARKEN JSON\'a doğru serileştirilmesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<IActivityLogRepository> _activityLogRepository = new();',
+            aciklama: 'TEK mock — `ActivityLogger`\'ın TEK bağımlılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private ActivityLogger CreateLogger() => new(_activityLogRepository.Object);',
+            aciklama: 'Factory metodu — bu servis parametre almadığı (`ActivityLogger`\'ın kurucusu tek bağımlılık) için `AdminSeedServiceTests`\'in (Bölüm 44) factory\'sinden daha basit.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'Parametresiz, tek senaryolu test işareti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync_NoOldOrNewValue_SavesLogWithNullDiffColumns()',
+            aciklama: 'Senaryo 1 — `oldValue`/`newValue` HİÇ geçirilmedi (LOGIN gibi bir eylem).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var logger = CreateLogger();',
+            aciklama: 'Test edilen nesne.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await logger.LogAsync(userId: 5, actorRole: "User", action: "LOGIN");',
+            aciklama: 'ACT — isimlendirilmiş argümanlarla (named arguments), yalnızca ZORUNLU + ilgilenilen parametreler geçiriliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogRepository.Verify(r => r.AddAsync(It.Is<ActivityLog>(l =>',
+            aciklama: '`AddAsync`\'e geçilen entity\'nin ALANLARINI doğrulayan bir predicate.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.UserId == 5 &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.ActorRole == "User" &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.Action == "LOGIN" &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.OldValue == null &&',
+            aciklama: 'BU SENARYONUN ASIL doğrulaması — `oldValue` parametresi geçirilmediğinde sonucun `"null"` (string) DEĞİL, gerçek `null` olduğunu kanıtlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.NewValue == null),',
+            aciklama: 'Aynı doğrulama, `NewValue` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`AddAsync`\'in TAM OLARAK bir kez çağrıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`SaveChangesAsync`\'in de çağrıldığını doğrular — `AddAsync` TEK BAŞINA veriyi KALICI yapmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync_OldAndNewValueProvided_SerializesBothAsJson()',
+            aciklama: 'Senaryo 2 — diff alanları DOLU (bir UPDATE_WORD eylemi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await logger.LogAsync(',
+            aciklama: 'ACT — bu kez TÜM opsiyonel parametreler de geçiriliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'userId: 5,',
+            aciklama: 'İlk testle (senaryo 1) AYNI kullanıcı ID\'si — bu senaryonun odağı kullanıcı DEĞİL, diff alanlarının serileştirilmesi olduğu için farklı bir değer seçmeye gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'actorRole: "Admin",',
+            aciklama: 'İlk senaryodaki "User" yerine bilinçli olarak "Admin" seçildi — bu eylemi (bir kelimeyi güncellemek) gerçekte YALNIZCA bir Admin\'in yapabileceği senaryoyla TUTARLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'action: "UPDATE_WORD",',
+            aciklama: 'İlk senaryonun "LOGIN"inden FARKLI, bir entity\'ye bağlı bir eylem — hemen altındaki `entityType`/`entityId`/`oldValue`/`newValue` parametrelerinin ANLAMLI olabilmesi için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entityType: "Word",',
+            aciklama: 'Bir entity\'ye BAĞLI eylem.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'entityId: 42,',
+            aciklama: 'Aynı, entity ID.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: new { Text = "eski" },',
+            aciklama: 'Anonim tür — gerçek bir Handler\'ın hassas alanları ÇIKARTILMIŞ küçük bir DTO geçireceği senaryoyu TEMSİL ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'newValue: new { Text = "yeni" });',
+            aciklama: 'Aynı, değişiklik SONRASI hâl.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EntityType == "Word" &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EntityId == 42 &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.OldValue == "{\\"Text\\":\\"eski\\"}" &&',
+            aciklama: 'BU SENARYONUN ASIL doğrulaması — anonim nesnenin GERÇEKTEN geçerli bir JSON metnine SERİLEŞTİRİLDİĞİNİ (mock DEĞİL, `System.Text.Json`\'ın gerçek çıktısını) kanıtlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.NewValue == "{\\"Text\\":\\"yeni\\"}"),',
+            aciklama: 'Aynı doğrulama, `NewValue` için.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityLoggerTests.cs — İki Senaryo',
+        dosyaYolu: 'backend/WordLearner.Tests/Services/SecurityLoggerTests.cs',
+        nedenBuKlasor: 'Test klasör kuralı `Tests/Services/` — `ISecurityLogRepository` MOCK\'lanır, `IPasswordService` GERÇEK verilir (AdminSeedServiceTests, Bölüm 44 ile AYNI gerekçe: hash\'lemenin GERÇEKTEN çalıştığını kanıtlamak için).',
+        kod: `using Moq;
+using WordLearner.Application.Interfaces.Repositories.Logging;
+using WordLearner.Application.Services;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Tests.Services;
+
+public class SecurityLoggerTests
+{
+    private readonly Mock<ISecurityLogRepository> _securityLogRepository = new();
+
+    private SecurityLogger CreateLogger() => new(_securityLogRepository.Object, new PasswordService());
+
+    [Fact]
+    public async Task LogAsync_EmailProvided_StoresHashNotRawEmail()
+    {
+        // ARRANGE
+        var logger = CreateLogger();
+
+        // ACT
+        await logger.LogAsync(LogEventType.LoginFailed, email: "user@example.com", ipAddress: "1.2.3.4");
+
+        // ASSERT — ham e-posta hiçbir zaman EmailHash'e yazılmaz, SHA-256 → Base64 44 karakter
+        _securityLogRepository.Verify(r => r.AddAsync(It.Is<SecurityLog>(l =>
+            l.EventType == LogEventType.LoginFailed &&
+            l.EmailHash != "user@example.com" &&
+            l.EmailHash != null && l.EmailHash.Length == 44 &&
+            l.IpAddress == "1.2.3.4"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _securityLogRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LogAsync_NoEmailProvided_LeavesEmailHashNull()
+    {
+        // ARRANGE — ör. TokenReplay gibi e-postanın hiç bilinmediği bir olay
+        var logger = CreateLogger();
+
+        // ACT
+        await logger.LogAsync(LogEventType.TokenReplay, userId: 7);
+
+        // ASSERT
+        _securityLogRepository.Verify(r => r.AddAsync(It.Is<SecurityLog>(l =>
+            l.UserId == 7 &&
+            l.EmailHash == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Moq;',
+            aciklama: '`Mock<T>`/`It.Is<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Logging;',
+            aciklama: '`ISecurityLogRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Services;',
+            aciklama: 'Test edilen `SecurityLogger` ve gerçek (mock DEĞİL) `PasswordService`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: '`SecurityLog` entity\'sinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Tests.Services;',
+            aciklama: 'Test klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class SecurityLoggerTests',
+            aciklama: 'İki senaryo — (1) e-posta VARKEN hash\'lenmesi, (2) e-posta YOKKEN çökmemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<ISecurityLogRepository> _securityLogRepository = new();',
+            aciklama: 'TEK mock.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private SecurityLogger CreateLogger() => new(_securityLogRepository.Object, new PasswordService());',
+            aciklama: '`IPasswordService` GERÇEK `PasswordService()` ile veriliyor — bir mock `HashToken(...)` çağrısına HER ZAMAN aynı sahte değeri DÖNERDİ, bu da "e-posta GERÇEKTEN hash\'leniyor mu" sorusunu test ETMEZDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'Tek senaryolu test işareti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync_EmailProvided_StoresHashNotRawEmail()',
+            aciklama: 'Senaryo 1 — mutlu yol, e-posta VERİLDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var logger = CreateLogger();',
+            aciklama: 'Test edilen nesne.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await logger.LogAsync(LogEventType.LoginFailed, email: "user@example.com", ipAddress: "1.2.3.4");',
+            aciklama: 'ACT — ilk parametre pozisyonel (`eventType`, zorunlu), geri kalanı isimlendirilmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_securityLogRepository.Verify(r => r.AddAsync(It.Is<SecurityLog>(l =>',
+            aciklama: 'Alan doğrulayan predicate.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EventType == LogEventType.LoginFailed &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EmailHash != "user@example.com" &&',
+            aciklama: 'BU SENARYONUN ASIL doğrulaması — HAM e-postanın OLDUĞU GİBİ saklanMADIĞINI kanıtlar; bu satır OLMADAN bir geliştirici yanlışlıkla `EmailHash = email` (hash\'lemeden) yazsa bile test YEŞİL kalırdı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EmailHash != null && l.EmailHash.Length == 44 &&',
+            aciklama: 'SHA-256 → Base64 çıktısının SABİT 44 karakter uzunluğunu doğrular — Bölüm 1\'in `EmailHash` EF config\'indeki `HasMaxLength(44)` ile TUTARLI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.IpAddress == "1.2.3.4"),',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`AddAsync`\'in TAM OLARAK bir kez çağrıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_securityLogRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`SaveChangesAsync`\'in de çağrıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task LogAsync_NoEmailProvided_LeavesEmailHashNull()',
+            aciklama: 'Senaryo 2 — e-posta HİÇ verilmedi, `SecurityLogger.cs`\'teki `IsNullOrWhiteSpace` erken çıkışının SINANDIĞI senaryo.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await logger.LogAsync(LogEventType.TokenReplay, userId: 7);',
+            aciklama: 'ACT — `email` parametresi HİÇ geçirilmedi (varsayılan `null`), bu çağrının bir istisna FIRLATMADAN tamamlanması bekleniyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.UserId == 7 &&',
+            aciklama: 'Doğru aktarıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'l.EmailHash == null),',
+            aciklama: 'BU SENARYONUN ASIL doğrulaması — `IsNullOrWhiteSpace` kontrolünün `HashToken(null)`\'ı hiç ÇAĞIRMADIĞINI, sonucun `null` kaldığını kanıtlar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'JsonSerializer.Serialize', tanim: '.NET\'in yerleşik `System.Text.Json` kütüphanesinin, bir C# nesnesini JSON metnine çeviren statik metodu.' },
+          { terim: 'Anonim tür (anonymous type)', tanim: '`new { Text = "..." }` gibi, adı olmayan, derleyicinin özellik adlarına göre otomatik oluşturduğu bir C# türü — burada JSON\'a serileştirilecek küçük, geçici DTO\'lar için kullanılıyor.' },
+          { terim: 'Expression-bodied constructor', tanim: '`public X(Y y) => _y = y;` gibi, `{ }` gövdesi yerine `=>` ile tek satıra indirgenmiş bir constructor yazımı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IActivityLogger/ActivityLogger — oldValue/newValue nesnelerini JSON\'a serileştirip ActivityLogs\'a yazan tek-bağımlılıklı bir servis.',
+          'ISecurityLogger/SecurityLogger — ham e-postayı IPasswordService.HashToken ile hash\'leyip EmailHash\'e yazan, ham e-postayı hiç saklamayan bir servis.',
+          'İki servis de yazma-amaçlı IActivityLogRepository/ISecurityLogRepository\'ye (Bölüm 4\'te okuma metotlarıyla genişleyecek) bağımlı — Handler\'lar repository\'yi DEĞİL, bu iki servisi çağıracak (Bölüm 5, A-03 retrofit).',
+          '4/4 yeni test yeşil (103/103 tüm paket) — JSON serileştirmenin ve e-posta hash\'lemenin GERÇEK implementasyonlarla (mock değil) doğrulandığı iki test dosyası.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

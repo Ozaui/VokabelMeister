@@ -17,6 +17,8 @@ public static class DependencyInjection
         services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
         services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
         services.AddScoped<IAdminSeedService, AdminSeedService>();
+        services.AddScoped<IActivityLogger, ActivityLogger>();
+        services.AddScoped<ISecurityLogger, SecurityLogger>();
 
         return services;
     }
