@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Logging;
 
 namespace WordLearner.Infrastructure.Data;
 
@@ -14,6 +15,9 @@ public class WordLearnerDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+    public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

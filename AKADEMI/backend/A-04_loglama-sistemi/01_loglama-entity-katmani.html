@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-04 — Loglama Sistemi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'loglama-entity-katmani',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '../A-03.2_ilk-admin-hesabi/01_admin-seed-service.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Üç Tablo, Üç Amaç: Loglama Katmanının Temeli',
+        altBaslik: 'Kim ne yaptı (ActivityLog), sistem içeride ne yaşadı (ApplicationLog), güvenlik açısından ne oldu (SecurityLog) — üç farklı soru, üç ayrı tablo.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Tek Bir "Logs" Tablosu Değil de Üç Ayrı Tablo?',
+        aciklama: '`ActivityLog` bir kullanıcının/adminin sistemde YAPTIĞI eylemleri (LOGIN, CREATE_WORD, CHANGE_ROLE…) kaydeder — bir denetim (audit) izi. `ApplicationLog` Serilog\'un otomatik yazdığı teknik logdur (hata/uyarı/bilgi mesajları) — bir Handler\'ın kasıtlı yazdığı bir şey DEĞİL, altyapının kendiliğinden ürettiği bir kayıt. `SecurityLog` yalnızca güvenlikle ilgili OLAYLARI (başarısız giriş denemesi, rate limit aşımı, token tekrar kullanımı…) tutar.',
+        neden: 'Üçü FARKLI okuyucuya, FARKLI sıklıkta, FARKLI saklama/sorgu ihtiyacına hizmet eder — bir admin "bu kullanıcı hangi kelimeleri sildi" diye `ActivityLog`\'a bakar, bir geliştirici "neden 500 döndü" diye `ApplicationLog`\'a bakar, bir güvenlik incelemesi "bu IP\'den kaç başarısız giriş denemesi oldu" diye `SecurityLog`\'a bakar. Tek bir tabloda bu üçü karışsaydı, her sorgu gereksiz satırları da tarardı ve `EventType`/`Action` gibi alanlar farklı anlamlara gelen ortak bir sütunu paylaşmak ZORUNDA kalırdı.',
+        olmasaydi: 'Tek bir tabloda birleştirilseydi, ör. bir "başarısız giriş" olayı hem `ActivityLog`\'un `OldValue`/`NewValue` (audit diff) hem `SecurityLog`\'un `EmailHash` (PII-güvenli ilişkilendirme) alanlarına AYNI ANDA ihtiyaç duyardı ama biri diğer olay türü için ANLAMSIZ kalırdı — tablo NULL sütunlarla dolar, hangi alanın hangi olay türünde doldurulacağı yalnızca kod yorumlarıyla anlaşılabilirdi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Hiçbiri BaseEntity\'den Türemiyor?',
+        aciklama: 'Bu üç tablo da insert-only — bir log satırı yazıldıktan sonra ne güncellenir ne silinir. `BaseEntity`\'nin taşıdığı `UpdatedAt`/`IsDeleted`/`DeletedAt`/`UpdatedByUserId`/`DeletedByUserId` alanlarının HİÇBİRİ bir log kaydı için anlamlı değil.',
+        neden: '`WordLearnerDbContext` (Bölüm 2, A-02) `BaseEntity`\'den türeyen HER entity\'ye otomatik bir soft-delete sorgu filtresi (`HasQueryFilter(e => !e.IsDeleted)`) uyguluyor — bu üç tablo `BaseEntity`\'den türeseydi, hiçbir kod ASLA `IsDeleted=true` yazmasa bile EF Core her sorguda gereksiz bir `WHERE IsDeleted = 0` koşulu üretirdi.',
+        olmasaydi: '`BaseEntity`\'den türeselerdi, `UpdatedAt`\'i her insert\'te ELLE doldurmak (SaveChangesAsync\'in interceptor\'ı zaten CreatedAt/UpdatedAt\'i dolduruyor olsa da) ve "bu satır hiç güncellenmeyecek" bilgisini kod yorumlarıyla anlatmak GEREKİRDİ — entity\'nin kendi şekli (hangi alanları taşıdığı) bunu zaten söylüyorken, bu fazladan bir belirsizlik katmanı olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LogEventType.cs — Güvenlik Olayı Türleri',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Logging/LogEventType.cs',
+        nedenBuKlasor: '`Domain/Enums/Logging/` — `Domain/Enums/Auth/` (Bölüm 1, `OtpPurpose`/`QrLoginStatus`) ile AYNI desen: her domain kendi enum alt klasöründe.',
+        kod: `namespace WordLearner.Domain.Enums.Logging;
+
+public enum LogEventType
+{
+    LoginFailed,
+    OtpFailed,
+    RateLimitHit,
+    UnauthorizedAccess,
+    TokenReplay,
+    PasswordReset,
+    AccountDeletion,
+    AdminAction,
+    QrLoginConfirmed,
+    QrLoginDenied
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Enums.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum LogEventType',
+            aciklama: '`SecurityLog.EventType`\'ın (aşağıda) tipi — sabit, kapalı bir küme; EF Core `HasConversion<string>` ile veritabanına OKUNABİLİR bir metin ("LoginFailed") olarak yazar, sayısal bir index DEĞİL.',
+            neden: 'Bir `string EventType` yerine enum kullanmak, geçersiz bir değerin (ör. bir yazım hatasıyla "LoginFaild") DERLEME ZAMANINDA yakalanmasını sağlar — veritabanı tarafında da AYNI küme bir CHECK constraint (aşağıdaki EF config slaytı) ile zorlanıyor, iki katmanlı bir güvence.',
+            olmasaydi: null
+          },
+          {
+            satir: 'LoginFailed,',
+            aciklama: 'Şifre/e-posta hatalı bir giriş denemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'OtpFailed,',
+            aciklama: 'Yanlış/süresi geçmiş bir OTP kodu girişi (kayıt doğrulama, şifre sıfırlama, e-posta değişikliği — dört akışın ortak olayı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RateLimitHit,',
+            aciklama: 'Bir istemcinin `Program.cs`\'teki (Bölüm 29) 5 rate limiting policy\'sinden birini AŞMASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'UnauthorizedAccess,',
+            aciklama: 'Yetkisi olmayan bir kaynağa erişim denemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TokenReplay,',
+            aciklama: 'Zaten kullanılmış/iptal edilmiş bir refresh token\'ın TEKRAR kullanılmaya çalışılması — Token Family Pattern\'in (A-03) tespit ettiği bir saldırı sinyali.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PasswordReset,',
+            aciklama: 'BAŞARILI bir şifre sıfırlama — bir hata değil ama güvenlik açısından izlenmesi gereken bir olay (hesap sahibine "şifreniz değişti" bildirimiyle eşlenir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AccountDeletion,',
+            aciklama: 'BAŞARILI bir hesap silme/anonimleştirme talebi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AdminAction,',
+            aciklama: 'Bir adminin hassas bir işlem yapması (rol/hesap durumu değişimi, SMTP ayarları) — `ActivityLog`\'a EK olarak buraya da yazılır, çünkü bu bir güvenlik açısından da izlenmesi gereken bir olay sınıfı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'QrLoginConfirmed,',
+            aciklama: 'QR ile girişin (A-03) kullanıcı tarafından ONAYLANMASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'QrLoginDenied',
+            aciklama: 'QR ile girişin kullanıcı tarafından REDDEDİLMESİ — olası bir yetkisiz QR kod paylaşımı sinyali.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLog.cs — Kim Ne Yaptı',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Logging/ActivityLog.cs',
+        nedenBuKlasor: '`Domain/Entities/Logging/` — `Domain/Entities/Auth/` ile AYNI desen, yeni bir domain alt klasörü.',
+        kod: `namespace WordLearner.Domain.Entities.Logging;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — audit log insert-only, soft delete/UpdatedAt anlamsız
+// (bir log satırı ne silinir ne güncellenir); DATABASE_SCHEMA/Loglama.md'deki ActivityLogs
+// tablosuyla birebir eşleşir.
+public class ActivityLog
+{
+    public long Id { get; set; }
+    public int? UserId { get; set; }
+    public string? ActorRole { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string? EntityType { get; set; }
+    public int? EntityId { get; set; }
+    public string? OldValue { get; set; }
+    public string? NewValue { get; set; }
+    public string? IpAddress { get; set; }
+    public string? UserAgent { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLog',
+            aciklama: '`IActivityLogger`\'ın (bu görevin ileri bölümü) yazacağı denetim izi satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public long Id { get; set; }',
+            aciklama: '`int` DEĞİL `long` — `User`/`RefreshToken` gibi sınırlı büyüyen tablolardan FARKLI olarak, bu tablo HER eyleme bir satır ekler; milyonlarca satırda `int`\'in (~2.1 milyar) sınırına yaklaşmak riskli, `bigint` bu riski baştan kaldırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? UserId { get; set; }',
+            aciklama: 'Eylemi yapan kullanıcı — anonim bir eylemse (ör. sistem tarafından tetiklenen bir işlem) `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? ActorRole { get; set; }',
+            aciklama: 'Kayıt ANINDAKİ rol ("User"/"Admin") — `User.Role`\'ün kendisine DEĞİL, o anki bir KOPYASINA bakılır.',
+            neden: 'Bir kullanıcı SONRADAN Admin\'e yükseltilirse (ya da tam tersi), geçmiş log satırlarının "o anda hangi rolle bu eylemi yaptı" bilgisini KORUMASI gerekir — `Users.Role`\'e bir JOIN ile bakılsaydı, tüm geçmiş loglar kullanıcının BUGÜNKÜ rolünü gösterirdi.',
+            olmasaydi: 'Bu alan olmasaydı, bir denetimde "bu CHANGE_ROLE eylemi bir Admin tarafından mı yoksa yetkisiz biri tarafından mı yapıldı" sorusu, kullanıcının O ANKİ rolüyle YANITLANAMAZDI — rol geçmişi başka bir yerde ayrıca tutulmadığı sürece.'
+          },
+          {
+            satir: 'public string Action { get; set; } = string.Empty;',
+            aciklama: 'Eylem kodu (LOGIN, REGISTER, CREATE_WORD, DELETE_USER_CARD, CHANGE_ROLE…) — sabit bir enum DEĞİL, serbest ama disiplinli bir string (yeni bir eylem türü eklemek bir migration GEREKTİRMEZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? EntityType { get; set; }',
+            aciklama: 'Eylemin hangi entity TÜRÜNE ait olduğu (Word, UserCard, User, Category…) — bir LOGIN eyleminde anlamsız olduğu için nullable.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? EntityId { get; set; }',
+            aciklama: 'Etkilenen entity\'nin ID\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? OldValue { get; set; }',
+            aciklama: 'Değişiklik ÖNCESİ hâlin JSON serileştirmesi — bir CREATE eyleminde `null` (henüz bir "öncesi" yok).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? NewValue { get; set; }',
+            aciklama: 'Değişiklik SONRASI hâlin JSON serileştirmesi — bir DELETE eyleminde `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? IpAddress { get; set; }',
+            aciklama: 'İsteğin geldiği IP adresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? UserAgent { get; set; }',
+            aciklama: 'İsteğin `User-Agent` header\'ı (tarayıcı/uygulama bilgisi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Eylemin ne zaman yapıldığı — `UpdatedAt` YOK, çünkü bu satır bir daha asla güncellenmeyecek.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplicationLog.cs — Serilog\'un Teknik Kaydı',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Logging/ApplicationLog.cs',
+        nedenBuKlasor: '`Domain/Entities/Logging/` — `ActivityLog` ile AYNI klasör.',
+        kod: `namespace WordLearner.Domain.Entities.Logging;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — Serilog MSSqlServer sink'in kendi yazdığı teknik log,
+// insert-only; DATABASE_SCHEMA/Loglama.md'deki ApplicationLogs tablosuyla birebir eşleşir. FK yok
+// (sink User tablosuna join/kontrol yapmaz, ham UserId int'i yazar).
+public class ApplicationLog
+{
+    public long Id { get; set; }
+    public string Level { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? Exception { get; set; }
+    public string? SourceContext { get; set; }
+    public string? RequestPath { get; set; }
+    public int? UserId { get; set; }
+    public string? Properties { get; set; }
+    public DateTime TimeStamp { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `ActivityLog` ile AYNI namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ApplicationLog',
+            aciklama: 'Bu entity hiçbir Handler tarafından ELLE oluşturulmaz — Serilog\'un `Serilog.Sinks.MSSqlServer` paketi (bu görevin sonraki bölümü) `ILogger<T>.Log*` çağrılarını OTOMATİK olarak bu şekle çevirip yazar.',
+            neden: 'EF Core bu entity için yalnızca TABLOYU oluşturmak (migration) amacıyla kullanılıyor — sink kendi ADO.NET yazma yolunu kullanır, `WordLearnerDbContext` üzerinden bir `Add`/`SaveChanges` GEÇMEZ.',
+            olmasaydi: null
+          },
+          {
+            satir: 'public long Id { get; set; }',
+            aciklama: '`ActivityLog.Id` ile AYNI gerekçe — `bigint`, çünkü Serilog HER log çağrısında bir satır ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Level { get; set; } = string.Empty;',
+            aciklama: 'Serilog seviyesi — Verbose/Debug/Information/Warning/Error/Fatal.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Message { get; set; } = string.Empty;',
+            aciklama: 'Log mesajının ŞABLONU doldurulmuş hâli (ör. "Initial admin account seeded for admin@x.com").',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Exception { get; set; }',
+            aciklama: 'Bir istisna varsa TAM stack trace — yoksa `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? SourceContext { get; set; }',
+            aciklama: 'Log\'u YAZAN sınıfın adı (ör. `WordLearner.Application.Services.AdminSeedService`) — Serilog\'un `ILogger<AdminSeedService>` (Bölüm 39, A-03.2) enjeksiyonundan otomatik gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? RequestPath { get; set; }',
+            aciklama: 'Log HTTP isteği SIRASINDA yazıldıysa isteğin path\'i (ör. `/api/v1/auth/login`) — bir başlangıç log\'unda (ör. `AdminSeedService`) `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? UserId { get; set; }',
+            aciklama: 'İstek kimliği doğrulanmışsa kullanıcının ID\'si — ham `int`, bir FK DEĞİL (aşağıdaki EF config notu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Properties { get; set; }',
+            aciklama: 'Serilog\'un yapılandırılmış loglama alanları (ör. `{Email}` gibi placeholder\'ların ÇÖZÜLMÜŞ değerleri) — JSON.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime TimeStamp { get; set; }',
+            aciklama: '`CreatedAt` DEĞİL `TimeStamp` — Serilog MSSqlServer sink\'inin KENDİ sabit sütun adı, sink\'in `ColumnOptions`\'ıyla eşleşmesi gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityLog.cs — Güvenlik Olayları',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Logging/SecurityLog.cs',
+        nedenBuKlasor: '`Domain/Entities/Logging/` — diğer ikisiyle AYNI klasör.',
+        kod: `using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Domain.Entities.Logging;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — güvenlik olayı insert-only, soft delete/UpdatedAt
+// anlamsız; DATABASE_SCHEMA/Loglama.md'deki SecurityLogs tablosuyla birebir eşleşir.
+public class SecurityLog
+{
+    public long Id { get; set; }
+    public LogEventType EventType { get; set; }
+    public int? UserId { get; set; }
+    public string? EmailHash { get; set; }
+    public string? IpAddress { get; set; }
+    public string? UserAgent { get; set; }
+    public string? Detail { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: 'Yukarıda tanımlanan `LogEventType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — diğer iki log entity\'siyle AYNI namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class SecurityLog',
+            aciklama: '`ISecurityLogger`\'ın (bu görevin ileri bölümü) yazacağı güvenlik olayı satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public long Id { get; set; }',
+            aciklama: '`ActivityLog.Id` ile AYNI gerekçe — `bigint`, HER güvenlik olayı bir satır ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LogEventType EventType { get; set; }',
+            aciklama: 'Bu tablonun `ActivityLog.Action`\'a KARŞILIK gelen alanı — AMA orada serbest bir string, burada kapalı bir enum (yukarıdaki kavram slaytı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? UserId { get; set; }',
+            aciklama: 'Kimliği doğrulanmış bir denemeyse ilgili kullanıcı — kimliği doğrulanmamış bir deneme (ör. hiç var olmayan bir e-postayla LoginFailed) için `null`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? EmailHash { get; set; }',
+            aciklama: '`SHA-256(email)` → Base64, SABİT 44 karakter — ham e-posta ASLA burada saklanmaz.',
+            neden: 'Bu tablo tam olarak "bu e-postaya kaç kez yanlış şifre girildi" gibi bir soruyu YANITLAMAK için var, AMA henüz kimliği doğrulanmamış (`UserId=null` olabilecek) bir deneme için ham e-postayı SAKLAMAK, PII\'yi (kişisel veri) gereksiz yere bir log tablosunda BİRİKTİRMEK olurdu.',
+            olmasaydi: 'Ham e-posta saklansaydı, bir veritabanı sızıntısında SecurityLogs tablosunun kendisi bir e-posta listesi SIZDIRIRDI — hash\'lenmiş hâliyle aynı e-postayla yapılan denemeler YİNE ilişkilendirilebilir (aynı girdi aynı hash\'i üretir) ama tablo TEK BAŞINA bir e-posta listesine geri ÇEVRİLEMEZ.'
+          },
+          {
+            satir: 'public string? IpAddress { get; set; }',
+            aciklama: 'İsteğin geldiği IP adresi — IP bazlı bir kaba kuvvet tespitinin temel alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? UserAgent { get; set; }',
+            aciklama: 'İsteğin `User-Agent` header\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Detail { get; set; }',
+            aciklama: 'Serbest metin DEĞİL, admin panelin `Accept-Language`\'ına göre OKUMA anında çözülecek bir Code — bu görevin A-03 retrofit bölümünde (aşağıdaki bölümler) somutlaşacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Olayın ne zaman gerçekleştiği.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ActivityLogConfiguration.cs — İndeks + FK SetNull',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Logging/ActivityLogConfiguration.cs',
+        nedenBuKlasor: '`Infrastructure/Data/Configurations/Logging/` — `Configurations/Auth/` (Bölüm 2) ile AYNI desen, entity klasörüyle eşleşen bir konfigürasyon alt klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Logging;
+
+public class ActivityLogConfiguration : IEntityTypeConfiguration<ActivityLog>
+{
+    public void Configure(EntityTypeBuilder<ActivityLog> builder)
+    {
+        builder.ToTable("ActivityLogs");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.ActorRole).HasMaxLength(20);
+        builder.Property(x => x.Action).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.EntityType).HasMaxLength(50);
+        builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);
+        builder.Property(x => x.UserAgent).HasMaxLength(500);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.Action);
+        builder.HasIndex(x => x.EntityType);
+        builder.HasIndex(x => x.CreatedAt).IsDescending();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior`/`IsUnicode` gibi EF Core temel türleri için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`\'ın (FK hedefi) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Yapılandırılan `ActivityLog`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ActivityLogConfiguration : IEntityTypeConfiguration<ActivityLog>',
+            aciklama: '`RefreshTokenConfiguration`/`QrLoginSessionConfiguration` (Bölüm 2, 15) ile AYNI arayüz — EF Core `ApplyConfigurationsFromAssembly` (Bölüm 8) çağrısı bu sınıfı OTOMATİK bulur, `WordLearnerDbContext`\'e elle kaydetmeye gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<ActivityLog> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu — EF Core her migration/model oluşturmada bu metodu çağırıp `builder` üzerinden şemayı tanımlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("ActivityLogs");',
+            aciklama: 'Tablo adı ÇOĞUL — `Users`/`RefreshTokens`/`QrLoginSessions` ile AYNI EF Core `DbSet<T>` adlandırma konvansiyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: 'Birincil anahtar bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.ActorRole).HasMaxLength(20);',
+            aciklama: '"User"/"Admin" iki değerden birini tutacak kısa bir alan için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Action).HasMaxLength(100).IsRequired();',
+            aciklama: 'Bu tablonun ZORUNLU tek alanı — bir log satırının HANGİ eylemi temsil ettiği bilinmeden var olması ANLAMSIZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.EntityType).HasMaxLength(50);',
+            aciklama: 'Nullable olduğu için `IsRequired()` YOK — LOGIN gibi bir entity\'ye bağlı olmayan eylemlerde boş kalabilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);',
+            aciklama: '`RefreshToken.IpAddress`/`QrLoginSession.RequesterIp` (Bölüm 2, 15) ile AYNI 45 karakter (IPv6\'nın en uzun metin gösterimini kapsar) ve `IsUnicode(false)` (bir IP adresi ASCII dışı karakter TAŞIMAZ, `varchar` `nvarchar`\'dan daha AZ yer kaplar).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.UserAgent).HasMaxLength(500);',
+            aciklama: '`QrLoginSession.RequesterDeviceInfo` ile AYNI üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");',
+            aciklama: 'Veritabanı seviyesinde bir VARSAYILAN değer — `WordLearnerDbContext.SaveChangesAsync`\'in (Bölüm 8) `BaseEntity.CreatedAt`\'i dolduran interceptor\'ı bu entity\'yi KAPSAMIYOR (bu entity `BaseEntity`\'den türemiyor), bu yüzden zaman damgası veritabanının kendisine BIRAKILIYOR.',
+            neden: 'Uygulama kodu bu alanı ELLE doldurmayı UNUTURSA (ör. ileride başka bir yerden doğrudan bir INSERT atılırsa) bile satır GEÇERSİZ bir `CreatedAt` (ör. `DateTime.MinValue`) ile KALMAZ.',
+            olmasaydi: 'Bu varsayılan olmasaydı, `CreatedAt`\'i ELLE ayarlamayı unutan HERHANGİ bir insert yolu, o satırı `0001-01-01` gibi ANLAMSIZ bir tarihle KALICI olarak kaydederdi — `IX_ActivityLogs_CreatedAt` (aşağıdaki index) üzerinden yapılan HER "son N güne bak" sorgusu bu satırı YANLIŞ sırada gösterirdi.'
+          },
+          {
+            satir: 'builder.HasIndex(x => x.UserId);',
+            aciklama: '"Bu kullanıcının TÜM eylemleri" sorgusunu hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.Action);',
+            aciklama: '"TÜM CREATE_WORD eylemleri" gibi eylem türüne göre filtreleme sorgularını hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.EntityType);',
+            aciklama: '"Bu entity türüne (ör. tüm Word\'lere) ait TÜM loglar" sorgusunu hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.CreatedAt).IsDescending();',
+            aciklama: 'Admin log panelinin (A-07, bu görevin frontend karşılığı) EN YAKIN tarihten geriye doğru sıralı listelemesi için AZALAN sırada bir index — SQL Server\'ın varsayılan ARTAN index\'ini "en yeni önce" sorgusu için TERS çevirip taramaktan kaçınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<User>()',
+            aciklama: '`RefreshTokenConfiguration`/`QrLoginSessionConfiguration` ile AYNI ilişki bildirim şekli — `User` tarafında BU tabloya karşılık gelen bir navigation property TANIMLANMADIĞI için jenerik `HasOne<User>()` (parametresiz) kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir `User`\'ın BİRDEN ÇOK `ActivityLog` satırına sahip olabileceğini bildirir — parametresiz, çünkü `User` tarafında karşılık gelen bir `List<ActivityLog>` navigation property TANIMLANMADI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.UserId)',
+            aciklama: 'İlişkinin hangi sütun ÜZERİNDEN kurulacağını belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.SetNull)',
+            aciklama: '`QrLoginSessionConfiguration` (Bölüm 15) ile AYNI davranış — `RefreshTokenConfiguration`\'ın (Bölüm 2) `Cascade`\'inden FARKLI.',
+            neden: 'Bir kullanıcı silindiğinde (hesap anonimleştirme akışı) o kullanıcının GEÇMİŞ eylem KAYITLARININ da silinmesi, denetim izinin (audit trail) BÜTÜNLÜĞÜNÜ bozardı — "kim ne yaptı" sorusu geçmişe dönük olarak CEVAPSIZ kalırdı. `UserId=null` bırakılarak satır KORUNUR, yalnızca KİME ait olduğu bilgisi kaybolur.',
+            olmasaydi: '`Cascade` olsaydı, bir hesap silme işlemi o kullanıcının TÜM `ActivityLog` geçmişini de silerdi — kişisel veri temizlendi doğru olsa da, "sistemde ne olduğu" sorusuna cevap veren denetim izi GERİ DÖNÜLEMEZ şekilde kaybolurdu.'
+          },
+          {
+            satir: '.IsRequired(false);',
+            aciklama: 'İlişkinin OPSİYONEL olduğunu (bir `UserId` `null` OLABİLİR) açıkça belirtir — `UserId` zaten `int?` (nullable) olduğu için EF Core bunu ÖRTÜK olarak çıkarabilirdi, ama açık bildirim niyetin YANLIŞ ANLAŞILMASINI engeller.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplicationLogConfiguration.cs — FK Yok',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Logging/ApplicationLogConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Logging/` — `ActivityLogConfiguration` ile AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Logging;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Logging;
+
+public class ApplicationLogConfiguration : IEntityTypeConfiguration<ApplicationLog>
+{
+    public void Configure(EntityTypeBuilder<ApplicationLog> builder)
+    {
+        builder.ToTable("ApplicationLogs");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Level).HasMaxLength(20).IsRequired();
+        builder.Property(x => x.Message).IsRequired();
+        builder.Property(x => x.SourceContext).HasMaxLength(255);
+        builder.Property(x => x.RequestPath).HasMaxLength(500);
+        builder.Property(x => x.TimeStamp).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => x.Level);
+        builder.HasIndex(x => x.TimeStamp).IsDescending();
+
+        // FK YOK — Serilog sink User tablosuna join/kontrol yapmaz, ham UserId int'i yazar
+        // (DATABASE_SCHEMA/Loglama.md).
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior`/`IsUnicode` gibi EF Core temel türleri için gerekli — burada `IsUnicode` kullanılmasa da AYNI import bloğu tutarlılık için diğer config dosyalarıyla birebir eşleşiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Yapılandırılan `ApplicationLog`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class ApplicationLogConfiguration : IEntityTypeConfiguration<ApplicationLog>',
+            aciklama: '`ActivityLogConfiguration` ile AYNI arayüz, `ApplicationLog` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<ApplicationLog> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("ApplicationLogs");',
+            aciklama: 'Tablo adı — Serilog\'un `Serilog.Sinks.MSSqlServer` yapılandırmasındaki (bu görevin sonraki bölümü) tablo adıyla BİREBİR eşleşmesi gereken tek bağlantı noktası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: 'Birincil anahtar bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Level).HasMaxLength(20).IsRequired();',
+            aciklama: '"Information"/"Warning"/"Error" gibi Serilog seviye adları için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Message).IsRequired();',
+            aciklama: 'Maksimum uzunluk BELİRTİLMEDİ — EF Core bunu varsayılan olarak `nvarchar(max)`\'a çevirir, bir log mesajının/stack trace\'in uzunluğu ÖNCEDEN sınırlanamaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.SourceContext).HasMaxLength(255);',
+            aciklama: 'Sınıf adının tam nitelenmiş (namespace dahil) hâlini tutmaya yetecek üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.RequestPath).HasMaxLength(500);',
+            aciklama: 'Bir URL path\'i için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.TimeStamp).HasDefaultValueSql("GETUTCDATE()");',
+            aciklama: '`ActivityLogConfiguration.CreatedAt` ile AYNI gerekçe — bu entity de `BaseEntity`\'den türemediği için zaman damgası veritabanına BIRAKILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.Level);',
+            aciklama: '"Sadece Error ve üzeri" gibi seviyeye göre filtreleme sorgularını hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.TimeStamp).IsDescending();',
+            aciklama: '`ActivityLogConfiguration.CreatedAt` index\'iyle AYNI gerekçe — admin panelin "en yeni önce" log listelemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// FK YOK — Serilog sink User tablosuna join/kontrol yapmaz, ham UserId int\'i yazar',
+            aciklama: '`ActivityLogConfiguration`\'ın AKSİNE burada bir `HasOne<User>()` çağrısı YOK — bu satır o EKSİKLİĞİN bilinçli bir tasarım kararı olduğunu, unutulmuş bir satır olmadığını açıklıyor.',
+            neden: 'Serilog\'un MSSqlServer sink\'i kendi ADO.NET yazma yolunu kullanır, `WordLearnerDbContext` üzerinden GEÇMEZ — bir FK constraint tanımlansaydı bile sink bunu HİÇ görmez, yalnızca EF Core\'un migration\'ının ürettiği veritabanı şemasını ETKİLERDİ.',
+            olmasaydi: 'Bir FK tanımlansaydı, `UserId`\'si artık VAR OLMAYAN (ör. anonimleştirilmiş) bir kullanıcıya işaret eden bir log satırı INSERT edilmeye çalışıldığında veritabanı bir FK ihlali istisnası FIRLATIRDI — Serilog\'un kendi hata yakalama mekanizması (genelde "loglama başarısız oldu diye UYGULAMAYI çökertme" ilkesiyle) bu istisnayı YUTAR, ama log KAYBOLURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'SecurityLogConfiguration.cs — Enum Dönüşümü + CHECK Constraint',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Logging/SecurityLogConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Logging/` — diğer ikisiyle AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Logging;
+using WordLearner.Domain.Enums.Logging;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Logging;
+
+public class SecurityLogConfiguration : IEntityTypeConfiguration<SecurityLog>
+{
+    public void Configure(EntityTypeBuilder<SecurityLog> builder)
+    {
+        builder.ToTable("SecurityLogs", tb =>
+            tb.HasCheckConstraint("CK_SecurityLogs_EventType",
+                "EventType IN ('LoginFailed','OtpFailed','RateLimitHit','UnauthorizedAccess','TokenReplay','PasswordReset','AccountDeletion','AdminAction','QrLoginConfirmed','QrLoginDenied')"));
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.EventType).HasConversion<string>().HasMaxLength(50).IsRequired();
+        builder.Property(x => x.EmailHash).HasMaxLength(44).IsUnicode(false);
+        builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);
+        builder.Property(x => x.UserAgent).HasMaxLength(500);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => x.EventType);
+        builder.HasIndex(x => x.IpAddress);
+        builder.HasIndex(x => x.CreatedAt).IsDescending();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Auth;',
+            aciklama: '`User`\'ın (FK hedefi) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Yapılandırılan `SecurityLog`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın ad alanı — `HasConversion<string>` (aşağıda) bu türü tanıması için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Logging;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class SecurityLogConfiguration : IEntityTypeConfiguration<SecurityLog>',
+            aciklama: '`ActivityLogConfiguration`/`ApplicationLogConfiguration` ile AYNI arayüz, `SecurityLog` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<SecurityLog> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("SecurityLogs", tb =>',
+            aciklama: '`QrLoginSessionConfiguration`\'ın (Bölüm 15) `Status` CHECK constraint\'iyle AYNI `ToTable` overload\'ı — tabloya ek bir kısıt eklemek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_SecurityLogs_EventType",',
+            aciklama: '`LogEventType` enum\'ının (yukarıda) C# tarafındaki kapalı kümesini, veritabanı SEVİYESİNDE de zorlayan bir CHECK constraint.',
+            neden: 'C# enum\'ı yalnızca UYGULAMA KODUNU korur — bir DBA\'in ELLE bir `INSERT`/`UPDATE` çalıştırması ya da başka bir servisin AYNI veritabanına doğrudan yazması (bu projede yok ama genel bir ilke) enum\'ın DIŞINDA bir değer yazabilirdi; CHECK constraint bunu veritabanının KENDİSİ reddeder.',
+            olmasaydi: 'Bu constraint olmasaydı, `EventType` sütunu teoride HERHANGİ bir metni kabul ederdi — C# tarafı hep enum\'dan geçtiği için pratikte SORUN çıkmaz, ama veri bütünlüğü yalnızca UYGULAMA KATMANININ disiplinine bağlı, veritabanının KENDİSİNE değil, kalırdı.'
+          },
+          {
+            satir: '"EventType IN (\'LoginFailed\',\'OtpFailed\',\'RateLimitHit\',\'UnauthorizedAccess\',\'TokenReplay\',\'PasswordReset\',\'AccountDeletion\',\'AdminAction\',\'QrLoginConfirmed\',\'QrLoginDenied\')"));',
+            aciklama: 'Yukarıdaki `LogEventType` enum\'ının 10 üyesiyle BİREBİR aynı, elle YAZILMIŞ bir SQL string kümesi.',
+            neden: null,
+            olmasaydi: 'Bu SQL kümesi enum\'la SENKRON tutulmazsa (ör. enum\'a 11. bir üye eklenip bu satır GÜNCELLENMEZSE), yeni üye C# tarafında GEÇERLİ görünürken veritabanı bir CHECK constraint ihlaliyle INSERT\'i REDDEDER — bu yüzden `LogEventType`\'a her yeni üye eklendiğinde bu satırın da AYNI PR içinde güncellenmesi gerekir.'
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: 'Birincil anahtar bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.EventType).HasConversion<string>().HasMaxLength(50).IsRequired();',
+            aciklama: '`QrLoginSessionConfiguration.Status` (Bölüm 15) ile AYNI desen — `HasConversion<string>` enum\'ı veritabanında OKUNABİLİR bir metin ("LoginFailed") olarak saklar, sayısal bir index (0, 1, 2…) DEĞİL.',
+            neden: 'Sayısal bir index saklansaydı, veritabanına doğrudan bakan bir admin/DBA "3 numaralı olay nedir" diye enum tanımına GERİ DÖNMEK zorunda kalırdı; okunabilir metin bu ihtiyacı ORTADAN kaldırır.',
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.EmailHash).HasMaxLength(44).IsUnicode(false);',
+            aciklama: 'SHA-256 → Base64 çıktısının SABİT 44 karakter uzunluğu — `RefreshToken.TokenHash`/`QrLoginSession.QrTokenHash` (Bölüm 2, 15) ile AYNI `IPasswordService.HashToken` çıktı boyu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IpAddress).HasMaxLength(45).IsUnicode(false);',
+            aciklama: '`ActivityLogConfiguration.IpAddress` ile AYNI üst sınır/ayarlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.UserAgent).HasMaxLength(500);',
+            aciklama: '`ActivityLogConfiguration.UserAgent` ile AYNI üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");',
+            aciklama: '`ActivityLogConfiguration.CreatedAt` ile AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.EventType);',
+            aciklama: '"Tüm LoginFailed olayları" gibi olay türüne göre filtreleme sorgularını hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.IpAddress);',
+            aciklama: '"Bu IP\'den kaç güvenlik olayı geldi" sorgusunu hızlandırır — bir kaba kuvvet (brute-force) saldırısını IP bazlı tespit etmenin temel sorgusu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.CreatedAt).IsDescending();',
+            aciklama: '`ActivityLogConfiguration.CreatedAt` index\'iyle AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<User>()',
+            aciklama: '`ActivityLogConfiguration` ile AYNI ilişki bildirim şekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir `User`\'ın BİRDEN ÇOK `SecurityLog` satırına sahip olabileceğini bildirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.UserId)',
+            aciklama: 'İlişkinin hangi sütun ÜZERİNDEN kurulacağını belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.SetNull)',
+            aciklama: '`ActivityLogConfiguration` ile AYNI gerekçe — bir güvenlik olayının izi, hesap silinse bile korunur, yalnızca KİME ait olduğu bilgisi kaybolur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.IsRequired(false);',
+            aciklama: 'İlişkinin OPSİYONEL olduğunu açıkça belirtir — kimliği doğrulanmamış bir denemede (ör. LoginFailed) `UserId` zaten `null` olabilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordLearnerDbContext.cs — Üç Yeni DbSet',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        neden: 'Bölüm 16\'da `QrLoginSessions` ile üçüncü DbSet\'e ulaşan bu dosyaya, yukarıdaki üç entity\'nin EF Core tarafından SORGULANABİLMESİ için üç yeni `DbSet<T>` property\'si eklendi.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using WordLearner.Domain.Entities;
+ using WordLearner.Domain.Entities.Auth;
++using WordLearner.Domain.Entities.Logging;
+
+ namespace WordLearner.Infrastructure.Data;
+
+ public class WordLearnerDbContext : DbContext
+ {
+     public WordLearnerDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
++    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
++    public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
++    public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(WordLearnerDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Logging;',
+            aciklama: 'Üç yeni entity\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();',
+            aciklama: '`Users`/`RefreshTokens`/`QrLoginSessions` ile AYNI desen — `foreach` döngüsü (aşağıda) bu entity\'yi `BaseEntity`\'den TÜREMEDİĞİ için soft-delete filtresine hiç SOKMAYACAK, `Users`/`RefreshTokens`\'la AYNI durum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();',
+            aciklama: 'Aynı desen — bu DbSet Serilog sink\'i TARAFINDAN kullanılmasa da (sink kendi yazma yolunu kullanır), EF Core migration\'ının tabloyu OLUŞTURABİLMESİ için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();',
+            aciklama: 'Aynı desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: AddLoggingTables',
+        aciklama: '`dotnet ef migrations add AddLoggingTables` komutu, yukarıdaki üç EF konfigürasyonunu okuyup `ActivityLogs`/`ApplicationLogs`/`SecurityLogs` tablolarını (index\'ler, `CK_SecurityLogs_EventType` CHECK constraint\'i, `Users`\'a iki FK dahil) oluşturan bir migration dosyası üretti.',
+        neden: 'Migration, kod ile veritabanı şemasının SENKRON kalmasını sağlayan tek yol — entity/config sınıfları ne kadar doğru yazılırsa yazılsın, gerçek SQL Server\'da karşılık gelen tablolar OLMADAN uygulama hiçbir sorguyu ÇALIŞTIRAMAZ.',
+        olmasaydi: 'Migration çalıştırılmasaydı, `WordLearnerDbContext`\'in `ActivityLogs`/`ApplicationLogs`/`SecurityLogs` DbSet\'leri derleme zamanında GEÇERLİ görünse de, ilk sorguda ("bu tablo yok") bir SQL istisnasıyla ÇALIŞMA ZAMANINDA patlardı.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Insert-only', tanim: 'Bir tabloya yalnızca yeni satır EKLENMESİ, mevcut satırların asla güncellenmemesi/silinmemesi — bir denetim/log tablosunun temel özelliği.' },
+          { terim: 'CHECK constraint', tanim: 'Bir sütunun alabileceği değerleri veritabanı SEVİYESİNDE sınırlayan bir kısıt — burada `EventType`\'ın yalnızca 10 belirli metinden biri OLABİLECEĞİNİ zorluyor.' },
+          { terim: 'HasConversion<string>', tanim: 'EF Core\'un bir C# enum\'ını veritabanında sayısal index yerine OKUNABİLİR bir metin olarak saklamasını sağlayan yapılandırma.' },
+          { terim: 'PII (Personally Identifiable Information)', tanim: 'Bir kişiyi doğrudan tanımlayabilecek veri — e-posta bunun bir örneği, bu yüzden `SecurityLog` ham e-posta yerine `EmailHash` tutuyor.' },
+          { terim: 'DeleteBehavior.SetNull', tanim: 'İlişkili bir kayıt (burada `User`) silindiğinde, bu tarafın FK sütununu (burada `UserId`) SATIRI SİLMEDEN `NULL` yapan bir EF Core davranışı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Üç ayrı tablo/entity: ActivityLog (audit — kim ne yaptı), ApplicationLog (Serilog teknik log), SecurityLog (güvenlik olayları) — hiçbiri BaseEntity\'den türemiyor, üçü de insert-only.',
+          'LogEventType enum\'ı SecurityLog.EventType\'ı hem C# tarafında (derleme zamanı) hem veritabanı tarafında (CK_SecurityLogs_EventType CHECK constraint) kapalı bir kümeye zorluyor.',
+          'ActivityLog/SecurityLog Users\'a DeleteBehavior.SetNull ile bağlı (denetim izi kullanıcı silinse bile KORUNUR); ApplicationLog\'ta hiç FK yok (Serilog sink DbContext üzerinden yazmıyor).',
+          'EmailHash — SHA-256(email), ham e-posta bir güvenlik log tablosunda bile ASLA saklanmıyor.',
+          'WordLearnerDbContext üç yeni DbSet ile genişledi, AddLoggingTables migration\'ı tabloları/index\'leri/constraint\'i veritabanına yansıttı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
