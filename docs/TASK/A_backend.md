@@ -243,11 +243,12 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > SONRA gelir. A-03'ün handler'ları bu task bitene kadar loglama YAPMAZ; bu task'ın bir parçası
 > olarak A-03'e (ve varsa QR akışına) **geriye dönük** `IActivityLogger`/`ISecurityLogger`
 > çağrıları eklenir — tek seferlik, planlı bir entegrasyon adımı, sürpriz retrofit değil.
-- [ ] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config +
+- [x] **Entity:** `ActivityLog`, `ApplicationLog`, `SecurityLog` + `LogEventType` enum + EF config +
       migration — hiçbiri `BaseEntity`'den türemez (insert-only, soft delete yok)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLogs` (konsol+dosya+DB), `RequestResponseLoggingMiddleware`
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/01_loglama-entity-katmani.html`
+- [x] Serilog `Serilog.Sinks.MSSqlServer` → `ApplicationLogs` (konsol+dosya+DB), `RequestResponseLoggingMiddleware`
+      — canlı doğrulama yapıldı (`dotnet run` + `/health` isteği sonrası tabloda gerçek satırlar görüldü)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/02_serilog-mssql-sink.html`
 - [ ] `IActivityLogger`/`ActivityLogger` (OldValue/NewValue JSON diff), `ISecurityLogger`/`SecurityLogger`
       (e-posta `IPasswordService.HashToken` ile hash'lenip `EmailHash`'e yazılır — ham e-posta ASLA loglanmaz)
 - [ ] ➜ **AKADEMI/backend'ye işle**
