@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-04 — Loglama Sistemi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'serilog-mssql-sink',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '01_loglama-entity-katmani.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'Serilog\'u ApplicationLogs Tablosuna Bağlamak',
+        altBaslik: 'Paket zaten kuruluydu (`Serilog.Sinks.MSSqlServer`) — eksik olan, Bölüm 1\'in tablosuna kolon kolon eşlenmiş bir yapılandırmaydı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bir "ColumnOptions" Eşlemesi Gerekiyor?',
+        aciklama: 'Serilog\'un MSSqlServer sink\'i VARSAYILAN olarak kendi standart kolon kümesini (Id, Message, MessageTemplate, Level, TimeStamp, Exception, Properties) bekler ve `Properties`\'i XML olarak yazar. Bölüm 1\'de oluşturulan `ApplicationLogs` tablosu ise `MessageTemplate` kolonunu HİÇ içermiyor, `SourceContext`/`RequestPath`/`UserId` gibi üç EK kolon içeriyor ve `Properties`\'in JSON (XML DEĞİL) olmasını bekliyor.',
+        neden: 'Sink\'in varsayılan kolon şemasıyla gerçek tablo şeması UYUŞMAZSA, sink her INSERT\'te "böyle bir kolon yok" hatası fırlatır (`AutoCreateSqlTable=false` olduğu için sink tabloyu KENDİSİ değiştirmeye çalışmaz, var olan şemaya UYMAK zorundadır) — bu yüzden `ColumnOptions` nesnesi, sink\'in varsayılanını Bölüm 1\'in gerçek tablosuna BİREBİR eşleyecek şekilde elle yapılandırılıyor.',
+        olmasaydi: 'Bu eşleme yapılmasaydı, uygulama açılışta ÇÖKMEZDİ (sink hataları varsayılan olarak sessizce yutulur, `SelfLog`\'a yazılır) AMA hiçbir log satırı veritabanına YAZILMAZDI — geliştirici Serilog\'u "kurulu" sanıp güvenirken, `ApplicationLogs` tablosu sessizce BOŞ kalırdı.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — MSSqlServer Sink Yapılandırması',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'A-03.2\'de (Bölüm 44) `IAdminSeedService` çağrısıyla genişleyen bu dosyada, Serilog\'un `UseSerilog` çağrısı tek satırlık bir fluent zincirden, `ApplicationLogs` tablosuna (Bölüm 1) yazan bir DB sink\'i de İÇİNE alan bir blok yapılandırmaya dönüştürüldü.',
+        diff: `+using System.Collections.ObjectModel;
++using System.Data;
+ using System.Security.Claims;
+ using System.Text;
+ using System.Threading.RateLimiting;
+ using FluentValidation;
+ using MediatR;
+ using Microsoft.AspNetCore.Authentication.JwtBearer;
+ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+ using Microsoft.AspNetCore.RateLimiting;
+ using Microsoft.Extensions.Diagnostics.HealthChecks;
+ using Microsoft.IdentityModel.Tokens;
+ using Serilog;
++using Serilog.Sinks.MSSqlServer;
+ using WordLearner.API.Common;
+ using WordLearner.API.Conventions;
+ using WordLearner.API.Middleware;
+ using WordLearner.Application;
+ using WordLearner.Application.Common;
+ using WordLearner.Application.Common.Behaviors;
+ using WordLearner.Application.DTOs;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Infrastructure;
+ using WordLearner.Infrastructure.Data;
+
+ var builder = WebApplication.CreateBuilder(args);
+
+-builder.Host.UseSerilog((context, configuration) => configuration
+-    .MinimumLevel.Information()
+-    .Enrich.FromLogContext()
+-    .WriteTo.Console()
+-    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
++builder.Host.UseSerilog((context, configuration) =>
++{
++    // ApplicationLogs (A-04, Domain/Entities/Logging/ApplicationLog.cs) tablosuyla birebir eşleşen
++    // kolon eşlemesi — MessageTemplate/varsayılan XML Properties bu tabloda yok, LogEvent'i JSON
++    // olarak "Properties" kolonuna yönlendiriyoruz.
++    var columnOptions = new ColumnOptions();
++    columnOptions.Store.Remove(StandardColumn.MessageTemplate);
++    columnOptions.Store.Remove(StandardColumn.Properties);
++    columnOptions.Store.Add(StandardColumn.LogEvent);
++    columnOptions.LogEvent.ColumnName = "Properties";
++    columnOptions.LogEvent.ExcludeAdditionalProperties = true;
++    columnOptions.AdditionalColumns = new Collection<SqlColumn>
++    {
++        new SqlColumn { ColumnName = "SourceContext", DataType = SqlDbType.NVarChar, DataLength = 255 },
++        new SqlColumn { ColumnName = "RequestPath", DataType = SqlDbType.NVarChar, DataLength = 500 },
++        new SqlColumn { ColumnName = "UserId", DataType = SqlDbType.Int }
++    };
++
++    configuration
++        .MinimumLevel.Information()
++        .Enrich.FromLogContext()
++        .WriteTo.Console()
++        .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day)
++        .WriteTo.MSSqlServer(
++            connectionString: context.Configuration.GetConnectionString("DefaultConnection"),
++            sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },
++            columnOptions: columnOptions);
++});
+
+ builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
+ builder.Services.AddEndpointsApiExplorer();
+ builder.Services.AddSwaggerGen();
+
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+ builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
+
+ // Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
+ // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
+ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
+ builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+     options.TokenValidationParameters = new TokenValidationParameters
+     {
+         ValidateIssuerSigningKey = true,
+         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+         ValidateIssuer = true,
+         ValidIssuer = builder.Configuration["Jwt:Issuer"],
+         ValidateAudience = true,
+         ValidAudience = builder.Configuration["Jwt:Audience"],
+         ClockSkew = TimeSpan.Zero
+     });
+ builder.Services.AddAuthorization();
+
+ builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
+
+ // 5 isimli policy — her Controller action'ı [EnableRateLimiting("...")] ile hangisini kullanacağını
+ // seçer; burada isimlendirilmeyen bir endpoint (ör. /health) HİÇ limitlenmez (global bir varsayılan
+ // policy set edilmedi, bilerek — health check'in izlenebilir olması gerekiyor).
+ builder.Services.AddRateLimiter(options =>
+ {
+     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+     options.AddPolicy("general", context => RateLimitPartition.GetFixedWindowLimiter(
+         GeneralPartitionKey(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 100 }));
+
+     options.AddPolicy("anonymous", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 10 }));
+
+     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(15), PermitLimit = 5 }));
+
+     options.AddPolicy("qrGenerate", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromHours(1), PermitLimit = 20 }));
+
+     options.AddPolicy("qrStatus", context => RateLimitPartition.GetFixedWindowLimiter(
+         ClientIp(context),
+         _ => new FixedWindowRateLimiterOptions { Window = TimeSpan.FromMinutes(1), PermitLimit = 40 }));
+
+     options.OnRejected = async (rejectedContext, cancellationToken) =>
+     {
+         var httpContext = rejectedContext.HttpContext;
+         var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
+         httpContext.Response.ContentType = "application/json";
+         await httpContext.Response.WriteAsJsonAsync(
+             new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);
+     };
+ });
+
+ var app = builder.Build();
+
+ if (app.Environment.IsDevelopment())
+ {
+     app.UseSwagger();
+     app.UseSwaggerUI();
+ }
+
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
+ app.UseCors("Default");
+ app.UseAuthentication();
+ app.UseAuthorization();
+ // Authorization'dan SONRA — "general" policy'nin partition anahtarı (aşağıdaki GeneralPartitionKey)
+ // context.User'ın (JWT claim'leri) doldurulmuş olmasına bağlı.
+ app.UseRateLimiter();
+ app.MapControllers();
+ app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = WriteHealthCheckResponseAsync });
+
+ // AdminController (A-18) ve [Authorize(Roles="Admin")] uçları için ilk Admin'i garantiler — idempotent,
+ // her başlangıçta güvenle tekrar çalışır (INITIAL_ADMIN_EMAIL/PASSWORD tanımlı değilse sessizce atlar).
+ using (var scope = app.Services.CreateScope())
+ {
+     await scope.ServiceProvider.GetRequiredService<IAdminSeedService>().SeedInitialAdminAsync();
+ }
+
+ app.Run();
+
+ static Task WriteHealthCheckResponseAsync(HttpContext context, HealthReport report)
+ {
+     context.Response.ContentType = "application/json";
+     return context.Response.WriteAsJsonAsync(new
+     {
+         status = report.Status.ToString(),
+         databaseConnected = report.Status == HealthStatus.Healthy,
+         timestampUtc = DateTime.UtcNow
+     });
+ }
+
+ // "general" policy [Authorize] uçlarda kullanılıyor — kimliği doğrulanmış her kullanıcı KENDİ
+ // bütçesini tüketir (IP DEĞİL, ör. aynı NAT arkasındaki iki kullanıcı birbirinin limitini YEMEZ).
+ static string GeneralPartitionKey(HttpContext context) =>
+     context.User.Identity?.IsAuthenticated == true
+         ? context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ClientIp(context)
+         : ClientIp(context);
+
+ static string ClientIp(HttpContext context) =>
+     context.Connection.RemoteIpAddress?.ToString() ?? "unknown";`,
+        satirlar: [
+          {
+            satir: 'using System.Collections.ObjectModel;',
+            aciklama: '`Collection<SqlColumn>` (aşağıda `AdditionalColumns` için) bu ad alanında tanımlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using System.Data;',
+            aciklama: '`SqlDbType` (aşağıda `NVarChar`/`Int` için) bu ad alanında tanımlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Serilog.Sinks.MSSqlServer;',
+            aciklama: '`ColumnOptions`/`SqlColumn`/`StandardColumn`/`MSSqlServerSinkOptions` türlerinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Host.UseSerilog((context, configuration) => configuration',
+            aciklama: 'ESKİ hâl — lambda TEK bir ifadeydi (`=>`\'ın sağı doğrudan `configuration`\'ın fluent zincirinin SONUCUYDU), gövde içinde BAŞKA bir kurulum (ör. `ColumnOptions` inşası) için yer YOKTU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Host.UseSerilog((context, configuration) =>',
+            aciklama: 'YENİ hâl — lambda artık BLOK gövdeli (`{ }`), bu sayede fluent zincirden ÖNCE `columnOptions` gibi yardımcı değişkenler hazırlanabiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.MinimumLevel.Information()',
+            aciklama: 'DEĞİŞMEDİ — Information ve üzeri (Warning/Error/Fatal) seviyeler HALA tüm sink\'lere (şimdi MSSqlServer dahil) yazılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Enrich.FromLogContext()',
+            aciklama: 'DEĞİŞMEDİ — bu satır, aşağıdaki `RequestResponseLoggingMiddleware` değişikliğinin `LogContext.PushProperty("RequestPath", ...)` ile eklediği özelliğin log olaylarına AKTARILMASINI sağlayan taraf; middleware değişikliği bu satır OLMADAN hiçbir işe yaramazdı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.Console()',
+            aciklama: 'DEĞİŞMEDİ — konsol çıktısı hâlâ aktif.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));',
+            aciklama: 'ESKİ hâl — zincirin SON halkasıydı, kapanış parantezleri (`));`) hem `WriteTo.File`\'ı hem dıştaki `UseSerilog` çağrısını KAPATIYORDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day)',
+            aciklama: 'YENİ hâl — artık zincirin SON halkası DEĞİL (`;` yok), hemen altındaki `.WriteTo.MSSqlServer(...)` ile devam ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var columnOptions = new ColumnOptions();',
+            aciklama: 'Sink\'in varsayılan yedi standart kolonuyla (Id, Message, MessageTemplate, Level, TimeStamp, Exception, Properties) BAŞLAR — aşağıdaki satırlar bunu Bölüm 1\'in gerçek tablosuna göre DEĞİŞTİRİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'columnOptions.Store.Remove(StandardColumn.MessageTemplate);',
+            aciklama: '`ApplicationLogs` tablosunda bir `MessageTemplate` kolonu YOK (Bölüm 1) — sink\'in bu standart kolonu yazmaya ÇALIŞMASI bir "geçersiz kolon" hatasıyla SONUÇLANIRDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'columnOptions.Store.Remove(StandardColumn.Properties);',
+            aciklama: 'Varsayılan XML tabanlı `Properties` kolonu KALDIRILIYOR — hemen altta `LogEvent` standart kolonu AYNI isimle (JSON olarak) onun YERİNİ alacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'columnOptions.Store.Add(StandardColumn.LogEvent);',
+            aciklama: 'TÜM log olayını (mesaj, seviye, TÜM özellikler) TEK bir JSON belgesi olarak yazan alternatif standart kolon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'columnOptions.LogEvent.ColumnName = "Properties";',
+            aciklama: '`LogEvent` kolonunun VARSAYILAN adı "LogEvent" — burada `ApplicationLogs` tablosundaki gerçek kolon adıyla ("Properties") eşleşecek şekilde YENİDEN ADLANDIRILIYOR.',
+            neden: 'Kolonun İÇERİĞİ (JSON) değişmiyor, yalnızca hangi VERİTABANI KOLONUNA yazılacağı değişiyor — Bölüm 1\'in `ApplicationLog.Properties` alanı "Serilog\'un yapılandırılmış loglama alanları — JSON" diye tanımlanmıştı, bu satır o sözü tutuyor.',
+            olmasaydi: 'Bu yeniden adlandırma OLMASAYDI, sink varsayılan "LogEvent" adıyla bir INSERT DENERDİ ve tabloda böyle bir kolon OLMADIĞI için yazma İSTİSNA fırlatırdı.'
+          },
+          {
+            satir: 'columnOptions.LogEvent.ExcludeAdditionalProperties = true;',
+            aciklama: 'Aşağıda `AdditionalColumns`\'a taşınan `SourceContext`/`RequestPath`/`UserId` özelliklerinin, JSON `Properties` kolonunda TEKRAR görünmesini engeller.',
+            neden: 'Bu üç değer zaten KENDİ ayrı kolonlarında sorgulanabilir hâlde duruyor — JSON içinde bir daha tekrarlanmaları yalnızca depolama alanını BÜYÜTÜR, hiçbir yeni bilgi KATMAZ.',
+            olmasaydi: 'Bu satır olmasaydı AYNI üç değer HEM kendi kolonunda HEM JSON içinde iki kez SAKLANIRDI — işlevsel bir hata değil ama gereksiz veri tekrarı.'
+          },
+          {
+            satir: 'columnOptions.AdditionalColumns = new Collection<SqlColumn>',
+            aciklama: 'Standart kolonların DIŞINDA, `ApplicationLogs` tablosunun kendine özgü üç kolonunu (Bölüm 1) tanımlayan koleksiyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new SqlColumn { ColumnName = "SourceContext", DataType = SqlDbType.NVarChar, DataLength = 255 },',
+            aciklama: 'Serilog\'un `ILogger<T>` enjeksiyonunda OTOMATİK eklediği `SourceContext` özelliğini (log\'u yazan sınıfın tam adı) bu kolona eşler — Bölüm 1\'deki `ApplicationLog.SourceContext` ile AYNI 255 karakter üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new SqlColumn { ColumnName = "RequestPath", DataType = SqlDbType.NVarChar, DataLength = 500 },',
+            aciklama: '`RequestPath` adlı bir özelliği bu kolona eşler — bu özelliği HANGİ kod ÜRETİYOR sorusunun cevabı aşağıdaki `RequestResponseLoggingMiddleware.cs` değişikliğinde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new SqlColumn { ColumnName = "UserId", DataType = SqlDbType.Int }',
+            aciklama: '`UserId` adlı bir özelliği bu kolona eşler — DataLength BELİRTİLMEDİ çünkü `int` sabit genişlikli bir SAYISAL tür, karakter uzunluğu kavramı YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'configuration',
+            aciklama: 'Bir önceki hâlde `configuration =>` sağ tarafındaki fluent zincirin BAŞLADIĞI ifade — artık lambda GÖVDE içinde ayrı bir ifade olarak duruyor (blok gövdeye geçildiği için).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WriteTo.MSSqlServer(',
+            aciklama: 'Konsol/dosya sink\'lerine EK olarak (onların YERİNE değil) dördüncü bir hedef — Serilog AYNI log olayını TÜM yapılandırılmış sink\'lere PARALEL yazar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'connectionString: context.Configuration.GetConnectionString("DefaultConnection"),',
+            aciklama: '`WordLearnerDbContext`\'in (Bölüm 8, A-02) KULLANDIĞI AYNI `DefaultConnection` — Serilog KENDİ ayrı bir veritabanı bağlantısı AÇMIYOR, aynı SQL Server örneğine, aynı veritabanına yazıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },',
+            aciklama: '`AutoCreateSqlTable = false` — tablo zaten `AddLoggingTables` migration\'ıyla (Bölüm 1) OLUŞTU, sink\'in kendi TABLO OLUŞTURMA mantığına (index/constraint İÇERMEYEN, basit bir CREATE TABLE) hiç ihtiyaç YOK.',
+            neden: 'İki ayrı sistem (EF Core migration VE sink\'in auto-create\'i) AYNI tabloyu YÖNETMEYE çalışsaydı, hangisinin "doğru" şema olduğu konusunda bir ÇELİŞKİ ortaya çıkardı — şema TEK bir yerden (migration) yönetildiğinde bu belirsizlik hiç oluşmuyor.',
+            olmasaydi: '`AutoCreateSqlTable=true` olsaydı, sink UYGULAMA AÇILIŞINDA kendi basit CREATE TABLE\'ını DENERDİ — tablo zaten VAR OLDUĞU için bu adım NO-OP kalırdı, ama şema KARARI iki farklı yerde (migration + sink varsayılanları) TUTULMUŞ gibi YANILTICI görünürdü.'
+          },
+          {
+            satir: 'columnOptions: columnOptions);',
+            aciklama: 'Yukarıda inşa edilen eşlemeyi sink\'e VERİR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'RequestResponseLoggingMiddleware.cs — RequestPath Zenginleştirmesi',
+        dosyaYolu: 'backend/WordLearner.API/Middleware/RequestResponseLoggingMiddleware.cs',
+        neden: 'A-02\'de (Bölüm 5) TAM olarak öğretilen bu middleware\'e, yukarıdaki `AdditionalColumns`\'taki `RequestPath` kolonunu DOLDURACAK bir zenginleştirme eklendi — bu değişiklik OLMADAN o kolon HER ZAMAN `NULL` kalırdı.',
+        diff: ` using System.Diagnostics;
++using Serilog.Context;
+
+ namespace WordLearner.API.Middleware;
+
+ public class RequestResponseLoggingMiddleware
+ {
+     private readonly RequestDelegate _next;
+     private readonly ILogger<RequestResponseLoggingMiddleware> _logger;
+
+     public RequestResponseLoggingMiddleware(RequestDelegate next, ILogger<RequestResponseLoggingMiddleware> logger)
+     {
+         _next = next;
+         _logger = logger;
+     }
+
+     public async Task InvokeAsync(HttpContext context)
+     {
+         var stopwatch = Stopwatch.StartNew();
+
++        // İsteğin path'ini, bu istek sırasında yazılan HER log satırına (Handler'lardaki dahil)
++        // otomatik ekler — ApplicationLogs.RequestPath (A-04) bu sayede elle geçirilmeden dolar.
++        using (LogContext.PushProperty("RequestPath", context.Request.Path.Value))
++        {
++            await _next(context);
++        }
+-        await _next(context);
+
+         stopwatch.Stop();
+         _logger.LogInformation(
+             "{Method} {Path} responded {StatusCode} in {ElapsedMs}ms",
+             context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using Serilog.Context;',
+            aciklama: '`LogContext` bu ad alanında tanımlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using (LogContext.PushProperty("RequestPath", context.Request.Path.Value))',
+            aciklama: '`LogContext.PushProperty`, adı verilen özelliği bir `using` bloğu SÜRESİNCE, o an çalışan ASYNC akışın (async flow) İÇİNDEKİ TÜM `ILogger` çağrılarına OTOMATİK ekler — `.Enrich.FromLogContext()` (Program.cs, yukarıdaki değişiklik) bu özelliği OKUYUP her log olayına ekleyen taraftır.',
+            neden: '`_logger.LogInformation(...)`\'a (aşağıda) elle bir `RequestPath` parametresi GEÇMEK yalnızca O TEK log satırını kapsardı — bu middleware\'den SONRA çalışan `ExceptionHandlingMiddleware`, Handler\'lar, EF Core\'un kendi SQL logları gibi TÜM diğer log satırları RequestPath\'siz kalırdı; `LogContext` bu bilgiyi İSTEK SÜRESİNCE otomatik "arka planda taşıyan" bir mekanizma.',
+            olmasaydi: 'Bu zenginleştirme olmasaydı, `ApplicationLogs.RequestPath` kolonu YALNIZCA bu middleware\'in kendi log satırında (bir istek başına TEK satır) dolardı — Bölüm 1\'in "hangi tüm bilgiler var" senaryolarından biri olan "bu path\'te olan TÜM hatalar" sorgusu, Handler\'lardan/EF Core\'dan gelen diğer YÜZLERCE satırı KAÇIRIRDI.'
+          },
+          {
+            satir: 'await _next(context);',
+            aciklama: 'İsteğin geri kalan pipeline\'ı (ExceptionHandling, Authentication, Controller\'lar…) ARTIK `using` bloğunun İÇİNDE çalışıyor — bu SÜRE boyunca yazılan HER log satırı `RequestPath`\'i taşıyacak.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama',
+        aciklama: '`docker exec` ile SQL Server\'a bağlanıp `SELECT TOP 10 ... FROM ApplicationLogs ORDER BY Id DESC` çalıştırıldı — uygulama `dotnet run` ile açılıp `/health`\'e bir istek atıldıktan sonra tabloda ONLARCA satır (uygulama başlangıcından "Application started" gibi log\'lar, `/health` isteğinin EF Core SQL sorgusu, endpoint çalıştırma, yanıt özeti…) görüldü.',
+        neden: '`RequestPath` kolonu TÜM bu satırlarda `/health` olarak DOLU çıktı (uygulama başlangıç log\'ları HARİÇ — onlar bir HTTP isteği SIRASINDA değil, `Program.cs`\'in en başında yazıldığı için `RequestPath=NULL`), `Properties` kolonu her satırda GEÇERLİ bir JSON belgesi olarak göründü — yukarıdaki `ColumnOptions` eşlemesinin GERÇEKTEN çalıştığının somut kanıtı.',
+        olmasaydi: null
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Sink (Serilog)', tanim: 'Bir log olayının YAZILDIĞI hedef — konsol, dosya, veritabanı gibi; Serilog AYNI olayı yapılandırılmış TÜM sink\'lere paralel yazar.' },
+          { terim: 'ColumnOptions', tanim: 'Serilog.Sinks.MSSqlServer\'ın, hangi log olayı alanının hangi veritabanı kolonuna nasıl yazılacağını tanımlayan yapılandırma nesnesi.' },
+          { terim: 'LogContext', tanim: 'Serilog\'un, bir `using` bloğu süresince ilgili async akıştaki TÜM log çağrılarına otomatik özellik ekleyen ("ambient" — ortam) mekanizması.' },
+          { terim: 'AutoCreateSqlTable', tanim: 'Sink\'in kendi basit tablo oluşturma mantığını açıp kapatan ayar — bir migration sistemi (EF Core) ZATEN tabloyu yönetiyorsa `false` bırakılır.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`Serilog.Sinks.MSSqlServer` paketi zaten kuruluydu — eksik olan, Bölüm 1\'in ApplicationLogs şemasına birebir eşlenmiş bir ColumnOptions yapılandırmasıydı.',
+          'MessageTemplate kaldırıldı, standart XML Properties kaldırılıp yerine JSON LogEvent "Properties" adıyla yeniden adlandırıldı, SourceContext/RequestPath/UserId üç AdditionalColumns olarak eklendi.',
+          'RequestResponseLoggingMiddleware, LogContext.PushProperty ile RequestPath\'i bir isteğin TÜM ömrü boyunca (Handler\'lar dahil) yazılan her log satırına otomatik taşıyacak şekilde genişledi.',
+          'Canlı doğrulama: dotnet run + /health isteği sonrası ApplicationLogs tablosunda gerçek satırlar, doğru RequestPath ve geçerli JSON Properties görüldü.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

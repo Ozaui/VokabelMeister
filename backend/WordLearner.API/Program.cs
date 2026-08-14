@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Data;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -9,6 +11,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using Serilog.Sinks.MSSqlServer;
 using WordLearner.API.Common;
 using WordLearner.API.Conventions;
 using WordLearner.API.Middleware;
@@ -23,11 +26,34 @@ using WordLearner.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, configuration) => configuration
-    .MinimumLevel.Information()
-    .Enrich.FromLogContext()
-    .WriteTo.Console()
-    .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day));
+builder.Host.UseSerilog((context, configuration) =>
+{
+    // ApplicationLogs (A-04, Domain/Entities/Logging/ApplicationLog.cs) tablosuyla birebir eşleşen
+    // kolon eşlemesi — MessageTemplate/varsayılan XML Properties bu tabloda yok, LogEvent'i JSON
+    // olarak "Properties" kolonuna yönlendiriyoruz.
+    var columnOptions = new ColumnOptions();
+    columnOptions.Store.Remove(StandardColumn.MessageTemplate);
+    columnOptions.Store.Remove(StandardColumn.Properties);
+    columnOptions.Store.Add(StandardColumn.LogEvent);
+    columnOptions.LogEvent.ColumnName = "Properties";
+    columnOptions.LogEvent.ExcludeAdditionalProperties = true;
+    columnOptions.AdditionalColumns = new Collection<SqlColumn>
+    {
+        new SqlColumn { ColumnName = "SourceContext", DataType = SqlDbType.NVarChar, DataLength = 255 },
+        new SqlColumn { ColumnName = "RequestPath", DataType = SqlDbType.NVarChar, DataLength = 500 },
+        new SqlColumn { ColumnName = "UserId", DataType = SqlDbType.Int }
+    };
+
+    configuration
+        .MinimumLevel.Information()
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File("logs/app-.txt", rollingInterval: RollingInterval.Day)
+        .WriteTo.MSSqlServer(
+            connectionString: context.Configuration.GetConnectionString("DefaultConnection"),
+            sinkOptions: new MSSqlServerSinkOptions { TableName = "ApplicationLogs", AutoCreateSqlTable = false },
+            columnOptions: columnOptions);
+});
 
 builder.Services.AddControllers(options => options.Conventions.Add(new RoutePrefixConvention("api/v1")));
 builder.Services.AddEndpointsApiExplorer();

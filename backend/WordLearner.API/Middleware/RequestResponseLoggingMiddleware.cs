@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Serilog.Context;
 
 namespace WordLearner.API.Middleware;
 
@@ -17,7 +18,12 @@ public class RequestResponseLoggingMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
 
-        await _next(context);
+        // İsteğin path'ini, bu istek sırasında yazılan HER log satırına (Handler'lardaki dahil)
+        // otomatik ekler — ApplicationLogs.RequestPath (A-04) bu sayede elle geçirilmeden dolar.
+        using (LogContext.PushProperty("RequestPath", context.Request.Path.Value))
+        {
+            await _next(context);
+        }
 
         stopwatch.Stop();
         _logger.LogInformation(
