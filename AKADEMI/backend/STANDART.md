@@ -170,6 +170,19 @@ geçmişi yok.
 - **Var olan bir kodun SATIRI/İMZASI DEĞİŞTİĞİNDE** (ekleme değil, değişiklik — bkz. §3.1) eski
   bölüm dokunulmadan bırakılır, değişikliği yapan görevin bölümüne bir `kod-degisiklik` slaytı
   eklenir.
+- **"Değişmedi"/"aynı"/"BİREBİR" gibi geçmişe atıfla YETİNEN bir `aciklama` YASAK — bir satır
+  ÖNCEKİ bir bölümde (hatta AYNI dosyanın kendi içinde başka bir yerinde) görülmüş olsa bile,
+  yeni bir `kod`/`kod-degisiklik` slaytındaki HER satır kendi başına, o satırı İLK kez okuyan bir
+  okuyucuya NE yaptığını anlatan gerçek bir açıklama alır.** "Bölüm 3'ten değişmedi", "Aynı,
+  sözleşmeyle BİREBİR", "X ile AYNI" gibi ifadeler bir açıklamanın YERİNE geçemez — bunlar en
+  fazla, gerçek açıklamaya EKLENEN bir bağlam notu olabilir ("... — Bölüm 3'teki AYNI parametre,
+  burada X'e atanıyor" gibi), ama cümlenin TAMAMI bu atıftan ibaret olamaz. Bu kural özellikle
+  önceden yazılmış bir arayüzün (interface) implementasyonunu gösteren `kod` slaytlarında ihlal
+  edilmeye eğilimlidir (imza tekrar ediyor diye "aynı" denip geçilir) — böyle bir satır için de
+  "bu parametre aşağıda hangi alana/işleme gidiyor" sorusu YANITLANMALIDIR. Yeni bir slayt
+  yazıldıktan sonra `grep -n "değişmedi\|BİREBİR\|AYNI,\|ile AYNI\." <dosya>` ile taranıp
+  eşleşen HER `aciklama`/`neden`/`olmasaydi` alanı gerçek bir açıklamayı İÇERİP içermediği
+  kontrol edilir; yalnızca atıftan ibaretse yeniden yazılır.
 - **Proje meta-dokümanlarına (`CLAUDE.md`, `TASK.md`, `STANDART.md`'nin kendisi, `ENV.md`,
   `SECURITY.md`, `API_ENDPOINTS.md`, `DATABASE_SCHEMA.md`, `TECHNICAL_SPECIFICATIONS.md`,
   `CODING_STANDARDS.md`, `DEVELOPMENT_SETUP.md`) bir slaytın `aciklama`/`neden`/`olmasaydi`/
