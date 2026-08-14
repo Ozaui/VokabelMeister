@@ -61,11 +61,13 @@ yalnızca bir token senkronizasyonu.
 > E-posta + şifre + OTP (2FA) + **QR ile giriş** (B-02.1); Google/Apple **yok** (Admin panelde asla).
 - [ ] **Tip:** `LoginRequest`, `VerifyOtpRequest`, `AdminUser` (`auth.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **API:** `authApi` — `login`, `verifyOtp` (axios + `useApiMutation`, `store/api/authApi.ts`)
+- [ ] **API:** `authApi` — `login`, `verifyOtp`, `logout` (axios + `useApiMutation`, `store/api/authApi.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` (`store/slices/authSlice.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
-- [ ] **Component:** `LoginPage` (e-posta+şifre formu, "QR ile giriş" linki), `OtpVerifyPage` (6 haneli kod)
+- [ ] **Component:** `LoginPage` (e-posta+şifre formu, "QR ile giriş" linki), `OtpVerifyPage` (6 haneli
+  kod) — `logout` çağrısı B-01'in Topbar'ındaki "Çıkış Yap" aksiyonuna bağlanır (B-01 ✅ zaten kurulu
+  Topbar'a bu task'ta retrofit edilir)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Route:** `/login`, `/verify-otp` (`App.tsx`), başarılı girişte `/` yönlendirme
 - [ ] ➜ **Admin Akademi'ye işle**
@@ -98,7 +100,9 @@ yalnızca bir token senkronizasyonu.
 - [ ] **Tip:** `Word`, `WordDetail`, `WordFormValues` (`word.types.ts`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **API:** `wordsApi` — `getWords` (filtre/sayfa), `createWord`, `updateWord`, `deleteWord`,
-      `getUnmatchedWordConcepts` (`languageId` bazlı, `suggestedMatchConceptId` dahil), `pairWordConcepts`
+      `getUnmatchedWordConcepts` (`languageId` bazlı, `suggestedMatchConceptId` dahil), `pairWordConcepts`,
+      `getLanguages` (`GET /languages` — `LanguageAndTypeStep`'in dil seçimi), `uploadWordImage`
+      (`POST /media/images/upload`, A-07 — `WordConcept.ImageUrl`'i doldurur)
       (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Slice:** `wordFilterSlice` — liste filtre/sayfa state (arama, level, partOfSpeech)
@@ -117,6 +121,7 @@ yalnızca bir token senkronizasyonu.
   - [ ] `TurkishGrammarFields` (`tr` + Noun/Verb/Diğer — `TURKISH_LANGUAGE_FEATURES.md §9`'un TS karşılığı; backend `WordGrammarValidator` ile aynı mantık, kod paylaşımı yok — bkz. A-05 notu)
   - [ ] `ConjugationGrid` (fiil çekim tablosu — Almanca/Türkçe form'unun ikisinde de kullanılan ortak alt component)
   - [ ] `ExampleSentenceField` (örnek cümle + kategori seçimi)
+  - [ ] `WordImageUploadField` (`uploadWordImage` ile görsel yükle/önizle/kaldır — `WordConcept.ImageUrl`)
   - [ ] ➜ **Admin Akademi'ye işle** (her alt component kendi bölümü)
 - [ ] **Component — `WordPairingPage`:**
   - [ ] `WordPairingPage` (üst kapsayıcı — iki sütun layout + eşleştirme state'i)
@@ -129,6 +134,25 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Birim testleri:** `WordFormModal.test.tsx` (dil+tür bazlı koşullu alan render/validasyon, submit),
       `WordListPage.test.tsx` (filtre), `WordPairingPage.test.tsx` (eşleştirme mutlu yol + önerilen eşleşme render)
+- [ ] ➜ **Admin Akademi'ye işle**
+
+### B-03.1 — Toplu Kelime İçe Aktarma ⬜ ⚠️ **[2026-08-15 — yeni task, kullanıcı isteği]**
+**Referans:** A-18 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §11
+> A-18'in `POST /admin/words/import`'u planlanmıştı ama admin panelde bunu çağıran hiçbir sayfa/
+> component yoktu — bu boşluğu kapatır. Endpoint bir CSV değil, JSON `{ rows: [...] }` bekler; admin
+> bir CSV dosyası seçer, istemci tarafında JSON'a çevrilip gönderilir. **Yeni kütüphane:**
+> `papaparse` (CLAUDE.md §4.1 "duruma göre eklenen" deseni — yalnızca bu task'ta, CSV parse için).
+- [ ] **Tip:** `BulkImportRow`, `BulkImportResult` (`{ totalRows, importedCount, skippedCount, results[] }`) (`wordImport.types.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **API:** `wordsApi` — `bulkImportWords` (`POST /admin/words/import`) (axios + `useApiMutation`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component:** `WordImportPage` (üst kapsayıcı), `CsvFileDropzone` (dosya seç/sürükle-bırak,
+  `papaparse` ile satırları `BulkImportRow[]`'a çevirir — hatalı sütun eşlemesi istemci tarafında
+  erken uyarır), `ImportResultTable` (satır bazlı başarı/hata — `errorCode` insan-okur mesaja çevrilir)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Route:** `/words/import` (`App.tsx`, `WordListPage`'den link)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Birim testleri:** `CsvFileDropzone.test.tsx` (parse + hatalı sütun uyarısı), `ImportResultTable.test.tsx` (best-effort karışık sonuç render)
 - [ ] ➜ **Admin Akademi'ye işle**
 
 ### B-04 — Kategori Yönetimi ⬜

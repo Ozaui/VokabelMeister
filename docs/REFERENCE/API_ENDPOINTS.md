@@ -76,10 +76,17 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | POST | `/users/me/avatar` | Avatar (multipart, max 5MB) |
 | PUT | `/users/me/device-token` | OneSignal player id |
 | DELETE | `/users/me` | Hesap sil (OTP akışı `/auth/delete-account/*`) |
+| PUT | `/users/me/password` | Şifre değiştir (giriş gerekli — `currentPassword`+`newPassword`, tüm cihazlardan çıkış) — A-12 |
+| GET | `/users/me/sessions` | Aktif oturum/cihaz listesi (`TokenFamily` bazlı, `isCurrent` işaretli) — A-12.1 |
+| DELETE | `/users/me/sessions/{tokenFamily}` | Tek oturumu iptal et — A-12.1 |
+| POST | `/users/me/sessions/revoke-all` | Diğer tüm cihazlardan çıkış (`exceptCurrent` varsayılan true) — A-12.1 |
 
 ```json
 // GET /users/me/statistics → { "totalWordsLearning": 45, "masteredWords": 12, "averageSuccessRate": 78.5,
 //   "streakDays": 5, "levelProgress": { "currentLevel": "A1", "xpInLevel": 250, "xpRequiredForNext": 500 } }
+
+// GET /users/me/sessions → [{ "tokenFamily": "...", "deviceInfo": "Chrome on Windows", "ipAddress": "...",
+//   "createdAt": "...", "isCurrent": true }]
 ```
 
 ## 5. Sistem Kelimeleri
@@ -169,8 +176,10 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | Metot | Yol | Auth | Açıklama |
 |-------|-----|------|----------|
 | GET | `/categories` | [Authorize] | Hiyerarşik (level, includeWordCount) |
-| GET | `/categories/{id}/words` | [Authorize] | Kategorinin kelimeleri (sayfalı) |
 | POST/PUT/DELETE | `/categories[/{id}]` | Admin | CRUD (alt kategori/aktif kelime varsa silme 409) |
+
+> ⚠️ **[2026-08-15]** `GET /categories/{id}/words` kaldırıldı — `GET /words?categoryId=` (§5) ile
+> birebir aynı veriyi döndürüyordu, hiçbir frontend hiç kullanmadı (YAGNI).
 
 ## 7. Kişisel Kartlar
 
@@ -180,6 +189,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | GET/PUT/DELETE | `/user-cards/{id}` | Detay / güncelle / soft delete (sahibi) |
 | POST | `/user-cards` | Oluştur (duplikat 409 + `?force=true`; sistem eşleşmesinde `suggestedSystemWordId`) |
 | POST | `/user-cards/learn-system-word` | `{ "wordId": 5 }` → **UserProgress** açar, UserCard OLUŞTURMAZ |
+| POST | `/user-cards/{id}/image` | Kart görseli yükle (multipart, sahibi — A-10) |
 
 ```json
 // POST /user-cards/learn-system-word → { "userProgressId": 12, "wordId": 5, "germanWord": "laufen", "alreadyExists": false }
@@ -285,6 +295,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | DELETE | `/classes/{id}` · `/leave` | Sahip / Üye | Sil / ayrıl |
 | POST/GET | `/classes/{id}/words` | Sahip / Üye | Sınıf kelimesi ekle (duplikat 409) / liste |
 | PUT/DELETE | `/classes/{id}/words/{wordId}` | Sahip | Güncelle / soft delete |
+| POST | `/classes/{id}/words/{wordConceptId}/learn` | Üye | Sınıf kelimesini öğrenmeye başla (A-15 — dahili olarak `/user-cards/learn-system-word`'ü çağırır, `UserProgress` açar) |
 
 ## 13. Arkadaşlar
 

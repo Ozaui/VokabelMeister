@@ -258,7 +258,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/04_paged-repository.html`
 - [x] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/
       QrLoginDenied + PasswordReset/AccountDeletion başarı olayları — `SecurityLog.Detail` serbest
-      metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür).
+      metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür)şimd.
       Canlı doğrulama yapıldı: yanlış şifreyle `/auth/login` isteği `SecurityLogs`'a doğru
       `EventType`/`EmailHash`/`IpAddress`/`Detail` ile yazıldı.
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/05_a03-retrofit.html`
@@ -314,9 +314,12 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       self-ref FK Restrict) + migration (12 kategori + 24 çeviri seed, `DATABASE_SCHEMA.md` sırasıyla)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `ICategoryRepository` (hiyerarşik liste, `HasChildrenAsync`/`HasActiveWordsAsync`/`WouldCreateCycleAsync`)
-      + 5 Command/Query (Create/Update/Delete/GetCategories/GetCategoryWords)
+      + 4 Command/Query (Create/Update/Delete/GetCategories) ⚠️ **[2026-08-15]** `GetCategoryWords`
+      (`GET /categories/{id}/words`) kapsam dışı bırakıldı — `GET /words?categoryId=` (aşağıdaki madde)
+      ile birebir aynı veriyi döndürüyordu, hiçbir frontend task'ı onu değil bunu kullanıyordu (YAGNI,
+      kullanılmayan bir endpoint yazılmaz); `API_ENDPOINTS.md` §6'dan da kaldırıldı
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] Silme koruması (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`/`CategoryParentCycleException`, 409/400), `CategoriesController` (5 endpoint)
+- [ ] Silme koruması (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`/`CategoryParentCycleException`, 409/400), `CategoriesController` (4 endpoint)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `GET /words`'e `categoryId` filtresi + Word DTO'larına `categories[]` alanı
 - [ ] ➜ **AKADEMI/backend'ye işle**
@@ -392,9 +395,16 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `POST /user-cards/learn-system-word` → `UserCard` değil **`UserProgress`** açar, `UserCardController`
 - [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-15] Kart görseli yükleme eksikti:** `UserCards.ImageUrl` (DATABASE_SCHEMA/
+      Kisisel_Icerik.md) alanı vardı ama onu dolduracak bir uç nokta hiç planlanmamıştı — A-07'nin
+      `/media/images/upload`'ı `[Authorize(Roles="Admin")]`, sıradan bir `User` çağıramaz. A-13
+      (Avatar) ile AYNI desen: `POST /user-cards/{id}/image` (`[Authorize]`, yalnızca sahibi, A-07'nin
+      `IFileStorageService`'i yeniden kullanılır, eski görsel silinir)
+- [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **`IActivityLogger`:** `CREATE_USER_CARD`/`UPDATE_USER_CARD`/`DELETE_USER_CARD`
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** sahiplik filtresi, duplikat 409, learn-system-word akışı, audit çağrısı
+- [ ] **Birim testleri:** sahiplik filtresi, duplikat 409, learn-system-word akışı, kart görseli
+      yükleme (sahiplik kontrolü + eski dosyanın silindiği), audit çağrısı
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-11 — Öğrenme / Sınav API ⬜
@@ -423,11 +433,52 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       LanguagePreference dahil — `RegisterCommand`'a girdi olarak EKLENMEZ, DB varsayılanı döner,
       gerçek seçim burada), `GET /users/me/statistics` (A-09'un `UserProgress`/`Achievements`'ından), `DELETE /users/me`
 - [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-15] Şifre değiştirme (giriş gerekli) eksikti:** `ChangePasswordCommand`
+      (`PUT /users/me/password`, `[Authorize]`, `{ currentPassword, newPassword }`) — mevcut
+      `/auth/reset-password` OTP tabanlı ve **anonim** ("şifremi unuttum" akışı), giriş yapmış bir
+      kullanıcının mevcut şifresini bilerek değiştirmesi için ayrı bir uç yoktu (Web C-12/Mobil D-14'ün
+      `ChangePasswordModal`'ı bu endpoint'i varsayıyordu, hiç yazılmamıştı). `IPasswordService` ile
+      `currentPassword` doğrulanır, farklıysa `InvalidCredentialsException`; başarılıysa
+      `/auth/reset-password` ile AYNI davranış — tüm `RefreshTokens` iptal (tüm cihazlardan çıkış,
+      Token Family Pattern) + A-20'nin mevcut "şifre değişti" e-posta şablonu gönderilir;
+      `ISecurityLogger` mevcut `LogEventType.PasswordReset`'i yeniden kullanır (yeni enum değeri
+      AÇILMAZ — Detail Code'u `PASSWORD_CHANGED` ile `PASSWORD_RESET`'ten ayrışır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **Admin panel bağlantısı:** `admin/src/store/slices/languageSlice.ts`/`themeSlice.ts` (B-01'de
       yalnızca `localStorage`'a yazıyordu) bu API'ye bağlanır — dil/tema değiştirildiğinde hem
       `localStorage` hem backend güncellenir, başka cihazda login'de `AuthUserDto`'dan senkron okunur
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** profil güncelleme, istatistik hesaplama, ThemePreference/LanguagePreference validasyonu
+- [ ] **Birim testleri:** profil güncelleme, istatistik hesaplama, ThemePreference/LanguagePreference
+      validasyonu, şifre değiştirme (yanlış mevcut şifre reddi, başarılı değişimde tüm oturumların
+      iptali + e-posta gönderimi)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+
+### A-12.1 — Oturum/Cihaz Yönetimi ⬜ ⚠️ **[2026-08-15 — yeni task, kullanıcı isteği]**
+**Referans:** REFERENCE/SECURITY.md (Token Family Pattern), DATABASE_SCHEMA/Auth.md `RefreshTokens`
+**Frontend karşılığı:** C-12 (Web — Profil Sayfası, oturum listesi), D-14 (Mobil — Profil Ekranı, oturum listesi)
+> Yeni entity/migration **gerekmez** — `RefreshTokens` (A-03) zaten `TokenFamily`/`DeviceInfo`/
+> `IpAddress`/`ExpiresAt`/`IsUsed`/`RevokedAt` taşıyor; her aktif (süresi geçmemiş, iptal edilmemiş)
+> `TokenFamily` bir "cihaz/oturum" olarak listelenir. "Tüm cihazlardan çıkış" mantığı zaten
+> `ResetPasswordCommandHandler`'da (A-03, SECURITY.md) var — bu task aynı iptal mekanizmasını
+> kullanıcıya seçmeli hale getirir (tek bir cihazı veya diğer tümünü iptal).
+- [ ] `IRefreshTokenRepository`'ye `GetActiveSessionsForUserAsync` (`TokenFamily` bazlı, her family
+      için en son kullanılan token TEK satır) — `GetActiveSessionsQuery` (`isCurrent` alanı, o anki
+      isteğin token'ının family'siyle karşılaştırılarak işaretlenir)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `RevokeSessionCommand` (`{ tokenFamily }` → yalnızca **çağıranın kendi** `UserId`'sine ait bir
+      family'yse tüm token'ları `RevokedAt` ile iptal edilir, başkasının family'si 404), `RevokeAllSessionsCommand`
+      (`exceptCurrent: bool`, varsayılan `true` — "diğer tüm cihazlardan çıkış")
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] `UserController`'a 3 endpoint: `GET /users/me/sessions`, `DELETE /users/me/sessions/{tokenFamily}`,
+      `POST /users/me/sessions/revoke-all`
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **`ISecurityLogger`:** oturum iptali `AdminAction` DEĞİL (kullanıcı kendi hesabında işlem
+      yapıyor) — `LogEventType` enum'ına (A-04, Domain/Enums/Logging) yeni bir değer **`SessionRevoked`**
+      eklenir, `DATABASE_SCHEMA/Loglama.md`'deki `CK_SecurityLog_EventType` listesi de güncellenir
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] **Birim testleri:** aktif oturum listesi (family bazlı tekilleştirme, `isCurrent` işaretleme),
+      tek oturum iptali (sahiplik kontrolü — başkasının family'si → 404), tümünü iptal
+      (`exceptCurrent` true/false)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-13 — Avatar Yükleme API ⬜

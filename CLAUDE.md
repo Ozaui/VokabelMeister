@@ -172,8 +172,11 @@ deseni):
 YAGNI, §3 "Spekülatif ortak tip yazılmaz" ile aynı ilke):
 - `qrcode.react` — QR ile giriş ekranı (Admin B-02.1, Web C-03.1) görsel üretimi.
 - `date-fns` — tarih filtresi/biçimlendirme gereken ilk ekranda (Admin B-08).
-- Telaffuz (TTS, yalnızca Web+Mobil — Admin'de kelime kartı yok): Web native `window.speechSynthesis`
-  (kütüphane eklenmez), Mobil `expo-speech` — kelime kartı component'inde eklenir (Web C-04, Mobil
+- `papaparse` — toplu kelime içe aktarma CSV ayrıştırma (Admin B-03.1).
+- Telaffuz (TTS, yalnızca Web+Mobil — Admin'de kelime kartı yok) — ⚠️ **[2026-08-15] ERTELENDİ**
+  (kullanıcı kararı): kullanıcıya ses vermek şimdilik C-04/D-06'nın kapsamı DIŞINDA, istenirse ayrı
+  bir task olarak sonra eklenir. Eklendiğinde plan aynı kalır — Web native `window.speechSynthesis`
+  (kütüphane eklenmez), Mobil `expo-speech`, kelime kartı component'ine eklenir (Web C-04, Mobil
   D-06). Ses kayıtlı bir dosyadan DEĞİL istemci tarafında anlık üretilir; backend'e ses yükleme/saklama
   sorumluluğu hiç binmez (bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu — `AudioUrl` sütunu yok).
 

@@ -39,7 +39,8 @@
 **Referans:** A-03 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §3
 - [ ] **Tip:** `RegisterRequest`, `LoginRequest`, `VerifyOtpRequest`, `User` (`auth.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **API:** `authApi` — `register`, `verifyEmail`, `login`, `verifyOtp`, `loginWithGoogle`, `forgotPassword`, `resetPassword` (axios + `useApiQuery`/`useApiMutation`)
+- [ ] **API:** `authApi` — `register`, `verifyEmail`, `resendVerification`, `login`, `verifyOtp`,
+  `loginWithGoogle`, `forgotPassword`, `resetPassword`, `logout` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 > **Not (tema):** `LevelSelectPage` kendi API çağrısını yazmaz — C-12'deki `profileApi.
 > updateProfile` (`PUT /users/me`) çağrılır, `{ currentLevel, themePreference }` birlikte gönderilir.
@@ -47,7 +48,10 @@
 > ile gösterilir; login sonrası `AuthUserDto.themePreference` `authSlice`'a yazılıp senkronlanır.
 - [ ] **Slice:** `authSlice` — `user`, `accessToken`, `isAuthenticated` güncellemesi
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `RegisterPage`, `VerifyEmailPage` (OTP), `LoginPage` (+ Google butonu), `VerifyOtpPage`, `ForgotPasswordPage`, `ResetPasswordPage`, `LevelSelectPage` (A1-C2 + tema seçimi [Açık/Koyu/Sistem], kayıt sonrası ilk giriş onboarding'i — `PUT /users/me` ile A-12'ye gönderilir, bkz. `A_backend.md` A-12 notu)
+- [ ] **Component:** `RegisterPage`, `VerifyEmailPage` (OTP + "kodu tekrar gönder" — `resendVerification`),
+  `LoginPage` (+ Google butonu), `VerifyOtpPage`, `ForgotPasswordPage`, `ResetPasswordPage`,
+  `LevelSelectPage` (A1-C2 + tema seçimi [Açık/Koyu/Sistem], kayıt sonrası ilk giriş onboarding'i —
+  `PUT /users/me` ile A-12'ye gönderilir, bkz. `A_backend.md` A-12 notu)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/register`, `/verify-email`, `/login`, `/verify-otp`, `/forgot-password`, `/reset-password`, `/level-select` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -74,32 +78,18 @@
 ### C-04 — Kelime Kartı Komponenti ⬜
 **Referans:** REFERENCE/GERMAN_LANGUAGE_FEATURES.md §1-6, §8
 > Yeniden kullanılan ortak component — C-05/C-07'de import edilir; kendi API çağrısı/route'u yok,
-> yalnızca `component` (+ `tip`/`hook`) adımları vardır.
+> yalnızca `component` (+ `tip`) adımları vardır.
+> ⚠️ **[2026-08-15] TTS ertelendi:** Sesli okuma (`useTextToSpeech`, `window.speechSynthesis`,
+> `TtsFallbackNotice`) kullanıcı kararıyla bu task'tan ÇIKARILDI — kullanıcıya ses vermek şimdilik
+> kapsam dışı, istenirse ayrı bir task olarak sonra eklenecek (CLAUDE.md §4.1'deki TTS satırı da
+> aynı notla güncellendi). IPA gösterimi (metin) TTS'e bağlı DEĞİL, kalıyor.
 - [ ] **Tip:** `SystemWordCardProps`, `PersonalCardProps` (`card.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Hook:** `useTextToSpeech` (`window.speechSynthesis` — ekstra kütüphane yok) — **4 durumlu**
-  state makinesi, sessizce yanlış dilde okumak yerine her durumu açıkça dışa verir:
-  `checking` (sesler henüz yüklenmedi — `getVoices()` bazı tarayıcılarda asenkron doldurur,
-  `voiceschanged` event'i beklenir) → `unsupported` (`window.speechSynthesis` tanımsız, API'nin
-  kendisi yok) **veya** `unavailable` (API var ama `Words.LanguageId`'ye karşılık gelen `de-DE`/`tr-TR`
-  önekli hiçbir ses bulunamadı) → `ready` (ses bulundu, `speak(text)` çağrılabilir). `speak()`
-  yalnızca `ready`'de gerçek etki yapar, diğer durumlarda no-op'tur (UI zaten butonu devre dışı bırakır).
+- [ ] **Component:** `SystemWordCard` (artikel + cinsiyet rengi + 4 hâl + çoğul; fiil çekim;
+  ayrılabilir gösterimi; IPA gösterimi), `PersonalCard` (flip animasyonu — `FrontText`/`BackText`
+  düz metin olduğu için admin kürasyonu gerekmez)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `TtsFallbackNotice` (`components/common/` — `SystemWordCard`/`PersonalCard`'ın
-  ikisinde de kullanılan paylaşılan uyarı, DESIGN_SYSTEM §4 Tooltip/Popover deseni [8px radius]; ses
-  butonunun yanında yalnızca `unsupported`/`unavailable` durumunda görünür: **"Tarayıcınız bu dilde
-  sesli okumayı desteklemiyor. En iyi destek için Chrome veya Edge kullanmanızı öneririz."**
-  — Chromium tabanlı tarayıcılar Web Speech API'de en geniş/tutarlı ses kataloğuna sahip olduğu için
-  önerilir; bloklamaz, kart TTS olmadan da tam işlevseldir), `SystemWordCard` (artikel + cinsiyet
-  rengi + 4 hâl + çoğul; fiil çekim; ayrılabilir gösterimi; + `useTextToSpeech` ile ses butonu + IPA
-  gösterimi — ses kayıtlı dosyadan değil anlık üretilir, bkz. `DATABASE_SCHEMA/Icerik.md`
-  `WordDetails` notu), `PersonalCard` (flip animasyonu + aynı `useTextToSpeech` hook'uyla ses butonu
-  — `FrontText`/`BackText` düz metin olduğu için admin kürasyonu gerekmez)
-- [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Birim testleri:** `SystemWordCard.test.tsx` (cinsiyet rengi/artikel render), `PersonalCard.test.tsx`
-  (flip), `useTextToSpeech.test.ts` (mock `speechSynthesis` — `unsupported`/`unavailable`/`ready`
-  durumlarının her biri, `speak()`'in yalnızca `ready`'de gerçek çağrı yaptığı), `TtsFallbackNotice.test.tsx`
-  (duruma göre doğru metin/görünürlük — `ready`'de hiç render edilmediği dahil)
+- [ ] **Birim testleri:** `SystemWordCard.test.tsx` (cinsiyet rengi/artikel render), `PersonalCard.test.tsx` (flip)
 - [ ] ➜ **AKADEMI/web'e işle**
 
 ### C-05 — Öğrenme / Sınav Sayfası ⬜
@@ -160,21 +150,55 @@
 - [ ] **API:** `categoriesApi` — `getCategories` (hiyerarşik+kelime sayısı), `getUserCategories`,
   `createUserCategory`, `updateUserCategory`, `deleteUserCategory` (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `CategoriesPage` (sistem kategorileri hiyerarşik grid + kişisel kategoriler
-  sekmesi, kişisel sekmede düzenle/sil aksiyonu), `UserCategoryFormModal` (ekle **ve** düzenle ortak akışı)
+- [ ] **Component:** `CategoriesPage` (sistem kategorileri hiyerarşik grid [kart üzerinde kelime
+  sayısı, `includeWordCount`] + kişisel kategoriler sekmesi, kişisel sekmede düzenle/sil aksiyonu —
+  bir sistem kategorisine tıklamak `/dictionary?categoryId={id}`'ye yönlendirir, kategorinin
+  kelimelerini KENDİSİ listelemez; bkz. C-06.1 notu), `UserCategoryFormModal` (ekle **ve** düzenle ortak akışı)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/categories` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Birim testleri:** `CategoriesPage.test.tsx` (sekme geçişi, hiyerarşik render)
 - [ ] ➜ **AKADEMI/web'e işle**
 
+### C-06.1 — Sözlük (Bağımsız Gözat) Sayfası ⬜ ⚠️ **[2026-08-15 — yeni task, kullanıcı isteği]**
+**Referans:** A-05, A-06 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §5, §6
+> Öğrenme akışından (C-05) BAĞIMSIZ, salt-okunur bir keşif/referans ekranı — kullanıcı "öğrenmeye
+> başlamadan" sistem kelimelerini serbestçe arayıp gözden geçirebilir. Backend'de yeni endpoint
+> **gerekmez** — A-05'in zaten var olan `GET /words` (level/categoryId/partOfSpeech/search/page/
+> pageSize filtreleri) ve A-06'nın `GET /categories` (filtre çubuğu için) uçları kullanılır; bu Web'in
+> kendi (admin'den bağımsız) ilk `wordsApi`'sidir. **"Bir kategorinin kelimeleri" akışı da buradan
+> geçer:** C-06'daki bir kategori kartına tıklamak `/dictionary?categoryId={id}`'ye yönlendirir —
+> `DictionaryPage` mount olurken URL'deki `categoryId`'yi `dictionaryFilterSlice`'a yazar, `DictionaryFilterBar`
+> o kategori önceden seçili açılır (`GET /categories/{id}/words` YOKTU/kaldırıldı, aynı sonuç
+> `GET /words?categoryId=` ile buradan alınır).
+- [ ] **Tip:** `Word` (Web'in kendi `word.types.ts`'i — admin'in `word.types.ts`'inden bağımsız paket)
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **API:** `wordsApi` — `getWords` (filtre+sayfa), `getWordById`, `getLanguages` (`GET /languages`
+  — filtre çubuğunda `de`/`tr` sabit yazmak yerine dinamik listelenir), `userCardsApi.learnSystemWord`
+  (`POST /user-cards/learn-system-word`, A-10 — "öğrenmeye başla" aksiyonu) (axios + `useApiQuery`/`useApiMutation`)
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Slice:** `dictionaryFilterSlice` — arama/level/categoryId/partOfSpeech/sayfa state
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Component:** `DictionaryPage` (üst kapsayıcı), `DictionaryFilterBar` (arama input +
+  level/kategori/tür select — C-06'nın kategori listesini yeniden kullanır), `DictionaryWordList`
+  (sayfalı, kompakt satır render), `DictionaryWordDetailModal` (tıklanınca C-04'ün TAM `SystemWordCard`'ı
+  + "Öğrenmeye Başla" butonu — `learnSystemWord` çağırır, zaten öğreniliyorsa buton devre dışı)
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Route:** `/dictionary` (`App.tsx`)
+- [ ] ➜ **AKADEMI/web'e işle**
+- [ ] **Birim testleri:** `DictionaryPage.test.tsx` (filtre+sayfalama), `DictionaryFilterBar.test.tsx`
+- [ ] ➜ **AKADEMI/web'e işle**
+
 ### C-07 — Kişisel Kartlar Sayfası ⬜
 **Referans:** A-10 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §7
 - [ ] **Tip:** `UserCard`, `UserCardFormValues` (`userCard.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **API:** `userCardsApi` — `getUserCards` (filtre/sayfa), `createUserCard` (duplikat 409 handling), `updateUserCard`, `deleteUserCard` (axios + `useApiQuery`/`useApiMutation`)
+- [ ] **API:** `userCardsApi` — `getUserCards` (filtre/sayfa), `createUserCard` (duplikat 409 handling),
+  `updateUserCard`, `deleteUserCard`, `uploadCardImage` (`POST /user-cards/{id}/image`, A-10) (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `UserCardsPage` (liste + C-04 `PersonalCard`), `UserCardFormModal` (Formik+Yup — sistem kelimesi eşleşme uyarısı gösterimi)
+- [ ] **Component:** `UserCardsPage` (liste + C-04 `PersonalCard`), `UserCardFormModal` (Formik+Yup —
+  sistem kelimesi eşleşme uyarısı gösterimi + görsel yükleme [native `<input type="file">`, Mobil
+  D-09'un `expo-image-picker`'ıyla aynı işlevi web dosya seçiciyle karşılar])
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/my-cards` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -186,11 +210,14 @@
 - [ ] **Tip:** `ClassSummary`, `ClassDetail`, `ClassWord` (`class.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **API:** `classesApi` — `getClasses`, `createClass`, `joinClass`, `getClassDetail`, `getClassStatistics`,
-  `addClassWord`, `updateClassWord`, `deleteClassWord`, `leaveClass`, `deleteClass` (axios + `useApiQuery`/`useApiMutation`)
+  `addClassWord`, `updateClassWord`, `deleteClassWord`, `leaveClass`, `deleteClass`,
+  `assignCategoryToClass` (`POST /classes/{id}/categories`·`/user-categories`, sahip), `learnClassWord`
+  (`POST /classes/{id}/words/{wordConceptId}/learn`, üye — A-15) (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Component:** `ClassListPage`, `ClassDetailPage` (üye+kelime+istatistik sekmeleri — sahip
-  "sınıfı sil", üye "ayrıl" aksiyonu görür; kelime sekmesinde sahip için düzenle/sil), `JoinClassModal`
-  (davet kodu), `ClassWordFormModal` (sınıf kelimesi ekle/düzenle)
+  "sınıfı sil", üye "ayrıl" aksiyonu görür; kelime sekmesinde sahip için düzenle/sil, üye için
+  "öğrenmeye başla" — `learnClassWord`), `JoinClassModal` (davet kodu), `ClassWordFormModal` (sınıf
+  kelimesi ekle/düzenle), `ClassCategoryAssignModal` (sahip — sınıfa kategori atama)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/classes`, `/classes/:id` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
@@ -235,30 +262,47 @@
   `Achievement`, `SuspendedWord` (`progress.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **API:** `progressApi` — `getWordProgress`, `getUserCardProgress`, `getProgressSummary`,
-  `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `achievementsApi` — `getMyAchievements` (axios + `useApiQuery`/`useApiMutation`)
+  `getBandWords` (İncele listesi), `getSuspendedWords`, `applyLeechAction`, `getStatistics`
+  (`GET /users/me/statistics?period=`, A-12 — `averageSuccessRate`/`streakDays`/`levelProgress`,
+  ⚠️ **[2026-08-15]** A-12'de tanımlıydı ama hiçbir sayfada çağrılmıyordu, "başarı oranı grafiği"
+  zaten bu veriyi gerektiriyordu, buraya eklendi), `getSessionHistory` (`GET /learning-sessions/history`,
+  A-11 — ⚠️ **[2026-08-15]** aynı şekilde tanımlıydı ama hiç çağrılmıyordu, "Geçmiş Oturumlar"
+  listesi olarak buraya eklendi), `achievementsApi` — `getMyAchievements`
+  (axios + `useApiQuery`/`useApiMutation`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, başarı oranı
-  grafiği), `BandCard` (🔴🟡🟢 bant kartı — tıklanınca `BandWordListPage`'e gider, leech kelimeler 🩹
-  işaretli), `BandWordListPage` (**İncele** salt okunur liste ve **Sına** butonu ile C-05
-  `mode: Band` oturumunu başlatma), `SuspendedWordsPage` (askıya alınmışlar, geri getir butonu),
-  `AchievementsSection` (rozet grid'i), `AchievementBadge` (tek rozet — `Icon` resim URL'i +
-  `Rarity` renk kodu, `AchievementsSection` içinde tekrarlı kullanılır)
+- [ ] **Component:** `ProgressPage` (mastery seviyesi listesi, sonraki tekrar zamanı, `getStatistics`'ten
+  beslenen başarı oranı grafiği + period seçici [week/month/year]), `BandCard` (🔴🟡🟢 bant kartı —
+  tıklanınca `BandWordListPage`'e gider, leech kelimeler 🩹 işaretli), `BandWordListPage` (**İncele**
+  salt okunur liste ve **Sına** butonu ile C-05 `mode: Band` oturumunu başlatma), `SuspendedWordsPage`
+  (askıya alınmışlar, geri getir butonu), `SessionHistoryPage` (`getSessionHistory`'den sayfalı liste
+  — tarih, mode, sonuç özeti; tıklanınca oturum detayına gitmez, salt geçmiş kaydı), `AchievementsSection`
+  (rozet grid'i), `AchievementBadge` (tek rozet — `Icon` resim URL'i + `Rarity` renk kodu,
+  `AchievementsSection` içinde tekrarlı kullanılır)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Route:** `/progress`, `/progress/band/:band`, `/progress/suspended` (`App.tsx`)
+- [ ] **Route:** `/progress`, `/progress/band/:band`, `/progress/suspended`, `/progress/history` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Birim testleri:** `ProgressPage.test.tsx` (veri render, bant kartı sayıları), `BandWordListPage.test.tsx`
-  (İncele/Sına geçişi), `SuspendedWordsPage.test.tsx` (geri getir akışı), `AchievementsSection.test.tsx` (rozet render)
+  (İncele/Sına geçişi), `SuspendedWordsPage.test.tsx` (geri getir akışı), `SessionHistoryPage.test.tsx`
+  (sayfalama), `AchievementsSection.test.tsx` (rozet render)
 - [ ] ➜ **AKADEMI/web'e işle**
 
-### C-12 — Profil Sayfası ⬜ *(avatar, şifre değiştir, hesap sil OTP)*
-**Referans:** A-12, A-13 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §4
-- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil, `profile.types.ts`)
+### C-12 — Profil Sayfası ⬜ *(avatar, şifre değiştir, hesap sil OTP, oturum yönetimi)*
+**Referans:** A-12, A-12.1, A-13 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §4
+- [ ] **Tip:** `UserProfile`, `UpdateProfileRequest` (`currentLevel`/`themePreference` dahil), `Session`
+  (`tokenFamily`/`deviceInfo`/`ipAddress`/`createdAt`/`isCurrent`) (`profile.types.ts`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **API:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`, `requestAccountDeletion`, `confirmAccountDeletion` (axios + `useApiQuery`/`useApiMutation`)
+- [ ] **API:** `profileApi` — `getProfile`, `updateProfile`, `uploadAvatar`, `changePassword`
+  (`PUT /users/me/password`, A-12 — bkz. not), `requestAccountDeletion`, `confirmAccountDeletion`,
+  `getSessions`, `revokeSession`, `revokeAllSessions` (axios + `useApiQuery`/`useApiMutation`);
+  `authApi.logout` (C-03'te tanımlı, burada "Çıkış Yap" butonuna bağlanır)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Component:** `ProfilePage` (profil formu + avatar yükleme + tema değiştir seçici [Açık/Koyu/Sistem]), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı)
+- [ ] **Component:** `ProfilePage` (profil formu + avatar yükleme + tema değiştir seçici [Açık/Koyu/Sistem]
+  + oturum sekmesi + "Çıkış Yap" butonu), `ChangePasswordModal`, `DeleteAccountModal` (OTP onaylı),
+  `SessionsList` (aktif oturum satırları — `isCurrent` rozeti, tek oturum "çıkış yap" butonu, "diğer
+  tüm cihazlardan çıkış" toplu aksiyonu)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/profile` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**
-- [ ] **Birim testleri:** `ProfilePage.test.tsx` (form submit), `DeleteAccountModal.test.tsx` (OTP akışı)
+- [ ] **Birim testleri:** `ProfilePage.test.tsx` (form submit), `DeleteAccountModal.test.tsx` (OTP akışı),
+  `SessionsList.test.tsx` (tekil/toplu iptal akışı, `isCurrent` rozeti)
 - [ ] ➜ **AKADEMI/web'e işle**

@@ -76,8 +76,9 @@ Bileşik olduğunu belirten ayrı bir alan yok; açıklama **mevcut `WordDetails
 
 ## 8. Kart Tasarımı
 > **Ses:** kayıtlı dosya değil, istemci taraflı TTS (Web `window.speechSynthesis`, Mobil `expo-speech`)
-> — bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu.
-- **İsim:** artikel + kelime (cinsiyet rengi) + 4 hâl tablosu + çoğul + Türkçe + örnek (seviyeye göre) + kategoriler + ses (TTS)/IPA.
+> planlanıyordu — 2026-08-15'te kullanıcı kararıyla ERTELENDİ (bkz. `DATABASE_SCHEMA/Icerik.md`
+> `WordDetails` notu). Kart TTS'siz de tam işlevseldir.
+- **İsim:** artikel + kelime (cinsiyet rengi) + 4 hâl tablosu + çoğul + Türkçe + örnek (seviyeye göre) + kategoriler + IPA (ses TTS ertelendi).
 - **Fiil:** mastar + ayrılabilir göstergesi + çekim tablosu (present/preterite/perfect) + Türkçe + örnek.
 
 ## 9. Sınav Türleri
@@ -118,7 +119,7 @@ Unicode: ö ü ä ß Ä Ö Ü. Örnekler `WordExamples.Level`'e göre filtreleni
   boş/NULL olmalı (validator: `isSeparableVerb=true` ⇒ `separablePrefix` NOT NULL, tersi de geçerli).
 - **Yasak:** `gender`, `plural`, `cases.*` — Verb'de anlamsız, GrammarData'da bulunmamalı.
 
-**Diğer türler (Adjective, Adverb, Conjunction, Preposition, Pronoun, Other)**
+**Diğer türler (Adjective, Adverb, Conjunction, Preposition, Pronoun, Idiom, Other)**
 - **Zorunlu:** yalnızca `Text`, `Definition`.
 - **GrammarData:** tamamen `NULL` — ne isim alanları ne fiil alanları yazılır.
 

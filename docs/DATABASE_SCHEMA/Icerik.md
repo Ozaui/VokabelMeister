@@ -24,7 +24,7 @@ INSERT INTO Languages (Code, Name, NativeName, DisplayOrder) VALUES
 ```sql
 CREATE TABLE WordConcepts (
     Id INT PRIMARY KEY IDENTITY,
-    PartOfSpeech NVARCHAR(20) NOT NULL,   -- Noun|Verb|Adjective|Adverb|Conjunction|Preposition|Pronoun|Other
+    PartOfSpeech NVARCHAR(20) NOT NULL,   -- Noun|Verb|Adjective|Adverb|Conjunction|Preposition|Pronoun|Idiom|Other
     DifficultyLevel NVARCHAR(2) NOT NULL, -- A1..C2
     ImageUrl NVARCHAR(500) NULL,          -- görsel dilden bağımsız
     IsActive BIT NOT NULL DEFAULT 1,
@@ -32,9 +32,13 @@ CREATE TABLE WordConcepts (
     IsDeleted BIT NOT NULL DEFAULT 0, DeletedAt DATETIME2 NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(), UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     CONSTRAINT CK_WordConcepts_Level CHECK (DifficultyLevel IN ('A1','A2','B1','B2','C1','C2')),
-    CONSTRAINT CK_WordConcepts_PartOfSpeech CHECK (PartOfSpeech IN ('Noun','Verb','Adjective','Adverb','Conjunction','Preposition','Pronoun','Other')),
+    CONSTRAINT CK_WordConcepts_PartOfSpeech CHECK (PartOfSpeech IN ('Noun','Verb','Adjective','Adverb','Conjunction','Preposition','Pronoun','Idiom','Other')),
     INDEX IX_WordConcepts_DifficultyLevel (DifficultyLevel)
 );
+-- Idiom ⚠️ [2026-08-15]: "Other" bucket'ının aksine, deyim/kalıp ifadeleri (ör. "auf jeden Fall")
+-- ayrı ve filtrelenebilir tutmak için kendi PartOfSpeech değeri var — WordGrammarValidator'da
+-- (A-05, `A_backend.md`) Noun/Verb DIŞINDAKİ her tür (Idiom dahil) GrammarData NULL bırakılır,
+-- yani ek bir dispatch dalı GEREKMEZ; tek fark admin filtresinde/istatistikte "Other" ile karışmaması.
 ```
 
 ### Words (bir kavramın tek dildeki karşılığı)
@@ -70,11 +74,13 @@ CREATE TABLE WordDetails (
     FOREIGN KEY (WordId) REFERENCES Words(Id) ON DELETE CASCADE
 );
 ```
-> **Ses (2026-08-08 sonrası karar):** Ayrı bir `AudioUrl` sütunu yok — telaffuz istemci tarafında
-> TTS ile anlık üretilir (Web: `window.speechSynthesis`, Mobil: `expo-speech`, bkz. `TASK_C_web_app.md`
-> C-04 / `D_mobil.md` D-06). Backend hiçbir ses dosyası saklamaz/sunmaz; bu yüzden A-07 (Medya API)
-> kapsamı yalnızca görsel kalır. `Pronunciation` (IPA) ile duyulan ses aynı motordan gelmez —
-> tarayıcı/OS TTS motorları düz metin okur, IPA fonem girdisini kabul etmez.
+> **Ses (2026-08-08 sonrası karar, 2026-08-15'te TTS ERTELENDİ):** Ayrı bir `AudioUrl` sütunu yok —
+> planlanan telaffuz istemci tarafında TTS ile anlık üretilecekti (Web: `window.speechSynthesis`,
+> Mobil: `expo-speech`), ama kullanıcı kararıyla `TASK_C_web_app.md` C-04 / `D_mobil.md` D-06'nın
+> kapsamından şimdilik çıkarıldı — istenirse ayrı bir task olarak sonra eklenir. Bu, `AudioUrl`
+> sütununun olmama kararını DEĞİŞTİRMEZ (backend hiçbir zaman ses dosyası saklamayacak); yalnızca
+> TTS entegrasyonunun kendisi ertelendi. A-07 (Medya API) kapsamı bu yüzden yalnızca görsel kalır.
+> `Pronunciation` (IPA) alanı TTS'ten bağımsız, kartta düz metin olarak kalmaya devam ediyor.
 > **GrammarData JSON şeması dil bazında:** de → `REFERENCE/GERMAN_LANGUAGE_FEATURES.md`, tr → `REFERENCE/TURKISH_LANGUAGE_FEATURES.md`, en → `REFERENCE/ENGLISH_LANGUAGE_FEATURES.md` (tanımlı ama henüz kullanılmıyor).
 > **Trade-off:** `Gender` üzerinde DB `CHECK`/`INDEX` yok; "tüm maskülinleri getir" gibi filtreler uygulama katmanında (`JSON_VALUE`). Bu ölçekte sorun değil.
 

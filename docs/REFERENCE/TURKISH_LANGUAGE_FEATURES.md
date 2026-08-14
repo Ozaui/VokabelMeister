@@ -68,8 +68,9 @@ biçimini tutar, her zamanın olumsuzu kurala göre türetilir (ayrı 30 kolon d
 
 ## 7. Kart Tasarımı
 > **Ses:** kayıtlı dosya değil, istemci taraflı TTS (Web `window.speechSynthesis`, Mobil `expo-speech`)
-> — bkz. `DATABASE_SCHEMA/Icerik.md` `WordDetails` notu.
-- **İsim:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik + Almanca + örnek + kategoriler + ses (TTS)/IPA.
+> planlanıyordu — 2026-08-15'te kullanıcı kararıyla ERTELENDİ (bkz. `DATABASE_SCHEMA/Icerik.md`
+> `WordDetails` notu). Kart TTS'siz de tam işlevseldir.
+- **İsim:** kelime + ünlü uyumu grubu + çoğul + 6 hâl tablosu + iyelik + Almanca + örnek + kategoriler + IPA (ses TTS ertelendi).
 - **Fiil:** mastar (`-mek/-mak`) + ünsüz yumuşaması göstergesi + çekim (şimdiki/geniş/geçmiş/gelecek) + Almanca + örnek.
 
 ## 8. Sınav Türleri
@@ -111,8 +112,8 @@ Unicode: ç ğ ı ö ş ü İ (`ı`≠`i` dikkat). Örnekler `WordExamples.Level
   validator bu ayrımı dile göre yapar, ortak bir kural değildir.
 - **Yasak:** `plural`, `cases.*`, `vowelHarmony`, `possessive` — Verb'de anlamsız.
 
-**Diğer türler (Adjective, Adverb, Conjunction, Preposition, Pronoun, Other — Sayı/Ünlem gibi ayrı
-enum değeri olmayanlar `PartOfSpeech=Other`'a düşer, `WordConcepts.PartOfSpeech` CHECK listesi sabit)**
+**Diğer türler (Adjective, Adverb, Conjunction, Preposition, Pronoun, Idiom, Other — Sayı/Ünlem gibi
+ayrı enum değeri olmayanlar `PartOfSpeech=Other`'a düşer, `WordConcepts.PartOfSpeech` CHECK listesi sabit)**
 - **Zorunlu:** yalnızca `Text`, `Definition`.
 - **GrammarData:** tamamen `NULL`.
 
