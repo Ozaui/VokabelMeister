@@ -4,6 +4,7 @@ using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
@@ -17,17 +18,20 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, RefreshResp
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly ITokenService _tokenService;
     private readonly IPasswordService _passwordService;
+    private readonly ISecurityLogger _securityLogger;
 
     public RefreshCommandHandler(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         ITokenService tokenService,
-        IPasswordService passwordService)
+        IPasswordService passwordService,
+        ISecurityLogger securityLogger)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _tokenService = tokenService;
         _passwordService = passwordService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<RefreshResponse> Handle(RefreshCommand request, CancellationToken cancellationToken)
@@ -38,8 +42,10 @@ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, RefreshResp
 
         if (existingToken.IsUsed)
         {
-            // Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış
-            // olabilir, family'deki TÜM token'lar iptal edilir (SecurityLog: TokenReplay, A-04'te eklenecek).
+            // Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış olabilir.
+            await _securityLogger.LogAsync(LogEventType.TokenReplay, userId: existingToken.UserId,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_REFRESH_TOKEN",
+                cancellationToken: cancellationToken);
             await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, cancellationToken);
             await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
             throw new InvalidRefreshTokenException();

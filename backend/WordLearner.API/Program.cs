@@ -21,6 +21,7 @@ using WordLearner.Application.Common.Behaviors;
 using WordLearner.Application.DTOs;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Services;
+using WordLearner.Domain.Enums.Logging;
 using WordLearner.Infrastructure;
 using WordLearner.Infrastructure.Data;
 
@@ -117,6 +118,11 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = async (rejectedContext, cancellationToken) =>
     {
         var httpContext = rejectedContext.HttpContext;
+        var securityLogger = httpContext.RequestServices.GetRequiredService<ISecurityLogger>();
+        await securityLogger.LogAsync(LogEventType.RateLimitHit,
+            ipAddress: ClientIp(httpContext), userAgent: httpContext.Request.Headers.UserAgent.ToString(),
+            detail: "RATE_LIMIT_EXCEEDED", cancellationToken: cancellationToken);
+
         var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
         httpContext.Response.ContentType = "application/json";
         await httpContext.Response.WriteAsJsonAsync(

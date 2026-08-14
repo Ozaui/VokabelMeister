@@ -5,6 +5,7 @@ using WordLearner.Application.Features.Auth;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -14,6 +15,7 @@ public class RefreshCommandHandlerTests
     private readonly Mock<IRefreshTokenRepository> _refreshTokenRepository = new();
     private readonly Mock<ITokenService> _tokenService = new();
     private readonly Mock<IPasswordService> _passwordService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     public RefreshCommandHandlerTests()
     {
@@ -21,7 +23,7 @@ public class RefreshCommandHandlerTests
     }
 
     private RefreshCommandHandler CreateHandler() => new(
-        _userRepository.Object, _refreshTokenRepository.Object, _tokenService.Object, _passwordService.Object);
+        _userRepository.Object, _refreshTokenRepository.Object, _tokenService.Object, _passwordService.Object, _securityLogger.Object);
 
     [Fact]
     public async Task Handle_TokenNotFound_ThrowsInvalidRefreshTokenException()
@@ -38,20 +40,22 @@ public class RefreshCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_TokenAlreadyUsed_RevokesFamilyAndThrowsInvalidRefreshTokenException()
+    public async Task Handle_TokenAlreadyUsed_RevokesFamilyLogsTokenReplayAndThrowsInvalidRefreshTokenException()
     {
         // ARRANGE — Token Family Pattern: replay algılanınca TÜM family iptal edilir
-        var token = new RefreshToken { TokenFamily = "family-1", IsUsed = true };
+        var token = new RefreshToken { UserId = 3, TokenFamily = "family-1", IsUsed = true };
         _refreshTokenRepository.Setup(r => r.GetByTokenHashAsync("hash-of-ham-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new RefreshCommand("ham-token", null, null), default);
+        var act = () => handler.Handle(new RefreshCommand("ham-token", "TestAgent/1.0", "9.9.9.9"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidRefreshTokenException>();
         _refreshTokenRepository.Verify(r => r.RevokeFamilyAsync("family-1", It.IsAny<CancellationToken>()), Times.Once);
         _refreshTokenRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // SecurityLog: A-04'te eklenen TokenReplay olayı, tekrar kullanılan token'ın sahibi UserId ile
+        _securityLogger.Verify(s => s.LogAsync(LogEventType.TokenReplay, 3, null, "9.9.9.9", "TestAgent/1.0", "INVALID_REFRESH_TOKEN", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]

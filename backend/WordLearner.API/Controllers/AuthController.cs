@@ -30,7 +30,7 @@ public class AuthController : ApiControllerBase
     [EnableRateLimiting("anonymous")]
     public async Task<ActionResult<MessageResponse>> VerifyEmail(VerifyEmailRequest request, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode), cancellationToken);
+        await _mediator.Send(new VerifyEmailCommand(request.Email, request.OtpCode, DeviceInfo, ClientIpAddress), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("EMAIL_VERIFIED", AcceptLanguage)));
     }
 
@@ -48,7 +48,7 @@ public class AuthController : ApiControllerBase
     [EnableRateLimiting("login")]
     public async Task<ActionResult<MessageResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new LoginCommand(request.Email, request.Password, AcceptLanguage), cancellationToken);
+        await _mediator.Send(new LoginCommand(request.Email, request.Password, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("LOGIN_OTP_SENT", AcceptLanguage)));
     }
 
@@ -111,7 +111,7 @@ public class AuthController : ApiControllerBase
     [EnableRateLimiting("anonymous")]
     public async Task<ActionResult<MessageResponse>> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new ResetPasswordCommand(request.Email, request.OtpCode, request.NewPassword, AcceptLanguage), cancellationToken);
+        await _mediator.Send(new ResetPasswordCommand(request.Email, request.OtpCode, request.NewPassword, DeviceInfo, ClientIpAddress, AcceptLanguage), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("PASSWORD_RESET", AcceptLanguage)));
     }
 
@@ -129,7 +129,7 @@ public class AuthController : ApiControllerBase
     [EnableRateLimiting("general")]
     public async Task<ActionResult<MessageResponse>> ConfirmAccountDeletion(ConfirmAccountDeletionRequest request, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new ConfirmAccountDeletionCommand(CurrentUserId, request.OtpCode), cancellationToken);
+        await _mediator.Send(new ConfirmAccountDeletionCommand(CurrentUserId, request.OtpCode, DeviceInfo, ClientIpAddress), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("ACCOUNT_DELETED", AcceptLanguage)));
     }
 }

@@ -3,10 +3,11 @@ using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-public record ResetPasswordCommand(string Email, string OtpCode, string NewPassword, string? Language) : IRequest<Unit>;
+public record ResetPasswordCommand(string Email, string OtpCode, string NewPassword, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<Unit>;
 
 public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand, Unit>
 {
@@ -15,19 +16,22 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
     private readonly IOtpService _otpService;
     private readonly IPasswordService _passwordService;
     private readonly IEmailService _emailService;
+    private readonly ISecurityLogger _securityLogger;
 
     public ResetPasswordCommandHandler(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IOtpService otpService,
         IPasswordService passwordService,
-        IEmailService emailService)
+        IEmailService emailService,
+        ISecurityLogger securityLogger)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _otpService = otpService;
         _passwordService = passwordService;
         _emailService = emailService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<Unit> Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
@@ -37,9 +41,19 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
 
         var result = _otpService.Verify(user, request.OtpCode, OtpPurpose.PasswordReset);
         if (result == OtpVerificationResult.Expired)
+        {
+            await _securityLogger.LogAsync(LogEventType.OtpFailed, userId: user.Id, email: request.Email,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "OTP_EXPIRED",
+                cancellationToken: cancellationToken);
             throw new OtpExpiredException();
+        }
         if (result == OtpVerificationResult.InvalidCode)
+        {
+            await _securityLogger.LogAsync(LogEventType.OtpFailed, userId: user.Id, email: request.Email,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_OTP",
+                cancellationToken: cancellationToken);
             throw new InvalidOtpException();
+        }
 
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
 
@@ -47,6 +61,9 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         await _refreshTokenRepository.RevokeAllForUserAsync(user.Id, cancellationToken);
         await _userRepository.SaveChangesAsync(cancellationToken);
 
+        await _securityLogger.LogAsync(LogEventType.PasswordReset, userId: user.Id, email: user.Email,
+            ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "PASSWORD_RESET",
+            cancellationToken: cancellationToken);
         await _emailService.SendPasswordChangedNotificationAsync(user.Email, user.FirstName, request.Language, cancellationToken);
         return Unit.Value;
     }

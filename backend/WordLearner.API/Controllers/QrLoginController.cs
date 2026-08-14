@@ -48,7 +48,7 @@ public class QrLoginController : ApiControllerBase
     [EnableRateLimiting("general")]
     public async Task<ActionResult<MessageResponse>> Confirm(string token, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new ConfirmQrLoginCommand(token, CurrentUserId), cancellationToken);
+        await _mediator.Send(new ConfirmQrLoginCommand(token, CurrentUserId, DeviceInfo, ClientIpAddress), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_CONFIRMED", AcceptLanguage)));
     }
 
@@ -57,7 +57,7 @@ public class QrLoginController : ApiControllerBase
     [EnableRateLimiting("general")]
     public async Task<ActionResult<MessageResponse>> Deny(string token, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new DenyQrLoginCommand(token, CurrentUserId), cancellationToken);
+        await _mediator.Send(new DenyQrLoginCommand(token, CurrentUserId, DeviceInfo, ClientIpAddress), cancellationToken);
         return Ok(new MessageResponse(SuccessMessages.Resolve("QR_LOGIN_DENIED", AcceptLanguage)));
     }
 }

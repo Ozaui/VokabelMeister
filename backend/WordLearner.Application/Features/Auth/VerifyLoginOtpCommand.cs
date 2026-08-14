@@ -4,6 +4,7 @@ using WordLearner.Application.DTOs.Auth;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
@@ -19,19 +20,22 @@ public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpComman
     private readonly IOtpService _otpService;
     private readonly ILoginCompletionService _loginCompletionService;
     private readonly IEmailService _emailService;
+    private readonly ISecurityLogger _securityLogger;
 
     public VerifyLoginOtpCommandHandler(
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IOtpService otpService,
         ILoginCompletionService loginCompletionService,
-        IEmailService emailService)
+        IEmailService emailService,
+        ISecurityLogger securityLogger)
     {
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _otpService = otpService;
         _loginCompletionService = loginCompletionService;
         _emailService = emailService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<LoginResponse> Handle(VerifyLoginOtpCommand request, CancellationToken cancellationToken)
@@ -44,9 +48,19 @@ public class VerifyLoginOtpCommandHandler : IRequestHandler<VerifyLoginOtpComman
 
         var result = _otpService.Verify(user, request.OtpCode, OtpPurpose.LoginOtp);
         if (result == OtpVerificationResult.Expired)
+        {
+            await _securityLogger.LogAsync(LogEventType.OtpFailed, userId: user.Id, email: request.Email,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "OTP_EXPIRED",
+                cancellationToken: cancellationToken);
             throw new OtpExpiredException();
+        }
         if (result == OtpVerificationResult.InvalidCode)
+        {
+            await _securityLogger.LogAsync(LogEventType.OtpFailed, userId: user.Id, email: request.Email,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_OTP",
+                cancellationToken: cancellationToken);
             throw new InvalidOtpException();
+        }
 
         var completion = _loginCompletionService.Complete(user, request.DeviceInfo, request.IpAddress);
 

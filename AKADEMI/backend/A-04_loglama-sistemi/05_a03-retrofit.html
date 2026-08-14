@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-04 — Loglama Sistemi</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'a03-retrofit',
+    bolumBaslik: 'A-04 — Loglama Sistemi',
+    oncekiBolum: '04_paged-repository.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'A-03 Retrofit: 8 Handler\'a Geriye Dönük Loglama',
+        altBaslik: 'A-03 bitene kadar hiçbir Handler loglama YAPMIYORDU — bu bölüm, planlı bir tek seferlik entegrasyon adımıyla ISecurityLogger çağrılarını geriye ekliyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Sekiz Handler, İki Tekrarlayan Desen',
+        aciklama: 'Bu bölümde `SecurityLog` çağrısı eklenen sekiz Handler, ALTINDA yatan mantığa göre İKİ AİLEYE ayrılıyor: (1) "OTP doğrulama başarısız" ailesi — `VerifyLoginOtpCommand`, `VerifyEmailCommand`, `ResetPasswordCommand`, `ConfirmAccountDeletionCommand` — dördü de AYNI iki dallı `if (result == Expired) / if (result == InvalidCode)` yapısını taşıyor; (2) "başarılı hassas işlem" ailesi — `ResetPasswordCommand`, `ConfirmAccountDeletionCommand`, `ConfirmQrLoginCommand`, `DenyQrLoginCommand` — dördü de işlem TAMAMLANDIKTAN hemen SONRA tek bir başarı log\'u atıyor. `LoginCommand` (LoginFailed) ve `RefreshCommand` (TokenReplay) ise KENDİNE özgü, tekil bir akış izliyor.',
+        neden: 'Sekiz Handler\'ın HER birini satır satır göstermek, okuyucuya AYNI iki-dallı `if` bloğunu dört kez, AYNI "kaydet sonra logla" desenini dört kez OKUTMAK anlamına gelirdi — hiçbiri yeni bir mühendislik kararı İÇERMİYOR, hepsi Bölüm 3\'te ZATEN öğretilmiş `ISecurityLogger.LogAsync` çağrısının bir Handler\'a nasıl KABLOLANDIĞININ tekrarı. Bu yüzden `LoginCommand` (en basit tekil örnek) ve `RefreshCommand` (akış İÇİNDE loglama gerektiren tek örnek) TAM olarak öğretiliyor, geri kalan altısı bir karşılaştırma tablosunda ÖZETLENİYOR.',
+        olmasaydi: 'Sekizi de TAM slaytla anlatılsaydı, bu bölüm ~2000 satırlık, büyük ölçüde BİRBİRİNİN kopyası kod bloklarından oluşurdu — okuyucu 5. tekrardan SONRA deseni zaten öğrenmiş olur, kalan tekrarlar yeni bilgi KATMADAN sayfayı uzatırdı.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LoginCommand.cs — LoginFailed (En Basit Örnek)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/LoginCommand.cs',
+        neden: 'Bölüm 12\'de (A-03) TAM olarak öğretilen bu dosyaya, şifre/e-posta hatalı bir giriş denemesinde `SecurityLog` yazan bir `ISecurityLogger` bağımlılığı eklendi — bu, sekiz Handler\'ın İÇİNDE en YALIN örnek: tek bir başarısızlık dalı, tek bir log çağrısı.',
+        diff: ` using MediatR;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Domain.Enums.Auth;
++using WordLearner.Domain.Enums.Logging;
+
+ namespace WordLearner.Application.Features.Auth;
+
+-public record LoginCommand(string Email, string Password, string? Language) : IRequest<Unit>;
++public record LoginCommand(string Email, string Password, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<Unit>;
+
+ public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>
+ {
+     // Kullanıcı bulunamadığında da bcrypt karşılaştırması ÇALIŞTIRILIR (sabit süre) — aksi halde
+     // "kayıtlı e-posta" ile "kayıtsız e-posta" yanıt süresinden ayırt edilebilir (SECURITY.md §1).
+     private const string DummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO4vTvHKp2FTa9DKAdKrdBvfsjnPZDe1i";
+
+     private readonly IUserRepository _userRepository;
+     private readonly IPasswordService _passwordService;
+     private readonly IOtpService _otpService;
+     private readonly IEmailService _emailService;
++    private readonly ISecurityLogger _securityLogger;
+
+-    public LoginCommandHandler(IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService, IEmailService emailService)
++    public LoginCommandHandler(
++        IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService,
++        IEmailService emailService, ISecurityLogger securityLogger)
+     {
+         _userRepository = userRepository;
+         _passwordService = passwordService;
+         _otpService = otpService;
+         _emailService = emailService;
++        _securityLogger = securityLogger;
+     }
+
+     public async Task<Unit> Handle(LoginCommand request, CancellationToken cancellationToken)
+     {
+         var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+
+         // PasswordHash null → sosyal-yalnızca hesap, şifre ile giriş edilemez (aynı hata, sızıntı yok).
+         var hashToVerify = user?.PasswordHash ?? DummyHash;
+         var passwordMatches = _passwordService.Verify(request.Password, hashToVerify);
+
+         if (user is null || user.PasswordHash is null || !passwordMatches)
++        {
++            await _securityLogger.LogAsync(LogEventType.LoginFailed, email: request.Email,
++                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_CREDENTIALS",
++                cancellationToken: cancellationToken);
+             throw new InvalidCredentialsException();
++        }
+
+         if (!user.IsActive)
+             throw new AccountInactiveException();
+
+         var otpCode = _otpService.Generate(user, OtpPurpose.LoginOtp);
+         await _userRepository.SaveChangesAsync(cancellationToken);`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın (Bölüm 1) ad alanı — aşağıdaki `LogEventType.LoginFailed` referansı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginCommand(string Email, string Password, string? Language) : IRequest<Unit>;',
+            aciklama: 'ESKİ (Bölüm 12) imza — yalnızca üç veri alanı taşıyordu, IP/UserAgent bilgisi HİÇ yoktu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record LoginCommand(string Email, string Password, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<Unit>;',
+            aciklama: 'İki yeni parametre eklendi — `VerifyLoginOtpCommand`nin (A-03, Bölüm 12) zaten taşıdığı `DeviceInfo`/`IpAddress` çiftiyle AYNI isim/tip, `AuthController`\'ın `ApiControllerBase.DeviceInfo`/`ClientIpAddress`\'ten dolduracağı iki alan.',
+            neden: 'Bu ikisi OLMADAN `LoginCommandHandler`, `SecurityLog.IpAddress`/`UserAgent` sütunlarına (Bölüm 1) yazacak HİÇBİR veriye sahip OLAMAZDI — Application katmanı `HttpContext`\'e DOĞRUDAN erişemediği için (Clean Architecture katman kuralı), bu bilgi Controller\'dan Command\'a EXPLICIT olarak taşınmak ZORUNDA.',
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ISecurityLogger _securityLogger;',
+            aciklama: 'Bölüm 3\'te yazılan servisin bu Handler\'a eklenen bağımlılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginCommandHandler(IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService, IEmailService emailService)',
+            aciklama: 'ESKİ (Bölüm 12) constructor imzası — dört parametre, TEK bir satıra sığıyordu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LoginCommandHandler(',
+            aciklama: 'Beşinci parametreyi alacak şekilde GENİŞLEYEN constructor imzası — okunabilirlik için tek satırdan çok satıra BÖLÜNDÜ (dört parametreden BEŞE çıkınca satır çok uzardı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService,',
+            aciklama: 'İlk üç parametre — ESKİ imzadan DEĞİŞMEDEN taşındı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IEmailService emailService, ISecurityLogger securityLogger)',
+            aciklama: 'Dördüncü parametre eskisiyle AYNI, beşinci (`securityLogger`) YENİ eklenen bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_securityLogger = securityLogger;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (user is null || user.PasswordHash is null || !passwordMatches)',
+            aciklama: 'Bölüm 12\'den DEĞİŞMEYEN koşul — kullanıcı yok, sosyal-yalnızca hesap, veya şifre YANLIŞ; üç farklı sebep AYNI genel `InvalidCredentialsException`\'a (e-posta enumerasyonunu önlemek için) düşüyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _securityLogger.LogAsync(LogEventType.LoginFailed, email: request.Email,',
+            aciklama: 'YENİ satır — bu koşulun İÇİNE eklenen tek log çağrısı, `throw`\'dan HEMEN önce.',
+            neden: 'Log çağrısı `throw`\'dan ÖNCE yapılıyor (sonra değil) çünkü bir istisna fırlatıldıktan SONRA `ExceptionHandlingMiddleware`\'e (A-02) kadar hiçbir Handler kodu ÇALIŞMAZ — istisnadan SONRAKİ bir log çağrısı hiç ÇALIŞMAZDI.',
+            olmasaydi: 'Bu satır `throw`\'dan SONRAYA konsaydı (veya bir `catch` bloğuna), asla ÇALIŞMAYAN ölü kod olurdu — `SecurityLogs` tablosu HİÇBİR zaman bir `LoginFailed` satırı GÖRMEZDİ, canlı doğrulamada (aşağıdaki bölüm) yapılan sorgu BOŞ dönerdi.'
+          },
+          {
+            satir: 'ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_CREDENTIALS",',
+            aciklama: '`request`\'in yukarıda eklenen iki yeni alanı buraya AKIYOR; `detail` alanına serbest metin DEĞİL, `ErrorMessages` sözlüğünde (A-03) ZATEN var olan `INVALID_CREDENTIALS` Code\'u yazılıyor — istemciye giden hata mesajıyla AYNI Code, admin log panelinde (A-07) admin\'in KENDİ diliyle çözülecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'cancellationToken: cancellationToken);',
+            aciklama: 'İsteğin iptal token\'ı log yazma işlemine de AKTARILIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new InvalidCredentialsException();',
+            aciklama: 'Bölüm 12\'den DEĞİŞMEYEN davranış — log YAZILDIKTAN hemen sonra AYNI istisna fırlatılmaya devam ediyor, istemcinin gördüğü yanıt (401 + `INVALID_CREDENTIALS`) HİÇ değişmedi.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'RefreshCommand.cs — TokenReplay (Akış İçinde Loglama)',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Auth/RefreshCommand.cs',
+        neden: 'Bölüm 14\'te (A-03) yazılan bu dosyada ZATEN "SecurityLog: TokenReplay, A-04\'te eklenecek" notu vardı — bu değişiklik o notu somutlaştırıyor. Diğerlerinden FARKI: log çağrısı bir `throw`\'dan HEMEN önce DEĞİL, `RevokeFamilyAsync`/`SaveChangesAsync`\'ten ÖNCE, akışın ORTASINA ekleniyor.',
+        diff: ` using MediatR;
+ using WordLearner.Application.Common.Exceptions;
+ using WordLearner.Application.DTOs.Auth;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
+ using WordLearner.Application.Interfaces.Services;
+ using WordLearner.Domain.Entities.Auth;
++using WordLearner.Domain.Enums.Logging;
+
+ namespace WordLearner.Application.Features.Auth;
+
+ public record RefreshCommand(string RefreshToken, string? DeviceInfo, string? IpAddress) : IRequest<RefreshResponse>;
+
+ public class RefreshCommandHandler : IRequestHandler<RefreshCommand, RefreshResponse>
+ {
+     private const int AccessTokenExpiresInSeconds = 900;
+
+     private readonly IUserRepository _userRepository;
+     private readonly IRefreshTokenRepository _refreshTokenRepository;
+     private readonly ITokenService _tokenService;
+     private readonly IPasswordService _passwordService;
++    private readonly ISecurityLogger _securityLogger;
+
+     public RefreshCommandHandler(
+         IUserRepository userRepository,
+         IRefreshTokenRepository refreshTokenRepository,
+         ITokenService tokenService,
+-        IPasswordService passwordService)
++        IPasswordService passwordService,
++        ISecurityLogger securityLogger)
+     {
+         _userRepository = userRepository;
+         _refreshTokenRepository = refreshTokenRepository;
+         _tokenService = tokenService;
+         _passwordService = passwordService;
++        _securityLogger = securityLogger;
+     }
+
+     public async Task<RefreshResponse> Handle(RefreshCommand request, CancellationToken cancellationToken)
+     {
+         var tokenHash = _passwordService.HashToken(request.RefreshToken);
+         var existingToken = await _refreshTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken)
+             ?? throw new InvalidRefreshTokenException();
+
+         if (existingToken.IsUsed)
+         {
+-            // Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış
+-            // olabilir, family'deki TÜM token'lar iptal edilir (SecurityLog: TokenReplay, A-04'te eklenecek).
++            // Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış olabilir.
++            await _securityLogger.LogAsync(LogEventType.TokenReplay, userId: existingToken.UserId,
++                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_REFRESH_TOKEN",
++                cancellationToken: cancellationToken);
+             await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, cancellationToken);
+             await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+             throw new InvalidRefreshTokenException();
+         }
+
+         if (existingToken.RevokedAt is not null || existingToken.ExpiresAt < DateTime.UtcNow)
+             throw new InvalidRefreshTokenException();
+
+         var user = await _userRepository.GetByIdAsync(existingToken.UserId, cancellationToken);
+         if (user is null || !user.IsActive || user.IsDeleted || user.IsAnonymized)
+             throw new InvalidRefreshTokenException();
+
+         existingToken.IsUsed = true;
+
+         var accessToken = _tokenService.GenerateAccessToken(user);
+         var newRefresh = _tokenService.GenerateRefreshToken();
+         var newRefreshTokenEntity = new RefreshToken
+         {
+             UserId = user.Id,
+             TokenHash = _passwordService.HashToken(newRefresh.Token),
+             TokenFamily = existingToken.TokenFamily,
+             ExpiresAt = newRefresh.ExpiresAt,
+             DeviceInfo = request.DeviceInfo,
+             IpAddress = request.IpAddress,`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Enums.Logging;',
+            aciklama: '`LogEventType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ISecurityLogger _securityLogger;',
+            aciklama: 'Yeni bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IPasswordService passwordService,',
+            aciklama: 'ESKİ imzanın SON parametresiydi (sonda `)` ile kapanıyordu) — YENİ bir parametre EKLENDİĞİ için artık sonda virgül taşıyor, kapanış aşağıki satıra TAŞINDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IPasswordService passwordService)',
+            aciklama: 'ESKİ (Bölüm 14) hâlde bu satır SON parametreydi, kapanış parantezini KENDİSİ taşıyordu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ISecurityLogger securityLogger)',
+            aciklama: 'Beşinci parametre — ve şimdi kapanış parantezini TAŞIYAN satır bu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_securityLogger = securityLogger;',
+            aciklama: 'Standart constructor ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Token Family Pattern: daha önce kullanılmış bir refresh token TEKRAR geldi — çalınmış olabilir.',
+            aciklama: 'Bölüm 14\'ün YORUMU kısaltıldı — "SecurityLog: TokenReplay, A-04\'te eklenecek" notu ARTIK gereksiz, çünkü hemen altındaki satır o işi ZATEN yapıyor; bir TODO yorumu, işi yapan kod YAZILDIĞINDA silinir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _securityLogger.LogAsync(LogEventType.TokenReplay, userId: existingToken.UserId,',
+            aciklama: 'YENİ log çağrısı — `RevokeFamilyAsync`\'ten (aşağıda) ÖNCE ekleniyor, `LoginCommand`\'daki desenden FARKLI olarak bir `throw`\'un HEMEN öncesinde DEĞİL, family iptalinden önceki bir ARA adımda.',
+            neden: '`userId` burada `existingToken.UserId`\'den (zaten elde bulunan) geliyor, `email` DEĞİL — bu noktada kullanıcının e-postasını ÖĞRENMEK için ayrı bir `GetByIdAsync` sorgusu GEREKİRDİ; `SecurityLog.UserId` zaten kimin olduğunu tek başına YETERLİ şekilde kaydediyor, gereksiz bir sorguya gerek YOK.',
+            olmasaydi: null
+          },
+          {
+            satir: 'ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_REFRESH_TOKEN",',
+            aciklama: '`detail` için, A-03\'ün `ErrorMessages` sözlüğünde ZATEN var olan `INVALID_REFRESH_TOKEN` Code\'u yeniden kullanılıyor — `TokenReplay` (EventType) BAĞLAMSAL olarak "bu neden geçersiz" sorusuna zaten cevap veriyor, `Detail`\'in ayrı, DAHA spesifik bir Code icat etmesine gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'cancellationToken: cancellationToken);',
+            aciklama: 'İptal token\'ı iletiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _refreshTokenRepository.RevokeFamilyAsync(existingToken.TokenFamily, cancellationToken);',
+            aciklama: 'Bölüm 14\'ten DEĞİŞMEYEN davranış — log YAZILDIKTAN sonra family iptali DEVAM ediyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Diğer Altı Handler — İki Bilinen Desenin Tekrarı',
+        aciklama: '`VerifyLoginOtpCommand`/`VerifyEmailCommand`/`ResetPasswordCommand`/`ConfirmAccountDeletionCommand` dördü de OtpFailed ailesine katılıyor: `OtpVerificationResult.Expired` dalına `LogEventType.OtpFailed` + `detail: "OTP_EXPIRED"`, `InvalidCode` dalına AYNI olay + `detail: "INVALID_OTP"` eklendi — `LoginCommand`\'daki "throw\'dan HEMEN önce logla" deseninin, İKİ dala ÇOĞALTILMIŞ hâli. `ResetPasswordCommand`/`ConfirmAccountDeletionCommand` AYRICA başarı ailesine de katılıyor: `SaveChangesAsync`\'ten SONRA sırasıyla `LogEventType.PasswordReset` (`detail: "PASSWORD_RESET"`) ve `LogEventType.AccountDeletion` (`detail: "ACCOUNT_DELETED"`) yazıyor. `ConfirmQrLoginCommand`/`DenyQrLoginCommand` yalnızca başarı ailesine katılıyor: session durumu güncellenip kaydedildikten SONRA sırasıyla `QrLoginConfirmed` (`detail: "QR_LOGIN_CONFIRMED"`) ve `QrLoginDenied` (`detail: "QR_LOGIN_DENIED"`) yazıyor.',
+        neden: 'Her dört OTP Handler\'ında `user.Id`/`request.Email` (veya `user.Email`) ZATEN elde bulunan değerler — hiçbiri log çağrısı için EK bir sorgu GEREKTİRMEDİ; her iki QR Handler\'ında `request.UserId` (Controller\'dan `CurrentUserId` ile ZATEN gelen) kullanıldı.',
+        olmasaydi: 'Bu altısı da TAM `kod-degisiklik` slaytıyla gösterilseydi, okuyucu `if (result == Expired) { log(...); throw; } if (result == InvalidCode) { log(...); throw; }` bloğunu DÖRT kez, `await _securityLogger.LogAsync(...)` + `return Unit.Value;` desenini yine DÖRT kez, tek satır bile farklılaşmadan OKURDU.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Sekiz Handler — Olay/Detail/Konum Özeti',
+        terimler: [
+          { terim: 'LoginCommand', tanim: 'LoginFailed · detail=INVALID_CREDENTIALS · şifre/e-posta doğrulaması başarısızsa throw\'dan önce (yukarıda TAM anlatıldı).' },
+          { terim: 'RefreshCommand', tanim: 'TokenReplay · detail=INVALID_REFRESH_TOKEN · kullanılmış token tekrar geldiğinde, family iptalinden önce (yukarıda TAM anlatıldı).' },
+          { terim: 'VerifyLoginOtpCommand', tanim: 'OtpFailed · detail=OTP_EXPIRED veya INVALID_OTP · OTP doğrulama iki dalından biri tetiklendiğinde.' },
+          { terim: 'VerifyEmailCommand', tanim: 'OtpFailed · detail=OTP_EXPIRED veya INVALID_OTP · e-posta doğrulama OTP\'si başarısızsa.' },
+          { terim: 'ResetPasswordCommand', tanim: 'OtpFailed (başarısızlıkta) + PasswordReset·detail=PASSWORD_RESET (SaveChangesAsync\'ten sonra, başarıda).' },
+          { terim: 'ConfirmAccountDeletionCommand', tanim: 'OtpFailed (başarısızlıkta) + AccountDeletion·detail=ACCOUNT_DELETED (SaveChangesAsync\'ten sonra, başarıda).' },
+          { terim: 'ConfirmQrLoginCommand', tanim: 'QrLoginConfirmed · detail=QR_LOGIN_CONFIRMED · session Confirmed\'e geçip kaydedildikten sonra.' },
+          { terim: 'DenyQrLoginCommand', tanim: 'QrLoginDenied · detail=QR_LOGIN_DENIED · session Denied\'e geçip kaydedildikten sonra.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — RateLimitHit (Constructor Injection Dışı Çözümleme)',
+        dosyaYolu: 'backend/WordLearner.API/Program.cs',
+        neden: 'Bölüm 2\'de (A-04) Serilog sink\'iyle genişleyen bu dosyada, rate limiter\'ın (A-03, Bölüm 29) `OnRejected` geri çağırımı — bir MediatR Handler DEĞİL, bir `Program.cs` lambda\'sı olduğu için `ISecurityLogger`\'ı constructor injection İLE alamıyor, bu bölümün SEKİZ Handler\'ından FARKLI bir çözümleme yolu gerekiyor.',
+        diff: `     options.OnRejected = async (rejectedContext, cancellationToken) =>
+     {
+         var httpContext = rejectedContext.HttpContext;
++        var securityLogger = httpContext.RequestServices.GetRequiredService<ISecurityLogger>();
++        await securityLogger.LogAsync(LogEventType.RateLimitHit,
++            ipAddress: ClientIp(httpContext), userAgent: httpContext.Request.Headers.UserAgent.ToString(),
++            detail: "RATE_LIMIT_EXCEEDED", cancellationToken: cancellationToken);
++
+         var message = ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", httpContext.GetLanguage());
+         httpContext.Response.ContentType = "application/json";
+         await httpContext.Response.WriteAsJsonAsync(
+             new ApiErrorResponse(false, new ApiErrorDetail("RATE_LIMIT_EXCEEDED", message)), cancellationToken);
+     };
+ });`,
+        satirlar: [
+          {
+            satir: 'var securityLogger = httpContext.RequestServices.GetRequiredService<ISecurityLogger>();',
+            aciklama: '`OnRejected` bir MediatR Handler DEĞİL — sekiz Handler\'ın hepsinde `ISecurityLogger` constructor parametresi olarak DI konteynerinden OTOMATİK geliyordu, burada ise bu lambda\'nın DI konteynerine erişimi YOK, bu yüzden ANLIK istek scope\'undan (`httpContext.RequestServices`) elle ÇÖZÜLÜYOR.',
+            neden: 'A-03.2\'nin (Bölüm 44) `AdminSeedService`\'i `app.Services.CreateScope()` ile KENDİ scope\'unu AÇARKEN, burada ZATEN bir HTTP isteğinin İÇİNDEYİZ — `httpContext.RequestServices` o isteğin scope\'unu TEMSİL ediyor, yeni bir scope açmaya gerek YOK.',
+            olmasaydi: 'Bir scope AÇILMADAN `ISecurityLogger`\'ı ÇÖZMEYE çalışmak (ör. kök `app.Services`\'ten doğrudan) `AddScoped` kayıtlı bir servis için "cannot resolve scoped service from root provider" istisnası FIRLATIRDI — `httpContext.RequestServices` bu isteğin KENDİ scope\'u olduğu için bu sorun hiç YAŞANMIYOR.'
+          },
+          {
+            satir: 'await securityLogger.LogAsync(LogEventType.RateLimitHit,',
+            aciklama: 'Diğer sekiz çağrıyla AYNI metot, farklı bir çağrı NOKTASI — burada `userId`/`email` YOK çünkü rate limit genelde kimliği doğrulanmamış (`anonymous`/`login` policy\'leri) istekleri de kapsıyor, tek bilinen bilgi IP/UserAgent.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ipAddress: ClientIp(httpContext), userAgent: httpContext.Request.Headers.UserAgent.ToString(),',
+            aciklama: '`ClientIp`, `Program.cs`\'in (A-03, Bölüm 29) rate limiter partition anahtarları için ZATEN tanımladığı yardımcı fonksiyon — burada TEKRAR kullanılıyor, ikinci bir IP okuma mantığı YAZILMADI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'detail: "RATE_LIMIT_EXCEEDED", cancellationToken: cancellationToken);',
+            aciklama: 'Hemen altındaki, DEĞİŞMEYEN `ErrorMessages.Resolve("RATE_LIMIT_EXCEEDED", ...)` çağrısıyla AYNI Code — istemciye giden hata mesajının Code\'u ile güvenlik logunun Detail\'i BİREBİR eşleşiyor, iki ayrı sabit BAKIMI gerekmiyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama',
+        aciklama: '`dotnet run` ile uygulama açılıp `POST /auth/login`\'e yanlış şifreyle bir istek atıldı — konsol loglarında `INSERT INTO [SecurityLogs] ([Detail], [EmailHash], [EventType], [IpAddress], [UserAgent], [UserId]) ... VALUES (...)` SQL komutu GÖRÜLDÜ, ardından beklenen 401 `INVALID_CREDENTIALS` yanıtı döndü.',
+        neden: '`docker exec` ile SQL Server\'a bağlanıp `SELECT TOP 5 ... FROM SecurityLogs ORDER BY Id DESC` çalıştırıldığında tek satır göründü: `EventType=LoginFailed`, `UserId=NULL` (kullanıcı DB\'de HİÇ yok), `EmailHash` 44 karakterlik bir Base64 dizesi (HAM e-posta DEĞİL), `IpAddress=::1` (localhost IPv6), `Detail=INVALID_CREDENTIALS` — Bölüm 3\'ün `SecurityLogger`\'ının ve bu bölümün `LoginCommand` retrofit\'inin BİRLİKTE, uçtan uca ÇALIŞTIĞININ somut kanıtı.',
+        olmasaydi: null
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Retrofit', tanim: 'Daha önce yazılmış, bitmiş bir koda SONRADAN, planlı bir görev kapsamında yeni bir yetenek (burada: loglama) eklemek — sürpriz bir "unutulmuş" düzeltme değil.' },
+          { terim: 'RequestServices', tanim: 'ASP.NET Core\'un, o an işlenen HTTP isteğinin KENDİ DI scope\'unu temsil eden `HttpContext` özelliği — constructor injection MÜMKÜN olmayan yerlerde (middleware lambda\'ları gibi) servis çözmek için kullanılır.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-04 Loglama Sistemi Tamamlandı',
+        maddeler: [
+          'LoginCommand (LoginFailed) ve RefreshCommand (TokenReplay) tam olarak retrofit edildi — sırasıyla "throw\'dan önce logla" ve "akış ortasında logla" olmak üzere iki farklı çağrı noktası deseni.',
+          'VerifyLoginOtpCommand/VerifyEmailCommand/ResetPasswordCommand/ConfirmAccountDeletionCommand OtpFailed ailesine, ResetPasswordCommand/ConfirmAccountDeletionCommand/ConfirmQrLoginCommand/DenyQrLoginCommand başarı ailesine katıldı — toplam sekiz Handler.',
+          'Program.cs\'in rate limiter OnRejected geri çağırımı, constructor injection yerine httpContext.RequestServices üzerinden ISecurityLogger çözüp RateLimitHit yazdı.',
+          'Tüm SecurityLog.Detail değerleri A-03\'ün ErrorMessages/SuccessMessages sözlüklerinde ZATEN var olan Code\'lar (INVALID_CREDENTIALS, OTP_EXPIRED, INVALID_OTP, INVALID_REFRESH_TOKEN, RATE_LIMIT_EXCEEDED, PASSWORD_RESET, ACCOUNT_DELETED, QR_LOGIN_CONFIRMED, QR_LOGIN_DENIED) — hiçbir yeni sözlük girdisi AÇILMADI.',
+          'Canlı doğrulama: gerçek bir başarısız giriş denemesi SecurityLogs tablosuna doğru EventType/EmailHash/IpAddress/Detail ile yazıldı.',
+          'A-04 — Loglama Sistemi görevi, 3 entity + Serilog sink + 2 logger servisi + PagedResult<T> + 3 repository + 8 Handler retrofit\'iyle tamamlandı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

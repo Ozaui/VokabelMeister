@@ -3,20 +3,24 @@ using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.QrLogin;
 
-public record ConfirmQrLoginCommand(string QrToken, int UserId) : IRequest<Unit>;
+public record ConfirmQrLoginCommand(string QrToken, int UserId, string? DeviceInfo, string? IpAddress) : IRequest<Unit>;
 
 public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginCommand, Unit>
 {
     private readonly IQrLoginSessionRepository _qrLoginSessionRepository;
     private readonly IPasswordService _passwordService;
+    private readonly ISecurityLogger _securityLogger;
 
-    public ConfirmQrLoginCommandHandler(IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService)
+    public ConfirmQrLoginCommandHandler(
+        IQrLoginSessionRepository qrLoginSessionRepository, IPasswordService passwordService, ISecurityLogger securityLogger)
     {
         _qrLoginSessionRepository = qrLoginSessionRepository;
         _passwordService = passwordService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<Unit> Handle(ConfirmQrLoginCommand request, CancellationToken cancellationToken)
@@ -35,6 +39,9 @@ public class ConfirmQrLoginCommandHandler : IRequestHandler<ConfirmQrLoginComman
         session.ConfirmedAt = DateTime.UtcNow;
         await _qrLoginSessionRepository.SaveChangesAsync(cancellationToken);
 
+        await _securityLogger.LogAsync(LogEventType.QrLoginConfirmed, userId: request.UserId,
+            ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "QR_LOGIN_CONFIRMED",
+            cancellationToken: cancellationToken);
         return Unit.Value;
     }
 }

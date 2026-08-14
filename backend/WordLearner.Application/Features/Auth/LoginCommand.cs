@@ -3,10 +3,11 @@ using WordLearner.Application.Common.Exceptions;
 using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Application.Features.Auth;
 
-public record LoginCommand(string Email, string Password, string? Language) : IRequest<Unit>;
+public record LoginCommand(string Email, string Password, string? DeviceInfo, string? IpAddress, string? Language) : IRequest<Unit>;
 
 public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>
 {
@@ -18,13 +19,17 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>
     private readonly IPasswordService _passwordService;
     private readonly IOtpService _otpService;
     private readonly IEmailService _emailService;
+    private readonly ISecurityLogger _securityLogger;
 
-    public LoginCommandHandler(IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService, IEmailService emailService)
+    public LoginCommandHandler(
+        IUserRepository userRepository, IPasswordService passwordService, IOtpService otpService,
+        IEmailService emailService, ISecurityLogger securityLogger)
     {
         _userRepository = userRepository;
         _passwordService = passwordService;
         _otpService = otpService;
         _emailService = emailService;
+        _securityLogger = securityLogger;
     }
 
     public async Task<Unit> Handle(LoginCommand request, CancellationToken cancellationToken)
@@ -36,7 +41,12 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, Unit>
         var passwordMatches = _passwordService.Verify(request.Password, hashToVerify);
 
         if (user is null || user.PasswordHash is null || !passwordMatches)
+        {
+            await _securityLogger.LogAsync(LogEventType.LoginFailed, email: request.Email,
+                ipAddress: request.IpAddress, userAgent: request.DeviceInfo, detail: "INVALID_CREDENTIALS",
+                cancellationToken: cancellationToken);
             throw new InvalidCredentialsException();
+        }
 
         if (!user.IsActive)
             throw new AccountInactiveException();

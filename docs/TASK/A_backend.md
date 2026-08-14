@@ -236,7 +236,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > `AdminSeedServiceTests` — 4 senaryo, sözlük, özet). A-03'ün kök `AKADEMI/backend/index.html`
 > kartı da bu görevle birlikte "tamamlandı" olarak nihai hale getirildi. Task ✅.
 
-### A-04 — Loglama Sistemi ⬜
+### A-04 — Loglama Sistemi ✅
 **Referans:** REFERENCE/SECURITY.md §6, DATABASE_SCHEMA/Loglama.md
 **Frontend karşılığı:** B-08 (Admin — Log Görüntüleme Paneli)
 > `ActivityLog`/`SecurityLog`'un `UserId` FK'i `Users`'a bağlı (SET NULL) — bu yüzden A-03'ten
@@ -256,12 +256,15 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/03_activity-security-logger.html`
 - [x] `IActivityLogRepository`/`IApplicationLogRepository`/`ISecurityLogRepository` (sayfalı, filtreli — `PagedResult<T>`'in ilk gerçek tüketicisi)
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/04_paged-repository.html`
-- [ ] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/
+- [x] **A-03 retrofit:** LoginFailed/OtpFailed(4 akış)/TokenReplay/RateLimitHit/QrLoginConfirmed/
       QrLoginDenied + PasswordReset/AccountDeletion başarı olayları — `SecurityLog.Detail` serbest
-      metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `ActivityLoggerTests`, `SecurityLoggerTests`, 3 Repository testi, A-03 handler testlerine eklenen log-doğrulama senaryoları
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      metin DEĞİL bir Code (CLAUDE.md "İkinci istisna" — admin okurken KENDİ `Accept-Language`'ıyla çözülür).
+      Canlı doğrulama yapıldı: yanlış şifreyle `/auth/login` isteği `SecurityLogs`'a doğru
+      `EventType`/`EmailHash`/`IpAddress`/`Detail` ile yazıldı.
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-04_loglama-sistemi/05_a03-retrofit.html`
+- [x] **Birim testleri:** `ActivityLoggerTests`, `SecurityLoggerTests` (Bölüm 3), 3 Repository testi (Bölüm 4),
+      A-03 handler testlerine eklenen log-doğrulama senaryoları (Bölüm 5) — 109/109 tüm paket yeşil
+- [x] ➜ **AKADEMI/backend'ye işle** — testler ilgili bölümlerin `kod` slaytlarında birlikte işlendi
 
 ### A-05 — Sistem Kelimesi API (Words) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §5, §5.1, §5.2, REFERENCE/GERMAN_LANGUAGE_FEATURES.md §10, REFERENCE/TURKISH_LANGUAGE_FEATURES.md §9

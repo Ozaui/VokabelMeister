@@ -6,6 +6,7 @@ using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -13,8 +14,9 @@ public class VerifyEmailCommandHandlerTests
 {
     private readonly Mock<IUserRepository> _userRepository = new();
     private readonly Mock<IOtpService> _otpService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
-    private VerifyEmailCommandHandler CreateHandler() => new(_userRepository.Object, _otpService.Object);
+    private VerifyEmailCommandHandler CreateHandler() => new(_userRepository.Object, _otpService.Object, _securityLogger.Object);
 
     [Fact]
     public async Task Handle_EmailNotFound_ThrowsInvalidOtpException()
@@ -24,42 +26,44 @@ public class VerifyEmailCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new VerifyEmailCommand("yok@test.de", "123456"), default);
+        var act = () => handler.Handle(new VerifyEmailCommand("yok@test.de", "123456", null, null), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
     }
 
     [Fact]
-    public async Task Handle_OtpExpired_ThrowsOtpExpiredException()
+    public async Task Handle_OtpExpired_ThrowsOtpExpiredExceptionAndLogsOtpFailed()
     {
         // ARRANGE
-        var user = new User { Email = "ada@test.de" };
+        var user = new User { Id = 7, Email = "ada@test.de" };
         _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
         _otpService.Setup(o => o.Verify(user, "123456", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.Expired);
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);
+        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "123456", "TestAgent/1.0", "9.9.9.9"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<OtpExpiredException>();
+        _securityLogger.Verify(s => s.LogAsync(LogEventType.OtpFailed, 7, "ada@test.de", "9.9.9.9", "TestAgent/1.0", "OTP_EXPIRED", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Handle_InvalidCode_ThrowsInvalidOtpException()
+    public async Task Handle_InvalidCode_ThrowsInvalidOtpExceptionAndLogsOtpFailed()
     {
         // ARRANGE
-        var user = new User { Email = "ada@test.de" };
+        var user = new User { Id = 7, Email = "ada@test.de" };
         _userRepository.Setup(r => r.GetByEmailAsync("ada@test.de", It.IsAny<CancellationToken>())).ReturnsAsync(user);
         _otpService.Setup(o => o.Verify(user, "000000", OtpPurpose.EmailVerification)).Returns(OtpVerificationResult.InvalidCode);
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "000000"), default);
+        var act = () => handler.Handle(new VerifyEmailCommand("ada@test.de", "000000", null, null), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidOtpException>();
+        _securityLogger.Verify(s => s.LogAsync(LogEventType.OtpFailed, 7, "ada@test.de", null, null, "INVALID_OTP", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -72,7 +76,7 @@ public class VerifyEmailCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        await handler.Handle(new VerifyEmailCommand("ada@test.de", "123456"), default);
+        await handler.Handle(new VerifyEmailCommand("ada@test.de", "123456", null, null), default);
 
         // ASSERT
         user.IsEmailVerified.Should().BeTrue();

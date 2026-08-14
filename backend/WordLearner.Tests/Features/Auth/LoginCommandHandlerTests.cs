@@ -6,6 +6,7 @@ using WordLearner.Application.Interfaces.Repositories.Auth;
 using WordLearner.Application.Interfaces.Services;
 using WordLearner.Domain.Entities.Auth;
 using WordLearner.Domain.Enums.Auth;
+using WordLearner.Domain.Enums.Logging;
 
 namespace WordLearner.Tests.Features.Auth;
 
@@ -15,9 +16,10 @@ public class LoginCommandHandlerTests
     private readonly Mock<IPasswordService> _passwordService = new();
     private readonly Mock<IOtpService> _otpService = new();
     private readonly Mock<IEmailService> _emailService = new();
+    private readonly Mock<ISecurityLogger> _securityLogger = new();
 
     private LoginCommandHandler CreateHandler() =>
-        new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object);
+        new(_userRepository.Object, _passwordService.Object, _otpService.Object, _emailService.Object, _securityLogger.Object);
 
     [Fact]
     public async Task Handle_UserNotFound_StillVerifiesDummyHashAndThrowsInvalidCredentialsException()
@@ -28,7 +30,7 @@ public class LoginCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new LoginCommand("yok@test.de", "Sifre123!", "tr"), default);
+        var act = () => handler.Handle(new LoginCommand("yok@test.de", "Sifre123!", null, null, "tr"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidCredentialsException>();
@@ -36,7 +38,7 @@ public class LoginCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WrongPassword_ThrowsInvalidCredentialsException()
+    public async Task Handle_WrongPassword_ThrowsInvalidCredentialsExceptionAndLogsLoginFailed()
     {
         // ARRANGE
         var user = new User { Email = "ada@test.de", PasswordHash = "gercek-hash" };
@@ -45,10 +47,12 @@ public class LoginCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new LoginCommand("ada@test.de", "YanlisSifre", "tr"), default);
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "YanlisSifre", "TestAgent/1.0", "9.9.9.9", "tr"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidCredentialsException>();
+        // SecurityLog: yanlış şifre A-04'te eklenen LoginFailed olayını, ham e-posta ve IP/UserAgent ile tetiklemeli
+        _securityLogger.Verify(s => s.LogAsync(LogEventType.LoginFailed, null, "ada@test.de", "9.9.9.9", "TestAgent/1.0", "INVALID_CREDENTIALS", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -61,7 +65,7 @@ public class LoginCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", null, null, "tr"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<InvalidCredentialsException>();
@@ -77,7 +81,7 @@ public class LoginCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+        var act = () => handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", null, null, "tr"), default);
 
         // ASSERT
         await act.Should().ThrowAsync<AccountInactiveException>();
@@ -94,7 +98,7 @@ public class LoginCommandHandlerTests
         var handler = CreateHandler();
 
         // ACT
-        await handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", "tr"), default);
+        await handler.Handle(new LoginCommand("ada@test.de", "Sifre123!", null, null, "tr"), default);
 
         // ASSERT
         _userRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
