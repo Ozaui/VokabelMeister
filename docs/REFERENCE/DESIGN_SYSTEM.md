@@ -17,6 +17,16 @@
 > bu doküman değiştiğinde o dosya da senkronize edilmeli (B-01'e "🔄 palet güncellemesi" notu
 > düşülür — B-01 tekrar ⬜'e alınmaz, yalnızca bir alt-görev olarak palet token'ları güncellenir).
 
+> **⚠️ Not (2026-08-16 — yasaklı desen listesiyle çelişki, ÇÖZÜLMEDİ):** `CLAUDE.md §1`'e
+> eklenen "Görsel tasarım — yasaklı desenler" kuralı (Admin+Web+Mobil ortak, kapsam kullanıcı
+> kararıyla netleşti) bu dosyadaki üç mevcut kararla çelişiyor: **§4** (radius skalası — "yumuşak/
+> yuvarlak köşe, Squircle" felsefesi ↔ yasaklı "soft corner radius"), **§5** (Apple çizgisi için
+> "hafif süzülen" gölgeler ↔ yasaklı "drop shadows") ve **§7/§8** (`lucide-react` ikon kütüphanesi
+> ↔ yasaklı "lucide icons"). Bu üçü burada **kendiliğinden çözülmedi** — admin (`B-01`) yeniden
+> yazılırken veya Web tasarımı somutlaşırken kullanıcıyla birlikte yeniden karara bağlanacak. O
+> karara kadar §4/§5/§7/§8'deki değerler **taslak/referans** sayılır; kod bunları birebir
+> uygulamaya başlamadan önce bu notun hâlâ güncel olup olmadığı kontrol edilmeli.
+
 ## 1. Renk Paleti — Light
 
 | Token              | Hex       | Kullanım                                                                        |
@@ -153,7 +163,7 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 
 | Kütüphane       | Kullanım Amacı                                                               |
 | --------------- | ---------------------------------------------------------------------------- |
-| `lucide-react`  | İkon kütüphanesi (navigasyon, ses, aksiyon butonları) — varsayılan           |
+| ~~`lucide-react`~~ | ⚠️ YASAKLI (CLAUDE.md §1) — bkz. dosya başındaki 2026-08-16 uyarı notu, alternatif henüz seçilmedi |
 | `framer-motion` | Kart çevirme (flip), yaylanma (`spring`) ve sarsılma (`shake`) animasyonları |
 | `use-sound`     | Kart çevirme, buton tıklama ve doğru/yanlış geribildirim ses efektleri       |
 
@@ -162,7 +172,7 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 - **İkon kullanımı:** yalnızca nav linki, ses oynatma butonları ve birincil aksiyon butonlarında (ekle/sil/düzenle/ara)
   işlevsel olduğu yerde ikon kullanılır. Dekoratif ikon yok. Görsel/fotoğraf bulunamadığında ikon
   türetme/elle çizme **yok** — nötr placeholder (gri blok, baş harf rozeti) kullanılır.
-- **İkon kütüphanesi:** `lucide-react` (Admin/Web) — değişmedi.
+- **İkon kütüphanesi:** ~~`lucide-react`~~ ⚠️ yasaklandı (bkz. dosya başındaki 2026-08-16 uyarı notu) — alternatif henüz seçilmedi.
 - **Durum/rol bilgisi** (aktif/donduran, admin/user, log seviyesi) renkle birlikte etiket metniyle
   de gösterilir — yalnızca renge güvenilmez (kontrast erişilebilirliği).
 - **Responsive:** masaüstünde sidebar + geniş tablo (Admin) / geniş içerik ve ortalanmış ana çalışma kartı (Web);

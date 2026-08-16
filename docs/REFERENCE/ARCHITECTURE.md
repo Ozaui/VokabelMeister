@@ -71,6 +71,6 @@ Hepsi `GET /admin/logs/*` (B-08). Detay → `DATABASE_SCHEMA/Loglama.md`, `SECUR
 **Admin/Web/Mobil ortak kütüphaneler → `CLAUDE.md` §4.1** (Redux Toolkit yalnızca local/auth/theme/
 language/filter UI state — RTK Query/React Query YOK, sunucu verisi axios + `useApiQuery`/
 `useApiMutation` ile çekilir; Formik + Yup formlarda; `react-i18next` arayüz dilinde).
-**Admin:** React+Vite, TS, TailwindCSS, React Router DOM, `lucide-react`, `react-toastify` (bildirim), `qrcode.react` (QR ile giriş), `date-fns` (log tarihleri) — henüz başlamadı (2026-08-05 baştan yazım).
-**Web:** React+Vite, TS, TailwindCSS, React Router v6, `lucide-react`, `react-toastify` (bildirim), `@react-oauth/google`, `qrcode.react` (QR ile giriş) (Faz C — henüz başlamadı).
+**Admin:** React+Vite, TS, TailwindCSS, React Router DOM, ⚠️ ikon kütüphanesi seçilecek (`lucide-react` YASAK, bkz. `CLAUDE.md` §1), `react-toastify` (bildirim), `qrcode.react` (QR ile giriş), `date-fns` (log tarihleri) — henüz başlamadı (2026-08-16 baştan yazım).
+**Web:** React+Vite, TS, TailwindCSS, React Router v6, ⚠️ ikon kütüphanesi seçilecek (`lucide-react` YASAK, bkz. `CLAUDE.md` §1), `react-toastify` (bildirim), `@react-oauth/google`, `qrcode.react` (QR ile giriş) (Faz C — henüz başlamadı).
 **Mobil:** React Native + Expo, React Navigation (tek routing istisnası — `react-router-dom` değil), `expo-camera` (QR tarayıcı), Expo Secure Store (Faz D — henüz başlamadı).

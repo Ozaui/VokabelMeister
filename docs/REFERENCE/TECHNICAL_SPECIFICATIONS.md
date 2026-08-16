@@ -47,7 +47,8 @@
 # Web (/web) — ortak React kütüphane seti admin ile aynı (bkz. CLAUDE.md §4.1)
 npm create vite@latest web -- --template react-ts && cd web
 npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next @react-oauth/google
-npm i qrcode.react react-toastify lucide-react   # QR ile giriş / toast bildirim / ikon
+npm i qrcode.react react-toastify   # QR ile giriş / toast bildirim
+npm i <ikon-kütüphanesi>   # ⚠️ seçilecek — lucide-react YASAK (CLAUDE.md §1)
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 
 # Admin (/admin) — Google/Apple yok, QR ile giriş VAR (bkz. CLAUDE.md §4.1)
@@ -55,7 +56,7 @@ npm create vite@latest admin -- --template react-ts && cd admin
 npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next
 npm i qrcode.react   # QR ile giriş — admin QR görselini bundan üretir (B-02.1)
 npm i date-fns       # B-08 log paneli tarih filtre/biçimlendirme
-npm i lucide-react   # ikon kütüphanesi (B-01'de karar verildi)
+npm i <ikon-kütüphanesi> # ⚠️ seçilecek — lucide-react YASAK (CLAUDE.md §1)
 npm i react-toastify # başarı/hata toast bildirimleri
 npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
 

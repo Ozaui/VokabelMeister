@@ -56,6 +56,21 @@
 - Hassas değer (`SecretKey`, bağlantı dizesi, AES anahtarı) **asla** `appsettings.json`/kaynak koda girmez → ENV (`REFERENCE/ENV.md`). Yeni servis eklenince ENV.md güncelle.
 - Loglarda ham e-posta yok → `SHA-256(email)`. Şifre/token asla loglanmaz.
 
+**Görsel tasarım (Admin/Web/Mobil) — yasaklı desenler**
+- Aşağıdaki desenler bu projede **hiçbir platformda** (Admin/Web/Mobil) kullanılmaz — hepsi
+  "yapay zekâ ürettiği" hissi veren jenerik/klişe SaaS görsel ve metin dili: harsh gradients,
+  lucide icons, pure white background, rainbow coloring, drop shadows, 3 feature cards in a row,
+  emojis, liquid glass, em dashes, Inter/Geist/Space Grotesk, colored left stripe, fake
+  testimonials, bento grids, terminal window, "it's not x, it's y" kopya kalıbı, checkmark
+  bullets, 3 pricing tiers, no real product demos, soft corner radius, purple and black, no
+  skeleton loaders, radial orbs, dot grids, sparkle icons, animated arrows, no TOS, no privacy
+  policy, hover animations, neon colors, basic pastel colors.
+- Somut renk/tipografi/radius/gölge/spacing kararları → `REFERENCE/DESIGN_SYSTEM.md`; o dosya bu
+  listeyle çelişmeyecek şekilde güncel tutulur. ⚠️ **2026-08-16 itibarıyla o dosyadaki `lucide-react`
+  ikon kütüphanesi kararı ve radius/gölge skalasının bir kısmı bu listeyle çelişiyor** (bkz. o
+  dosyanın başındaki uyarı notu) — admin (B-01) yeniden yazılırken veya Web/Mobil tasarımı
+  somutlaşırken kullanıcıyla birlikte çözülecek, o güne kadar §4/§5/§7/§8 taslak sayılır.
+
 **Test**
 - Her public servis/Handler metodunun birim testi **aynı task içinde** yazılır (Faz E'ye bırakma). Standart → `REFERENCE/CODING_STANDARDS.md §6`.
 
@@ -164,7 +179,7 @@ deseni):
 | Form + Validasyon | `formik` + `yup` | `react-hook-form` **kullanılmaz** — üç alanda da tek form deseni |
 | HTTP | `axios` | Ortak `apiClient` + `Authorization`/`Accept-Language` interceptor'ı |
 | i18n | `i18next` + `react-i18next` | Admin panelin dil tercihi deseni (`languageSlice`, CLAUDE.md §1) üçünde de aynı |
-| İkon | `lucide-react` (Admin/Web) · `lucide-react-native` (Mobil) | |
+| İkon | ⚠️ **seçilecek** — `lucide-react`/`lucide-react-native` YASAK (bkz. §1 "Görsel tasarım — yasaklı desenler") | Admin/Web/Mobil ortak, alternatif henüz seçilmedi |
 | Bildirim | `react-toastify` (Admin/Web) | Başarı/hata toast'ları (ör. "Kelime eklendi", 409 çakışma mesajı) — Mobil'in kendi eşdeğeri (ör. `react-native-toast-message`) ilgili faz başladığında seçilir, DOM tabanlı `react-toastify` React Native'de çalışmaz |
 | Test | `vitest` + `@testing-library/react` + `jsdom` (Mobil: `@testing-library/react-native`) | |
 

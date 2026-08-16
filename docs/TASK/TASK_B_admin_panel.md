@@ -21,22 +21,25 @@
 > DESIGN_SYSTEM.md`'nin baştan yazımına göre güncellendi (Turkuaz+Mercan/Nunito+DM Sans →
 > yeni nötr palet/Inter). Tasarım sistemi artık Admin+Web ortak — ayrıntı `DESIGN_SYSTEM.md`.
 
-### B-01 — Kurulum ✅
+> **2026-08-16 — Yeniden baştan yazım:** `/admin` kodu (B-01) ve onu öğreten `AKADEMI/admin/`
+> tekrar tamamen silindi (kullanıcı kararı), B-01 ilerlemesi ⬜'e sıfırlandı.
+
+### B-01 — Kurulum ⬜
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §2, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
-- [x] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki ortak palet (Primary/accent `#5B54F0`
+- [ ] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki ortak palet (Primary/accent `#5B54F0`
       light · `#8A83FF` dark), Inter fontu, §4 radius skalası (buton/input 8px, kart 16px, modal
       20px, badge 999px) ve §5 gölge skalası Tailwind `@theme`'e + `.dark` override'ına işlenir
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı, Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
-- [x] ➜ **Admin Akademi'ye işle**
-- [x] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar, `lucide-react` Sun/Moon/Monitor ikonlarıyla), `index.html`'e FOUC-önleyici senkron script
-- [x] ➜ **Admin Akademi'ye işle**
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] `store.ts` (Redux store) + `authSlice` (yalnızca `accessToken`/`isAuthenticated` — `ProtectedRoute`'un ihtiyaç duyduğu asgari alan) + `store/api.ts` (axios `apiClient`, `Authorization`/`Accept-Language` interceptor'ı)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Dil tercihi (i18n)** — `languageSlice` (tr/de, localStorage persist, varsayılan tr — `ErrorMessages`/`SuccessMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `react-i18next` ile frontend statik metinleri (buton/etiket) tr/de, `api.ts`'e `Accept-Language` header'ı, Topbar'da dil değiştirici (`aria-pressed` + `<html lang>` senkronu dahil)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] `.env*` (`VITE_API_URL`), `ProtectedRoute` (JWT yoksa `/login`'e yönlendir, `state`'te nereden geldiğini taşır), temel layout (Sidebar/Topbar)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Dark Mode** — dark tema paleti `DESIGN_SYSTEM.md`'de (light paletin yanına, §2), `index.css`'te `.dark` seçicisiyle token override (Tailwind v4 `@custom-variant dark`), `themeSlice` (Light/Dark/System — `languageSlice` ile aynı desen), `useThemeSync` hook (canlı değişiklik + System modunda OS dinleyicisi), `ThemeSwitcher` (Topbar), `index.html`'e FOUC-önleyici senkron script
+- [ ] ➜ **Admin Akademi'ye işle**
 *(Kurulum task'ı — dikey dilim/roadmap kuralı A-01 gibi burada uygulanmaz (tek "feature" değil,
 paylaşılan altyapı), AMA A-02 (Ortak Altyapı) emsaliyle aynı şekilde akademiye işlenir.)*
 
