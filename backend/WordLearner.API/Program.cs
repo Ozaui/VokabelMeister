@@ -13,6 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Sinks.MSSqlServer;
 using WordLearner.API.Common;
+using WordLearner.Application.Validators.Words;
 using WordLearner.API.Conventions;
 using WordLearner.API.Middleware;
 using WordLearner.Application;
@@ -64,9 +65,13 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddApplicationServices();
 builder.Services.AddHealthChecks().AddDbContextCheck<WordLearnerDbContext>();
 
-// Application assembly'sinde henüz hiçbir Command/Validator yok (ilk feature ile dolacak) —
 // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
-builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly);
+// WordGrammarValidator FİLTRELENİR — bir Command'a değil WordGrammarInput'a bağlı, constructor'ı
+// (languageCode, partOfSpeech) DI'nin çözemeyeceği primitive parametreler alıyor; Command
+// validator'ları onu ELLE örnekliyor (bkz. CreateWordCommandValidator). Filtrelenmeseydi
+// Development ortamının ValidateOnBuild kontrolü uygulamayı AÇILIŞTA çökertirdi.
+builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly,
+    filter: result => result.ValidatorType != typeof(WordGrammarValidator));
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 

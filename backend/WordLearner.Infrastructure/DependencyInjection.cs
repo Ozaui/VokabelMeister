@@ -3,10 +3,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WordLearner.Application.Interfaces.Repositories;
 using WordLearner.Application.Interfaces.Repositories.Auth;
+using WordLearner.Application.Interfaces.Repositories.Content;
 using WordLearner.Application.Interfaces.Repositories.Logging;
 using WordLearner.Infrastructure.Data;
 using WordLearner.Infrastructure.Repositories;
 using WordLearner.Infrastructure.Repositories.Auth;
+using WordLearner.Infrastructure.Repositories.Content;
 using WordLearner.Infrastructure.Repositories.Logging;
 
 namespace WordLearner.Infrastructure;
@@ -26,6 +28,8 @@ public static class DependencyInjection
         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+        services.AddScoped<ILanguageRepository, LanguageRepository>();
+        services.AddScoped<IWordConceptRepository, WordConceptRepository>();
 
         return services;
     }

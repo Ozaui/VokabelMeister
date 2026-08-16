@@ -283,10 +283,12 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       NULL) — `consonantMutation` bilinçli olarak dışarıda bırakılır (yalnızca ileri bir quiz
       özelliğinde kullanılacak, YAGNI)
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/02_word-grammar-validator.html`
-- [ ] `ILanguageRepository`/`IWordConceptRepository` + `GetLanguagesQuery` + 5 Command/Query
+- [x] `ILanguageRepository`/`IWordConceptRepository` + `GetLanguagesQuery` + 5 Command/Query
       (Create/Update/Delete/GetById/GetWords) — `translations[]` 1 veya 2 dil tek işlemde, duplikat
-      409+`?force=true`, tek dilse kavram "eşleşmemiş" kalır
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      409+`?force=true`, tek dilse kavram "eşleşmemiş" kalır — canlı doğrulama yapıldı (`dotnet run`
+      + `/health`, DI çözümlemesi sağlıklı); süreçte `WordGrammarValidator`'ın `AddValidatorsFromAssembly`
+      otomatik taramasına yakalanıp uygulamayı açılışta çökerttiği bulunup `Program.cs`'e filtre eklenerek düzeltildi
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/` 03-06. bölümler
 - [ ] `LanguagesController` (`GET /languages`, `[Authorize]`), `WordsController` (`[Authorize]`
       liste/detay, `[Authorize(Roles="Admin")]` CRUD)
 - [ ] ➜ **AKADEMI/backend'ye işle**

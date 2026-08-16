@@ -1,0 +1,1962 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'word-crud-komutlari',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '04_word-dto-ve-mapping.html',
+    sonrakiBolum: '06_hata-kodlari-ve-di-duzeltmesi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'Beş Command/Query: Create, Update, Delete, GetById, GetWords',
+        altBaslik: 'Duplikat kontrolü + force bypass, kademeli soft-delete, ve WordGrammarValidator\'ın Command validator\'larına nasıl bağlandığı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Force + Duplikat 409 — Neden excludeWordId Update\'te Ama Create\'te Yok?',
+        aciklama: '`CreateWordCommand`\'da duplikat kontrolü HER ZAMAN `excludeWordId: null` ile çağrılır (henüz VAR OLMAYAN bir kelime, kendisiyle çakışamaz). `UpdateWordCommand`\'da ise `excludeWordId: existingWord?.Id` — bir kelimenin KENDİ mevcut satırı duplikat SAYILMAZ.',
+        neden: 'Duplikat kontrolü "bu dilde AYNI metinli BAŞKA bir kelime var mı" sorusunu YANITLAMALI — Create\'te "başka" her zaman TÜM kelimelerdir (yeni satır henüz yok), Update\'te "başka" TÜM kelimeler EKSİ güncellenen kelimenin KENDİSİ.',
+        olmasaydi: '`excludeWordId` OLMASAYDI, bir admin var olan bir "Mann" kelimesinin SADECE `Definition`\'ını değiştirip kaydetse bile (Text AYNI kalsa bile) sistem "Mann" zaten VAR diyip 409 dönerdi — kelimenin kendi ÖNCEKİ hâliyle çakıştığını SANIRDI, `?force=true` her ZORUNLU güncellemede gerekirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/CreateWordCommand.cs',
+        nedenBuKlasor: '`Application/Features/Words/` — `WordMapping`/`GetLanguagesQuery` ile AYNI üst klasör altında, Words alt klasörü.',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Application.Features.Words;
+
+// Force — Controller'da ?force=true query string'inden okunur (API_ENDPOINTS.md §5), Request
+// DTO'sunun bir alanı DEĞİL, HTTP-bağlamından gelen bir değer (A-03'teki UserId/Language deseniyle AYNI).
+public record CreateWordCommand(
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    List<WordTranslationRequest> Translations,
+    bool Force,
+    int? UserId) : IRequest<WordResponse>;
+
+public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordResponse>
+{
+    private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly ILanguageRepository _languageRepository;
+
+    public CreateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
+    {
+        _wordConceptRepository = wordConceptRepository;
+        _languageRepository = languageRepository;
+    }
+
+    public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)
+    {
+        var languagesByCode = await ResolveLanguagesAsync(request.Translations, cancellationToken);
+
+        if (!request.Force)
+        {
+            foreach (var translation in request.Translations)
+            {
+                var language = languagesByCode[translation.LanguageCode];
+                var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(
+                    language.Id, translation.Text, excludeWordId: null, cancellationToken);
+                if (duplicate is not null)
+                    throw new WordDuplicateException(translation.LanguageCode, translation.Text);
+            }
+        }
+
+        var concept = new WordConcept
+        {
+            PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech),
+            DifficultyLevel = request.DifficultyLevel,
+            ImageUrl = request.ImageUrl
+        };
+        await _wordConceptRepository.AddConceptAsync(concept, request.UserId, cancellationToken);
+        await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+        foreach (var translation in request.Translations)
+        {
+            var language = languagesByCode[translation.LanguageCode];
+            var word = new Word
+            {
+                WordConceptId = concept.Id,
+                LanguageId = language.Id,
+                Text = translation.Text,
+                Definition = translation.Definition
+            };
+            await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);
+            await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+            await AddDetailAndExamplesAsync(word.Id, translation, request.UserId, cancellationToken);
+        }
+
+        await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+        var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
+            ?? throw new EntityNotFoundException($"WordConcept not found after creation: Id={concept.Id}");
+        return WordMapping.ToResponse(aggregate);
+    }
+
+    private async Task<Dictionary<string, Language>> ResolveLanguagesAsync(
+        List<WordTranslationRequest> translations, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, Language>();
+        foreach (var translation in translations)
+        {
+            result[translation.LanguageCode] = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+        }
+
+        return result;
+    }
+
+    private async Task AddDetailAndExamplesAsync(int wordId, WordTranslationRequest translation, int? userId, CancellationToken cancellationToken)
+    {
+        if (translation.WordDetail is not null)
+        {
+            var detail = new WordDetail
+            {
+                WordId = wordId,
+                Pronunciation = translation.WordDetail.Pronunciation,
+                Notes = translation.WordDetail.Notes,
+                CommonMistakes = translation.WordDetail.CommonMistakes,
+                GrammarData = translation.WordDetail.GrammarData?.GetRawText()
+            };
+            await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);
+        }
+
+        if (translation.Examples is not null)
+        {
+            var newExamples = translation.Examples.Select(example => new WordExample
+            {
+                WordId = wordId,
+                SentenceText = example.SentenceText,
+                Level = example.Level,
+                ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))
+            }).ToList();
+
+            // Yeni bir Word'de silinecek eski örnek yok — ReplaceExamplesAsync boş bir "existing"
+            // bulup yalnızca ekleme yapar, Create/Update AYNI metodu paylaşır.
+            await _wordConceptRepository.ReplaceExamplesAsync(wordId, newExamples, userId, cancellationToken);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<T,R>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`WordDuplicateException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: '`WordTranslationRequest`/`WordResponse` DTO\'larının ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`/`ILanguageRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`WordConcept`/`Word`/`WordDetail`/`WordExample`/`Language` entity türlerinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`/`ExampleType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record CreateWordCommand(',
+            aciklama: 'Bu görevin ilk yazma Command\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string PartOfSpeech,',
+            aciklama: 'Enum DEĞİL string — `CreateWordCommandValidator`\'ın (bu bölümün ileri kısmı) `Enum.TryParse` ile doğruladığı, Handler\'ın sonra `Enum.Parse` ile GÜVENLE çevirdiği ham girdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string DifficultyLevel,',
+            aciklama: '"A1".."C2".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ImageUrl,',
+            aciklama: 'Nullable — görsel opsiyonel.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<WordTranslationRequest> Translations,',
+            aciklama: '1 veya 2 elemanlı — validator bunu ZORLAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'bool Force,',
+            aciklama: '`?force=true` — duplikat kontrolünü BYPASS eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId) : IRequest<WordResponse>;',
+            aciklama: 'HTTP-bağlamından gelen kimlik — audit alanları (`CreatedByUserId`) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordResponse>',
+            aciklama: 'Bu görevin en KARMAŞIK Handler\'ı — bir kavram + 1-2 çeviri + her çevirinin detay/örnek grafını TEK işlemde kurar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IWordConceptRepository _wordConceptRepository;',
+            aciklama: 'Tüm yazma işlemleri BURADAN geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILanguageRepository _languageRepository;',
+            aciklama: '`languageCode` → `Language.Id` çözümü için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)',
+            aciklama: 'İki bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository = languageRepository;',
+            aciklama: 'Atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağırdığı tek metot — dört aşamalı: dil çözümü → duplikat kontrolü → kavram+çeviri oluşturma → yanıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var languagesByCode = await ResolveLanguagesAsync(request.Translations, cancellationToken);',
+            aciklama: 'HER çevirinin `languageCode`\'unu BİR KEZ çözer — aşağıdaki iki AYRI döngüde (duplikat kontrolü + oluşturma) TEKRAR sorgulamamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!request.Force)',
+            aciklama: '`Force=true` ise duplikat kontrolü TAMAMEN atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(',
+            aciklama: 'Repository çağrısı (A-05 Bölüm 3).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'language.Id, translation.Text, excludeWordId: null, cancellationToken);',
+            aciklama: '`excludeWordId: null` — Create\'te HENÜZ var olmayan bir kelime kendisiyle ÇAKIŞAMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (duplicate is not null)',
+            aciklama: 'Aynı dilde aynı metin BULUNDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new WordDuplicateException(translation.LanguageCode, translation.Text);',
+            aciklama: '409 Conflict — `ExceptionHandlingMiddleware` (A-02) bunu YAKALAR, `WORD_DUPLICATE` Code\'unu döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concept = new WordConcept',
+            aciklama: 'Kavramın KENDİSİ — henüz hiçbir çeviriye bağlı DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech),',
+            aciklama: '`Enum.Parse` (TryParse DEĞİL) — validator ZATEN geçerliliği garanti ettiği için burada bir istisna BEKLENMİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'DifficultyLevel = request.DifficultyLevel,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ImageUrl = request.ImageUrl',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.AddConceptAsync(concept, request.UserId, cancellationToken);',
+            aciklama: 'EF change tracker\'a EKLER — henüz DB\'ye YAZILMADI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var translation in request.Translations)',
+            aciklama: 'Bu dosyada İKİ kez geçer — biri duplikat kontrolü, biri kavram+çeviri oluşturma döngüsü, ikisi de AYNI `request.Translations` listesini dolaşır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = languagesByCode[translation.LanguageCode];',
+            aciklama: 'Önceden çözülmüş sözlükten O(1) erişim — bu dosyada İKİ kez geçer (duplikat kontrolü + oluşturma döngüsü), ikisi de AYNI sözlüğü kullanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var word = new Word',
+            aciklama: 'Bu çevirinin `Word` satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'WordConceptId = concept.Id,',
+            aciklama: 'Bir ÖNCEKİ `SaveChangesAsync`\'in ÜRETTİĞİ gerçek Id.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LanguageId = language.Id,',
+            aciklama: 'Çözülmüş dil Id\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Text = translation.Text,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Definition = translation.Definition',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);',
+            aciklama: 'Change tracker\'a ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await AddDetailAndExamplesAsync(word.Id, translation, request.UserId, cancellationToken);',
+            aciklama: 'Aşağıdaki özel metoda delege — gramer detayı VE örnek cümleler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Bu Handler\'da ÜÇ kez geçer — kavramın Id\'sini almak için (kavram eklendikten hemen sonra), her çevirinin Word Id\'sini almak için (döngü içinde), ve TÜM detay/örnekleri kaydetmek için (döngü BİTTİKTEN sonra).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)',
+            aciklama: 'Az önce YAZILAN veriyi GERİ okur — Handler\'ın kendi elindeki `concept`/`word` nesneleri PARÇALI (ör. `translation`\'lar arasında paylaşılan bir `WordConceptAggregate` YOK), yanıtı TUTARLI kurmanın en basit yolu TEKRAR sorgulamak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"WordConcept not found after creation: Id={concept.Id}");',
+            aciklama: 'Teorik olarak İMKANSIZ bir durum (az önce OLUŞTURULAN satır bulunamadı) — yine de `null`-forgiving DEĞİL, açık bir istisna; sessiz bir `NullReferenceException`\'dan daha AÇIKLAYICI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(aggregate);',
+            aciklama: 'A-05 Bölüm 4\'teki paylaşılan mapper.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private async Task<Dictionary<string, Language>> ResolveLanguagesAsync(',
+            aciklama: 'Yardımcı metot — kod TEKRARINI önler (iki döngüde de `languageCode` ARANACAKTI).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<WordTranslationRequest> translations, CancellationToken cancellationToken)',
+            aciklama: 'Parametre listesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = new Dictionary<string, Language>();',
+            aciklama: 'Sonuç sözlüğü — anahtar `languageCode`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var translation in translations)',
+            aciklama: 'HER çeviri için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result[translation.LanguageCode] = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)',
+            aciklama: 'Repository çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");',
+            aciklama: 'Validator "de"/"tr" DIŞINDA bir kod GEÇİRMEZ, ama teorik bir veri tutarsızlığına (seed silinmiş vb.) karşı açık bir istisna.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return result;',
+            aciklama: 'Tamamlanmış sözlük.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private async Task AddDetailAndExamplesAsync(int wordId, WordTranslationRequest translation, int? userId, CancellationToken cancellationToken)',
+            aciklama: 'Bir çevirinin gramer detayı VE örnek cümlelerini EKLER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (translation.WordDetail is not null)',
+            aciklama: 'Gramer detayı OPSİYONEL — "Diğer" türlerde HİÇ gönderilmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var detail = new WordDetail',
+            aciklama: 'Yeni bir `WordDetail` satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Pronunciation = translation.WordDetail.Pronunciation,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Notes = translation.WordDetail.Notes,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CommonMistakes = translation.WordDetail.CommonMistakes,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'GrammarData = translation.WordDetail.GrammarData?.GetRawText()',
+            aciklama: '`JsonElement?` → `string?` — `GetRawText()` gelen JSON\'un HAM metnini alır, DB\'nin `NVARCHAR(MAX)` sütununa YAZILACAK biçim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);',
+            aciklama: 'Change tracker\'a ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (translation.Examples is not null)',
+            aciklama: 'Örnekler de OPSİYONEL — `null` ile "boş liste" arasındaki fark burada ANLAMLI DEĞİL (Create\'te ikisi de "hiç örnek ekleme" demek), ama Update ile AYNI kod yolunu paylaşmak için AYNI kontrol kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var newExamples = translation.Examples.Select(example => new WordExample',
+            aciklama: 'HER istek örneğini bir `WordExample` entity\'sine çevirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'WordId = wordId,',
+            aciklama: 'FK — bu dosyada İKİ kez geçer (gramer detayı VE örnek cümle oluşturma bloklarında), ikisi de bir ÖNCEKİ flush\'ın ürettiği gerçek `word.Id`\'yi kullanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'SentenceText = example.SentenceText,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Level = example.Level,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))',
+            aciklama: '`??` — `ExampleType` `null` gelirse `nameof(ExampleType.Normal)` ("Normal" string\'i) VARSAYILAN olarak kullanılır, `WordExample.ExampleType`\'ın DB varsayılanıyla AYNI değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}).ToList();',
+            aciklama: 'Projeksiyonu ÇALIŞTIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Yeni bir Word\'de silinecek eski örnek yok — ReplaceExamplesAsync boş bir "existing"',
+            aciklama: 'Yorum satırı — `satirlar[]` kapsamı DIŞINDA, motor tarafından atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.ReplaceExamplesAsync(wordId, newExamples, userId, cancellationToken);',
+            aciklama: 'Create\'te "eski"leri SİLECEK bir şey yok (yeni Word), ama AYNI metot Update\'te GERÇEK bir "değiştirme" yapar — Create/Update AYNI kod yolunu PAYLAŞIR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommandValidator.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/CreateWordCommandValidator.cs',
+        nedenBuKlasor: '`Validators/Words/` — `Validators/Auth/`/`QrLogin/` ile AYNI desen.',
+        kod: `using FluentValidation;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Features.Words;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Application.Validators.Words;
+
+public class CreateWordCommandValidator : AbstractValidator<CreateWordCommand>
+{
+    private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];
+    private static readonly string[] SupportedLanguageCodes = ["de", "tr"];
+    private static readonly string[] ValidExampleTypes = ["Normal", "Idiom", "Formal", "Colloquial"];
+
+    public CreateWordCommandValidator()
+    {
+        RuleFor(x => x.PartOfSpeech).Must(p => Enum.TryParse<PartOfSpeech>(p, out _)).WithErrorCode("PART_OF_SPEECH_INVALID");
+        RuleFor(x => x.DifficultyLevel).Must(ValidLevels.Contains).WithErrorCode("DIFFICULTY_LEVEL_INVALID");
+
+        RuleFor(x => x.Translations).NotEmpty().WithErrorCode("TRANSLATIONS_REQUIRED");
+        RuleFor(x => x.Translations).Must(t => t.Count <= 2).WithErrorCode("TRANSLATIONS_COUNT_INVALID");
+        RuleFor(x => x.Translations)
+            .Must(t => t.Select(x => x.LanguageCode).Distinct().Count() == t.Count)
+            .WithErrorCode("TRANSLATIONS_LANGUAGE_DUPLICATE");
+
+        // Enum.Parse'ın (Handler'da) her zaman GEÇERLİ bir değer bulacağını garanti eden kurallar —
+        // ExampleType/Level burada doğrulanmazsa Handler'daki Enum.Parse/DB CHECK constraint
+        // yakalanmayan bir istisna fırlatır (400 yerine 500).
+        RuleForEach(x => x.Translations).ChildRules(translation =>
+        {
+            translation.RuleFor(t => t.LanguageCode).Must(SupportedLanguageCodes.Contains).WithErrorCode("LANGUAGE_CODE_UNSUPPORTED");
+            translation.RuleForEach(t => t.Examples).ChildRules(example =>
+            {
+                example.RuleFor(e => e.SentenceText).NotEmpty().WithErrorCode("EXAMPLE_SENTENCE_TEXT_REQUIRED");
+                example.RuleFor(e => e.Level).Must(ValidLevels.Contains).WithErrorCode("EXAMPLE_LEVEL_INVALID");
+                example.RuleFor(e => e.ExampleType).Must(v => v is null || ValidExampleTypes.Contains(v)).WithErrorCode("EXAMPLE_TYPE_INVALID");
+            });
+        });
+
+        RuleFor(x => x).Custom(ValidateGrammar);
+    }
+
+    // WordGrammarValidator dile+PartOfSpeech'e göre bir defalık kurulur — burada geçersiz bir
+    // PartOfSpeech veya desteklenmeyen bir dil varsa (yukarıdaki kurallar zaten bunu YAKALAYACAK)
+    // gramer kontrolü hiç çalıştırılmaz, aynı eksiklik için ÇİFTE/çelişkili hata üretilmez.
+    private static void ValidateGrammar(CreateWordCommand command, ValidationContext<CreateWordCommand> context)
+    {
+        if (!Enum.TryParse<PartOfSpeech>(command.PartOfSpeech, out var partOfSpeech))
+            return;
+
+        foreach (var translation in command.Translations)
+        {
+            if (!SupportedLanguageCodes.Contains(translation.LanguageCode))
+                continue;
+
+            var grammarValidator = new WordGrammarValidator(translation.LanguageCode, partOfSpeech);
+            var input = new WordGrammarInput(translation.Text, translation.Definition, translation.WordDetail?.GrammarData);
+            var result = grammarValidator.Validate(input);
+            foreach (var failure in result.Errors)
+                context.AddFailure(failure);
+        }
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AbstractValidator<T>`/`RuleFor`/`ValidationContext<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: '`WordGrammarInput`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Features.Words;',
+            aciklama: 'Doğrulanan `CreateWordCommand`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Validators.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `WordGrammarValidator` (A-05 Bölüm 2) ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CreateWordCommandValidator : AbstractValidator<CreateWordCommand>',
+            aciklama: '`LoginCommandValidator` (A-03) ile AYNI temel sınıf, `CreateWordCommand`\'a bağlı — `ValidationBehavior` (A-03) pipeline\'ı bunu OTOMATİK bulur/çalıştırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];',
+            aciklama: '`WordConceptRepository.GetPagedAsync`\'te DEĞİL burada tutulan LİTERAL küme — `WordConcept.DifficultyLevel`\'ın CHECK constraint\'iyle (A-05 Bölüm 1) AYNI 6 değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] SupportedLanguageCodes = ["de", "tr"];',
+            aciklama: '`WordGrammarValidator`\'ın (A-05 Bölüm 2) dispatch ettiği İKİ dil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] ValidExampleTypes = ["Normal", "Idiom", "Formal", "Colloquial"];',
+            aciklama: '`ExampleType` enum\'ının (A-05 Bölüm 1) 4 üyesiyle BİREBİR aynı SQL küme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateWordCommandValidator()',
+            aciklama: 'Parametresiz constructor — `WordGrammarValidator`\'ın (languageCode, partOfSpeech) alan constructor\'ından FARKLI, çünkü bu sınıf DI/pipeline tarafından OTOMATİK örneklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.PartOfSpeech).Must(p => Enum.TryParse<PartOfSpeech>(p, out _)).WithErrorCode("PART_OF_SPEECH_INVALID");',
+            aciklama: 'Handler\'daki `Enum.Parse`\'ın ASLA istisna FIRLATMAYACAĞINI garanti eden ilk kural.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.DifficultyLevel).Must(ValidLevels.Contains).WithErrorCode("DIFFICULTY_LEVEL_INVALID");',
+            aciklama: '`ValidLevels.Contains` — metot GRUBU sözdizimi (`level => ValidLevels.Contains(level)`\'in kısayolu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Translations).NotEmpty().WithErrorCode("TRANSLATIONS_REQUIRED");',
+            aciklama: 'En az BİR çeviri şart — bir kavram HİÇ dilsiz var OLAMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Translations).Must(t => t.Count <= 2).WithErrorCode("TRANSLATIONS_COUNT_INVALID");',
+            aciklama: 'En fazla İKİ — sistem yalnızca `de`+`tr` destekliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Translations)',
+            aciklama: 'Çok-satırlı üçüncü `Translations` kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(t => t.Select(x => x.LanguageCode).Distinct().Count() == t.Count)',
+            aciklama: 'AYNI dil İKİ kez GİRİLEMEZ — `Distinct().Count()` orijinal `Count`\'tan AZSA, bir tekrar VARDIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("TRANSLATIONS_LANGUAGE_DUPLICATE");',
+            aciklama: 'Üstteki kuralın hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Enum.Parse\'ın (Handler\'da) her zaman GEÇERLİ bir değer bulacağını garanti eden kurallar —',
+            aciklama: 'Yorum satırı — atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleForEach(x => x.Translations).ChildRules(translation =>',
+            aciklama: 'HER çeviri elemanı için İÇ İÇE kurallar — `ChildRules`, `RuleForEach`\'in bir koleksiyonun HER elemanına birden çok kural bağlamasını sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'translation.RuleFor(t => t.LanguageCode).Must(SupportedLanguageCodes.Contains).WithErrorCode("LANGUAGE_CODE_UNSUPPORTED");',
+            aciklama: '"de"/"tr" DIŞINDA bir kod REDDEDİLİR — `WordGrammarValidator`\'ın dispatch edemeyeceği bir dil buraya HİÇ ULAŞMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'translation.RuleForEach(t => t.Examples).ChildRules(example =>',
+            aciklama: 'İKİNCİ seviye iç içe — her çevirinin HER örneği için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'example.RuleFor(e => e.SentenceText).NotEmpty().WithErrorCode("EXAMPLE_SENTENCE_TEXT_REQUIRED");',
+            aciklama: 'DB `NOT NULL` kısıtının uygulama seviyesindeki ÖN kontrolü — bu OLMASAYDI boş bir cümle Handler\'da bir `DbUpdateException`\'a (400 yerine 500) yol AÇARDI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'example.RuleFor(e => e.Level).Must(ValidLevels.Contains).WithErrorCode("EXAMPLE_LEVEL_INVALID");',
+            aciklama: '`WordConcept.DifficultyLevel` ile AYNI 6 değerlik küme, örnek cümle seviyesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'example.RuleFor(e => e.ExampleType).Must(v => v is null || ValidExampleTypes.Contains(v)).WithErrorCode("EXAMPLE_TYPE_INVALID");',
+            aciklama: '`null` GEÇERLİ (Handler "Normal" varsayar), ama DOLU geldiyse 4 değerden biri OLMALI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '});',
+            aciklama: 'İç `ChildRules` lambda\'sını KAPATIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x).Custom(ValidateGrammar);',
+            aciklama: 'TÜM Command\'ı (tek bir alan DEĞİL) aşağıdaki özel metoda VERİR — `WordGrammarValidator`\'ı ÇAĞIRMAK için hem `PartOfSpeech` hem `Translations`\'a AYNI ANDA erişmek gerekiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// WordGrammarValidator dile+PartOfSpeech\'e göre bir defalık kurulur — burada geçersiz bir',
+            aciklama: 'Yorum satırı — atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static void ValidateGrammar(CreateWordCommand command, ValidationContext<CreateWordCommand> context)',
+            aciklama: '`Custom` delegate imzası — `context.AddFailure(...)` ile SERBEST sayıda hata EKLEYEBİLİR (tek bir `bool` dönmek YERİNE).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!Enum.TryParse<PartOfSpeech>(command.PartOfSpeech, out var partOfSpeech))',
+            aciklama: '`PartOfSpeech` ZATEN geçersizse (yukarıdaki `PART_OF_SPEECH_INVALID` kuralı bunu YAKALAYACAK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return;',
+            aciklama: 'Gramer kontrolü HİÇ çalıştırılmaz — geçersiz bir `PartOfSpeech` için `WordGrammarValidator` KURULAMAZ zaten (constructor `PartOfSpeech partOfSpeech` bekler, string DEĞİL).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var translation in command.Translations)',
+            aciklama: 'HER çeviri kendi gramer kuralına göre KONTROL edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!SupportedLanguageCodes.Contains(translation.LanguageCode))',
+            aciklama: 'Desteklenmeyen bir dil (yukarıdaki `LANGUAGE_CODE_UNSUPPORTED` kuralı bunu ZATEN yakalayacak).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'continue;',
+            aciklama: 'Bu çeviri İÇİN gramer kontrolü atlanır, DÖNGÜ devam eder (foreach\'in DIŞINA çıkmaz — diğer çeviri hâlâ kontrol EDİLMELİ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var grammarValidator = new WordGrammarValidator(translation.LanguageCode, partOfSpeech);',
+            aciklama: 'A-05 Bölüm 2\'nin validator\'ı — ELLE örneklenir, DI\'dan GELMEZ (Program.cs\'te bu bölümün SONUNDA neden filtrelendiği görülecek).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var input = new WordGrammarInput(translation.Text, translation.Definition, translation.WordDetail?.GrammarData);',
+            aciklama: 'DTO\'dan `WordGrammarInput`\'a KÜÇÜK bir adaptasyon — `WordDetail` `null`SA `GrammarData` da `null` GEÇER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = grammarValidator.Validate(input);',
+            aciklama: 'FluentValidation\'ın SENKRON `Validate` metodu (Async DEĞİL — `WordGrammarValidator`\'ın kuralları hiçbiri I/O YAPMIYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var failure in result.Errors)',
+            aciklama: 'Alt validator\'ın ÜRETTİĞİ TÜM hatalar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'context.AddFailure(failure);',
+            aciklama: 'Alt validator\'ın hatasını ÜST validator\'ın (`CreateWordCommandValidator`) SONUÇ listesine EKLER — `ValidationBehavior` (A-03) ikisini AYIRT etmeden TEK bir `Details[]` dizisinde toplar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateWordCommand.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/UpdateWordCommand.cs',
+        nedenBuKlasor: '`Application/Features/Words/` — `CreateWordCommand` ile AYNI klasör.',
+        kod: `using MediatR;
+using WordLearner.Application.Common.Exceptions;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Application.Features.Words;
+
+public record UpdateWordCommand(
+    int WordConceptId,
+    string PartOfSpeech,
+    string DifficultyLevel,
+    string? ImageUrl,
+    List<WordTranslationRequest> Translations,
+    bool Force,
+    int? UserId) : IRequest<WordResponse>;
+
+public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordResponse>
+{
+    private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly ILanguageRepository _languageRepository;
+
+    public UpdateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
+    {
+        _wordConceptRepository = wordConceptRepository;
+        _languageRepository = languageRepository;
+    }
+
+    public async Task<WordResponse> Handle(UpdateWordCommand request, CancellationToken cancellationToken)
+    {
+        var concept = (await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken))?.Concept
+            ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
+
+        concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);
+        concept.DifficultyLevel = request.DifficultyLevel;
+        concept.ImageUrl = request.ImageUrl;
+        await _wordConceptRepository.UpdateConceptAsync(concept, request.UserId, cancellationToken);
+
+        foreach (var translation in request.Translations)
+        {
+            var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+
+            var existingWord = await _wordConceptRepository.FindWordAsync(concept.Id, language.Id, cancellationToken);
+
+            if (!request.Force)
+            {
+                var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(
+                    language.Id, translation.Text, excludeWordId: existingWord?.Id, cancellationToken);
+                if (duplicate is not null)
+                    throw new WordDuplicateException(translation.LanguageCode, translation.Text);
+            }
+
+            var word = existingWord ?? new Word { WordConceptId = concept.Id, LanguageId = language.Id };
+            word.Text = translation.Text;
+            word.Definition = translation.Definition;
+
+            if (existingWord is null)
+            {
+                await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);
+                await _wordConceptRepository.SaveChangesAsync(cancellationToken); // word.Id gerekli (yeni dil ekleniyor)
+            }
+            else
+            {
+                await _wordConceptRepository.UpdateWordAsync(word, request.UserId, cancellationToken);
+            }
+
+            await UpsertDetailAsync(word.Id, translation.WordDetail, request.UserId, cancellationToken);
+
+            if (translation.Examples is not null)
+            {
+                var newExamples = translation.Examples.Select(example => new WordExample
+                {
+                    WordId = word.Id,
+                    SentenceText = example.SentenceText,
+                    Level = example.Level,
+                    ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))
+                }).ToList();
+                await _wordConceptRepository.ReplaceExamplesAsync(word.Id, newExamples, request.UserId, cancellationToken);
+            }
+        }
+
+        await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+        var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
+            ?? throw new EntityNotFoundException($"WordConcept not found after update: Id={concept.Id}");
+        return WordMapping.ToResponse(aggregate);
+    }
+
+    private async Task UpsertDetailAsync(int wordId, WordDetailRequest? request, int? userId, CancellationToken cancellationToken)
+    {
+        if (request is null)
+            return;
+
+        var existingDetail = await _wordConceptRepository.GetDetailByWordIdAsync(wordId, cancellationToken);
+        var detail = existingDetail ?? new WordDetail { WordId = wordId };
+        detail.Pronunciation = request.Pronunciation;
+        detail.Notes = request.Notes;
+        detail.CommonMistakes = request.CommonMistakes;
+        detail.GrammarData = request.GrammarData?.GetRawText();
+
+        if (existingDetail is null)
+            await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);
+        else
+            await _wordConceptRepository.UpdateDetailAsync(detail, userId, cancellationToken);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<T,R>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Common.Exceptions;',
+            aciklama: '`WordDuplicateException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: '`WordTranslationRequest`/`WordDetailRequest`/`WordResponse` DTO\'larının ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`/`ILanguageRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`Word`/`WordDetail`/`WordExample` entity türlerinin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`/`ExampleType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `CreateWordCommand` ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record UpdateWordCommand(',
+            aciklama: '`CreateWordCommand` ile AYNI alanlar + BAŞTA `WordConceptId` — HANGİ kavramın güncellendiğini belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int WordConceptId,',
+            aciklama: '`PUT /words/{id}`\'in path parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string PartOfSpeech,',
+            aciklama: 'Create ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string DifficultyLevel,',
+            aciklama: 'Create ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ImageUrl,',
+            aciklama: 'Create ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<WordTranslationRequest> Translations,',
+            aciklama: 'Create ile AYNI DTO tipini kullanır — "yeni dil ekleme" ve "mevcut çeviriyi güncelleme" AYNI şekilde temsil edilir, Handler ARADAKİ farkı `FindWordAsync` sonucuna göre KENDİSİ çözer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'bool Force,',
+            aciklama: 'Create ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId) : IRequest<WordResponse>;',
+            aciklama: 'Create ile AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordResponse>',
+            aciklama: 'Create\'in "oluştur" mantığının YERİNE "var-ise-güncelle yoksa-oluştur" (upsert) mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IWordConceptRepository _wordConceptRepository;',
+            aciklama: 'Create ile AYNI bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILanguageRepository _languageRepository;',
+            aciklama: 'Create ile AYNI bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public UpdateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)',
+            aciklama: 'Create ile AYNI constructor imzası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository = languageRepository;',
+            aciklama: 'Atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<WordResponse> Handle(UpdateWordCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağırdığı tek metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concept = (await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken))?.Concept',
+            aciklama: 'Var olan kavramı BULUR — `GetAggregateAsync` ÇEVİRİLERİ de getirse de burada yalnızca `.Concept` KULLANILIR (çeviriler aşağıda AYRI AYRI işlenecek).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");',
+            aciklama: 'Kavram YOKSA (veya soft-delete\'liyse) 404.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);',
+            aciklama: 'Var olan `concept` nesnesi MUTASYONA uğratılır (EF change tracker zaten İZLİYOR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'concept.DifficultyLevel = request.DifficultyLevel;',
+            aciklama: 'Mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'concept.ImageUrl = request.ImageUrl;',
+            aciklama: 'Mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.UpdateConceptAsync(concept, request.UserId, cancellationToken);',
+            aciklama: '`UpdatedByUserId`\'i ayarlar, `_context.Update(concept)` çağırır (zaten İZLENEN bir entity\'de zararsız/gereksiz ama AÇIK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var translation in request.Translations)',
+            aciklama: 'HER çeviri kendi upsert MANTIĞINDAN geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)',
+            aciklama: 'Create\'in `ResolveLanguagesAsync`\'inin AKSİNE burada TOPLU değil, HER çeviri için AYRI sorgu (2 çeviri için fark ÖNEMSİZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");',
+            aciklama: 'Create ile AYNI güvenlik ağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var existingWord = await _wordConceptRepository.FindWordAsync(concept.Id, language.Id, cancellationToken);',
+            aciklama: 'Bu kavramın BU dilde ZATEN bir karşılığı VAR MI — `null` ise "yeni dil ekleniyor" demektir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!request.Force)',
+            aciklama: 'Create ile AYNI bypass mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(',
+            aciklama: 'Duplikat kontrolü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'language.Id, translation.Text, excludeWordId: existingWord?.Id, cancellationToken);',
+            aciklama: '`excludeWordId: existingWord?.Id` — Create\'in `null`\'ından FARKLI, bu Bölümün ilk kavram slaytındaki tasarım kararı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (duplicate is not null)',
+            aciklama: 'BAŞKA bir kelime AYNI metni taşıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new WordDuplicateException(translation.LanguageCode, translation.Text);',
+            aciklama: '409 — Create ile AYNI istisna.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var word = existingWord ?? new Word { WordConceptId = concept.Id, LanguageId = language.Id };',
+            aciklama: 'Upsert\'in KALBİ — VAR olan `Word`\'ü KULLAN, yoksa YENİ bir tane KUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'word.Text = translation.Text;',
+            aciklama: 'HER İKİ durumda da (var olan/yeni) metin GÜNCELLENİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'word.Definition = translation.Definition;',
+            aciklama: 'HER İKİ durumda da anlam notu GÜNCELLENİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (existingWord is null)',
+            aciklama: 'YENİ bir dil ekleniyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);',
+            aciklama: 'Change tracker\'a EKLER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.SaveChangesAsync(cancellationToken); // word.Id gerekli (yeni dil ekleniyor)',
+            aciklama: 'Yalnızca YENİ bir `Word` için flush GEREKLİ — var olan bir `Word`\'ün Id\'si ZATEN bilinir, ara flush\'a gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.UpdateWordAsync(word, request.UserId, cancellationToken);',
+            aciklama: '`word.Id` ZATEN bilindiği için ara flush GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await UpsertDetailAsync(word.Id, translation.WordDetail, request.UserId, cancellationToken);',
+            aciklama: 'Aşağıdaki özel metoda delege — gramer detayının KENDİ upsert mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (translation.Examples is not null)',
+            aciklama: '`null` ile "boş liste" arasındaki fark BURADA (Create\'in AKSİNE) GERÇEKTEN önemli — `null` "örnekleri hiç DEĞİŞTİRME", boş liste "TÜM örnekleri SİL" demek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var newExamples = translation.Examples.Select(example => new WordExample',
+            aciklama: 'Create ile BİREBİR aynı dönüşüm mantığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'WordId = word.Id,',
+            aciklama: 'FK — YENİ veya VAR olan `word`\'ün Id\'si.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'SentenceText = example.SentenceText,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Level = example.Level,',
+            aciklama: 'Doğrudan atama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))',
+            aciklama: 'Create ile AYNI varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}).ToList();',
+            aciklama: 'Projeksiyonu ÇALIŞTIRIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.ReplaceExamplesAsync(word.Id, newExamples, request.UserId, cancellationToken);',
+            aciklama: 'Burada Create\'in AKSİNE GERÇEK bir "değiştirme" — ESKİ örnekler soft-delete\'lenir, YENİLERİ eklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'TÜM birikmiş değişiklikleri (concept + her çevirinin word/detail/example\'ı) TEK seferde flush eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)',
+            aciklama: 'Create ile AYNI desen — GÜNCEL hâli TEKRAR okuyup yanıt kurar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"WordConcept not found after update: Id={concept.Id}");',
+            aciklama: 'Teorik olarak imkansız — açık istisna.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(aggregate);',
+            aciklama: 'Create ile AYNI paylaşılan mapper.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private async Task UpsertDetailAsync(int wordId, WordDetailRequest? request, int? userId, CancellationToken cancellationToken)',
+            aciklama: '`WordDetail` için upsert — `Word`\'ün KENDİSİ için yukarıdaki `if (existingWord is null)` bloğunun KÜÇÜK ölçekli bir tekrarı, ama AYRI metot olarak (Detail\'in KENDİ arama/oluşturma adımı olduğu için).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request is null)',
+            aciklama: 'Bu çeviri için gramer detayı HİÇ gönderilmemiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return;',
+            aciklama: 'Var olan detay (varsa) DOKUNULMADAN bırakılır — `null` göndermek "detayı SİL" DEMEK DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var existingDetail = await _wordConceptRepository.GetDetailByWordIdAsync(wordId, cancellationToken);',
+            aciklama: 'Bu Word\'ün ZATEN bir detayı var mı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var detail = existingDetail ?? new WordDetail { WordId = wordId };',
+            aciklama: 'Upsert deseni — Word\'ün KENDİSİYLE AYNI mantık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'detail.Pronunciation = request.Pronunciation;',
+            aciklama: 'Mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'detail.Notes = request.Notes;',
+            aciklama: 'Mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'detail.CommonMistakes = request.CommonMistakes;',
+            aciklama: 'Mutasyon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'detail.GrammarData = request.GrammarData?.GetRawText();',
+            aciklama: 'Create ile AYNI `JsonElement?` → `string?` dönüşümü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (existingDetail is null)',
+            aciklama: 'YENİ bir detay ekleniyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);',
+            aciklama: 'Change tracker\'a EKLER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else',
+            aciklama: 'Bu dosyada İKİ kez geçer — biri var olan bir çevirinin (Word), biri var olan bir gramer detayının (WordDetail) GÜNCELLENDİĞİ dal, ikisi de AYNI "var olanı bul, yoksa oluştur" upsert desenine ait.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.UpdateDetailAsync(detail, userId, cancellationToken);',
+            aciklama: 'Change tracker\'da işaretler.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteWordCommand.cs — Kademeli Soft-Delete',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/DeleteWordCommand.cs',
+        nedenBuKlasor: '`Application/Features/Words/` — diğerleriyle AYNI klasör.',
+        kod: `using MediatR;
+using WordLearner.Application.Interfaces.Repositories.Content;
+
+namespace WordLearner.Application.Features.Words;
+
+public record DeleteWordCommand(int WordConceptId, int? UserId) : IRequest<Unit>;
+
+public class DeleteWordCommandHandler : IRequestHandler<DeleteWordCommand, Unit>
+{
+    private readonly IWordConceptRepository _wordConceptRepository;
+
+    public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
+
+    public async Task<Unit> Handle(DeleteWordCommand request, CancellationToken cancellationToken)
+    {
+        // Kavram + tüm dillerdeki Word/WordDetail/WordExample TEK bir kademeli soft-delete'te —
+        // WordConceptId FK'i Words'te CASCADE (gerçek DELETE için), ama bu soft-delete, EF'in
+        // otomatik soft-delete filtresi CASCADE'i TAKLİT ETMEZ, repository elle yürütüyor.
+        await _wordConceptRepository.SoftDeleteConceptCascadeAsync(request.WordConceptId, request.UserId, cancellationToken);
+        await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+        return Unit.Value;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<Unit>`/`Unit` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record DeleteWordCommand(int WordConceptId, int? UserId) : IRequest<Unit>;',
+            aciklama: '`LogoutCommand` (A-03) ile AYNI `IRequest<Unit>` deseni — yanıtta dönecek ANLAMLI bir veri YOK, yalnızca başarı/başarısızlık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class DeleteWordCommandHandler : IRequestHandler<DeleteWordCommand, Unit>',
+            aciklama: 'Bu görevin EN KISA Handler\'ı — tüm karmaşıklık `SoftDeleteConceptCascadeAsync`\'e (A-05 Bölüm 3) DELEGE edilmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IWordConceptRepository _wordConceptRepository;',
+            aciklama: 'Tek bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Expression-bodied constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Unit> Handle(DeleteWordCommand request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağırdığı tek metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Kavram + tüm dillerdeki Word/WordDetail/WordExample TEK bir kademeli soft-delete\'te —',
+            aciklama: 'Yorum satırı — atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.SoftDeleteConceptCascadeAsync(request.WordConceptId, request.UserId, cancellationToken);',
+            aciklama: 'TEK çağrı — kavram + TÜM ilişkili satırlar (A-05 Bölüm 3\'te tanımlı mantık) change tracker\'da IŞARETLENİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Tek flush — TÜM işaretlemeler AYNI transaction\'da yazılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Unit.Value;',
+            aciklama: '`LogoutCommand` ile AYNI dönüş.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetWordByIdQuery.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetWordByIdQuery.cs',
+        nedenBuKlasor: '`Application/Features/Words/` — diğerleriyle AYNI klasör.',
+        kod: `using MediatR;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Exceptions;
+
+namespace WordLearner.Application.Features.Words;
+
+public record GetWordByIdQuery(int WordConceptId) : IRequest<WordResponse>;
+
+public class GetWordByIdQueryHandler : IRequestHandler<GetWordByIdQuery, WordResponse>
+{
+    private readonly IWordConceptRepository _wordConceptRepository;
+
+    public GetWordByIdQueryHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
+
+    public async Task<WordResponse> Handle(GetWordByIdQuery request, CancellationToken cancellationToken)
+    {
+        var aggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)
+            ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
+        return WordMapping.ToResponse(aggregate);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<T,R>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: '`WordResponse`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record GetWordByIdQuery(int WordConceptId) : IRequest<WordResponse>;',
+            aciklama: '`GET /words/{id}`\'in path parametresi — TEK alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class GetWordByIdQueryHandler : IRequestHandler<GetWordByIdQuery, WordResponse>',
+            aciklama: 'Bu görevin İKİNCİ en kısa Handler\'ı (GetLanguagesQuery\'den, A-05 Bölüm 4, SONRA).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IWordConceptRepository _wordConceptRepository;',
+            aciklama: 'Tek bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public GetWordByIdQueryHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Expression-bodied constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<WordResponse> Handle(GetWordByIdQuery request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağırdığı tek metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var aggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)',
+            aciklama: 'A-05 Bölüm 3\'ün okuma metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");',
+            aciklama: 'Var olmayan/soft-delete\'li bir Id için 404.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(aggregate);',
+            aciklama: 'A-05 Bölüm 4\'ün paylaşılan mapper\'ı.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetWordsQuery.cs — Sayfalı Liste',
+        dosyaYolu: 'backend/WordLearner.Application/Features/Words/GetWordsQuery.cs',
+        nedenBuKlasor: '`Application/Features/Words/` — diğerleriyle AYNI klasör.',
+        kod: `using MediatR;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Application.Features.Words;
+
+// categoryId filtresi BİLİNÇLİ olarak YOK — Category/WordCategory entity'leri henüz yazılmadı (A-06),
+// o task'ta bu Query'ye geriye dönük eklenecek (API_ENDPOINTS.md §6 notu).
+public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int Page, int PageSize)
+    : IRequest<PagedResult<WordResponse>>;
+
+public class GetWordsQueryHandler : IRequestHandler<GetWordsQuery, PagedResult<WordResponse>>
+{
+    private readonly IWordConceptRepository _wordConceptRepository;
+
+    public GetWordsQueryHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
+
+    public async Task<PagedResult<WordResponse>> Handle(GetWordsQuery request, CancellationToken cancellationToken)
+    {
+        var partOfSpeech = request.PartOfSpeech is not null && Enum.TryParse<PartOfSpeech>(request.PartOfSpeech, out var parsed)
+            ? parsed
+            : (PartOfSpeech?)null;
+
+        var page = await _wordConceptRepository.GetPagedAsync(
+            request.DifficultyLevel, partOfSpeech, request.Search, request.Page, request.PageSize, cancellationToken);
+
+        return new PagedResult<WordResponse>
+        {
+            Items = page.Items.Select(WordMapping.ToResponse).ToList(),
+            TotalCount = page.TotalCount,
+            Page = page.Page,
+            PageSize = page.PageSize
+        };
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<T,R>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'in (A-04) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: '`WordResponse`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Features.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// categoryId filtresi BİLİNÇLİ olarak YOK — Category/WordCategory entity\'leri henüz yazılmadı (A-06),',
+            aciklama: 'Yorum satırı — atlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int Page, int PageSize)',
+            aciklama: 'Üç OPSİYONEL filtre + zorunlu sayfalama — `PartOfSpeech` burada da string (Create/Update ile AYNI "DTO seviyesinde ham, Handler\'da enum\'a çevir" deseni).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': IRequest<PagedResult<WordResponse>>;',
+            aciklama: 'Dönüş tipi `PagedResult<WordResponse>` — `GET /words`\'ün Controller\'da (bu görevin bir SONRAKİ maddesi) `{data,pagination}` şekline dönüştürüleceği ARA temsil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class GetWordsQueryHandler : IRequestHandler<GetWordsQuery, PagedResult<WordResponse>>',
+            aciklama: 'Liste ucunun Handler\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IWordConceptRepository _wordConceptRepository;',
+            aciklama: 'Tek bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public GetWordsQueryHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Expression-bodied constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<PagedResult<WordResponse>> Handle(GetWordsQuery request, CancellationToken cancellationToken)',
+            aciklama: 'MediatR\'ın çağırdığı tek metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var partOfSpeech = request.PartOfSpeech is not null && Enum.TryParse<PartOfSpeech>(request.PartOfSpeech, out var parsed)',
+            aciklama: '`TryParse` — Create/Update\'in AKSİNE burada `PartOfSpeech` OPSİYONEL bir FİLTRE, geçersiz/eksik bir değer bir HATA değil "filtre uygulama" anlamına gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '? parsed',
+            aciklama: 'Geçerli bir değer PARSE edildiyse KULLAN.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': (PartOfSpeech?)null;',
+            aciklama: 'Aksi halde (boş VEYA geçersiz) `null` — repository\'nin (A-05 Bölüm 3) `partOfSpeech is not null` kontrolü bu filtreyi TAMAMEN atlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var page = await _wordConceptRepository.GetPagedAsync(',
+            aciklama: 'Repository çağrısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.DifficultyLevel, partOfSpeech, request.Search, request.Page, request.PageSize, cancellationToken);',
+            aciklama: 'Çözülmüş `partOfSpeech` (enum?) + ham `DifficultyLevel`/`Search` (string?) + sayfalama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new PagedResult<WordResponse>',
+            aciklama: 'Repository `PagedResult<WordConceptAggregate>` DÖNDÜRÜR — burada `PagedResult<WordResponse>`\'a ÇEVRİLİR (öğeler mapping\'den geçer, sayfalama META verisi AYNEN kopyalanır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Items = page.Items.Select(WordMapping.ToResponse).ToList(),',
+            aciklama: 'HER sayfa elemanı A-05 Bölüm 4\'ün mapper\'ından geçer — metot GRUBU sözdizimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TotalCount = page.TotalCount,',
+            aciklama: 'Doğrudan kopya.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Page = page.Page,',
+            aciklama: 'Doğrudan kopya.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'PageSize = page.PageSize',
+            aciklama: 'Doğrudan kopya.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteWordCommandValidator.cs — Basit Id Kontrolü',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/DeleteWordCommandValidator.cs',
+        nedenBuKlasor: '`Validators/Words/` — diğerleriyle AYNI klasör. `GetWordByIdQueryValidator` (ayrıca öğretilmiyor) BİREBİR AYNI tek-kural desenini `GetWordByIdQuery.WordConceptId` üzerinde tekrarlıyor.',
+        kod: `using FluentValidation;
+using WordLearner.Application.Features.Words;
+
+namespace WordLearner.Application.Validators.Words;
+
+public class DeleteWordCommandValidator : AbstractValidator<DeleteWordCommand>
+{
+    public DeleteWordCommandValidator()
+    {
+        RuleFor(x => x.WordConceptId).GreaterThan(0).WithErrorCode("WORD_CONCEPT_ID_INVALID");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AbstractValidator<T>`/`RuleFor` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Features.Words;',
+            aciklama: '`DeleteWordCommand`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Validators.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class DeleteWordCommandValidator : AbstractValidator<DeleteWordCommand>',
+            aciklama: 'Bu görevin EN KÜÇÜK validator\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DeleteWordCommandValidator()',
+            aciklama: 'Parametresiz constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.WordConceptId).GreaterThan(0).WithErrorCode("WORD_CONCEPT_ID_INVALID");',
+            aciklama: 'Yalnızca pozitif bir Id kabul edilir — `0` veya negatif bir değer, bir path parametresi eksik/hatalı BAĞLANDIĞINDA (ör. `/words/0`) DB\'ye HİÇ gitmeden reddedilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetWordsQueryValidator.cs — Sayfalama Sınırları',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/GetWordsQueryValidator.cs',
+        nedenBuKlasor: '`Validators/Words/` — diğerleriyle AYNI klasör.',
+        kod: `using FluentValidation;
+using WordLearner.Application.Features.Words;
+
+namespace WordLearner.Application.Validators.Words;
+
+public class GetWordsQueryValidator : AbstractValidator<GetWordsQuery>
+{
+    public GetWordsQueryValidator()
+    {
+        RuleFor(x => x.Page).GreaterThanOrEqualTo(1).WithErrorCode("PAGE_INVALID");
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100).WithErrorCode("PAGE_SIZE_INVALID");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AbstractValidator<T>`/`RuleFor` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Features.Words;',
+            aciklama: '`GetWordsQuery`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Validators.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class GetWordsQueryValidator : AbstractValidator<GetWordsQuery>',
+            aciklama: 'Filtre alanları (`DifficultyLevel`/`PartOfSpeech`/`Search`) İÇİN kural YOK — hepsi opsiyonel, geçersiz bir değer basitçe "eşleşme yok" sonucu ÜRETİR, bir HATA değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public GetWordsQueryValidator()',
+            aciklama: 'Parametresiz constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Page).GreaterThanOrEqualTo(1).WithErrorCode("PAGE_INVALID");',
+            aciklama: '`page=0` veya negatif — `Skip((page-1)*pageSize)` (A-05 Bölüm 3) NEGATİF bir `Skip` değeri üretip bir SQL istisnasına yol AÇARDI, bu kural onu ÖNLER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.PageSize).InclusiveBetween(1, 100).WithErrorCode("PAGE_SIZE_INVALID");',
+            aciklama: 'Üst sınır 100 — bir admin `pageSize=1000000` gönderip TÜM tabloyu TEK istekte çekmeye ÇALIŞAMAZ.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Upsert', tanim: '"Update" + "Insert" — var olan bir kayıt varsa GÜNCELLE, yoksa OLUŞTUR; UpdateWordCommand\'ın hem Word hem WordDetail için izlediği desen.' },
+          { terim: 'RuleForEach + ChildRules (FluentValidation)', tanim: 'Bir koleksiyonun (Translations) HER elemanına, hatta o elemanın KENDİ iç koleksiyonuna (Examples) birden çok kural bağlamanın yolu — CreateWordCommandValidator\'da İKİ seviye iç içe kullanılıyor.' },
+          { terim: 'Custom rule + AddFailure', tanim: 'FluentValidation\'ın TEK bir property yerine TÜM nesneyi (`RuleFor(x => x)`) alıp SERBEST sayıda hata üretebildiği kural türü — WordGrammarValidator\'ı Command validator\'larına BAĞLAYAN mekanizma.' },
+          { terim: 'UpdateWordCommandValidator (temsili öğretim)', tanim: 'Bu bölümde AYRI bir kod slaytıyla öğretilmedi — CreateWordCommandValidator ile BİREBİR aynı kural kümesi + WordConceptId kontrolü, tek fark FluentValidation\'ın her Command tipine AYRI bir validator sınıfı GEREKTİRMESİ.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'CreateWordCommand: dil çözümü → duplikat kontrolü (force ile bypass edilebilir) → kavram+çeviri+detay+örnek oluşturma (3 SaveChanges — concept.Id, sonra word.Id, sonra tüm detay/örnekler için).',
+          'UpdateWordCommand aynı DTO şeklini "upsert" mantığıyla işliyor — FindWordAsync sonucu null ise yeni dil ekleniyor, değilse mevcut çeviri güncelleniyor; excludeWordId kendiyle çakışmayı önlüyor.',
+          'DeleteWordCommand tüm karmaşıklığı SoftDeleteConceptCascadeAsync\'e (A-05 Bölüm 3) devrediyor — kavram + tüm diller TEK kademeli soft-delete.',
+          'CreateWordCommandValidator, WordGrammarValidator\'ı (A-05 Bölüm 2) RuleFor(x=>x).Custom(...) + context.AddFailure(...) ile HER çeviri için ayrı ayrı çağırıyor — child validator deseninin gerçek kullanımı.',
+          'GetWordsQuery filtreleri (level/partOfSpeech/search) hepsi opsiyonel, PageSize üst sınırı 100 — categoryId BİLİNÇLİ olarak yok (A-06\'da eklenecek).'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

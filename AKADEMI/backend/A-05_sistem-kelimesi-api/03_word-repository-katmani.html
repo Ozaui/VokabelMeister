@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'word-repository-katmani',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '02_word-grammar-validator.html',
+    sonrakiBolum: '04_word-crud-komutlari.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'Bir Aggregate Repository: WordConcept + Word + WordDetail + WordExample TEK Yerde',
+        altBaslik: 'Dört ayrı entity türü, tek bir kavramın parçaları — repository de onları TEK bir arayüzde, TEK bir birlikte-okunan/yazılan graf olarak yönetiyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden IWordConceptRepository Bu Kadar Geniş — 14 Metot, TEK Arayüz?',
+        aciklama: '`WordConcept`/`Word`/`WordDetail`/`WordExample` dördü de `BaseEntity`\'den türüyor, yani her biri için ayrı ayrı jenerik `IRepository<T>` KULLANILABİLİRDİ. Bunun yerine tek bir `IWordConceptRepository`, hem okuma (aggregate/sayfalı liste/duplikat arama) hem yazma (concept/word/detail/example CRUD\'ı) metotlarının TAMAMINI taşıyor.',
+        neden: 'Bu dört entity PRATİKTE asla birbirinden BAĞIMSIZ anlamlı değil — bir `Word` her zaman bir `WordConcept`\'e ait, bir `WordDetail` her zaman bir `Word`\'ün grameri, bir `WordExample` her zaman bir `Word`\'ün cümlesi. "Aggregate root" deseni (DDD) tam bu durum için var: bir kavramla ilgili HER mutasyon/okuma TEK bir kapıdan geçer, o kapı da BÜTÜN grafın tutarlılığından (ör. bir kavram silinirken çevirilerinin de silinmesi) sorumludur.',
+        olmasaydi: 'Dört ayrı jenerik `IRepository<T>` kullanılsaydı, `CreateWordCommandHandler` gibi HER Handler kendi İÇİNDE "önce Concept\'i kaydet, sonra Id\'sini al, sonra Word\'ü kaydet, sonra Id\'sini al, sonra Detail/Example\'ı kaydet" sırasını ELLE, HER seferinde tekrar yazmak zorunda kalırdı — bu sıralama mantığı (ki hataya açık, ör. Concept Id\'si alınmadan Word eklenirse FK 0 kalır) BİRDEN FAZLA Handler\'a DAĞILIRDI, tek bir yerde doğrulanamazdı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Navigation Property Yok — .Include() Kullanılmıyor?',
+        aciklama: '`GetAggregateAsync`/`GetPagedAsync` bir kavramın çevirilerini EF Core\'un `.Include()` zinciriyle DEĞİL, `BuildTranslationsAsync` içinde AYRI AYRI sorgularla (Words/WordDetails/WordExamples/Languages) çekip C# tarafında `GroupBy`/`ToLookup` ile BİRLEŞTİRİYOR.',
+        neden: '`WordConcept`/`Word` (A-05 Bölüm 1) HİÇBİR navigation property TAŞIMIYOR — `User`/`RefreshToken`/`ActivityLog` gibi bu projedeki HER entity\'nin izlediği, FK\'yi ham `int` olarak tutup ilişkiyi yalnızca EF config\'te `HasOne<T>()` ile kuran aynı desen. `.Include()` bir navigation property GEREKTİRİR — bu proje BİLİNÇLİ olarak hiç açmadı.',
+        olmasaydi: 'Navigation property eklenip `.Include()` kullanılsaydı, kod daha KISA görünürdü (`_context.WordConcepts.Include(c => c.Words).ThenInclude(w => w.Detail)...`) ama bu, önceki bölümlerde ZATEN öğretilmiş 5 entity dosyasının (Word/WordConcept/WordDetail/WordExample/Language) GERİYE DÖNÜK değiştirilmesini GEREKTİRİRDİ — bu projenin "her entity\'de navigation property yok" tutarlılığını BOZARDI, dört ayrı sorgu + in-memory birleştirme bu tutarlılığı KORUYARAK aynı sonucu üretiyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ILanguageRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Content/ILanguageRepository.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/Content/` — `Interfaces/Repositories/Auth/`/`Logging/` (önceki bölümler) ile AYNI desen, yeni bir domain alt klasörü.',
+        kod: `using WordLearner.Domain.Entities.Content;
+
+namespace WordLearner.Application.Interfaces.Repositories.Content;
+
+// Language BaseEntity'den türemediği için generic IRepository<T> kullanılamıyor — salt-okur, dar
+// kapsamlı arayüz (yazma yolu yok, CRUD'u yok, seed migration-zamanında oluşuyor).
+public interface ILanguageRepository
+{
+    Task<List<Language>> GetActiveOrderedAsync(CancellationToken cancellationToken = default);
+    Task<Language?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`Language`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ILanguageRepository',
+            aciklama: '`IUserRepository` (A-03) ile AYNI gerekçeyle dar arayüz — `Language` de `BaseEntity`\'den türemiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<List<Language>> GetActiveOrderedAsync(CancellationToken cancellationToken = default);',
+            aciklama: '`GetLanguagesQuery`\'nin (bu bölümün ileri kısmı) tek veri kaynağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<Language?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);',
+            aciklama: 'Bir çevirinin `languageCode`\'unu ("de"/"tr") gerçek `Language.Id`\'ye çözmek için — Word Command Handler\'larının (bu bölümün ileri kısmı) HER çeviri için çağırdığı metot.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LanguageRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Content/LanguageRepository.cs',
+        nedenBuKlasor: '`Infrastructure/Repositories/Content/` — `Interfaces/Repositories/Content/` ile eşleşen implementasyon klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Content;
+
+public class LanguageRepository : ILanguageRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public LanguageRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<List<Language>> GetActiveOrderedAsync(CancellationToken cancellationToken = default) =>
+        await _context.Languages
+            .Where(l => l.IsActive)
+            .OrderBy(l => l.DisplayOrder)
+            .ToListAsync(cancellationToken);
+
+    public async Task<Language?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+        await _context.Languages.FirstOrDefaultAsync(l => l.Code == code, cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`ToListAsync`/`FirstOrDefaultAsync` gibi async LINQ metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Uygulanan `ILanguageRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`Language`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LanguageRepository : ILanguageRepository',
+            aciklama: '`UserRepository` (A-03) ile AYNI desen — dar arayüzün TEK implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: 'Repository\'nin tek bağımlılığı — DbContext scoped olduğu için Handler\'lar arasında PAYLAŞILAN aynı instance (aynı istek içinde).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public LanguageRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Expression-bodied constructor — tek satırlık atama için `{ }` bloğu gereksiz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<List<Language>> GetActiveOrderedAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: 'Arayüzdeki imzanın BİREBİR karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Languages',
+            aciklama: '`WordLearnerDbContext.Languages` DbSet\'i (A-05 Bölüm 1) üzerinden sorgu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(l => l.IsActive)',
+            aciklama: 'Yalnızca aktif diller — `GET /languages`\'in "aktif dillerin listesi" tanımı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OrderBy(l => l.DisplayOrder)',
+            aciklama: 'Migration seed\'inde belirlenen sıra (`de`=1, `tr`=2) — dil listesi ucunun "DisplayOrder\'a göre sıralı" döndürme kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToListAsync(cancellationToken);',
+            aciklama: 'Sorguyu ÇALIŞTIRIR — buraya kadar olan `Where`/`OrderBy` yalnızca bir ifade ağacı KURAR, gerçek SQL bu satırda üretilip çalıştırılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Language?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Arayüzdeki imzanın BİREBİR karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Languages.FirstOrDefaultAsync(l => l.Code == code, cancellationToken);',
+            aciklama: '`Languages.Code` üzerinde UNIQUE index (A-05 Bölüm 1) sayesinde en fazla 1 satır döner — bulunamazsa `null`.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptAggregate.cs — Repository\'nin Döndürdüğü Şekil',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Content/WordConceptAggregate.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/Content/` — `ILanguageRepository` ile AYNI klasör; arayüzün İMZASININ bir parçası olduğu için DTOs/ değil Interfaces/Repositories/ altında.',
+        kod: `using WordLearner.Domain.Entities.Content;
+
+namespace WordLearner.Application.Interfaces.Repositories.Content;
+
+// IWordConceptRepository'nin okuma metotlarının döndürdüğü şekil — WordConcept tek başına
+// anlamsız (bir kavramın karşılığı olmadan gösterilecek bir şeyi yok), bu yüzden repository
+// Concept + o kavramın TÜM çevirilerini TEK bir çağrıda birlikte döndürüyor.
+public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations);
+
+// Her çeviri kendi Word'ü + hangi dile ait olduğu (Language) + varsa WordDetail + örnek listesi.
+public record WordTranslationAggregate(Word Word, Language Language, WordDetail? Detail, List<WordExample> Examples);`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'İçerdiği dört entity türünün (`WordConcept`/`Word`/`Language`/`WordDetail`/`WordExample`) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations);',
+            aciklama: '`GetAggregateAsync`/`GetPagedAsync`\'in döndürdüğü ÜST seviye şekil — bir kavram + o kavramın (0, 1 veya 2 dildeki) çevirileri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record WordTranslationAggregate(Word Word, Language Language, WordDetail? Detail, List<WordExample> Examples);',
+            aciklama: 'TEK bir çevirinin TÜM parçaları bir arada — `Detail` nullable (gramer detayı GİRİLMEMİŞ olabilir), `Examples` her zaman bir liste (boş da olabilir, `null` DEĞİL).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IWordConceptRepository.cs',
+        dosyaYolu: 'backend/WordLearner.Application/Interfaces/Repositories/Content/IWordConceptRepository.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/Content/` — `WordConceptAggregate` ile AYNI klasör.',
+        kod: `using WordLearner.Application.DTOs;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Application.Interfaces.Repositories.Content;
+
+// WordConcept BaseEntity'den türese de, tek başına bir "kelime" değil — Word/WordDetail/WordExample
+// ile birlikte TEK bir aggregate oluşturuyor (bkz. Icerik.md). Bu yüzden generic IRepository<T>
+// yalnızca WordConcept satırının kendisini yönetebilirdi, çevirileri/detayları/örnekleri AYRI AYRI
+// yönetmek için Handler'ın 4 farklı repository enjekte etmesi gerekirdi — bunun yerine TEK bir
+// aggregate-repository tüm graf üzerinde çalışıyor (User/RefreshToken'ın dar-arayüz deseniyle AYNI
+// gerekçe: entity'nin doğası generic CRUD'a sığmıyor).
+public interface IWordConceptRepository
+{
+    Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);
+    Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);
+    Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);
+    Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
+
+    Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default);
+
+    Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+    Task UpdateConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+    Task SoftDeleteConceptCascadeAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+    Task AddWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+    Task UpdateWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+    Task AddDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+    Task UpdateDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+    Task ReplaceExamplesAsync(int wordId, List<WordExample> newExamples, int? userId, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'in (A-04) ad alanı — `GetPagedAsync`\'in dönüş tipi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'Metot imzalarındaki `WordConcept`/`Word`/`WordDetail`/`WordExample`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı — `GetPagedAsync`\'in filtre parametresi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface IWordConceptRepository',
+            aciklama: 'Bu görevin en geniş arayüzü — 14 metot, ama HEPSİ TEK bir aggregate\'in (kavram+çevirileri) okuma/yazma yüzeyi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);',
+            aciklama: 'Duplikat kontrolü (409+`force`) — `excludeWordId`, GÜNCELLEME sırasında bir kelimenin KENDİ mevcut metnini kendisiyle çakışıyor SAYMAMAK için (bu bölümün ileri kısmındaki `UpdateWordCommand`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);',
+            aciklama: 'Bir kavramın BELİRLİ bir dildeki karşılığı VAR MI sorusu — Update\'in "mevcut çeviriyi güncelle mi, yeni dil mi ekliyor" ayrımının temeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);',
+            aciklama: 'Update\'in `WordDetail` için upsert (var-ise-güncelle yoksa-oluştur) kararını vermesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);',
+            aciklama: 'TEK bir kavramı TÜM çevirileriyle getirir — `GET /words/{id}`\'in ve Create/Update sonrası dönen yanıtın veri kaynağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<PagedResult<WordConceptAggregate>> GetPagedAsync(',
+            aciklama: '`GET /words` liste ucunun veri kaynağı — çok-satırlı imza, filtre parametreleri aşağıdaki satırda devam ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,',
+            aciklama: 'Üç filtre — `categoryId` BİLİNÇLİ olarak YOK (Category entity\'si henüz A-06\'da yazılmadı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default);',
+            aciklama: 'Sayfalama parametreleri — `ActivityLogRepository.GetPagedAsync` (A-04) ile AYNI imza deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Yeni bir kavram oluşturma — `userId` audit alanları (`CreatedByUserId`) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task UpdateConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Var olan bir kavramın (PartOfSpeech/DifficultyLevel/ImageUrl) güncellenmesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SoftDeleteConceptCascadeAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: '`DELETE /words/{id}`\'in "kavram + TÜM diller" tanımı — kavramı VE ona bağlı her `Word`/`WordDetail`/`WordExample`\'ı TEK çağrıda soft-delete\'ler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Bir kavrama yeni bir dil karşılığı ekleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task UpdateWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Var olan bir çevirinin metnini/anlam notunu güncelleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Bir çeviriye YENİ bir gramer detayı ekleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task UpdateDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Var olan bir gramer detayını güncelleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task ReplaceExamplesAsync(int wordId, List<WordExample> newExamples, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Bir çevirinin ÖRNEK CÜMLELERİNİN TAMAMINI yenisiyle DEĞİŞTİRİR — tekil ekleme/silme metodu YOK, admin formu her zaman GÜNCEL tam listeyi gönderir varsayımıyla "tam değiştirme" deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: '`ActivityLogRepository`/`UserRepository` ile AYNI desen — TÜM yukarıdaki `Add*`/`Update*` metotları yalnızca EF change tracker\'a KAYDEDER, gerçek SQL bu metotla YAZILIR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptRepository.cs — Okuma Tarafı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Repositories/Content/WordConceptRepository.cs',
+        nedenBuKlasor: '`Infrastructure/Repositories/Content/` — `LanguageRepository` ile AYNI klasör. Dosya tek parça ama okuma/yazma metotları öğretim için iki `kod` slaytına bölündü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using WordLearner.Application.DTOs;
+using WordLearner.Application.Interfaces.Repositories.Content;
+using WordLearner.Domain.Entities;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+using WordLearner.Domain.Exceptions;
+using WordLearner.Infrastructure.Data;
+
+namespace WordLearner.Infrastructure.Repositories.Content;
+
+public class WordConceptRepository : IWordConceptRepository
+{
+    private readonly WordLearnerDbContext _context;
+
+    public WordConceptRepository(WordLearnerDbContext context) => _context = context;
+
+    public async Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default)
+    {
+        var query = _context.Words.Where(w => w.LanguageId == languageId && w.Text == text);
+        if (excludeWordId is not null)
+            query = query.Where(w => w.Id != excludeWordId);
+
+        return await query.FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default) =>
+        await _context.Words.FirstOrDefaultAsync(w => w.WordConceptId == wordConceptId && w.LanguageId == languageId, cancellationToken);
+
+    public async Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default) =>
+        await _context.WordDetails.FirstOrDefaultAsync(d => d.WordId == wordId, cancellationToken);
+
+    public async Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default)
+    {
+        var concept = await _context.WordConcepts.FirstOrDefaultAsync(c => c.Id == wordConceptId, cancellationToken);
+        if (concept is null)
+            return null;
+
+        var translationsByConcept = await BuildTranslationsAsync([wordConceptId], cancellationToken);
+        return new WordConceptAggregate(concept, translationsByConcept.GetValueOrDefault(wordConceptId, []));
+    }
+
+    public async Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.WordConcepts.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(difficultyLevel))
+            query = query.Where(c => c.DifficultyLevel == difficultyLevel);
+        if (partOfSpeech is not null)
+            query = query.Where(c => c.PartOfSpeech == partOfSpeech);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var matchingConceptIds = _context.Words
+                .Where(w => w.Text.Contains(search) || (w.Definition != null && w.Definition.Contains(search)))
+                .Select(w => w.WordConceptId);
+            query = query.Where(c => matchingConceptIds.Contains(c.Id));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var concepts = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var conceptIds = concepts.Select(c => c.Id).ToList();
+        var translationsByConcept = await BuildTranslationsAsync(conceptIds, cancellationToken);
+
+        var items = concepts
+            .Select(c => new WordConceptAggregate(c, translationsByConcept.GetValueOrDefault(c.Id, [])))
+            .ToList();
+
+        return new PagedResult<WordConceptAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+    }
+
+    private async Task<Dictionary<int, List<WordTranslationAggregate>>> BuildTranslationsAsync(
+        List<int> wordConceptIds, CancellationToken cancellationToken)
+    {
+        var words = await _context.Words.Where(w => wordConceptIds.Contains(w.WordConceptId)).ToListAsync(cancellationToken);
+        var wordIds = words.Select(w => w.Id).ToList();
+
+        var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);
+        var details = await _context.WordDetails.Where(d => wordIds.Contains(d.WordId)).ToDictionaryAsync(d => d.WordId, cancellationToken: cancellationToken);
+        var examplesByWord = (await _context.WordExamples.Where(e => wordIds.Contains(e.WordId)).ToListAsync(cancellationToken))
+            .ToLookup(e => e.WordId);
+
+        return words
+            .GroupBy(w => w.WordConceptId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(w => new WordTranslationAggregate(
+                    w, languages[w.LanguageId], details.GetValueOrDefault(w.Id), examplesByWord[w.Id].ToList()
+                )).ToList());
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: 'Async LINQ metotları için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs;',
+            aciklama: '`PagedResult<T>`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Uygulanan `IWordConceptRepository` + `WordConceptAggregate`/`WordTranslationAggregate`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı — yazma tarafındaki (bir SONRAKİ kod slaytı) toplu soft-delete döngüsü için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'Beş entity türünün (`WordConcept`/`Word`/`WordDetail`/`WordExample`/`Language`) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException`\'ın ad alanı — yazma tarafındaki (bir SONRAKİ kod slaytı) `SoftDeleteConceptCascadeAsync`\'te kullanılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Data;',
+            aciklama: '`WordLearnerDbContext`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Repositories.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordConceptRepository : IWordConceptRepository',
+            aciklama: 'Arayüzün TEK implementasyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly WordLearnerDbContext _context;',
+            aciklama: 'Tek bağımlılık — beş DbSet\'e (WordConcepts/Words/WordDetails/WordExamples/Languages) BURADAN erişilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public WordConceptRepository(WordLearnerDbContext context) => _context = context;',
+            aciklama: 'Expression-bodied constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default)',
+            aciklama: 'Metot gövdesi bir `if` içerdiği için expression-bodied DEĞİL, tam blok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var query = _context.Words.Where(w => w.LanguageId == languageId && w.Text == text);',
+            aciklama: 'Sorgu HENÜZ ÇALIŞTIRILMADI — `IQueryable<Word>` bir ifade ağacı, `excludeWordId` varsa aşağıda BİR KURAL DAHA eklenecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (excludeWordId is not null)',
+            aciklama: 'Yalnızca GÜNCELLEME senaryosunda (bu bölümün ileri kısmındaki `UpdateWordCommand`) dolu gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'query = query.Where(w => w.Id != excludeWordId);',
+            aciklama: 'Kendi Id\'sini SONUÇTAN çıkarır — bir kelimenin metnini DEĞİŞTİRMEDEN kaydetmek, "kendisiyle çakışıyor" diye YANLIŞLIKLA reddedilmesin diye.',
+            neden: 'Bir admin, bir kelimenin SADECE `Definition`\'ını (metnini DEĞİL) güncelleyip kaydetse bile, `Text` değişmediği için "bu metin zaten VAR" kontrolü (excludeWordId OLMASAYDI) kelimenin KENDİ satırını bir DUPLIKAT olarak görüp 409 döndürürdü.',
+            olmasaydi: '`excludeWordId` filtresi OLMASAYDI, HİÇBİR admin var olan bir kelimeyi metnini değiştirmeden GÜNCELLEYEMEZDİ — her `PUT /words/{id}` isteği kendi ÖNCEKİ hâliyle çakışıp 409 dönerdi, `?force=true` her güncellemede ZORUNLU hale gelirdi.'
+          },
+          {
+            satir: 'return await query.FirstOrDefaultAsync(cancellationToken);',
+            aciklama: 'Sorgu burada ÇALIŞIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Tek satırlık gövde, expression-bodied.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Words.FirstOrDefaultAsync(w => w.WordConceptId == wordConceptId && w.LanguageId == languageId, cancellationToken);',
+            aciklama: '`UQ_Words_Concept_Language` unique index (A-05 Bölüm 1) sayesinde en fazla 1 satır — "bu kavramın BU dildeki karşılığı var mı" sorusunun doğrudan cevabı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Tek satırlık gövde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.WordDetails.FirstOrDefaultAsync(d => d.WordId == wordId, cancellationToken);',
+            aciklama: '`IX_WordDetails_WordId` unique index (A-05 Bölüm 1) sayesinde en fazla 1 satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default)',
+            aciklama: 'Blok gövde — `if` ile erken çıkış içeriyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concept = await _context.WordConcepts.FirstOrDefaultAsync(c => c.Id == wordConceptId, cancellationToken);',
+            aciklama: 'Önce kavramın KENDİSİ var mı diye bakılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (concept is null)',
+            aciklama: 'Kavram yoksa (veya soft-delete\'liyse — global filtre otomatik dışlar) çevirileri SORGULAMAYA bile gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Erken çıkış — `GetWordByIdQueryHandler` (bu bölümün ileri kısmı) bunu `EntityNotFoundException`\'a çevirecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translationsByConcept = await BuildTranslationsAsync([wordConceptId], cancellationToken);',
+            aciklama: 'Tek elemanlı bir liste ile aşağıdaki `BuildTranslationsAsync`\'i (sayfalı listeyle PAYLAŞILAN yardımcı) çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new WordConceptAggregate(concept, translationsByConcept.GetValueOrDefault(wordConceptId, []));',
+            aciklama: '`GetValueOrDefault(...,[])` — kavramın HİÇ çevirisi yoksa (teorik olarak, ör. bir hata senaryosunda) boş liste döner, `KeyNotFoundException` FIRLAMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<PagedResult<WordConceptAggregate>> GetPagedAsync(',
+            aciklama: '`GET /words` liste ucunun asıl sorgu mantığı — çok-satırlı imza.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,',
+            aciklama: 'Üç opsiyonel filtre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int page, int pageSize, CancellationToken cancellationToken = default)',
+            aciklama: 'Sayfalama parametreleri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var query = _context.WordConcepts.AsQueryable();',
+            aciklama: 'Filtre YOKSA bile TÜM kavramları döndürecek başlangıç sorgusu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(difficultyLevel))',
+            aciklama: 'Seviye filtresi yalnızca DOLU geldiyse uygulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'query = query.Where(c => c.DifficultyLevel == difficultyLevel);',
+            aciklama: 'Tam eşleşme — "A1 VE ÜZERİ" gibi bir aralık DEĞİL, TEK bir seviye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (partOfSpeech is not null)',
+            aciklama: 'Tür filtresi yalnızca BELİRTİLDİYSE uygulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'query = query.Where(c => c.PartOfSpeech == partOfSpeech);',
+            aciklama: 'Enum karşılaştırması — EF Core bunu `WHERE PartOfSpeech = @p` SQL\'ine çevirir (sütun `HasConversion<string>` olduğu için string karşılaştırması ÜRETİR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!string.IsNullOrWhiteSpace(search))',
+            aciklama: 'Arama terimi yalnızca DOLU geldiyse uygulanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var matchingConceptIds = _context.Words',
+            aciklama: 'Arama `Words` tablosunda YAPILIR (bir kavramın metni `Word.Text`\'te), sonuç `WordConceptId`\'lere İNDİRGENİR — kavram tablosunun kendisinde ARANACAK bir metin sütunu YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(w => w.Text.Contains(search) || (w.Definition != null && w.Definition.Contains(search)))',
+            aciklama: 'Hem kelimenin KENDİSİNDE (`Text`) hem anlam notunda (`Definition`) arar — bir Türkçe kullanıcı "ama" yazıp Almanca `aber`\'i (Definition\'ı "ama, fakat, ancak" olan) bulabilsin diye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Select(w => w.WordConceptId);',
+            aciklama: 'Yalnızca `WordConceptId`\'ler PROJEKSİYONLANIR — TÜM `Word` satırını çekmeye gerek yok.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'query = query.Where(c => matchingConceptIds.Contains(c.Id));',
+            aciklama: '`matchingConceptIds` bir ALT SORGU olarak (henüz `ToListAsync` ÇAĞRILMADI) EF Core tarafından TEK bir SQL\'e (`WHERE Id IN (SELECT WordConceptId FROM Words WHERE ...)`) DERLENİR — iki AYRI round-trip DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var totalCount = await query.CountAsync(cancellationToken);',
+            aciklama: 'TÜM filtrelerden SONRA, ama sayfalamadan ÖNCE toplam sayı — `PagedResult.TotalCount`, admin panelin "kaç sayfa var" hesabı için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concepts = await query',
+            aciklama: 'Asıl sayfa verisi — `totalCount`\'tan AYRI bir sorgu (SQL Server\'da TEK sorguda hem `COUNT` hem sayfa almak mümkün değil, iki round-trip KAÇINILMAZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OrderByDescending(c => c.CreatedAt)',
+            aciklama: 'En YENİ eklenen kavram ÖNCE — admin panelin varsayılan sıralaması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Skip((page - 1) * pageSize)',
+            aciklama: '1-tabanlı sayfa numarasını 0-tabanlı `Skip` sayısına çevirir (`page=1` → `Skip(0)`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Take(pageSize)',
+            aciklama: 'Sayfa büyüklüğü kadar satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToListAsync(cancellationToken);',
+            aciklama: 'Sorgu burada ÇALIŞIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var conceptIds = concepts.Select(c => c.Id).ToList();',
+            aciklama: 'Bu SAYFADAKİ kavramların Id\'leri — `BuildTranslationsAsync`\'e verilecek, TÜM tabloya değil SADECE bu sayfaya ait çevirileri çekmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translationsByConcept = await BuildTranslationsAsync(conceptIds, cancellationToken);',
+            aciklama: '`GetAggregateAsync` ile AYNI yardımcı — burada TEK elemanlı değil, bu SAYFADAKİ TÜM kavramlar için TEK ÇAĞRIDA.',
+            neden: 'Sayfadaki 20 kavram için 20 AYRI `BuildTranslationsAsync` çağrısı yapılsaydı (her biri kendi içinde 4 sorgu çalıştırıyor), TOPLAM 80 veritabanı round-trip\'i olurdu — TEK çağrı, TÜM `conceptIds` için TOPLU sorgu yaparak bunu 4 round-trip\'e İNDİRİYOR (N+1 sorgu probleminin KLASİK çözümü).',
+            olmasaydi: 'Döngü içinde tek tek çağrılsaydı, sayfa büyüklüğü arttıkça (`pageSize=100`) veritabanı round-trip sayısı da DOĞRUSAL artardı — küçük bir admin panelinde fark edilmese de, gerçek 795+ kelimelik içerikte listeleme ekranı YAVAŞLARDI.'
+          },
+          {
+            satir: 'var items = concepts',
+            aciklama: 'Sayfadaki HER kavramı kendi çevirileriyle birleştirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Select(c => new WordConceptAggregate(c, translationsByConcept.GetValueOrDefault(c.Id, [])))',
+            aciklama: '`GetAggregateAsync`\'teki AYNI `GetValueOrDefault(...,[])` deseni — çevirisi olmayan (teorik) bir kavram için boş liste.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToList();',
+            aciklama: 'Projeksiyonu ÇALIŞTIRIR (bu noktada zaten bellekte, EF sorgusu DEĞİL).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new PagedResult<WordConceptAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };',
+            aciklama: '`ActivityLogRepository.GetPagedAsync` (A-04) ile AYNI dönüş deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private async Task<Dictionary<int, List<WordTranslationAggregate>>> BuildTranslationsAsync(',
+            aciklama: '`GetAggregateAsync` VE `GetPagedAsync` tarafından PAYLAŞILAN özel yardımcı — "N kavram Id\'si verildiğinde, HER birinin çevirilerini TEK TOPLU sorgu setiyle getir".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<int> wordConceptIds, CancellationToken cancellationToken)',
+            aciklama: 'Parametre listesi devam ediyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var words = await _context.Words.Where(w => wordConceptIds.Contains(w.WordConceptId)).ToListAsync(cancellationToken);',
+            aciklama: 'Verilen TÜM kavram Id\'lerine ait Word satırları TEK sorguda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var wordIds = words.Select(w => w.Id).ToList();',
+            aciklama: 'Detay/örnek sorgularının `WHERE WordId IN (...)` filtresi için gereken Id listesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);',
+            aciklama: '`Languages` tablosu yalnızca 2 satır — TAMAMI çekilip `Id`\'ye göre bir sözlüğe konur, her `Word.LanguageId` için AYRI bir sorgu YAPILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var details = await _context.WordDetails.Where(d => wordIds.Contains(d.WordId)).ToDictionaryAsync(d => d.WordId, cancellationToken: cancellationToken);',
+            aciklama: 'TÜM Word\'lerin detayları TEK sorguda, `WordId`\'ye göre sözlük — bir Word\'ün detayı YOKSA sözlükte hiç ANAHTARI olmaz (`GetValueOrDefault` bunu aşağıda `null` olarak ele alır).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var examplesByWord = (await _context.WordExamples.Where(e => wordIds.Contains(e.WordId)).ToListAsync(cancellationToken))',
+            aciklama: 'TÜM Word\'lerin örnekleri TEK sorguda.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToLookup(e => e.WordId);',
+            aciklama: '`ToDictionary`\'den FARKLI olarak `ToLookup` bir anahtara BİRDEN FAZLA değer bağlanmasına izin verir (bir Word\'ün BİRDEN ÇOK örneği olabilir) — `Dictionary` burada ÇALIŞMAZDI (aynı `WordId` için ikinci `Add` bir istisna fırlatırdı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return words',
+            aciklama: 'Şimdi HER şey bellekte — kalan iş SAF C# LINQ ile birleştirme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.GroupBy(w => w.WordConceptId)',
+            aciklama: 'Word\'leri hangi kavrama ait olduklarına göre GRUPLAR — dönüş sözlüğünün anahtarı burada oluşur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToDictionary(',
+            aciklama: 'Her grup (kavram) için bir sözlük girdisi üretir — değer aşağıdaki `g.Select(...)` ile hesaplanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'g => g.Key,',
+            aciklama: 'Sözlüğün anahtarı — `WordConceptId`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'g => g.Select(w => new WordTranslationAggregate(',
+            aciklama: 'Bir kavramın TÜM Word\'lerini `WordTranslationAggregate`\'e dönüştürür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'w, languages[w.LanguageId], details.GetValueOrDefault(w.Id), examplesByWord[w.Id].ToList()',
+            aciklama: '`languages[w.LanguageId]` KÖŞELİ PARANTEZ (indexer) — `Languages`\'te HER `LanguageId` GARANTİ vardır (FK constraint), bu yüzden `GetValueOrDefault` DEĞİL doğrudan erişim güvenli; `details`/`examplesByWord` ise OPSİYONEL olduğu için `GetValueOrDefault`/indexer-with-empty-default kullanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ')).ToList());',
+            aciklama: 'İç `Select`\'i ve dış `ToDictionary`\'yi KAPATIR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'DependencyInjection.cs — İki Yeni Repository Kaydı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/DependencyInjection.cs',
+        neden: 'A-04\'te 6. repository kaydına (`IApplicationLogRepository`) ulaşan bu dosyaya, yukarıdaki `ILanguageRepository`/`IWordConceptRepository`\'nin EF Core\'un `ApplyConfigurationsFromAssembly`\'sinin AKSİNE OTOMATİK bulunmadığı (arayüz→implementasyon eşleşmesi ELLE kaydedilmesi gerektiği) için iki yeni `AddScoped` satırı eklendi.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using WordLearner.Application.Interfaces.Repositories;
+ using WordLearner.Application.Interfaces.Repositories.Auth;
++using WordLearner.Application.Interfaces.Repositories.Content;
+ using WordLearner.Application.Interfaces.Repositories.Logging;
+ using WordLearner.Infrastructure.Data;
+ using WordLearner.Infrastructure.Repositories;
+ using WordLearner.Infrastructure.Repositories.Auth;
++using WordLearner.Infrastructure.Repositories.Content;
+ using WordLearner.Infrastructure.Repositories.Logging;
+
+ namespace WordLearner.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<WordLearnerDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
++        services.AddScoped<ILanguageRepository, LanguageRepository>();
++        services.AddScoped<IWordConceptRepository, WordConceptRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Application.Interfaces.Repositories.Content;',
+            aciklama: 'İki yeni arayüzün (`ILanguageRepository`/`IWordConceptRepository`) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Infrastructure.Repositories.Content;',
+            aciklama: 'İki yeni implementasyonun (`LanguageRepository`/`WordConceptRepository`) ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<ILanguageRepository, LanguageRepository>();',
+            aciklama: '`Scoped` — HTTP isteği başına bir instance, `WordLearnerDbContext`\'in KENDİ ömrüyle AYNI (DbContext da Scoped).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'services.AddScoped<IWordConceptRepository, WordConceptRepository>();',
+            aciklama: 'Aynı `Scoped` ömür.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Aggregate root (DDD)', tanim: 'Bir grup ilişkili entity\'nin (burada WordConcept+Word+WordDetail+WordExample) TEK bir "kapıdan" (repository) okunup yazıldığı tasarım deseni — grubun İÇ tutarlılığından o TEK kapı sorumludur.' },
+          { terim: 'N+1 sorgu problemi', tanim: 'Bir liste için 1 sorgu, sonra listedeki HER eleman için AYRI birer sorgu daha çalıştırmak — toplamda N+1 round-trip; BuildTranslationsAsync\'in TOPLU sorgu deseni bunu önler.' },
+          { terim: 'ToLookup vs ToDictionary', tanim: '`ToDictionary` bir anahtara TEK değer bağlar (ikinci ekleme istisna fırlatır); `ToLookup` bir anahtara BİRDEN FAZLA değer bağlayabilir — WordExamples (bir Word\'ün birden çok örneği olabilir) bu yüzden ToLookup kullanır.' },
+          { terim: 'IQueryable ertelenmiş yürütme', tanim: 'Bir LINQ ifadesi (`.Where`/`.OrderBy`) `ToListAsync`/`FirstOrDefaultAsync` gibi bir "materializasyon" metoduna kadar veritabanına HİÇ gitmez — yalnızca bir ifade ağacı kurulur.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'IWordConceptRepository bir "aggregate repository" — WordConcept/Word/WordDetail/WordExample dört entity için TEK arayüz, generic IRepository<T> yerine.',
+          'WordConceptAggregate/WordTranslationAggregate — repository\'nin döndürdüğü iç içe şekil, navigation property OLMADAN (bu projenin tutarlı deseni) dört entity\'yi TEK bir DTO\'da birleştiriyor.',
+          'BuildTranslationsAsync hem GetAggregateAsync hem GetPagedAsync tarafından paylaşılıyor — N+1 sorgu yerine 4 TOPLU sorgu + C# tarafında GroupBy/ToLookup/Dictionary ile birleştirme.',
+          'FindWordByLanguageAndTextAsync\'in excludeWordId parametresi — güncellemede bir kelimenin kendi mevcut metniyle YANLIŞLIKLA çakışmasını önlüyor.',
+          'ReplaceExamplesAsync "tam değiştirme" semantiği — tekil ekleme/silme yok, admin formunun her zaman GÜNCEL tam listeyi gönderdiği varsayımı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
