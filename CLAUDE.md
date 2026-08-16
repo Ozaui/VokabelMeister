@@ -5,7 +5,9 @@
 > birden çok dosya okuman gerekmiyor — hepsi burada.
 >
 > **Proje:** WordLearner — Almanca↔Türkçe kelime öğrenme (SRS). .NET 9 Web API + React (admin/web) +
-> React Native (mobil). Junior eğitimi amaçlı yazılır: kod kendini anlatır, Türkçe yorumlar *neden*i.
+> React Native (mobil) + Next.js (anonim/public tanıtım sitesi, Faz F — ürün akışından ayrı, farklı
+> teknoloji yığını, bkz. `TASK/F_tanitim_sitesi.md`). Junior eğitimi amaçlı yazılır: kod kendini
+> anlatır, Türkçe yorumlar *neden*i.
 
 ---
 
@@ -23,7 +25,7 @@
 - Kod kendini anlatır (iyi isimlendirme). Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, non-obvious bir NEDEN, bilerek alınmış bir karar. NE yaptığını değil NEDEN öyle yaptığını anlat.
 - Zorunlu dosya-başı/method-başı AMAÇ/NEDEN/NASIL bloğu **YOK** — bu blok kaldırıldı (eski kod tabanında vardı, kaldırılıyor). Dosya/sınıf/metot adı zaten ne yaptığını söylüyor.
 - Yorum kısa ve Türkçe — genelde tek satır, gerekirse iki. Paragraf hâlinde uzun blok yorum **yasak**; anlatılacak şey birkaç satıra sığmıyorsa muhtemelen bir yardımcı metot/isimlendirme sorunu var, yorum onu telafi etmez.
-- Bu kural yalnızca **kaynak kod**(`.cs`/`.ts`/`.tsx`) yorumları için geçerli. Akademi klasörlerinin (§6 — kök `AKADEMI/` altında `backend/`, `admin/`, gelecekte `web/`/`mobile/`) içindeki `aciklama`/`neden`/`olmasaydi` alanları öğretim materyali — bu kuralın dışında, ayrıntılı kalmaya devam eder.
+- Bu kural yalnızca **kaynak kod**(`.cs`/`.ts`/`.tsx`) yorumları için geçerli. Akademi klasörlerinin (§6 — kök `AKADEMI/` altında `backend/`, `admin/`, gelecekte `web/`/`mobile/`/`site/`) içindeki `aciklama`/`neden`/`olmasaydi` alanları öğretim materyali — bu kuralın dışında, ayrıntılı kalmaya devam eder.
 
 **Roller ve sahiplik**
 - **Yalnızca iki rol:** `User` (herkes kayıt olur) ve `Admin` (elle atanır). `Instructor`/`Teacher`/"öğretmen" **YOK**. Hiçbir public endpoint rol yükseltemez.
@@ -213,7 +215,7 @@ istemciye göre dallanmaz, backend'de değişiklik gerekmez — bkz. `SECURITY.m
 
 ## 6. Kod Akademisi Kuralı — her parça yazılınca HEMEN
 
-Her katman (backend, admin, gelecekte web/mobil) kendi **akademi klasörüne** ve kendi
+Her katman (backend, admin, gelecekte web/mobil/tanıtım sitesi) kendi **akademi klasörüne** ve kendi
 `STANDART.md`'sine sahiptir — aynı slayt motoru (`engine/`), aynı disiplin, tek somut fark
 "bunu gerçekte nasıl denerim" slaytının türü (backend'de `postman`, frontend'de `onizleme`):
 
@@ -223,6 +225,7 @@ Her katman (backend, admin, gelecekte web/mobil) kendi **akademi klasörüne** v
 | B (admin) | `AKADEMI/admin/` | `B-0X` | `onizleme` |
 | C (web) | `AKADEMI/web/` (C fazı başlayınca açılır) | `C-0X` | `onizleme` |
 | D (mobil) | `AKADEMI/mobile/` (D fazı başlayınca açılır) | `D-0X` | `onizleme` |
+| F (tanıtım sitesi — anonim/public, ürün akışından ayrı, Next.js) | `AKADEMI/site/` (F fazı başlayınca açılır) | `F-0X` | `onizleme` |
 
 Tüm akademiler kök `AKADEMI/` klasörü altında yaşar (kök dizin kalabalıklaşmasın diye), `AKADEMI/index.html` hepsine tek giriş noktasıdır. Toplu yazma **yasak**. Her kod parçasını yazar yazmaz: (1) ilgili `TASK/` maddesini `[ ]→[x]`, (2) parçayı ilgili `AKADEMI/<katman>/<faz>_.../` klasöründeki ilgili bölüme işle. Şema/kurallar tek doğruluk kaynağı — backend için `AKADEMI/backend/STANDART.md`, admin için `AKADEMI/admin/STANDART.md` (ikincisi ortak kurallarda birinciye referans verir, tekrar etmez) — burada tekrar edilmez.
 

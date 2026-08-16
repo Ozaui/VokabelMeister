@@ -18,6 +18,7 @@
 | **C** | Web app (`/web`) | Tarayıcıda hızlı test, mobile referans | `TASK/TASK_C_web_app.md` |
 | **D** | Mobil (`/mobile`) | API+içerik+web referansı hazır | `TASK/D_mobil.md` |
 | **E** | Test & deployment | Son kontroller, entegrasyon/regresyon | `TASK/E_test_yayin.md` |
+| **F** | Tanıtım sitesi (`/site`, Next.js — anonim/public, ürün akışından ayrı) | Mağaza başvurusunun (Google Play/Apple App Store) zorunlu kıldığı Gizlilik/Şartlar/Hesap Silme/Destek URL'lerini barındırır; E ile paralel/bağımsız yürüyebilir | `TASK/F_tanitim_sitesi.md` |
 
 > **Not:** Faz E yeniden test yazma fazı değildir — var olan testler her API'da yazılır (`CLAUDE.md §1`), E yalnızca topluca çalıştırıp eksik entegrasyon/regresyon kapsamını tamamlar.
 > **Not (2026-08-08 — roadmap değişikliği):** Önceki yapıda backend ikiye bölünmüştü — "Admin
@@ -28,6 +29,13 @@
 > ARCHITECTURE, SECURITY, TECHNICAL_SPECIFICATIONS, ENV, GERMAN/TURKISH_LANGUAGE_FEATURES)
 > içindeki tasarım kararları KORUNDU — yeni backend bunları blueprint olarak kullanır.
 
+> **Not (2026-08-16 — yeni faz eklendi):** Faz F (Tanıtım Sitesi) eklendi — kullanıcı kararıyla,
+> ürünün kendisinden (Faz C/D) ayrı, anonim/public bir Next.js sitesi. Diğer fazlardan farklı
+> olarak `CLAUDE.md` §4.1'deki Admin/Web/Mobil ortak kütüphane seti bu faza uygulanmaz (gerekçe →
+> `TASK/F_tanitim_sitesi.md` dosya başı notu). Faz sırası bilgi/bağımlılık akışını yansıtır (F,
+> içerik olarak C/D'deki gerçek ürün özelliklerine referans verir) ama kod olarak A-E'den
+> **bağımsızdır** — istenirse daha erken de başlanabilir.
+
 ## İlerleme Durumu
 
 | Faz | Task Aralığı | Başlık | Durum |
@@ -37,6 +45,7 @@
 | C | C-01…C-12 | Web App | ⬜ |
 | D | D-01…D-14 | Mobil | ⬜ |
 | E | E-01…E-04 | Test & Yayın | ⬜ |
+| F | F-01…F-10 (+F-02.1, F-02.2, F-04.1…F-04.5) | Tanıtım Sitesi | ⬜ |
 
 **Sıradaki task:** `A-05` ⬜ (Sistem Kelimesi API — Words) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.

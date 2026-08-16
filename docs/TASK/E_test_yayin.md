@@ -21,3 +21,6 @@
 **Referans:** REFERENCE/SECURITY.md §10
 - [ ] IIS publish, production secrets (REFERENCE/ENV.md), güvenlik checklist, DB backup
 - [ ] GDPR/KVKK: hesap silme anonimleştirme, `OriginalEmailHash` blok testi, log saklama politikası
+> **Not:** Mağaza başvurusu (App Store Connect/Play Console) için gereken Gizlilik/Şartlar/Hesap
+> Silme/Destek URL'leri bu task'ın kapsamında DEĞİL — `TASK/F_tanitim_sitesi.md` (F-05…F-08,
+> yayına alma F-10) ayrı, bağımsız bir fazdır.

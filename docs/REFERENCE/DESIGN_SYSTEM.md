@@ -78,7 +78,9 @@ Tercih üçlü (Light/Dark/System, `Users.ThemePreference`), `System` seçiliyke
   ve son derece okunabilir yapısıyla hem Apple presizyonunu hem Duolingo samimiyetini sağlar.
   Alternatif/yedek: **SF Pro** veya **Inter**.
 - **Ağırlıklar:** **400 (regular)**, **500 (medium)**, **600 (semibold)** ve kart kelimelerinde **700 (bold)** kullanılır.
-- **Ölçek — pazarlama/genel sayfa (Web'de içerik ağırlıklı ekranlar, ör. `HomePage` hero'su):**
+- **Ölçek — pazarlama/genel sayfa (Faz F Tanıtım Sitesi'nin hero/başlık hiyerarşisi — bu ölçek
+  Web'in `HomePage`'i [C-05, oturum açmış kullanıcı ana sayfası] için DEĞİL, `TASK/
+  F_tanitim_sitesi.md`'deki anonim/public sayfalar içindir):**
 
   | Rol            | Boyut   | Ağırlık | Line-height |
   | -------------- | ------- | ------- | ----------- |
@@ -199,6 +201,21 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 ### Web (C-01 → C-12, `docs/TASK/TASK_C_web_app.md`)
 
 Bkz. ilgili dosyadaki C-03 → C-12 başlıkları — aynı token setini kullanır, ayrı bir tabloya gerek yok.
+
+### Tanıtım Sitesi (F-01 → F-10, `docs/TASK/F_tanitim_sitesi.md`)
+
+| #    | Ekran                          | Sayfa                          |
+| ---- | ------------------------------- | ------------------------------ |
+| F-03 | Ana Sayfa (hero + Lottie)       | `/`                             |
+| F-04 | Özellikler                      | `/features`                    |
+| F-05 | Gizlilik Politikası             | `/privacy`                     |
+| F-06 | Kullanım Şartları               | `/terms`                       |
+| F-07 | Hesap/Veri Silme Talimatı       | `/delete-account`              |
+| F-08 | Destek/İletişim                 | `/support`                     |
+
+Admin/Web ile **aynı marka rengi** kullanır (§1/§2) ama Next.js ayrı bir proje olduğu için kendi
+`tailwind.config`/`globals.css`'ine sahiptir — token değerleri elle senkron tutulur (ortak bir npm
+paketine çıkarma YAGNI, üç proje de henüz bunu gerektirecek kadar sık değişmiyor).
 
 Diğer agent'a verilen tam tasarım brief'i (ekran detayları + kısıtlar) bu paletle birebir aynıdır —
 bu doküman o brief'in kalıcı, kod-tarafı referans halidir.
