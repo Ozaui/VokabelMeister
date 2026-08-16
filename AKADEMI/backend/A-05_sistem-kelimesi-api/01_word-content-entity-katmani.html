@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'word-content-entity-katmani',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '../A-04_loglama-sistemi/05_a03-retrofit.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Beş Tablo: Kavram, Karşılık, Gramer, Örnek, Dil',
+        altBaslik: 'Bir kelime tek bir satır değil — dilden bağımsız bir kavram (WordConcept) ve o kavramın her dildeki ayrı bir karşılığı (Word), o karşılığın grameri (WordDetail) ve örnek cümleleri (WordExample).'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Tek Bir "Kelime" Tablosu Değil de İkiye Bölünmüş: WordConcept + Word?',
+        aciklama: '`WordConcept` dilden BAĞIMSIZ bir kavramı temsil eder (ör. "masa/Tisch kavramı") — türü (Noun/Verb…), zorluk seviyesi (A1-C2) ve görseli burada tutulur. `Word` ise o kavramın TEK bir dildeki metin karşılığıdır ("Tisch" ya da "masa") — aynı `WordConceptId`\'ye bağlı en fazla iki `Word` satırı olabilir (bir `de`, bir `tr`).',
+        neden: 'Almanca ve Türkçe içerik AYRI toplu import akışlarıyla, farklı zamanlarda girilebiliyor — bir kavram girildiği anda karşı dildeki eşleniği HENÜZ sistemde olmayabilir. Kavram ve dile özel metni AYNI tabloda tutsaydık, "bu satır hangi dile ait" ile "bu satır hangi kavrama ait" bilgisi İÇ İÇE geçerdi ve tek dilli girilen 795+ satırlık bir importu ayrı ayrı `WordConcept` satırlarına bölmek İMKANSIZ olurdu.',
+        olmasaydi: 'Tek tabloda birleştirilseydi, bir Almanca kelime `de` sütunlarıyla, bir Türkçe kelime `tr` sütunlarıyla AYNI satırda tutulmak ZORUNDA kalırdı — ikisi ayrı zamanlarda gelirse satırın YARISI NULL kalırdı, üstelik üçüncü bir dil (ör. `en`) eklenince tabloya YENİ SÜTUNLAR açmak gerekirdi; bu proje "yeni dil = migration gerekmez" kararını (Languages tablosuna tek satır) tam olarak bu ayrım sayesinde tutabiliyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Language BaseEntity\'den Türemiyor?',
+        aciklama: '`Language` yalnızca `de`/`tr` gibi birkaç satırdan oluşan, admin panelden HİÇ CRUD işlemi görmeyen statik bir referans tablosu — yeni bir dil eklemek DB\'ye elle tek bir INSERT, bir API endpoint\'i üzerinden değil.',
+        neden: '`BaseEntity`\'nin taşıdığı `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId`/soft-delete alanları "kim ne zaman değiştirdi" sorusuna cevap vermek için var — bir dil satırı hiç değişmediği, hiç silinmediği için bu alanların HİÇBİRİ anlam taşımaz, `User`/`RefreshToken` (A-03) ile AYNI gerekçe.',
+        olmasaydi: '`BaseEntity`\'den türeseydi, `WordLearnerDbContext`\'in (A-02) OTOMATİK soft-delete filtresi bu tabloya da uygulanırdı — hiçbir kod ASLA `IsDeleted=true` yazmasa bile EF Core her `GET /languages` sorgusunda gereksiz bir `WHERE IsDeleted = 0` koşulu üretirdi; ayrıca migration seed\'i (aşağıda) `CreatedAt`/`UpdatedAt` gibi anlamsız alanları da elle doldurmak ZORUNDA kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'PartOfSpeech.cs — Kelime Türü',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Content/PartOfSpeech.cs',
+        nedenBuKlasor: '`Domain/Enums/Content/` — `Domain/Enums/Auth/`/`Domain/Enums/Logging/` (önceki bölümler) ile AYNI desen: her domain kendi enum alt klasöründe.',
+        kod: `namespace WordLearner.Domain.Enums.Content;
+
+public enum PartOfSpeech
+{
+    Noun,
+    Verb,
+    Adjective,
+    Adverb,
+    Conjunction,
+    Preposition,
+    Pronoun,
+    Idiom,
+    Other
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Enums.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum PartOfSpeech',
+            aciklama: '`WordConcept.PartOfSpeech`\'in (aşağıda) tipi — aynı zamanda ileri bir bölümdeki `WordGrammarValidator`\'ın dile göre HANGİ gramer dalına dispatch edeceğini belirleyen anahtar.',
+            neden: '`string PartOfSpeech` yerine enum kullanmak, "Nuon" gibi bir yazım hatasının DERLEME ZAMANINDA yakalanmasını sağlar — veritabanı tarafında da AYNI küme bir CHECK constraint (aşağıdaki EF config slaytı) ile ayrıca zorlanır.',
+            olmasaydi: null
+          },
+          {
+            satir: 'Noun,',
+            aciklama: 'İsim — gramer doğrulaması cinsiyet+çoğul+4 hâl (de) ya da çoğul+6 hâl+ünlü uyumu+iyelik (tr) ister.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Verb,',
+            aciklama: 'Fiil — gramer doğrulaması 18 çekim+yardımcı fiil (de) ya da kök+olumsuz+30 çekim (tr) ister.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Adjective,',
+            aciklama: 'Sıfat — `WordGrammarValidator`\'da Noun/Verb DIŞINDAKİ her tür gibi `GrammarData` NULL bırakılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Adverb,',
+            aciklama: 'Zarf.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Conjunction,',
+            aciklama: 'Bağlaç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Preposition,',
+            aciklama: 'Edat/ilgeç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Pronoun,',
+            aciklama: 'Zamir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Idiom,',
+            aciklama: 'Deyim/kalıp ifade (ör. "auf jeden Fall") — "Other" ile aynı davranır (GrammarData NULL) ama admin filtresinde/istatistikte "Other" ile karışmasın diye ayrı bir değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Other',
+            aciklama: 'Yukarıdaki hiçbir türe uymayan kalan durumlar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ExampleType.cs — Örnek Cümle Türü',
+        dosyaYolu: 'backend/WordLearner.Domain/Enums/Content/ExampleType.cs',
+        nedenBuKlasor: '`Domain/Enums/Content/` — `PartOfSpeech` ile AYNI klasör.',
+        kod: `namespace WordLearner.Domain.Enums.Content;
+
+public enum ExampleType
+{
+    Normal,
+    Idiom,
+    Formal,
+    Colloquial
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Enums.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `PartOfSpeech` ile AYNI namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public enum ExampleType',
+            aciklama: '`WordExample.ExampleType`\'ın (ileride) tipi — bir örnek cümlenin kayıt/üslup düzeyini sınıflar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Normal,',
+            aciklama: 'Standart, gündelik bir örnek cümle — varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Idiom,',
+            aciklama: 'Deyimsel kullanımı gösteren bir cümle.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Formal,',
+            aciklama: 'Resmi/yazılı dil kaydı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Colloquial',
+            aciklama: 'Günlük konuşma dili.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Language.cs — Statik Referans Tablosu',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Content/Language.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — `Domain/Entities/Auth/`/`Domain/Entities/Logging/` ile AYNI desen, yeni bir domain alt klasörü.',
+        kod: `namespace WordLearner.Domain.Entities.Content;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — statik seed/referans tablosu (de, tr), audit/soft-delete
+// anlamsız; DATABASE_SCHEMA/Icerik.md'deki Languages tablosuyla birebir eşleşir.
+public class Language
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string NativeName { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public int DisplayOrder { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class Language',
+            aciklama: '`Word`/`WordExample`\'daki `PairedExampleId`/kategori gibi FK\'lerin hedefi, `GET /languages`\'in (ileri bölüm) döndüreceği veri şekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Migration seed\'inde (aşağıdaki EF config slaytı) sabit `de`=1, `tr`=2 olarak ELLE atanan birincil anahtar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Code { get; set; } = string.Empty;',
+            aciklama: 'ISO 639-1 kodu ("de", "tr") — `GET /words/unmatched?languageId=` gibi uçların hangi dili KASTETTİĞİNİ çözmenin insan-okunur karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Name { get; set; } = string.Empty;',
+            aciklama: 'İngilizce dil adı ("German").',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string NativeName { get; set; } = string.Empty;',
+            aciklama: 'Dilin KENDİ dilindeki adı ("Deutsch") — dil seçim ekranında gösterilecek metin.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: 'Bir dil ileride devre dışı bırakılmak istenirse (ör. içerik henüz hazır değilken) satırı SİLMEDEN listeden gizlemenin yolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int DisplayOrder { get; set; }',
+            aciklama: '`GET /languages`\'in sıralama alanı — `de` önce, `tr` sonra gösterilecek şekilde seed\'de 1/2 olarak doldurulur.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConcept.cs — Dilden Bağımsız Kavram',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Content/WordConcept.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — `Language` ile AYNI klasör.',
+        kod: `using WordLearner.Domain.Entities;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Domain.Entities.Content;
+
+// Dilden bağımsız kavram — kategori/seviye burada, dile özel metin Word'de.
+public class WordConcept : BaseEntity
+{
+    public PartOfSpeech PartOfSpeech { get; set; }
+    public string DifficultyLevel { get; set; } = "A1";
+    public string? ImageUrl { get; set; }
+    public bool IsActive { get; set; } = true;
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı — nested namespace (`Entities.Content`) PARENT namespace\'i (`Entities`) otomatik görmez, açık `using` şart.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: 'Yukarıda tanımlanan `PartOfSpeech`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordConcept : BaseEntity',
+            aciklama: '`WordConcepts` tablosundaki eski ad-hoc `CreatedBy`/`UpdatedBy` sütunları YOK — `BaseEntity`\'nin `CreatedByUserId`/`UpdatedByUserId`/`DeletedByUserId`/soft-delete alanlarıyla birleştirildi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public PartOfSpeech PartOfSpeech { get; set; }',
+            aciklama: 'Aşağıdaki `WordGrammarValidator`\'ın (bu görevin ileri bölümü) dile göre HANGİ gramer alanlarını zorunlu tutacağını belirleyen anahtar alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string DifficultyLevel { get; set; } = "A1";',
+            aciklama: 'A1-C2 seviye kodu — `PartOfSpeech`\'in AKSİNE enum DEĞİL, `User.CurrentLevel` (A-03) ile AYNI desen (bir "seviye" hem `User`\'da hem burada hem `WordExample`\'da geçen, tekrarlayan bir kavram olduğu için tutarlı bir string+CHECK deseni tercih edildi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? ImageUrl { get; set; }',
+            aciklama: 'Görsel dilden BAĞIMSIZ olduğu için burada, `Word`\'de DEĞİL — A-07 (Medya API) bu alana yazılacak URL\'i üretecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: 'Soft delete (`IsDeleted`, `BaseEntity`\'den gelir) DIŞINDA, kavramı KALICI silmeden geçici olarak öğrenme akışından çıkarmanın yolu.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Word.cs — Tek Dildeki Karşılık',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Content/Word.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — `WordConcept` ile AYNI klasör.',
+        kod: `using WordLearner.Domain.Entities;
+
+namespace WordLearner.Domain.Entities.Content;
+
+// Bir WordConcept'in tek dildeki karşılığı — Definition serbest anlam notu (bkz. Icerik.md), resmi
+// çeviri DEĞİL.
+public class Word : BaseEntity
+{
+    public int WordConceptId { get; set; }
+    public int LanguageId { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? Definition { get; set; }
+    public bool IsActive { get; set; } = true;
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı — `WordConcept` ile AYNI namespace.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class Word : BaseEntity',
+            aciklama: 'Bir `WordConcept`\'in TEK bir dildeki metin karşılığı — aynı kavrama bağlı en fazla iki satır olabilir (aşağıdaki `UQ_Words_Concept_Language` unique index bunu zorlar).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int WordConceptId { get; set; }',
+            aciklama: 'Hangi dilden bağımsız kavrama ait olduğu — FK, aşağıdaki EF config slaytında `Cascade` (kavram silinirse bu satır da silinir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int LanguageId { get; set; }',
+            aciklama: 'Bu satırın HANGİ dilde olduğu — FK, `Language`\'e.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Text { get; set; } = string.Empty;',
+            aciklama: 'Kelimenin o dildeki YAZIMI ("Tisch"/"masa") — kartın gösterdiği asıl metin.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Definition { get; set; }',
+            aciklama: 'Serbest "anlam notu" — resmi çeviri DEĞİL (o eşleşen karşı dildeki `Text`\'ten gelir), birincil işlevi eşleştirme (Pairing) ekranında bir ipucu olmak.',
+            neden: 'İki dil AYRI import edildiğinde, eşleştirme öncesi bir Türkçe kavramın karşı dildeki adayını BULMANIN tek yolu bu serbest metin notudur — admin panelin `GET /words/unmatched` ucu bu alanı virgülle ayrılmış token\'lara bölüp karşı dilin `Text` havuzunda arar.',
+            olmasaydi: 'Bu alan olmasaydı, eşleşmemiş 795+ satırlık bir kelime havuzunu admin ELLE, tek tek okuyarak eşleştirmek ZORUNDA kalırdı — hiçbir otomatik öneri (`suggestedMatchConceptId`) üretilemezdi.'
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: '`WordConcept.IsActive` ile AYNI amaç, ama DİL SEVİYESİNDE — bir kavram aktifken tek bir dildeki karşılığı geçici olarak gizlenebilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordDetail.cs — Dile Özel Gramer (1:1 Word)',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Content/WordDetail.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — `Word` ile AYNI klasör.',
+        kod: `using WordLearner.Domain.Entities;
+
+namespace WordLearner.Domain.Entities.Content;
+
+// Dile özel gramer — 1:1 Word. GrammarData'nın şekli Word.LanguageId'ye göre değişir
+// (GERMAN_LANGUAGE_FEATURES.md §10 / TURKISH_LANGUAGE_FEATURES.md §9).
+public class WordDetail : BaseEntity
+{
+    public int WordId { get; set; }
+    public string? Pronunciation { get; set; }
+    public string? Notes { get; set; }
+    public string? CommonMistakes { get; set; }
+    public string? GrammarData { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordDetail : BaseEntity',
+            aciklama: '`Word`\'den AYRI bir tablo olmasının nedeni: `Word` her zaman dolu/zorunlu alanlar taşırken, gramer verisi TÜRE göre TAMAMEN farklı şekiller alıyor (Noun/Verb/diğer) — ayrı tabloda tutmak `Words`\'ü şişirmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int WordId { get; set; }',
+            aciklama: 'Hangi `Word`\'e ait olduğu — aşağıdaki EF config slaytında UNIQUE index ile 1:1 ilişki zorlanır (bir `Word`\'ün birden fazla `WordDetail`\'i OLAMAZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Pronunciation { get; set; }',
+            aciklama: 'IPA telaffuz gösterimi — yalnızca görsel referans, TTS motoruna girdi olarak VERİLMEZ (ses özelliği ertelendi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Notes { get; set; }',
+            aciklama: 'Serbest not — ör. eşleşmeyen ek eşanlamlıların (Pairing bölümündeki bilinçli sınırlama) elle eklenebileceği alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? CommonMistakes { get; set; }',
+            aciklama: 'Öğrencilerin bu kelimede sık yaptığı hatalar — serbest metin.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? GrammarData { get; set; }',
+            aciklama: 'JSON — şekli `Word.LanguageId`\'ye göre TAMAMEN değişir (Almanca\'da cinsiyet+4 hâl, Türkçe\'de ünlü uyumu+iyelik gibi); `WordGrammarValidator` (bu görevin ileri bölümü) bu JSON\'u dile ve `WordConcept.PartOfSpeech`\'e göre doğrular.',
+            neden: 'Her dilin gramer alanları BİRBİRİNDEN o kadar FARKLI ki (Almanca\'da hâl çekimi, Türkçe\'de ünlü uyumu gibi HİÇBİRİ diğerinde karşılığı olmayan kavramlar) sabit sütunlarla modellemek onlarca NULL sütun DOĞURURDU; JSON, her dilin KENDİ şeklini taşımasına izin verirken tabloyu SABİT tutuyor.',
+            olmasaydi: 'Sabit sütunlarla modellenseydi (ör. `Gender`, `Plural`, `VowelHarmony`, `NegativeForm`… ayrı ayrı sütun), üçüncü bir dil eklendiğinde (ör. İngilizce, `ENGLISH_LANGUAGE_FEATURES.md`\'de tanımlı ama henüz kullanılmıyor) o dilin KENDİNE özgü gramer alanları için YİNE yeni sütunlar/migration gerekirdi — JSON şeklinde bu yalnızca YENİ bir doğrulama dalı eklemek demek, şema DEĞİŞMEZ.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordExample.cs — Seviyeli Örnek Cümle (1:N Word)',
+        dosyaYolu: 'backend/WordLearner.Domain/Entities/Content/WordExample.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — diğerleriyle AYNI klasör.',
+        kod: `using WordLearner.Domain.Entities;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Domain.Entities.Content;
+
+// Seviyeli örnek cümle — 1:N Word. PairedExampleId YALNIZCA gerçekten birlikte girildiyse veya admin
+// eşleştirme sırasında elle bağladıysa dolar (bkz. Icerik.md) — NULL ise bağımsız bir cümledir.
+public class WordExample : BaseEntity
+{
+    public int WordId { get; set; }
+    public string SentenceText { get; set; } = string.Empty;
+    public string Level { get; set; } = "A1";
+    public ExampleType ExampleType { get; set; } = ExampleType.Normal;
+    public int? PairedExampleId { get; set; }
+    public int DisplayOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+}`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`ExampleType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Domain.Entities.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordExample : BaseEntity',
+            aciklama: 'Bir `Word`\'ün BİRDEN FAZLA örnek cümlesi olabilir (1:N) — `WordDetail`\'in AKSİNE 1:1 DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int WordId { get; set; }',
+            aciklama: 'Hangi `Word`\'e ait olduğu — FK, `Cascade` (aşağıdaki EF config).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string SentenceText { get; set; } = string.Empty;',
+            aciklama: 'Bu `Word`\'ün dilinde TEK bir örnek cümle.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Level { get; set; } = "A1";',
+            aciklama: 'Cümlenin zorluk seviyesi — `WordConcept.DifficultyLevel`\'DEN BAĞIMSIZ olabilir (bir A1 kelimenin B1 seviyesinde bir örnek cümlesi olabilir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public ExampleType ExampleType { get; set; } = ExampleType.Normal;',
+            aciklama: 'Yukarıdaki enum — cümlenin kayıt/üslup düzeyi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? PairedExampleId { get; set; }',
+            aciklama: 'Karşı dildeki `WordExample` satırına self-referencing FK — YALNIZCA `translations[]` ile BİRLİKTE girildiyse veya admin eşleştirme sırasında elle bağladıysa dolar.',
+            neden: 'İki dil AYRI import edildiğinde, aynı kavramın Almanca ve Türkçe örnek cümlelerinin birbirinin ÇEVİRİSİ olacağı GARANTİ EDİLEMEZ — ikisi de o kelimeyi kullanan BAĞIMSIZ cümleler. Bu alan doldurulmadığı sürece UI bir örneği diğerinin "anlamı" gibi SUNMAZ.',
+            olmasaydi: 'Bu alan olmasaydı, UI iki dildeki örnek cümleleri HER ZAMAN çift olarak göstermek ZORUNDA kalırdı — ayrı import edilmiş, birbiriyle İLGİSİZ iki cümle yanlışlıkla "bu, o cümlenin çevirisi" gibi SUNULMUŞ olurdu, kullanıcı için YANILTICI bir öğrenme materyali doğardı.'
+          },
+          {
+            satir: 'public int DisplayOrder { get; set; }',
+            aciklama: 'Aynı kelimenin birden fazla örneği varsa gösterim SIRASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: '`Word.IsActive` ile AYNI amaç, örnek cümle SEVİYESİNDE.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LanguageConfiguration.cs — Statik Seed',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Content/LanguageConfiguration.cs',
+        nedenBuKlasor: '`Infrastructure/Data/Configurations/Content/` — `Configurations/Auth/`/`Configurations/Logging/` (önceki bölümler) ile AYNI desen, entity klasörüyle eşleşen bir konfigürasyon alt klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Content;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Content;
+
+public class LanguageConfiguration : IEntityTypeConfiguration<Language>
+{
+    public void Configure(EntityTypeBuilder<Language> builder)
+    {
+        builder.ToTable("Languages");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Code).HasMaxLength(5).IsUnicode(false).IsRequired();
+        builder.HasIndex(x => x.Code).IsUnique();
+
+        builder.Property(x => x.Name).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.NativeName).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+        builder.Property(x => x.DisplayOrder).HasDefaultValue(0);
+
+        // Seed — üçüncü dil migration gerektirmez, DB'ye elle satır eklenir (bkz. Icerik.md).
+        builder.HasData(
+            new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch", IsActive = true, DisplayOrder = 1 },
+            new Language { Id = 2, Code = "tr", Name = "Turkish", NativeName = "Türkçe", IsActive = true, DisplayOrder = 2 }
+        );
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`IsUnicode` gibi EF Core temel türleri için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'Yapılandırılan `Language`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class LanguageConfiguration : IEntityTypeConfiguration<Language>',
+            aciklama: '`ActivityLogConfiguration` (önceki bölüm) ile AYNI arayüz — EF Core `ApplyConfigurationsFromAssembly` (A-02) bu sınıfı OTOMATİK bulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<Language> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("Languages");',
+            aciklama: 'Tablo adı — `DbSet<Language> Languages` ile AYNI EF Core konvansiyonu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: 'Birincil anahtar bildirimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Code).HasMaxLength(5).IsUnicode(false).IsRequired();',
+            aciklama: 'ISO 639-1 kodları en fazla birkaç karakter, ASCII dışı bir karakter TAŞIMAZ — `IsUnicode(false)` `varchar` üretir, `nvarchar`\'dan daha AZ yer kaplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.Code).IsUnique();',
+            aciklama: 'Aynı kodda iki dil satırı OLAMAZ — `UQ_Languages_Code` kısıtının EF Core karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Name).HasMaxLength(50).IsRequired();',
+            aciklama: 'İngilizce dil adı için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.NativeName).HasMaxLength(50).IsRequired();',
+            aciklama: 'Dilin kendi dilindeki adı için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'Veritabanı seviyesinde varsayılan — yeni bir dil satırı elle eklenirken bu alan unutulsa bile aktif başlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DisplayOrder).HasDefaultValue(0);',
+            aciklama: 'Varsayılan sıralama değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasData(',
+            aciklama: 'EF Core\'un migration-zamanı seed mekanizması — `dotnet ef migrations add` bu veriyi OKUYUP migration dosyasına gömülü bir `InsertData` çağrısı ÜRETİR.',
+            neden: '`de`/`tr` iki dil UYGULAMA AÇILIŞINDA değil, MİGRATİON zamanında (A-03.2\'deki `IAdminSeedService`\'in çalışma-zamanı seed\'inin AKSİNE) veriye YAZILIR — bu iki satır asla değişmeyecek referans veri olduğu için, her `dotnet run`\'da tekrar KONTROL ETMEYE gerek yok.',
+            olmasaydi: '`HasData` yerine `AdminSeedService` gibi bir çalışma-zamanı servis yazılsaydı, HER uygulama açılışında "bu dil var mı" diye bir SORGU çalıştırmak GEREKİRDİ — statik, hiç değişmeyen iki satır için gereksiz bir tekrarlayan maliyet.'
+          },
+          {
+            satir: 'new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch", IsActive = true, DisplayOrder = 1 },',
+            aciklama: 'Almanca — `Id` migration\'da SABİT 1 olarak yazılır, çünkü `HasData` ile eklenen satırların anahtarı OTOMATİK üretilmez, elle verilmesi ZORUNLUDUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new Language { Id = 2, Code = "tr", Name = "Turkish", NativeName = "Türkçe", IsActive = true, DisplayOrder = 2 }',
+            aciklama: 'Türkçe — `Id=2`, `DisplayOrder=2` (`GET /languages` listesinde Almanca\'dan SONRA gösterilir).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConceptConfiguration.cs — Enum Dönüşümü + İki CHECK Constraint',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Content/WordConceptConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Content/` — `LanguageConfiguration` ile AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Content;
+
+public class WordConceptConfiguration : IEntityTypeConfiguration<WordConcept>
+{
+    public void Configure(EntityTypeBuilder<WordConcept> builder)
+    {
+        builder.ToTable("WordConcepts", tb =>
+        {
+            tb.HasCheckConstraint("CK_WordConcepts_Level", "DifficultyLevel IN ('A1','A2','B1','B2','C1','C2')");
+            tb.HasCheckConstraint("CK_WordConcepts_PartOfSpeech",
+                "PartOfSpeech IN ('Noun','Verb','Adjective','Adverb','Conjunction','Preposition','Pronoun','Idiom','Other')");
+        });
+
+        builder.Property(x => x.PartOfSpeech).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.DifficultyLevel).HasMaxLength(2).IsRequired().HasDefaultValue("A1");
+        builder.Property(x => x.ImageUrl).HasMaxLength(500);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => x.DifficultyLevel);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` bu dosyada kullanılmasa da (FK yok), diğer config dosyalarıyla AYNI import bloğu tutarlılık için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'Yapılandırılan `WordConcept`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı — `HasConversion<string>` (aşağıda) bu türü tanıması için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordConceptConfiguration : IEntityTypeConfiguration<WordConcept>',
+            aciklama: '`LanguageConfiguration` ile AYNI arayüz, `WordConcept` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<WordConcept> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("WordConcepts", tb =>',
+            aciklama: '`SecurityLogConfiguration` (önceki bölüm) ile AYNI `ToTable` overload\'ı — burada TEK DEĞİL, İKİ CHECK constraint birden eklenecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_WordConcepts_Level", "DifficultyLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: '`DifficultyLevel` enum DEĞİL düz string olduğu için (`User.CurrentLevel` ile AYNI desen), C# tarafında geçersiz bir değeri YAKALAYAN hiçbir mekanizma yok — bu CHECK constraint tek güvence.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_WordConcepts_PartOfSpeech",',
+            aciklama: '`PartOfSpeech` enum OLMASINA rağmen (C# tarafı zaten korunuyor) veritabanı SEVİYESİNDE de AYNI kapalı küme zorlanır — `SecurityLogConfiguration.EventType` ile AYNI iki-katmanlı güvence deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"PartOfSpeech IN (\'Noun\',\'Verb\',\'Adjective\',\'Adverb\',\'Conjunction\',\'Preposition\',\'Pronoun\',\'Idiom\',\'Other\')");',
+            aciklama: 'Yukarıdaki `PartOfSpeech` enum\'ının 9 üyesiyle BİREBİR aynı, elle yazılmış SQL küme — enum\'a yeni bir üye eklenirse bu satır da AYNI PR içinde güncellenmelidir, yoksa yeni üye C# tarafında geçerliyken veritabanı bir CHECK ihlaliyle reddeder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.PartOfSpeech).HasConversion<string>().HasMaxLength(20).IsRequired();',
+            aciklama: '`QrLoginSessionConfiguration.Status`/`SecurityLogConfiguration.EventType` (önceki bölümler) ile AYNI desen — enum veritabanında OKUNABİLİR bir metin ("Noun") olarak saklanır, sayısal bir index DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DifficultyLevel).HasMaxLength(2).IsRequired().HasDefaultValue("A1");',
+            aciklama: '"A1".."C2" iki karakterlik kod için üst sınır ve varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.ImageUrl).HasMaxLength(500);',
+            aciklama: 'Bir URL için üst sınır — `User.AvatarUrl` (A-03) ile AYNI değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'Veritabanı seviyesinde varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.DifficultyLevel);',
+            aciklama: '"Yalnızca A1 kelimeleri" gibi seviyeye göre filtreleme sorgularını (`GET /words?level=`) hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordConfiguration.cs — İki Farklı FK Davranışı',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Content/WordConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Content/` — diğerleriyle AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Content;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Content;
+
+public class WordConfiguration : IEntityTypeConfiguration<Word>
+{
+    public void Configure(EntityTypeBuilder<Word> builder)
+    {
+        builder.ToTable("Words");
+
+        builder.Property(x => x.Text).HasMaxLength(255).IsRequired();
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => new { x.WordConceptId, x.LanguageId }).IsUnique();
+        builder.HasIndex(x => new { x.LanguageId, x.Text });
+
+        builder.HasOne<WordConcept>()
+            .WithMany()
+            .HasForeignKey(x => x.WordConceptId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Language>()
+            .WithMany()
+            .HasForeignKey(x => x.LanguageId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`Word` ile birlikte FK hedefleri `WordConcept`/`Language`\'ın da ad alanı (üçü AYNI namespace).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordConfiguration : IEntityTypeConfiguration<Word>',
+            aciklama: '`WordConceptConfiguration` ile AYNI arayüz, `Word` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<Word> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("Words");',
+            aciklama: 'Tablo adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Text).HasMaxLength(255).IsRequired();',
+            aciklama: 'Bu tablonun ZORUNLU tek metin alanı — bir `Word` satırının kelimenin KENDİSİ olmadan var olması ANLAMSIZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'Veritabanı seviyesinde varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => new { x.WordConceptId, x.LanguageId }).IsUnique();',
+            aciklama: '`UQ_Words_Concept_Language` kısıtının EF Core karşılığı — bir kavramın AYNI dilde İKİNCİ bir `Word` satırı OLAMAZ, bu da eşleştirme (Pairing) mantığının dayandığı temel garanti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => new { x.LanguageId, x.Text });',
+            aciklama: '`IX_Words_LanguageId_Text` — bir dildeki metne göre arama (ör. eşleştirme ekranının karşı-dil havuzu taraması) hızlandırılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<WordConcept>()',
+            aciklama: '`WordConcept` tarafında karşılık gelen bir navigation property TANIMLANMADIĞI için jenerik `HasOne<T>()` — `ActivityLogConfiguration`\'ın `User` ilişkisiyle AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir üst tarafın (üstteki `HasOne<T>()`\'nin hedefi) BİRDEN ÇOK `Word` satırına sahip olabileceğini bildirir — parametresiz, karşı tarafta navigation property TANIMLANMADIĞI için; bu satır dosyada İKİ kez (WordConcept ve Language ilişkilerinde) AYNI şekilde geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.WordConceptId)',
+            aciklama: 'İlişkinin `WordConceptId` sütunu ÜZERİNDEN kurulduğunu belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir `WordConcept` silinirse (soft delete DEĞİL, gerçek `DELETE /words/{id}` kavramı tamamen kaldırırsa) o kavrama bağlı TÜM `Word` satırları da silinir.',
+            neden: 'Bir `Word` satırının `WordConceptId`\'siz var olması ANLAMSIZ — dilden bağımsız kavram yoksa "bu hangi kavramın karşılığı" sorusunun CEVABI yok, satırın kendisi öksüz kalır.',
+            olmasaydi: '`Cascade` olmasaydı (ör. `Restrict`), bir kavramı silmeye çalışan admin, ÖNCE o kavrama bağlı TÜM `Word`/`WordDetail`/`WordExample` satırlarını ELLE silmek ZORUNDA kalırdı — "bir kavramı silmek, kavram+tüm diller anlamına gelir" beklentisi tek bir işlemde KARŞILANAMAZDI.'
+          },
+          {
+            satir: 'builder.HasOne<Language>()',
+            aciklama: 'İkinci ilişki — `Language`\'e, AYNI jenerik `HasOne<T>()` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.LanguageId)',
+            aciklama: 'İlişkinin `LanguageId` sütunu ÜZERİNDEN kurulduğunu belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Restrict);',
+            aciklama: '`WordConcept` ilişkisindeki `Cascade`\'in TERSİ — bir dil (`Language`) SİLİNEMEZ zaten (CRUD\'u yok, statik referans tablosu), ama bu davranış o varsayımı veritabanı SEVİYESİNDE de kilitler.',
+            neden: 'İki dil satırı (`de`/`tr`) binlerce `Word` satırına bağlı — bir `Language` satırının YANLIŞLIKLA silinmesi (teorik olarak, doğrudan bir SQL komutuyla) `Cascade` olsaydı TÜM içerik veritabanının SİLİNMESİNE yol açardı.',
+            olmasaydi: '`Restrict` yerine `Cascade` seçilseydi, bir dil satırının silinmesi o dile ait HER `Word`\'ü (ve `Cascade` zinciriyle her `WordDetail`/`WordExample`\'ı) GERİ DÖNÜLEMEZ şekilde silerdi — "yeni bir dil eklemek tek satırlık bir INSERT, veri kaybı riski taşımaz" ilkesiyle doğrudan ÇELİŞirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordDetailConfiguration.cs — 1:1 İlişki',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Content/WordDetailConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Content/` — diğerleriyle AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Content;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Content;
+
+public class WordDetailConfiguration : IEntityTypeConfiguration<WordDetail>
+{
+    public void Configure(EntityTypeBuilder<WordDetail> builder)
+    {
+        builder.ToTable("WordDetails");
+
+        builder.Property(x => x.Pronunciation).HasMaxLength(500);
+
+        builder.HasIndex(x => x.WordId).IsUnique();
+
+        builder.HasOne<Word>()
+            .WithOne()
+            .HasForeignKey<WordDetail>(x => x.WordId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`WordDetail` ve FK hedefi `Word`\'ün ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordDetailConfiguration : IEntityTypeConfiguration<WordDetail>',
+            aciklama: '`WordConfiguration` ile AYNI arayüz, `WordDetail` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<WordDetail> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("WordDetails");',
+            aciklama: 'Tablo adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Pronunciation).HasMaxLength(500);',
+            aciklama: 'Bir IPA gösterimi için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.WordId).IsUnique();',
+            aciklama: 'Bu satır olmadan EF Core `HasForeignKey<WordDetail>` (aşağıda) TEK BAŞINA 1:1 ilişkiyi veritabanı SEVİYESİNDE zorlamaz — unique index, bir `WordId`\'nin İKİNCİ bir `WordDetail` satırında TEKRAR ETMESİNİ engelleyen asıl kısıt.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Word>()',
+            aciklama: '`Word` tarafında karşılık gelen bir navigation property TANIMLANMADIĞI için jenerik `HasOne<T>()`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithOne()',
+            aciklama: '`WordConfiguration`\'daki `.WithMany()`\'in AKSİNE — bir `Word`\'ün EN FAZLA bir `WordDetail`\'i olabileceğini bildirir, 1:1 ilişkinin EF Core tarafı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey<WordDetail>(x => x.WordId)',
+            aciklama: '1:1 ilişkilerde EF Core FK\'nin HANGİ tarafta (burada `WordDetail`) olduğunu bilemez — generic parametre bunu AÇIKÇA belirtir (`.HasForeignKey(x => x.WordConceptId)`\'nin 1:N halindeki tek-parametreli hâlinden FARKLI).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir `Word` silinirse onun gramer detayı da silinir — `WordConfiguration.WordConceptId` ilişkisiyle AYNI mantık, bir `WordDetail`\'in `WordId`\'siz var olması ANLAMSIZ.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordExampleConfiguration.cs — Self-Referencing FK',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/Configurations/Content/WordExampleConfiguration.cs',
+        nedenBuKlasor: '`Configurations/Content/` — diğerleriyle AYNI klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using WordLearner.Domain.Entities.Content;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Infrastructure.Data.Configurations.Content;
+
+public class WordExampleConfiguration : IEntityTypeConfiguration<WordExample>
+{
+    public void Configure(EntityTypeBuilder<WordExample> builder)
+    {
+        builder.ToTable("WordExamples", tb =>
+        {
+            tb.HasCheckConstraint("CK_WordExamples_Level", "Level IN ('A1','A2','B1','B2','C1','C2')");
+            tb.HasCheckConstraint("CK_WordExamples_ExampleType", "ExampleType IN ('Normal','Idiom','Formal','Colloquial')");
+        });
+
+        builder.Property(x => x.SentenceText).IsRequired();
+        builder.Property(x => x.Level).HasMaxLength(2).IsRequired().HasDefaultValue("A1");
+        builder.Property(x => x.ExampleType).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(ExampleType.Normal);
+        builder.Property(x => x.DisplayOrder).HasDefaultValue(0);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => new { x.WordId, x.Level });
+
+        builder.HasOne<Word>()
+            .WithMany()
+            .HasForeignKey(x => x.WordId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Self-ref — SQL Server self-referencing FK'de CASCADE'e izin vermez, Restrict şart.
+        builder.HasOne<WordExample>()
+            .WithMany()
+            .HasForeignKey(x => x.PairedExampleId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .IsRequired(false);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: '`WordExample` ve FK hedefi `Word`\'ün ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`ExampleType`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordExampleConfiguration : IEntityTypeConfiguration<WordExample>',
+            aciklama: '`WordDetailConfiguration` ile AYNI arayüz, `WordExample` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<WordExample> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("WordExamples", tb =>',
+            aciklama: '`WordConceptConfiguration` ile AYNI iki-CHECK-constraint deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_WordExamples_Level", "Level IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: '`WordConceptConfiguration`\'ın `CK_WordConcepts_Level`\'iyle AYNI küme, farklı tablo.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_WordExamples_ExampleType", "ExampleType IN (\'Normal\',\'Idiom\',\'Formal\',\'Colloquial\')");',
+            aciklama: 'Yukarıdaki `ExampleType` enum\'ının 4 üyesiyle BİREBİR aynı SQL küme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.SentenceText).IsRequired();',
+            aciklama: 'Maksimum uzunluk BELİRTİLMEDİ — EF Core bunu `nvarchar(max)`\'a çevirir, bir örnek cümlenin uzunluğu ÖNCEDEN sınırlanamaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Level).HasMaxLength(2).IsRequired().HasDefaultValue("A1");',
+            aciklama: '`WordConceptConfiguration.DifficultyLevel` ile AYNI üst sınır/varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.ExampleType).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(ExampleType.Normal);',
+            aciklama: '`WordConceptConfiguration.PartOfSpeech` ile AYNI `HasConversion<string>` deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DisplayOrder).HasDefaultValue(0);',
+            aciklama: 'Veritabanı seviyesinde varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'Veritabanı seviyesinde varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => new { x.WordId, x.Level });',
+            aciklama: '`IX_WordExamples_WordId_Level` — "bu kelimenin A1 seviyesindeki örnekleri" gibi sorguları hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Word>()',
+            aciklama: '`Word` tarafında navigation property TANIMLANMADIĞI için jenerik `HasOne<T>()`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir üst tarafın (üstteki `HasOne<T>()`\'nin hedefi) BİRDEN ÇOK `WordExample` satırına sahip olabileceğini bildirir — bu satır dosyada İKİ kez (Word ve self-ref WordExample ilişkilerinde) AYNI şekilde geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.WordId)',
+            aciklama: 'İlişkinin `WordId` sütunu ÜZERİNDEN kurulduğunu belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir `Word` silinirse örnek cümleleri de silinir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// Self-ref — SQL Server self-referencing FK\'de CASCADE\'e izin vermez, Restrict şart.',
+            aciklama: 'Bu yorum satırı `satirlar[]` kapsamı DIŞINDA (yorum satırları hiç işaretlenmez) — motor tarafından atlanır, yalnızca kaynak dosyada okuyucuya bir uyarı olarak durur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<WordExample>()',
+            aciklama: '`PairedExampleId`\'nin (karşı dildeki eşleşen örnek) hedefi — AYNI tabloya (`WordExample`) bakan bir self-referencing ilişki.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.PairedExampleId)',
+            aciklama: 'İlişkinin `PairedExampleId` sütunu ÜZERİNDEN kurulduğunu belirtir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Restrict)',
+            aciklama: 'SQL Server self-referencing bir FK\'de `CASCADE`\'e İZİN VERMEZ (bir satırın kendi tablosundaki başka bir satırı silme zincirine girmesi döngüsel bir tehlike doğurur) — `Restrict` bu kısıtlamanın kaçınılmaz sonucu, `WordConfiguration.LanguageId` ilişkisindeki tercihten FARKLI olarak burada bir SEÇENEK değil, bir ZORUNLULUK.',
+            neden: 'Bir örnek cümle silinirken (`WordId` üzerinden `Cascade` ile) karşı dildeki EŞLEŞTİĞİ örnek cümlenin (`PairedExampleId`) OTOMATİK silinmesi istenmezdi zaten — o cümle KENDİ `Word`\'üne bağlı BAĞIMSIZ bir satır, yalnızca eşleşme referansı kaybolur.',
+            olmasaydi: 'SQL Server bu FK\'yi `CASCADE` ile tanımlamaya İZİN VERMEZDİ — migration `dotnet ef database update` adımında "may cause cycles or multiple cascade paths" hatasıyla BAŞARISIZ OLURDU, tablo hiç oluşturulamazdı.'
+          },
+          {
+            satir: '.IsRequired(false);',
+            aciklama: 'İlişkinin OPSİYONEL olduğunu açıkça belirtir — `PairedExampleId` zaten `int?` (nullable), ayrı import edilmiş BAĞIMSIZ bir örnek için `null` kalabilir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordLearnerDbContext.cs — Beş Yeni DbSet',
+        dosyaYolu: 'backend/WordLearner.Infrastructure/Data/WordLearnerDbContext.cs',
+        neden: 'Önceki bölümde `SecurityLogs` ile altıncı DbSet\'e ulaşan bu dosyaya, yukarıdaki beş entity\'nin EF Core tarafından SORGULANABİLMESİ için beş yeni `DbSet<T>` property\'si eklendi.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using WordLearner.Domain.Entities;
+ using WordLearner.Domain.Entities.Auth;
++using WordLearner.Domain.Entities.Content;
+ using WordLearner.Domain.Entities.Logging;
+
+ namespace WordLearner.Infrastructure.Data;
+
+ public class WordLearnerDbContext : DbContext
+ {
+     public WordLearnerDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
++    public DbSet<Language> Languages => Set<Language>();
++    public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
++    public DbSet<Word> Words => Set<Word>();
++    public DbSet<WordDetail> WordDetails => Set<WordDetail>();
++    public DbSet<WordExample> WordExamples => Set<WordExample>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(WordLearnerDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(WordLearnerDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using WordLearner.Domain.Entities.Content;',
+            aciklama: 'Beş yeni entity\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<Language> Languages => Set<Language>();',
+            aciklama: '`Users`/`RefreshTokens` ile AYNI desen — `foreach` döngüsü (aşağıda) bu entity\'yi `BaseEntity`\'den TÜREMEDİĞİ için soft-delete filtresine hiç SOKMAYACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<WordConcept> WordConcepts => Set<WordConcept>();',
+            aciklama: '`ActivityLogs`/`SecurityLogs` ile AYNI desen — bu entity `BaseEntity`\'den TÜREDİĞİ için `foreach` döngüsü OTOMATİK bir soft-delete filtresi uygular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<Word> Words => Set<Word>();',
+            aciklama: 'Aynı desen — `BaseEntity`\'den türüyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<WordDetail> WordDetails => Set<WordDetail>();',
+            aciklama: 'Aynı desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<WordExample> WordExamples => Set<WordExample>();',
+            aciklama: 'Aynı desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: AddWordContentEntities + Canlı Doğrulama',
+        aciklama: '`dotnet ef migrations add AddWordContentEntities` komutu yukarıdaki beş EF konfigürasyonunu okuyup `Languages`/`WordConcepts`/`Words`/`WordDetails`/`WordExamples` tablolarını (indeksler, dört CHECK constraint, dört FK, `Languages`\'e `de`/`tr` seed INSERT\'i dahil) oluşturan bir migration ürettü; `dotnet ef database update` ile gerçek SQL Server konteynerine uygulandı ve `sqlcmd` ile `Languages` tablosunda iki satırın (Id=1 de/Deutsch, Id=2 tr/Türkçe) doğru geldiği doğrulandı.',
+        neden: 'Migration, kod ile veritabanı şemasının SENKRON kalmasını sağlayan tek yol — entity/config sınıfları ne kadar doğru yazılırsa yazılsın, karşılık gelen tablolar gerçek SQL Server\'da OLMADAN hiçbir sorgu ÇALIŞTIRILAMAZ; canlı doğrulama da migration dosyasının "derlendi" ile "gerçekten doğru SQL üretti" arasındaki farkı KAPATIR.',
+        olmasaydi: 'Migration yalnızca dosyada üretilip DB\'ye UYGULANMASAYDI, `WordLearnerDbContext`\'in beş yeni DbSet\'i derleme zamanında GEÇERLİ görünse de, ilk sorguda ("bu tablo yok") bir SQL istisnasıyla ÇALIŞMA ZAMANINDA patlardı; canlı doğrulama YAPILMASAYDI, `HasData` seed\'indeki bir yazım hatası (ör. yanlış `DisplayOrder`) migration dosyası "başarıyla oluşturuldu" görünse bile fark EDİLMEZDİ.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'WordConcept vs Word', tanim: '`WordConcept` dilden BAĞIMSIZ bir kavram (tür+seviye+görsel); `Word` o kavramın TEK bir dildeki metin karşılığı — bir kavrama en fazla iki `Word` (de+tr) bağlanabilir.' },
+          { terim: 'Eşleşmemiş (unmatched) kavram', tanim: 'Bir `WordConcept`\'in altında yalnızca TEK dilde `Word` satırı olması — ayrı bir `IsMatched` kolonu yok, durum `COUNT(DISTINCT LanguageId)=1` ile türetilir.' },
+          { terim: 'HasData (EF Core)', tanim: 'Migration-zamanı statik seed verisi — çalışma-zamanı bir servis (ör. `AdminSeedService`) DEĞİL, migration dosyasına GÖMÜLÜ bir `InsertData` çağrısı üretir.' },
+          { terim: '1:1 ilişki (HasOne().WithOne())', tanim: '`WordDetail`\'in `Word`\'e bağlanma şekli — `.WithMany()`\'in AKSİNE bir tarafın EN FAZLA bir karşılığı olabileceğini bildirir, FK\'nin hangi tarafta olduğu `HasForeignKey<T>()` generic parametresiyle AÇIKÇA belirtilir.' },
+          { terim: 'Self-referencing FK', tanim: 'Bir tablonun KENDİ satırlarından birine işaret eden FK — `WordExample.PairedExampleId` örneği; SQL Server bu tür FK\'lerde `CASCADE`\'e izin VERMEZ, `Restrict` zorunludur.' },
+          { terim: 'CHECK constraint', tanim: 'Bir sütunun alabileceği değerleri veritabanı SEVİYESİNDE sınırlayan kısıt — burada `PartOfSpeech`/`ExampleType`/iki `Level` alanı için C# enum/string ile PARALEL bir güvence.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Beş tablo/entity: Language (statik referans, BaseEntity YOK), WordConcept (dilden bağımsız kavram), Word (dile özel karşılık), WordDetail (1:1 gramer), WordExample (1:N örnek cümle, self-ref PairedExampleId).',
+          'PartOfSpeech/ExampleType enum\'ları HasConversion<string> ile veritabanında okunabilir metin olarak saklanıyor, AYRICA CHECK constraint ile veritabanı seviyesinde de zorlanıyor — DifficultyLevel/Level ise User.CurrentLevel ile AYNI desenle düz string+CHECK.',
+          'Words tablosunda İKİ farklı FK davranışı: WordConceptId Cascade (kavram silinince karşılıkları da silinir), LanguageId Restrict (bir dil satırı asla silinmemeli, binlerce kelimeye bağlı).',
+          'WordExample.PairedExampleId self-referencing FK — SQL Server CASCADE\'e izin vermediği için Restrict zorunlu, NULL ise örnek cümle bağımsızdır (çeviri iddia edilmez).',
+          'WordLearnerDbContext beş yeni DbSet ile genişledi, AddWordContentEntities migration\'ı tabloları/index\'leri/constraint\'leri/de+tr seed\'ini veritabanına yansıttı — canlı doğrulama yapıldı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

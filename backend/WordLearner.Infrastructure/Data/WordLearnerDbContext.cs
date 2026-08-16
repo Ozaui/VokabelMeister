@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using WordLearner.Domain.Entities;
 using WordLearner.Domain.Entities.Auth;
+using WordLearner.Domain.Entities.Content;
 using WordLearner.Domain.Entities.Logging;
 
 namespace WordLearner.Infrastructure.Data;
@@ -18,6 +19,11 @@ public class WordLearnerDbContext : DbContext
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+    public DbSet<Language> Languages => Set<Language>();
+    public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+    public DbSet<Word> Words => Set<Word>();
+    public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+    public DbSet<WordExample> WordExamples => Set<WordExample>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

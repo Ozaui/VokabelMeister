@@ -266,15 +266,16 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       A-03 handler testlerine eklenen log-doğrulama senaryoları (Bölüm 5) — 109/109 tüm paket yeşil
 - [x] ➜ **AKADEMI/backend'ye işle** — testler ilgili bölümlerin `kod` slaytlarında birlikte işlendi
 
-### A-05 — Sistem Kelimesi API (Words) ⬜
+### A-05 — Sistem Kelimesi API (Words) 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §5, §5.1, §5.2, REFERENCE/GERMAN_LANGUAGE_FEATURES.md §10, REFERENCE/TURKISH_LANGUAGE_FEATURES.md §9
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
 > Dil listesi endpoint'i (eski A-05.1) ve Türkçe `vowelHarmony`/`possessive` zorunluluğu (eski
 > A-05.2) artık baştan biliniyor — bu task ilk turda kapsar.
-- [ ] **Entity:** `Language` (`BaseEntity`'den TÜREMEZ — statik seed/referans tablosu, audit
+- [x] **Entity:** `Language` (`BaseEntity`'den TÜREMEZ — statik seed/referans tablosu, audit
       gerekmez) + seed (`de`, `tr`); `WordConcept`/`Word`/`WordDetail`/`WordExample` (`BaseEntity`'den
-      türer) + EF config + migration
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      türer) + EF config + migration — canlı doğrulama yapıldı (migration DB'ye uygulandı, `Languages`
+      tablosunda `de`/`tr` seed satırları `sqlcmd` ile teyit edildi)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/01_word-content-entity-katmani.html`
 - [ ] `WordGrammarValidator` (FluentValidation, `LanguageId`'ye göre dile dispatch): **`de`**
       (Noun: gender+plural+4 hâl zorunlu; Verb: 18 çekim+auxiliary+pastParticiple+koşullu
       `separablePrefix`; Diğer: GrammarData NULL), **`tr`** (Noun: plural+6 hâl+**vowelHarmony**+
