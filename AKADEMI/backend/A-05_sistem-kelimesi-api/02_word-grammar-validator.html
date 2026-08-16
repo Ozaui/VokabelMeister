@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'word-grammar-validator',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '01_word-content-entity-katmani.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'WordGrammarValidator: Dile ve Türe Göre Değişen Bir JSON\'u Doğrulamak',
+        altBaslik: 'Almanca\'da cinsiyet+4 hâl, Türkçe\'de ünlü uyumu+6 hâl+iyelik — aynı GrammarData sütunu, iki dilin TAMAMEN farklı gramerine göre iki farklı doğrulama kümesi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Dispatch Constructor\'da — RuleFor İçinde .When() Değil?',
+        aciklama: '`WordGrammarValidator(languageCode, partOfSpeech)` bu iki değeri constructor parametresi olarak alır ve HANGİ kural grubunun (`AddDeNounRules`/`AddDeVerbRules`/`AddTrNounRules`/`AddTrVerbRules`) ekleneceğine bir `if`/`else` zinciriyle İNŞA anında karar verir — FluentValidation\'ın tipik `.When(x => x.LanguageCode == "de")` runtime-koşullu deseni KULLANILMAZ.',
+        neden: 'Bu validator TEK bir (dil, tür) çiftini doğrulamak için kurulur — çağıran kod (ileride `CreateWordCommandValidator`) zaten HER çeviri için AYRI bir `new WordGrammarValidator(t.LanguageCode, command.PartOfSpeech)` örneği oluşturacak. Dil/tür bir kere BELLİYKEN, gereksiz 4 dalın HEPSİNİN `.When()` ile her `Validate()` çağrısında yeniden DEĞERLENDİRİLMESİ yerine, yalnızca İLGİLİ 4-6 kural nesnenin `Rules` koleksiyonuna EKLENİR.',
+        olmasaydi: '`.When()` deseni kullanılsaydı, `de`+Noun için kurulan bir validator nesnesi bile içinde `tr`+Verb\'e ait 30-hücre çekim kontrolünü TAŞIRDI (yalnızca çalışma zamanında `.When()` koşulu YANLIŞ olduğu için atlanırdı) — kod okunurken "bu validator ŞU AN hangi kuralları çalıştırıyor" sorusunun cevabı yalnızca TÜM `.When()` koşullarını tek tek OKUYARAK bulunabilirdi, constructor\'daki açık dallanma bu soruyu bir bakışta YANITLAR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden GrammarData JsonElement? — Sabit Bir C# Sınıfı Değil?',
+        aciklama: '`WordGrammarInput.GrammarData` tipi `System.Text.Json.JsonElement?` — Almanca ve Türkçe için AYRI, dile özel bir C# sınıfı (ör. `GermanNounGrammar`/`TurkishNounGrammar`) YAZILMADI.',
+        neden: 'Bir kelimenin `PartOfSpeech`\'i (Noun/Verb/Diğer) ve `LanguageCode`\'u (de/tr) İKİ BOYUTLU bir matris oluşturuyor — her hücre TAMAMEN farklı alanlar taşıyor (Noun+de: `gender`/`cases`; Verb+tr: `verbRoot`/`conjugation`). Sabit tipli C# sınıflarıyla modellense bu, en az 4 ayrı DTO sınıfı (de-Noun, de-Verb, tr-Noun, tr-Verb) + bunlar arasında ASP.NET Core model binding\'in HANGİSİNİ seçeceğini bilmesi için bir polymorphic deserialization katmanı GEREKTİRİRDİ — `WordDetail.GrammarData`\'nın veritabanında zaten TEK bir `NVARCHAR(MAX)` JSON sütunu olmasıyla da UYUŞMAZDI.',
+        olmasaydi: 'Sabit sınıflar kullanılsaydı, üçüncü bir dil (ör. İngilizce, `ENGLISH_LANGUAGE_FEATURES.md`\'de tanımlı ama henüz kullanılmıyor) eklendiğinde YENİ bir DTO sınıfı + YENİ bir binding kuralı + YENİ bir validator dalı YAZMAK gerekirdi — `JsonElement?` ile üçüncü dil yalnızca bu dosyaya bir `else if (languageCode == "en" && ...)` dalı EKLEMEK demek, ne `WordGrammarInput`\'un tipi ne çağıran kodun DTO\'su DEĞİŞİR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Her Kural Kendi RuleFor + ErrorCode\'unu Taşıyor — Tek Bir Dev Must() Değil?',
+        aciklama: 'Her gramer gereksinimi (ör. `gender` zorunlu, 4 hâl tamam mı, ayrılabilir fiil ön eki tutarlı mı) KENDİ `RuleFor(x => x.GrammarData).Must(...).WithErrorCode(...)` satırını alıyor — TEK bir `Must()` içinde TÜM kontrolleri `&&` ile birleştirip TEK bir hata kodu döndürmek YERİNE.',
+        neden: 'FluentValidation aynı property üzerinde birden fazla `RuleFor` çağrısını BAĞIMSIZ kurallar olarak çalıştırır ve HEPSİNİN hata mesajını `ApiErrorResponse.Details[]`\'e toplar (A-03\'ün `ValidationBehavior`\'ı) — bir admin "der Mann" girip `gender` VE `plural` alanlarının İKİSİNİ de unutursa, TEK bir istekte HEM `DE_NOUN_GENDER_REQUIRED` HEM `DE_NOUN_PLURAL_REQUIRED` DÖNER; tek bir dev `Must()` olsaydı admin yalnızca "gramer eksik" gibi TEK, hangi alanın eksik olduğunu SÖYLEMEYEN bir hata görürdü.',
+        olmasaydi: 'Admin panel formunun (B-03, `WordFormModal`) HER alan için AYRI bir hata mesajı gösterme yeteneği OLMAZDI — kullanıcı 22 alanlık bir fiil çekim tablosunu TEK TEK deneme-yanılmayla doldurmak ZORUNDA kalırdı, hangi belirli hücrenin eksik olduğunu backend hiç SÖYLEMEZDİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordGrammarInput.cs — Doğrulanan Girdi',
+        dosyaYolu: 'backend/WordLearner.Application/DTOs/Words/WordGrammarInput.cs',
+        nedenBuKlasor: '`Application/DTOs/Words/` — `Application/DTOs/Auth/` (A-03) ile AYNI desen, yeni bir feature alt klasörü.',
+        kod: `using System.Text.Json;
+
+namespace WordLearner.Application.DTOs.Words;
+
+// WordGrammarValidator'ın doğruladığı tek dildeki karşılık — hiçbir Command'a bağlı değil, bu
+// yüzden validator Command'lardan bağımsız test edilebiliyor.
+public record WordGrammarInput(string Text, string? Definition, JsonElement? GrammarData);`,
+        satirlar: [
+          {
+            satir: 'using System.Text.Json;',
+            aciklama: '`JsonElement`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.DTOs.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record WordGrammarInput(string Text, string? Definition, JsonElement? GrammarData);',
+            aciklama: '`Text`/`Definition` zorunlu (her `PartOfSpeech`\'te ortak), `GrammarData` opsiyonel — Noun/Verb\'de dolu, diğer türlerde `null` beklenir (aşağıdaki validator bunu zorlar).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordGrammarValidator.cs — Dile ve Türe Göre 4 Kural Grubu',
+        dosyaYolu: 'backend/WordLearner.Application/Validators/Words/WordGrammarValidator.cs',
+        nedenBuKlasor: '`Application/Validators/Words/` — `Validators/Auth/`/`Validators/QrLogin/` (A-03) ile AYNI desen; bu klasör bir sonraki task maddesinde yazılacak `CreateWordCommandValidator`/`UpdateWordCommandValidator`\'ı da alacak.',
+        kod: `using System.Text.Json;
+using FluentValidation;
+using WordLearner.Application.DTOs.Words;
+using WordLearner.Domain.Enums.Content;
+
+namespace WordLearner.Application.Validators.Words;
+
+// languageCode+partOfSpeech İNŞA anında sabitlenir — bu yüzden dispatch RuleFor içinde .When()
+// DEĞİL, constructor'da hangi kural grubunun ekleneceğine karar veren bir if/else zinciridir.
+public class WordGrammarValidator : AbstractValidator<WordGrammarInput>
+{
+    private static readonly string[] DeNounCases = ["nominative", "accusative", "dative", "genitive"];
+    private static readonly string[] TrNounCases = ["nominative", "accusative", "dative", "locative", "ablative", "genitive"];
+    private static readonly string[] DeVerbTenses = ["present", "preterite", "perfect"];
+    private static readonly string[] TrVerbTenses = ["presentContinuous", "aorist", "pastDefinite", "pastNarrative", "future"];
+    private static readonly string[] DePersons = ["ich", "du", "erSieEs", "wir", "ihr", "sie"];
+    private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
+
+    public WordGrammarValidator(string languageCode, PartOfSpeech partOfSpeech)
+    {
+        RuleFor(x => x.Text).NotEmpty().WithErrorCode("WORD_TEXT_REQUIRED");
+        RuleFor(x => x.Definition).NotEmpty().WithErrorCode("WORD_DEFINITION_REQUIRED");
+
+        if (languageCode == "de" && partOfSpeech == PartOfSpeech.Noun)
+            AddDeNounRules();
+        else if (languageCode == "de" && partOfSpeech == PartOfSpeech.Verb)
+            AddDeVerbRules();
+        else if (languageCode == "tr" && partOfSpeech == PartOfSpeech.Noun)
+            AddTrNounRules();
+        else if (languageCode == "tr" && partOfSpeech == PartOfSpeech.Verb)
+            AddTrVerbRules();
+        else
+            RuleFor(x => x.GrammarData).Must(g => g is null).WithErrorCode("GRAMMAR_DATA_MUST_BE_NULL");
+    }
+
+    private void AddDeNounRules()
+    {
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "gender")).WithErrorCode("DE_NOUN_GENDER_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "plural")).WithErrorCode("DE_NOUN_PLURAL_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "cases", DeNounCases)).WithErrorCode("DE_NOUN_CASES_INCOMPLETE");
+        RuleFor(x => x.GrammarData)
+            .Must(g => !HasAnyKey(g, "isSeparableVerb", "separablePrefix", "auxiliaryVerb", "pastParticiple", "conjugation"))
+            .WithErrorCode("DE_NOUN_VERB_FIELDS_FORBIDDEN");
+    }
+
+    private void AddDeVerbRules()
+    {
+        RuleFor(x => x.GrammarData).Must(g => TryGetBool(g, "isSeparableVerb", out _)).WithErrorCode("DE_VERB_IS_SEPARABLE_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "auxiliaryVerb")).WithErrorCode("DE_VERB_AUXILIARY_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "pastParticiple")).WithErrorCode("DE_VERB_PAST_PARTICIPLE_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(SeparablePrefixMatchesFlag).WithErrorCode("DE_VERB_SEPARABLE_PREFIX_MISMATCH");
+        RuleFor(x => x.GrammarData).Must(g => HasCompleteConjugation(g, DeVerbTenses, DePersons)).WithErrorCode("DE_VERB_CONJUGATION_INCOMPLETE");
+        RuleFor(x => x.GrammarData).Must(g => !HasAnyKey(g, "gender", "plural", "cases")).WithErrorCode("DE_VERB_NOUN_FIELDS_FORBIDDEN");
+    }
+
+    private void AddTrNounRules()
+    {
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "plural")).WithErrorCode("TR_NOUN_PLURAL_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "cases", TrNounCases)).WithErrorCode("TR_NOUN_CASES_INCOMPLETE");
+        RuleFor(x => x.GrammarData)
+            .Must(g => TryGetString(g, "vowelHarmony", out var v) && (v == "kalın" || v == "ince"))
+            .WithErrorCode("TR_NOUN_VOWEL_HARMONY_INVALID");
+        RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "possessive", TrPersons)).WithErrorCode("TR_NOUN_POSSESSIVE_INCOMPLETE");
+        RuleFor(x => x.GrammarData)
+            .Must(g => !HasAnyKey(g, "verbRoot", "negativeForm", "conjugation"))
+            .WithErrorCode("TR_NOUN_VERB_FIELDS_FORBIDDEN");
+    }
+
+    private void AddTrVerbRules()
+    {
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "verbRoot")).WithErrorCode("TR_VERB_ROOT_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "negativeForm")).WithErrorCode("TR_VERB_NEGATIVE_FORM_REQUIRED");
+        RuleFor(x => x.GrammarData).Must(g => HasCompleteConjugation(g, TrVerbTenses, TrPersons)).WithErrorCode("TR_VERB_CONJUGATION_INCOMPLETE");
+        RuleFor(x => x.GrammarData)
+            .Must(g => !HasAnyKey(g, "plural", "cases", "vowelHarmony", "possessive"))
+            .WithErrorCode("TR_VERB_NOUN_FIELDS_FORBIDDEN");
+    }
+
+    private static bool SeparablePrefixMatchesFlag(JsonElement? grammarData)
+    {
+        if (!TryGetBool(grammarData, "isSeparableVerb", out var isSeparable)) return false;
+        var hasPrefix = HasNonEmptyString(grammarData, "separablePrefix");
+        return isSeparable == hasPrefix;
+    }
+
+    private static bool HasCompleteConjugation(JsonElement? grammarData, string[] tenses, string[] persons)
+    {
+        if (!TryGetObject(grammarData, "conjugation", out var conjugation)) return false;
+        return tenses.All(tense => HasCompleteObject(conjugation, tense, persons));
+    }
+
+    private static bool HasCompleteObject(JsonElement? parent, string propertyName, string[] requiredKeys)
+    {
+        if (!TryGetObject(parent, propertyName, out var obj)) return false;
+        return requiredKeys.All(key => HasNonEmptyString(obj, key));
+    }
+
+    private static bool HasNonEmptyString(JsonElement? obj, string propertyName) =>
+        TryGetString(obj, propertyName, out var value) && !string.IsNullOrWhiteSpace(value);
+
+    private static bool TryGetString(JsonElement? obj, string propertyName, out string? value)
+    {
+        value = null;
+        if (obj is not { ValueKind: JsonValueKind.Object } data) return false;
+        if (!data.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
+        value = prop.GetString();
+        return true;
+    }
+
+    private static bool TryGetObject(JsonElement? obj, string propertyName, out JsonElement value)
+    {
+        value = default;
+        if (obj is not { ValueKind: JsonValueKind.Object } data) return false;
+        if (!data.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.Object) return false;
+        value = prop;
+        return true;
+    }
+
+    private static bool TryGetBool(JsonElement? obj, string propertyName, out bool value)
+    {
+        value = false;
+        if (obj is not { ValueKind: JsonValueKind.Object } data) return false;
+        if (!data.TryGetProperty(propertyName, out var prop)) return false;
+        if (prop.ValueKind != JsonValueKind.True && prop.ValueKind != JsonValueKind.False) return false;
+        value = prop.GetBoolean();
+        return true;
+    }
+
+    private static bool HasAnyKey(JsonElement? obj, params string[] keys) =>
+        obj is { ValueKind: JsonValueKind.Object } data && keys.Any(k => data.TryGetProperty(k, out _));
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Text.Json;',
+            aciklama: '`JsonElement`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AbstractValidator<T>`/`RuleFor` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Application.DTOs.Words;',
+            aciklama: 'Doğrulanan `WordGrammarInput`\'un ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using WordLearner.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech`\'in ad alanı — dispatch\'in ikinci anahtarı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace WordLearner.Application.Validators.Words;',
+            aciklama: 'Klasör yoluyla eşleşen ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordGrammarValidator : AbstractValidator<WordGrammarInput>',
+            aciklama: '`LoginCommandValidator` (A-03) ile AYNI temel sınıf, ama bir MediatR Command DEĞİL sıradan bir DTO\'yu (`WordGrammarInput`) doğruluyor — bu yüzden `ValidationBehavior` pipeline\'ı tarafından OTOMATİK çağrılmaz, ileride Command validator\'ları tarafından ELLE örneklenip çağrılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] DeNounCases = ["nominative", "accusative", "dative", "genitive"];',
+            aciklama: 'Almanca 4 hâlin JSON anahtar adları — `GERMAN_LANGUAGE_FEATURES.md §3`\'teki `cases` şeklinin BİREBİR karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] TrNounCases = ["nominative", "accusative", "dative", "locative", "ablative", "genitive"];',
+            aciklama: 'Türkçe 6 hâlin JSON anahtar adları — Almanca\'nın 4 hâline karşı İKİ FAZLA (`locative`/`ablative`), Türkçe dilbilgisinin kendi hâl sayısı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] DeVerbTenses = ["present", "preterite", "perfect"];',
+            aciklama: 'Almanca fiil çekiminin 3 zamanı — `conjugation` objesinin üst-seviye anahtarları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] TrVerbTenses = ["presentContinuous", "aorist", "pastDefinite", "pastNarrative", "future"];',
+            aciklama: 'Türkçe fiil çekiminin 5 zamanı — Almanca\'nın 3 zamanına karşı İKİ FAZLA, 3×6=18 yerine 5×6=30 hücrelik matrisin kaynağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] DePersons = ["ich", "du", "erSieEs", "wir", "ihr", "sie"];',
+            aciklama: 'Almanca 6 kişi — her zaman objesinin (present/preterite/perfect) İÇİNDEKİ anahtarlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];',
+            aciklama: 'Türkçe 6 kişi — hem `conjugation`\'ın (fiil) hem `possessive`\'in (isim) İÇİNDEKİ anahtarlar; iki farklı gramer yapısı AYNI 6 kişi etiketini paylaştığı için tek bir dizi ikisinde de kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public WordGrammarValidator(string languageCode, PartOfSpeech partOfSpeech)',
+            aciklama: 'Çağıran kod (ileride Command validator\'ları) HER çeviri için kendi `languageCode`/`partOfSpeech` çiftiyle AYRI bir örnek kurar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Text).NotEmpty().WithErrorCode("WORD_TEXT_REQUIRED");',
+            aciklama: 'HER `PartOfSpeech`/dil kombinasyonunda ortak tek kural — dispatch dallanmasından ÖNCE, koşulsuz eklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Definition).NotEmpty().WithErrorCode("WORD_DEFINITION_REQUIRED");',
+            aciklama: '`Text` ile AYNI gerekçe — her iki dil dokümanının "Diğer türler" bölümü bile bu ikisini zorunlu tutuyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (languageCode == "de" && partOfSpeech == PartOfSpeech.Noun)',
+            aciklama: 'Dört dalın İLKİ — Almanca isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AddDeNounRules();',
+            aciklama: 'Aşağıdaki `AddDeNounRules` metodunu çağırıp isim kurallarını `Rules` koleksiyonuna ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else if (languageCode == "de" && partOfSpeech == PartOfSpeech.Verb)',
+            aciklama: 'İkinci dal — Almanca fiil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AddDeVerbRules();',
+            aciklama: 'Aşağıdaki `AddDeVerbRules` metodunu çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else if (languageCode == "tr" && partOfSpeech == PartOfSpeech.Noun)',
+            aciklama: 'Üçüncü dal — Türkçe isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AddTrNounRules();',
+            aciklama: 'Aşağıdaki `AddTrNounRules` metodunu çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else if (languageCode == "tr" && partOfSpeech == PartOfSpeech.Verb)',
+            aciklama: 'Dördüncü dal — Türkçe fiil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'AddTrVerbRules();',
+            aciklama: 'Aşağıdaki `AddTrVerbRules` metodunu çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else',
+            aciklama: 'Yukarıdaki dört (dil, tür) kombinasyonunun HİÇBİRİNE uymayan durum — Adjective/Adverb/Conjunction/Preposition/Pronoun/Idiom/Other, HER İKİ dilde de.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => g is null).WithErrorCode("GRAMMAR_DATA_MUST_BE_NULL");',
+            aciklama: 'Her iki dokümanın da "Diğer türler: GrammarData tamamen NULL" kuralı — Noun/Verb DIŞINDAKİ 7 türde gramer verisi hiç BEKLENMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private void AddDeNounRules()',
+            aciklama: '`GERMAN_LANGUAGE_FEATURES.md §10` "PartOfSpeech = Noun" maddesinin BİREBİR kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "gender")).WithErrorCode("DE_NOUN_GENDER_REQUIRED");',
+            aciklama: '`gender` alanı (Masculine/Feminine/Neuter) dolu bir string mi — hangi DEĞERİ taşıdığı burada KONTROL EDİLMEZ, yalnızca varlığı; kart rengini/artikeli seçen mantık `WordFormModal`\'ın (B-03) sorumluluğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "plural")).WithErrorCode("DE_NOUN_PLURAL_REQUIRED");',
+            aciklama: 'Çoğul formu dolu mu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "cases", DeNounCases)).WithErrorCode("DE_NOUN_CASES_INCOMPLETE");',
+            aciklama: '`cases` objesinin VAR olup olmadığını VE içindeki 4 hâlin (`DeNounCases`) HEPSİNİN dolu olup olmadığını TEK bir kuralda kontrol eder — aşağıdaki `HasCompleteObject` yardımcı metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData)',
+            aciklama: 'Bu dosyada DÖRT kez (isim/fiil kural gruplarının her birinde birer kez) geçen çok-satırlı bir `RuleFor` başlangıcı — hangi `.Must()`/`.WithErrorCode()` zincirine bağlandığı HER seferinde bir alttaki satırdan anlaşılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(g => !HasAnyKey(g, "isSeparableVerb", "separablePrefix", "auxiliaryVerb", "pastParticiple", "conjugation"))',
+            aciklama: '`GERMAN_LANGUAGE_FEATURES.md §10`\'un Noun için "Yasak" listesi — bu 5 fiil alanından HERHANGİ biri isimde varsa doğrulama BAŞARISIZ olur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("DE_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'Üstteki `.Must()`\'un hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private void AddDeVerbRules()',
+            aciklama: '`GERMAN_LANGUAGE_FEATURES.md §10` "PartOfSpeech = Verb" maddesinin kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => TryGetBool(g, "isSeparableVerb", out _)).WithErrorCode("DE_VERB_IS_SEPARABLE_REQUIRED");',
+            aciklama: '`isSeparableVerb` alanının VAR ve gerçekten `true`/`false` (bir string veya sayı DEĞİL) olduğunu kontrol eder — `out _` değeri burada kullanılmıyor, yalnızca "geçerli bir bool mu" sorusu soruluyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "auxiliaryVerb")).WithErrorCode("DE_VERB_AUXILIARY_REQUIRED");',
+            aciklama: 'Yardımcı fiil ("haben"/"sein") dolu mu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "pastParticiple")).WithErrorCode("DE_VERB_PAST_PARTICIPLE_REQUIRED");',
+            aciklama: 'Perfekt ortaç formu ("gegangen") dolu mu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(SeparablePrefixMatchesFlag).WithErrorCode("DE_VERB_SEPARABLE_PREFIX_MISMATCH");',
+            aciklama: 'Aşağıdaki `SeparablePrefixMatchesFlag` metoduna delege eder — `isSeparableVerb=true` iken `separablePrefix` dolu, `false` iken BOŞ olmasını zorlayan KOŞULLU kural.',
+            neden: '`GERMAN_LANGUAGE_FEATURES.md §10` bu ikisini "validator: isSeparableVerb=true ⇒ separablePrefix NOT NULL, tersi de geçerli" diye açıkça İKİ YÖNLÜ bir kural olarak tanımlıyor — yalnızca "true iken dolu olmalı" kontrol edilseydi, `isSeparableVerb=false` YAZIP yine de bir `separablePrefix` DEĞERİ giren tutarsız bir veri fark EDİLMEZDİ.',
+            olmasaydi: 'Bu kural olmasaydı, `anrufen` gibi ayrılabilir bir fiil `isSeparableVerb=false` ile YANLIŞ girilse bile validator bunu YAKALAMAZDI — kart, ön eki cümle sonuna TAŞIMASI gereken bir fiili sanki ayrılamazmış GİBİ gösterirdi.'
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasCompleteConjugation(g, DeVerbTenses, DePersons)).WithErrorCode("DE_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: '3 zaman × 6 kişi = 18 hücrenin TAMAMININ dolu olduğunu TEK bir kuralda kontrol eder — aşağıdaki `HasCompleteConjugation` yardımcı metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => !HasAnyKey(g, "gender", "plural", "cases")).WithErrorCode("DE_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: '`GERMAN_LANGUAGE_FEATURES.md §10`\'un Verb için "Yasak" listesi (`gender`/`plural`/`cases`) — `AddDeNounRules`\'daki yasak listesinin TERSİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private void AddTrNounRules()',
+            aciklama: '`TURKISH_LANGUAGE_FEATURES.md §9` "PartOfSpeech = Noun" maddesinin kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "plural")).WithErrorCode("TR_NOUN_PLURAL_REQUIRED");',
+            aciklama: 'Çoğul formu dolu mu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "cases", TrNounCases)).WithErrorCode("TR_NOUN_CASES_INCOMPLETE");',
+            aciklama: '`AddDeNounRules`\'daki 4-hâl kontrolüyle AYNI yardımcı metot, bu kez Türkçe\'nin 6 hâli (`TrNounCases`) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(g => TryGetString(g, "vowelHarmony", out var v) && (v == "kalın" || v == "ince"))',
+            aciklama: '`vowelHarmony`\'nin yalnızca `"kalın"` veya `"ince"` İKİ değerinden birini taşıyabileceğini zorlar — Almanca\'nın `gender`\'ından (üç serbest string) FARKLI olarak burada kapalı bir küme doğrudan validator içinde kontrol ediliyor.',
+            neden: 'Ünlü uyumu Türkçe dilbilgisinin İKİLİ (kalın/ince) bir kuralı — üçüncü bir değer (ör. yanlışlıkla "kalin" yazımı) kart\'ın çekim/hâl eklerini YANLIŞ göstermesine yol açardı, `TURKISH_LANGUAGE_FEATURES.md §1`\'deki tabloyla tutarlılık burada garanti edilir.',
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("TR_NOUN_VOWEL_HARMONY_INVALID");',
+            aciklama: 'Üstteki `.Must()`\'un hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasCompleteObject(g, "possessive", TrPersons)).WithErrorCode("TR_NOUN_POSSESSIVE_INCOMPLETE");',
+            aciklama: '6 kişilik iyelik ekinin (`possessive`) TAMAMININ dolu olduğunu kontrol eder — `HasCompleteObject`, `cases` kontrolüyle AYNI yardımcı metot, farklı anahtar/dizi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(g => !HasAnyKey(g, "verbRoot", "negativeForm", "conjugation"))',
+            aciklama: '`TURKISH_LANGUAGE_FEATURES.md §9`\'un Noun için "Yasak" listesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("TR_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'Üstteki `.Must()`\'un hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private void AddTrVerbRules()',
+            aciklama: '`TURKISH_LANGUAGE_FEATURES.md §9` "PartOfSpeech = Verb" maddesinin kod karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "verbRoot")).WithErrorCode("TR_VERB_ROOT_REQUIRED");',
+            aciklama: 'Fiil kökü ("gel") dolu mu — Türkçe çekimin türetildiği taban.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasNonEmptyString(g, "negativeForm")).WithErrorCode("TR_VERB_NEGATIVE_FORM_REQUIRED");',
+            aciklama: 'Olumsuz mastar formu ("gelmemek") dolu mu — 30 kolonun DIŞINDA, TEK bir alanda tutulan olumsuzluk bilgisi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.GrammarData).Must(g => HasCompleteConjugation(g, TrVerbTenses, TrPersons)).WithErrorCode("TR_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: '5 zaman × 6 kişi = 30 hücrenin TAMAMININ dolu olduğunu kontrol eder — `AddDeVerbRules`\'daki 18-hücre kontrolüyle AYNI yardımcı metot, farklı zaman/kişi dizileri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(g => !HasAnyKey(g, "plural", "cases", "vowelHarmony", "possessive"))',
+            aciklama: '`TURKISH_LANGUAGE_FEATURES.md §9`\'un Verb için "Yasak" listesi — `AddTrNounRules`\'daki yasak listesinin TERSİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("TR_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: 'Üstteki `.Must()`\'un hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool SeparablePrefixMatchesFlag(JsonElement? grammarData)',
+            aciklama: '`AddDeVerbRules`\'ın çağırdığı, `isSeparableVerb`↔`separablePrefix` tutarlılığını kontrol eden ayrı bir metot — imzası `Func<JsonElement?, bool>` şeklinde, `.Must()`\'a doğrudan METOT GRUBU olarak (lambda YAZMADAN) verilebiliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!TryGetBool(grammarData, "isSeparableVerb", out var isSeparable)) return false;',
+            aciklama: '`isSeparableVerb` geçerli bir bool DEĞİLSE (zaten `DE_VERB_IS_SEPARABLE_REQUIRED` kuralı bunu AYRICA yakalayacak) bu metot da başarısız döner — iki kural aynı eksikliği farklı hata kodlarıyla RAPORLAR, bu BİLİNÇLİ bir tekrar (admin hem "alan eksik" hem "tutarsız" gibi yanıltıcı ÇİFTE mesaj almasın diye erken çıkış).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var hasPrefix = HasNonEmptyString(grammarData, "separablePrefix");',
+            aciklama: '`separablePrefix`\'in dolu olup olmadığını AYRICA hesaplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return isSeparable == hasPrefix;',
+            aciklama: 'İki booleanın EŞİT olmasını ister — `true`+dolu VEYA `false`+boş geçerli, `true`+boş VEYA `false`+dolu GEÇERSİZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool HasCompleteConjugation(JsonElement? grammarData, string[] tenses, string[] persons)',
+            aciklama: 'Hem Almanca (18 hücre) hem Türkçe (30 hücre) çekim kontrolü tarafından ORTAK kullanılan yardımcı — zaman/kişi dizileri PARAMETRE olarak geldiği için dilden BAĞIMSIZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!TryGetObject(grammarData, "conjugation", out var conjugation)) return false;',
+            aciklama: '`conjugation` objesi YOKSA (veya obje değilse) doğrulama hemen BAŞARISIZ döner, tek tek zamanlara BAKILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return tenses.All(tense => HasCompleteObject(conjugation, tense, persons));',
+            aciklama: 'HER zamanın (present/preterite/perfect VEYA presentContinuous/aorist/…) kendi İÇİNDE `persons` listesindeki HER kişiyi taşıdığını kontrol eder — `HasCompleteObject`\'in İÇ İÇE (nested) kullanımı: önce `conjugation.present` gibi bir alt-obje BULUNUR, sonra o alt-objenin İÇİNDEKİ 6 kişi kontrol edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool HasCompleteObject(JsonElement? parent, string propertyName, string[] requiredKeys)',
+            aciklama: 'Bu dosyadaki EN ÇOK tekrar eden yardımcı — `cases`/`possessive`/tek bir zaman objesi gibi "bir alt-objenin BELİRLİ anahtarlarının HEPSİ dolu mu" sorusunu TEK bir yerde cevaplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!TryGetObject(parent, propertyName, out var obj)) return false;',
+            aciklama: 'Önce alt-obje VAR mı diye bakar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return requiredKeys.All(key => HasNonEmptyString(obj, key));',
+            aciklama: 'Sonra `requiredKeys` listesindeki HER anahtarın obje İÇİNDE dolu bir string olarak bulunduğunu doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool HasNonEmptyString(JsonElement? obj, string propertyName) =>',
+            aciklama: 'Bu dosyanın EN TEMEL yardımcısı — `gender`/`plural`/`auxiliaryVerb` gibi TEK bir string alanın "var VE boş değil" kontrolü, expression-bodied (`=>`) kısa yazım.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'TryGetString(obj, propertyName, out var value) && !string.IsNullOrWhiteSpace(value);',
+            aciklama: 'Önce alan STRING tipinde mi diye bakar (`TryGetString`), SONRA o string\'in yalnızca boşluklardan İBARET olmadığını kontrol eder — `"gender": "   "` gibi görünüşte dolu ama ANLAMSIZ bir değeri de REDDEDER.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool TryGetString(JsonElement? obj, string propertyName, out string? value)',
+            aciklama: 'Üç `TryGetX` yardımcısından (String/Object/Bool) İLKİ — hepsi AYNI "önce obje mi, sonra anahtar var mı, sonra tip doğru mu" üç aşamalı deseni izler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'value = null;',
+            aciklama: '`out` parametresi C#\'ta HER çıkış yolunda ATANMIŞ olmalı — başarısız senaryolar için baştan `null` atanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (obj is not { ValueKind: JsonValueKind.Object } data) return false;',
+            aciklama: 'Bu dosyada ÜÇ kez (TryGetString/TryGetObject/TryGetBool\'un HER birinde) BİREBİR aynı geçen bir satır — `obj` `null` İSE veya bir JSON objesi DEĞİLSE (ör. bir dizi/sayı/string geldiyse) erken çıkar. `is not {...} data` deseni `JsonElement?`\'in HEM null-kontrolünü HEM unwrap\'ini TEK ifadede yapar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!data.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.String) return false;',
+            aciklama: 'Anahtar objede YOKSA VEYA değeri bir STRING değilse (ör. `"gender": 5` gibi yanlış tipte girildiyse) başarısız döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'value = prop.GetString();',
+            aciklama: 'Değer bulundu, `out` parametresine yazılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return true;',
+            aciklama: 'Bu dosyada ÜÇ kez (`TryGetString`/`TryGetObject`/`TryGetBool`\'un her birinin son satırı) BİREBİR aynı geçen bir satır — üçü de "obje bulundu, tipi doğru, `out` parametresi dolduruldu" başarı durumunu AYNI şekilde bildirir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool TryGetObject(JsonElement? obj, string propertyName, out JsonElement value)',
+            aciklama: '`TryGetString` ile AYNI üç aşamalı desen, bu kez `prop.ValueKind == JsonValueKind.Object` beklenir — `cases`/`conjugation`/`possessive` gibi İÇ İÇE objeler için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'value = default;',
+            aciklama: '`JsonElement` bir struct olduğu için `null` DEĞİL, `default` (boş bir `JsonElement`) atanır — `TryGetString`\'in `value = null;`\'inden FARKLI, çünkü buradaki `out` parametresi nullable DEĞİL (`JsonElement`, `JsonElement?` değil).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!data.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.Object) return false;',
+            aciklama: '`TryGetString`\'in string kontrolüyle AYNI mantık, `JsonValueKind.Object` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'value = prop;',
+            aciklama: 'Alt-objenin KENDİSİ `out` parametresine yazılır — `HasCompleteObject`\'in bunu SONRAKİ bir `HasNonEmptyString`/`TryGetObject` çağrısına PARENT olarak geçirebilmesi için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool TryGetBool(JsonElement? obj, string propertyName, out bool value)',
+            aciklama: '`isSeparableVerb` gibi bir bool alanın VARLIĞINI ve GERÇEKTEN bool tipinde olduğunu kontrol eden üçüncü `TryGetX`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'value = false;',
+            aciklama: 'Başarısız senaryolar için varsayılan `out` değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (!data.TryGetProperty(propertyName, out var prop)) return false;',
+            aciklama: 'Anahtar objede YOKSA erken çıkar — bir SONRAKİ satırda `ValueKind` kontrolü yapılacağı için burada TİP kontrolü henüz YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (prop.ValueKind != JsonValueKind.True && prop.ValueKind != JsonValueKind.False) return false;',
+            aciklama: '`System.Text.Json` bool değerleri `JsonValueKind.String`/`.Object` gibi TEK bir "Boolean" türü OLARAK DEĞİL, `True`/`False` diye İKİ AYRI `ValueKind` olarak temsil eder — bu yüzden `TryGetString`/`TryGetObject`\'in tek-değerli `!= JsonValueKind.X` kontrolünden FARKLI olarak burada İKİ değeri de dışlamak gerekir.',
+            neden: 'JSON\'un kendisinde `true`/`false` iki AYRI literal — `System.Text.Json`\'ın ayrıştırıcısı bunu, bir sayının `Number` ValueKind\'ı gibi TEK bir "Boolean" kategorisine İNDİRGEMEK yerine, hangi literal geldiğini `ValueKind`\'ın KENDİSİNDE tutuyor.',
+            olmasaydi: 'Yalnızca `prop.ValueKind != JsonValueKind.True` kontrol edilseydi, `"isSeparableVerb": false` YAZAN GEÇERLİ bir istek YANLIŞLIKLA reddedilirdi — `false` da `True` DEĞİLDİR ama GEÇERLİ bir bool değeridir.'
+          },
+          {
+            satir: 'value = prop.GetBoolean();',
+            aciklama: 'Değer bulundu, `out` parametresine yazılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static bool HasAnyKey(JsonElement? obj, params string[] keys) =>',
+            aciklama: '"Yasak" kontrollerinin (`DE_NOUN_VERB_FIELDS_FORBIDDEN` vb.) dayandığı yardımcı — `params` ile HER çağrıda değişken sayıda anahtar (3, 4 veya 5) VERİLEBİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'obj is { ValueKind: JsonValueKind.Object } data && keys.Any(k => data.TryGetProperty(k, out _));',
+            aciklama: 'Obje GEÇERLİYSE ve `keys` listesindeki HERHANGİ bir anahtar objede BULUNUYORSA `true` döner — değerin TİPİ/İÇERİĞİ önemsiz, yalnızca anahtarın VARLIĞI "bu alan yanlışlıkla girilmiş" anlamına gelir.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'JsonElement (System.Text.Json)', tanim: 'Ayrıştırılmış ama tipi ÖNCEDEN belli olmayan bir JSON değerini temsil eden struct — `ValueKind` (Object/String/Number/True/False/…) ile değerin TÜRÜ, `TryGetProperty`/`GetString`/`GetBoolean` ile İÇERİĞİ okunur.' },
+          { terim: 'Child validator (FluentValidation)', tanim: 'Bir Command\'a DOĞRUDAN bağlı olmayan, kendi başına örneklenip başka bir validator\'ın İÇİNDEN çağrılan yeniden kullanılabilir `AbstractValidator<T>` — `WordGrammarValidator` burada bu deseni izliyor.' },
+          { terim: 'GrammarData Doldurma Matrisi', tanim: '`GERMAN_LANGUAGE_FEATURES.md §10`/`TURKISH_LANGUAGE_FEATURES.md §9`\'daki, `PartOfSpeech`\'e göre hangi JSON alanının zorunlu/yasak/koşullu olduğunu tanımlayan tablo — bu validator o tabloyu kod olarak uygular.' },
+          { terim: 'Ayrılabilir fiil (separable verb)', tanim: 'Almanca\'da bir ön ekin cümlede fiilden AYRILIP cümle sonuna gittiği fiil türü (`anrufen` → "Ich rufe dich an") — `isSeparableVerb`/`separablePrefix` bu ikisini birlikte taşır.' },
+          { terim: 'Ünlü uyumu (vowel harmony)', tanim: 'Türkçe\'de eklerin kelimenin son ünlüsüne göre kalın/ince biçim alması — `vowelHarmony` alanı bu grubu tek bir değerde özetler.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'WordGrammarValidator, dilinin (de/tr) ve türünün (Noun/Verb/Diğer) constructor\'da SABİTLENDİĞİ, o kombinasyona ÖZEL kural kümesini kuran bir AbstractValidator<WordGrammarInput> — bir MediatR Command\'a DOĞRUDAN bağlı değil, ileride Command validator\'ları tarafından elle örneklenip çağrılacak.',
+          'GrammarData JsonElement? olarak taşınıyor — dile/türe göre TAMAMEN farklı şekiller alan bu JSON\'u sabit bir C# sınıfına DÖKMEK yerine, TryGetString/TryGetObject/TryGetBool üçlüsü ile alan alan doğrulanıyor.',
+          'de Noun: gender+plural+4 hâl zorunlu, fiil alanları yasak. de Verb: isSeparableVerb+auxiliaryVerb+pastParticiple+18 hücrelik çekim zorunlu, separablePrefix KOŞULLU (isSeparableVerb ile eşleşmeli), isim alanları yasak.',
+          'tr Noun: plural+6 hâl+vowelHarmony(kalın/ince)+6 kişilik possessive zorunlu, fiil alanları yasak. tr Verb: verbRoot+negativeForm+30 hücrelik çekim zorunlu, isim alanları yasak.',
+          'Her gramer gereksinimi KENDİ RuleFor+ErrorCode\'unu taşıyor — tek bir dev Must() değil, admin panelin (B-03) hangi ALANIN eksik olduğunu tek tek gösterebilmesi için.',
+          'consonantMutation bilinçli olarak HİÇ doğrulanmıyor — henüz yazılmamış bir quiz özelliği için ayrılmış bir alan, YAGNI.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

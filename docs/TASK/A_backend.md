@@ -276,13 +276,13 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       türer) + EF config + migration — canlı doğrulama yapıldı (migration DB'ye uygulandı, `Languages`
       tablosunda `de`/`tr` seed satırları `sqlcmd` ile teyit edildi)
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/01_word-content-entity-katmani.html`
-- [ ] `WordGrammarValidator` (FluentValidation, `LanguageId`'ye göre dile dispatch): **`de`**
+- [x] `WordGrammarValidator` (FluentValidation, `LanguageId`'ye göre dile dispatch): **`de`**
       (Noun: gender+plural+4 hâl zorunlu; Verb: 18 çekim+auxiliary+pastParticiple+koşullu
       `separablePrefix`; Diğer: GrammarData NULL), **`tr`** (Noun: plural+6 hâl+**vowelHarmony**+
       **possessive**[6 kişi] zorunlu; Verb: verbRoot+negativeForm+30 çekim; Diğer: GrammarData
       NULL) — `consonantMutation` bilinçli olarak dışarıda bırakılır (yalnızca ileri bir quiz
       özelliğinde kullanılacak, YAGNI)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/02_word-grammar-validator.html`
 - [ ] `ILanguageRepository`/`IWordConceptRepository` + `GetLanguagesQuery` + 5 Command/Query
       (Create/Update/Delete/GetById/GetWords) — `translations[]` 1 veya 2 dil tek işlemde, duplikat
       409+`?force=true`, tek dilse kavram "eşleşmemiş" kalır
