@@ -42,7 +42,7 @@ public class WordsController : ApiControllerBase
         WordCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),
+            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
             cancellationToken);
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -54,7 +54,7 @@ public class WordsController : ApiControllerBase
         int id, WordUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),
+            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
             cancellationToken);
         return Ok(result);
     }
@@ -64,7 +64,28 @@ public class WordsController : ApiControllerBase
     [EnableRateLimiting("general")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new DeleteWordCommand(id, CurrentUserId), cancellationToken);
+        await _mediator.Send(new DeleteWordCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
         return NoContent();
+    }
+
+    [HttpGet("unmatched")]
+    [Authorize(Roles = "Admin")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<PagedResult<UnmatchedWordResponse>>> GetUnmatched(
+        [FromQuery] int languageId, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetUnmatchedWordConceptsQuery(languageId, search, page, pageSize), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("pair")]
+    [Authorize(Roles = "Admin")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<WordResponse>> Pair(PairWordConceptsRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId, CurrentUserRole), cancellationToken);
+        return Ok(result);
     }
 }

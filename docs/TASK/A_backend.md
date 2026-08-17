@@ -266,7 +266,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       A-03 handler testlerine eklenen log-doğrulama senaryoları (Bölüm 5) — 109/109 tüm paket yeşil
 - [x] ➜ **AKADEMI/backend'ye işle** — testler ilgili bölümlerin `kod` slaytlarında birlikte işlendi
 
-### A-05 — Sistem Kelimesi API (Words) 🔄
+### A-05 — Sistem Kelimesi API (Words) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §5, §5.1, §5.2, REFERENCE/GERMAN_LANGUAGE_FEATURES.md §10, REFERENCE/TURKISH_LANGUAGE_FEATURES.md §9
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi)
 > Dil listesi endpoint'i (eski A-05.1) ve Türkçe `vowelHarmony`/`possessive` zorunluluğu (eski
@@ -302,14 +302,39 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > /words` ALTISI da gerçek HTTP istekleriyle çağrıldı — 200/201/204/400(WORD_DEFINITION_REQUIRED)/
 > 404(ENTITY_NOT_FOUND) durumlarının hepsi beklenen şekilde gözlemlendi.
 
-- [ ] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı + `suggestedMatchConceptId`
+- [x] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı + `suggestedMatchConceptId`
       — `Definition` virgülle ayrılmış çoklu karşılığı token'lara bölünüp aranır) + `PairWordConceptsCommand`
-      (`primaryId` kazanır, tür/kategori çakışması bloklamaz — dilin doğası)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **`IActivityLogger`:** `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `WordGrammarValidatorTests` (her dil×tür), 5 Command/Query Handler testi, eşleştirme testleri
-- [ ] ➜ **AKADEMI/backend'ye işle**
+      (`primaryId` kazanır, tür/kategori çakışması bloklamaz — dilin doğası) — canlı doğrulama yapıldı
+      (`de`-only "Anrufbeantworter" + `tr`-only "telesekreter" oluşturulup iki yönde de doğru
+      `suggestedMatchConceptId` bulundu, `POST /words/pair` ikisini birleştirdi, self-pair 400
+      `SAME_CONCEPT_PAIR_NOT_ALLOWED` ile engellendi)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/08_eslestirme.html`
+- [x] **`IActivityLogger`:** `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS` —
+      `ApiControllerBase.CurrentUserRole` eklendi (JWT `role` claim'i, `ActivityLog.ActorRole`
+      kaynağı), `UPDATE`/`DELETE`/`PAIR`'da "önce oku sonra değiştir" deseniyle `OldValue`
+      yakalanıyor — canlı doğrulama yapıldı (`ActivityLogs` tablosuna gerçek isteklerle 6 satır
+      yazıldı, `PAIR_WORD_CONCEPTS`'in `OldValue`si iki kavramı da içeren JSON'u `sqlcmd` ile
+      doğrulandı)
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/09_activity-logger.html`
+- [x] **Birim testleri:** `WordGrammarValidatorTests` (her dil×tür, 30 test) + 5 Command/Query
+      Handler testi (Create/Update/Delete/GetById/GetWords, 20 test) + eşleştirme testleri
+      (GetUnmatchedWordConceptsQuery/PairWordConceptsCommand, 9 test) — 89 yeni test, tüm paket
+      165/165 yeşil
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/10_birim-testleri.html`
+
+> **A-05 TAMAMLANDI (2026-08-18).** Entity katmanı (Language statik seed + WordConcept/Word/
+> WordDetail/WordExample) → WordGrammarValidator (de/tr × Noun/Verb, 22+13 hata kodu) →
+> Repository katmanı (ILanguageRepository/IWordConceptRepository) → 5 CRUD Command/Query →
+> LanguagesController/WordsController (canlı doğrulandı, proje adı değişikliği nedeniyle
+> ZauselDB migration'dan sıfırdan oluşturuldu) → Eşleştirme (GetUnmatchedWordConceptsQuery
+> +PairWordConceptsCommand, iki yönlü öneri algoritması, canlı doğrulandı) → IActivityLogger
+> (4 Handler, ApiControllerBase.CurrentUserRole, canlı doğrulandı) → 89 birim testi. Süreçte
+> AKADEMI motorunda gerçek bir bug bulunup düzeltildi (`kod-degisiklik` slaytlarında context
+> satırlarının satirlar[] metin çakışmasıyla yanlışlıkla tıklanabilir hâle gelmesi —
+> `engine/slides-engine.js`'e `satirIndex` konum-tabanlı eşleştirme eklendi) ve kalıcı bir
+> denetim script'i yazıldı (`AKADEMI/backend/_scripts/audit-bolum.js`) — STANDART.md §3.1/§4'e
+> işlendi, A-05'in TÜM 10 bölümü ve öncesindeki gözden kaçmış 48 içeriksiz açıklama script ile
+> bulunup düzeltildi. Sıradaki: `A-06` (Kategori API).
 
 ### A-06 — Kategori API (Categories) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §6

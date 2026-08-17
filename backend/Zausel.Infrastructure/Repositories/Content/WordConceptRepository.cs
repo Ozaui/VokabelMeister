@@ -75,6 +75,75 @@ public class WordConceptRepository : IWordConceptRepository
         return new PagedResult<WordConceptAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
     }
 
+    public async Task<PagedResult<UnmatchedWordAggregate>> GetUnmatchedAsync(
+        int languageId, string? search, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = UnmatchedWordsQuery(languageId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(w => w.Text.Contains(search) || (w.Definition != null && w.Definition.Contains(search)));
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var words = await query
+            .OrderByDescending(w => w.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = await ToUnmatchedAggregatesAsync(words, cancellationToken);
+        return new PagedResult<UnmatchedWordAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+    }
+
+    public async Task<List<UnmatchedWordAggregate>> GetUnmatchedPoolAsync(int languageId, CancellationToken cancellationToken = default)
+    {
+        var words = await UnmatchedWordsQuery(languageId).ToListAsync(cancellationToken);
+        return await ToUnmatchedAggregatesAsync(words, cancellationToken);
+    }
+
+    // Bir WordConcept'in TOPLAM Words satır SAYISI 1 ise (dile bakılmaksızın), o TEK satır zaten
+    // languageId filtresinden GEÇTİYSE bu concept o dilde "eşleşmemiş" demektir — UQ_Words_Concept_Language
+    // kısıtı bir concept'in bir dilde EN FAZLA bir satırı olmasını zaten garanti ettiği için, "toplam
+    // satır sayısı" ile "dil sayısı" burada AYNI ŞEY.
+    private IQueryable<Word> UnmatchedWordsQuery(int languageId)
+    {
+        var singleWordConceptIds = _context.Words
+            .GroupBy(w => w.WordConceptId)
+            .Where(g => g.Count() == 1)
+            .Select(g => g.Key);
+
+        return _context.Words.Where(w => w.LanguageId == languageId && singleWordConceptIds.Contains(w.WordConceptId));
+    }
+
+    private async Task<List<UnmatchedWordAggregate>> ToUnmatchedAggregatesAsync(List<Word> words, CancellationToken cancellationToken)
+    {
+        var conceptIds = words.Select(w => w.WordConceptId).ToList();
+        var concepts = await _context.WordConcepts.Where(c => conceptIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, cancellationToken);
+
+        return words
+            .Select(w => new UnmatchedWordAggregate(
+                w.WordConceptId, w.Text, w.Definition, concepts[w.WordConceptId].PartOfSpeech, concepts[w.WordConceptId].DifficultyLevel))
+            .ToList();
+    }
+
+    public async Task MoveWordToConceptAsync(int wordId, int targetConceptId, int? userId, CancellationToken cancellationToken = default)
+    {
+        var word = await _context.Words.FirstOrDefaultAsync(w => w.Id == wordId, cancellationToken)
+            ?? throw new EntityNotFoundException($"Word not found: Id={wordId}");
+        word.WordConceptId = targetConceptId;
+        word.UpdatedByUserId = userId;
+    }
+
+    public async Task SoftDeleteConceptOnlyAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default)
+    {
+        var concept = await _context.WordConcepts.FirstOrDefaultAsync(c => c.Id == wordConceptId, cancellationToken)
+            ?? throw new EntityNotFoundException($"WordConcept not found: Id={wordConceptId}");
+
+        concept.IsDeleted = true;
+        concept.DeletedAt = DateTime.UtcNow;
+        concept.DeletedByUserId = userId;
+        concept.UpdatedByUserId = userId;
+    }
+
     public async Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default)
     {
         concept.CreatedByUserId = userId;

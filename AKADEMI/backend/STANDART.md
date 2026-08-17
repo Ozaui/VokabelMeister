@@ -140,6 +140,27 @@ slaytına İNDİRGENMEZ:
   hiç açıklanmaması kuralıyla (§3, üçüncü istisna) AYNI mantık — motor zaten context'i turuncu
   render ederek "bu zaten biliniyor" sinyalini VERİYOR, `satirlar[]` bunu tekrar etmez. Yalnızca
   `+`/`-` satırlar `satirlar[]` girdisi alır.
+- ⚠️ **Motor eşleştirmesi VARSAYILAN olarak METNE göre çalışır — aynı diff bloğunda bir `+`
+  satırının metni, BAŞKA bir yerdeki (tipik olarak bir context satırı) metinle karakter karakter
+  AYNI ise, o `+` satır için yazılan `satirlar[]` girdisi context satırını da YANLIŞLIKLA
+  tıklanabilir/açıklanmış hale GETİRİR** — yazan kişi context'e hiç dokunmadığını düşünse bile
+  (bkz. `engine/slides-engine.js` `renderKodDegisiklik`'in başındaki yorum). Bu, yukarıdaki
+  "CONTEXT'e girdi yazılmaz" kuralının GÖRÜNMEZ bir ihlalidir — kod incelemesiyle fark edilmesi
+  ZOR, yalnızca render edilmiş sayfaya bakılınca (context satırının turuncu DEĞİL, yeşil/tıklanabilir
+  GÖRÜNMESİYLE) fark edilir. **İki çözüm yolu var, önce birincisi denenir:**
+  1. **`satirIndex` (0-tabanlı, diff'in satır DİZİSİNDEKİ konumu — `+`/`-`/` ` önek karakteri
+     SAYILMADAN) ekle.** Bu, eşleştirmeyi metin yerine KONUMA göre yapar — aynı metne sahip başka
+     bir satır ARTIK yanlışlıkla eşleşmez, `+` satırı TAM açıklanabilir. Bu alan yazılmayan
+     girdiler eski (metin-tabanlı) davranışı korur, mevcut hiçbir bölüm bozulmaz.
+  2. **`satirIndex` yazmak yerine o `+` satırı için hiç girdi AÇILMAZ** — komşu (çakışmayan) bir
+     satırın `aciklama`sına "hemen alt/üstündeki satır X'in Y bölümüyle BİREBİR aynı olduğu için
+     AYRICA açıklanmıyor" notu eklenir. `satirIndex` her zaman DAHA İYİ bir çözümdür (satır GERÇEKTEN
+     açıklanır); bu yol yalnızca aynı satırın diff İÇİNDE hem context hem `+` olarak ÜÇ+ kez
+     geçtiği, `satirIndex`in okunurluğu bozacağı NADİR durumlarda tercih edilir.
+  **Yeni bir `kod-degisiklik` slaytı yazıldıktan HEMEN sonra**
+  `node AKADEMI/backend/_scripts/audit-bolum.js <dosya.html>` çalıştırılır — bu script hem context
+  sızıntısını (yukarıdaki madde) hem `+` satır kapsamını hem de aşağıdaki §4 "içeriksiz açıklama"
+  kuralını OTOMATİK denetler, `❌`/bulgu listesi dönerse yayına ALINMAZ.
 - Bu slayt, DEĞİŞEN dosyanın SONRAKİ görevine (değişikliği yapan göreve) ait bölümde yer alır —
   eski görevin kendi `kod` slaytına dokunulmaz, yalnızca yeni görev "bak, bu dosyaya önceki bir
   görevde yazdığımız X metodu değişti" diye bu slaytla işaret eder.
@@ -179,10 +200,18 @@ geçmişi yok.
   burada X'e atanıyor" gibi), ama cümlenin TAMAMI bu atıftan ibaret olamaz. Bu kural özellikle
   önceden yazılmış bir arayüzün (interface) implementasyonunu gösteren `kod` slaytlarında ihlal
   edilmeye eğilimlidir (imza tekrar ediyor diye "aynı" denip geçilir) — böyle bir satır için de
-  "bu parametre aşağıda hangi alana/işleme gidiyor" sorusu YANITLANMALIDIR. Yeni bir slayt
-  yazıldıktan sonra `grep -n "değişmedi\|BİREBİR\|AYNI,\|ile AYNI\." <dosya>` ile taranıp
-  eşleşen HER `aciklama`/`neden`/`olmasaydi` alanı gerçek bir açıklamayı İÇERİP içermediği
-  kontrol edilir; yalnızca atıftan ibaretse yeniden yazılır.
+  "bu parametre aşağıda hangi alana/işleme gidiyor" sorusu YANITLANMALIDIR. **En sık görülen somut
+  örneği:** bir `namespace X;`/`using X;` satırı için "Diğer Y'lerle AYNI ad alanı."/"Klasör yoluyla
+  eşleşen ad alanı." gibi salt OLGU bildiren, NEDEN sorusunu hiç yanıtlamayan bir cümle — bu tip
+  satırlar için gerçek gerekçe HER ZAMAN vardır (MediatR/FluentValidation/ASP.NET Core handler'ı
+  DI'yi assembly taraması ile bulur, ad alanına BAKMAZ; klasörleme SALT bir sonraki geliştiricinin
+  "bu özellikle ilgili HER dosya nerede" sorusunu TEK klasöre bakarak yanıtlayabilmesi içindir) ve
+  bu gerekçe YAZILMALIDIR, "aynı" demek YETMEZ. Yeni bir slayt yazıldıktan sonra
+  `node AKADEMI/backend/_scripts/audit-bolum.js <dosya.html>` çalıştırılır — bu script hem bu
+  kuralı (regex tabanlı, `LAZY_PATTERNS`) hem §3.1'in context-sızıntısı/kapsam kurallarını OTOMATİK
+  denetler; `❌` dönerse ilgili alan yeniden yazılır. Script'in regex listesi TAM değildir (yeni bir
+  içeriksiz kalıp fark edilirse `LAZY_PATTERNS`'e eklenir) — otomatik geçmek TEK BAŞINA yeterli
+  DEĞİLDİR, insan gözüyle "bu cümle NEDEN sorusunu gerçekten yanıtlıyor mu" kontrolü HÂLÂ gerekir.
 - **Proje meta-dokümanlarına (`CLAUDE.md`, `TASK.md`, `STANDART.md`'nin kendisi, `ENV.md`,
   `SECURITY.md`, `API_ENDPOINTS.md`, `DATABASE_SCHEMA.md`, `TECHNICAL_SPECIFICATIONS.md`,
   `CODING_STANDARDS.md`, `DEVELOPMENT_SETUP.md`) bir slaytın `aciklama`/`neden`/`olmasaydi`/

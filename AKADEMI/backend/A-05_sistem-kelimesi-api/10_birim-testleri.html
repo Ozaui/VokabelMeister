@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'birim-testleri',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '09_activity-logger.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 10',
+        baslik: 'Birim Testleri',
+        altBaslik: 'WordGrammarValidatorTests (30 test) + 7 Handler/Query testi (59 test, 89 test toplam) — A-05\'in SON adımı, tüm paket 165/165 yeşil.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Test Kapsamı Stratejisi',
+        aciklama: 'Üç ayrı test AİLESİ yazıldı: (1) `WordGrammarValidatorTests` — `WordGrammarValidator`\'ı (Bölüm 2) Handler\'lardan TAMAMEN BAĞIMSIZ, saf bir sınıf olarak test eder (mock YOK); (2) beş Handler/Query testi (Create/Update/Delete/GetById/GetWords, Bölüm 5\'in ürünleri) — repository\'ler Moq ile SAHTELENİR; (3) iki eşleştirme testi (Bölüm 8\'in GetUnmatchedWordConceptsQuery/PairWordConceptsCommand\'ı).',
+        neden: '`WordGrammarValidator`\'ın kendi başına test EDİLEBİLMESİ, Bölüm 2\'de onu `WordGrammarInput` gibi Command\'lardan BAĞIMSIZ bir DTO üzerinde çalışacak şekilde TASARLAMANIN doğrudan SONUCU — bir Command Handler testi yazıp içinden dolaylı yoldan gramer kurallarını test etmek ZORUNDA KALINSAYDI, HANGİ testin HANGİ kuralı kapsadığı BELİRSİZLEŞİRDİ.',
+        olmasaydi: 'Gramer kuralları yalnızca `CreateWordCommandHandlerTests` İÇİNDEN dolaylı test EDİLSEYDİ, 24 farklı hata koduna karşılık gelen 24 SENARYO için HER SEFERİNDE tüm Handler bağımlılıklarını (repository, dil, aggregate) da MOCK\'LAMAK gerekirdi — saf validator testi bunu TAMAMEN atlıyor.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordGrammarValidatorTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Validators/Words/WordGrammarValidatorTests.cs',
+        nedenBuKlasor: 'Test projesindeki klasör yapısı, test EDİLEN sınıfın kaynak klasörünü BİREBİR YANSITIR — `Validators/Words/` burada da `Application/Validators/Words/`\'ün (Bölüm 2, 5, 8) karşılığı, bir geliştiricinin "X sınıfının testi NEREDE" sorusunu TAHMİN edebilmesi için.',
+        kod: `using System.Text.Json;
+using FluentAssertions;
+using Zausel.Application.DTOs.Words;
+using Zausel.Application.Validators.Words;
+using Zausel.Domain.Enums.Content;
+
+namespace Zausel.Tests.Validators.Words;
+
+public class WordGrammarValidatorTests
+{
+    private static readonly string[] DeVerbTenses = ["present", "preterite", "perfect"];
+    private static readonly string[] DePersons = ["ich", "du", "erSieEs", "wir", "ihr", "sie"];
+    private static readonly string[] TrVerbTenses = ["presentContinuous", "aorist", "pastDefinite", "pastNarrative", "future"];
+    private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];
+
+    private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
+
+    // Her tense'e her kişi için AYNI placeholder değeri ("x") yazan bir conjugation JSON'u üretir —
+    // testin ilgilendiği şey DOLU/BOŞ ayrımı, gerçek çekim metinlerinin İÇERİĞİ değil.
+    private static string Conjugation(string[] tenses, string[] persons)
+    {
+        var personEntries = string.Join(",", persons.Select(p => $"\\"{p}\\":\\"x\\""));
+        var tenseEntries = string.Join(",", tenses.Select(t => $"\\"{t}\\":{{{personEntries}}}"));
+        return "{" + tenseEntries + "}";
+    }
+
+    private const string ValidDeNounJson =
+        """{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";
+
+    private static string ValidDeVerbJson(bool separable) =>
+        $$"""{"isSeparableVerb":{{(separable ? "true" : "false")}},{{(separable ? "\\"separablePrefix\\":\\"an\\"," : "")}}"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";
+
+    private const string ValidTrNounJson =
+        """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";
+
+    private static string ValidTrVerbJson() =>
+        $$"""{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";
+
+    // --- Ortak kurallar (dil/tür fark etmeksizin) ---
+
+    [Fact]
+    public void Validate_TextEmpty_ReturnsWordTextRequired()
+    {
+        // ARRANGE — "Diğer" tür seçildi ki gramer kuralları devreye girmesin, yalnızca Text/Definition test edilsin
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Other);
+
+        // ACT
+        var result = validator.Validate(new WordGrammarInput("", "anlam notu", null));
+
+        // ASSERT
+        result.Errors.Should().Contain(e => e.ErrorCode == "WORD_TEXT_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DefinitionEmpty_ReturnsWordDefinitionRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Other);
+
+        var result = validator.Validate(new WordGrammarInput("Wort", "", null));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "WORD_DEFINITION_REQUIRED");
+    }
+
+    // --- de × Diğer (Noun/Verb dışı) ---
+
+    [Fact]
+    public void Validate_DeOtherWithNullGrammarData_IsValid()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Adjective);
+
+        var result = validator.Validate(new WordGrammarInput("schnell", "hızlı", null));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DeOtherWithGrammarData_ReturnsGrammarDataMustBeNull()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Adjective);
+
+        var result = validator.Validate(new WordGrammarInput("schnell", "hızlı", Parse("""{"gender":"Masculine"}""")));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "GRAMMAR_DATA_MUST_BE_NULL");
+    }
+
+    // --- de × Noun ---
+
+    [Fact]
+    public void Validate_DeNounValidData_IsValid()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);
+
+        var result = validator.Validate(new WordGrammarInput("Mann", "erkek, adam", Parse(ValidDeNounJson)));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DeNounMissingGender_ReturnsDeNounGenderRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);
+        var json = """{"plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("Mann", "erkek", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_GENDER_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DeNounMissingPlural_ReturnsDeNounPluralRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);
+        var json = """{"gender":"Masculine","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("Mann", "erkek", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_PLURAL_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DeNounIncompleteCases_ReturnsDeNounCasesIncomplete()
+    {
+        // ARRANGE — dört hâlden yalnızca ikisi dolu (genitive/dative eksik)
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);
+        var json = """{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("Mann", "erkek", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_CASES_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_DeNounWithVerbField_ReturnsDeNounVerbFieldsForbidden()
+    {
+        // ARRANGE — geçerli bir isim, ama YANLIŞLIKLA fiil alanı (auxiliaryVerb) da eklenmiş
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);
+        var json = """{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"},"auxiliaryVerb":"haben"}""";
+
+        var result = validator.Validate(new WordGrammarInput("Mann", "erkek", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_VERB_FIELDS_FORBIDDEN");
+    }
+
+    // --- de × Verb ---
+
+    [Fact]
+    public void Validate_DeVerbValidData_IsValid()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(ValidDeVerbJson(separable: false))));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DeVerbSeparableWithMatchingPrefix_IsValid()
+    {
+        // ARRANGE — ayrılabilir fiil (isSeparableVerb=true) + eşlik eden separablePrefix — SeparablePrefixMatchesFlag'in "eşleşen" dalı
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+
+        var result = validator.Validate(new WordGrammarInput("anfangen", "başlamak", Parse(ValidDeVerbJson(separable: true))));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_DeVerbMissingIsSeparable_ReturnsDeVerbIsSeparableRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = $$"""{"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_IS_SEPARABLE_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DeVerbMissingAuxiliary_ReturnsDeVerbAuxiliaryRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = $$"""{"isSeparableVerb":false,"pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_AUXILIARY_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DeVerbMissingPastParticiple_ReturnsDeVerbPastParticipleRequired()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = $$"""{"isSeparableVerb":false,"auxiliaryVerb":"haben","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_PAST_PARTICIPLE_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_DeVerbSeparableFlagWithoutPrefix_ReturnsDeVerbSeparablePrefixMismatch()
+    {
+        // ARRANGE — isSeparableVerb=true ama separablePrefix HİÇ YOK — SeparablePrefixMatchesFlag'in "uyuşmuyor" dalı
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = $$"""{"isSeparableVerb":true,"auxiliaryVerb":"haben","pastParticiple":"angefangen","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("anfangen", "başlamak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_SEPARABLE_PREFIX_MISMATCH");
+    }
+
+    [Fact]
+    public void Validate_DeVerbIncompleteConjugation_ReturnsDeVerbConjugationIncomplete()
+    {
+        // ARRANGE — yalnızca "present" zamanı dolu, preterite/perfect eksik
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = """{"isSeparableVerb":false,"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{"present":{"ich":"mache","du":"machst","erSieEs":"macht","wir":"machen","ihr":"macht","sie":"machen"}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_CONJUGATION_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_DeVerbWithNounField_ReturnsDeVerbNounFieldsForbidden()
+    {
+        var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);
+        var json = $$"""{"isSeparableVerb":false,"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}},"gender":"Masculine"}""";
+
+        var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_NOUN_FIELDS_FORBIDDEN");
+    }
+
+    // --- tr × Noun ---
+
+    [Fact]
+    public void Validate_TrNounValidData_IsValid()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(ValidTrNounJson)));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_TrNounMissingPlural_ReturnsTrNounPluralRequired()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+        var json = """{"vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_PLURAL_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_TrNounIncompleteCases_ReturnsTrNounCasesIncomplete()
+    {
+        // ARRANGE — altı hâlden yalnızca üçü dolu (locative/ablative/genitive eksik)
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+        var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_CASES_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_TrNounInvalidVowelHarmony_ReturnsTrNounVowelHarmonyInvalid()
+    {
+        // ARRANGE — "kalın"/"ince" DIŞINDA bir değer
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+        var json = """{"plural":"kediler","vowelHarmony":"orta","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_VOWEL_HARMONY_INVALID");
+    }
+
+    [Fact]
+    public void Validate_TrNounIncompletePossessive_ReturnsTrNounPossessiveIncomplete()
+    {
+        // ARRANGE — altı kişiden yalnızca "ben" dolu
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+        var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim"}}""";
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_POSSESSIVE_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_TrNounWithVerbField_ReturnsTrNounVerbFieldsForbidden()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);
+        var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"},"verbRoot":"gel"}""";
+
+        var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_VERB_FIELDS_FORBIDDEN");
+    }
+
+    // --- tr × Verb ---
+
+    [Fact]
+    public void Validate_TrVerbValidData_IsValid()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);
+
+        var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(ValidTrVerbJson())));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_TrVerbMissingVerbRoot_ReturnsTrVerbRootRequired()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);
+        var json = $$"""{"negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_ROOT_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_TrVerbMissingNegativeForm_ReturnsTrVerbNegativeFormRequired()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);
+        var json = $$"""{"verbRoot":"gel","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_NEGATIVE_FORM_REQUIRED");
+    }
+
+    [Fact]
+    public void Validate_TrVerbIncompleteConjugation_ReturnsTrVerbConjugationIncomplete()
+    {
+        // ARRANGE — beş zamandan yalnızca biri (aorist) dolu
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);
+        var json = """{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{"aorist":{"ben":"gelirim","sen":"gelirsin","o":"gelir","biz":"geliriz","siz":"gelirsiniz","onlar":"gelirler"}}}""";
+
+        var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_CONJUGATION_INCOMPLETE");
+    }
+
+    [Fact]
+    public void Validate_TrVerbWithNounField_ReturnsTrVerbNounFieldsForbidden()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);
+        var json = $$"""{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}},"plural":"gelmekler"}""";
+
+        var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(json)));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_NOUN_FIELDS_FORBIDDEN");
+    }
+
+    // --- tr × Diğer ---
+
+    [Fact]
+    public void Validate_TrOtherWithNullGrammarData_IsValid()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Conjunction);
+
+        var result = validator.Validate(new WordGrammarInput("ama", "aber, doch", null));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_TrOtherWithGrammarData_ReturnsGrammarDataMustBeNull()
+    {
+        var validator = new WordGrammarValidator("tr", PartOfSpeech.Conjunction);
+
+        var result = validator.Validate(new WordGrammarInput("ama", "aber, doch", Parse("""{"plural":"x"}""")));
+
+        result.Errors.Should().Contain(e => e.ErrorCode == "GRAMMAR_DATA_MUST_BE_NULL");
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Text.Json;',
+            aciklama: '`JsonElement`/`JsonDocument`\'ı kullanabilmek için gerekli — `WordGrammarInput.GrammarData` bu tipten.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` zincirleme sözdizimi için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.DTOs.Words;',
+            aciklama: '`WordGrammarInput`\'u (Bölüm 2) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Validators.Words;',
+            aciklama: 'Test EDİLEN sınıf `WordGrammarValidator` (Bölüm 2) burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech` enum\'ı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Tests.Validators.Words;',
+            aciklama: 'Test projesindeki klasör yapısı kaynak klasörü YANSITIR — `Zausel.Application.Validators.Words` → `Zausel.Tests.Validators.Words`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordGrammarValidatorTests',
+            aciklama: 'CODING_STANDARDS §6.1\'in `{TestEdilenSınıf}Tests` adlandırma kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] DeVerbTenses = ["present", "preterite", "perfect"];',
+            aciklama: '`WordGrammarValidator`\'ın (Bölüm 2) KENDİ `DeVerbTenses` sabitiyle BİREBİR AYNI değerler — testin "tam çekim" senaryosu üretebilmesi için doğrulanan sınıfla AYNI zaman/kişi kümesini bilmesi GEREKİYOR.',
+            neden: 'Bu değerler `WordGrammarValidator`\'dan (Bölüm 2) `internal`/`public` olarak DIŞA açılıp test buradan İTHAL EDEBİLİRDİ, ama bu proje validator\'ın kendi sabitlerini `private` TUTMAYI (kapsülleme) test kolaylığına TERCİH ediyor — testin kendi kopyası, iki tarafın da AYNI SEVİYEDE gramer bilgisine sahip OLMASINI gerektiriyor, ki bu zaten dilin GERÇEK yapısından geliyor (Almanca 3 zaman).',
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] DePersons = ["ich", "du", "erSieEs", "wir", "ihr", "sie"];',
+            aciklama: 'Almanca 6 şahıs zamiri — `WordGrammarValidator`\'ın (Bölüm 2) `DePersons`\'ıyla AYNI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] TrVerbTenses = ["presentContinuous", "aorist", "pastDefinite", "pastNarrative", "future"];',
+            aciklama: 'Türkçe 5 zaman.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] TrPersons = ["ben", "sen", "o", "biz", "siz", "onlar"];',
+            aciklama: 'Türkçe 6 şahıs zamiri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;',
+            aciklama: 'Ham JSON metnini `WordGrammarInput.GrammarData`\'nın beklediği `JsonElement`\'e ÇEVİRİR — HER testte tekrar eden bu iki adımı (parse + RootElement) TEK bir yardımcıya toplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string Conjugation(string[] tenses, string[] persons)',
+            aciklama: 'Tam bir çekim JSON\'u üreten yardımcı — Almanca 3×6=18, Türkçe 5×6=30 alanlık bir nesneyi ELLE yazmak yerine PROGRAMLI üretir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var personEntries = string.Join(",", persons.Select(p => $"\\"{p}\\":\\"x\\""));',
+            aciklama: 'Her kişi için `"kişi":"x"` biçiminde bir JSON alanı üretir — "x" BİLEREK anlamsız bir DOLGU değeri, `WordGrammarValidator`\'ın (Bölüm 2) kontrol ettiği şey alanın DOLU olması, İÇERİĞİ DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var tenseEntries = string.Join(",", tenses.Select(t => $"\\"{t}\\":{{{personEntries}}}"));',
+            aciklama: 'Her zaman için `"zaman":{...tüm kişiler...}` biçiminde bir JSON alanı üretir — `personEntries` HER zaman için TEKRAR kullanılıyor (aynı 6 kişi, her zamanda AYNI).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return "{" + tenseEntries + "}";',
+            aciklama: 'Tüm zamanları TEK bir JSON nesnesine SARAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private const string ValidDeNounJson =',
+            aciklama: 'Almanca geçerli bir isim için TAM grammarData — `de×Noun` happy-path testinin girdisi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"""{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";',
+            aciklama: 'C# 11 RAW string literal (`"""`) — JSON\'daki çift tırnakları `\\"` ile KAÇIŞ YAPMAYA gerek KALMADAN, JSON\'u OLDUĞU gibi yazmayı sağlar.',
+            neden: 'Kaçış karakterli bir string (`"{\\"gender\\":...}"`) OLSAYDI, iç içe geçmiş JSON\'un OKUNMASI (özellikle `cases` gibi İÇ İÇE nesnelerde) ZORLAŞIRDI — raw string, JSON\'un GERÇEKTE yazılacağı BİÇİMLE test kodundaki HALİNİ AYNI yapıyor.',
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string ValidDeVerbJson(bool separable) =>',
+            aciklama: 'Sabit bir `const` DEĞİL, bir METOT — çünkü ayrılabilir/ayrılamaz fiil için İKİ farklı GEÇERLİ JSON gerekiyor (`isSeparableVerb`+`separablePrefix` BİRLİKTE değişiyor), bu bir PARAMETREYLE kontrol ediliyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '$$"""{"isSeparableVerb":{{(separable ? "true" : "false")}},{{(separable ? "\\"separablePrefix\\":\\"an\\"," : "")}}"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";',
+            aciklama: 'C# 11 İNTERPOLE EDİLMİŞ raw string (`$$"""`) — `{{...}}` İÇİNDEKİ C# ifadeleri (üçlü operatör, `Conjugation` çağrısı) ÇALIŞTIRILIP JSON\'a GÖMÜLÜR; `separable=true` iken `separablePrefix` alanı da EKLENİR, `false` iken HİÇ eklenmez (boş string).',
+            neden: 'İki dolar işareti (`$$`) KULLANILDI çünkü tek dolar (`$`) İLE normal `{`/`}` karakterleri (JSON\'un KENDİSİ) İNTERPOLASYON zannedilirdi — `$$` ile İNTERPOLASYON delimiter\'ı `{{`/`}}`\'YE YÜKSELİR, JSON\'daki TEK `{`/`}` karakterleri DOKUNULMADAN kalır.',
+            olmasaydi: 'Tek `$` kullanılsaydı, JSON\'daki HER `{"gender":...}` gibi TEK süslü parantez BİLE bir interpolasyon BAŞLANGICI sanılıp DERLEME HATASI verirdi — `{{`/`}}` ayrımı OLMASAYDI, JSON İÇEREN interpolasyonlar PRATİKTE yazılamazdı.'
+          },
+          {
+            satir: 'private const string ValidTrNounJson =',
+            aciklama: 'Türkçe geçerli bir isim için TAM grammarData.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '"""{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";',
+            aciklama: 'Altı hâl + altı iyelik kişisi TAM dolu — `WordGrammarValidator`\'ın (Bölüm 2) `AddTrNounRules`\'ının TÜM kurallarını GEÇECEK tek bir örnek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static string ValidTrVerbJson() =>',
+            aciklama: 'Türkçe fiil için PARAMETRESİZ bir metot — Almanca\'nın AKSİNE Türkçe fiilde "ayrılabilirlik" gibi bir DALLANMA YOK, tek bir geçerli şekil YETERLİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '$$"""{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";',
+            aciklama: '`Conjugation(TrVerbTenses, TrPersons)` 5×6=30 alanlık TAM çekimi üretir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit\'in "bu bir test metodudur" işareti — 30 test metodunun HEPSİNİN üzerinde AYNI öznitelik, [Theory]/[InlineData] KULLANILMADI çünkü her senaryonun KENDİ farklı JSON kurulumu var (ortak bir parametre TABLOSUNA indirgenemiyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- Ortak kurallar (dil/tür fark etmeksizin) ---',
+            aciklama: 'Bölüm başlığı yorumu — `Text`/`Definition` kuralları HANGİ dil/tür seçilirse seçilsin AYNI, bu iki test HERHANGİ bir tür (burada "Diğer") ile YAZILABİLİRDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TextEmpty_ReturnsWordTextRequired()',
+            aciklama: 'CODING_STANDARDS §6.2 adlandırması: `{Metot}_{Senaryo}_{BeklenenSonuç}` — `Validate` metodu, `TextEmpty` senaryosu, `WORD_TEXT_REQUIRED` hata koduna karşılık gelen sonuç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("de", PartOfSpeech.Other);',
+            aciklama: '"Diğer" tür seçildi ki gramer kuralları HİÇ devreye GİRMESİN — bu test SADECE Text/Definition kuralını izole ETMEK istiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("", "anlam notu", null));',
+            aciklama: '`Text=""` — boş string, `NotEmpty()` kuralını (Bölüm 2) İHLAL ETMESİ beklenen girdi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "WORD_TEXT_REQUIRED");',
+            aciklama: 'FluentValidation\'ın `ValidationResult.Errors` listesinde BEKLENEN `ErrorCode`\'un VAR OLUP olmadığını kontrol eder — hangi ALANIN mesajı olduğuyla değil, yalnızca KOD ile ilgileniyoruz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DefinitionEmpty_ReturnsWordDefinitionRequired()',
+            aciklama: 'Simetrik test — bu SEFER `Text` DOLU, `Definition` BOŞ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("Wort", "", null));',
+            aciklama: '`Definition=""`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "WORD_DEFINITION_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- de × Diğer (Noun/Verb dışı) ---',
+            aciklama: 'Bölüm başlığı — `PartOfSpeech.Adjective` gibi Noun/Verb DIŞINDAKİ türler için `WordGrammarValidator`\'ın (Bölüm 2) `else` dalı (`GRAMMAR_DATA_MUST_BE_NULL`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeOtherWithNullGrammarData_IsValid()',
+            aciklama: 'Happy path — "Diğer" türde `grammarData=null` GEÇERLİ olmalı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("de", PartOfSpeech.Adjective);',
+            aciklama: 'Sıfat — Noun/Verb DIŞINDA somut bir tür örneği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("schnell", "hızlı", null));',
+            aciklama: '`grammarData=null` — bu türde BEKLENEN değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.IsValid.Should().BeTrue();',
+            aciklama: 'Happy-path testlerin ORTAK ASSERT\'i — `Errors` listesinin İÇERİĞİYLE değil, TAMAMEN geçerli OLUP olmadığıyla ilgileniyoruz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeOtherWithGrammarData_ReturnsGrammarDataMustBeNull()',
+            aciklama: 'Happy-path\'in TERSİ — "Diğer" türde grammarData GÖNDERİLİRSE reddedilmeli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("schnell", "hızlı", Parse("""{"gender":"Masculine"}""")));',
+            aciklama: 'Sıfat için ANLAMSIZ ama gerçekçi bir grammarData (`gender` bir İSİM alanı) — HANGİ içerik olduğu ÖNEMSİZ, `PartOfSpeech.Adjective`\'te grammarData\'nın var OLMASININ KENDİSİ hata.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "GRAMMAR_DATA_MUST_BE_NULL");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- de × Noun ---',
+            aciklama: 'Bölüm başlığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeNounValidData_IsValid()',
+            aciklama: 'Happy path — TAM dolu `ValidDeNounJson` ile hiçbir hata BEKLENMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("de", PartOfSpeech.Noun);',
+            aciklama: '`de×Noun` bölümünün TÜM testlerinin PAYLAŞTIĞI kurulum satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("Mann", "erkek, adam", Parse(ValidDeNounJson)));',
+            aciklama: 'Yukarıda tanımlı SABİT `ValidDeNounJson` — TAM dolu, hiçbir alan EKSİK DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeNounMissingGender_ReturnsDeNounGenderRequired()',
+            aciklama: '`ValidDeNounJson`\'dan TEK fark: `gender` alanı EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";',
+            aciklama: '`gender` YOK, geri kalan HER ŞEY dolu — TEK değişkenli test (yalnızca `gender`\'ın etkisi izole edildi).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("Mann", "erkek", Parse(json)));',
+            aciklama: 'Yerel `json` değişkeni kullanılıyor — bu testin KENDİ eksik-alanlı JSON\'u.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_GENDER_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeNounMissingPlural_ReturnsDeNounPluralRequired()',
+            aciklama: 'Bu SEFER `plural` alanı EKSİK, `gender` DOLU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"gender":"Masculine","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"}}""";',
+            aciklama: '`plural` YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_PLURAL_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeNounIncompleteCases_ReturnsDeNounCasesIncomplete()',
+            aciklama: 'Bu SEFER `cases` nesnesinin KENDİSİ var ama İÇİ eksik.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann"}}""";',
+            aciklama: 'Dört hâlden (nominative/accusative/dative/genitive) yalnızca İKİSİ (nominative/accusative) dolu — `dative`/`genitive` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_CASES_INCOMPLETE");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeNounWithVerbField_ReturnsDeNounVerbFieldsForbidden()',
+            aciklama: 'Bu SEFER isim TAM dolu (geçerli) ama YABANCI bir fiil alanı da EKLENMİŞ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"gender":"Masculine","plural":"Männer","cases":{"nominative":"der Mann","accusative":"den Mann","dative":"dem Mann","genitive":"des Mannes"},"auxiliaryVerb":"haben"}""";',
+            aciklama: 'Tüm isim alanları DOLU + `auxiliaryVerb` (bir FİİL alanı) YANLIŞLIKLA eklenmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- de × Verb ---',
+            aciklama: 'Bölüm başlığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbValidData_IsValid()',
+            aciklama: 'Happy path — ayrılamaz (`separable: false`) bir fiil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("de", PartOfSpeech.Verb);',
+            aciklama: '`de×Verb` bölümünün PAYLAŞILAN kurulumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(ValidDeVerbJson(separable: false))));',
+            aciklama: '`ValidDeVerbJson(false)` — `separablePrefix` alanı HİÇ EKLENMEZ (ayrılamaz fiilde OLMAMASI GEREKEN).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbSeparableWithMatchingPrefix_IsValid()',
+            aciklama: 'İKİNCİ happy-path — ayrılabilir (`separable: true`) bir fiil, `SeparablePrefixMatchesFlag`\'in (Bölüm 2) "eşleşen" dalını test eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("anfangen", "başlamak", Parse(ValidDeVerbJson(separable: true))));',
+            aciklama: '`ValidDeVerbJson(true)` — hem `isSeparableVerb:true` hem `separablePrefix:"an"` BİRLİKTE, `WordGrammarValidator`\'ın (Bölüm 2) `isSeparable == hasPrefix` kuralı SAĞLANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbMissingIsSeparable_ReturnsDeVerbIsSeparableRequired()',
+            aciklama: '`isSeparableVerb` alanı HİÇ YOK (`false` DEĞİL, tamamen EKSİK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";',
+            aciklama: '`isSeparableVerb` YOK, geri kalan (auxiliaryVerb/pastParticiple/conjugation) DOLU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("machen", "yapmak", Parse(json)));',
+            aciklama: 'Bu bölümün TÜM testlerinin ORTAK ACT satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_IS_SEPARABLE_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbMissingAuxiliary_ReturnsDeVerbAuxiliaryRequired()',
+            aciklama: '`auxiliaryVerb` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"isSeparableVerb":false,"pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";',
+            aciklama: '`auxiliaryVerb` YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_AUXILIARY_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbMissingPastParticiple_ReturnsDeVerbPastParticipleRequired()',
+            aciklama: '`pastParticiple` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"isSeparableVerb":false,"auxiliaryVerb":"haben","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";',
+            aciklama: '`pastParticiple` YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_PAST_PARTICIPLE_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbSeparableFlagWithoutPrefix_ReturnsDeVerbSeparablePrefixMismatch()',
+            aciklama: '`SeparablePrefixMatchesFlag`\'in (Bölüm 2) "uyuşmuyor" dalı — `isSeparableVerb=true` ama `separablePrefix` HİÇ YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"isSeparableVerb":true,"auxiliaryVerb":"haben","pastParticiple":"angefangen","conjugation":{{Conjugation(DeVerbTenses, DePersons)}}}""";',
+            aciklama: '`isSeparableVerb:true` ama `separablePrefix` EKLENMEDİ — bayrak ile GERÇEKLİK ÇELİŞİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("anfangen", "başlamak", Parse(json)));',
+            aciklama: 'Bu test farklı bir kelime ("anfangen") kullanıyor — ayrılabilir fiil ÖRNEĞİYLE tutarlı bir isim.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_SEPARABLE_PREFIX_MISMATCH");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbIncompleteConjugation_ReturnsDeVerbConjugationIncomplete()',
+            aciklama: 'Çekim NAKSİK — üç zamandan (present/preterite/perfect) yalnızca BİRİ dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"isSeparableVerb":false,"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{"present":{"ich":"mache","du":"machst","erSieEs":"macht","wir":"machen","ihr":"macht","sie":"machen"}}}""";',
+            aciklama: 'Bu TEK test `Conjugation` yardımcısını KULLANMIYOR — ELLE yazılmış TEK zamanlık (`present`) bir çekim, `preterite`/`perfect` HİÇ YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_DeVerbWithNounField_ReturnsDeVerbNounFieldsForbidden()',
+            aciklama: 'TAM geçerli bir fiil + YABANCI bir isim alanı (`gender`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"isSeparableVerb":false,"auxiliaryVerb":"haben","pastParticiple":"gemacht","conjugation":{{Conjugation(DeVerbTenses, DePersons)}},"gender":"Masculine"}""";',
+            aciklama: 'TAM fiil alanları + `gender` (bir İSİM alanı) YANLIŞLIKLA eklenmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "DE_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- tr × Noun ---',
+            aciklama: 'Bölüm başlığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounValidData_IsValid()',
+            aciklama: 'Happy path.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("tr", PartOfSpeech.Noun);',
+            aciklama: '`tr×Noun` bölümünün PAYLAŞILAN kurulumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(ValidTrNounJson)));',
+            aciklama: 'TAM dolu `ValidTrNounJson`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounMissingPlural_ReturnsTrNounPluralRequired()',
+            aciklama: '`plural` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";',
+            aciklama: '`plural` YOK, geri kalanı TAM.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("kedi", "Katze", Parse(json)));',
+            aciklama: 'Bu bölümün ORTAK ACT satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_PLURAL_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounIncompleteCases_ReturnsTrNounCasesIncomplete()',
+            aciklama: 'Altı hâlden yalnızca ÜÇÜ (nominative/accusative/dative) dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";',
+            aciklama: '`locative`/`ablative`/`genitive` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_CASES_INCOMPLETE");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounInvalidVowelHarmony_ReturnsTrNounVowelHarmonyInvalid()',
+            aciklama: '`vowelHarmony` DOLU ama GEÇERSİZ bir değerde ("kalın"/"ince" DIŞINDA).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"plural":"kediler","vowelHarmony":"orta","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"}}""";',
+            aciklama: '`"orta"` — Türkçe ünlü uyumunda GEÇERLİ bir kategori DEĞİL (yalnızca kalın/ince VAR).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_VOWEL_HARMONY_INVALID");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounIncompletePossessive_ReturnsTrNounPossessiveIncomplete()',
+            aciklama: 'Altı iyelik kişisinden yalnızca BİRİ (ben) dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim"}}""";',
+            aciklama: '`possessive.ben` DOLU, `sen`/`o`/`biz`/`siz`/`onlar` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_POSSESSIVE_INCOMPLETE");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrNounWithVerbField_ReturnsTrNounVerbFieldsForbidden()',
+            aciklama: 'TAM geçerli isim + YABANCI fiil alanı (`verbRoot`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"plural":"kediler","vowelHarmony":"ince","cases":{"nominative":"kedi","accusative":"kediyi","dative":"kediye","locative":"kedide","ablative":"kediden","genitive":"kedinin"},"possessive":{"ben":"kedim","sen":"kedin","o":"kedisi","biz":"kedimiz","siz":"kediniz","onlar":"kedileri"},"verbRoot":"gel"}""";',
+            aciklama: 'TAM isim alanları + `verbRoot` YANLIŞLIKLA eklenmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_NOUN_VERB_FIELDS_FORBIDDEN");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- tr × Verb ---',
+            aciklama: 'Bölüm başlığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrVerbValidData_IsValid()',
+            aciklama: 'Happy path.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("tr", PartOfSpeech.Verb);',
+            aciklama: '`tr×Verb` bölümünün PAYLAŞILAN kurulumu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(ValidTrVerbJson())));',
+            aciklama: 'TAM dolu `ValidTrVerbJson()`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrVerbMissingVerbRoot_ReturnsTrVerbRootRequired()',
+            aciklama: '`verbRoot` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";',
+            aciklama: '`verbRoot` YOK, `negativeForm`+çekim DOLU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("gelmek", "kommen", Parse(json)));',
+            aciklama: 'Bu bölümün ORTAK ACT satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_ROOT_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrVerbMissingNegativeForm_ReturnsTrVerbNegativeFormRequired()',
+            aciklama: '`negativeForm` EKSİK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"verbRoot":"gel","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}}}""";',
+            aciklama: '`negativeForm` YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_NEGATIVE_FORM_REQUIRED");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrVerbIncompleteConjugation_ReturnsTrVerbConjugationIncomplete()',
+            aciklama: 'Beş zamandan yalnızca BİRİ (aorist) dolu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = """{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{"aorist":{"ben":"gelirim","sen":"gelirsin","o":"gelir","biz":"geliriz","siz":"gelirsiniz","onlar":"gelirler"}}}""";',
+            aciklama: 'ELLE yazılmış TEK zamanlık (`aorist`) bir çekim — `Conjugation` yardımcısı BURADA kullanılmadı çünkü test EKSİKLİĞİ göstermek istiyor, TAMLIĞI değil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_CONJUGATION_INCOMPLETE");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrVerbWithNounField_ReturnsTrVerbNounFieldsForbidden()',
+            aciklama: 'TAM geçerli fiil + YABANCI isim alanı (`plural`).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var json = $$"""{"verbRoot":"gel","negativeForm":"gelmemek","conjugation":{{Conjugation(TrVerbTenses, TrPersons)}},"plural":"gelmekler"}""";',
+            aciklama: 'TAM fiil alanları + `plural` YANLIŞLIKLA eklenmiş.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Errors.Should().Contain(e => e.ErrorCode == "TR_VERB_NOUN_FIELDS_FORBIDDEN");',
+            aciklama: 'İlgili hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// --- tr × Diğer ---',
+            aciklama: 'Bölüm başlığı — `de×Diğer`\'in Türkçe simetriği, AYNI iki test.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrOtherWithNullGrammarData_IsValid()',
+            aciklama: 'Happy path.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var validator = new WordGrammarValidator("tr", PartOfSpeech.Conjunction);',
+            aciklama: 'Bağlaç — Türkçe tarafında Noun/Verb DIŞINDA somut bir tür örneği (`de×Diğer`\'in Sıfat\'ından FARKLI bir tür seçildi, aynı örneğin TEKRARI olmasın diye).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("ama", "aber, doch", null));',
+            aciklama: '`grammarData=null` — "ama" kelimesinin, Bölüm 8\'in eşleştirme örneğinde de kullanılan GERÇEKÇİ bir Türkçe bağlaç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Validate_TrOtherWithGrammarData_ReturnsGrammarDataMustBeNull()',
+            aciklama: 'Happy-path\'in TERSİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = validator.Validate(new WordGrammarInput("ama", "aber, doch", Parse("""{"plural":"x"}""")));',
+            aciklama: 'Bağlaç için ANLAMSIZ bir grammarData (`plural` bir İSİM alanı) — İÇERİĞİ ÖNEMSİZ, VAR OLMASI hata.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateWordCommandHandlerTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Words/CreateWordCommandHandlerTests.cs',
+        nedenBuKlasor: '`Zausel.Tests/Features/Words/` — `Application/Features/Words/`\'ün (Bölüm 5, 8, 9) test karşılığı; beş Handler/Query testinin (Create/Update/Delete/GetById/GetWords) TÜMÜ bu klasörde yaşıyor, `WordGrammarValidatorTests`\'in (üstteki slayt) AKSİNE burada repository\'ler Moq ile SAHTELENİYOR.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.DTOs.Words;
+using Zausel.Application.Features.Words;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Enums.Content;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Tests.Features.Words;
+
+public class CreateWordCommandHandlerTests
+{
+    private readonly Mock<IWordConceptRepository> _wordConceptRepository = new();
+    private readonly Mock<ILanguageRepository> _languageRepository = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    private CreateWordCommandHandler CreateHandler() =>
+        new(_wordConceptRepository.Object, _languageRepository.Object, _activityLogger.Object);
+
+    private static WordConceptAggregate BuildAggregate(int conceptId, string languageCode, string text)
+    {
+        var concept = new WordConcept { Id = conceptId, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };
+        var language = new Language { Id = 1, Code = languageCode, Name = "German", NativeName = "Deutsch" };
+        var word = new Word { Id = 1, WordConceptId = conceptId, LanguageId = 1, Text = text, Definition = "ağaç" };
+        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);
+    }
+
+    private void SetupGermanLanguage() =>
+        _languageRepository.Setup(r => r.GetByCodeAsync("de", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" });
+
+    [Fact]
+    public async Task Handle_SingleLanguageTranslation_CreatesConceptAndReturnsResponse()
+    {
+        // ARRANGE
+        SetupGermanLanguage();
+        _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Word?)null);
+        _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.Translations.Should().ContainSingle(t => t.Text == "Baum");
+        _wordConceptRepository.Verify(r => r.AddConceptAsync(It.IsAny<WordConcept>(), 1, It.IsAny<CancellationToken>()), Times.Once);
+        _wordConceptRepository.Verify(r => r.AddWordAsync(It.Is<Word>(w => w.Text == "Baum"), 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateTextWithoutForce_ThrowsWordDuplicateException()
+    {
+        // ARRANGE — aynı dilde aynı metinli bir Word zaten var, force=false
+        SetupGermanLanguage();
+        _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Word { Id = 5, Text = "Baum" });
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<WordDuplicateException>();
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateTextWithForce_CreatesAnyway()
+    {
+        // ARRANGE — force=true duplikat kontrolünü BAYPAS eder
+        SetupGermanLanguage();
+        _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Word { Id = 5, Text = "Baum" });
+        _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: true, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.Should().NotBeNull();
+        _wordConceptRepository.Verify(r => r.AddWordAsync(It.IsAny<Word>(), 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_UnknownLanguageCode_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _languageRepository.Setup(r => r.GetByCodeAsync("xx", It.IsAny<CancellationToken>())).ReturnsAsync((Language?)null);
+        var translations = new List<WordTranslationRequest> { new("xx", "test", "anlam", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Handle_Success_LogsCreateWordActivity()
+    {
+        // ARRANGE
+        SetupGermanLanguage();
+        _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Word?)null);
+        _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 7, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(command, default);
+
+        // ASSERT — CREATE_WORD, OldValue=null (yeni kayıt), NewValue dolu
+        _activityLogger.Verify(l => l.LogAsync(
+            7, "Admin", "CREATE_WORD", "Word", It.IsAny<int?>(), null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentAssertions;',
+            aciklama: '`.Should()` zincirleme sözdizimi için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Moq;',
+            aciklama: 'Repository/servis MOCK\'lamak için — `WordGrammarValidatorTests`\'in (üstteki slayt) AKSİNE bu dosyanın TEMEL aracı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Common.Exceptions;',
+            aciklama: '`WordDuplicateException`\'ı (Bölüm 5) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.DTOs.Words;',
+            aciklama: '`WordTranslationRequest`\'i (Bölüm 4) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Features.Words;',
+            aciklama: 'Test EDİLEN `CreateWordCommand`/`CreateWordCommandHandler` (Bölüm 5, 9) burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: '`IWordConceptRepository`/`ILanguageRepository`\'yi (Bölüm 3) mock\'lamak için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ı (A-04, Bölüm 9) mock\'lamak için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`WordConcept`/`Word`/`Language`/`WordDetail`/`WordExample` (Bölüm 1) sahte nesneler İNŞA etmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Enums.Content;',
+            aciklama: '`PartOfSpeech` enum\'ı için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException`\'ı (A-02) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Tests.Features.Words;',
+            aciklama: 'Kaynak `Application/Features/Words/` (Bölüm 5, 8, 9) klasörünün test-proje karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CreateWordCommandHandlerTests',
+            aciklama: 'CODING_STANDARDS §6.1 adlandırması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<IWordConceptRepository> _wordConceptRepository = new();',
+            aciklama: 'Handler\'ın (Bölüm 5, 9) İLK bağımlılığının SAHTESİ — CODING_STANDARDS §6.4 "repository + dış servisler HER ZAMAN mock" kuralı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<ILanguageRepository> _languageRepository = new();',
+            aciklama: 'İKİNCİ bağımlılığın sahtesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();',
+            aciklama: 'ÜÇÜNCÜ bağımlılığın (Bölüm 9) sahtesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private CreateWordCommandHandler CreateHandler() =>',
+            aciklama: 'HER testte tekrar eden "üç mock\'u Handler\'a geçir" satırını TEK bir yardımcıya toplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new(_wordConceptRepository.Object, _languageRepository.Object, _activityLogger.Object);',
+            aciklama: 'Moq\'un `.Object`\'i — GERÇEK arayüzü UYGULAYAN sahte nesne, Handler\'ın constructor\'ının (Bölüm 9) BEKLEDİĞİ TAM tip.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static WordConceptAggregate BuildAggregate(int conceptId, string languageCode, string text)',
+            aciklama: '`GetAggregateAsync`\'in DÖNMESİ gereken şekli (Bölüm 3) İNŞA eden yardımcı — HER "başarılı oluşturma" testinin PAYLAŞTIĞI kurulum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concept = new WordConcept { Id = conceptId, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };',
+            aciklama: 'Sahte bir `WordConcept` entity\'si (Bölüm 1) — GERÇEK DB\'ye HİÇ dokunmuyor, salt bellekte bir NESNE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = new Language { Id = 1, Code = languageCode, Name = "German", NativeName = "Deutsch" };',
+            aciklama: 'Sahte bir `Language` (Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var word = new Word { Id = 1, WordConceptId = conceptId, LanguageId = 1, Text = text, Definition = "ağaç" };',
+            aciklama: 'Sahte bir `Word` (Bölüm 1).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);',
+            aciklama: '`WordDetail=null`, `Examples=[]` — bu testler grammar/örnek cümle DETAYIYLA İLGİLENMİYOR (o `WordGrammarValidatorTests`\'in — üstteki slayt — İŞİ), yalnızca CRUD akışıyla.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private void SetupGermanLanguage() =>',
+            aciklama: 'Almanca dil ARAMASININ (Bölüm 5\'in `ResolveLanguagesAsync`\'i) sahte YANITINI kuran, DÖRT testte tekrar eden bir kısayol.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository.Setup(r => r.GetByCodeAsync("de", It.IsAny<CancellationToken>()))',
+            aciklama: 'Moq\'un `Setup` sözdizimi — "bu METOT bu ARGÜMANLARLA çağrılırsa, ŞUNU dön" kuralı TANIMLAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync(new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" });',
+            aciklama: 'Asenkron bir Task<T> DÖNEN metotlar için `ReturnsAsync` (senkron `Returns` DEĞİL).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '[Fact]',
+            aciklama: 'xUnit test işareti — beş test metodunun HEPSİNİN üzerinde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task Handle_SingleLanguageTranslation_CreatesConceptAndReturnsResponse()',
+            aciklama: 'Happy-path testi — CODING_STANDARDS §6.5\'in "her public metot için HAPPY PATH" minimum kapsam maddesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'SetupGermanLanguage();',
+            aciklama: 'Üstteki yardımcı metodun ÇAĞRISI — beş testten DÖRDÜNDE tekrar eden bu satır, "Almanca dil sorgusu `de`/Id=1 döner" kurulumunu TEK satıra indiriyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))',
+            aciklama: 'Duplikat kontrolünün (Bölüm 5) sahte YANITI — `excludeWordId: null` çünkü bu bir OLUŞTURMA (henüz hariç tutulacak bir Word YOK).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync((Word?)null);',
+            aciklama: '`null` dönerse duplikat YOK demektir — `WordDuplicateException` FIRLATILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))',
+            aciklama: 'Handler\'ın (Bölüm 5) OLUŞTURDUKTAN SONRA tekrar okuduğu aggregate — `It.IsAny<int>()` çünkü GERÇEK `concept.Id` (mock\'ta OTOMATİK atanmıyor) test için ÖNEMSİZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync(BuildAggregate(1, "de", "Baum"));',
+            aciklama: 'Üstteki yardımcı ile İNŞA edilen sahte sonuç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };',
+            aciklama: 'TEK dilli bir çeviri listesi — `WordDetail`/`Examples` her ikisi de `null` (grammar doğrulaması bu testin KAPSAMI DIŞINDA, `WordGrammarValidatorTests`\'te — üstteki slayt — zaten test EDİLDİ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");',
+            aciklama: 'Command\'ın (Bölüm 5, 9) YEDİ alanı — `Force: false`, `ActorRole: "Admin"` isimli parametrelerle AÇIKÇA belirtildi (okunabilirlik).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var handler = CreateHandler();',
+            aciklama: 'Üstteki yardımcı ile kurulmuş Handler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var result = await handler.Handle(command, default);',
+            aciklama: '`CancellationToken` için `default` — testte gerçek bir İPTAL senaryosu YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Translations.Should().ContainSingle(t => t.Text == "Baum");',
+            aciklama: 'Dönen `WordResponse`\'un beklenen çeviriyi İÇERDİĞİNİ doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository.Verify(r => r.AddConceptAsync(It.IsAny<WordConcept>(), 1, It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: 'Moq\'un `Verify`\'ı — bir METODUN GERÇEKTEN çağrıldığını (kaç KEZ) doğrular; `Setup` "ne DÖNSÜN", `Verify` "ÇAĞRILDI MI" sorusuna cevap verir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository.Verify(r => r.AddWordAsync(It.Is<Word>(w => w.Text == "Baum"), 1, It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: '`It.Is<T>(predicate)` — argümanın TAM DEĞERİNİ DEĞİL, bir KOŞULU (Text=="Baum") doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task Handle_DuplicateTextWithoutForce_ThrowsWordDuplicateException()',
+            aciklama: 'CODING_STANDARDS §6.5\'in "sınır/uç durum (duplikat 409)" minimum kapsam maddesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ReturnsAsync(new Word { Id = 5, Text = "Baum" });',
+            aciklama: 'Bu SEFER `null` DEĞİL, GERÇEK bir `Word` dönüyor — duplikat VAR demek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");',
+            aciklama: '`Force: false` — duplikat kontrolü AKTİF.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var act = () => handler.Handle(command, default);',
+            aciklama: 'İstisna BEKLEYEN testlerde ACT bir LAMBDA\'ya SARILIR — `await handler.Handle(...)` DOĞRUDAN çağrılsaydı istisna TEST METODUNUN kendisini ÇÖKERTİRDİ, `FluentAssertions`\'ın `ThrowAsync` metodu bu lambda\'yı KENDİSİ çalıştırıp istisnayı YAKALAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<WordDuplicateException>();',
+            aciklama: 'FluentAssertions\'ın istisna doğrulaması — Handler\'ın (Bölüm 5) `WordDuplicateException` FIRLATTIĞINI kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task Handle_DuplicateTextWithForce_CreatesAnyway()',
+            aciklama: '`Force=true`nun duplikat kontrolünü NASIL baypas ettiğini doğrulayan EK bir uç-durum testi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var command = new CreateWordCommand("Noun", "A1", null, translations, Force: true, UserId: 1, ActorRole: "Admin");',
+            aciklama: '`Force: true` — YUKARIDAKİ testle TEK fark bu satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'result.Should().NotBeNull();',
+            aciklama: 'İstisna FIRLAMADAN sonuç DÖNDÜĞÜNÜN kanıtı — `Force=true` iken duplikat OLMASINA RAĞMEN oluşturma BAŞARILI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository.Verify(r => r.AddWordAsync(It.IsAny<Word>(), 1, It.IsAny<CancellationToken>()), Times.Once);',
+            aciklama: 'Yalnızca sonucun `null` OLMAMASI YETMEZ — `AddWordAsync`\'in GERÇEKTEN çağrıldığı (yani `Force=true`\'nun kontrolü BAYPAS ETTİĞİ, tamamen ATLAMADIĞI) da doğrulanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task Handle_UnknownLanguageCode_ThrowsEntityNotFoundException()',
+            aciklama: 'CODING_STANDARDS §6.5\'in "bulunamadı (EntityNotFoundException)" minimum kapsam maddesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository.Setup(r => r.GetByCodeAsync("xx", It.IsAny<CancellationToken>())).ReturnsAsync((Language?)null);',
+            aciklama: '"xx" — GEÇERSİZ, sistemde TANIMLI olmayan bir dil kodu; `null` dönüşü Handler\'ın (Bölüm 5) `ResolveLanguagesAsync`\'inin `EntityNotFoundException` FIRLATMASINA yol AÇAR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translations = new List<WordTranslationRequest> { new("xx", "test", "anlam", null, null) };',
+            aciklama: 'GEÇERSİZ dil koduyla bir çeviri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");',
+            aciklama: 'Bu testin Command\'ı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();',
+            aciklama: 'A-02\'nin ORTAK "bulunamadı" istisnası — `WordDuplicateException`\'dan (üstteki test) FARKLI bir istisna TİPİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task Handle_Success_LogsCreateWordActivity()',
+            aciklama: 'Bölüm 9\'un `IActivityLogger` entegrasyonunu doğrulayan test — bu dosyanın DİĞER dört Handler test dosyasında (sözlük slaytı) TEKRAR eden bir kalıp.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 7, ActorRole: "Admin");',
+            aciklama: '`UserId: 7` — bu SEFER SPESİFİK bir değer (diğer testlerdeki `1` DEĞİL), `Verify`de bu TAM DEĞERİN LogAsync\'e GİTTİĞİNİ doğrulayabilmek için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await handler.Handle(command, default);',
+            aciklama: 'Sonuç bir değişkene ATANMIYOR — bu test yalnızca YAN ETKİYLE (log çağrısı) ilgileniyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger.Verify(l => l.LogAsync(',
+            aciklama: '`IActivityLogger.LogAsync`\'in (A-04, Bölüm 9) TAM olarak beklenen argümanlarla çağrıldığını doğrular.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '7, "Admin", "CREATE_WORD", "Word", It.IsAny<int?>(), null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),',
+            aciklama: '`userId=7`/`actorRole="Admin"`/`action="CREATE_WORD"`/`entityType="Word"` TAM DEĞERLERLE, `entityId`/`newValue` `It.IsAny<>()` ile (mock\'ta gerçek Id ATANMADIĞI için), `oldValue`/`ipAddress`/`userAgent` `null` (Bölüm 9\'un CREATE_WORD deseni) TAM DEĞERLE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Times.Once);',
+            aciklama: 'TAM olarak BİR kez çağrıldığını doğrular — sıfır (hiç loglanmadı) ya da birden FAZLA (yanlışlıkla iki kez loglandı) durumlarını EKARTE eder.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Altı Test Dosyası — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'UpdateWordCommandHandlerTests.cs', tanim: '`CreateWordCommandHandlerTests`\'in (üstteki slayt) AYNI Moq+FluentAssertions kalıbı — kendine ÖZGÜ senaryosu: `beforeAggregate`/`beforeResponse` (Bölüm 9\'un "önce oku sonra değiştir" deseni) İKİ AYRI `GetAggregateAsync` çağrısını `SetupSequence` ile SIRALI mock\'lar (birinci çağrı güncellemeden ÖNCEKİ, ikinci SONRAKİ hâli döner) — 4 test.' },
+          { terim: 'DeleteWordCommandHandlerTests.cs', tanim: 'AYNI kalıp — kendine ÖZGÜ: `SoftDeleteConceptCascadeAsync`\'in (Bölüm 5) ÇAĞRILDIĞINI `Verify` eder, `IActivityLogger.LogAsync`\'in `newValue`sinin HER ZAMAN `null` olduğunu doğrular (Bölüm 9) — 3 test.' },
+          { terim: 'GetWordByIdQueryHandlerTests.cs', tanim: 'En KISA dosya — `IActivityLogger` YOK (okuma uçları loglanmıyor), yalnızca happy-path + `EntityNotFoundException` — 2 test.' },
+          { terim: 'GetWordsQueryHandlerTests.cs', tanim: 'Kendine ÖZGÜ senaryo: `partOfSpeech` string\'inin `Enum.TryParse` ile (Bölüm 5) DOĞRU parse EDİLDİĞİNİ VE geçersiz bir string\'in (`"Gecersiz"`) sessizce `null`\'a DÜŞTÜĞÜNÜ `Verify` ile repository\'ye GEÇEN ARGÜMAN üzerinden doğrular — 3 test.' },
+          { terim: 'GetUnmatchedWordConceptsQueryHandlerTests.cs', tanim: 'Eşleştirme testi (Bölüm 8) — `FindSuggestedMatch`\'in (Bölüm 8) İKİ YÖNLÜ arama mantığını AYRI AYRI test eder: Definition→Text yönü VE Text→Definition (ters) yönü, artı "karşı dil YOK" ve "eşleşme YOK" uç durumları — 5 test.' },
+          { terim: 'PairWordConceptsCommandHandlerTests.cs', tanim: 'Eşleştirme testi (Bölüm 8) — `primary`nin (hayatta kalan) aggregate\'ini `SetupSequence` ile İKİ FARKLI anda (birleştirmeden ÖNCE/SONRA) mock\'lar, `MoveWordToConceptAsync`/`SoftDeleteConceptOnlyAsync`\'in DOĞRU argümanlarla çağrıldığını VE `LogAsync`\'in OldValue\'sinin İKİ kavramı da (Primary+Other) TAŞIDIĞINI doğrular — 4 test.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-05 Tamamlandı',
+        maddeler: [
+          '`WordGrammarValidatorTests` 30 test — her dil×tür (de/tr × Noun/Verb/Diğer) kombinasyonu İÇİN en az BİR happy-path + o kombinasyonun HER hata koduna (24 tanesi) karşılık gelen BİR başarısızlık senaryosu; mock YOK, saf `Validate()` çağrısı.',
+          'Beş Handler/Query testi (Create/Update/Delete/GetById/GetWords) `Mock<IWordConceptRepository>`/`Mock<ILanguageRepository>`/`Mock<IActivityLogger>` (Bölüm 9) ile CODING_STANDARDS §6.5\'in minimum kapsamını (happy path + bulunamadı + duplikat 409 + Activity log doğrulaması) karşılıyor — 20 test.',
+          'İki eşleştirme testi (Bölüm 8) `SetupSequence` ile AYNI `GetAggregateAsync` çağrısının İKİ FARKLI ANDA (önce/sonra) FARKLI DEĞER dönmesini simüle ediyor — "önce oku sonra değiştir" deseninin (Bölüm 9) test-YAZMA karşılığı — 9 test.',
+          'CODING_STANDARDS §6.2 adlandırması (`{Metot}_{Senaryo}_{BeklenenSonuç}`) TÜM 59 yeni testte tutarlı — test adının KENDİSİ bir DOKÜMANTASYONDUR, ayrı bir açıklamaya gerek KALMADAN "ne test EDİLDİĞİ" OKUNABİLİR.',
+          'A-05 (Sistem Kelimesi API) TAMAMLANDI: 5 Entity + WordGrammarValidator + Repository katmanı + 5 CRUD Command/Query + LanguagesController/WordsController + Eşleştirme (2 uç) + IActivityLogger (4 Handler) + 89 yeni birim testi — tüm paket 165/165 yeşil.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

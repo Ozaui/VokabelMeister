@@ -21,9 +21,25 @@ public interface IWordConceptRepository
         string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
         int page, int pageSize, CancellationToken cancellationToken = default);
 
+    // Eşleşmemiş = bir WordConcept'in TOPLAM tek Words satırı olması (dile bakılmaksızın) VE o
+    // satırın languageId'de olması — ayrı bir IsMatched kolonu yok, durum COUNT(*)=1'den türetilir.
+    Task<PagedResult<UnmatchedWordAggregate>> GetUnmatchedAsync(
+        int languageId, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    // GetUnmatchedAsync'in SAYFASIZ hâli — bir dildeki eşleşmemiş TÜM kelimelerin öneri havuzu
+    // olarak kullanılması için (karşı dilin eşleşmemiş kavramlarına önerilecek aday listesi).
+    Task<List<UnmatchedWordAggregate>> GetUnmatchedPoolAsync(int languageId, CancellationToken cancellationToken = default);
+
     Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
     Task UpdateConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
     Task SoftDeleteConceptCascadeAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+    // Eşleştirme (PairWordConceptsCommand) iki adımlı: önce otherConceptId'nin Word'leri
+    // primaryId'ye TAŞINIR (MoveWordToConceptAsync), sonra artık boş kalan otherConceptId
+    // SoftDeleteConceptOnlyAsync ile silinir — SoftDeleteConceptCascadeAsync'in AKSİNE Words'e
+    // DOKUNMAZ, çünkü onlar zaten başka bir kavrama taşındı.
+    Task MoveWordToConceptAsync(int wordId, int targetConceptId, int? userId, CancellationToken cancellationToken = default);
+    Task SoftDeleteConceptOnlyAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
 
     Task AddWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
     Task UpdateWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);

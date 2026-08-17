@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-05 — Sistem Kelimesi API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'activity-logger',
+    bolumBaslik: 'A-05 — Sistem Kelimesi API',
+    oncekiBolum: '08_eslestirme.html',
+    sonrakiBolum: '10_birim-testleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 9',
+        baslik: 'IActivityLogger Entegrasyonu',
+        altBaslik: 'CREATE_WORD/UPDATE_WORD/DELETE_WORD/PAIR_WORD_CONCEPTS — kelime içeriğini değiştiren dört Handler, Bölüm 5-8\'in ilk turunda BİLEREK ERTELENMİŞ bir adımı tamamlıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden İçerik CRUD\'u Kendi Audit İzini Bırakır?',
+        aciklama: 'Bu dört Handler `WordConcept`/`Word` satırlarını KALICI olarak DEĞİŞTİRİYOR (oluşturuyor, güncelliyor, siliyor, birleştiriyor) — bunların hiçbiri `SecurityLog`\'un (A-04) kapsadığı bir GÜVENLİK olayı DEĞİL (giriş denemesi, rate limit vb.), ama YİNE DE "hangi admin NE ZAMAN NEYİ değiştirdi" sorusuna KİMSE cevap veremiyordu — DB\'de yalnızca son hâl DURUYORDU, geçmiş YOKTU.',
+        neden: '`ActivityLog` (A-04) TAM olarak bu boşluk için var — `Action`+`EntityType`+`EntityId`+`OldValue`/`NewValue` JSON çiftiyle bir kaydın TÜM yaşam öyküsünü SIRALI tutar. İçeriği DEĞİL DAVRANIŞI (güvenlik) izleyen `SecurityLog`\'dan TAMAMEN AYRI bir sorumluluk.',
+        olmasaydi: 'Bu entegrasyon OLMASAYDI, admin panelin (B-08) log görüntüleme ekranı `/admin/logs/activity`\'de Word ile ilgili TEK bir satır GÖRMEZDİ — bir kelime yanlışlıkla SİLİNDİĞİNDE ya da hatalı DÜZENLENDİĞİNDE "bunu kim, ne zaman yaptı" sorusu YANITSIZ KALIRDI.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'OldValue Nasıl Yakalanıyor? — "Önce Oku, Sonra Değiştir"',
+        aciklama: '`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`\'in ÜÇÜ de aynı sıra izliyor: veritabanı değişikliğinden ÖNCE aggregate\'i `GetAggregateAsync` ile OKUYUP `WordMapping.ToResponse`\'a ÇEVİRİYOR, DEĞİŞİKLİĞİ yaptıktan SONRA bu ÖNCEKİ hâli `OldValue` olarak `LogAsync`\'e VERİYOR.',
+        neden: 'Soft-delete/güncelleme uygulandıktan SONRA aynı sorguyu TEKRARLASAK, `DELETE_WORD`\'de soft-delete FİLTRESİ o kaydı ARTIK bulamaz (silinen satır GÖRÜNMEZ olur), `UPDATE_WORD`\'de ise entity BELLEKTE zaten DEĞİŞMİŞ olur (EF Core Change Tracker aynı örneği DÖNDÜRÜR) — "önce" ve "sonra" farkı SONRADAN asla YENİDEN üretilemez, tek fırsat DEĞİŞİKLİKTEN ÖNCEKİ okumadır.',
+        olmasaydi: '`OldValue`\'yu değişiklikten SONRA okumaya çalışsaydık, `DELETE_WORD`\'de `null`/hata, `UPDATE_WORD`\'de YANLIŞLIKLA "önce" ile "sonra"nın AYNI JSON\'u DÖNDÜĞÜ (ikisi de "sonra"yı gösteren) SESSİZ bir bug ile karşılaşırdık — audit log\'un TEK amacı olan "ne değişti" sorusu YANITSIZ KALIRDI.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ApiControllerBase.cs — CurrentUserRole Eklendi',
+        dosyaYolu: 'backend/Zausel.API/Controllers/ApiControllerBase.cs',
+        neden: '`ActivityLog.ActorRole` (A-04 şeması) "kayıt anındaki rol"ü tutar — dört Handler\'ın `ActorRole` parametresini DOLDURABİLMESİ için Controller\'ın JWT\'den bu değeri OKUYAN bir yola ihtiyacı var, `CurrentUserId`\'nin (A-03 Bölüm 24) YANINA aynı desenle eklendi.',
+        diff: ` using System.Security.Claims;
+ using Microsoft.AspNetCore.Mvc;
+ using Zausel.API.Common;
+
+ namespace Zausel.API.Controllers;
+
+ // AuthController/QrLoginController'ın PAYLAŞTIĞI dört küçük okuma — [Authorize] bir istekte JWT'den
+ // kullanıcı kimliği, ve HER isteğin taşıdığı Accept-Language/IP/User-Agent. Handler'lara Command
+ // inşa ederken geçirilir; Controller'ın kendisi bunların DIŞINDA hiçbir iş mantığı taşımaz.
+ [ApiController]
+ public abstract class ApiControllerBase : ControllerBase
+ {
+     protected int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
++    protected string? CurrentUserRole => User.FindFirstValue(ClaimTypes.Role);
++
+     protected string? AcceptLanguage => HttpContext.GetLanguage();
+
+     protected string? ClientIpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+     protected string? DeviceInfo => Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null;
+ }`,
+        satirlar: [
+          {
+            satir: 'protected string? CurrentUserRole => User.FindFirstValue(ClaimTypes.Role);',
+            aciklama: 'JWT\'nin `role` claim\'ini OKUR — `LoginResponse`\'u üreten `TokenService`\'in (A-03) token\'a GÖMDÜĞÜ AYNI claim, `[Authorize(Roles="Admin")]` özniteliğinin de DOĞRULAMA için kullandığı DEĞER.',
+            neden: 'Nullable (`string?`) — bu property teorik olarak rolsüz bir token için de ÇAĞRILABİLİR (`[Authorize]` ROL şartı koymayan uçlarda), `CurrentUserId`\'nin AKSİNE `!` ile ZORLA null-olmayan yapılmıyor, çünkü Word CRUD dışındaki bazı `[Authorize]` uçlarında rol HİÇ ÖNEMLİ değil.',
+            olmasaydi: 'Bu property OLMASAYDI, HER Word Command\'ının kendi `User.FindFirstValue(ClaimTypes.Role)` çağrısını TEKRARLAMASI (4 Controller metodunda AYNI satır) ya da `ActorRole`\'ü hiç DOLDURMAMASI (audit kaydının değerli bir alanının BOŞ kalması) gerekirdi.'
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'CreateWordCommand.cs — ActivityLog Entegrasyonu',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/CreateWordCommand.cs',
+        neden: 'Yeni bir kelime OLUŞTURULDUĞUNDA `CREATE_WORD` audit kaydı YAZILIR — `OldValue` her zaman `null` (kavram henüz VAR DEĞİLDİ), `NewValue` az önce oluşturulan `WordResponse`.',
+        diff: ` using MediatR;
+ using Zausel.Application.Common.Exceptions;
+ using Zausel.Application.DTOs.Words;
+ using Zausel.Application.Interfaces.Repositories.Content;
++using Zausel.Application.Interfaces.Services;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Enums.Content;
+ using Zausel.Domain.Exceptions;
+
+ namespace Zausel.Application.Features.Words;
+
+ // Force — Controller'da ?force=true query string'inden okunur (API_ENDPOINTS.md §5), Request
+ // DTO'sunun bir alanı DEĞİL, HTTP-bağlamından gelen bir değer (A-03'teki UserId/Language deseniyle AYNI).
+ public record CreateWordCommand(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+     List<WordTranslationRequest> Translations,
+     bool Force,
+-    int? UserId) : IRequest<WordResponse>;
++    int? UserId,
++    string? ActorRole) : IRequest<WordResponse>;
+
+ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordResponse>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+     private readonly ILanguageRepository _languageRepository;
++    private readonly IActivityLogger _activityLogger;
+
+-    public CreateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
++    public CreateWordCommandHandler(
++        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+     {
+         _wordConceptRepository = wordConceptRepository;
+         _languageRepository = languageRepository;
++        _activityLogger = activityLogger;
+     }
+
+     public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)
+     {
+         var languagesByCode = await ResolveLanguagesAsync(request.Translations, cancellationToken);
+
+         if (!request.Force)
+         {
+             foreach (var translation in request.Translations)
+             {
+                 var language = languagesByCode[translation.LanguageCode];
+                 var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(
+                     language.Id, translation.Text, excludeWordId: null, cancellationToken);
+                 if (duplicate is not null)
+                     throw new WordDuplicateException(translation.LanguageCode, translation.Text);
+             }
+         }
+
+         var concept = new WordConcept
+         {
+             PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech),
+             DifficultyLevel = request.DifficultyLevel,
+             ImageUrl = request.ImageUrl
+         };
+         await _wordConceptRepository.AddConceptAsync(concept, request.UserId, cancellationToken);
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         foreach (var translation in request.Translations)
+         {
+             var language = languagesByCode[translation.LanguageCode];
+             var word = new Word
+             {
+                 WordConceptId = concept.Id,
+                 LanguageId = language.Id,
+                 Text = translation.Text,
+                 Definition = translation.Definition
+             };
+             await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);
+             await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+             await AddDetailAndExamplesAsync(word.Id, translation, request.UserId, cancellationToken);
+         }
+
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found after creation: Id={concept.Id}");
+-        return WordMapping.ToResponse(aggregate);
++        var response = WordMapping.ToResponse(aggregate);
++
++        await _activityLogger.LogAsync(
++            request.UserId, request.ActorRole, "CREATE_WORD", entityType: "Word", entityId: concept.Id,
++            oldValue: null, newValue: response, cancellationToken: cancellationToken);
++
++        return response;
+     }
+
+     private async Task<Dictionary<string, Language>> ResolveLanguagesAsync(
+         List<WordTranslationRequest> translations, CancellationToken cancellationToken)
+     {
+         var result = new Dictionary<string, Language>();
+         foreach (var translation in translations)
+         {
+             result[translation.LanguageCode] = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                 ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+         }
+
+         return result;
+     }
+
+     private async Task AddDetailAndExamplesAsync(int wordId, WordTranslationRequest translation, int? userId, CancellationToken cancellationToken)
+     {
+         if (translation.WordDetail is not null)
+         {
+             var detail = new WordDetail
+             {
+                 WordId = wordId,
+                 Pronunciation = translation.WordDetail.Pronunciation,
+                 Notes = translation.WordDetail.Notes,
+                 CommonMistakes = translation.WordDetail.CommonMistakes,
+                 GrammarData = translation.WordDetail.GrammarData?.GetRawText()
+             };
+             await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);
+         }
+
+         if (translation.Examples is not null)
+         {
+             var newExamples = translation.Examples.Select(example => new WordExample
+             {
+                 WordId = wordId,
+                 SentenceText = example.SentenceText,
+                 Level = example.Level,
+                 ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))
+             }).ToList();
+
+             // Yeni bir Word'de silinecek eski örnek yok — ReplaceExamplesAsync boş bir "existing"
+             // bulup yalnızca ekleme yapar, Create/Update AYNI metodu paylaşır.
+             await _wordConceptRepository.ReplaceExamplesAsync(wordId, newExamples, userId, cancellationToken);
+         }
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ı (A-04) kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '    int? UserId) : IRequest<WordResponse>;',
+            aciklama: 'Command\'ın ESKİ (Bölüm 5) son satırı — ALTI alanla BİTİYORDU, `ActorRole` HENÜZ YOKTU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId,',
+            aciklama: 'Aynı alan, artık son satır DEĞİL — `ActorRole` bir satır ALTTA EKLENDİĞİ için sonuna virgül KONDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ActorRole) : IRequest<WordResponse>;',
+            aciklama: 'Yeni YEDİNCİ alan — `ActivityLog.ActorRole`\'ün (A-04 şeması) kaynağı, Controller\'ın `CurrentUserRole`\'den (üstteki slayt) DOLDURDUĞU değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'Handler\'ın ÜÇÜNCÜ bağımlılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)',
+            aciklama: 'ESKİ (Bölüm 5) İKİ parametreli, TEK satırlık constructor imzası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateWordCommandHandler(',
+            aciklama: 'Constructor İMZASI artık ÜÇ parametre ALDIĞI için TEK satıra SIĞMADI, ikiye BÖLÜNDÜ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'İmzanın DEVAMI — üç parametre de constructor GÖVDESİNDE kendi alanına ATANIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'Üçüncü alanın ATANMASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(aggregate);',
+            aciklama: 'ESKİ (Bölüm 5) son satır — dönüş değeri DOĞRUDAN, bir ARA değişkene ATANMADAN döndürülüyordu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var response = WordMapping.ToResponse(aggregate);',
+            aciklama: 'Artık bir DEĞİŞKENE atanıyor — HEM `LogAsync`\'in `newValue` argümanı HEM metodun dönüş değeri olarak İKİ kez KULLANILACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Çağrının BAŞLANGICI — `IActivityLogger`\'ın (A-04) TEK metodu, çok satıra YAYILDI (7 parametre).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "CREATE_WORD", entityType: "Word", entityId: concept.Id,',
+            aciklama: '`userId`/`actorRole` Controller\'dan GELEN JWT bilgisi, `"CREATE_WORD"` bu eylem için SABİT bir Action kodu, `EntityType="Word"` + `EntityId=concept.Id` HANGİ kaydın ETKİLENDİĞİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: null, newValue: response, cancellationToken: cancellationToken);',
+            aciklama: '`oldValue` HER ZAMAN `null` — bir CREATE işleminde "öncesi" diye bir şey YOK, kavram bu satırdan ÖNCE HİÇ VAR OLMADI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return response;',
+            aciklama: 'Artık değişkenden DÖNÜYOR — `LogAsync` çağrısı TAMAMLANDIKTAN sonra AYNI değer istemciye GİDİYOR.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UpdateWordCommand.cs — ActivityLog Entegrasyonu',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/UpdateWordCommand.cs',
+        neden: 'Bir kelime GÜNCELLENDİĞİNDE `UPDATE_WORD` audit kaydı YAZILIR — hem `OldValue` (güncellemeden ÖNCEKİ tam hâl) hem `NewValue` (güncellemeden SONRAKİ tam hâl) DOLU, admin panelin (B-08) "ne DEĞİŞTİ" sorusunu yanıtlayabilmesi için.',
+        diff: ` using MediatR;
+ using Zausel.Application.Common.Exceptions;
+ using Zausel.Application.DTOs.Words;
+ using Zausel.Application.Interfaces.Repositories.Content;
++using Zausel.Application.Interfaces.Services;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Enums.Content;
+ using Zausel.Domain.Exceptions;
+
+ namespace Zausel.Application.Features.Words;
+
+ public record UpdateWordCommand(
+     int WordConceptId,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+     List<WordTranslationRequest> Translations,
+     bool Force,
+-    int? UserId) : IRequest<WordResponse>;
++    int? UserId,
++    string? ActorRole) : IRequest<WordResponse>;
+
+ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordResponse>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+     private readonly ILanguageRepository _languageRepository;
++    private readonly IActivityLogger _activityLogger;
+
+-    public UpdateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
++    public UpdateWordCommandHandler(
++        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+     {
+         _wordConceptRepository = wordConceptRepository;
+         _languageRepository = languageRepository;
++        _activityLogger = activityLogger;
+     }
+
+     public async Task<WordResponse> Handle(UpdateWordCommand request, CancellationToken cancellationToken)
+     {
+-        var concept = (await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken))?.Concept
++        var beforeAggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
++        var beforeResponse = WordMapping.ToResponse(beforeAggregate);
++        var concept = beforeAggregate.Concept;
+
+         concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);
+         concept.DifficultyLevel = request.DifficultyLevel;
+         concept.ImageUrl = request.ImageUrl;
+         await _wordConceptRepository.UpdateConceptAsync(concept, request.UserId, cancellationToken);
+
+         foreach (var translation in request.Translations)
+         {
+             var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                 ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+
+             var existingWord = await _wordConceptRepository.FindWordAsync(concept.Id, language.Id, cancellationToken);
+
+             if (!request.Force)
+             {
+                 var duplicate = await _wordConceptRepository.FindWordByLanguageAndTextAsync(
+                     language.Id, translation.Text, excludeWordId: existingWord?.Id, cancellationToken);
+                 if (duplicate is not null)
+                     throw new WordDuplicateException(translation.LanguageCode, translation.Text);
+             }
+
+             var word = existingWord ?? new Word { WordConceptId = concept.Id, LanguageId = language.Id };
+             word.Text = translation.Text;
+             word.Definition = translation.Definition;
+
+             if (existingWord is null)
+             {
+                 await _wordConceptRepository.AddWordAsync(word, request.UserId, cancellationToken);
+                 await _wordConceptRepository.SaveChangesAsync(cancellationToken); // word.Id gerekli (yeni dil ekleniyor)
+             }
+             else
+             {
+                 await _wordConceptRepository.UpdateWordAsync(word, request.UserId, cancellationToken);
+             }
+
+             await UpsertDetailAsync(word.Id, translation.WordDetail, request.UserId, cancellationToken);
+
+             if (translation.Examples is not null)
+             {
+                 var newExamples = translation.Examples.Select(example => new WordExample
+                 {
+                     WordId = word.Id,
+                     SentenceText = example.SentenceText,
+                     Level = example.Level,
+                     ExampleType = Enum.Parse<ExampleType>(example.ExampleType ?? nameof(ExampleType.Normal))
+                 }).ToList();
+                 await _wordConceptRepository.ReplaceExamplesAsync(word.Id, newExamples, request.UserId, cancellationToken);
+             }
+         }
+
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found after update: Id={concept.Id}");
+-        return WordMapping.ToResponse(aggregate);
++        var response = WordMapping.ToResponse(aggregate);
++
++        await _activityLogger.LogAsync(
++            request.UserId, request.ActorRole, "UPDATE_WORD", entityType: "Word", entityId: concept.Id,
++            oldValue: beforeResponse, newValue: response, cancellationToken: cancellationToken);
++
++        return response;
+     }
+
+     private async Task UpsertDetailAsync(int wordId, WordDetailRequest? request, int? userId, CancellationToken cancellationToken)
+     {
+         if (request is null)
+             return;
+
+         var existingDetail = await _wordConceptRepository.GetDetailByWordIdAsync(wordId, cancellationToken);
+         var detail = existingDetail ?? new WordDetail { WordId = wordId };
+         detail.Pronunciation = request.Pronunciation;
+         detail.Notes = request.Notes;
+         detail.CommonMistakes = request.CommonMistakes;
+         detail.GrammarData = request.GrammarData?.GetRawText();
+
+         if (existingDetail is null)
+             await _wordConceptRepository.AddDetailAsync(detail, userId, cancellationToken);
+         else
+             await _wordConceptRepository.UpdateDetailAsync(detail, userId, cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '    int? UserId) : IRequest<WordResponse>;',
+            aciklama: 'ESKİ (Bölüm 5) son satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId,',
+            aciklama: 'Artık son satır DEĞİL, sonuna virgül EKLENDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ActorRole) : IRequest<WordResponse>;',
+            aciklama: 'Yeni alan — `CreateWordCommand`\'ın (üstteki slayt) AYNI gerekçesiyle.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'Üçüncü bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public UpdateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)',
+            aciklama: 'ESKİ (Bölüm 5) İKİ parametreli, TEK satırlık constructor imzası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public UpdateWordCommandHandler(',
+            aciklama: 'Üç parametreli imza ikiye BÖLÜNDÜ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'İmzanın devamı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'Üçüncü alanın atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '        var concept = (await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken))?.Concept',
+            aciklama: 'ESKİ (Bölüm 5) satır — aggregate\'i OKUR OKUMAZ yalnızca `.Concept`\'i ALIP geri kalanını (Translations) hemen ATIYORDU, `OldValue` için bir kopyası HİÇ SAKLANMIYORDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeAggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)',
+            aciklama: 'Artık TÜM aggregate bir değişkende SAKLANIYOR — `.Concept`\'e HEMEN erişmek YERİNE, önce `OldValue` için bir DTO\'ya ÇEVRİLECEK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeResponse = WordMapping.ToResponse(beforeAggregate);',
+            aciklama: 'Güncellemeden ÖNCEKİ tam hâl — `ActivityLog.OldValue`\'nun kaynağı, bu satırdan SONRA `concept` DEĞİŞTİRİLMEYE başlanacak.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var concept = beforeAggregate.Concept;',
+            aciklama: 'Geri kalan kod (aşağıdaki `concept.PartOfSpeech = ...` gibi mutasyonlar) DEĞİŞMEDEN çalışabilsin diye `concept` DEĞİŞKENİ YİNE tanımlanıyor — TEK fark, artık `beforeAggregate`\'DEN türetiliyor OLMASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(aggregate);',
+            aciklama: 'ESKİ (Bölüm 5) son satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var response = WordMapping.ToResponse(aggregate);',
+            aciklama: 'Artık değişkene atanıyor — hem `LogAsync`\'in `newValue`\'su hem dönüş değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Çağrının başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "UPDATE_WORD", entityType: "Word", entityId: concept.Id,',
+            aciklama: '`"UPDATE_WORD"` — bu Handler\'a ÖZGÜ sabit Action kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: beforeResponse, newValue: response, cancellationToken: cancellationToken);',
+            aciklama: '`CreateWordCommand`\'ın (üstteki slayt) AKSİNE `oldValue` burada DOLU — güncellemeden ÖNCEKİ `beforeResponse`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return response;',
+            aciklama: 'Değişkenden dönüyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'DeleteWordCommand.cs — ActivityLog Entegrasyonu',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/DeleteWordCommand.cs',
+        neden: 'Bir kelime SİLİNDİĞİNDE `DELETE_WORD` audit kaydı YAZILIR — `OldValue` silinen kavramın SON hâli, `NewValue` HER ZAMAN `null` (silindikten sonra bir "yeni hâl" YOK).',
+        diff: ` using MediatR;
+ using Zausel.Application.Interfaces.Repositories.Content;
++using Zausel.Application.Interfaces.Services;
++using Zausel.Domain.Exceptions;
+
+ namespace Zausel.Application.Features.Words;
+
+-public record DeleteWordCommand(int WordConceptId, int? UserId) : IRequest<Unit>;
++public record DeleteWordCommand(int WordConceptId, int? UserId, string? ActorRole) : IRequest<Unit>;
+
+ public class DeleteWordCommandHandler : IRequestHandler<DeleteWordCommand, Unit>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
++    private readonly IActivityLogger _activityLogger;
+
+-    public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
++    public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository, IActivityLogger activityLogger)
++    {
++        _wordConceptRepository = wordConceptRepository;
++        _activityLogger = activityLogger;
++    }
+
+     public async Task<Unit> Handle(DeleteWordCommand request, CancellationToken cancellationToken)
+     {
++        // Silinmeden ÖNCEKİ hâli yakalanıyor — soft-delete'ten SONRA GetAggregateAsync (soft-delete
++        // filtresi yüzünden) bu kavramı BULAMAZ, ActivityLog'un OldValue'su bu yüzden ÖNCE okunuyor.
++        var beforeAggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)
++            ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
++        var beforeResponse = WordMapping.ToResponse(beforeAggregate);
++
+         // Kavram + tüm dillerdeki Word/WordDetail/WordExample TEK bir kademeli soft-delete'te —
+         // WordConceptId FK'i Words'te CASCADE (gerçek DELETE için), ama bu soft-delete, EF'in
+         // otomatik soft-delete filtresi CASCADE'i TAKLİT ETMEZ, repository elle yürütüyor.
+         await _wordConceptRepository.SoftDeleteConceptCascadeAsync(request.WordConceptId, request.UserId, cancellationToken);
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
++
++        await _activityLogger.LogAsync(
++            request.UserId, request.ActorRole, "DELETE_WORD", entityType: "Word", entityId: request.WordConceptId,
++            oldValue: beforeResponse, newValue: null, cancellationToken: cancellationToken);
++
+         return Unit.Value;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException` (A-02) için gerekli — bu dosyada İLK kez kullanılıyor (Bölüm 5\'teki ORİJİNAL `DeleteWordCommand` bu istisnayı hiç FIRLATMIYORDU, `SoftDeleteConceptCascadeAsync`\'in KENDİSİ zaten kontrol EDİYORDU).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record DeleteWordCommand(int WordConceptId, int? UserId) : IRequest<Unit>;',
+            aciklama: 'ESKİ (Bölüm 5) tek satırlık record — İKİ alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record DeleteWordCommand(int WordConceptId, int? UserId, string? ActorRole) : IRequest<Unit>;',
+            aciklama: 'ÜÇÜNCÜ alan eklendi — kısa olduğu için (tek satıra sığdığı için) çok satırlı biçime BÖLÜNMEDİ, `Create`/`Update`\'in AKSİNE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'İKİNCİ bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;',
+            aciklama: 'ESKİ (Bölüm 5) expression-bodied constructor — TEK parametre, TEK atama, `=>` ile TEK satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DeleteWordCommandHandler(IWordConceptRepository wordConceptRepository, IActivityLogger activityLogger)',
+            aciklama: 'ESKİ (Bölüm 5) expression-bodied TEK satırlık constructor ARTIK bir gövdeye AÇILDI — İKİ parametre TEK satıra sığsa da, İKİ AYRI atama expression-body\'de İFADE EDİLEMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Birinci alanın atanması — ESKİ expression-body\'nin YAPTIĞI TEK işin, açık gövdede YAZILMASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'İkinci alanın atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeAggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)',
+            aciklama: 'Silinecek kavramın SİLİNMEDEN ÖNCEKİ hâlini OKUR — Bölüm 5\'in ORİJİNAL `DeleteWordCommandHandler`\'ında bu okuma HİÇ YOKTU, doğrudan `SoftDeleteConceptCascadeAsync`\'e GİDİLİYORDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");',
+            aciklama: 'Geçersiz bir `wordConceptId` artık BURADA (log\'dan ÖNCE) 404\'e DÖNÜŞÜYOR — pratikte davranış DEĞİŞMEDİ, çünkü `SoftDeleteConceptCascadeAsync` (Bölüm 5) ZATEN aynı kontrolü kendi İÇİNDE yapıyordu, şimdi bu kontrol İKİ yerde (erken VE geç) var.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeResponse = WordMapping.ToResponse(beforeAggregate);',
+            aciklama: '`ActivityLog.OldValue`\'nun kaynağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Çağrının başlangıcı — `SoftDeleteConceptCascadeAsync`+`SaveChangesAsync`\'TEN SONRA, `return Unit.Value`\'DAN ÖNCE.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "DELETE_WORD", entityType: "Word", entityId: request.WordConceptId,',
+            aciklama: '`entityId` burada `concept.Id` DEĞİL `request.WordConceptId` — çünkü bu Handler\'da (Create/Update\'in AKSİNE) yerel bir `concept` DEĞİŞKENİ hiç YOK, `beforeAggregate.Concept.Id` de AYNI değeri VERİRDİ ama `request`ten okumak BİR adım daha KISA.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: beforeResponse, newValue: null, cancellationToken: cancellationToken);',
+            aciklama: '`CreateWordCommand`\'ın (üstteki slaytlar) TAM TERSİ — burada `newValue` HER ZAMAN `null`, `oldValue` HER ZAMAN DOLU.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'PairWordConceptsCommand.cs — ActivityLog Entegrasyonu',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/PairWordConceptsCommand.cs',
+        neden: 'Eşleştirme İKİ kavramı BİRLEŞTİRİP birini SİLDİĞİ için `OldValue` de İKİ tarafı (primary + other) birlikte TAŞIYOR — ne `CreateWordCommand`\'ın ne `UpdateWordCommand`\'ın tek-kavramlı diff kalıbı burada YETERLİ.',
+        diff: ` using MediatR;
+ using Zausel.Application.DTOs.Words;
+ using Zausel.Application.Interfaces.Repositories.Content;
++using Zausel.Application.Interfaces.Services;
+ using Zausel.Domain.Exceptions;
+
+ namespace Zausel.Application.Features.Words;
+
+-public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId, int? UserId) : IRequest<WordResponse>;
++public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId, int? UserId, string? ActorRole) : IRequest<WordResponse>;
+
+ public class PairWordConceptsCommandHandler : IRequestHandler<PairWordConceptsCommand, WordResponse>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
++    private readonly IActivityLogger _activityLogger;
+
+-    public PairWordConceptsCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
++    public PairWordConceptsCommandHandler(IWordConceptRepository wordConceptRepository, IActivityLogger activityLogger)
++    {
++        _wordConceptRepository = wordConceptRepository;
++        _activityLogger = activityLogger;
++    }
+
+     public async Task<WordResponse> Handle(PairWordConceptsCommand request, CancellationToken cancellationToken)
+     {
+         // \`primaryId\`nin var OLDUĞUNU burada doğruluyoruz — kendi alanları (PartOfSpeech/Category/
+         // DifficultyLevel) hiç OKUNMUYOR, çünkü aşağıda yalnızca onun WordConcept satırı hayatta
+         // kalıyor ve çakışma kontrolü BİLEREK yapılmıyor (dilden dile gramer türü kayması bir veri
+-        // hatası değil, primaryId'ninki zaten dokunulmadan kalıyor).
+-        _ = await _wordConceptRepository.GetAggregateAsync(request.PrimaryId, cancellationToken)
++        // hatası değil, primaryId'ninki zaten dokunulmadan kalıyor). Yine de aggregate'in TAMAMI
++        // ActivityLog'un OldValue'suna (aşağıda) giriyor — "eşleşmeden ÖNCE primaryId neydi" sorusu
++        // audit için değerli, PartOfSpeech'in OKUNMAMASI ile OldValue'YA hiç GİRMEMESİ FARKLI şeyler.
++        var primaryBefore = await _wordConceptRepository.GetAggregateAsync(request.PrimaryId, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.PrimaryId}");
+         var other = await _wordConceptRepository.GetAggregateAsync(request.OtherConceptId, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.OtherConceptId}");
++        var otherBeforeResponse = WordMapping.ToResponse(other);
+
+         foreach (var translation in other.Translations)
+             await _wordConceptRepository.MoveWordToConceptAsync(translation.Word.Id, request.PrimaryId, request.UserId, cancellationToken);
+
+         await _wordConceptRepository.SoftDeleteConceptOnlyAsync(request.OtherConceptId, request.UserId, cancellationToken);
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         var merged = await _wordConceptRepository.GetAggregateAsync(request.PrimaryId, cancellationToken)
+             ?? throw new EntityNotFoundException($"WordConcept not found after pairing: Id={request.PrimaryId}");
+-        return WordMapping.ToResponse(merged);
++        var response = WordMapping.ToResponse(merged);
++
++        await _activityLogger.LogAsync(
++            request.UserId, request.ActorRole, "PAIR_WORD_CONCEPTS", entityType: "Word", entityId: request.PrimaryId,
++            oldValue: new { Primary = WordMapping.ToResponse(primaryBefore), Other = otherBeforeResponse },
++            newValue: response, cancellationToken: cancellationToken);
++
++        return response;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ı kullanabilmek için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId, int? UserId) : IRequest<WordResponse>;',
+            aciklama: 'ESKİ (Bölüm 8) tek satırlık record — ÜÇ alan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record PairWordConceptsCommand(int PrimaryId, int OtherConceptId, int? UserId, string? ActorRole) : IRequest<WordResponse>;',
+            aciklama: 'DÖRDÜNCÜ alan eklendi — `DeleteWordCommand`\'ın (üstteki slayt) AKSİNE bu satır da (uzun olsa da) TEK satırda KALDI, sadece parametre SAYISI arttı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'İkinci bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public PairWordConceptsCommandHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;',
+            aciklama: 'ESKİ (Bölüm 8) expression-bodied constructor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public PairWordConceptsCommandHandler(IWordConceptRepository wordConceptRepository, IActivityLogger activityLogger)',
+            aciklama: 'ESKİ (Bölüm 8) expression-bodied constructor gövdeye AÇILDI — `DeleteWordCommandHandler`\'ın (üstteki slayt) AYNI dönüşümü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_wordConceptRepository = wordConceptRepository;',
+            aciklama: 'Birinci alanın atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'İkinci alanın atanması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// hatası değil, primaryId\'ninki zaten dokunulmadan kalıyor).',
+            aciklama: 'ESKİ (Bölüm 8) yorum SONU — o an yalnızca "neden PartOfSpeech okunmuyor" SORUSUNU yanıtlıyordu, `OldValue`\'ya değinmiyordu (çünkü `OldValue` HENÜZ yoktu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_ = await _wordConceptRepository.GetAggregateAsync(request.PrimaryId, cancellationToken)',
+            aciklama: 'ESKİ (Bölüm 8) satır — sonucu `_ =` ile BİLEREK ATIYORDU, yalnızca "var mı yok mu" SORUSUNUN yanıtı ÖNEMLİYDİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// hatası değil, primaryId\'ninki zaten dokunulmadan kalıyor). Yine de aggregate\'in TAMAMI',
+            aciklama: 'Yorum GENİŞLETİLDİ — artık NEDEN sonucun (aşağıda) ARTIK atılmadığını da AÇIKLIYOR: `PartOfSpeech`\'in Handler MANTIĞINDA okunmaması ile aynı alanın `OldValue` JSON\'unda YER ALMASI FARKLI kaygılar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// ActivityLog\'un OldValue\'suna (aşağıda) giriyor — "eşleşmeden ÖNCE primaryId neydi" sorusu',
+            aciklama: 'Yorumun DEVAMI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '// audit için değerli, PartOfSpeech\'in OKUNMAMASI ile OldValue\'YA hiç GİRMEMESİ FARKLI şeyler.',
+            aciklama: 'Yorumun SONU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var primaryBefore = await _wordConceptRepository.GetAggregateAsync(request.PrimaryId, cancellationToken)',
+            aciklama: 'Sonuç artık `_ =` ile ATILMIYOR, bir DEĞİŞKENDE tutuluyor — `OldValue`\'nun "Primary" tarafının kaynağı OLACAK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var otherBeforeResponse = WordMapping.ToResponse(other);',
+            aciklama: '`other`\'ın (henüz taşınmadan/silinmeden ÖNCEKİ) DTO hâli — `OldValue`\'nun "Other" tarafı; bu satırdan HEMEN SONRA `other.Translations` BAŞKA bir kavrama TAŞINMAYA başlıyor, o yüzden DTO\'ya çevirme İŞİ taşımadan ÖNCE yapılıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return WordMapping.ToResponse(merged);',
+            aciklama: 'ESKİ (Bölüm 8) son satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var response = WordMapping.ToResponse(merged);',
+            aciklama: 'Artık değişkene atanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Çağrının başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "PAIR_WORD_CONCEPTS", entityType: "Word", entityId: request.PrimaryId,',
+            aciklama: '`entityId` PRIMARY tarafın id\'si — eşleştirmeden SONRA HAYATTA kalan kavram bu, `otherConceptId` SİLİNİYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: new { Primary = WordMapping.ToResponse(primaryBefore), Other = otherBeforeResponse },',
+            aciklama: '`Create`/`Update`/`Delete`\'in (üstteki slaytlar) TEK-kavramlı `OldValue`\'sundan FARKLI — burada İKİ kavramın (primary+other) BİRLEŞTİRME ÖNCESİ hâli TEK bir anonim tipte TAŞINIYOR, çünkü eşleştirme İKİ kaydı BİRDEN etkiliyor.',
+            neden: 'İsimsiz (`new { ... }`) bir tip kullanmak, `PairSnapshot` gibi TEK-KULLANIMLIK bir DTO sınıfı AÇMAKTAN daha YALIN — `JsonSerializer.Serialize` (ActivityLogger, A-04) ZATEN herhangi bir nesneyi SERİLEŞTİREBİLİR, ayrı bir tip TANIMLAMANIN katma DEĞERİ yok.',
+            olmasaydi: 'Ayrı bir isimli DTO sınıfı AÇILSAYDI (`PairOldValueSnapshot` gibi), bu SADECE bir kez, TEK bir Handler\'da kullanılan bir tip için `DTOs/Words/` klasörüne YENİ bir dosya EKLEMEK GEREKİRDİ — YAGNI\'ye AYKIRI, anonim tip TAM olarak bu tek-kullanımlık İHTİYACI karşılıyor.'
+          },
+          {
+            satir: 'newValue: response, cancellationToken: cancellationToken);',
+            aciklama: '`NewValue` — eşleştirmeden SONRAKİ, İKİ dili de İÇEREN birleşmiş `WordResponse`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return response;',
+            aciklama: 'Değişkenden dönüyor.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordsController.cs — CurrentUserRole Dört Çağrıya Eklendi',
+        dosyaYolu: 'backend/Zausel.API/Controllers/WordsController.cs',
+        neden: 'Dört Command\'ın (üstteki dört slayt) YENİ `ActorRole` alanı Controller\'dan DOLDURULMALI — `CurrentUserRole`\'ün (bu bölümün ilk slaytı) TEK tüketicisi burası.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using Zausel.Application.DTOs;
+ using Zausel.Application.DTOs.Words;
+ using Zausel.Application.Features.Words;
+
+ namespace Zausel.API.Controllers;
+
+ [Route("words")]
+ public class WordsController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public WordsController(IMediator mediator) => _mediator = mediator;
+
+     [HttpGet]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<WordResponse>>> GetWords(
+         [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+         var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpGet("{id}")]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> GetById(int id, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GetWordByIdQuery(id), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Create(
+         WordCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+-            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),
++            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPut("{id}")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Update(
+         int id, WordUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+-            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),
++            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpDelete("{id}")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+     {
+-        await _mediator.Send(new DeleteWordCommand(id, CurrentUserId), cancellationToken);
++        await _mediator.Send(new DeleteWordCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
+         return NoContent();
+     }
+
+     [HttpGet("unmatched")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<UnmatchedWordResponse>>> GetUnmatched(
+         [FromQuery] int languageId, [FromQuery] string? search,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+         var result = await _mediator.Send(new GetUnmatchedWordConceptsQuery(languageId, search, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("pair")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Pair(PairWordConceptsRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+-            new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId), cancellationToken);
++            new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId, CurrentUserRole), cancellationToken);
+         return Ok(result);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),',
+            aciklama: 'ESKİ (Bölüm 7) çağrı — ALTI argümanla BİTİYORDU.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),',
+            aciklama: 'YEDİNCİ argüman eklendi — `CurrentUserRole` (bu bölümün ilk slaytı) JWT\'den okunan rolü Command\'a AKTARIYOR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId),',
+            aciklama: 'ESKİ (Bölüm 7) çağrı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),',
+            aciklama: '`Create`in (üstteki iki satır) AYNI ekleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new DeleteWordCommand(id, CurrentUserId), cancellationToken);',
+            aciklama: 'ESKİ (Bölüm 7) çağrı — İKİ argüman.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _mediator.Send(new DeleteWordCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);',
+            aciklama: 'ÜÇÜNCÜ argüman eklendi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId), cancellationToken);',
+            aciklama: 'ESKİ (Bölüm 8) çağrı — ÜÇ argüman.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId, CurrentUserRole), cancellationToken);',
+            aciklama: 'DÖRDÜNCÜ argüman eklendi — dört Command\'ın (bu bölümün dört slaytı) HEPSİ artık `CurrentUserRole` alıyor, tutarlı bir şekilde.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — ActivityLogs Tablosunda Dört Satır',
+        aciklama: 'Sırayla `POST /words` (Baum), `PUT /words/{id}`, `DELETE /words/{id}`, ve iki tek-dilli kelime (Haus/ev) oluşturulup `POST /words/pair` ile birleştirildi. `ActivityLogs` tablosu SQL ile SORGULANDIĞINDA: `1 | 1 | Admin | CREATE_WORD | Word | 4`, `2 | 1 | Admin | UPDATE_WORD | Word | 4`, `3 | 1 | Admin | DELETE_WORD | Word | 4`, `4/5 | ... | CREATE_WORD | Word | 5/6`, `6 | 1 | Admin | PAIR_WORD_CONCEPTS | Word | 5` satırları GERÇEKTEN oluştu.',
+        neden: '`PAIR_WORD_CONCEPTS` satırının `OldValue`\'su AYRICA sorgulanıp `{"Primary":{...WordConceptId:5...},"Other":{...WordConceptId:6...}}` şeklinde İKİ kavramı da TAŞIDIĞI doğrulandı — anonim tip (üstteki slayt) `JsonSerializer.Serialize`\'a (A-04) VERİLDİĞİNDE beklenen JSON şeklini ÜRETTİ.',
+        olmasaydi: 'Bu canlı doğrulama YAPILMASAYDI, `LogAsync`\'in `oldValue`/`newValue` parametrelerine yanlış bir NESNE (ör. `Word` entity\'sinin KENDİSİ, DTO DEĞİL) verilip verilmediği — `Word` entity\'sinin `WordConcept` navigasyon property\'si OLMADIĞI için teorik olarak ÇALIŞIRDI ama `JsonSerializer` bazı entity ilişkilerinde döngüsel referans İSTİSNASI FIRLATABİLİRDİ — yalnızca kod okuyarak fark EDİLEMEZDİ.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'ActorRole', tanim: '`ActivityLog`in (A-04) "kayıt anındaki rol"ü tutan alanı — bir kullanıcının rolü SONRADAN değişse bile (ör. User\'dan Admin\'e terfi), eski log satırları o ANKİ rolü GÖSTERMEYE devam eder.' },
+          { terim: 'Before-fetch deseni', tanim: 'Bir entity DEĞİŞTİRİLMEDEN/SİLİNMEDEN ÖNCE onun DTO\'ya çevrilmiş hâlinin bir DEĞİŞKENDE saklanması — `UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`in ÜÇÜNÜN de `ActivityLog.OldValue`sini doldurmak için kullandığı ORTAK teknik.' },
+          { terim: 'Anonim tip (`new { ... }`)', tanim: 'C#\'ta isimlendirilmeden, yerinde tanımlanan bir obje türü — `PairWordConceptsCommandHandler`\'ın `OldValue`sinde iki kavramı (Primary+Other) TEK bir JSON\'a sarmak için, tek-kullanımlık bir DTO sınıfı AÇMADAN kullanıldı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Dört Word Handler\'ı (Create/Update/Delete/Pair) artık `IActivityLogger`\'a (A-04) `CREATE_WORD`/`UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS` yazıyor — `SecurityLog`\'un (A-04) GÜVENLİK olaylarından TAMAMEN AYRI, İÇERİK değişikliklerinin audit izi.',
+          '`ApiControllerBase.CurrentUserRole` JWT\'nin `role` claim\'ini okuyup dört Command\'ın YENİ `ActorRole` alanını DOLDURUYOR — `ActivityLog.ActorRole`ün ("kayıt anındaki rol") kaynağı.',
+          '"Önce oku, sonra değiştir" deseni `UPDATE_WORD`/`DELETE_WORD`/`PAIR_WORD_CONCEPTS`in ÜÇÜNDE de ZORUNLU — soft-delete/güncellemeden SONRA aynı sorgu ya kaydı BULAMAZ (silinen) ya da ZATEN DEĞİŞMİŞ hâli döner (Change Tracker), "öncesi" bilgisi yalnızca DEĞİŞİKLİKTEN ÖNCE yakalanabilir.',
+          '`PAIR_WORD_CONCEPTS`in `OldValue`si İKİ kavramı (Primary+Other) TEK bir anonim tipte taşıyor — eşleştirme İKİ kaydı BİRDEN etkileyen TEK operasyon olduğu için `Create`/`Update`/`Delete`in tek-kavramlı diff kalıbı YETERSİZ kaldı.',
+          'Canlı doğrulama: `ActivityLogs` tablosuna gerçek istekler SONUCUNDA altı satır (2× CREATE_WORD, 1× UPDATE_WORD, 1× DELETE_WORD, 1× ikinci CREATE_WORD, 1× PAIR_WORD_CONCEPTS) yazıldığı `sqlcmd` ile doğrulandı — `PAIR_WORD_CONCEPTS`in `OldValue`si İKİ kavramı da içeren beklenen JSON şeklini ÜRETTİ.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

@@ -12,6 +12,8 @@ public abstract class ApiControllerBase : ControllerBase
 {
     protected int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+    protected string? CurrentUserRole => User.FindFirstValue(ClaimTypes.Role);
+
     protected string? AcceptLanguage => HttpContext.GetLanguage();
 
     protected string? ClientIpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();

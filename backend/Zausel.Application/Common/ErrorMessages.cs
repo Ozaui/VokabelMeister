@@ -75,6 +75,8 @@ public static class ErrorMessages
             ["EXAMPLE_SENTENCE_TEXT_REQUIRED"] = "Örnek cümle metni zorunlu.",
             ["EXAMPLE_LEVEL_INVALID"] = "Geçersiz örnek cümle seviyesi.",
             ["EXAMPLE_TYPE_INVALID"] = "Geçersiz örnek cümle türü.",
+            ["LANGUAGE_ID_INVALID"] = "Geçersiz dil kimliği.",
+            ["SAME_CONCEPT_PAIR_NOT_ALLOWED"] = "Bir kelime kendisiyle eşleştirilemez.",
         },
         ["de"] = new()
         {
@@ -143,6 +145,8 @@ public static class ErrorMessages
             ["EXAMPLE_SENTENCE_TEXT_REQUIRED"] = "Der Beispielsatz ist erforderlich.",
             ["EXAMPLE_LEVEL_INVALID"] = "Ungültiges Niveau für den Beispielsatz.",
             ["EXAMPLE_TYPE_INVALID"] = "Ungültiger Beispielsatztyp.",
+            ["LANGUAGE_ID_INVALID"] = "Ungültige Sprach-ID.",
+            ["SAME_CONCEPT_PAIR_NOT_ALLOWED"] = "Ein Wort kann nicht mit sich selbst verknüpft werden.",
         },
     };
 

@@ -213,14 +213,29 @@
   //        yeni gereksinim) sonucudur, sebepsiz kod değişikliği olmaz.
   // `diff` alanı: her satırın İLK karakteri `+` (eklendi), `-` (silindi) veya ` ` (değişmedi) —
   //        gerisi kodun kendisi (git unified diff formatıyla aynı disiplin).
+  //
+  // `satirIndex` (opsiyonel, satirlar[] girdisinde): bir `+` satırının metni, AYNI diff bloğunda
+  // BAŞKA bir yerde (tipik olarak bir context satırında, ör. daha önce Bölüm 3'te tam öğretilmiş
+  // bir yardımcı metodun tekrar eden bir satırı) karakter karakter AYNI olabilir — salt metne göre
+  // eşleştirme (aşağıdaki `bySatir`) bu durumda o AÇIKLAMAYI diff'teki HER eşleşen satıra (context
+  // dahil) uygular, yani önceden öğretilmiş bir context satırı YANLIŞLIKLA yeniden tıklanabilir/
+  // açıklanmış GÖRÜNÜR (STANDART.md'nin "context satırlara satirlar[] girdisi YAZILMAZ" kuralını
+  // SESSİZCE ihlal eder, YAZAN kişi context'e hiç DOKUNMADIĞINI düşünse bile). `satirIndex`, diff'in
+  // (işaret karakteri HARİÇ) satır DİZİSİNDEKİ 0-tabanlı konumu belirterek eşleştirmeyi METİN yerine
+  // KONUMA göre yapar — aynı metne sahip başka bir satır ARTIK yanlışlıkla eşleşmez. `satirIndex`
+  // BELİRTİLMEYEN girdiler eski (metin-tabanlı) davranışı KORUR — A-03/A-04/A-05 Bölüm 1-7'nin
+  // TÜM mevcut kod-degisiklik slaytları bu alanı hiç kullanmıyor, geriye dönük UYUMLULUK bozulmaz.
   function renderKodDegisiklik(s, activeIdx) {
     const lines = String(s.diff == null ? '' : s.diff).replace(/\n$/, '').split('\n');
+    const byIndex = new Map();
     const bySatir = new Map();
     (s.satirlar || []).forEach((x, idx) => {
-      if (x.satir) bySatir.set(x.satir.trim(), idx);
+      if (!x.satir) return;
+      if (typeof x.satirIndex === 'number') byIndex.set(x.satirIndex, idx);
+      else bySatir.set(x.satir.trim(), idx);
     });
     const rendered = lines
-      .map((raw) => {
+      .map((raw, lineIdx) => {
         const marker = raw.charAt(0);
         const content = raw.slice(1);
         const cls = marker === '+' ? 'diff-line diff-added'
@@ -228,7 +243,7 @@
           : 'diff-line diff-context';
         const markerChar = marker === '+' ? '+' : marker === '-' ? '−' : ' ';
         const trimmed = content.trim();
-        const idx = bySatir.has(trimmed) ? bySatir.get(trimmed) : -1;
+        const idx = byIndex.has(lineIdx) ? byIndex.get(lineIdx) : (bySatir.has(trimmed) ? bySatir.get(trimmed) : -1);
         const escaped = esc(content);
         const markerSpan = `<span class="diff-marker">${markerChar}</span>`;
         if (idx === -1) return `<span class="${cls}">${markerSpan}${escaped || ' '}</span>`;

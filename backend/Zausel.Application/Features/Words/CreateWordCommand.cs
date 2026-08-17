@@ -2,6 +2,7 @@ using MediatR;
 using Zausel.Application.Common.Exceptions;
 using Zausel.Application.DTOs.Words;
 using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
 using Zausel.Domain.Entities.Content;
 using Zausel.Domain.Enums.Content;
 using Zausel.Domain.Exceptions;
@@ -16,17 +17,21 @@ public record CreateWordCommand(
     string? ImageUrl,
     List<WordTranslationRequest> Translations,
     bool Force,
-    int? UserId) : IRequest<WordResponse>;
+    int? UserId,
+    string? ActorRole) : IRequest<WordResponse>;
 
 public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordResponse>
 {
     private readonly IWordConceptRepository _wordConceptRepository;
     private readonly ILanguageRepository _languageRepository;
+    private readonly IActivityLogger _activityLogger;
 
-    public CreateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
+    public CreateWordCommandHandler(
+        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
     {
         _wordConceptRepository = wordConceptRepository;
         _languageRepository = languageRepository;
+        _activityLogger = activityLogger;
     }
 
     public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)
@@ -74,7 +79,13 @@ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordR
 
         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
             ?? throw new EntityNotFoundException($"WordConcept not found after creation: Id={concept.Id}");
-        return WordMapping.ToResponse(aggregate);
+        var response = WordMapping.ToResponse(aggregate);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "CREATE_WORD", entityType: "Word", entityId: concept.Id,
+            oldValue: null, newValue: response, cancellationToken: cancellationToken);
+
+        return response;
     }
 
     private async Task<Dictionary<string, Language>> ResolveLanguagesAsync(

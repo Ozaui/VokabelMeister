@@ -2,6 +2,7 @@ using MediatR;
 using Zausel.Application.Common.Exceptions;
 using Zausel.Application.DTOs.Words;
 using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
 using Zausel.Domain.Entities.Content;
 using Zausel.Domain.Enums.Content;
 using Zausel.Domain.Exceptions;
@@ -15,23 +16,29 @@ public record UpdateWordCommand(
     string? ImageUrl,
     List<WordTranslationRequest> Translations,
     bool Force,
-    int? UserId) : IRequest<WordResponse>;
+    int? UserId,
+    string? ActorRole) : IRequest<WordResponse>;
 
 public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordResponse>
 {
     private readonly IWordConceptRepository _wordConceptRepository;
     private readonly ILanguageRepository _languageRepository;
+    private readonly IActivityLogger _activityLogger;
 
-    public UpdateWordCommandHandler(IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository)
+    public UpdateWordCommandHandler(
+        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
     {
         _wordConceptRepository = wordConceptRepository;
         _languageRepository = languageRepository;
+        _activityLogger = activityLogger;
     }
 
     public async Task<WordResponse> Handle(UpdateWordCommand request, CancellationToken cancellationToken)
     {
-        var concept = (await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken))?.Concept
+        var beforeAggregate = await _wordConceptRepository.GetAggregateAsync(request.WordConceptId, cancellationToken)
             ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
+        var beforeResponse = WordMapping.ToResponse(beforeAggregate);
+        var concept = beforeAggregate.Concept;
 
         concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);
         concept.DifficultyLevel = request.DifficultyLevel;
@@ -86,7 +93,13 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordR
 
         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)
             ?? throw new EntityNotFoundException($"WordConcept not found after update: Id={concept.Id}");
-        return WordMapping.ToResponse(aggregate);
+        var response = WordMapping.ToResponse(aggregate);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "UPDATE_WORD", entityType: "Word", entityId: concept.Id,
+            oldValue: beforeResponse, newValue: response, cancellationToken: cancellationToken);
+
+        return response;
     }
 
     private async Task UpsertDetailAsync(int wordId, WordDetailRequest? request, int? userId, CancellationToken cancellationToken)
