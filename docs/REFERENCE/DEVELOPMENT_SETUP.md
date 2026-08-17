@@ -9,41 +9,41 @@ Node.js 18.17+ LTS · .NET 9 SDK · SQL Server 2019+ (SSMS) · VS 2022 / VS Code
 
 ## 2. Projeyi Al
 ```bash
-git clone https://github.com/kullanici/WordLearner.git && cd WordLearner/backend && dotnet restore
+git clone https://github.com/kullanici/Zausel.git && cd Zausel/backend && dotnet restore
 ```
 
 ## 3. Backend İskeleti (A-01)
-`WordLearner.sln` ve `global.json`, kök dizindeki `admin/`/`web/`/`mobile/` ile karışmasın diye
+`Zausel.sln` ve `global.json`, kök dizindeki `admin/`/`web/`/`mobile/` ile karışmasın diye
 `backend/` altında yaşar — SDK sürümü de yalnızca backend'i kapsar, frontend'i etkilemez.
 ```bash
 cd backend
-dotnet new sln -n WordLearner
-dotnet new webapi   -n WordLearner.API            -o WordLearner.API
-dotnet new classlib -n WordLearner.Application    -o WordLearner.Application
-dotnet new classlib -n WordLearner.Infrastructure -o WordLearner.Infrastructure
-dotnet new classlib -n WordLearner.Domain         -o WordLearner.Domain
-dotnet new xunit    -n WordLearner.Tests          -o WordLearner.Tests
+dotnet new sln -n Zausel
+dotnet new webapi   -n Zausel.API            -o Zausel.API
+dotnet new classlib -n Zausel.Application    -o Zausel.Application
+dotnet new classlib -n Zausel.Infrastructure -o Zausel.Infrastructure
+dotnet new classlib -n Zausel.Domain         -o Zausel.Domain
+dotnet new xunit    -n Zausel.Tests          -o Zausel.Tests
 dotnet sln add **/*.csproj
 
 # Referanslar: Domain ← Application ← Infrastructure ← API
-dotnet add WordLearner.API reference WordLearner.Application WordLearner.Infrastructure
-dotnet add WordLearner.Application reference WordLearner.Domain
-dotnet add WordLearner.Infrastructure reference WordLearner.Domain WordLearner.Application
-dotnet add WordLearner.Tests reference WordLearner.Application WordLearner.Infrastructure
+dotnet add Zausel.API reference Zausel.Application Zausel.Infrastructure
+dotnet add Zausel.Application reference Zausel.Domain
+dotnet add Zausel.Infrastructure reference Zausel.Domain Zausel.Application
+dotnet add Zausel.Tests reference Zausel.Application Zausel.Infrastructure
 ```
 Tests klasörü: `{Services, Features, Helpers, Repositories}/` (→ `CODING_STANDARDS.md §6`). NuGet → `TECHNICAL_SPECIFICATIONS.md §1`.
 
 ## 4. Migration (dikey dilim — her API kendi migration'ını ekler)
 ```bash
 cd backend
-dotnet ef migrations add InitialCreate --project WordLearner.Infrastructure --startup-project WordLearner.API
-dotnet ef database update --project WordLearner.Infrastructure --startup-project WordLearner.API
+dotnet ef migrations add InitialCreate --project Zausel.Infrastructure --startup-project Zausel.API
+dotnet ef database update --project Zausel.Infrastructure --startup-project Zausel.API
 # Yeni API: dotnet ef migrations add AddXxx (tüm tablolar tek seferde değil, API API büyür)
 ```
 
 ## 5. Çalıştırma
 ```bash
-cd backend && dotnet run --project WordLearner.API   # Swagger: http://localhost:5001/swagger
+cd backend && dotnet run --project Zausel.API   # Swagger: http://localhost:5001/swagger
 cd admin && npm run dev                    # http://localhost:5173  (yalnızca e-posta+şifre, Admin rolü)
 cd web && npm run dev                      # http://localhost:5174  (token localStorage; Apple yok)
 cd mobile && npx expo start                # token Expo Secure Store
@@ -61,7 +61,7 @@ var claims = await ValidateAppleTokenAsync(identityToken);
 
 ## 7. IIS Yayınlama
 ```bash
-dotnet publish backend/WordLearner.API -c Release -r win-x64 --self-contained false -o ./publish/api
+dotnet publish backend/Zausel.API -c Release -r win-x64 --self-contained false -o ./publish/api
 ```
 App Pool → **No Managed Code** (Kestrel + IIS reverse proxy, URL Rewrite gerekli). Frontend: `npm run build` → `dist/`; React Router için `web.config`'e SPA rewrite.
 
@@ -73,8 +73,8 @@ Commit: Türkçe, task no ile başlar → `CLAUDE.md §7` (ör. `A-03: AuthContr
 
 ## 9. Klasör Yapısı
 ```
-WordLearner/
+Zausel/
 ├── CLAUDE.md · docs/
-├── backend/{WordLearner.sln, global.json, WordLearner.API, .Application, .Infrastructure, .Domain, .Tests}
+├── backend/{Zausel.sln, global.json, Zausel.API, .Application, .Infrastructure, .Domain, .Tests}
 ├── admin/ · web/ · mobile/
 ```

@@ -1,7 +1,7 @@
 # API ENDPOINTS
 
 ```
-Base : https://api.wordlearner.com/api/v1  (dev: http://localhost:5001/api/v1)
+Base : https://api.zausel.com/api/v1  (dev: http://localhost:5001/api/v1)
 JSON (UTF-8) · Auth: JWT Bearer · Rate limit: Login 5/15dk → kilit; 100/dk (auth), 10/dk (anonim)
 ```
 
@@ -316,5 +316,5 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | DELETE | `/shared-contents/{token}` | Sahip | Link sil |
 
 ```json
-// POST /shared-contents → { "shareToken": "550e8400-...", "shareUrl": "https://app.wordlearner.com/share/550e8400-..." }
+// POST /shared-contents → { "shareToken": "550e8400-...", "shareUrl": "https://app.zausel.com/share/550e8400-..." }
 ```

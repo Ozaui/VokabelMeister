@@ -4,7 +4,7 @@
 > dosyaları yalnızca o task gerektirince aç (bkz. §2 Yönlendirme). Bir kuralı öğrenmek için
 > birden çok dosya okuman gerekmiyor — hepsi burada.
 >
-> **Proje:** WordLearner — Almanca↔Türkçe kelime öğrenme (SRS). .NET 9 Web API + React (admin/web) +
+> **Proje:** Zausel — Almanca↔Türkçe kelime öğrenme (SRS). .NET 9 Web API + React (admin/web) +
 > React Native (mobil) + Next.js (anonim/public tanıtım sitesi, Faz F — ürün akışından ayrı, farklı
 > teknoloji yığını, bkz. `TASK/F_tanitim_sitesi.md`). Junior eğitimi amaçlı yazılır: kod kendini
 > anlatır, Türkçe yorumlar *neden*i.

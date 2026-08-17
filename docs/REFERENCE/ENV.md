@@ -6,14 +6,14 @@
 
 ## 1. Veritabanı (log tabloları da aynı DB — ek değişken yok)
 ```
-ConnectionStrings__DefaultConnection=Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;
+ConnectionStrings__DefaultConnection=Server=127.0.0.1,1433;Database=ZauselDB;User Id=sa;Password=...;TrustServerCertificate=True;
 ```
 
 ## 2. JWT
 ```
 Jwt__SecretKey=en-az-32-karakter-rastgele        # HMAC-SHA256, min 32 karakter (openssl rand -base64 48)
-Jwt__Issuer=WordLearnerApp
-Jwt__Audience=WordLearnerApp
+Jwt__Issuer=ZauselApp
+Jwt__Audience=ZauselApp
 Jwt__RefreshTokenExpirationDays=7
 ```
 
@@ -25,7 +25,7 @@ Backend yalnızca `GoogleJsonWebSignature.ValidateAsync` ile audience doğrular;
 
 ## 4. Apple Sign In
 ```
-Apple__BundleId=com.vokabelmeister.app
+Apple__BundleId=com.zausel.app
 ```
 JWKS `https://appleid.apple.com/auth/keys`'ten dinamik çekilir.
 > **İleride web'e Apple eklenirse (şu an YOK):** `Apple__ServicesId` gerekir + Apple Console'da bu Services ID mobil Bundle ID'ye "Primary App ID" olarak gruplanmalı, yoksa aynı kişi için iki `sub` → iki hesap (`SECURITY.md §1.2`).
@@ -45,7 +45,7 @@ OneSignal__RestApiKey=os_v2_...    # YALNIZCA backend — asla mobil koda girmez
 ## 7. Dosya Depolama (avatar/görsel)
 ```
 FileStorage__UploadPath=/var/app/uploads
-FileStorage__BaseUrl=https://api.vokabelmeister.com/uploads
+FileStorage__BaseUrl=https://api.zausel.com/uploads
 ```
 `UseStaticFiles()` ile public. Dev: `wwwroot/uploads` + `https://localhost:7001/uploads`.
 
@@ -58,7 +58,7 @@ Cors__AllowedOrigins__2=http://localhost:5174     # Web app
 
 ## 9. İlk Admin Hesabı (A-03.2)
 ```
-INITIAL_ADMIN_EMAIL=admin@vokabelmeister.com
+INITIAL_ADMIN_EMAIL=admin@zausel.com
 INITIAL_ADMIN_PASSWORD=...
 ```
 `Program.cs` başlangıcında (`app.Run()`'dan önce) `AdminSeedService` bu ikisini okur — yalnızca o
@@ -70,11 +70,11 @@ bu bir dokümantasyon notudur, kod zorlaması değil.
 ## appsettings.Development.json Şablonu (`.gitignore`'da)
 ```json
 {
-  "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=VokabelMeisterDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
-  "Jwt": { "SecretKey": "gelistirme-icin-en-az-32-karakter", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp", "RefreshTokenExpirationDays": "7" },
+  "ConnectionStrings": { "DefaultConnection": "Server=127.0.0.1,1433;Database=ZauselDB;User Id=sa;Password=...;TrustServerCertificate=True;" },
+  "Jwt": { "SecretKey": "gelistirme-icin-en-az-32-karakter", "Issuer": "ZauselApp", "Audience": "ZauselApp", "RefreshTokenExpirationDays": "7" },
   "Google": { "ClientId": "..." },
-  "Apple": { "BundleId": "com.vokabelmeister.app" },
-  "INITIAL_ADMIN_EMAIL": "admin@vokabelmeister.com",
+  "Apple": { "BundleId": "com.zausel.app" },
+  "INITIAL_ADMIN_EMAIL": "admin@zausel.com",
   "INITIAL_ADMIN_PASSWORD": "...",
   "OneSignal": { "AppId": "...", "RestApiKey": "..." },
   "FileStorage": { "UploadPath": "wwwroot/uploads", "BaseUrl": "https://localhost:7001/uploads" },

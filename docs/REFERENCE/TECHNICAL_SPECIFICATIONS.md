@@ -5,7 +5,7 @@
 ## 1. NuGet Paketleri (Backend)
 
 ```xml
-<!-- WordLearner.API -->
+<!-- Zausel.API -->
 <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
 <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.0" />   <!-- GET /health (A-02) -->
 <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
@@ -13,7 +13,7 @@
 <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
 <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="6.6.0" />   <!-- ApplicationLog tablosu -->
 
-<!-- WordLearner.Application -->
+<!-- Zausel.Application -->
 <PackageReference Include="MediatR" Version="12.1.1" />
 <PackageReference Include="AutoMapper" Version="13.0.1" />
 <PackageReference Include="FluentValidation" Version="11.9.2" />
@@ -23,7 +23,7 @@
 <PackageReference Include="Google.Apis.Auth" Version="1.67.0" />
 <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />   <!-- DevEmailService'in ILogger'ı için (A-03) -->
 
-<!-- WordLearner.Infrastructure -->
+<!-- Zausel.Infrastructure -->
 <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
 <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
@@ -31,7 +31,7 @@
 <PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />        <!-- A-17 bildirim scheduler'ı -->
 <PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />        <!-- mevcut MSSQL'e job persist -->
 
-<!-- WordLearner.Tests (xUnit) -->
+<!-- Zausel.Tests (xUnit) -->
 <PackageReference Include="xunit" Version="2.7.0" />
 <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7" />
 <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
@@ -76,7 +76,7 @@ npm i @react-native-google-signin/google-signin
 ```json
 {
   "ConnectionStrings": { "DefaultConnection": "..." },
-  "Jwt": { "SecretKey": "MIN_32_KARAKTER", "Issuer": "WordLearnerApp", "Audience": "WordLearnerApp",
+  "Jwt": { "SecretKey": "MIN_32_KARAKTER", "Issuer": "ZauselApp", "Audience": "ZauselApp",
            "ExpirationMinutes": 15, "RefreshTokenExpirationDays": 7 },
   "Cors": { "AllowedOrigins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:8081"] },
   "QrLogin": { "ExpirationSeconds": 120 }
@@ -235,7 +235,7 @@ builder.Host.UseSerilog(/* §9 */);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<WordLearnerDbContext>(o =>
+builder.Services.AddDbContext<ZauselDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddInfrastructureServices();   // repo + logging + DbContext
 builder.Services.AddApplicationServices();       // servisler

@@ -39,7 +39,7 @@
       sabitlenir (`Program.cs`'te tek yerden `MapControllers` öncesi ayarlanır). Şimdilik tek versiyon
       var — `Asp.Versioning` gibi bir kütüphane eklenmez (YAGNI), yalnızca URL prefix'i ileride
       `v2` açılabilecek şekilde baştan konur. Bu karar geriye dönük A-03+ tüm controller'ları etkiler,
-      bu yüzden A-01'e (ilk task) eklendi. → `RoutePrefixConvention` (`WordLearner.API/Conventions/`,
+      bu yüzden A-01'e (ilk task) eklendi. → `RoutePrefixConvention` (`Zausel.API/Conventions/`,
       `IApplicationModelConvention`) tüm controller'lara `"api/v1"` önekini ekler; `Program.cs`'te
       `AddControllers(options => options.Conventions.Add(...))` ile TEK yerden bağlanır.
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-01_proje-iskeleti/02_route-versiyonlama.html`
@@ -48,7 +48,7 @@
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §4, §7
 *(Feature entity'leri YOK — yalnızca her API'ın ihtiyaç duyduğu paylaşılan temel.)*
 > **A-02 sırasında düzeltilen 2 şey (kayıt altına alınmış kararlar):** (1) A-01'de proje referansları
-> kurulurken `WordLearner.Infrastructure` yalnızca `WordLearner.Domain`'e referans veriyordu, Application'a
+> kurulurken `Zausel.Infrastructure` yalnızca `Zausel.Domain`'e referans veriyordu, Application'a
 > değil — `Repository<T>`'nin `IRepository<T>`'yi implemente edebilmesi için bu eksik fark edilip
 > düzeltildi (`DEVELOPMENT_SETUP.md` güncellendi). (2) `SECURITY.md §1.4`'teki "EntityNotFoundException
 > için 404 yanıtı ex.Message (yalnızca Türkçe)" notu `CLAUDE.md §1`/`CODING_STANDARDS.md`'nin
@@ -57,7 +57,7 @@
 > kendi `Code` alanını taşıyor, `AppException`'dan türemeden aynı ilkeyi uyguluyor).
 - [x] `BaseEntity` (Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt, CreatedByUserId, UpdatedByUserId, DeletedByUserId)
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [x] `WordLearnerDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
+- [x] `ZauselDbContext` (boş; `ApplyConfigurationsFromAssembly`, soft delete filter, `SaveChangesAsync` override)
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] `EntityNotFoundException` (Repository<T>.SoftDeleteAsync'in bağımlılığı olduğu için Repository'den önce yazılır)
 - [x] ➜ **AKADEMI/backend'ye işle**
@@ -76,7 +76,7 @@
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] ⚠️ **[2026-08-12] Health check endpoint'i:** `GET /health` (`[AllowAnonymous]`, auth'tan ve
       versiyon prefix'inden BAĞIMSIZ — yani `/health`, `/api/v1/health` değil) — `AddHealthChecks()` +
-      DB bağlantı kontrolü (`AddDbContextCheck<WordLearnerDbContext>`). Deployment/monitoring için
+      DB bağlantı kontrolü (`AddDbContextCheck<ZauselDbContext>`). Deployment/monitoring için
       gerekli, spekülatif değil — ilk günden ihtiyaç duyulur, bu yüzden A-02'ye (ortak altyapı) eklendi.
       → `MapHealthChecks("/health", ...)` minimal API endpoint'i olarak (Controller DEĞİL, bu yüzden
       `RoutePrefixConvention`'dan hiç etkilenmiyor) — özel `ResponseWriter` `{ status, databaseConnected,
@@ -122,7 +122,7 @@
 > türemediği için generic `IRepository<T>` kullanılamıyor — `IUserRepository`/`UserRepository` ve
 > `IRefreshTokenRepository`/`RefreshTokenRepository` (Auth'a özel, dar arayüz; Update metodu YOK,
 > EF change tracking + tek `SaveChangesAsync` yeterli, OtpService/LoginCompletionService'in "servis
-> saf mantık taşır" deseniyle aynı). `WordLearnerDbContext`'e de bu adımda ilk kez `DbSet<User>`/
+> saf mantık taşır" deseniyle aynı). `ZauselDbContext`'e de bu adımda ilk kez `DbSet<User>`/
 > `DbSet<RefreshToken>` eklendi (önceden yalnızca `ApplyConfigurationsFromAssembly` ile örtük
 > tanımlıydı). (2) Task metninde yalnızca `IAppleTokenValidator` anılmış olsa da `IGoogleTokenValidator`
 > da eklendi — `GoogleJsonWebSignature.ValidateAsync` statik bir çağrı, arkasına bir arayüz konmazsa
@@ -181,7 +181,7 @@
 > önlemi). (4) **Canlı testte bulunan bug:** `GenerateQrLoginCommand`'ın standart Base64 token'ı
 > (`/`, `+` içerebilir) URL path segmentinde (`/auth/qr/{token}/...`) routing'i bozuyordu — gerçek
 > sunucu + gerçek HTTP isteğiyle test edilene kadar fark edilmedi, URL-safe Base64'e (`-`/`_`,
-> dolgusuz) çevrilerek düzeltildi. (5) Test sırasında `VokabelMeisterDB`'nin 2026-08-08'de silinen
+> dolgusuz) çevrilerek düzeltildi. (5) Test sırasında `ZauselDB`'nin 2026-08-08'de silinen
 > eski backend'in artığı olduğu keşfedildi (Words/Categories/SmtpSettings gibi artık kod tabanında
 > olmayan tablolar + eksik migration geçmişi) — kullanıcı onayıyla DB sıfırlanıp güncel 2 migration
 > temiz uygulandı.
@@ -228,8 +228,8 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm)
 
 > **Not (2026-08-14):** Kod+ENV+test tamamlandı, canlı doğrulama yapıldı — gerçek DB'ye karşı `dotnet run`
-> ile ilk çalıştırmada `admin@vokabelmeister.com` (Role=Admin) oluştuğu SQL loglarında görüldü
-> (`INSERT INTO [Users]... Initial admin account seeded for admin@vokabelmeister.com`), ikinci
+> ile ilk çalıştırmada `admin@zausel.com` (Role=Admin) oluştuğu SQL loglarında görüldü
+> (`INSERT INTO [Users]... Initial admin account seeded for admin@zausel.com`), ikinci
 > çalıştırmada idempotent davrandığı doğrulandı (INSERT YOK, sessiz atlama — DB'de zaten var).
 > Akademi işleme de tamamlandı — `AKADEMI/backend/A-03.2_ilk-admin-hesabi/` (1 bölüm: kavram,
 > `IAdminSeedService`/`AdminSeedService` kod, `DependencyInjection.cs`/`Program.cs` kod-değişiklik,

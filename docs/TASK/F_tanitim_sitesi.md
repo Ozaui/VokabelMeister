@@ -29,8 +29,8 @@
 > - i18n: proje geneli hedef kitle DE↔TR (`CLAUDE.md` §1) — bu site de en az **tr/de** iki dilde.
 >   Kütüphane (`next-intl` vb.) F-01'de seçilir.
 >
-> ⚠️ **Açık karar (henüz verilmedi):** Hosting/domain (`vokabelmeister.com` kökü mü, ayrı bir alan
-> adı mı — `ENV.md`'deki `api.vokabelmeister.com` ile çakışmayacak şekilde). F-10'da, Faz E'nin
+> ⚠️ **Açık karar (henüz verilmedi):** Hosting/domain (`zausel.com` kökü mü, ayrı bir alan
+> adı mı — `ENV.md`'deki `api.zausel.com` ile çakışmayacak şekilde). F-10'da, Faz E'nin
 > deployment kararlarıyla birlikte netleşecek.
 
 ### F-01 — Kurulum ⬜

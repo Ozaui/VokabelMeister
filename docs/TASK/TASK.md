@@ -82,7 +82,7 @@ paketleri, appsettings.json/appsettings.Development.json ayrımı [ENV.md], baş
 `AKADEMI/backend/A-01_proje-iskeleti/`e işlendi, bkz. `02_yapilandirma-ozet-sozluk.html`.)
 
 (`A-02 — Ortak Altyapı` ✅ tamamlandı 2026-08-10: BaseEntity, EntityNotFoundException,
-WordLearnerDbContext [reflection tabanlı otomatik soft-delete filtresi], IRepository<T>/Repository<T>/
+ZauselDbContext [reflection tabanlı otomatik soft-delete filtresi], IRepository<T>/Repository<T>/
 AddInfrastructureServices, ApiErrorResponse+ErrorMessages [Code+dil sözlüğü], 3 middleware
 [ExceptionHandling/SecurityHeaders/RequestResponseLogging], Program.cs [Serilog/JWT/CORS/
 FluentValidation/MediatR — gerçekten çalıştırılıp Swagger/güvenlik başlıkları/loglama canlı

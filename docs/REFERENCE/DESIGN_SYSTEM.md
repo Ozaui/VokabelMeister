@@ -27,6 +27,13 @@
 > karara kadar §4/§5/§7/§8'deki değerler **taslak/referans** sayılır; kod bunları birebir
 > uygulamaya başlamadan önce bu notun hâlâ güncel olup olmadığı kontrol edilmeli.
 
+> **Not (2026-08-17 — accent rengi maskota hizalandı):** `accent`/`accent-hover` artık maskot
+> Zausel'in kendi paletinden birebir alınıyor (`TASK/F_tanitim_sitesi.md` F-02.1) — light `accent`
+> maskotun ana turuncusu (`#F2661D`), light `accent-hover` maskotun tüy tutamı gölge tonu
+> (`#C94E0C`). Dark mod değerleri (`#F27537`/`#F28A5A`) eski light↔dark oranı korunarak türetildi.
+> Diğer token'lar (background/surface/border/text, success/warning/destructive) **değişmedi** —
+> kullanıcı kararıyla kapsam yalnızca accent'le sınırlı tutuldu.
+
 ## 1. Renk Paleti — Light
 
 | Token              | Hex       | Kullanım                                                                        |
@@ -38,8 +45,8 @@
 | `text-secondary`   | `#8E8E93` | Yardımcı/ikincil metin, okunuşlar, dil bilgisi ipuçları                         |
 | `text-muted`       | `#AEAEE2` | Placeholder, en düşük öncelikli metin                                           |
 | `border`           | `#E5E5EA` | Kart/input/tablo kenarlığı                                                      |
-| `accent` (primary) | `#FF6B00` | Tek aksan rengi — primary buton, aktif nav linki, streak ateşi, ilerleme çubuğu |
-| `accent-hover`     | `#E05E00` | Accent'in hover/active tonu (~%10 koyu)                                         |
+| `accent` (primary) | `#F2661D` | Tek aksan rengi — primary buton, aktif nav linki, streak ateşi, ilerleme çubuğu |
+| `accent-hover`     | `#C94E0C` | Accent'in hover/active tonu                                                     |
 | `success`          | `#34C759` | Başarı durumu, doğru cevap (Apple Yeşili)                                       |
 | `warning`          | `#FFCC00` | Uyarı durumu, XP/Puan vurgusu                                                   |
 | `destructive`      | `#FF3B30` | Silme/tehlikeli aksiyon, yanlış cevap                                           |
@@ -59,8 +66,8 @@ accent rengi koyu zeminde göz yormaması için hafif yumuşatılır).
 | `text-secondary` | `#98989D` | `#8E8E93`       |                                                 |
 | `text-muted`     | `#636366` | `#AEAEE2`       |                                                 |
 | `border`         | `#2C2C2E` | `#E5E5EA`       |                                                 |
-| `accent`         | `#FF7A1A` | `#FF6B00`       | Koyu zeminde kontrast için daha yumuşak turuncu |
-| `accent-hover`   | `#FF8F3D` | `#E05E00`       |                                                 |
+| `accent`         | `#F27537` | `#F2661D`       | Koyu zeminde kontrast için daha yumuşak turuncu |
+| `accent-hover`   | `#F28A5A` | `#C94E0C`       |                                                 |
 | `success`        | `#30D158` | `#34C759`       |                                                 |
 | `warning`        | `#FFD60A` | `#FFCC00`       |                                                 |
 | `destructive`    | `#FF453A` | `#FF3B30`       |                                                 |

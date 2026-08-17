@@ -60,7 +60,7 @@ Gerçekten çok adımlı bir akış varsa (ör. SM-2 hesaplama) kod kendi akış
 
 ## 6. Birim Test Standardı (zorunlu — Faz E'ye bırakılmaz)
 
-**Araçlar:** xUnit + Moq + FluentAssertions + `EFCore.InMemory` (yalnızca `Repository<T>` gibi DB'ye dokunan testlerde). Proje: `WordLearner.Tests`.
+**Araçlar:** xUnit + Moq + FluentAssertions + `EFCore.InMemory` (yalnızca `Repository<T>` gibi DB'ye dokunan testlerde). Proje: `Zausel.Tests`.
 
 **6.1 Konum/adlandırma:** `Tests/{Services|Features|Helpers|Repositories}/`. `{TestEdilenSınıf}Tests.cs`.
 

@@ -25,10 +25,10 @@
 ## 2. Backend Katmanlı Mimari
 
 ```
-WordLearner.API            → HTTP (Controllers, Middleware, Program.cs)
-WordLearner.Application    → İş mantığı (Features/Handlers, DTOs, Validators, Interfaces, Services)
-WordLearner.Infrastructure → Veri erişimi (DbContext, Repositories, Configurations, Serilog sink)
-WordLearner.Domain         → Entities, Enums
+Zausel.API            → HTTP (Controllers, Middleware, Program.cs)
+Zausel.Application    → İş mantığı (Features/Handlers, DTOs, Validators, Interfaces, Services)
+Zausel.Infrastructure → Veri erişimi (DbContext, Repositories, Configurations, Serilog sink)
+Zausel.Domain         → Entities, Enums
 ```
 Bağımlılık: `Domain ← Application ← Infrastructure ← API`.
 
