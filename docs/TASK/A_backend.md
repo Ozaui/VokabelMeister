@@ -289,9 +289,19 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       + `/health`, DI çözümlemesi sağlıklı); süreçte `WordGrammarValidator`'ın `AddValidatorsFromAssembly`
       otomatik taramasına yakalanıp uygulamayı açılışta çökerttiği bulunup `Program.cs`'e filtre eklenerek düzeltildi
 - [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/` 03-06. bölümler
-- [ ] `LanguagesController` (`GET /languages`, `[Authorize]`), `WordsController` (`[Authorize]`
+- [x] `LanguagesController` (`GET /languages`, `[Authorize]`), `WordsController` (`[Authorize]`
       liste/detay, `[Authorize(Roles="Admin")]` CRUD)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-05_sistem-kelimesi-api/07_languages-ve-words-controller.html`
+
+> **Not (2026-08-17):** Canlı doğrulama sırasında SQL Server'da hâlâ projenin eski adıyla açılmış
+> `VokabelMeisterDB` bulundu, `appsettings.Development.json`'daki bağlantı dizesi zaten yeni ada
+> (`ZauselDB`) güncel ama o isimde bir DB henüz hiç oluşturulmamıştı. Eski `VokabelMeisterDB`
+> silindi (içinde korunacak veri yoktu), `dotnet ef database update` ile migration'lardan sıfırdan
+> `ZauselDB` oluşturuldu (`de`/`tr` seed dahil). Ardından admin girişiyle (`/auth/login` +
+> `[DEV EMAIL]` loguna düşen OTP) alınan bir JWT ile `GET /languages` ve `GET/POST/PUT/DELETE
+> /words` ALTISI da gerçek HTTP istekleriyle çağrıldı — 200/201/204/400(WORD_DEFINITION_REQUIRED)/
+> 404(ENTITY_NOT_FOUND) durumlarının hepsi beklenen şekilde gözlemlendi.
+
 - [ ] **Eşleştirme:** `GetUnmatchedWordConceptsQuery` (`languageId` bazlı + `suggestedMatchConceptId`
       — `Definition` virgülle ayrılmış çoklu karşılığı token'lara bölünüp aranır) + `PairWordConceptsCommand`
       (`primaryId` kazanır, tür/kategori çakışması bloklamaz — dilin doğası)

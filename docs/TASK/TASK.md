@@ -48,7 +48,8 @@
 | F | F-01…F-10 (+F-02.1, F-02.2, F-04.1…F-04.5) | Tanıtım Sitesi | ⬜ |
 
 **Sıradaki task:** `A-05` 🔄 (Sistem Kelimesi API — Words; Entity/WordGrammarValidator/Repository+5
-Command tamamlandı, sırada `LanguagesController`/`WordsController`) → `TASK/A_backend.md`.
+Command/`LanguagesController`+`WordsController` tamamlandı — canlı doğrulandı, sırada **Eşleştirme**
+[`GetUnmatchedWordConceptsQuery`+`PairWordConceptsCommand`]) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
 
 (`A-03 — Auth API` ✅ tamamlandı 2026-08-14: `User`/`RefreshToken`/`QrLoginSession` entity'leri,
