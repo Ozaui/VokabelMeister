@@ -21,7 +21,7 @@ public class PairWordConceptsCommandHandlerTests
         var concept = new WordConcept { Id = conceptId, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };
         var language = new Language { Id = languageId, Code = languageCode, Name = languageCode, NativeName = languageCode };
         var word = new Word { Id = wordId, WordConceptId = conceptId, LanguageId = languageId, Text = text, Definition = "anlam" };
-        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);
+        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])], []);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class PairWordConceptsCommandHandlerTests
         // ARRANGE
         var primary = BuildAggregate(1, 1, "de", "Haus", 10);
         var other = BuildAggregate(2, 2, "tr", "ev", 20);
-        var merged = new WordConceptAggregate(primary.Concept, [.. primary.Translations, .. other.Translations]);
+        var merged = new WordConceptAggregate(primary.Concept, [.. primary.Translations, .. other.Translations], []);
         _wordConceptRepository.SetupSequence(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(primary)
             .ReturnsAsync(merged);
@@ -87,7 +87,7 @@ public class PairWordConceptsCommandHandlerTests
         // ARRANGE
         var primary = BuildAggregate(1, 1, "de", "Haus", 10);
         var other = BuildAggregate(2, 2, "tr", "ev", 20);
-        var merged = new WordConceptAggregate(primary.Concept, [.. primary.Translations, .. other.Translations]);
+        var merged = new WordConceptAggregate(primary.Concept, [.. primary.Translations, .. other.Translations], []);
         _wordConceptRepository.SetupSequence(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(primary)
             .ReturnsAsync(merged);

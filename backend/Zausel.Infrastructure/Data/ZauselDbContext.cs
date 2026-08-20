@@ -24,6 +24,9 @@ public class ZauselDbContext : DbContext
     public DbSet<Word> Words => Set<Word>();
     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
     public DbSet<WordExample> WordExamples => Set<WordExample>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+    public DbSet<WordCategory> WordCategories => Set<WordCategory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

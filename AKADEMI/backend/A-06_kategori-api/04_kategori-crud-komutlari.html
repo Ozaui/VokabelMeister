@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'kategori-crud-komutlari',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '03_category-dto-ve-mapping.html',
+    sonrakiBolum: '05_silme-korumasi-ve-controller.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'Create/UpdateCategoryCommand — Kategori Taşıma',
+        altBaslik: 'Bir kategori oluşturmak WordConcept ile hemen hemen aynı — ama GÜNCELLEME sırasında ParentCategoryId değişirse (kategori taşıma) döngü koruması devreye girer, bu bölümün asıl konusu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryParentCycleException.cs',
+        dosyaYolu: 'backend/Zausel.Application/Common/Exceptions/CategoryParentCycleException.cs',
+        nedenBuKlasor: '`Common/Exceptions/` — `WordDuplicateException` (A-05) ile AYNI klasör, tüm `AppException` alt sınıfları TEK yerde.',
+        kod: `using System.Net;
+
+namespace Zausel.Application.Common.Exceptions;
+
+public class CategoryParentCycleException : AppException
+{
+    public CategoryParentCycleException(int categoryId, int parentCategoryId)
+        : base("CATEGORY_PARENT_CYCLE", HttpStatusCode.BadRequest,
+            $"Category parent would create a cycle: Id={categoryId}, ParentCategoryId={parentCategoryId}")
+    {
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using System.Net;',
+            aciklama: '`HttpStatusCode` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Common.Exceptions;',
+            aciklama: 'CategoryParentCycleException.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CategoryParentCycleException : AppException',
+            aciklama: '`AppException`\'dan türeyen bir alt sınıf — `ExceptionHandlingMiddleware`\'in (A-02/A-03) genel `catch (AppException)` kolu bunu OTOMATİK yakalar, ayrı bir middleware değişikliği GEREKMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CategoryParentCycleException(int categoryId, int parentCategoryId)',
+            aciklama: 'İki parametre — hangi kategorinin, hangi (geçersiz) yeni ebeveyne taşınmaya çalışıldığı, `.Message`\'a (İngilizce, log-only) işlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: ': base("CATEGORY_PARENT_CYCLE", HttpStatusCode.BadRequest,',
+            aciklama: '`WordDuplicateException`\'ın (A-05, 409 Conflict) AKSİNE 400 Bad Request — bu bir "kayıt zaten var" çakışması DEĞİL, isteğin KENDİSİ mantıksal olarak geçersiz (bir kategori kendi torununun altına taşınamaz).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '$"Category parent would create a cycle: Id={categoryId}, ParentCategoryId={parentCategoryId}")',
+            aciklama: '`.Message` İngilizce ve yalnızca LOG içindir — istemciye giden metin `ErrorMessages.Resolve("CATEGORY_PARENT_CYCLE", ...)` üzerinden AYRICA çözülür (bölüm 5).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateCategoryCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Categories/CreateCategoryCommand.cs',
+        nedenBuKlasor: '`Features/Categories/` — Command+Handler AYNI dosyada, `CreateWordCommand` (A-05) ile AYNI dikey-dilim deseni.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Categories;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.Categories;
+
+public record CreateCategoryCommand(
+    int? ParentCategoryId,
+    int DisplayOrder,
+    string? Icon,
+    string? Color,
+    string? MinLevel,
+    string? MaxLevel,
+    List<CategoryTranslationRequest> Translations,
+    int? UserId,
+    string? ActorRole) : IRequest<CategoryResponse>;
+
+public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryCommand, CategoryResponse>
+{
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly ILanguageRepository _languageRepository;
+    private readonly IActivityLogger _activityLogger;
+
+    public CreateCategoryCommandHandler(
+        ICategoryRepository categoryRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+    {
+        _categoryRepository = categoryRepository;
+        _languageRepository = languageRepository;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<CategoryResponse> Handle(CreateCategoryCommand request, CancellationToken cancellationToken)
+    {
+        if (request.ParentCategoryId is not null
+            && await _categoryRepository.GetAggregateAsync(request.ParentCategoryId.Value, cancellationToken) is null)
+            throw new EntityNotFoundException($"Category not found: Id={request.ParentCategoryId}");
+
+        var category = new Category
+        {
+            ParentCategoryId = request.ParentCategoryId,
+            DisplayOrder = request.DisplayOrder,
+            Icon = request.Icon,
+            Color = request.Color,
+            MinLevel = request.MinLevel,
+            MaxLevel = request.MaxLevel
+        };
+        await _categoryRepository.AddCategoryAsync(category, request.UserId, cancellationToken);
+        await _categoryRepository.SaveChangesAsync(cancellationToken);
+
+        foreach (var translation in request.Translations)
+        {
+            var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+
+            await _categoryRepository.AddTranslationAsync(new CategoryTranslation
+            {
+                CategoryId = category.Id,
+                LanguageId = language.Id,
+                Name = translation.Name,
+                Description = translation.Description
+            }, cancellationToken);
+        }
+
+        await _categoryRepository.SaveChangesAsync(cancellationToken);
+
+        var aggregate = await _categoryRepository.GetAggregateAsync(category.Id, cancellationToken)
+            ?? throw new EntityNotFoundException($"Category not found after creation: Id={category.Id}");
+        var response = CategoryMapping.ToResponse(aggregate);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "CREATE_CATEGORY", entityType: "Category", entityId: category.Id,
+            oldValue: null, newValue: response, cancellationToken: cancellationToken);
+
+        return response;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.DTOs.Categories;',
+            aciklama: '`CategoryResponse`/`CategoryTranslationRequest`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: '`ICategoryRepository`/`ILanguageRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`Category`/`CategoryTranslation`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Features.Categories;',
+            aciklama: 'CreateCategoryCommand.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record CreateCategoryCommand(',
+            aciklama: '`CreateWordCommand` (A-05) ile AYNI desen — MediatR\'ın `IRequest<T>`\'ini uygulayan bir `record`, Handler\'ın işleyeceği komut.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? ParentCategoryId,',
+            aciklama: 'NULL ise kök kategori.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int DisplayOrder,',
+            aciklama: 'Sıralama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? Icon,',
+            aciklama: 'İkon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? Color,',
+            aciklama: 'Renk.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? MinLevel,',
+            aciklama: 'Alt seviye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? MaxLevel,',
+            aciklama: 'Üst seviye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<CategoryTranslationRequest> Translations,',
+            aciklama: 'Bir/iki dilde ad.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId,',
+            aciklama: 'İsteği yapan admin\'in kimliği — `ActivityLog`\'a ve audit alanlarına (`CreatedByUserId`) yazılır. Controller\'dan (bölüm 5) `CurrentUserId` ile geçirilir, HTTP-bağlamından gelen bir değer, Request DTO\'sunun bir alanı DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ActorRole) : IRequest<CategoryResponse>;',
+            aciklama: 'JWT\'deki rol claim\'i — `ActivityLog.ActorRole` alanına gider.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryCommand, CategoryResponse>',
+            aciklama: 'MediatR bu sınıfı `CreateCategoryCommand` gönderildiğinde OTOMATİK bulur (assembly taraması, A-02/Program.cs).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ICategoryRepository _categoryRepository;',
+            aciklama: 'Kategori yazma/okuma.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILanguageRepository _languageRepository;',
+            aciklama: 'Dil kodundan (`"de"`) `Language.Id`\'ye çözümleme için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'Audit log yazımı için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateCategoryCommandHandler(',
+            aciklama: 'Constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ICategoryRepository categoryRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'Üç bağımlılık parametre olarak alınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_categoryRepository = categoryRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository = languageRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<CategoryResponse> Handle(CreateCategoryCommand request, CancellationToken cancellationToken)',
+            aciklama: '`IRequestHandler<TRequest,TResponse>`\'ın tek metodu — MediatR pipeline\'ı burayı çağırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request.ParentCategoryId is not null',
+            aciklama: 'Yalnızca bir üst kategori BELİRTİLMİŞSE kontrol edilir — kök kategori oluşturmak (`ParentCategoryId=null`) hiçbir doğrulama gerektirmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '&& await _categoryRepository.GetAggregateAsync(request.ParentCategoryId.Value, cancellationToken) is null)',
+            aciklama: 'Belirtilen üst kategori GERÇEKTEN var mı — yoksa aşağıdaki `EntityNotFoundException` fırlatılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new EntityNotFoundException($"Category not found: Id={request.ParentCategoryId}");',
+            aciklama: 'Var olmayan bir `ParentCategoryId` ile kategori oluşturmak, DB\'de bir FK ihlaline (500 hata) düşmek yerine burada temiz bir 404\'e çevrilir.',
+            neden: 'FK ihlali `SaveChangesAsync` sırasında ham bir `SqlException` fırlatır — bu, `ExceptionHandlingMiddleware`\'in genel `catch` koluna düşer ve istemciye 500 + anlamsız bir hata mesajı olarak yansırdı.',
+            olmasaydi: 'Bu kontrol olmasaydı, admin panelinde bir dropdown\'ın eski/silinmiş bir kategori ID\'sini göndermesi durumunda kullanıcı "sunucu hatası" görürdü, oysa gerçek sorun basit bir "böyle bir kategori yok" mesajıyla anlatılabilirdi.'
+          },
+          {
+            satir: 'var category = new Category',
+            aciklama: 'Yeni entity — henüz `Id`\'si yok (DB tarafından atanacak).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ParentCategoryId = request.ParentCategoryId,',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'DisplayOrder = request.DisplayOrder,',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Icon = request.Icon,',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Color = request.Color,',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'MinLevel = request.MinLevel,',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'MaxLevel = request.MaxLevel',
+            aciklama: 'İstekten aktarılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.AddCategoryAsync(category, request.UserId, cancellationToken);',
+            aciklama: 'EF `ChangeTracker`\'a eklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'BURADA commit edilir — `category.Id`\'nin aşağıdaki `foreach`\'te (çeviri ekleme) GERÇEK bir değere sahip olması için, DB\'nin ürettiği kimliğin geri dönmesi ŞART.',
+            neden: 'EF Core, `Id` gibi DB-üretimli (identity) alanları yalnızca gerçek bir INSERT ÇALIŞTIRILDIKTAN sonra doldurur — `SaveChangesAsync` çağrılmadan `category.Id` hâlâ `0` olurdu.',
+            olmasaydi: 'Bu ara `SaveChangesAsync` atlanıp TÜM işlemler tek seferde commit edilmeye çalışılsaydı, aşağıdaki `CategoryId = category.Id` her çeviri satırında YANLIŞLIKLA `0` yazardı — hepsi var-olmayan bir kategoriye bağlanırdı.'
+          },
+          {
+            satir: 'foreach (var translation in request.Translations)',
+            aciklama: '`CreateWordCommand`\'ın (A-05) çeviri döngüsüyle AYNI desen — bir veya iki dil için TEKRARLI ekleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)',
+            aciklama: 'Dil kodunu (`"de"`) `Language.Id`\'ye çözer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");',
+            aciklama: 'Validator (`CreateCategoryCommandValidator`, aşağıda) zaten yalnızca `"de"`/`"tr"` geçirir, bu yüzden pratikte TETİKLENMEZ — ama Handler kendi başına GÜVENLİ kalmalı (validator\'a bel BAĞLAMAZ).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.AddTranslationAsync(new CategoryTranslation',
+            aciklama: 'Yeni bir çeviri satırı oluşturulup eklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CategoryId = category.Id,',
+            aciklama: 'Az önce commit edilen kategori kimliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LanguageId = language.Id,',
+            aciklama: 'Çözümlenen dil kimliği.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Name = translation.Name,',
+            aciklama: 'İstekten gelen ad.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Description = translation.Description',
+            aciklama: 'İstekten gelen açıklama (opsiyonel).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}, cancellationToken);',
+            aciklama: 'Çağrının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var aggregate = await _categoryRepository.GetAggregateAsync(category.Id, cancellationToken)',
+            aciklama: 'TÜM işlemler bittikten sonra kategori TEKRAR okunur — `CreateWordCommand` (A-05) ile AYNI "yaz, sonra oku" deseni, dönen `CategoryResponse`\'un gerçekten DB\'deki son hâli yansıtmasını garanti eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Category not found after creation: Id={category.Id}");',
+            aciklama: 'Teorik olarak imkansız (az önce oluşturuldu) ama savunma amaçlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var response = CategoryMapping.ToResponse(aggregate);',
+            aciklama: 'Aggregate → DTO (bölüm 3).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: 'Bu satırlar ActivityLog\'a "bir kategori oluşturuldu" kaydı DÜŞER — kim (`UserId`/`ActorRole`), ne zaman, hangi kategori (`entityId`), yeni hâli neydi (`newValue`).',
+            neden: 'Admin panelin kategori ağacını kim ne zaman değiştirdiği bilinmezse (audit trail YOKSA), yanlış/istenmeyen bir değişiklik yapıldığında GERİYE dönük "kim yaptı" sorusu ASLA yanıtlanamaz.',
+            olmasaydi: 'Bu çağrı olmasaydı, bir admin yanlışlıkla önemli bir kategoriyi silse/değiştirse, DİĞER adminler bunun NE ZAMAN NASIL olduğunu hiçbir yerden GÖREMEZDİ — B-08\'in (Log Görüntüleme Paneli) gösterecek hiçbir verisi olmazdı.'
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "CREATE_CATEGORY", entityType: "Category", entityId: category.Id,',
+            aciklama: '`"CREATE_CATEGORY"` — `CREATE_WORD` (A-05) ile AYNI isimlendirme deseni (`{FİİL}_{VARLIK}`), sabit bir action kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: null, newValue: response, cancellationToken: cancellationToken);',
+            aciklama: 'Yeni kayıt olduğu için `oldValue` HER ZAMAN `null` — `CreateWordCommandHandler` (A-05) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return response;',
+            aciklama: 'Controller\'a (bölüm 5) döner, `201 Created` olarak sarmalanır.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Kategori Taşıma — ParentCategoryId Değişimi Nasıl Ele Alınır?',
+        aciklama: '`UpdateCategoryCommandHandler`, isteğin `ParentCategoryId`\'sini var olan kategorinin `ParentCategoryId`\'siyle KARŞILAŞTIRIR. Eşitse hiçbir şey yapılmaz (normal alan güncellemesi). FARKLIYSA bu bir "kategori taşıma" işlemidir: önce yeni ebeveynin GERÇEKTEN var olduğu, sonra bu taşımanın bir DÖNGÜ yaratıp yaratmayacağı (`WouldCreateCycleAsync`, bölüm 2) kontrol edilir.',
+        neden: 'Bir kategori kendi ALT AĞACININ içine taşınırsa (ör. "Meslekler" kategorisi kendi çocuğu "Doktorluk"un altına taşınırsa), hiyerarşi SONSUZ bir döngüye girer — `ParentCategoryId` zincirini takip eden HERHANGİ bir kod (ağaç kurma, breadcrumb gösterme) SONSUZ döngüye düşer.',
+        olmasaydi: 'Bu kontrol olmasaydı, bir admin yanlışlıkla bir kategoriyi kendi torununun altına sürükleyip bıraksa (admin panelin sürükle-bırak arayüzü, B-04), `GET /categories` (bölüm 6) sonsuz döngüye giren bir ağaç kurma denemesiyle ÇÖKERDİ — StackOverflowException veya süresiz bekleme.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Categories/UpdateCategoryCommand.cs',
+        nedenBuKlasor: 'backend/Zausel.Application/Features/Categories/ altındaki diğer dosyalarla aynı klasör.',
+        kod: `using MediatR;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.DTOs.Categories;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.Categories;
+
+public record UpdateCategoryCommand(
+    int CategoryId,
+    int? ParentCategoryId,
+    int DisplayOrder,
+    string? Icon,
+    string? Color,
+    string? MinLevel,
+    string? MaxLevel,
+    List<CategoryTranslationRequest> Translations,
+    int? UserId,
+    string? ActorRole) : IRequest<CategoryResponse>;
+
+public class UpdateCategoryCommandHandler : IRequestHandler<UpdateCategoryCommand, CategoryResponse>
+{
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly ILanguageRepository _languageRepository;
+    private readonly IActivityLogger _activityLogger;
+
+    public UpdateCategoryCommandHandler(
+        ICategoryRepository categoryRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+    {
+        _categoryRepository = categoryRepository;
+        _languageRepository = languageRepository;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<CategoryResponse> Handle(UpdateCategoryCommand request, CancellationToken cancellationToken)
+    {
+        var beforeAggregate = await _categoryRepository.GetAggregateAsync(request.CategoryId, cancellationToken)
+            ?? throw new EntityNotFoundException($"Category not found: Id={request.CategoryId}");
+        var beforeResponse = CategoryMapping.ToResponse(beforeAggregate);
+        var category = beforeAggregate.Category;
+
+        // Kategori TAŞIMA — ParentCategoryId gerçekten değişiyorsa döngü kontrolü + var olma kontrolü.
+        if (request.ParentCategoryId != category.ParentCategoryId)
+        {
+            if (request.ParentCategoryId is not null)
+            {
+                if (await _categoryRepository.GetAggregateAsync(request.ParentCategoryId.Value, cancellationToken) is null)
+                    throw new EntityNotFoundException($"Category not found: Id={request.ParentCategoryId}");
+                if (await _categoryRepository.WouldCreateCycleAsync(request.CategoryId, request.ParentCategoryId.Value, cancellationToken))
+                    throw new CategoryParentCycleException(request.CategoryId, request.ParentCategoryId.Value);
+            }
+
+            category.ParentCategoryId = request.ParentCategoryId;
+        }
+
+        category.DisplayOrder = request.DisplayOrder;
+        category.Icon = request.Icon;
+        category.Color = request.Color;
+        category.MinLevel = request.MinLevel;
+        category.MaxLevel = request.MaxLevel;
+        await _categoryRepository.UpdateCategoryAsync(category, request.UserId, cancellationToken);
+
+        foreach (var translation in request.Translations)
+        {
+            var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)
+                ?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");
+
+            var existing = await _categoryRepository.FindTranslationAsync(category.Id, language.Id, cancellationToken);
+            if (existing is null)
+            {
+                await _categoryRepository.AddTranslationAsync(new CategoryTranslation
+                {
+                    CategoryId = category.Id,
+                    LanguageId = language.Id,
+                    Name = translation.Name,
+                    Description = translation.Description
+                }, cancellationToken);
+            }
+            else
+            {
+                existing.Name = translation.Name;
+                existing.Description = translation.Description;
+                await _categoryRepository.UpdateTranslationAsync(existing, cancellationToken);
+            }
+        }
+
+        await _categoryRepository.SaveChangesAsync(cancellationToken);
+
+        var aggregate = await _categoryRepository.GetAggregateAsync(category.Id, cancellationToken)
+            ?? throw new EntityNotFoundException($"Category not found after update: Id={category.Id}");
+        var response = CategoryMapping.ToResponse(aggregate);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "UPDATE_CATEGORY", entityType: "Category", entityId: category.Id,
+            oldValue: beforeResponse, newValue: response, cancellationToken: cancellationToken);
+
+        return response;
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using MediatR;',
+            aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Common.Exceptions;',
+            aciklama: '`CategoryParentCycleException`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.DTOs.Categories;',
+            aciklama: '`CategoryResponse`/`CategoryTranslationRequest`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: '`ICategoryRepository`/`ILanguageRepository`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Services;',
+            aciklama: '`IActivityLogger`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`Category`/`CategoryTranslation`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Features.Categories;',
+            aciklama: 'UpdateCategoryCommand.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record UpdateCategoryCommand(',
+            aciklama: '`UpdateWordCommand` (A-05) ile AYNI desen — `CreateCategoryCommand`\'ın TÜM alanları + hangi kategorinin güncellendiğini belirten `CategoryId`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int CategoryId,',
+            aciklama: 'Güncellenecek kategorinin kimliği — route\'tan (`PUT /categories/{id}`) gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? ParentCategoryId,',
+            aciklama: 'YENİ istenen üst kategori — mevcut değerle FARKLIYSA taşıma tetiklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int DisplayOrder,',
+            aciklama: 'Sıralama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? Icon,',
+            aciklama: 'İkon.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? Color,',
+            aciklama: 'Renk.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? MinLevel,',
+            aciklama: 'Alt seviye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? MaxLevel,',
+            aciklama: 'Üst seviye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<CategoryTranslationRequest> Translations,',
+            aciklama: 'Güncel çeviriler — hangi diller MEVCUT hangileri YENİ olduğu Handler\'da (aşağıda) `FindTranslationAsync` ile ayırt edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'int? UserId,',
+            aciklama: 'İsteği yapan admin.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'string? ActorRole) : IRequest<CategoryResponse>;',
+            aciklama: 'JWT rol claim\'i.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class UpdateCategoryCommandHandler : IRequestHandler<UpdateCategoryCommand, CategoryResponse>',
+            aciklama: 'MediatR bu sınıfı `UpdateCategoryCommand` gönderildiğinde OTOMATİK bulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ICategoryRepository _categoryRepository;',
+            aciklama: 'Kategori yazma/okuma.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ILanguageRepository _languageRepository;',
+            aciklama: 'Dil kodu çözümleme.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly IActivityLogger _activityLogger;',
+            aciklama: 'Audit log.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public UpdateCategoryCommandHandler(',
+            aciklama: 'Constructor injection.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ICategoryRepository categoryRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'Üç bağımlılık.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_categoryRepository = categoryRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_languageRepository = languageRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_activityLogger = activityLogger;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<CategoryResponse> Handle(UpdateCategoryCommand request, CancellationToken cancellationToken)',
+            aciklama: 'Handler\'ın tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeAggregate = await _categoryRepository.GetAggregateAsync(request.CategoryId, cancellationToken)',
+            aciklama: 'Güncellenecek kategori ÖNCE okunur — hem "var mı" kontrolü hem `oldValue` (ActivityLog için) bu okuma ÜZERİNDEN gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Category not found: Id={request.CategoryId}");',
+            aciklama: 'Var olmayan bir kategori güncellenemez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var beforeResponse = CategoryMapping.ToResponse(beforeAggregate);',
+            aciklama: 'ActivityLog\'un `oldValue`\'su İÇİN, herhangi bir değişiklikten ÖNCEKİ hâl DTO\'ya çevrilip SAKLANIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var category = beforeAggregate.Category;',
+            aciklama: 'Değiştirilecek `Category` entity\'si aggregate\'ten çıkarılır — aşağıdaki alan atamaları DOĞRUDAN bu nesne üzerinde yapılır (EF `ChangeTracker` zaten TAKİP ediyor, `Update` çağrısı yalnızca güvence için).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request.ParentCategoryId != category.ParentCategoryId)',
+            aciklama: 'KATEGORİ TAŞIMANIN başlangıç koşulu — istenen yeni üst kategori, VAR OLAN üst kategoriden FARKLIYSA aşağıdaki blok çalışır; eşitse (ör. sadece renk değişiyorsa) hiç girilmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request.ParentCategoryId is not null)',
+            aciklama: 'Yeni değer NULL ise (kategori KÖK yapılmak isteniyorsa) doğrulama GEREKMEZ — bir kategoriyi köke taşımak asla döngü YARATAMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (await _categoryRepository.GetAggregateAsync(request.ParentCategoryId.Value, cancellationToken) is null)',
+            aciklama: 'Yeni üst kategori GERÇEKTEN var mı — `CreateCategoryCommandHandler`\'daki AYNI kontrolün taşıma sırasındaki karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new EntityNotFoundException($"Category not found: Id={request.ParentCategoryId}");',
+            aciklama: 'Var olmayan bir kategoriye taşıma denemesi temiz bir 404\'e çevrilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (await _categoryRepository.WouldCreateCycleAsync(request.CategoryId, request.ParentCategoryId.Value, cancellationToken))',
+            aciklama: 'Bu bölümün ÇEKİRDEK kontrolü — `request.CategoryId`\'nin (taşınan kategori) `request.ParentCategoryId.Value`\'nin (hedef) ebeveyn zincirinde OLUP OLMADIĞINI sorar (bölüm 2).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new CategoryParentCycleException(request.CategoryId, request.ParentCategoryId.Value);',
+            aciklama: 'Döngü tespit edilirse taşıma 400 `CATEGORY_PARENT_CYCLE` ile REDDEDİLİR — hiçbir alan güncellenmeden Handler burada durur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.ParentCategoryId = request.ParentCategoryId;',
+            aciklama: 'Döngü kontrolünden GEÇTİYSE (ya da yeni değer zaten NULL\'sa) taşıma gerçekleşir — bu satır yalnızca `if (request.ParentCategoryId != category.ParentCategoryId)` bloğunun İÇİNDE, yani gerçek bir değişiklik olduğunda ÇALIŞIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.DisplayOrder = request.DisplayOrder;',
+            aciklama: 'Taşıma olsun olmasın HER güncellemede uygulanan normal alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.Icon = request.Icon;',
+            aciklama: 'Normal alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.Color = request.Color;',
+            aciklama: 'Normal alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.MinLevel = request.MinLevel;',
+            aciklama: 'Normal alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.MaxLevel = request.MaxLevel;',
+            aciklama: 'Normal alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.UpdateCategoryAsync(category, request.UserId, cancellationToken);',
+            aciklama: '`UpdatedByUserId` audit alanını da günceller (bölüm 2).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'foreach (var translation in request.Translations)',
+            aciklama: 'İstekteki HER dil için "var mı, yoksa yeni mi" ayrımı yapılır — `UpdateWordCommand`\'ın (A-05) çeviri döngüsüyle AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var language = await _languageRepository.GetByCodeAsync(translation.LanguageCode, cancellationToken)',
+            aciklama: 'Dil kodunu çözer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Language not found: Code={translation.LanguageCode}");',
+            aciklama: 'Validator zaten engeller, Handler yine de savunma amaçlı kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var existing = await _categoryRepository.FindTranslationAsync(category.Id, language.Id, cancellationToken);',
+            aciklama: 'Bu (kategori, dil) çiftine ait bir çeviri ZATEN var mı — bölüm 2\'deki `FindTranslationAsync`.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (existing is null)',
+            aciklama: 'YOKSA — bu bir YENİ dil ekleme (ör. daha önce yalnızca `de` girilmiş bir kategoriye şimdi `tr` ekleniyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.AddTranslationAsync(new CategoryTranslation',
+            aciklama: 'Yeni bir çeviri satırı oluşturulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CategoryId = category.Id,',
+            aciklama: 'Güncellenmekte olan kategoriye bağlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'LanguageId = language.Id,',
+            aciklama: 'Çözümlenen dil.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Name = translation.Name,',
+            aciklama: 'İstekten gelen ad.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Description = translation.Description',
+            aciklama: 'İstekten gelen açıklama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '}, cancellationToken);',
+            aciklama: 'Çağrının kapanışı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'else',
+            aciklama: 'VARSA — bu bir GÜNCELLEME, yeni satır AÇILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'existing.Name = translation.Name;',
+            aciklama: 'Var olan çevirinin adı güncellenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'existing.Description = translation.Description;',
+            aciklama: 'Var olan çevirinin açıklaması güncellenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.UpdateTranslationAsync(existing, cancellationToken);',
+            aciklama: 'EF `ChangeTracker`\'a işaretlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _categoryRepository.SaveChangesAsync(cancellationToken);',
+            aciklama: 'Kategori alanları + TÜM çeviri değişiklikleri TEK seferde commit edilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var aggregate = await _categoryRepository.GetAggregateAsync(category.Id, cancellationToken)',
+            aciklama: 'Güncel hâl TEKRAR okunur — dönen `CategoryResponse`\'un DB\'deki son duruma birebir uymasını garantiler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Category not found after update: Id={category.Id}");',
+            aciklama: 'Teorik olarak imkansız, savunma amaçlı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var response = CategoryMapping.ToResponse(aggregate);',
+            aciklama: 'Aggregate → DTO.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _activityLogger.LogAsync(',
+            aciklama: '"UPDATE_CATEGORY" olayı loglanır — `CreateCategoryCommandHandler`\'ın AKSİNE burada `oldValue` da DOLU, öncesi/sonrası KARŞILAŞTIRILABİLİR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'request.UserId, request.ActorRole, "UPDATE_CATEGORY", entityType: "Category", entityId: category.Id,',
+            aciklama: '`"UPDATE_CATEGORY"` sabit action kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'oldValue: beforeResponse, newValue: response, cancellationToken: cancellationToken);',
+            aciklama: 'Değişiklikten ÖNCEKİ ve SONRAKİ tam hâller — bir kategori taşındığında `oldValue.parentCategoryId` ile `newValue.parentCategoryId` FARKLI görünecek, admin log ekranında bu taşıma AÇIKÇA görülebilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return response;',
+            aciklama: 'Controller\'a döner, `200 OK` olarak sarmalanır.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateCategoryCommandValidator.cs / UpdateCategoryCommandValidator.cs',
+        dosyaYolu: 'backend/Zausel.Application/Validators/Categories/CreateCategoryCommandValidator.cs',
+        nedenBuKlasor: '`Validators/Categories/` — `Validators/Words/` (A-05) ile AYNI desen, her feature\'ın kendi validator alt klasörü.',
+        kod: `using FluentValidation;
+using Zausel.Application.Features.Categories;
+
+namespace Zausel.Application.Validators.Categories;
+
+public class CreateCategoryCommandValidator : AbstractValidator<CreateCategoryCommand>
+{
+    private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];
+    private static readonly string[] SupportedLanguageCodes = ["de", "tr"];
+
+    public CreateCategoryCommandValidator()
+    {
+        RuleFor(x => x.DisplayOrder).GreaterThanOrEqualTo(0).WithErrorCode("CATEGORY_DISPLAY_ORDER_INVALID");
+        RuleFor(x => x.MinLevel).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");
+        RuleFor(x => x.MaxLevel).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");
+
+        RuleFor(x => x.Translations).NotEmpty().WithErrorCode("CATEGORY_TRANSLATIONS_REQUIRED");
+        RuleFor(x => x.Translations)
+            .Must(t => t.Select(x => x.LanguageCode).Distinct().Count() == t.Count)
+            .WithErrorCode("CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE");
+
+        RuleForEach(x => x.Translations).ChildRules(translation =>
+        {
+            translation.RuleFor(t => t.LanguageCode).Must(SupportedLanguageCodes.Contains).WithErrorCode("LANGUAGE_CODE_UNSUPPORTED");
+            translation.RuleFor(t => t.Name).NotEmpty().WithErrorCode("CATEGORY_NAME_REQUIRED");
+        });
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using FluentValidation;',
+            aciklama: '`AbstractValidator<T>`/`RuleFor` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Features.Categories;',
+            aciklama: 'Doğrulanan `CreateCategoryCommand`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Validators.Categories;',
+            aciklama: 'CreateCategoryCommandValidator.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — MediatR\'ın `ValidationBehavior`\'ı (A-03) `AddValidatorsFromAssembly` ile assembly TARAMASIYLA bulur, klasöre BAKMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CreateCategoryCommandValidator : AbstractValidator<CreateCategoryCommand>',
+            aciklama: '`CreateWordCommandValidator` (A-05) ile AYNI desen — FluentValidation\'ın temel sınıfından türer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];',
+            aciklama: '`CreateWordCommandValidator`\'daki AYNI dizi, kopyalanmış hâli — `MinLevel`/`MaxLevel`\'in kapalı kümesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly string[] SupportedLanguageCodes = ["de", "tr"];',
+            aciklama: '`CreateWordCommandValidator`\'daki AYNI dizi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CreateCategoryCommandValidator()',
+            aciklama: 'Kurallar constructor İÇİNDE tanımlanır — FluentValidation\'ın standart deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.DisplayOrder).GreaterThanOrEqualTo(0).WithErrorCode("CATEGORY_DISPLAY_ORDER_INVALID");',
+            aciklama: 'Negatif bir sıralama değeri anlamsız.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.MinLevel).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");',
+            aciklama: 'NULL geçerli (sınır YOK), doluysa kapalı kümeye uymalı — `WordConcept.DifficultyLevel` doğrulamasından FARKLI olarak burada NULL bir seçenek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.MaxLevel).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");',
+            aciklama: '`MinLevel` ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Translations).NotEmpty().WithErrorCode("CATEGORY_TRANSLATIONS_REQUIRED");',
+            aciklama: 'En az bir dilde ad ZORUNLU — çevirisiz bir kategori hiçbir dilde GÖSTERİLEMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleFor(x => x.Translations)',
+            aciklama: 'İkinci bir kural, AYNI alan (`Translations`) üzerinde — FluentValidation birden fazla `RuleFor(x => x.AynıAlan)` çağrısını DESTEKLER, her biri kendi hata koduyla BAĞIMSIZ çalışır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Must(t => t.Select(x => x.LanguageCode).Distinct().Count() == t.Count)',
+            aciklama: 'Aynı dil kodu (ör. iki kez `"de"`) LİSTEDE tekrar ETMEMELİ — `Distinct().Count()` ile toplam eleman sayısı FARKLIYSA tekrar var demektir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithErrorCode("CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE");',
+            aciklama: 'Bu ihlalin hata kodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'RuleForEach(x => x.Translations).ChildRules(translation =>',
+            aciklama: 'Listenin HER elemanı için AYRI kurallar — `CreateWordCommandValidator`\'daki `RuleForEach(x => x.Translations)` ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'translation.RuleFor(t => t.LanguageCode).Must(SupportedLanguageCodes.Contains).WithErrorCode("LANGUAGE_CODE_UNSUPPORTED");',
+            aciklama: 'Her çevirinin dil kodu desteklenen kümede olmalı — `"en"` gibi henüz TANIMLANMAMIŞ bir kod reddedilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'translation.RuleFor(t => t.Name).NotEmpty().WithErrorCode("CATEGORY_NAME_REQUIRED");',
+            aciklama: 'Her çevirinin adı ZORUNLU — boş bir kategori adı gösterime UYGUN DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'UpdateCategoryCommandValidator — Neredeyse Birebir Aynı, Bir Fark: CategoryId',
+        aciklama: '`UpdateCategoryCommandValidator`, `CreateCategoryCommandValidator`\'ın TÜM kurallarını (DisplayOrder/MinLevel/MaxLevel/Translations) BİREBİR taşır, TEK ek kural: `RuleFor(x => x.CategoryId).GreaterThan(0).WithErrorCode("CATEGORY_ID_INVALID")` — route\'tan gelen kimliğin geçerli bir pozitif sayı olduğunu doğrular.',
+        neden: 'İki validator arasındaki fark TEK bir satır olduğu için (Create\'te `CategoryId` yok, Update\'te var), temsili öğretim ilkesiyle bu bölümde yalnızca Create\'in TAM kodu gösterildi — Update, "AYNI kurallar + CategoryId kontrolü" notuyla anlaşılabilir.',
+        olmasaydi: 'İkisi de tam kod slaytıyla gösterilseydi, okuyucu neredeyse birebir aynı 20 satırı İKİNCİ kez okurdu — asıl fark (tek satır) bu tekrarın İÇİNDE KAYBOLURDU.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Kategori taşıma', tanim: 'Bir kategorinin `ParentCategoryId`\'sinin güncelleme isteğiyle DEĞİŞTİRİLMESİ — kategoriyi hiyerarşide başka bir üst kategorinin altına aktarma.' },
+          { terim: 'Döngü koruması', tanim: 'Bir kategorinin kendi alt ağacının İÇİNE taşınmasını engelleyen kontrol — `WouldCreateCycleAsync` (bölüm 2) ile uygulanır.' },
+          { terim: 'FluentValidation ChildRules', tanim: 'Bir liste alanının HER elemanına AYRI kurallar tanımlamak için kullanılan `RuleForEach(...).ChildRules(...)` söz dizimi.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`CreateCategoryCommand` — üst kategori varlık kontrolü + kategori/çeviri oluşturma + `CREATE_CATEGORY` audit log.',
+          '`UpdateCategoryCommand` — kategori TAŞIMA mantığının çekirdeği: `ParentCategoryId` değiştiğinde önce varlık, sonra `WouldCreateCycleAsync` ile döngü kontrolü.',
+          'Döngü tespit edilirse `CategoryParentCycleException` (400 `CATEGORY_PARENT_CYCLE`) fırlatılır — hiçbir alan güncellenmeden Handler durur.',
+          'Çeviri güncellemesi `FindTranslationAsync` ile "var mı yok mu" ayrımı yapar — varsa GÜNCELLER, yoksa YENİ dil olarak EKLER.',
+          '`CreateCategoryCommandValidator`/`UpdateCategoryCommandValidator` — `CreateWordCommandValidator` (A-05) ile AYNI desen, `Translations` listesi için `NotEmpty`+tekrar kontrolü+`RuleForEach`.',
+          'ActivityLogger her iki Handler\'da da NATİF yazıldı — A-04\'teki gibi sonradan bir retrofit GEREKMEDİ.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

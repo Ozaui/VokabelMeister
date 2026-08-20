@@ -19,8 +19,13 @@ public static class WordMapping
             concept.PartOfSpeech.ToString(),
             concept.DifficultyLevel,
             concept.ImageUrl,
-            aggregate.Translations.Select(ToTranslationResponse).ToList());
+            aggregate.Translations.Select(ToTranslationResponse).ToList(),
+            aggregate.Categories.Select(ToCategoryResponse).ToList());
     }
+
+    private static WordCategoryResponse ToCategoryResponse(CategoryAggregate category) =>
+        new(category.Category.Id, category.Translations.Select(
+            t => new WordCategoryTranslationResponse(t.Language.Code, t.Translation.Name)).ToList());
 
     private static WordTranslationResponse ToTranslationResponse(WordTranslationAggregate translation) =>
         new(

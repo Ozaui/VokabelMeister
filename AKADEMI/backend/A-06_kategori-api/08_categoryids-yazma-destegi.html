@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'categoryids-yazma-destegi',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '07_words-categoryid-entegrasyonu.html',
+    sonrakiBolum: '09_birim-testleri.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 8',
+        baslik: 'categoryIds[] Yazma Desteği',
+        altBaslik: 'Bölüm 7\'de okuma tarafı (categoryId filtresi + categories[]) tamamlandı — ama bir kelimeye kategori ATAYACAK hiçbir yol yoksa, WordCategories tablosu SONSUZA dek boş kalırdı. Bu bölüm o boşluğu kapatır.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Kapsam Neden Genişletildi? (Kullanıcı Kararı)',
+        aciklama: 'A-06 task tanımı yalnızca "`GET /words`\'e `categoryId` filtresi + Word DTO\'larına `categories[]` alanı" diyordu — kelime OLUŞTURURKEN/GÜNCELLERKEN kategori atama task metninde AÇIKÇA yoktu. Ama sistemin API sözleşmesi (`POST /words` örnek isteği) zaten baştan `categoryIds: [1]` alanını GÖSTERİYORDU; bu alan A-05\'te (Category henüz yokken) UYGULANMAMIŞTI.',
+        neden: 'Yazma tarafı hiç bağlanmasaydı, `WordCategories` tablosuna ASLA bir satır YAZILAMAZDI — bölüm 7\'de öğretilen `categories[]` alanı ve `categoryId` filtresi PRATİKTE hiçbir zaman veri DÖNDÜRMEZDİ, "çalışan ama hiç kullanılamayan" bir özellik olurdu.',
+        olmasaydi: 'Bu genişleme yapılmasaydı, admin panel (B-04) geliştirilirken "kategori seç" alanı zaten var olan bir API sözleşmesine göre TASARLANMIŞ olacaktı ama backend hiçbir zaman bu veriyi KABUL ETMEYECEKTİ — B fazında GERİYE dönük bir A-06.1 retrofit task\'ı açmak GEREKİRDİ.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordCreateRequest.cs — CategoryIds Alanı',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/Words/WordCreateRequest.cs',
+        neden: '`POST /words` isteğinin gövdesi artık `categoryIds[]` KABUL EDER — bu alan olmadan istemcinin göndereceği kategori bilgisi hiçbir yere BAĞLANAMAZDI.',
+        diff: ` public record WordCreateRequest(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    List<WordTranslationRequest> Translations);
++    List<WordTranslationRequest> Translations,
++    List<int>? CategoryIds);`,
+        satirlar: [
+          {
+            satir: 'List<WordTranslationRequest> Translations);',
+            aciklama: 'Eski satır — kapanış parantezi `Translations` alanının SON alan olduğunu gösteriyordu, şimdi ondan sonra `CategoryIds` geldiği için satır sonu VİRGÜLE döndü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<WordTranslationRequest> Translations,',
+            aciklama: 'Aynı satır, yalnızca kapanış parantezi `)` KALKTI — artık son alan DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<int>? CategoryIds);',
+            aciklama: 'Nullable — istemci bu alanı HİÇ göndermezse (`null`), Controller (bölüm 7) bunu `request.CategoryIds ?? []` ile boş listeye çevirir; boş liste "hiçbir kategoriye atanmasın" anlamına gelir, `null` ile `[]` arasında Handler seviyesinde bir DAVRANIŞ FARKI yok.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordUpdateRequest.cs — CategoryIds Alanı',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/Words/WordUpdateRequest.cs',
+        neden: '`WordCreateRequest` ile AYNI gerekçe — `PUT /words/{id}` de artık `categoryIds[]` kabul eder, TAM DEĞİŞİM semantiğiyle (gönderilen liste mevcut atamaların YERİNE geçer).',
+        diff: ` public record WordUpdateRequest(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    List<WordTranslationRequest> Translations);
++    List<WordTranslationRequest> Translations,
++    List<int>? CategoryIds);`,
+        satirlar: [
+          {
+            satir: 'List<WordTranslationRequest> Translations);',
+            aciklama: 'Eski satır — `WordCreateRequest`\'teki AYNI değişikliğin `Update` karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<WordTranslationRequest> Translations,',
+            aciklama: 'Kapanış parantezi kalktı, artık son alan DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<int>? CategoryIds);',
+            aciklama: '`WordCreateRequest.CategoryIds` ile AYNI nullable desen — TEK farkı bu isteğin `translations[]`\'i gibi `CategoryIds` de "bu güncellemeden SONRA geçerli olacak TAM liste"dir, "ekle/çıkar" gibi kısmi bir semantik TAŞIMAZ (bölüm 7\'deki `ReplaceWordCategoriesAsync`\'in "tam değişim" deseniyle TUTARLI).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'CreateWordCommand.cs — categoryIds Doğrulaması + Yazma',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/CreateWordCommand.cs',
+        neden: 'Command\'ın `CategoryIds` alması yetmez — Handler bu ID\'lerin GERÇEKTEN var olduğunu doğrulamalı (yoksa DB\'ye geçersiz bir FK ile INSERT denemesi 500 hatasına düşer) ve WordCategories\'e GERÇEKTEN yazmalı.',
+        diff: ` public record CreateWordCommand(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+     List<WordTranslationRequest> Translations,
++    List<int> CategoryIds,
+     bool Force,
+     int? UserId,
+     string? ActorRole) : IRequest<WordResponse>;
+
+ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordResponse>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+     private readonly ILanguageRepository _languageRepository;
++    private readonly ICategoryRepository _categoryRepository;
+     private readonly IActivityLogger _activityLogger;
+
+     public CreateWordCommandHandler(
+-        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
++        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,
++        ICategoryRepository categoryRepository, IActivityLogger activityLogger)
+     {
+         _wordConceptRepository = wordConceptRepository;
+         _languageRepository = languageRepository;
++        _categoryRepository = categoryRepository;
+         _activityLogger = activityLogger;
+     }
+
+     public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)
+     {
+         var languagesByCode = await ResolveLanguagesAsync(request.Translations, cancellationToken);
+
++        if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))
++            throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");
++
+         if (!request.Force)
+         {
+             foreach (var translation in request.Translations)
+@@
+             await AddDetailAndExamplesAsync(word.Id, translation, request.UserId, cancellationToken);
+         }
+
++        await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)`,
+        satirlar: [
+          {
+            satir: 'List<int> CategoryIds,',
+            aciklama: 'Command\'ın YENİ alanı — `WordCreateRequest`\'in AKSİNE (nullable) burada NON-NULLABLE, çünkü Controller (bölüm 7) `?? []` ile HER ZAMAN boş olmayan bir liste garanti eder; Handler `null` kontrolü YAPMAK ZORUNDA kalmaz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ICategoryRepository _categoryRepository;',
+            aciklama: 'YENİ bağımlılık — kategori ID\'lerinin var olduğunu doğrulamak için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'Eski TEK SATIRLIK constructor imzası — yeni bir parametre eklenince satır çok uzayacağı için İKİ satıra bölündü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,',
+            aciklama: 'Bölünmüş imzanın ilk satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ICategoryRepository categoryRepository, IActivityLogger activityLogger)',
+            aciklama: 'Bölünmüş imzanın ikinci satırı — YENİ parametre burada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_categoryRepository = categoryRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))',
+            aciklama: 'Boş liste iken (`Count > 0` YANLIŞ) bu kontrol HİÇ ÇALIŞMAZ — kısa devre değerlendirmesi, `AllExistAsync`\'e gereksiz bir sorgu ATILMAZ.',
+            neden: '`AllExistAsync` (bölüm 2) zaten boş liste için `true` döner, ama `Count > 0` kontrolü DB\'ye gitmeden AYNI sonucu belirler — küçük bir performans kazancı, TEK satır kelime kaydı için bile.',
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");',
+            aciklama: 'Geçersiz bir `categoryId` FK ihlaline (500) düşmeden önce temiz bir 404\'e çevrilir — `CreateCategoryCommandHandler`\'ın (bölüm 4) `ParentCategoryId` kontrolüyle AYNI ilke.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);',
+            aciklama: 'Bölüm 7\'de TANIMLANAN/UYGULANAN metot burada İLK KEZ ÇAĞRILIR — `SaveChangesAsync`\'ten HEMEN ÖNCE, çeviri/detay/örnek ekleme döngüsünden SONRA (kelime kavramının `Id`\'si artık kesinleşmiş durumda).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UpdateWordCommand.cs — categoryIds Doğrulaması + Yazma',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/UpdateWordCommand.cs',
+        neden: '`CreateWordCommand` ile AYNI gerekçe — güncelleme akışı da `categoryIds[]` doğrulamalı ve yazmalı.',
+        diff: ` public record UpdateWordCommand(
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+     List<WordTranslationRequest> Translations,
++    List<int> CategoryIds,
+     bool Force,
+     int? UserId,
+     string? ActorRole) : IRequest<WordResponse>;
+
+ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordResponse>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+     private readonly ILanguageRepository _languageRepository;
++    private readonly ICategoryRepository _categoryRepository;
+     private readonly IActivityLogger _activityLogger;
+
+     public UpdateWordCommandHandler(
+-        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
++        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,
++        ICategoryRepository categoryRepository, IActivityLogger activityLogger)
+     {
+         _wordConceptRepository = wordConceptRepository;
+         _languageRepository = languageRepository;
++        _categoryRepository = categoryRepository;
+         _activityLogger = activityLogger;
+     }
+@@
+         var beforeResponse = WordMapping.ToResponse(beforeAggregate);
+         var concept = beforeAggregate.Concept;
+
++        if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))
++            throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");
++
+         concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);
+         concept.DifficultyLevel = request.DifficultyLevel;
+         concept.ImageUrl = request.ImageUrl;
+@@
+             }
+         }
+
++        await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);
+         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
+
+         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)`,
+        satirlar: [
+          {
+            satir: 'List<int> CategoryIds,',
+            aciklama: '`CreateWordCommand.CategoryIds` ile AYNI — non-nullable, Controller `?? []` ile garanti eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ICategoryRepository _categoryRepository;',
+            aciklama: 'YENİ bağımlılık — `CreateWordCommandHandler` ile AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)',
+            aciklama: 'Eski TEK SATIRLIK constructor imzası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,',
+            aciklama: 'Bölünmüş imzanın ilk satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'ICategoryRepository categoryRepository, IActivityLogger activityLogger)',
+            aciklama: 'Bölünmüş imzanın ikinci satırı — YENİ parametre.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_categoryRepository = categoryRepository;',
+            aciklama: 'Alan ataması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))',
+            aciklama: 'Doğrulama, `beforeAggregate.Category`\'yi (bölüm 4\'teki `UpdateCategoryCommandHandler` ile AYNI "önce oku" deseni) OKUDUKTAN hemen SONRA, herhangi bir alan güncellenmeden ÖNCE çalışır — geçersiz bir kategori varsa, kelime KISMEN güncellenmiş bir hâlde KALMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");',
+            aciklama: '`CreateWordCommand`\'daki AYNI hata — Update\'in `Force`/duplikat kontrolünden ÖNCE çalıştığı için, geçersiz kategori en ERKEN aşamada yakalanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);',
+            aciklama: 'Çeviri güncelleme döngüsünden SONRA, `SaveChangesAsync`\'ten HEMEN ÖNCE — `CreateWordCommand` ile AYNI konum, TEK farkı burada `concept.Id` zaten VARDI (yeni oluşturulmadı).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Tam değişim (full replace)', tanim: 'Bir güncelleme isteğinde gönderilen listenin, mevcut durumun YERİNE tamamen geçmesi — "ekle/çıkar" gibi kısmi bir semantik yerine, "bundan sonra GEÇERLİ olacak TAM liste bu" yaklaşımı.' },
+          { terim: 'Kısa devre değerlendirme', tanim: '`&&`/`||` operatörlerinin sol taraf sonucu yeterliyse sağ tarafı HİÇ ÇALIŞTIRMAMASI — `Count > 0 && ...AllExistAsync(...)` burada boş listede DB sorgusunu atlar.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'Kapsam kullanıcı kararıyla genişletildi — `categoryIds[]` yazma desteği olmadan bölüm 7\'nin okuma tarafı hiçbir zaman VERİ göstermezdi.',
+          '`WordCreateRequest`/`WordUpdateRequest` — nullable `CategoryIds`, Controller `?? []` ile normalize eder.',
+          '`CreateWordCommand`/`UpdateWordCommand` — `ICategoryRepository` yeni bağımlılık, `AllExistAsync` ile ERKEN doğrulama (500 yerine temiz 404).',
+          '`ReplaceWordCategoriesAsync` (bölüm 7\'de tanımlı) her iki Handler\'da da `SaveChangesAsync`\'ten HEMEN ÖNCE çağrılır.',
+          'Bu, A-06\'nın 5 dosyayı (`WordsController` bölüm 7\'de, geri kalan 4\'ü burada) etkileyen SON entegrasyon adımıydı — sıradaki bölüm testler.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

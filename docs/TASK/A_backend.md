@@ -336,7 +336,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > işlendi, A-05'in TÜM 10 bölümü ve öncesindeki gözden kaçmış 48 içeriksiz açıklama script ile
 > bulunup düzeltildi. Sıradaki: `A-06` (Kategori API).
 
-### A-06 — Kategori API (Categories) ⬜
+### A-06 — Kategori API (Categories) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §6
 **Frontend karşılığı:** B-04 (Admin), C-06 (Web), D-08 (Mobil)
 > ⚠️ **[2026-08-12] Silme koruması ↔ "orphan terfi" çelişkisi çözüldü:** Eski task metninde hem
@@ -347,24 +347,45 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > kısıtıyla tutarlı. "Orphan terfi" ifadesi kaldırıldı, yerine gerçekte test edilmesi gereken
 > senaryo yazıldı: **kategori taşıma** (`UPDATE`'te `ParentCategoryId` değişimi — bir kategori başka
 > bir üst kategorinin altına taşınabilir, çocukları kendisiyle birlikte gelir, döngü kontrolü burada devreye girer).
-- [ ] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation`, `WordCategory` ara tablo
+- [x] **Entity:** `Category` (self-ref hiyerarşi), `CategoryTranslation`, `WordCategory` ara tablo
       (`WordConceptId`↔`CategoryId` — kategori dilden bağımsız) + EF config (CHECK MinLevel/MaxLevel,
       self-ref FK Restrict) + migration (12 kategori + 24 çeviri seed, `DATABASE_SCHEMA.md` sırasıyla)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `ICategoryRepository` (hiyerarşik liste, `HasChildrenAsync`/`HasActiveWordsAsync`/`WouldCreateCycleAsync`)
+      — canlı doğrulama yapıldı (migration DB'ye uygulandı, `sqlcmd` ile 12/24 satır teyit edildi)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `ICategoryRepository` (hiyerarşik liste, `HasChildrenAsync`/`HasActiveWordsAsync`/`WouldCreateCycleAsync`)
       + 4 Command/Query (Create/Update/Delete/GetCategories) ⚠️ **[2026-08-15]** `GetCategoryWords`
       (`GET /categories/{id}/words`) kapsam dışı bırakıldı — `GET /words?categoryId=` (aşağıdaki madde)
       ile birebir aynı veriyi döndürüyordu, hiçbir frontend task'ı onu değil bunu kullanıyordu (YAGNI,
       kullanılmayan bir endpoint yazılmaz); `API_ENDPOINTS.md` §6'dan da kaldırıldı
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] Silme koruması (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`/`CategoryParentCycleException`, 409/400), `CategoriesController` (4 endpoint)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `GET /words`'e `categoryId` filtresi + Word DTO'larına `categories[]` alanı
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **`IActivityLogger`:** `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** hiyerarşik liste, **kategori taşıma** (üst kategori değişimi + döngü koruması), silme koruması (çocuk/aktif kelime), `categoryId` filtresi
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] Silme koruması (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`/`CategoryParentCycleException`, 409/400), `CategoriesController` (4 endpoint)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `GET /words`'e `categoryId` filtresi + Word DTO'larına `categories[]` alanı — ⚠️ **[2026-08-18
+      kullanıcı kararı]** kapsam `CreateWordCommand`/`UpdateWordCommand`'a `categoryIds[]` yazma desteğiyle
+      GENİŞLETİLDİ (task metninde açıkça yoktu, ama `API_ENDPOINTS.md §5`'in `POST /words` örneği zaten
+      `categoryIds` gösteriyordu — yoksa `categories[]`/`categoryId` filtresi hiçbir zaman veri döndürmezdi).
+      `WordCreateRequest`/`WordUpdateRequest.CategoryIds` → Handler `ICategoryRepository.AllExistAsync` ile
+      doğrular → `IWordConceptRepository.ReplaceWordCategoriesAsync` (translations[] ile AYNI "tam değişim"
+      deseni, WordCategory BaseEntity olmadığı için hard delete+insert)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **`IActivityLogger`:** `CREATE_CATEGORY`/`UPDATE_CATEGORY`/`DELETE_CATEGORY`
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** hiyerarşik liste, **kategori taşıma** (üst kategori değişimi + döngü koruması), silme koruması (çocuk/aktif kelime), `categoryId` filtresi — 22 yeni test (4 Create+6 Update+4 Delete+4 GetCategories Category testi, +2 Create Word+2 Update Word+1 GetWords categoryId wiring testi), tüm paket 187/187 yeşil
+- [x] ➜ **AKADEMI/backend'ye işle**
+
+> **A-06 TAMAMLANDI (2026-08-18).** `Category`(self-ref, BaseEntity)/`CategoryTranslation`(plain,
+> `Language` gibi audit'siz)/`WordCategory`(plain, `UserCardCategories` gibi saf M:N bağı) → EF config
+> (CHECK MinLevel/MaxLevel, self-ref FK Restrict, 12+24 seed `HasData`) → `ICategoryRepository` +
+> `CategoryAggregate` → 4 Command/Query (Create/Update/Delete/GetCategories, hiyerarşi düz listeden
+> Handler'da `ILookup` ile kurulur) → silme koruması + `CategoriesController` → `GET /words` categoryId
+> filtresi + `categories[]` (+ kullanıcı kararıyla `categoryIds[]` yazma, A-05'in `WordConceptAggregate`'ine
+> geriye dönük `Categories` alanı eklendi) → `IActivityLogger` (3 Handler) → 22 birim testi. Canlı
+> doğrulama yapıldı: hiyerarşik liste (`GET /categories`, `includeWordCount`, `level` filtresi), alt
+> kategori oluşturma+`children[]`'da görünmesi, silme koruması (409 `CATEGORY_HAS_CHILDREN` →
+> 409 `CATEGORY_HAS_ACTIVE_WORDS` izole edilerek), kategori taşıma (`PUT`), döngü koruması (400
+> `CATEGORY_PARENT_CYCLE`), `POST /words` `categoryIds` ile kelime oluşturma → `GET /words?categoryId=`
+> filtresi ve `categories[]` alanı doğru döndü, `ActivityLogs`'a 3 aksiyonun tamamı doğru yazıldı — test
+> verileri temizlendi (soft-delete edilen seed kategori 1 geri alındı). Sıradaki: `A-07` (Medya API).
 
 ### A-07 — Medya / Dosya Yükleme API ⬜
 **Referans:** REFERENCE/ENV.md §7

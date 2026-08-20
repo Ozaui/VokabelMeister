@@ -21,7 +21,7 @@ public class DeleteWordCommandHandlerTests
         var concept = new WordConcept { Id = conceptId, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };
         var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
         var word = new Word { Id = 1, WordConceptId = conceptId, LanguageId = 1, Text = text, Definition = "ağaç" };
-        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);
+        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])], []);
     }
 
     [Fact]

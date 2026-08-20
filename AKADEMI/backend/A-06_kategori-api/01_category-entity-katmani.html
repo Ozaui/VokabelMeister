@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'category-entity-katmani',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '../A-05_sistem-kelimesi-api/10_birim-testleri.html',
+    sonrakiBolum: '02_category-repository-katmani.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Üç Tablo: Kategori, Çeviri, Bağ',
+        altBaslik: 'Kategori de kelime gibi dilden bağımsız bir çekirdek (Category) + her dile bir ad satırı (CategoryTranslation) olarak modellenir — ama ikisinin de WordConcept/Word\'ün aksine kendi audit geçmişi yok, üçüncü bir tablo (WordCategory) kelimeyle kategoriyi M:N bağlar.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Category BaseEntity\'den Türerken CategoryTranslation/WordCategory Türemiyor?',
+        aciklama: '`Category` (self-ref hiyerarşi, admin CRUD\'a tabi, silinebilir/taşınabilir) `BaseEntity`\'nin TÜM alanlarını (soft delete, kim-ne-zaman) gerçekten kullanır. `CategoryTranslation` ise bir kategorinin dil başına TEK satırlık adı — kendi başına hiç var olamaz, `Category` silinince CASCADE ile birlikte gider, "bu çeviri ne zaman güncellendi" sorusu hiç sorulmaz (üstündeki `Category` zaten audit\'li). `WordCategory` ise `WordConcept`↔`Category` arasındaki saf bir M:N bağ satırı — `UserCardCategories` (Kişisel İçerik domaini) ile TAMAMEN aynı desen.',
+        neden: 'Bir tablo yalnızca GERÇEKTEN ihtiyaç duyduğu alanları taşımalı — `CategoryTranslation`/`WordCategory`\'ye `IsDeleted`/`DeletedByUserId` gibi 5 fazla sütun eklemek, o sütunların HİÇBİRİ hiçbir sorguda okunmayacakken hem migration\'ı hem her INSERT\'i gereksiz büyütür.',
+        olmasaydi: 'Her ikisi de `BaseEntity`\'den türeseydi, `ZauselDbContext`\'in otomatik soft-delete filtresi bu iki tabloya da uygulanırdı — bir `WordCategory` satırı ASLA soft-delete EDİLMİYOR (kategori değişince `ReplaceWordCategoriesAsync` satırı doğrudan HARD siliyor, bölüm 7\'de görülecek), bu yüzden filtre hiçbir işlev görmeden yalnızca her sorguya gereksiz bir `WHERE IsDeleted = 0` eklerdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'Category.cs — Hiyerarşik Çekirdek',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Content/Category.cs',
+        nedenBuKlasor: '`Domain/Entities/Content/` — `WordConcept`/`Word` (A-05) ile AYNI klasör, aynı domain\'in parçası olduğu için.',
+        kod: `using Zausel.Domain.Entities;
+
+namespace Zausel.Domain.Entities.Content;
+
+// Hiyerarşik, dilden bağımsız kategori çekirdeği — ad/açıklama CategoryTranslation'da.
+public class Category : BaseEntity
+{
+    public int? ParentCategoryId { get; set; }
+    public int DisplayOrder { get; set; }
+    public string? Icon { get; set; }
+    public string? Color { get; set; }
+    public string? MinLevel { get; set; }
+    public string? MaxLevel { get; set; }
+    public bool IsActive { get; set; } = true;
+}`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Domain.Entities;',
+            aciklama: '`BaseEntity`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Domain.Entities.Content;',
+            aciklama: 'Category.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — EF Core entityleri `DbSet<T>` propertyleriyle KEŞFEDER, klasöre BAKMAZ; gruplama, "kategori" kavramının TÜM parça dosyalarını (bu bölümdeki üç entity) TEK klasörde bulabilmek içindir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class Category : BaseEntity',
+            aciklama: 'Silme koruması (bölüm 5) ve kategori taşıma (bölüm 4) `BaseEntity`\'nin `IsDeleted`/`UpdatedByUserId` alanlarını doğrudan kullanır — bir kategori "silindiğinde" satır fiziksel olarak SİLİNMEZ, yalnızca işaretlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int? ParentCategoryId { get; set; }',
+            aciklama: 'Self-referencing FK — NULL ise kök (üst düzey) kategori, dolu ise başka bir `Category`\'nin çocuğu. Aşağıdaki EF config bunu `Restrict` (Cascade DEĞİL) ile kısıtlar.',
+            neden: 'Kategoriler kullanıcıya iç içe (ör. "İnsanlar" altında "Meslekler") gösterilecek — tek seviyeli düz bir liste bu yapıyı MODELLEYEMEZDİ.',
+            olmasaydi: 'Self-ref yerine ayrı bir `ParentCategoryId` YERİNE sabit "seviye" sütunları (ör. `Level1Id`, `Level2Id`) kullanılsaydı, hiyerarşi DERİNLİĞİ şemaya sabitlenmiş olurdu — üç seviyeli bir alt kategori eklemek YENİ bir migration gerektirirdi.'
+          },
+          {
+            satir: 'public int DisplayOrder { get; set; }',
+            aciklama: '`GET /categories` yanıtındaki sıralama — admin panelde kategoriler bu değere göre dizilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Icon { get; set; }',
+            aciklama: 'Frontend\'in göstereceği ikon adı (ör. "family") — serbest metin, DB seviyesinde bir kapalı küme ZORLANMAZ (ikon setinin kendisi henüz seçilmedi, bkz. DESIGN_SYSTEM.md notu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Color { get; set; }',
+            aciklama: 'Kategori kartının rengi, hex kod (ör. "#FF6B6B").',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? MinLevel { get; set; }',
+            aciklama: 'Bu kategorinin ANLAMLI olduğu en düşük CEFR seviyesi — `GET /categories?level=` filtresinin (bölüm 6) alt sınırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? MaxLevel { get; set; }',
+            aciklama: 'Üst sınır — NULL ise "sınırsız", yani bu kategori MinLevel\'den itibaren HER seviyede ilgili sayılır (bölüm 6\'daki aralık mantığının ikinci ucu).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public bool IsActive { get; set; } = true;',
+            aciklama: 'Soft delete (`IsDeleted`, `BaseEntity`\'den gelir) DIŞINDA, kategoriyi KALICI silmeden geçici olarak listeden çıkarmanın yolu — `WordConcept.IsActive` ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryTranslation.cs — Dil Başına Bir Satır',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Content/CategoryTranslation.cs',
+        nedenBuKlasor: 'backend/Zausel.Domain/Entities/Content/ altındaki diğer dosyalarla aynı klasör — EF Core entityleri `DbSet<T>` propertyleriyle KEŞFEDER, klasöre BAKMAZ; gruplama, "kategori" kavramının TÜM parça dosyalarını TEK klasörde bulabilmek içindir.',
+        kod: `namespace Zausel.Domain.Entities.Content;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — Category'nin CASCADE ile silinen dil-başına-1-satır
+// çevirisi, Language gibi kendi audit/soft-delete geçmişi olmayan bir alt-satır (DATABASE_SCHEMA/
+// Icerik.md'deki CategoryTranslations SQL'i hiç CreatedAt/UpdatedAt taşımıyor).
+public class CategoryTranslation
+{
+    public int Id { get; set; }
+    public int CategoryId { get; set; }
+    public int LanguageId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace Zausel.Domain.Entities.Content;',
+            aciklama: 'CategoryTranslation.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — EF Core entityleri `DbSet<T>` propertyleriyle KEŞFEDER, klasöre BAKMAZ; gruplama, "kategori" kavramının TÜM parça dosyalarını TEK klasörde bulabilmek içindir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CategoryTranslation',
+            aciklama: '`BaseEntity`\'den türemeyen, `Language`/`WordCategory` ile AYNI "plain entity" ailesinden — Word.cs\'in (A-05) AKSİNE (o `BaseEntity`\'den türer) çünkü bir çevirinin kendi audit geçmişi anlamsız, üstündeki `Category` zaten audit\'li.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: '`BaseEntity`\'den GELMEDİĞİ için birincil anahtar burada elle tanımlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int CategoryId { get; set; }',
+            aciklama: 'Hangi kategoriye ait olduğu — FK, aşağıdaki EF config\'te `Cascade` (kategori silinirse çevirisi de silinir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int LanguageId { get; set; }',
+            aciklama: 'Bu satırın HANGİ dilde olduğu — FK, `Language`\'e (A-05).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string Name { get; set; } = string.Empty;',
+            aciklama: 'Kategorinin o dildeki adı ("Familie"/"Aile") — kartın gösterdiği asıl metin.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public string? Description { get; set; }',
+            aciklama: 'Serbest, opsiyonel açıklama metni.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordCategory.cs — Kelime↔Kategori Bağı (M:N)',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Content/WordCategory.cs',
+        nedenBuKlasor: 'backend/Zausel.Domain/Entities/Content/ altındaki diğer dosyalarla aynı klasör — EF Core entityleri `DbSet<T>` propertyleriyle KEŞFEDER, klasöre BAKMAZ; gruplama, "kategori" kavramının TÜM parça dosyalarını TEK klasörde bulabilmek içindir.',
+        kod: `namespace Zausel.Domain.Entities.Content;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — WordConcept↔Category M:N ara tablosu, UserCardCategories
+// (Kisisel_Icerik.md) ile AYNI desen: saf bağ satırı, kendi audit/soft-delete geçmişi yok, ilişki
+// silinince satır da (hard) silinir.
+public class WordCategory
+{
+    public int Id { get; set; }
+    public int WordConceptId { get; set; }
+    public int CategoryId { get; set; }
+    public int DisplayOrder { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          {
+            satir: 'namespace Zausel.Domain.Entities.Content;',
+            aciklama: 'WordCategory.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — EF Core entityleri `DbSet<T>` propertyleriyle KEŞFEDER, klasöre BAKMAZ; gruplama, "kategori" kavramının TÜM parça dosyalarını TEK klasörde bulabilmek içindir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordCategory',
+            aciklama: 'Bir `WordConcept`\'in BİRDEN FAZLA kategoriye, bir `Category`\'nin de BİRDEN FAZLA kelimeye ait olabilmesini sağlayan ara tablo — klasik M:N deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int Id { get; set; }',
+            aciklama: 'Birincil anahtar — `BaseEntity`\'den GELMEDİĞİ için elle tanımlanır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int WordConceptId { get; set; }',
+            aciklama: 'Hangi kelime kavramına ait olduğu — FK, `WordConcept`\'e (A-05).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int CategoryId { get; set; }',
+            aciklama: 'Hangi kategoriye ait olduğu — FK, `Category`\'ye.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public int DisplayOrder { get; set; }',
+            aciklama: 'Bir kelimenin birden fazla kategorisi varsa gösterim SIRASI.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DateTime CreatedAt { get; set; }',
+            aciklama: 'Bu bağın NE ZAMAN kurulduğu — `BaseEntity`\'nin tam audit setinin AKSİNE yalnızca oluşturma zamanı tutulur (bir M:N bağ satırının "güncellenmesi" diye bir şey yok, ya vardır ya silinir), bölüm 2\'deki `ReplaceWordCategoriesAsync` bu alanı `DateTime.UtcNow` ile elle doldurur.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryConfiguration.cs — CHECK + Self-Ref Restrict + 12 Kategori Seed',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Content/CategoryConfiguration.cs',
+        nedenBuKlasor: '`Infrastructure/Data/Configurations/Content/` — `WordConceptConfiguration` (A-05) ile AYNI klasör, entity klasörüyle eşleşen bir konfigürasyon alt klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Infrastructure.Data.Configurations.Content;
+
+public class CategoryConfiguration : IEntityTypeConfiguration<Category>
+{
+    // HasData migration-zamanında sabitlenir — DateTime.UtcNow burada KULLANILMAZ, her migration
+    // scaffold'unda farklı bir değer üretip sahte bir diff yaratırdı.
+    private static readonly DateTime SeedTimestamp = new(2026, 8, 18, 0, 0, 0, DateTimeKind.Utc);
+
+    public void Configure(EntityTypeBuilder<Category> builder)
+    {
+        builder.ToTable("Categories", tb =>
+        {
+            tb.HasCheckConstraint("CK_Categories_MinLevel", "MinLevel IS NULL OR MinLevel IN ('A1','A2','B1','B2','C1','C2')");
+            tb.HasCheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN ('A1','A2','B1','B2','C1','C2')");
+        });
+
+        builder.Property(x => x.Icon).HasMaxLength(100);
+        builder.Property(x => x.Color).HasMaxLength(10);
+        builder.Property(x => x.MinLevel).HasMaxLength(2);
+        builder.Property(x => x.MaxLevel).HasMaxLength(2);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+        builder.Property(x => x.DisplayOrder).HasDefaultValue(0);
+
+        builder.HasIndex(x => x.ParentCategoryId);
+
+        // Restrict — çocuğu olan kategori silinemez (A_backend.md A-06 notu, self-ref FK Restrict
+        // kısıtıyla tutarlı olacak şekilde bilinçli tercih edildi, Cascade DEĞİL).
+        builder.HasOne<Category>()
+            .WithMany()
+            .HasForeignKey(x => x.ParentCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Seed — DATABASE_SCHEMA.md "Seed Data (başlangıç kategorileri)" ile birebir, 12 kategori.
+        builder.HasData(
+            Seed(1, 1, "A1", "#FF6B6B", "people"), Seed(2, 2, "A1", "#FF8C42", "family"), Seed(3, 3, "A1", "#95E1D3", "food"),
+            Seed(4, 4, "A1", "#4ECDC4", "house"), Seed(5, 5, "A1", "#AA96DA", "school"), Seed(6, 6, "A1", "#FCBAD3", "numbers"),
+            Seed(7, 7, "A1", "#A8EDEA", "colors"), Seed(8, 8, "A1", "#FFD89B", "time"), Seed(9, 9, "A1", "#FB7D5B", "body"),
+            Seed(10, 10, "A1", "#84DCC6", "animal"), Seed(11, 11, "A2", "#F38181", "work"), Seed(12, 12, "A2", "#C7CEEA", "travel")
+        );
+    }
+
+    private static Category Seed(int id, int displayOrder, string minLevel, string color, string icon) => new()
+    {
+        Id = id, DisplayOrder = displayOrder, MinLevel = minLevel, Color = color, Icon = icon, IsActive = true,
+        CreatedAt = SeedTimestamp, UpdatedAt = SeedTimestamp
+    };
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: 'Yapılandırılan `Category`\'nin ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'CategoryConfiguration.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — EF Core `IEntityTypeConfiguration<T>` sınıflarını `ApplyConfigurationsFromAssembly` ile assembly TARAMASIYLA bulur, klasöre BAKMAZ; gruplama, hangi entitynin yapılandırmasının NEREDE olduğunu entity klasörüyle 1:1 eşleyerek TAHMİN EDİLEBİLİR kılmak içindir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CategoryConfiguration : IEntityTypeConfiguration<Category>',
+            aciklama: '`WordConceptConfiguration` (A-05) ile AYNI arayüz — EF Core `ApplyConfigurationsFromAssembly` bu sınıfı OTOMATİK bulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static readonly DateTime SeedTimestamp = new(2026, 8, 18, 0, 0, 0, DateTimeKind.Utc);',
+            aciklama: '`HasData` ile eklenen satırların migration dosyasına GÖMÜLÜ, SABİT bir değeri olmalı.',
+            neden: '`DateTime.UtcNow` kullanılsaydı, her `dotnet ef migrations add` çalıştırmasında (ör. ileride küçük bir düzeltme için tekrar migration alınsa) FARKLI bir zaman damgası üretilir, bu da migration snapshot\'ında GERÇEK bir şema değişikliği olmadan sahte bir fark doğururdu.',
+            olmasaydi: 'Sabit değer kullanılmasaydı, `dotnet ef migrations add` iki farklı geliştirici makinesinde İKİ FARKLI migration dosyası üretirdi (saat farkı kadar) — takım çalışmasında sürekli gereksiz migration çakışmasına yol açardı.'
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<Category> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("Categories", tb =>',
+            aciklama: '`WordConceptConfiguration` (A-05) ile AYNI `ToTable` overload\'ı — burada da İKİ CHECK constraint birden eklenecek.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Categories_MinLevel", "MinLevel IS NULL OR MinLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: '`MinLevel` NULLABLE olduğu için `WordConcept.DifficultyLevel`\'in (A-05, zorunlu alan) CHECK\'inden farklı — önce `IS NULL` şıkkı denenir, doluysa kapalı kümeye uyması zorunlu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'tb.HasCheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");',
+            aciklama: '`MinLevel` ile AYNI desen, üst sınır için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Icon).HasMaxLength(100);',
+            aciklama: 'İkon adı için üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Color).HasMaxLength(10);',
+            aciklama: 'Hex renk kodu ("#FF6B6B", 7 karakter) için yeterli, biraz paylı üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.MinLevel).HasMaxLength(2);',
+            aciklama: '"A1".."C2" iki karakterlik kod için üst sınır — `WordConcept.DifficultyLevel` ile AYNI değer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.MaxLevel).HasMaxLength(2);',
+            aciklama: '`MinLevel` ile AYNI üst sınır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);',
+            aciklama: 'Veritabanı seviyesinde varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.DisplayOrder).HasDefaultValue(0);',
+            aciklama: 'Varsayılan sıralama değeri.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => x.ParentCategoryId);',
+            aciklama: '"Bu kategorinin çocukları kimler" sorgusunu (hiyerarşik liste kurulurken, bölüm 6) hızlandırır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Category>()',
+            aciklama: 'Self-referencing ilişki — `Category`\'nin hem KENDİSİ hem HEDEFİ olduğu tek FK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir üst kategorinin BİRDEN FAZLA çocuğu olabilir — navigation property TANIMLANMADI (`WithMany()` parametresiz), çünkü bu projede entity\'ler arası C# navigation property KULLANILMIYOR (A-05\'teki `Word`→`WordConcept` FK\'i de aynı desen), ilişkiler yalnızca FK id\'leriyle kurulup Repository katmanında elle sorgulanıyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.ParentCategoryId)',
+            aciklama: 'FK kolonunun hangi property olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Restrict);',
+            aciklama: 'Çocuğu olan bir kategori veritabanı SEVİYESİNDE de silinemez — bölüm 5\'teki uygulama-seviyesi `CategoryHasChildrenException` kontrolünün ARKASINDAKİ son güvence (uygulama kontrolü atlanıp doğrudan SQL çalıştırılsa bile FK ihlali engeller).',
+            neden: 'Cascade seçilseydi, bir üst kategori silindiğinde TÜM alt ağacı SESSİZCE yok olurdu — bu proje bunun yerine "çocuğu olan kategori HİÇ silinemez" kararını verdi (silme koruması, bölüm 5), Restrict bu kararı veritabanı seviyesinde de zorunlu kılıyor.',
+            olmasaydi: 'Cascade olsaydı, admin panelde yanlışlıkla bir kök kategoriye "sil" denildiğinde altındaki TÜM alt kategoriler (ve varsa onların da alt kategorileri) hiçbir onay istenmeden TAMAMEN kaybolurdu — geri dönüşü olmayan, kapsamı öngörülemeyen bir veri kaybı.'
+          },
+          {
+            satir: 'builder.HasData(',
+            aciklama: 'EF Core\'un migration-zamanı seed mekanizması — `LanguageConfiguration` (A-05) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(1, 1, "A1", "#FF6B6B", "people"), Seed(2, 2, "A1", "#FF8C42", "family"), Seed(3, 3, "A1", "#95E1D3", "food"),',
+            aciklama: '12 kategorinin ilk üçü — projenin başlangıç kategori listesiyle Id/DisplayOrder/MinLevel/Color/Icon birebir aynı sırada.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(4, 4, "A1", "#4ECDC4", "house"), Seed(5, 5, "A1", "#AA96DA", "school"), Seed(6, 6, "A1", "#FCBAD3", "numbers"),',
+            aciklama: '4-6. kategoriler (Ev/Okul/Sayılar) — hepsi MinLevel="A1".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(7, 7, "A1", "#A8EDEA", "colors"), Seed(8, 8, "A1", "#FFD89B", "time"), Seed(9, 9, "A1", "#FB7D5B", "body"),',
+            aciklama: '7-9. kategoriler (Renkler/Zaman/Vücut) — hepsi MinLevel="A1".',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(10, 10, "A1", "#84DCC6", "animal"), Seed(11, 11, "A2", "#F38181", "work"), Seed(12, 12, "A2", "#C7CEEA", "travel")',
+            aciklama: 'Son üç kategori — 10 (Hayvanlar) hâlâ MinLevel="A1", 11-12 (İş/Seyahat) ise MinLevel="A2" — bölüm 6\'daki `level` filtresinin bu ikisini A1 sorgusunda ELEMESİNİN kaynağı bu satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static Category Seed(int id, int displayOrder, string minLevel, string color, string icon) => new()',
+            aciklama: '12 kez tekrar eden `new Category { ... }` bloğunu (yalnızca 5 değişken alan) TEK bir yardımcı metoda indirger — `LanguageConfiguration`\'ın 2 satırlık `HasData`\'sının AKSİNE burada satır sayısı fazla olduğu için tekrar azaltma değer yaratıyor.',
+            neden: 'Elle 12 kez `new Category { Id = ..., DisplayOrder = ..., ... CreatedAt = SeedTimestamp, UpdatedAt = SeedTimestamp, IsActive = true }` yazmak, ortak 3 alanı (IsActive/CreatedAt/UpdatedAt) HER satırda tekrar ederdi — bir satırda unutulursa (ör. `IsActive` yazılmayı unutulursa varsayılan `false` olur) fark edilmesi ZOR bir hata doğar.',
+            olmasaydi: 'Yardımcı metot olmasaydı 12 satırlık `HasData` çağrısı yaklaşık 12×8=96 karaktere kadar uzayan tek satırlardan oluşurdu, gözle "hangi kategori hangi renk" karşılaştırması ZORLAŞIRdı.'
+          },
+          {
+            satir: 'Id = id, DisplayOrder = displayOrder, MinLevel = minLevel, Color = color, Icon = icon, IsActive = true,',
+            aciklama: 'Yardımcı metodun parametrelerini entity alanlarına eşler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'CreatedAt = SeedTimestamp, UpdatedAt = SeedTimestamp',
+            aciklama: '`BaseEntity`\'nin `SaveChangesAsync` override\'ı (A-02) bu alanları yalnızca EF `ChangeTracker` üzerinden gelen normal INSERT\'lerde otomatik doldurur — `HasData` migration-zamanı çalıştığı için bu mekanizmayı HİÇ TETİKLEMEZ, sabit değer elle verilmek zorunda.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryTranslationConfiguration.cs — 24 Çeviri Seed',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Content/CategoryTranslationConfiguration.cs',
+        nedenBuKlasor: 'backend/Zausel.Infrastructure/Data/Configurations/Content/ altındaki diğer dosyalarla aynı klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Infrastructure.Data.Configurations.Content;
+
+public class CategoryTranslationConfiguration : IEntityTypeConfiguration<CategoryTranslation>
+{
+    public void Configure(EntityTypeBuilder<CategoryTranslation> builder)
+    {
+        builder.ToTable("CategoryTranslations");
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
+
+        builder.HasIndex(x => new { x.CategoryId, x.LanguageId }).IsUnique();
+
+        builder.HasOne<Category>()
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Language>()
+            .WithMany()
+            .HasForeignKey(x => x.LanguageId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Seed — DATABASE_SCHEMA.md ile birebir, LanguageId 1='de', 2='tr'. 12 kategori × 2 dil = 24 satır.
+        builder.HasData(
+            Seed(1, 1, 1, "Menschen"), Seed(2, 1, 2, "İnsanlar"),
+            Seed(3, 2, 1, "Familie"), Seed(4, 2, 2, "Aile"),
+            Seed(5, 3, 1, "Essen"), Seed(6, 3, 2, "Yemek"),
+            Seed(7, 4, 1, "Haus"), Seed(8, 4, 2, "Ev"),
+            Seed(9, 5, 1, "Schule"), Seed(10, 5, 2, "Okul"),
+            Seed(11, 6, 1, "Zahlen"), Seed(12, 6, 2, "Sayılar"),
+            Seed(13, 7, 1, "Farben"), Seed(14, 7, 2, "Renkler"),
+            Seed(15, 8, 1, "Zeit"), Seed(16, 8, 2, "Zaman"),
+            Seed(17, 9, 1, "Körperteile"), Seed(18, 9, 2, "Vücut"),
+            Seed(19, 10, 1, "Tiere"), Seed(20, 10, 2, "Hayvanlar"),
+            Seed(21, 11, 1, "Arbeit"), Seed(22, 11, 2, "İş"),
+            Seed(23, 12, 1, "Reisen"), Seed(24, 12, 2, "Seyahat")
+        );
+    }
+
+    private static CategoryTranslation Seed(int id, int categoryId, int languageId, string name) =>
+        new() { Id = id, CategoryId = categoryId, LanguageId = languageId, Name = name };
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`CategoryTranslation` ile birlikte FK hedefleri `Category`/`Language`\'ın da ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'CategoryTranslationConfiguration.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CategoryTranslationConfiguration : IEntityTypeConfiguration<CategoryTranslation>',
+            aciklama: '`CategoryConfiguration` ile AYNI arayüz, `CategoryTranslation` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<CategoryTranslation> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("CategoryTranslations");',
+            aciklama: 'Tablo adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: '`Language.cs` (A-05) ile AYNI gerekçe — `BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtar EF konvansiyonuyla OTOMATİK bulunmaz, elle bildirilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.Name).HasMaxLength(100).IsRequired();',
+            aciklama: 'Bu tablonun ZORUNLU tek metin alanı — bir çevirinin adı olmadan var olması ANLAMSIZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasIndex(x => new { x.CategoryId, x.LanguageId }).IsUnique();',
+            aciklama: 'Aynı kategori aynı dilde İKİ satıra sahip OLAMAZ — `UQ_CategoryTranslations_Category_Language`\'ın EF Core karşılığı, `Words`\'teki `UQ_Words_Concept_Language` (A-05) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Category>()',
+            aciklama: 'Bu çevirinin ait olduğu kategoriye FK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bir kategorinin BİRDEN FAZLA çevirisi (bir de bir tr) olabilir — navigation property yok, `CategoryConfiguration`\'daki self-ref ile AYNI gerekçe.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.CategoryId)',
+            aciklama: 'FK kolonunun hangi property olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Kategori silinirse çevirileri de birlikte gider — `WordDetail`\'in `Word`\'e bağlılığı (A-05) ile AYNI mantık: çeviri, kategori olmadan ASLA var olamayan bir alt-satır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Language>()',
+            aciklama: 'Bu çevirinin hangi dilde olduğuna FK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.LanguageId)',
+            aciklama: 'FK kolonunun hangi property olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Restrict);',
+            aciklama: '`WordConfiguration`\'ın `Language` FK\'i (A-05) ile AYNI: bir dil satırı zaten hiç silinmediği için bu pratikte hiç TETİKLENMEZ, ama "kelime silinince dil satırı da silinsin" gibi YANLIŞ bir zincirleme davranışın önüne baştan geçer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasData(',
+            aciklama: 'EF Core\'un migration-zamanı seed mekanizması — 24 çeviri satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(1, 1, 1, "Menschen"), Seed(2, 1, 2, "İnsanlar"),',
+            aciklama: 'İlk kategorinin (Id=1, "people/Menschen/İnsanlar") iki dildeki adı — `CategoryId=1` her ikisinde de AYNI, yalnızca `LanguageId` (1=de, 2=tr) ve `Name` değişiyor.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(3, 2, 1, "Familie"), Seed(4, 2, 2, "Aile"),',
+            aciklama: '2. kategorinin (Familie/Aile) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(5, 3, 1, "Essen"), Seed(6, 3, 2, "Yemek"),',
+            aciklama: '3. kategorinin (Essen/Yemek) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(7, 4, 1, "Haus"), Seed(8, 4, 2, "Ev"),',
+            aciklama: '4. kategorinin (Haus/Ev) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(9, 5, 1, "Schule"), Seed(10, 5, 2, "Okul"),',
+            aciklama: '5. kategorinin (Schule/Okul) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(11, 6, 1, "Zahlen"), Seed(12, 6, 2, "Sayılar"),',
+            aciklama: '6. kategorinin (Zahlen/Sayılar) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(13, 7, 1, "Farben"), Seed(14, 7, 2, "Renkler"),',
+            aciklama: '7. kategorinin (Farben/Renkler) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(15, 8, 1, "Zeit"), Seed(16, 8, 2, "Zaman"),',
+            aciklama: '8. kategorinin (Zeit/Zaman) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(17, 9, 1, "Körperteile"), Seed(18, 9, 2, "Vücut"),',
+            aciklama: '9. kategorinin (Körperteile/Vücut) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(19, 10, 1, "Tiere"), Seed(20, 10, 2, "Hayvanlar"),',
+            aciklama: '10. kategorinin (Tiere/Hayvanlar) iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(21, 11, 1, "Arbeit"), Seed(22, 11, 2, "İş"),',
+            aciklama: '11. kategorinin (Arbeit/İş, MinLevel="A2") iki dildeki adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Seed(23, 12, 1, "Reisen"), Seed(24, 12, 2, "Seyahat")',
+            aciklama: '12. kategorinin (Reisen/Seyahat, MinLevel="A2") iki dildeki adı — 24. ve son çeviri satırı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private static CategoryTranslation Seed(int id, int categoryId, int languageId, string name) =>',
+            aciklama: '`CategoryConfiguration.Seed`\'in AYNI deseni — 24 kez tekrar eden `new CategoryTranslation { ... }` bloğunu TEK yardımcı metoda indirger.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'new() { Id = id, CategoryId = categoryId, LanguageId = languageId, Name = name };',
+            aciklama: 'Yardımcı metodun parametrelerini entity alanlarına eşler — `Description` alanı seed\'de hiç doldurulmaz (NULL kalır), tüm seed kategoriler için opsiyonel açıklama şimdilik boş.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordCategoryConfiguration.cs — Saf M:N Bağı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Content/WordCategoryConfiguration.cs',
+        nedenBuKlasor: 'backend/Zausel.Infrastructure/Data/Configurations/Content/ altındaki diğer dosyalarla aynı klasör.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Infrastructure.Data.Configurations.Content;
+
+public class WordCategoryConfiguration : IEntityTypeConfiguration<WordCategory>
+{
+    public void Configure(EntityTypeBuilder<WordCategory> builder)
+    {
+        builder.ToTable("WordCategories");
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => new { x.WordConceptId, x.CategoryId }).IsUnique();
+
+        builder.HasOne<WordConcept>()
+            .WithMany()
+            .HasForeignKey(x => x.WordConceptId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Category>()
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`DeleteBehavior` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;',
+            aciklama: '`EntityTypeBuilder<T>` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`WordCategory` ile birlikte FK hedefleri `WordConcept`/`Category`\'nin de ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Infrastructure.Data.Configurations.Content;',
+            aciklama: 'WordCategoryConfiguration.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class WordCategoryConfiguration : IEntityTypeConfiguration<WordCategory>',
+            aciklama: '`CategoryTranslationConfiguration` ile AYNI arayüz, `WordCategory` için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public void Configure(EntityTypeBuilder<WordCategory> builder)',
+            aciklama: '`IEntityTypeConfiguration<T>`\'in tek metodu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.ToTable("WordCategories");',
+            aciklama: 'Tablo adı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasKey(x => x.Id);',
+            aciklama: '`BaseEntity`\'den TÜREMEDİĞİ için birincil anahtar elle bildirilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");',
+            aciklama: 'Veritabanı SEVİYESİNDE bir varsayılan değer — `BaseEntity`\'nin `SaveChangesAsync` override\'ının (A-02) AKSİNE, `WordCategory` `BaseEntity`\'den türemediği için o otomatik zaman damgalama mekanizmasından FAYDALANAMAZ; bölüm 2\'deki `ReplaceWordCategoriesAsync` yine de `DateTime.UtcNow`\'u ELLE set eder, bu SQL varsayılanı yalnızca ikinci bir güvence katmanı.',
+            neden: 'İki bağımsız güvence (C# tarafında elle set + DB tarafında varsayılan) tek bir noktanın unutulmasıyla NULL/boş bir tarihin veritabanına yazılmasını engeller.',
+            olmasaydi: 'Yalnızca C# tarafında set edilseydi ve bir geliştirici ileride bu satırı `AddAsync` yerine ham SQL\'le eklerse (nadir ama olası), `CreatedAt` sütunu `0001-01-01` gibi anlamsız bir varsayılana düşerdi — DB seviyesi varsayılan bunu ENGELLİYOR.'
+          },
+          {
+            satir: 'builder.HasIndex(x => new { x.WordConceptId, x.CategoryId }).IsUnique();',
+            aciklama: 'Aynı kelime aynı kategoriye İKİ kez bağlanamaz — `UQ_WordCategories`\'in EF Core karşılığı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<WordConcept>()',
+            aciklama: 'Bu bağın hangi kelime kavramına ait olduğuna FK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.WithMany()',
+            aciklama: 'Bu satır dosyada İKİ kez geçiyor (hem `WordConcept` hem `Category` ilişkisinde) — her ikisi de AYNI gerekçeyle: bir kelime kavramının/kategorinin BİRDEN FAZLA bağ satırı olabilir, navigation property TANIMLANMAZ (bu projede entity\'ler arası C# navigation property hiç KULLANILMIYOR, ilişkiler yalnızca FK id\'leriyle kurulup Repository katmanında elle sorgulanıyor).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.WordConceptId)',
+            aciklama: 'FK kolonunun hangi property olduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.OnDelete(DeleteBehavior.Cascade);',
+            aciklama: 'Bir kelime kavramı (soft-delete DEĞİL, hard) silinirse bağ satırı da gider — pratikte `WordConceptRepository.SoftDeleteConceptCascadeAsync` (A-05) zaten soft-delete kullandığı için bu CASCADE günlük akışta tetiklenmez, yalnızca gerçek bir hard-delete/migration senaryosunda devreye girer.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'builder.HasOne<Category>()',
+            aciklama: 'Bu bağın hangi kategoriye ait olduğuna FK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.HasForeignKey(x => x.CategoryId)',
+            aciklama: 'FK kolonunun hangi property olduğu.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: `dotnet ef migrations add AddCategoryEntities`',
+        aciklama: 'Yukarıdaki 3 entity + 3 config yazıldıktan sonra `dotnet ef migrations add AddCategoryEntities --project Zausel.Infrastructure --startup-project Zausel.API` çalıştırıldı. EF Core, `ApplyConfigurationsFromAssembly` (A-02) ile TÜM `IEntityTypeConfiguration<T>` sınıflarını TARAYIP karşılaştırır ve üç yeni tablo (`Categories`, `CategoryTranslations`, `WordCategories`) + iki `CreateIndex` + üç `HasCheckConstraint` + 12+24 satırlık `InsertData` (yukarıdaki `HasData` çağrılarından ÜRETİLDİ) içeren bir migration dosyası yazar.',
+        neden: 'Migration dosyasının KENDİSİ elle YAZILMAZ — EF Core\'un "önceki model snapshot\'ı ile şu anki entity/config kümesini karşılaştır, aradaki farkı SQL\'e çevir" mekanizması insan hatasına (ör. bir index\'in unutulması) göre çok daha güvenilirdir.',
+        olmasaydi: 'Migration elle yazılsaydı, `CategoryConfiguration`\'daki `HasCheckConstraint`/`HasIndex`/`HasData` çağrılarının HER BİRİNİN karşılığı elle SQL olarak yeniden yazılmak zorunda kalırdı — üstelik bu iki kaynak (C# config + elle SQL) ZAMANLA birbirinden SAPARDI (biri güncellenir, diğeri unutulur).'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama',
+        aciklama: 'Migration `dotnet ef database update` ile gerçek `ZauselDB`\'ye uygulandı, ardından `sqlcmd` ile doğrudan sorgulandı: `Categories` tablosunda 12 satır, `CategoryTranslations` tablosunda 24 satır (`IsDeleted=0` filtresiyle) sayıldı — seed verisi beklendiği gibi geldi.',
+        neden: 'Migration dosyasının DERLENDİĞİNİ görmek yetmez — `HasData`\'nın gerçekten INSERT\'e dönüştüğünü, CHECK constraint\'lerin gerçek DB\'de var olduğunu doğrulamanın tek yolu gerçek bir veritabanına karşı ÇALIŞTIRMAK.',
+        olmasaydi: 'Yalnızca "derlendi, migration dosyası oluştu" ile yetinilseydi, ör. `HasData`\'daki bir `Id` çakışması (aynı Id\'nin iki entity\'de kullanılması gibi) migration OLUŞTURMA anında değil, YALNIZCA `database update` çalıştırılırken bir SQL hatası olarak ortaya çıkardı — canlı doğrulama olmadan bu fark edilmezdi.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ZauselDbContext.cs — 3 Yeni DbSet',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/ZauselDbContext.cs',
+        neden: 'A-06\'da yeni 3 entity (`Category`/`CategoryTranslation`/`WordCategory`) eklendi — `DbSet<T>` property\'leri olmadan EF Core bu tipleri hiç TANIMAZ, `ApplyConfigurationsFromAssembly` bile onlar için sorgu ÜRETEMEZ.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using Zausel.Domain.Entities;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Logging;
+
+ namespace Zausel.Infrastructure.Data;
+
+ public class ZauselDbContext : DbContext
+ {
+     public ZauselDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+     public DbSet<Language> Languages => Set<Language>();
+     public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+     public DbSet<Word> Words => Set<Word>();
+     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+     public DbSet<WordExample> WordExamples => Set<WordExample>();
++    public DbSet<Category> Categories => Set<Category>();
++    public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
++    public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ZauselDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(ZauselDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'public DbSet<Category> Categories => Set<Category>();',
+            aciklama: '`Category` içindir — `WordConcept`/`Word` (A-05) ile AYNI `Set<T>()` deseni, EF Core\'un bu tabloyu sorgulamak için gerçek bir giriş noktası.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();',
+            aciklama: '`CategoryTranslation` için — `BaseEntity`\'den türemese de, herhangi bir entity gibi `DbSet<T>` gerektirir; soft-delete filtresi bu tabloya UYGULANMAZ çünkü `OnModelCreating`\'teki `foreach` yalnızca `BaseEntity` alt sınıflarını tarar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public DbSet<WordCategory> WordCategories => Set<WordCategory>();',
+            aciklama: '`WordCategory` için — `CategoryTranslation` ile AYNI gerekçe, soft-delete filtresi YOK.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Self-referencing FK', tanim: 'Bir tablonun kendi satırlarına işaret eden yabancı anahtarı — `Category.ParentCategoryId` → `Category.Id` gibi, hiyerarşi kurmanın standart yolu.' },
+          { terim: 'Plain entity', tanim: 'Bu akademide `BaseEntity`\'den TÜREMEYEN entity\'lere verilen isim (`Language`, `CategoryTranslation`, `WordCategory`) — audit/soft-delete alanlarına ihtiyaç duymayan, genelde bir üst entity\'ye sıkı bağlı alt-satırlar.' },
+          { terim: 'HasData', tanim: 'EF Core\'un migration-zamanı seed mekanizması — `dotnet ef migrations add` sırasında verilen entity listesini migration dosyasına gömülü bir `InsertData` çağrısına çevirir.' },
+          { terim: 'DeleteBehavior.Restrict', tanim: 'Bir FK için "hedef satır silinemez, eğer bu satırdan ona bir referans varsa" davranışı — `Cascade`\'in (otomatik zincirleme silme) aksine, silme işlemini TAMAMEN engeller.' },
+          { terim: 'M:N ara tablo', tanim: 'İki tablo arasında çoktan-çoğa ilişki kurmak için kullanılan üçüncü tablo — burada `WordCategory`, `WordConcept` ile `Category` arasında.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`Category` (self-ref hiyerarşi, `BaseEntity`) + `CategoryTranslation` (dil başına 1 satır, plain entity) + `WordCategory` (M:N bağ, plain entity) — üç ayrı sorumluluk, üç ayrı tablo.',
+          '`CategoryTranslation`/`WordCategory` neden `BaseEntity`\'den TÜREMEDİ: ikisi de üstündeki bir entity\'ye (Category/WordConcept) sıkı bağlı, kendi audit geçmişi olmayan alt-satırlar — `Language`/`UserCardCategories` ile AYNI aile.',
+          'Self-ref FK `Restrict` ile kısıtlandı — çocuğu olan bir kategori veritabanı seviyesinde de silinemez, bölüm 5\'teki uygulama kontrolünün arkasındaki son güvence.',
+          '12 kategori + 24 çeviri `HasData` ile migration-zamanında seed edildi — sabit bir `DateTime` kullanılarak her migration scaffold\'unda tutarlı kaldı.',
+          'Migration gerçek `ZauselDB`\'ye uygulanıp `sqlcmd` ile 12/24 satır canlı doğrulandı.',
+          '`ZauselDbContext`\'e 3 yeni `DbSet` eklendi — A-05\'te öğretilen dosyaya SONRADAN yapılan bir ekleme, `kod-degisiklik` slaytıyla işlendi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

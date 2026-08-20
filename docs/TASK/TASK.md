@@ -47,10 +47,12 @@
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 | F | F-01…F-10 (+F-02.1, F-02.2, F-04.1…F-04.5) | Tanıtım Sitesi | ⬜ |
 
-**Sıradaki task:** `A-05` ✅ tamamlandı (Sistem Kelimesi API — Words; Entity/WordGrammarValidator/
-Repository/5 Command/`LanguagesController`+`WordsController`/Eşleştirme/`IActivityLogger`/89 birim
-testi — hepsi canlı doğrulandı, `AKADEMI/backend/A-05_sistem-kelimesi-api/` 10 bölüm). Sırada
-`A-06` (Kategori API) → `TASK/A_backend.md`.
+**Sıradaki task:** `A-06` ✅ tamamlandı (Kategori API — Categories; `Category`/`CategoryTranslation`/
+`WordCategory` self-ref hiyerarşi + 12 kategori/24 çeviri seed, `ICategoryRepository`/4 Command/Query,
+silme koruması (409/400)/`CategoriesController`, `GET /words` `categoryId` filtresi+`categories[]` +
+kullanıcı kararıyla `categoryIds[]` yazma desteği, `IActivityLogger`, 22 birim testi — hepsi canlı
+doğrulandı, `TASK/A_backend.md` A-06 notuna işlendi). Sırada `A-07` (Medya/Dosya Yükleme API) →
+`TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
 
 (`A-03 — Auth API` ✅ tamamlandı 2026-08-14: `User`/`RefreshToken`/`QrLoginSession` entity'leri,

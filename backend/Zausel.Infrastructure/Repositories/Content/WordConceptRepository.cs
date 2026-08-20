@@ -37,11 +37,13 @@ public class WordConceptRepository : IWordConceptRepository
             return null;
 
         var translationsByConcept = await BuildTranslationsAsync([wordConceptId], cancellationToken);
-        return new WordConceptAggregate(concept, translationsByConcept.GetValueOrDefault(wordConceptId, []));
+        var categoriesByConcept = await BuildCategoriesAsync([wordConceptId], cancellationToken);
+        return new WordConceptAggregate(
+            concept, translationsByConcept.GetValueOrDefault(wordConceptId, []), categoriesByConcept.GetValueOrDefault(wordConceptId, []));
     }
 
     public async Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
-        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
+        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
         int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var query = _context.WordConcepts.AsQueryable();
@@ -57,6 +59,13 @@ public class WordConceptRepository : IWordConceptRepository
                 .Select(w => w.WordConceptId);
             query = query.Where(c => matchingConceptIds.Contains(c.Id));
         }
+        if (categoryId is not null)
+        {
+            var matchingConceptIds = _context.WordCategories
+                .Where(wc => wc.CategoryId == categoryId)
+                .Select(wc => wc.WordConceptId);
+            query = query.Where(c => matchingConceptIds.Contains(c.Id));
+        }
 
         var totalCount = await query.CountAsync(cancellationToken);
         var concepts = await query
@@ -67,9 +76,11 @@ public class WordConceptRepository : IWordConceptRepository
 
         var conceptIds = concepts.Select(c => c.Id).ToList();
         var translationsByConcept = await BuildTranslationsAsync(conceptIds, cancellationToken);
+        var categoriesByConcept = await BuildCategoriesAsync(conceptIds, cancellationToken);
 
         var items = concepts
-            .Select(c => new WordConceptAggregate(c, translationsByConcept.GetValueOrDefault(c.Id, [])))
+            .Select(c => new WordConceptAggregate(
+                c, translationsByConcept.GetValueOrDefault(c.Id, []), categoriesByConcept.GetValueOrDefault(c.Id, [])))
             .ToList();
 
         return new PagedResult<WordConceptAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
@@ -227,6 +238,23 @@ public class WordConceptRepository : IWordConceptRepository
         await _context.WordExamples.AddRangeAsync(newExamples, cancellationToken);
     }
 
+    public async Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default)
+    {
+        // WordCategory BaseEntity DEĞİL (soft delete yok) — eskiler HARD silinir, ReplaceExamplesAsync'in
+        // AKSİNE (o soft-delete'e tabi WordExample'ları IsDeleted=true yapar).
+        var existing = await _context.WordCategories.Where(wc => wc.WordConceptId == wordConceptId).ToListAsync(cancellationToken);
+        _context.WordCategories.RemoveRange(existing);
+
+        var newRows = categoryIds.Distinct().Select((categoryId, index) => new WordCategory
+        {
+            WordConceptId = wordConceptId,
+            CategoryId = categoryId,
+            DisplayOrder = index,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.WordCategories.AddRangeAsync(newRows, cancellationToken);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
         _context.SaveChangesAsync(cancellationToken);
 
@@ -248,5 +276,27 @@ public class WordConceptRepository : IWordConceptRepository
                 g => g.Select(w => new WordTranslationAggregate(
                     w, languages[w.LanguageId], details.GetValueOrDefault(w.Id), examplesByWord[w.Id].ToList()
                 )).ToList());
+    }
+
+    private async Task<Dictionary<int, List<CategoryAggregate>>> BuildCategoriesAsync(
+        List<int> wordConceptIds, CancellationToken cancellationToken)
+    {
+        var links = await _context.WordCategories.Where(wc => wordConceptIds.Contains(wc.WordConceptId)).ToListAsync(cancellationToken);
+        var categoryIds = links.Select(l => l.CategoryId).Distinct().ToList();
+
+        var categories = await _context.Categories.Where(c => categoryIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, cancellationToken);
+        var translations = await _context.CategoryTranslations.Where(t => categoryIds.Contains(t.CategoryId)).ToListAsync(cancellationToken);
+        var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);
+
+        var translationsByCategory = translations
+            .GroupBy(t => t.CategoryId)
+            .ToDictionary(g => g.Key, g => g.Select(t => new CategoryTranslationAggregate(t, languages[t.LanguageId])).ToList());
+
+        return links
+            .GroupBy(l => l.WordConceptId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(l => new CategoryAggregate(categories[l.CategoryId], translationsByCategory.GetValueOrDefault(l.CategoryId, [])))
+                    .ToList());
     }
 }

@@ -16,6 +16,7 @@ public record CreateWordCommand(
     string DifficultyLevel,
     string? ImageUrl,
     List<WordTranslationRequest> Translations,
+    List<int> CategoryIds,
     bool Force,
     int? UserId,
     string? ActorRole) : IRequest<WordResponse>;
@@ -24,19 +25,25 @@ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordR
 {
     private readonly IWordConceptRepository _wordConceptRepository;
     private readonly ILanguageRepository _languageRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly IActivityLogger _activityLogger;
 
     public CreateWordCommandHandler(
-        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,
+        ICategoryRepository categoryRepository, IActivityLogger activityLogger)
     {
         _wordConceptRepository = wordConceptRepository;
         _languageRepository = languageRepository;
+        _categoryRepository = categoryRepository;
         _activityLogger = activityLogger;
     }
 
     public async Task<WordResponse> Handle(CreateWordCommand request, CancellationToken cancellationToken)
     {
         var languagesByCode = await ResolveLanguagesAsync(request.Translations, cancellationToken);
+
+        if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))
+            throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");
 
         if (!request.Force)
         {
@@ -75,6 +82,7 @@ public class CreateWordCommandHandler : IRequestHandler<CreateWordCommand, WordR
             await AddDetailAndExamplesAsync(word.Id, translation, request.UserId, cancellationToken);
         }
 
+        await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);
         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
 
         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)

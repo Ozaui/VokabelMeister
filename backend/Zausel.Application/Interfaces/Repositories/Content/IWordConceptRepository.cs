@@ -18,8 +18,13 @@ public interface IWordConceptRepository
     Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
 
     Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
-        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
+        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
         int page, int pageSize, CancellationToken cancellationToken = default);
+
+    // Create/UpdateWordCommand'ın categoryIds[] alanı için — mevcut TÜM WordCategories satırlarını
+    // (hard) siler, verilenlerle değiştirir. ReplaceExamplesAsync'in "translations[] tam değişim"
+    // deseniyle AYNI (A-06 kullanıcı kararı — WordCategories'i boş bırakmamak için A-06'da eklendi).
+    Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default);
 
     // Eşleşmemiş = bir WordConcept'in TOPLAM tek Words satırı olması (dile bakılmaksızın) VE o
     // satırın languageId'de olması — ayrı bir IsMatched kolonu yok, durum COUNT(*)=1'den türetilir.

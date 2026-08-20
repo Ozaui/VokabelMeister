@@ -5,4 +5,5 @@ public record WordResponse(
     string PartOfSpeech,
     string DifficultyLevel,
     string? ImageUrl,
-    List<WordTranslationResponse> Translations);
+    List<WordTranslationResponse> Translations,
+    List<WordCategoryResponse> Categories);

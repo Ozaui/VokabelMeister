@@ -77,6 +77,14 @@ public static class ErrorMessages
             ["EXAMPLE_TYPE_INVALID"] = "Geçersiz örnek cümle türü.",
             ["LANGUAGE_ID_INVALID"] = "Geçersiz dil kimliği.",
             ["SAME_CONCEPT_PAIR_NOT_ALLOWED"] = "Bir kelime kendisiyle eşleştirilemez.",
+            ["CATEGORY_HAS_CHILDREN"] = "Alt kategorisi olan bir kategori silinemez.",
+            ["CATEGORY_HAS_ACTIVE_WORDS"] = "Aktif kelimesi olan bir kategori silinemez.",
+            ["CATEGORY_PARENT_CYCLE"] = "Bir kategori kendisinin veya alt kategorisinin altına taşınamaz.",
+            ["CATEGORY_ID_INVALID"] = "Geçersiz kategori kimliği.",
+            ["CATEGORY_NAME_REQUIRED"] = "Kategori adı zorunlu.",
+            ["CATEGORY_TRANSLATIONS_REQUIRED"] = "En az bir dilde kategori adı girilmeli.",
+            ["CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE"] = "Aynı dil birden fazla kez girilemez.",
+            ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Sıralama değeri 0 veya daha büyük olmalı.",
         },
         ["de"] = new()
         {
@@ -147,6 +155,14 @@ public static class ErrorMessages
             ["EXAMPLE_TYPE_INVALID"] = "Ungültiger Beispielsatztyp.",
             ["LANGUAGE_ID_INVALID"] = "Ungültige Sprach-ID.",
             ["SAME_CONCEPT_PAIR_NOT_ALLOWED"] = "Ein Wort kann nicht mit sich selbst verknüpft werden.",
+            ["CATEGORY_HAS_CHILDREN"] = "Eine Kategorie mit Unterkategorien kann nicht gelöscht werden.",
+            ["CATEGORY_HAS_ACTIVE_WORDS"] = "Eine Kategorie mit aktiven Wörtern kann nicht gelöscht werden.",
+            ["CATEGORY_PARENT_CYCLE"] = "Eine Kategorie kann nicht unter sich selbst oder eine ihrer Unterkategorien verschoben werden.",
+            ["CATEGORY_ID_INVALID"] = "Ungültige Kategorie-ID.",
+            ["CATEGORY_NAME_REQUIRED"] = "Der Kategoriename ist erforderlich.",
+            ["CATEGORY_TRANSLATIONS_REQUIRED"] = "Mindestens ein Kategoriename muss angegeben werden.",
+            ["CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE"] = "Dieselbe Sprache darf nicht mehrfach angegeben werden.",
+            ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Der Sortierwert muss 0 oder größer sein.",
         },
     };
 

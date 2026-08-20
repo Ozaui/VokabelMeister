@@ -371,6 +371,424 @@ namespace Zausel.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.Category", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DisplayOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MaxLevel")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("MinLevel")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<int?>("ParentCategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentCategoryId");
+
+                    b.ToTable("Categories", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Categories_MaxLevel", "MaxLevel IS NULL OR MaxLevel IN ('A1','A2','B1','B2','C1','C2')");
+
+                            t.HasCheckConstraint("CK_Categories_MinLevel", "MinLevel IS NULL OR MinLevel IN ('A1','A2','B1','B2','C1','C2')");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Color = "#FF6B6B",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 1,
+                            Icon = "people",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Color = "#FF8C42",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 2,
+                            Icon = "family",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Color = "#95E1D3",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 3,
+                            Icon = "food",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Color = "#4ECDC4",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 4,
+                            Icon = "house",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Color = "#AA96DA",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 5,
+                            Icon = "school",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Color = "#FCBAD3",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 6,
+                            Icon = "numbers",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 7,
+                            Color = "#A8EDEA",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 7,
+                            Icon = "colors",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 8,
+                            Color = "#FFD89B",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 8,
+                            Icon = "time",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 9,
+                            Color = "#FB7D5B",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 9,
+                            Icon = "body",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 10,
+                            Color = "#84DCC6",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 10,
+                            Icon = "animal",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A1",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 11,
+                            Color = "#F38181",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 11,
+                            Icon = "work",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A2",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 12,
+                            Color = "#C7CEEA",
+                            CreatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DisplayOrder = 12,
+                            Icon = "travel",
+                            IsActive = true,
+                            IsDeleted = false,
+                            MinLevel = "A2",
+                            UpdatedAt = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.CategoryTranslation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("LanguageId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LanguageId");
+
+                    b.HasIndex("CategoryId", "LanguageId")
+                        .IsUnique();
+
+                    b.ToTable("CategoryTranslations", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CategoryId = 1,
+                            LanguageId = 1,
+                            Name = "Menschen"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CategoryId = 1,
+                            LanguageId = 2,
+                            Name = "İnsanlar"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CategoryId = 2,
+                            LanguageId = 1,
+                            Name = "Familie"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CategoryId = 2,
+                            LanguageId = 2,
+                            Name = "Aile"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CategoryId = 3,
+                            LanguageId = 1,
+                            Name = "Essen"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CategoryId = 3,
+                            LanguageId = 2,
+                            Name = "Yemek"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CategoryId = 4,
+                            LanguageId = 1,
+                            Name = "Haus"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CategoryId = 4,
+                            LanguageId = 2,
+                            Name = "Ev"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CategoryId = 5,
+                            LanguageId = 1,
+                            Name = "Schule"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CategoryId = 5,
+                            LanguageId = 2,
+                            Name = "Okul"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CategoryId = 6,
+                            LanguageId = 1,
+                            Name = "Zahlen"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CategoryId = 6,
+                            LanguageId = 2,
+                            Name = "Sayılar"
+                        },
+                        new
+                        {
+                            Id = 13,
+                            CategoryId = 7,
+                            LanguageId = 1,
+                            Name = "Farben"
+                        },
+                        new
+                        {
+                            Id = 14,
+                            CategoryId = 7,
+                            LanguageId = 2,
+                            Name = "Renkler"
+                        },
+                        new
+                        {
+                            Id = 15,
+                            CategoryId = 8,
+                            LanguageId = 1,
+                            Name = "Zeit"
+                        },
+                        new
+                        {
+                            Id = 16,
+                            CategoryId = 8,
+                            LanguageId = 2,
+                            Name = "Zaman"
+                        },
+                        new
+                        {
+                            Id = 17,
+                            CategoryId = 9,
+                            LanguageId = 1,
+                            Name = "Körperteile"
+                        },
+                        new
+                        {
+                            Id = 18,
+                            CategoryId = 9,
+                            LanguageId = 2,
+                            Name = "Vücut"
+                        },
+                        new
+                        {
+                            Id = 19,
+                            CategoryId = 10,
+                            LanguageId = 1,
+                            Name = "Tiere"
+                        },
+                        new
+                        {
+                            Id = 20,
+                            CategoryId = 10,
+                            LanguageId = 2,
+                            Name = "Hayvanlar"
+                        },
+                        new
+                        {
+                            Id = 21,
+                            CategoryId = 11,
+                            LanguageId = 1,
+                            Name = "Arbeit"
+                        },
+                        new
+                        {
+                            Id = 22,
+                            CategoryId = 11,
+                            LanguageId = 2,
+                            Name = "İş"
+                        },
+                        new
+                        {
+                            Id = 23,
+                            CategoryId = 12,
+                            LanguageId = 1,
+                            Name = "Reisen"
+                        },
+                        new
+                        {
+                            Id = 24,
+                            CategoryId = 12,
+                            LanguageId = 2,
+                            Name = "Seyahat"
+                        });
+                });
+
             modelBuilder.Entity("Zausel.Domain.Entities.Content.Language", b =>
                 {
                     b.Property<int>("Id")
@@ -489,6 +907,38 @@ namespace Zausel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Words", (string)null);
+                });
+
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.WordCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WordConceptId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("WordConceptId", "CategoryId")
+                        .IsUnique();
+
+                    b.ToTable("WordCategories", (string)null);
                 });
 
             modelBuilder.Entity("Zausel.Domain.Entities.Content.WordConcept", b =>
@@ -865,12 +1315,50 @@ namespace Zausel.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.Category", b =>
+                {
+                    b.HasOne("Zausel.Domain.Entities.Content.Category", null)
+                        .WithMany()
+                        .HasForeignKey("ParentCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.CategoryTranslation", b =>
+                {
+                    b.HasOne("Zausel.Domain.Entities.Content.Category", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Zausel.Domain.Entities.Content.Language", null)
+                        .WithMany()
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Zausel.Domain.Entities.Content.Word", b =>
                 {
                     b.HasOne("Zausel.Domain.Entities.Content.Language", null)
                         .WithMany()
                         .HasForeignKey("LanguageId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Zausel.Domain.Entities.Content.WordConcept", null)
+                        .WithMany()
+                        .HasForeignKey("WordConceptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Zausel.Domain.Entities.Content.WordCategory", b =>
+                {
+                    b.HasOne("Zausel.Domain.Entities.Content.Category", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("Zausel.Domain.Entities.Content.WordConcept", null)

@@ -15,6 +15,7 @@ public record UpdateWordCommand(
     string DifficultyLevel,
     string? ImageUrl,
     List<WordTranslationRequest> Translations,
+    List<int> CategoryIds,
     bool Force,
     int? UserId,
     string? ActorRole) : IRequest<WordResponse>;
@@ -23,13 +24,16 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordR
 {
     private readonly IWordConceptRepository _wordConceptRepository;
     private readonly ILanguageRepository _languageRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly IActivityLogger _activityLogger;
 
     public UpdateWordCommandHandler(
-        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository, IActivityLogger activityLogger)
+        IWordConceptRepository wordConceptRepository, ILanguageRepository languageRepository,
+        ICategoryRepository categoryRepository, IActivityLogger activityLogger)
     {
         _wordConceptRepository = wordConceptRepository;
         _languageRepository = languageRepository;
+        _categoryRepository = categoryRepository;
         _activityLogger = activityLogger;
     }
 
@@ -39,6 +43,9 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordR
             ?? throw new EntityNotFoundException($"WordConcept not found: Id={request.WordConceptId}");
         var beforeResponse = WordMapping.ToResponse(beforeAggregate);
         var concept = beforeAggregate.Concept;
+
+        if (request.CategoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(request.CategoryIds, cancellationToken))
+            throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", request.CategoryIds)}");
 
         concept.PartOfSpeech = Enum.Parse<PartOfSpeech>(request.PartOfSpeech);
         concept.DifficultyLevel = request.DifficultyLevel;
@@ -89,6 +96,7 @@ public class UpdateWordCommandHandler : IRequestHandler<UpdateWordCommand, WordR
             }
         }
 
+        await _wordConceptRepository.ReplaceWordCategoriesAsync(concept.Id, request.CategoryIds, cancellationToken);
         await _wordConceptRepository.SaveChangesAsync(cancellationToken);
 
         var aggregate = await _wordConceptRepository.GetAggregateAsync(concept.Id, cancellationToken)

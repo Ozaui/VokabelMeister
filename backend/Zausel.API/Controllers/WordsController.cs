@@ -19,10 +19,10 @@ public class WordsController : ApiControllerBase
     [Authorize]
     [EnableRateLimiting("general")]
     public async Task<ActionResult<PagedResult<WordResponse>>> GetWords(
-        [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search,
+        [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search, [FromQuery] int? categoryId,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
-        var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, page, pageSize), cancellationToken);
+        var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, categoryId, page, pageSize), cancellationToken);
         return Ok(result);
     }
 
@@ -42,7 +42,9 @@ public class WordsController : ApiControllerBase
         WordCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
+            new CreateWordCommand(
+                request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
+                request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
             cancellationToken);
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -54,7 +56,9 @@ public class WordsController : ApiControllerBase
         int id, WordUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
+            new UpdateWordCommand(
+                id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
+                request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
             cancellationToken);
         return Ok(result);
     }

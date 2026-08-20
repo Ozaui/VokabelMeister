@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'hiyerarsik-liste-sorgusu',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '05_silme-korumasi-ve-controller.html',
+    sonrakiBolum: '07_words-categoryid-entegrasyonu.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'Düz Listeden Ağaca — GetCategoriesQuery',
+        altBaslik: 'Repository yalnızca satır getirir, hiyerarşiyi (ve seviye filtresini, kelime sayısını) Handler kurar.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Hiyerarşi Repository\'de Değil, Handler\'da Kuruluyor?',
+        aciklama: '`ICategoryRepository.GetAllAsync` veritabanından TÜM kategorileri DÜZ bir liste olarak döner (`ParentCategoryId` her satırda var, ama satırlar iç içe DEĞİL). Ağacı (kimin çocuğu kim) `GetCategoriesQueryHandler` kurar.',
+        neden: 'SQL\'in kendisi rekürsif bir CTE olmadan iç içe bir sonuç ÜRETEMEZ, 12-30 kategori gibi küçük bir veri setinde bunu bellekte (LINQ ile) kurmak DB\'ye rekürsif bir sorgu yazmaktan hem daha basit hem daha HIZLI (tek sorgu, tek yuvarlanma). Repository "satır getir" işini yapar, "bu satırları nasıl SUNARIM" iş mantığı Handler\'ın işidir — WordConceptRepository\'nin Word/WordDetail/WordExample\'ı TEK bir aggregate\'e birleştirip iş mantığını (eşleştirme, gramer) Handler\'a bırakmasıyla AYNI ayrım.',
+        olmasaydi: 'Repository ağacı KENDİSİ kursaydı, `?level=` filtresi veya `?includeWordCount=` gibi HER yeni sunum ihtiyacı repository metodunun imzasını BÜYÜTÜRDÜ — "kaç farklı şekilde kategori listelenebilir" sorusunun cevabı repository katmanına SIZMIŞ olurdu, oysa bu SALT bir sunum kararı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetCategoriesQuery.cs — Ağaç Kurma + Seviye Filtresi',
+        dosyaYolu: 'backend/Zausel.Application/Features/Categories/GetCategoriesQuery.cs',
+        nedenBuKlasor: 'Diğer tüm Command/Query dosyaları gibi Features/Categories altında — CQRS deseninde bir Query\'nin Handler\'ı ile aynı dosyada yaşaması, bir özellikle ilgili TÜM akışın (istek şekli + iş mantığı) tek dosyada görülebilmesini sağlar.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Categories;
+using Zausel.Application.Interfaces.Repositories.Content;
+
+namespace Zausel.Application.Features.Categories;
+
+public record GetCategoriesQuery(string? Level, bool IncludeWordCount) : IRequest<List<CategoryResponse>>;
+
+public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, List<CategoryResponse>>
+{
+    private static readonly string[] Levels = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
+    private readonly ICategoryRepository _categoryRepository;
+
+    public GetCategoriesQueryHandler(ICategoryRepository categoryRepository) => _categoryRepository = categoryRepository;
+
+    public async Task<List<CategoryResponse>> Handle(GetCategoriesQuery request, CancellationToken cancellationToken)
+    {
+        var all = await _categoryRepository.GetAllAsync(cancellationToken);
+        var filtered = request.Level is null
+            ? all
+            : all.Where(a => IsInRange(request.Level, a.Category.MinLevel, a.Category.MaxLevel)).ToList();
+
+        var wordCounts = request.IncludeWordCount
+            ? await _categoryRepository.GetActiveWordCountsAsync(cancellationToken)
+            : null;
+
+        // Filtrelenmiş üst kategori kümenin DIŞINDA kaldıysa (ör. level filtresiyle elenmişse), o çocuk
+        // ağacın KÖKÜ olarak gösterilir — sessizce KAYBOLMAZ. ILookup null anahtarı DESTEKLER
+        // (Dictionary'nin AKSİNE), kök kategoriler (ParentCategoryId=null) bu yüzden ToLookup ile.
+        var filteredIds = filtered.Select(a => a.Category.Id).ToHashSet();
+        var childrenByParent = filtered
+            .ToLookup(a => a.Category.ParentCategoryId is int parentId && filteredIds.Contains(parentId) ? parentId : (int?)null);
+
+        return BuildTree(null, childrenByParent, wordCounts);
+    }
+
+    private static List<CategoryResponse> BuildTree(
+        int? parentId, ILookup<int?, CategoryAggregate> childrenByParent, Dictionary<int, int>? wordCounts)
+    {
+        return childrenByParent[parentId]
+            .OrderBy(c => c.Category.DisplayOrder)
+            .Select(c => CategoryMapping.ToResponse(c, wordCounts?.GetValueOrDefault(c.Category.Id, 0)) with
+            {
+                Children = BuildTree(c.Category.Id, childrenByParent, wordCounts)
+            })
+            .ToList();
+    }
+
+    // MinLevel/MaxLevel bir ARALIK (ör. yalnızca MinLevel="A2" set edilmişse üst sınır YOK, C2'ye
+    // kadar her seviyeden istenen kelime bu kategoride görünebilir) — tek bir eşitlik kontrolü DEĞİL.
+    private static bool IsInRange(string level, string? minLevel, string? maxLevel)
+    {
+        var levelIndex = Array.IndexOf(Levels, level);
+        if (levelIndex < 0)
+            return true;
+
+        var minIndex = minLevel is null ? 0 : Array.IndexOf(Levels, minLevel);
+        var maxIndex = maxLevel is null ? Levels.Length - 1 : Array.IndexOf(Levels, maxLevel);
+        return levelIndex >= minIndex && levelIndex <= maxIndex;
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: 'MediatR\'ın `IRequest<T>`/`IRequestHandler<TRequest,TResponse>` arayüzleri — CQRS\'in Command/Query+Handler çiftini bu paket sağlıyor.', neden: 'Controller\'ın doğrudan bir Handler sınıfı çağırmak yerine `_mediator.Send(query)` demesi, Controller\'ı hangi Handler\'ın çalıştığından TAMAMEN habersiz bırakır — yeni bir pipeline davranışı (ör. loglama, validasyon) eklemek Controller\'a hiç dokunmadan mümkün olur.', olmasaydi: 'MediatR olmasaydı her Controller action\'ı ilgili Handler\'ı DI\'dan elle enjekte edip çağırmak ZORUNDA kalırdı — `ValidationBehavior` gibi TÜM Handler\'lara otomatik uygulanan bir ara katman (pipeline) yazılamazdı.' },
+          { satir: 'using Zausel.Application.DTOs.Categories;', aciklama: '`CategoryResponse` bu namespace\'te tanımlı — Query\'nin dönüş tipi.', neden: 'DTO\'lar `DTOs/<Domain>/` altında toplanır, Handler\'ın kendi klasöründe DEĞİL — bir sonraki geliştirici "bu response şekli nerede" sorusunu HER ZAMAN aynı klasörde arayarak yanıtlayabilir.', olmasaydi: 'DTO\'lar Handler dosyalarının içine gömülseydi, admin panel (B-04) hangi alanların API\'dan döndüğünü görmek için TÜM Handler dosyalarını taramak ZORUNDA kalırdı.' },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Content;', aciklama: '`ICategoryRepository`/`CategoryAggregate` bu namespace\'te — Handler\'ın veri erişimi için bağımlı olduğu arayüz.', neden: 'Handler somut `CategoryRepository` sınıfına DEĞİL soyut arayüze bağımlı — birim testinde gerçek bir veritabanı olmadan `Mock<ICategoryRepository>` ile Handler tek başına test edilebilir.', olmasaydi: 'Handler doğrudan Infrastructure katmanındaki `CategoryRepository`\'ye bağımlı olsaydı, her testte gerçek bir SQL Server bağlantısı gerekirdi — testler yavaş ve DB durumuna bağımlı olurdu.' },
+          { satir: 'namespace Zausel.Application.Features.Categories;', aciklama: 'Klasör yapısıyla (`Features/Categories/`) birebir eşleşen ad alanı — bu dosyanın "Categories" özelliğine ait olduğunu bildirir.', neden: 'MediatR, `GetCategoriesQuery` için `IRequestHandler` implementasyonunu DI container\'a assembly TARAMASIYLA kaydeder — bu taramanın kriteri sınıfın `IRequestHandler<,>` arayüzünü implemente ETMESİDİR, ad alanının METNİNE hiç BAKMAZ; klasörleme SALT bir sonraki geliştiricinin "Category özelliğiyle ilgili HER dosya nerede" sorusunu TEK klasöre bakarak yanıtlayabilmesi İÇİNDİR.', olmasaydi: 'Tüm Command/Query\'ler TEK bir düz ad alanında (Domain ayrımı OLMADAN) toplansaydı, 30+ Handler dosyası arasında "Category\'ye ait olanlar HANGİLERİ" sorusu dosya isimlerine bakarak (grep\'siz) YANITLANAMAZDI — MediatR YİNE doğru çalışırdı ama insan okunabilirliği KAYBOLURDU.' },
+          { satir: 'public record GetCategoriesQuery(string? Level, bool IncludeWordCount) : IRequest<List<CategoryResponse>>;', aciklama: 'İstek şekli — opsiyonel `Level` (CEFR seviyesi, ör. "A1") ve `IncludeWordCount` (varsayılan `false`, `bool` olduğu için query string\'te belirtilmezse otomatik `false`).', neden: '`record` kullanımı MediatR\'ın diğer TÜM Command/Query\'leriyle (CreateWordCommand, GetWordsQuery vb.) tutarlı — değişmez (immutable), yapısal eşitliğe sahip bir istek nesnesi, test yazarken `new GetCategoriesQuery(...)` ile beklenen değerle KARŞILAŞTIRILABİLİR.', olmasaydi: 'Sıradan bir `class` kullanılsaydı, iki eşit-görünen istek nesnesi referans eşitliğinden dolayı testte `Equals` ile KARŞILAŞTIRILAMAZDI.' },
+          { satir: 'public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, List<CategoryResponse>>', aciklama: 'MediatR\'ın `Handle` metodunu implemente eden sınıf — `GetCategoriesQuery` geldiğinde ÇALIŞACAK kod.', neden: 'MediatR bu sınıfı DI container\'dan (assembly taramasıyla) OTOMATİK bulur — Program.cs\'te elle bir kayıt YAZILMAZ.', olmasaydi: 'MediatR olmasaydı Controller\'ın hangi sınıfı çağıracağını KENDİSİ bilmesi gerekirdi — Controller ile iş mantığı arasındaki gevşek bağ (loose coupling) kaybolurdu.' },
+          { satir: 'private static readonly string[] Levels = ["A1", "A2", "B1", "B2", "C1", "C2"];', aciklama: 'CEFR seviyelerinin SIRALI listesi — dizideki KONUM (index), o seviyenin "kaçıncı" olduğunu temsil eder (A1=0, C2=5).', neden: '`IsInRange` metodunun "A2, A1\'den YÜKSEK bir seviye midir" sorusunu yanıtlaması için seviyelerin bir SIRASI olması gerekiyor — string\'ler ("A1" < "A2") alfabetik sırada RASTLANTISAL olarak doğru çıkar ama "B1" ile "A2" karşılaştırması alfabetik sırada YANLIŞ sonuç VERİRDİ ("B1" < "A2" alfabetik olarak YANLIŞ), bu yüzden sabit bir dizi + `Array.IndexOf` kullanılıyor.', olmasaydi: 'Seviyeler string olarak DOĞRUDAN karşılaştırılsaydı (`"B1" < "A2"` gibi), `?level=B1` isteği MinLevel="A2" olan bir kategoriyi YANLIŞLIKLA elerdi (alfabetik sırada "A2" > "B1" çıkar) — sessiz, fark edilmesi zor bir mantık hatası.' },
+          { satir: 'private readonly ICategoryRepository _categoryRepository;', aciklama: 'Constructor injection ile DI container\'dan gelen tek bağımlılık.', neden: 'Bu Query yalnızca OKUMA yapıyor — `ILanguageRepository`/`IActivityLogger` gibi başka bir bağımlılığa ihtiyacı YOK (CreateCategoryCommand\'ın aksine, o dil çözümlemesi + audit log gerektiriyordu).', olmasaydi: 'Gereksiz bağımlılıklar enjekte edilseydi, her birim testinde kullanılmayan mock\'lar KURULMASI gerekirdi — test kodu şişerdi.' },
+          { satir: 'public GetCategoriesQueryHandler(ICategoryRepository categoryRepository) => _categoryRepository = categoryRepository;', aciklama: 'Expression-bodied constructor — tek satırlık atama.', neden: 'Projedeki TÜM tek-bağımlılıklı Handler/Repository constructor\'ları AYNI kısa sözdizimini kullanıyor (ör. `LanguageRepository`) — kod tabanında tutarlı bir stil, okuyucu her yerde AYNI kalıbı görüyor.', olmasaydi: 'Süslü parantezli uzun bir constructor gövdesi (`{ _categoryRepository = categoryRepository; }`) tek satırlık bir atama için gereksiz GÖRSEL GÜRÜLTÜ yaratırdı.' },
+          { satir: 'public async Task<List<CategoryResponse>> Handle(GetCategoriesQuery request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın çağıracağı asıl metot — imza `IRequestHandler<TRequest,TResponse>` arayüzünce ZORUNLU kılınıyor.', neden: '`CancellationToken` parametresi HTTP isteği iptal edilirse (ör. kullanıcı sayfayı kapatırsa) DB sorgusunun YARIDA KESİLEBİLMESİ için — projedeki HER I/O metodunda zorunlu.', olmasaydi: '`CancellationToken` geçirilmeseydi, kullanıcı istekten VAZGEÇSE bile sunucu sorguyu SONUNA kadar çalıştırmaya devam ederdi — gereksiz DB yükü.' },
+          { satir: 'var all = await _categoryRepository.GetAllAsync(cancellationToken);', aciklama: 'Repository\'den TÜM kategorileri (12-30 satır civarı, küçük bir set) TEK sorguda çeker — henüz filtrelenmemiş, henüz ağaç DEĞİL.', neden: 'Kategori sayısı küçük olduğu için (sayfalama YOK, `PagedResult` kullanılmıyor) tamamını belleğe almak, ardından LINQ ile filtrelemek/ağaçlamak DB\'ye karmaşık bir sorgu yazmaktan daha BASİT.', olmasaydi: 'Sayfalı bir sorgu yazılsaydı, bir kategorinin çocuğu FARKLI bir sayfada kalabilir, ağaç EKSİK kurulurdu.' },
+          { satir: 'var filtered = request.Level is null', aciklama: 'Üç satırlık bir ternary\'nin ilk satırı — `Level` verilmemişse (`null`) filtreleme HİÇ yapılmaz.', neden: '`?level=` opsiyonel bir query parametresi — verilmezse admin panelin "TÜM kategorileri göster" ekranı bu Query\'yi HİÇ `level` göndermeden çağırabilir.', olmasaydi: '`Level` zorunlu olsaydı, "tüm kategorileri seviyeye bakmaksızın listele" gibi basit bir istek için sahte bir değer (ör. `"C2"`) UYDURMAK gerekirdi.' },
+          { satir: '? all', aciklama: '`Level` `null` ise filtrelenmemiş TÜM liste kullanılır.', neden: 'Bu dal `IsInRange`\'i HİÇ çağırmıyor — gereksiz bir hesaplama YAPILMIYOR.', olmasaydi: 'Bu kısayol olmasaydı, `Level=null` durumunda `IsInRange` her kategori için "her zaman true" DÖNDÜRECEK şekilde ÖZEL olarak yazılması gerekirdi — gereksiz bir karmaşıklık.' },
+          { satir: ': all.Where(a => IsInRange(request.Level, a.Category.MinLevel, a.Category.MaxLevel)).ToList();', aciklama: '`Level` doluysa, her kategori için `IsInRange` ile ARALIK kontrolü yapılır — yalnızca aralığa GİRENLER kalır.', neden: '`.ToList()` ile sonuç HEMEN somutlaştırılır (materialized) — aşağıda `filteredIds`/`ToLookup` bu listeyi BİRDEN FAZLA kez gezecek, `IQueryable` gecikmeli değerlendirme (deferred execution) olsaydı her gezinti AYNI filtrelemeyi TEKRAR çalıştırırdı.', olmasaydi: '`.ToList()` olmasaydı (LINQ-to-Objects\'te bu kadar kritik olmasa da, alışkanlık olarak) her `filtered` erişimi filtreyi YENİDEN hesaplardı — küçük veri setinde performans sorunu YARATMAZ ama okunabilirlik/niyet netliği için materialize etmek tercih edilir.' },
+          { satir: 'var wordCounts = request.IncludeWordCount', aciklama: 'İkinci ternary\'nin ilk satırı — `?includeWordCount=true` isteniyorsa ek bir sorgu ÇALIŞTIRILIR, istenmiyorsa `wordCounts` `null` KALIR.', neden: 'Kelime sayısı hesaplaması `WordCategories` tablosunu `WordConcepts.IsActive` ile JOIN eden ayrı bir sorgu — HER `GET /categories` isteğinde bunu çalıştırmak GEREKSİZ maliyet, yalnızca admin panelin "kaç kelime var" ihtiyacı olduğunda TALEP EDİLİR.', olmasaydi: 'Kelime sayısı HER ZAMAN hesaplansaydı, yalnızca ağaç yapısını görmek isteyen (ör. bir dropdown dolduran) bir istek bile gereksiz bir JOIN sorgusuna KATLANMAK ZORUNDA kalırdı.' },
+          { satir: '? await _categoryRepository.GetActiveWordCountsAsync(cancellationToken)', aciklama: 'Tüm kategoriler için TEK sorguda (CategoryId → aktif kelime sayısı) bir sözlük döner.', neden: 'HER kategori için AYRI AYRI "bu kategoride kaç kelime var" sorgusu atmak yerine TEK bir GROUP BY sorgusuyla TÜM sayımlar bir kerede alınır — N+1 sorgu problemi (12 kategori için 12 ayrı sorgu) bu şekilde ÖNLENİR.', olmasaydi: 'Her kategori için ayrı bir sayım sorgusu atılsaydı, 12 kategoride 12 ayrı DB round-trip GEREKİRDİ — gereksiz gecikme.' },
+          { satir: ': null;', aciklama: '`IncludeWordCount=false` ise `wordCounts` `null` kalır — aşağıda `CategoryMapping.ToResponse`\'a `null` geçilecek, bu da `WordCount` alanının yanıt JSON\'ında `null` olarak DÖNMESİNİ sağlar.', neden: '`null` ile `0` arasındaki fark ANLAMLI: `null` = "hesaplanmadı, sormadın", `0` = "hesaplandı, hiç kelime YOK" — istemci bu ikisini birbirinden AYIRT edebilmeli.', olmasaydi: '`wordCounts` yerine boş bir sözlük (`new Dictionary<int,int>()`) dönseydi, `GetValueOrDefault(id, 0)` HER kategori için `0` döndürürdü — istemci "gerçekten 0 kelime mi var, yoksa hiç HESAPLANMADI mı" AYIRT EDEMEZDİ.' },
+          { satir: 'var filteredIds = filtered.Select(a => a.Category.Id).ToHashSet();', aciklama: 'Filtrelenmiş kategorilerin ID\'lerini bir `HashSet<int>`\'e toplar — `Contains` kontrolü O(1) olsun diye.', neden: 'Aşağıdaki `ToLookup` çağrısı HER kategori için "ebeveynim filtrelenmiş kümede mi" sorusunu SORACAK — bir `List<int>.Contains` O(n) olurdu, `HashSet<int>.Contains` O(1).', olmasaydi: '`HashSet` yerine düz bir `List` kullanılsaydı, 30 kategoriyle bile fark edilmez ama alışkanlık/ölçeklenebilirlik açısından YANLIŞ bir tercih olurdu — kategori sayısı ileride YÜZLERE çıkarsa performans FARK EDİLİR hale gelirdi.' },
+          { satir: 'var childrenByParent = filtered', aciklama: '`ToLookup` çağrısının başladığı satır.', neden: 'Değişken adı (`childrenByParent`) sonraki satırın NE ÜRETTİĞİNİ önceden okuyucuya SÖYLÜYOR — "ebeveyn ID\'sine göre gruplanmış çocuklar".', olmasaydi: 'Tek satırlık bir ifade olsaydı (`var childrenByParent = filtered.ToLookup(...)`), satır ÇOK UZAYIP okunması ZORLAŞIRDI — iki satıra bölünmesi bir stil tercihi.' },
+          { satir: '.ToLookup(a => a.Category.ParentCategoryId is int parentId && filteredIds.Contains(parentId) ? parentId : (int?)null);', aciklama: 'Her kategoriyi "EFEKTİF ebeveyni" neyse ona göre gruplar — `ParentCategoryId` DOLU ve o ebeveyn filtrelenmiş kümede VARSA gerçek ebeveyn, YOKSA (ya kök ya da ebeveyni elenmiş) `null` (kök) sayılır.', neden: '`ToLookup` (`Dictionary<int?, ...>`\'in AKSİNE) `int?` gibi NULLABLE bir anahtar tipini DOĞRUDAN destekler — .NET\'in `Dictionary<TKey,TValue>` generic\'i `TKey`\'in `notnull` olmasını ZORUNLU kılar, derleme sırasında `int?` için bir UYARI (CS8714) verirdi.', olmasaydi: '`Dictionary<int?, List<CategoryAggregate>>` kullanılmaya ÇALIŞILSAYDI, kod DERLENİRDİ ama derleyici "bu anahtar null olabilir, TKey kısıtına UYMUYOR" uyarısı verirdi — `ToLookup` bu sorunu YAŞAMADAN, dilin BUNUN İÇİN var olan aracını kullanarak ÇÖZER.' },
+          { satir: 'return BuildTree(null, childrenByParent, wordCounts);', aciklama: 'Ağaç kurmayı KÖKTEN (`parentId=null`) başlatan rekürsif çağrı.', neden: 'Kök kategorilerin (`ParentCategoryId=null` OLANLAR) hepsi `childrenByParent[null]` anahtarının ALTINDA toplanmış durumda — `BuildTree`\'nin İLK çağrısı bu anahtarla başlar.', olmasaydi: 'Rekürsif bir yardımcı metot OLMASAYDI, "kökten başlayıp her seviyede çocukları BUL" mantığı iç içe `foreach` döngüleriyle (kaç seviye derinlik olduğu BİLİNMEDEN) yazılması GEREKİRDİ — kategori hiyerarşisi ileride 3-4 seviye DERİNLEŞİRSE bu kod ÇALIŞMAZDI.' },
+          { satir: 'private static List<CategoryResponse> BuildTree(', aciklama: 'Rekürsif ağaç kurma metodunun imzası — `static` çünkü HERHANGİ bir instance alanına ihtiyaç DUYMUYOR (saf fonksiyon: aynı girdi, aynı çıktı).', neden: '`static` işaretlemek, bu metodun `_categoryRepository`\'ye veya SINIFIN başka bir DURUMUNA erişmediğini derleme zamanında GARANTİ eder — okuyucu "bu metot yan etkisiz, saf" olduğunu imzadan ANLAR.', olmasaydi: '`static` olmasaydı, bir sonraki geliştirici bu metodun içeriden `_categoryRepository`\'ye erişip GİZLİ bir DB sorgusu ATABİLECEĞİNİ düşünebilirdi — imza bunu (yanlışlıkla da olsa) MÜMKÜN bırakırdı.' },
+          { satir: 'int? parentId, ILookup<int?, CategoryAggregate> childrenByParent, Dictionary<int, int>? wordCounts)', aciklama: 'Üç parametre: hangi düğümün çocuklarını arıyoruz (`parentId`), tüm ebeveyn→çocuk haritası, ve opsiyonel kelime sayıları.', neden: '`childrenByParent`/`wordCounts` her rekürsif çağrıda AYNEN geçiriliyor (yeniden hesaplanmıyor) — TEK bir sorgu sonucunun TÜM ağaç boyunca yeniden kullanılması.', olmasaydi: 'Her rekürsif çağrı kendi `GetAllAsync`\'ini ÇALIŞTIRSAYDI, bir N-seviyeli ağaç için N kez GEREKSİZ DB sorgusu atılırdı.' },
+          { satir: 'return childrenByParent[parentId]', aciklama: '`ILookup`\'ın indeksleyicisi (`[]`) — anahtar YOKSA (o düğümün hiç çocuğu yoksa) İSTİSNA FIRLATMAZ, boş bir dizi döner.', neden: 'Bu, `Dictionary`\'nin `[]` operatöründen (anahtar yoksa `KeyNotFoundException` fırlatır) FARKLI bir davranış — `ILookup` tasarım gereği "bu grup boş olabilir" senaryosunu GÜVENLE karşılar.', olmasaydi: '`Dictionary` kullanılıp `TryGetValue`/boş liste kontrolü ELLE yazılmasaydı, yaprak (çocuğu olmayan) bir kategoride `KeyNotFoundException` ile UYGULAMA ÇÖKERDİ.' },
+          { satir: '.OrderBy(c => c.Category.DisplayOrder)', aciklama: 'Kardeş kategoriler `DisplayOrder`\'a göre sıralanır (seed verisindeki 1-12 sırası).', neden: 'Admin panelin kategori listesi/dropdown\'ı HER ZAMAN aynı, ÖNGÖRÜLEBİLİR sırada görünmeli — DB\'nin fiziksel satır sırasına (ki bu GARANTİ EDİLMEZ) güvenilemez.', olmasaydi: 'Sıralama olmasaydı, aynı sorgu farklı zamanlarda FARKLI sırada sonuç DÖNDÜREBİLİRDİ (DB\'nin iç optimizasyonlarına bağlı) — kullanıcı arayüzünde kategoriler "zıplayan" bir sırada GÖRÜNÜRDÜ.' },
+          { satir: '.Select(c => CategoryMapping.ToResponse(c, wordCounts?.GetValueOrDefault(c.Category.Id, 0)) with', aciklama: 'Her kategoriyi `CategoryResponse`\'a çevirir (`CategoryMapping`, Bölüm 3), sonra `with` ifadesiyle `Children` alanını GÜNCELLER.', neden: '`wordCounts?.GetValueOrDefault(id, 0)` — `wordCounts` `null` ise TÜM ifade `null` (C#\'ın null-conditional zinciri), `wordCounts` DOLUYSA ama o kategori sözlükte YOKSA (hiç aktif kelimesi yoksa) `0` döner; bu üç durumun (hesaplanmadı / hesaplandı-sıfır / hesaplandı-dolu) doğru AYRIŞTIRILMASI.', olmasaydi: '`with` ifadesi olmadan `CategoryResponse`\'un `Children` alanını SONRADAN doldurmak için `record`\'un immutable doğasına AYKIRI bir mutasyon YOLU gerekirdi (ya `class`\'a çevrilirdi ya da constructor\'a Children EKLENİRDİ).' },
+          { satir: 'Children = BuildTree(c.Category.Id, childrenByParent, wordCounts)', aciklama: '`with` bloğunun İÇİNDEKİ tek alan ataması — bu kategorinin ÇOCUKLARINI, KENDİ ID\'sini yeni `parentId` yaparak REKÜRSİF olarak kurar.', neden: 'Bu satır REKÜRSİYONUN kendisi — her düğüm kendi çocuklarını AYNI `BuildTree` metoduyla, bir seviye AŞAĞI inerek kurar; ağacın DERİNLİĞİ (kaç seviye olduğu) koda HİÇ YAZILMAMIŞ, veri neyse o kadar derin gider.', olmasaydi: 'Rekürsiyon yerine sabit sayıda iç içe döngü (ör. "kök → çocuk → torun", 3 seviye sabit) yazılsaydı, kategori hiyerarşisi 4. seviyeye ULAŞTIĞINDA kod SESSİZCE o seviyeyi GÖSTERMEZDİ.' },
+          { satir: '.ToList();', aciklama: 'LINQ `Select` sonucunu (deferred/gecikmeli) somut bir `List<CategoryResponse>`\'a çevirir.', neden: 'Dönüş tipi `List<CategoryResponse>` — `IEnumerable` DEĞİL, JSON serileştirme (ve MediatR\'ın `IRequest<List<CategoryResponse>>` sözleşmesi) somut bir koleksiyon BEKLİYOR.', olmasaydi: '`.ToList()` çağrılmasaydı, dönüş tipi uyuşmazlığından derleme HATASI ALINIRDI.' },
+          { satir: 'private static bool IsInRange(string level, string? minLevel, string? maxLevel)', aciklama: 'Bir seviyenin `[minLevel, maxLevel]` ARALIĞINA girip GİRMEDİĞİNİ kontrol eden yardımcı metot.', neden: '`static` — yine SAF bir fonksiyon, yalnızca parametrelerine (ve sınıf düzeyindeki sabit `Levels` dizisine) bakar, DIŞARIDAN bir DURUMA erişmez.', olmasaydi: 'Instance metodu olsaydı, bu metodu test etmek için TAM bir `GetCategoriesQueryHandler` nesnesi (ve onun `ICategoryRepository` bağımlılığı) KURULMASI gerekirdi — `static` olması bu metodun BAĞIMSIZ test edilebilmesini de sağlar.' },
+          { satir: 'var levelIndex = Array.IndexOf(Levels, level);', aciklama: 'Sorgulanan seviyenin (`level`, ör. "A1") `Levels` dizisindeki KONUMUNU bulur (A1=0, A2=1, ...).', neden: 'Bu konum, aşağıdaki karşılaştırmaların (`>=`/`<=`) DAYANAĞI — string\'lerin kendisi değil, SIRALARI karşılaştırılıyor.', olmasaydi: '`Array.IndexOf` yerine string karşılaştırması (`level == minLevel`) kullanılsaydı, "A2 A1\'DEN yüksektir" gibi bir ARALIK sorgusu HİÇ YAPILAMAZDI, yalnızca TAM eşitlik kontrol edilebilirdi.' },
+          { satir: 'if (levelIndex < 0)', aciklama: '`level` `Levels` dizisinde BULUNAMAZSA (`IndexOf` `-1` döner) — teorik olarak `GetCategoriesQueryValidator` (bir sonraki slayt) bunu ZATEN engelliyor, ama Handler kendi başına da SAVUNMACI davranıyor.', neden: 'Validator ile Handler İKİ AYRI güvenlik katmanı — Validator HTTP isteği seviyesinde geçersiz bir değeri REDDEDER, ama Handler\'ın KENDİSİ de (ör. ileride başka bir Command bu Handler\'ı doğrudan çağırırsa) geçersiz bir `level` ile ÇÖKMEMELİ.', olmasaydi: 'Bu kontrol olmasaydı, geçersiz bir `level` (ör. "Z9") `Array.IndexOf`\'tan `-1` döndürür, aşağıdaki `levelIndex >= minIndex` karşılaştırması `-1 >= 0` gibi YANLIŞ bir sonuç ÜRETİR ve TÜM kategoriler (hiçbiri "Z9"e uymadığı için) YANLIŞLIKLA ELENİRDİ.' },
+          { satir: 'return true;', aciklama: 'Geçersiz bir `level` değeriyle karşılaşılırsa, filtrelemeyi UYGULAMAMAK için `true` (yani "bu kategori GÖSTERİLSİN") döner.', neden: '"Emin olunmayan durumda GÖSTER" (fail-open), "emin olunmayan durumda GİZLE" (fail-closed)\'den burada TERCİH EDİLDİ — bir admin\'in yanlış yazılmış bir `level` parametresiyle TÜM kategori listesinin SESSİZCE boş dönmesindense, filtresiz TAM liste görmesi daha az ŞAŞIRTICI.', olmasaydi: '`false` dönseydi (fail-closed), geçersiz bir `level` değeriyle YAPILAN her istek SESSİZCE boş bir liste döndürürdü — hatanın KAYNAĞI (yazım hatası mı, gerçekten hiç kategori mi yok) ayırt EDİLEMEZDİ.' },
+          { satir: 'var minIndex = minLevel is null ? 0 : Array.IndexOf(Levels, minLevel);', aciklama: '`MinLevel` `null` ise ALT sınır yok sayılır (index 0 = A1, yani "her seviye MinLevel\'i AŞAR").', neden: 'Seed verisindeki 12 kategorinin TAMAMI `MinLevel` set edilmiş durumda (bkz. Bölüm 1) ama şema `MinLevel`\'i NULLABLE bırakıyor — ileride "her seviyeye uygun" bir kategori (ör. "Sayılar") `MinLevel=null` ile eklenebilir, bu satır o senaryoyu da doğru KARŞILAR.', olmasaydi: '`null` durumu ele ALINMASAYDI, `Array.IndexOf(Levels, null)` `-1` döner ve HER karşılaştırma YANLIŞ sonuç üretirdi (aynı `levelIndex<0` senaryosundaki gibi).' },
+          { satir: 'var maxIndex = maxLevel is null ? Levels.Length - 1 : Array.IndexOf(Levels, maxLevel);', aciklama: '`MaxLevel` `null` ise ÜST sınır yok sayılır (index 5 = C2, yani "her seviyenin ALTINDA").', neden: 'Seed verisindeki 12 kategorinin HİÇBİRİNDE `MaxLevel` set edilmemiş — bu satır, canlı doğrulamada gözlemlenen "A1 kategorileri ÜST SINIRSIZ, A2 seviyesindeki bir öğrenci de onları GÖRMELİ" davranışının TAM KAYNAĞI.', olmasaydi: '`MaxLevel=null` iken üst sınır `Levels.Length-1` (C2) YERİNE `0` (A1) sayılsaydı, `?level=A2` isteği TÜM A1 kategorilerini (üst sınırları A1\'de "kapalı" sayılarak) YANLIŞLIKLA ELERDİ.' },
+          { satir: 'return levelIndex >= minIndex && levelIndex <= maxIndex;', aciklama: 'Asıl ARALIK kontrolü — sorgulanan seviyenin konumu `[minIndex, maxIndex]` KAPALI aralığında mı.', neden: 'Bu TEK satır, hem "MinLevel\'den DÜŞÜK seviyeleri" (ör. A2 kategorisini A1 öğrencisine GÖSTERME) hem "MaxLevel\'den YÜKSEK seviyeleri" AYNI ANDA elemekten SORUMLU — canlı doğrulanan `?level=A1` (id 11,12 ELENİYOR) ve `?level=A2` (TÜM 12 kategori DÖNÜYOR, çünkü A1 kategorilerinin ÜST SINIRI yok) davranışlarının İKİSİ de bu satırdan GELİYOR.', olmasaydi: 'Yalnızca TEK yönlü bir kontrol (ör. sadece `levelIndex >= minIndex`) yazılsaydı, "B1 seviyesindeki bir öğrenciye YALNIZCA A1 için tasarlanmış (varsayımsal `MaxLevel=A1` olan) bir kategori" YANLIŞLIKLA gösterilirdi.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetCategoriesQueryValidator.cs — Seviye Formatı Doğrulaması',
+        dosyaYolu: 'backend/Zausel.Application/Validators/Categories/GetCategoriesQueryValidator.cs',
+        nedenBuKlasor: 'Validators/Categories/ — projedeki TÜM FluentValidation doğrulayıcıları, Command/Query\'nin kendi Features/ klasöründen AYRI, ilgili domain adını taşıyan bir Validators/ alt klasöründe toplanır.',
+        kod: `using FluentValidation;
+using Zausel.Application.Features.Categories;
+
+namespace Zausel.Application.Validators.Categories;
+
+public class GetCategoriesQueryValidator : AbstractValidator<GetCategoriesQuery>
+{
+    private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
+    public GetCategoriesQueryValidator()
+    {
+        RuleFor(x => x.Level).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentValidation;', aciklama: '`AbstractValidator<T>`/`RuleFor` FluentValidation paketinden gelir.', neden: 'MediatR pipeline\'ına takılan `ValidationBehavior`, HER Command/Query için DI container\'da kayıtlı bir `IValidator<T>` ARAR — bu paket olmadan o arayüz TANIMSIZ kalır.', olmasaydi: 'FluentValidation olmasaydı, her Handler\'ın başına elle `if` bloklarıyla doğrulama YAZILMASI gerekirdi — 30\'dan fazla Command/Query\'de TUTARSIZ bir doğrulama stiline yol AÇARDI.' },
+          { satir: 'using Zausel.Application.Features.Categories;', aciklama: 'Doğrulanan tip olan `GetCategoriesQuery` bu namespace\'te tanımlı (bir önceki slayt).', neden: 'Validator, Command/Query ile AYNI isimde ama AYRI bir dosyada/klasörde yaşıyor — bir Command\'ın TÜM doğrulama kuralları tek bir dosyada toplanır, Handler\'ın iş mantığı dosyası KABARMAZ.', olmasaydi: 'Doğrulama kuralları Handler\'ın İÇİNE (ör. `Handle` metodunun başına) yazılsaydı, "bu Command\'ın TÜM kuralları nerede" sorusunun cevabı HER Handler için FARKLI bir yerde ARANIRDI.' },
+          { satir: 'namespace Zausel.Application.Validators.Categories;', aciklama: 'Klasör yapısıyla birebir eşleşen namespace.', neden: 'MediatR\'ın `ValidationBehavior`\'ı `IValidator<TRequest>` arayüzünü DI container\'dan (assembly taramasıyla) BULUR — bu tarama namespace\'e DEĞİL, sınıfın `AbstractValidator<T>`\'DEN türeyip türemediğine BAKAR; klasörleme SALT insan okunabilirliği İÇİNDİR (bir sonraki geliştirici "Category doğrulamaları nerede" diye TEK klasöre bakarak bulur).', olmasaydi: 'Tüm validator\'lar TEK bir düz klasörde (Domain ayrımı OLMADAN) toplansaydı, 30+ validator dosyası arasında "Category\'ye ait olanlar HANGİLERİ" sorusu dosya İSİMLERİNE bakarak (grep\'siz) YANITLANAMAZDI.' },
+          { satir: 'public class GetCategoriesQueryValidator : AbstractValidator<GetCategoriesQuery>', aciklama: 'FluentValidation\'ın taban sınıfından türeyen, `GetCategoriesQuery`\'e ÖZGÜ doğrulayıcı.', neden: '`AbstractValidator<GetCategoriesQuery>` generic parametresi, bu validator\'ın YALNIZCA `GetCategoriesQuery` tipindeki istekler için ÇALIŞACAĞINI derleme zamanında GARANTİ eder — yanlışlıkla başka bir Command\'a UYGULANAMAZ.', olmasaydi: 'Generic olmayan bir doğrulama arayüzü kullanılsaydı, HANGİ Command\'a ait olduğu yalnızca ÇALIŞMA ZAMANINDA (reflection ile) belirlenebilirdi — tip güvenliği KAYBOLURDU.' },
+          { satir: 'private static readonly string[] ValidLevels = ["A1", "A2", "B1", "B2", "C1", "C2"];', aciklama: 'Geçerli CEFR seviyelerinin listesi — `GetCategoriesQueryHandler`\'daki `Levels` dizisiyle AYNI değerleri taşır ama AMACI farklı: burada SIRALAMA değil, yalnızca "BU LİSTEDE mi" (üyelik) kontrolü için kullanılıyor.', neden: 'Projedeki DİĞER TÜM seviye doğrulamaları (`CreateWordCommandValidator`, `CreateCategoryCommandValidator`) AYNI 6 değerlik diziyi kullanıyor — CEFR standardının 6 seviyesi (A1-C2) proje boyunca SABİT bir gerçek, her yerde AYNI kaynaktan TEKRARLANIYOR.', olmasaydi: 'Bu dizi eksik veya yanlış bir seviye seti içerseydi (ör. "B3" gibi olmayan bir seviye eklenseydi), `?level=B3` isteği SESSİZCE kabul edilir ama `GetCategoriesQueryHandler.IsInRange` bu değeri TANIMAYIP her kategoriyi (yanlışlıkla) UYGUN sayardı.' },
+          { satir: 'public GetCategoriesQueryValidator()', aciklama: 'Kuralların TANIMLANDIĞI constructor — FluentValidation\'ın deseni, kurallar `Handle`\'da DEĞİL burada, nesne KURULURKEN bir kez tanımlanır.', neden: 'FluentValidation, constructor\'da tanımlanan `RuleFor` zincirlerini İÇSEL bir kural listesine KAYDEDER, her `Validate()` çağrısında bu listeyi YENİDEN OLUŞTURMAZ — performans için validator NESNESİ genelde SINGLETON olarak DI\'a kayıtlıdır.', olmasaydi: 'Kurallar her `Handle` çağrısında YENİDEN tanımlansaydı (ör. bir `if` zinciri olarak), FluentValidation\'ın sağladığı standart hata-kodu/mesaj ALTYAPISI (ExceptionHandlingMiddleware ile entegrasyon) hiç KULLANILAMAZDI.' },
+          { satir: 'RuleFor(x => x.Level).Must(v => v is null || ValidLevels.Contains(v)).WithErrorCode("DIFFICULTY_LEVEL_INVALID");', aciklama: '`Level` ya `null` (filtre YOK) ya da 6 geçerli seviyeden BİRİ olmalı — DEĞİLSE `DIFFICULTY_LEVEL_INVALID` koduyla 400 döner.', neden: '`DIFFICULTY_LEVEL_INVALID` kodu YENİ bir kod DEĞİL — `CreateWordCommandValidator`\'ın `DifficultyLevel` alanı için ZATEN kullandığı, `ErrorMessages` sözlüğünde HALİHAZIRDA tr/de karşılığı OLAN bir kod; A-06 için AYRI bir "kategori seviyesi" hata kodu AÇILMADI, aynı kavram (CEFR seviyesi geçersiz) İKİ farklı bağlamda AYNI kodu paylaşıyor.', olmasaydi: 'Bu kural olmasaydı, `?level=xyz` gibi geçersiz bir değer `GetCategoriesQueryHandler.IsInRange`\'e KADAR ULAŞIR, orada `levelIndex<0` savunma kontrolüyle SESSİZCE yutulurdu — istemci "bu geçersiz bir istek" geri bildirimini (400) HİÇ ALAMAZDI, yalnızca beklenmedik (filtresiz) bir sonuç GÖRÜRDÜ.' }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'ILookup<TKey,TElement>', tanim: '.NET\'in "gruplanmış, salt-okunur, ANAHTAR-ÇOKLU-DEĞER" koleksiyon tipi — `Dictionary`\'den farkı NULLABLE anahtarları desteklemesi VE olmayan bir anahtar için indeksleyicinin (`[]`) istisna FIRLATMAK yerine boş bir dizi DÖNMESİ.' },
+          { terim: 'notnull kısıtı (constraint)', tanim: '.NET\'in `Dictionary<TKey,TValue>` gibi bazı generic tiplerinde `TKey`\'in `null` OLAMAYACAĞINI zorunlu kılan derleme-zamanı kuralı — `int?` gibi nullable value type\'lar bu kısıtı İHLAL eder, derleyici UYARI verir.' },
+          { terim: 'Fail-open / fail-closed', tanim: 'Belirsiz/hatalı bir durumla karşılaşıldığında sistemin varsayılan tepkisi — "fail-open" hataya rağmen İZİN VERİR (ör. `IsInRange`\'in `levelIndex<0` durumunda `true` dönmesi), "fail-closed" hataya karşı ENGELLER. Hangisinin doğru olduğu bağlama göre değişir.' },
+          { terim: 'Materialize etmek (.ToList())', tanim: 'LINQ\'in gecikmeli (deferred) bir sorgu ifadesini, HEMEN çalıştırıp somut bir koleksiyona (`List<T>`) DÖNÜŞTÜRMEK — aynı gecikmeli ifadenin birden çok kez GEZİLMESİNİ (ve dolayısıyla YENİDEN hesaplanmasını) ÖNLER.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`GetCategoriesQuery`/`Handler` — repository DÜZ liste döner, Handler `ToLookup` ile ağacı KURAR; `Dictionary<int?,...>` YERİNE `ILookup` kullanıldı çünkü `int?` `notnull` kısıtına UYMUYOR.',
+          '"Filtrelenmiş bir kategorinin çocuğu SESSİZCE kaybolmaz, ağacın KÖKÜ olarak gösterilir" — `filteredIds.Contains(parentId)` kontrolüyle sağlanan bilinçli bir tasarım kararı.',
+          '`IsInRange` MinLevel/MaxLevel\'i bir EŞİTLİK değil bir ARALIK olarak yorumluyor — canlı doğrulanan davranış: `?level=A1` iken MinLevel=A2 olanlar (id 11,12) ELENİYOR, `?level=A2` iken TÜM 12 kategori DÖNÜYOR (A1 kategorilerinin ÜST SINIRI yok).',
+          '`GetCategoriesQueryValidator` — `DIFFICULTY_LEVEL_INVALID` kodu YENİDEN kullanıldı, A-06 için AYRI bir kod AÇILMADI.',
+          '`GET /categories` (postman örneği) zaten Bölüm 5\'te işlendi — bu bölüm SADECE Handler\'ın İÇ hiyerarşi/filtre mantığını anlattı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

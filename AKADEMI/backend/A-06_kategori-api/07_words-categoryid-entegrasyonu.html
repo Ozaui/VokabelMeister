@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'words-categoryid-entegrasyonu',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '06_hiyerarsik-liste-sorgusu.html',
+    sonrakiBolum: '08_categoryids-yazma-destegi.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'A-05\'in Sekiz Dosyası Geri Dönüyor',
+        altBaslik: 'Category/WordCategory artık var — GET /words\'e categoryId filtresi ve categories[] alanı, A-05\'te TAM öğretilmiş dosyalara SONRADAN eklenir.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bu Kadar Çok Dosya Aynı Anda Değişiyor?',
+        aciklama: 'A-05\'te GetWordsQuery.cs\'in içinde bilinçli bir not vardı: "categoryId filtresi Category/WordCategory henüz yazılmadığı için YOK, A-06\'da eklenecek". Bu bölüm o notun tuttuğu sözü yerine getiriyor — WordConceptAggregate, IWordConceptRepository, WordConceptRepository, GetWordsQuery, WordsController, WordResponse ve WordMapping\'in HEPSİ tek bir özelliğin (kelime→kategori ilişkisi okunabilir olsun) parçaları oldukları için AYNI anda değişti.',
+        neden: 'Bir aggregate\'in (WordConceptAggregate) şekli değişince bu şekli TAŞIYAN her katman (repository imzası → repository implementasyonu → onu tüketen Query → onu tetikleyen Controller → onu dış dünyaya sunan DTO/mapping) sırayla GÜNCELLENMEK ZORUNDA — tek bir alan eklemek bile UÇTAN UCA bir zincir yaratır, bu CQRS\'in doğal bir sonucu.',
+        olmasaydi: 'Yalnızca repository katmanı güncellenip DTO/mapping GÜNCELLENMESEYDİ, `categories[]` verisi veritabanından ÇEKİLİRDİ ama hiçbir zaman istemciye giden JSON\'a YANSIMAZDI — "veri var ama görünmüyor" türünden, fark edilmesi zor bir eksiklik.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordConceptAggregate.cs — Categories Alanı Eklendi',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/WordConceptAggregate.cs',
+        neden: 'A-05\'te bu record yalnızca Concept+Translations taşıyordu — bir kelimenin hangi kategorilere ait olduğunu göstermek için üçüncü bir alan (Categories) gerekti. Tek bir alan eklemek bile "saf ekleme" sayılmaz, kayıt altına alınan bir kod-degisiklik\'tir.',
+        diff: `
+ // IWordConceptRepository\'nin okuma metotlarının döndürdüğü şekil — WordConcept tek başına
+ // anlamsız (bir kavramın karşılığı olmadan gösterilecek bir şeyi yok), bu yüzden repository
+ // Concept + o kavramın TÜM çevirilerini TEK bir çağrıda birlikte döndürüyor.
+-public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations);
++public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations, List<CategoryAggregate> Categories);
+
+ // Her çeviri kendi Word\'ü + hangi dile ait olduğu (Language) + varsa WordDetail + örnek listesi.
+ public record WordTranslationAggregate(Word Word, Language Language, WordDetail? Detail, List<WordExample> Examples);`,
+        satirlar: [
+          { satir: 'public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations);', aciklama: 'A-05\'teki hâli — yalnızca kavram + çeviriler.', neden: 'O ana kadar Category/WordCategory entity\'leri hiç yoktu, bir kelimenin kategorisini taşıyacak bir alan olamazdı.', olmasaydi: 'Bu satır zaten geçmişte kalmış, bu diff\'in "ÖNCESİ" hâli — artık geçerli değil.' },
+          { satir: 'public record WordConceptAggregate(WordConcept Concept, List<WordTranslationAggregate> Translations, List<CategoryAggregate> Categories);', aciklama: 'Üçüncü alan olarak `Categories` eklendi — `WordConceptRepository`nin (birazdan) doldurduğu, o kelimenin bağlı olduğu kategorilerin listesi.', neden: '`CategoryAggregate` tipi (Bölüm 2, ICategoryRepository) burada TEKRAR kullanıldı — Word\'ün kategorilerini göstermek için ayrı bir "hafif" tip AÇILMADI, aynı tip iki farklı bağlamda (Category\'nin kendi CRUD\'u VE Word\'e gömülü özet) paylaşılıyor.', olmasaydi: 'Bu alan eklenmeseydi, `WordConceptRepository`nin kategori bilgisini DB\'den ÇEKMESİ için hiçbir yer OLMAZDI — `GetWordsQuery`nin `categoryId` filtresi kelimeleri DOĞRU filtreleyebilirdi ama yanıt JSON\'ında hangi kategorilere ait oldukları HİÇ GÖRÜNMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IWordConceptRepository.cs — categoryId Parametresi + ReplaceWordCategoriesAsync',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/IWordConceptRepository.cs',
+        neden: '`GetPagedAsync`nin categoryId filtresi UYGULAYABİLMESİ için imzasına bir parametre eklendi; AYRICA `ReplaceWordCategoriesAsync` YENİ bir metot olarak tanıtıldı — bu metot Bölüm 8\'de (categoryIds[] yazma) kullanılacak, ama sözleşmesi (arayüzdeki tanımı) burada, repository katmanının GERİ KALANIYLA birlikte gösteriliyor.',
+        diff: `
+ // WordConcept BaseEntity\'den türese de, tek başına bir "kelime" değil — Word/WordDetail/WordExample
+ // ile birlikte TEK bir aggregate oluşturuyor (bkz. Icerik.md). Bu yüzden generic IRepository<T>
+ // yalnızca WordConcept satırının kendisini yönetebilirdi, çevirileri/detayları/örnekleri AYRI AYRI
+ // yönetmek için Handler\'ın 4 farklı repository enjekte etmesi gerekirdi — bunun yerine TEK bir
+ // aggregate-repository tüm graf üzerinde çalışıyor (User/RefreshToken\'ın dar-arayüz deseniyle AYNI
+ // gerekçe: entity\'nin doğası generic CRUD\'a sığmıyor).
+ public interface IWordConceptRepository
+ {
+     Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);
+     Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);
+     Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);
+     Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
+
+     Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+-        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
++        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
+         int page, int pageSize, CancellationToken cancellationToken = default);
+
++    // Create/UpdateWordCommand\'ın categoryIds[] alanı için — mevcut TÜM WordCategories satırlarını
++    // (hard) siler, verilenlerle değiştirir. ReplaceExamplesAsync\'in "translations[] tam değişim"
++    // deseniyle AYNI (A-06 kullanıcı kararı — WordCategories\'i boş bırakmamak için A-06\'da eklendi).
++    Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default);
++
+     // Eşleşmemiş = bir WordConcept\'in TOPLAM tek Words satırı olması (dile bakılmaksızın) VE o
+     // satırın languageId\'de olması — ayrı bir IsMatched kolonu yok, durum COUNT(*)=1\'den türetilir.
+     Task<PagedResult<UnmatchedWordAggregate>> GetUnmatchedAsync(
+         int languageId, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
+
+     // GetUnmatchedAsync\'in SAYFASIZ hâli — bir dildeki eşleşmemiş TÜM kelimelerin öneri havuzu
+     // olarak kullanılması için (karşı dilin eşleşmemiş kavramlarına önerilecek aday listesi).
+     Task<List<UnmatchedWordAggregate>> GetUnmatchedPoolAsync(int languageId, CancellationToken cancellationToken = default);`,
+        satirlar: [
+          { satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,', aciklama: 'A-05\'teki hâli — üç filtre parametresi, kategori filtresi YOK.', neden: 'O ana kadar WordCategories tablosu yoktu, filtrelenecek bir kategori ilişkisi de yoktu.', olmasaydi: 'Bu satır artık geçerli değil, diff\'in ÖNCESİ hâli.' },
+          { satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,', aciklama: 'Dördüncü (opsiyonel) filtre parametresi eklendi.', neden: '`?categoryId=` HTTP query parametresinin repository katmanına kadar İNMESİ gerekiyordu — Controller\'dan Query\'ye, Query\'den repository\'ye, TEK bir tip (`int?`) olarak taşınıyor.', olmasaydi: 'Bu parametre olmasaydı, `GetWordsQuery`nin `CategoryId` alanı repository\'ye HİÇ ULAŞTIRILAMAZDI — filtre yalnızca Application katmanında dursa da hiçbir SQL sorgusuna YANSIMAZDI.' },
+          { satir: 'Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default);', aciklama: 'YENİ bir sözleşme — bir kelimenin TÜM kategori bağlarını verilen listeyle DEĞİŞTİRİR (ekleme değil, TAM değişim).', neden: '`ReplaceExamplesAsync`nin (A-05) "translations[] tam değişim" deseniyle AYNI — istemci HER GÜNCELLEMEDE hangi kategorilerin GEÇERLİ olduğunu TAM olarak belirtir, "şunu ekle şunu çıkar" gibi kısmi bir API sunulmaz; bu, istemci tarafının basit kalmasını sağlar (mevcut durumu bilmesine gerek yok, olması gerekeni gönderir).', olmasaydi: 'Yalnızca "ekle" bir metot olsaydı, bir kelimeden bir kategoriyi ÇIKARMAK için AYRI bir "kaldır" endpoint\'i gerekirdi — iki ayrı API çağrısı, iki ayrı hata senaryosu.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordConceptRepository.cs — categoryId Filtresi + BuildCategoriesAsync + ReplaceWordCategoriesAsync',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/Content/WordConceptRepository.cs',
+        neden: 'Arayüzdeki (bir önceki slayt) sözleşmelerin GERÇEK implementasyonu — `GetAggregateAsync`/`GetPagedAsync` artık kategori verisini de DOLDURUYOR, `ReplaceWordCategoriesAsync` YENİ bir metot olarak eklendi.',
+        diff: `     public async Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default)
+     {
+         var concept = await _context.WordConcepts.FirstOrDefaultAsync(c => c.Id == wordConceptId, cancellationToken);
+         if (concept is null)
+             return null;
+
+         var translationsByConcept = await BuildTranslationsAsync([wordConceptId], cancellationToken);
+-        return new WordConceptAggregate(concept, translationsByConcept.GetValueOrDefault(wordConceptId, []));
++        var categoriesByConcept = await BuildCategoriesAsync([wordConceptId], cancellationToken);
++        return new WordConceptAggregate(
++            concept, translationsByConcept.GetValueOrDefault(wordConceptId, []), categoriesByConcept.GetValueOrDefault(wordConceptId, []));
+     }
+
+     public async Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+-        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,
++        string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
+         int page, int pageSize, CancellationToken cancellationToken = default)
+     {
+         var query = _context.WordConcepts.AsQueryable();
+
+         if (!string.IsNullOrWhiteSpace(difficultyLevel))
+             query = query.Where(c => c.DifficultyLevel == difficultyLevel);
+         if (partOfSpeech is not null)
+             query = query.Where(c => c.PartOfSpeech == partOfSpeech);
+         if (!string.IsNullOrWhiteSpace(search))
+         {
+             var matchingConceptIds = _context.Words
+                 .Where(w => w.Text.Contains(search) || (w.Definition != null && w.Definition.Contains(search)))
+                 .Select(w => w.WordConceptId);
+             query = query.Where(c => matchingConceptIds.Contains(c.Id));
+         }
++        if (categoryId is not null)
++        {
++            var matchingConceptIds = _context.WordCategories
++                .Where(wc => wc.CategoryId == categoryId)
++                .Select(wc => wc.WordConceptId);
++            query = query.Where(c => matchingConceptIds.Contains(c.Id));
++        }
+
+         var totalCount = await query.CountAsync(cancellationToken);
+         var concepts = await query
+             .OrderByDescending(c => c.CreatedAt)
+             .Skip((page - 1) * pageSize)
+             .Take(pageSize)
+             .ToListAsync(cancellationToken);
+
+         var conceptIds = concepts.Select(c => c.Id).ToList();
+         var translationsByConcept = await BuildTranslationsAsync(conceptIds, cancellationToken);
++        var categoriesByConcept = await BuildCategoriesAsync(conceptIds, cancellationToken);
+
+         var items = concepts
+-            .Select(c => new WordConceptAggregate(c, translationsByConcept.GetValueOrDefault(c.Id, [])))
++            .Select(c => new WordConceptAggregate(
++                c, translationsByConcept.GetValueOrDefault(c.Id, []), categoriesByConcept.GetValueOrDefault(c.Id, [])))
+             .ToList();
+
+         return new PagedResult<WordConceptAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+     }
+
++    public async Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default)
++    {
++        // WordCategory BaseEntity DEĞİL (soft delete yok) — eskiler HARD silinir, ReplaceExamplesAsync\'in
++        // AKSİNE (o soft-delete\'e tabi WordExample\'ları IsDeleted=true yapar).
++        var existing = await _context.WordCategories.Where(wc => wc.WordConceptId == wordConceptId).ToListAsync(cancellationToken);
++        _context.WordCategories.RemoveRange(existing);
++
++        var newRows = categoryIds.Distinct().Select((categoryId, index) => new WordCategory
++        {
++            WordConceptId = wordConceptId,
++            CategoryId = categoryId,
++            DisplayOrder = index,
++            CreatedAt = DateTime.UtcNow
++        });
++        await _context.WordCategories.AddRangeAsync(newRows, cancellationToken);
++    }
++
++    private async Task<Dictionary<int, List<CategoryAggregate>>> BuildCategoriesAsync(
++        List<int> wordConceptIds, CancellationToken cancellationToken)
++    {
++        var links = await _context.WordCategories.Where(wc => wordConceptIds.Contains(wc.WordConceptId)).ToListAsync(cancellationToken);
++        var categoryIds = links.Select(l => l.CategoryId).Distinct().ToList();
++
++        var categories = await _context.Categories.Where(c => categoryIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, cancellationToken);
++        var translations = await _context.CategoryTranslations.Where(t => categoryIds.Contains(t.CategoryId)).ToListAsync(cancellationToken);
++        var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);
++
++        var translationsByCategory = translations
++            .GroupBy(t => t.CategoryId)
++            .ToDictionary(g => g.Key, g => g.Select(t => new CategoryTranslationAggregate(t, languages[t.LanguageId])).ToList());
++
++        return links
++            .GroupBy(l => l.WordConceptId)
++            .ToDictionary(
++                g => g.Key,
++                g => g.Select(l => new CategoryAggregate(categories[l.CategoryId], translationsByCategory.GetValueOrDefault(l.CategoryId, [])))
++                    .ToList());
++    }`,
+        satirlar: [
+          { satir: 'return new WordConceptAggregate(concept, translationsByConcept.GetValueOrDefault(wordConceptId, []));', aciklama: 'A-05\'teki hâli — yalnızca iki alanla aggregate kurar.', neden: 'O ana kadar `Categories` alanı record\'da hiç yoktu.', olmasaydi: 'Diff\'in ÖNCESİ hâli, artık geçerli değil.' },
+          { satir: 'var categoriesByConcept = await BuildCategoriesAsync([wordConceptId], cancellationToken);', aciklama: 'Tek bir WordConcept için kategori verisini (aşağıdaki yeni `BuildCategoriesAsync` yardımcı metoduyla) çeker.', neden: '`BuildTranslationsAsync`\'in (A-05) YANINA, AYNI desende (bir sözlük kurup çağıranın istediği ID\'yle sorgulaması) bir eş daha eklendi — tutarlı bir "aggregate parçalarını topla" deseni.', olmasaydi: '`GetAggregateAsync` tek bir kelimenin TÜM detayını döndüren merkezi metot — kategori verisi burada eksik kalsaydı, `GET /words/{id}` yanıtı categories[] alanını HER ZAMAN boş döndürürdü.' },
+          { satir: 'return new WordConceptAggregate(', aciklama: 'Üç parametreli constructor çağrısının başlangıcı — satır iki parçaya bölündü (okunabilirlik için).', neden: 'Tek satırda üç argüman yazılsaydı satır ÇOK UZARDI — proje genelinde 120 karakteri aşan ifadeler iki satıra bölünüyor.', olmasaydi: 'Tek satırda yazılsaydı kod ÇALIŞIRDI ama editörde yatay kaydırma GEREKTİRİRDİ.' },
+          { satir: 'concept, translationsByConcept.GetValueOrDefault(wordConceptId, []), categoriesByConcept.GetValueOrDefault(wordConceptId, []));', aciklama: 'Üçüncü argüman olarak `categoriesByConcept.GetValueOrDefault(wordConceptId, [])` eklendi — o concept\'in kategorisi YOKSA boş liste (istisna değil).', neden: '`GetValueOrDefault` kullanımı `translationsByConcept` ile AYNI kalıp — bir kelimenin HİÇ kategorisi olmaması geçerli bir durum (henüz atanmamış olabilir), hata SAYILMAZ.', olmasaydi: 'Sözlük indeksleyicisi (`[]`) kullanılsaydı, kategorisi olmayan bir kelime için `KeyNotFoundException` fırlar, `GET /words/{id}` kategorisiz her kelimede 500 DÖNERDİ.' },
+          { satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search,', aciklama: 'A-05\'teki `GetPagedAsync` imzası — kategori filtresi yok.', neden: 'Arayüzdeki (bir önceki slayt) DEĞİŞİKLİĞİN implementasyon tarafındaki YANSIMASI.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,', aciklama: 'Yeni `categoryId` parametresi metot imzasına eklendi.', neden: 'Arayüzdeki sözleşmeyle (bir önceki slayt) BİREBİR eşleşmesi gerekiyor — C#\'ta bir sınıfın arayüzü implemente etmesi için imzaların TAM uyuşması ZORUNLU.', olmasaydi: 'İmza uyuşmasaydı proje DERLENMEZDİ.' },
+          { satir: 'if (categoryId is not null)', aciklama: 'Diğer üç filtre (`difficultyLevel`/`partOfSpeech`/`search`) ile AYNI "opsiyonel filtre" deseni — yalnızca değer VERİLMİŞSE sorguya bir `Where` eklenir.', neden: '`categoryId=null` (filtre istenmiyor) durumunda gereksiz bir `WHERE` koşulu SQL\'e YANSITILMAMALI — sorgu planı GEREKSİZ yere karmaşıklaşmamalı.', olmasaydi: 'Koşulsuz her zaman filtrelenseydi, `categoryId` gönderilmeyen HER `GET /words` isteği (yani çoğu istek) YANLIŞLIKLA hiçbir sonuç DÖNDÜRMEZDİ (categoryId=null hiçbir WordCategory satırıyla eşleşmez).' },
+          { satir: 'var matchingConceptIds = _context.WordCategories', aciklama: 'WordCategories tablosundan, verilen kategoriye ait WordConceptId\'lerin bir alt-sorgusunu (subquery) kurar.', neden: '`search` filtresindeki `matchingConceptIds` deseniyle AYNI teknik — Words tablosundan bir ID listesi türetip WordConcepts sorgusuna `Contains` ile bağlamak; EF Core bunu TEK bir SQL sorgusuna (JOIN/subquery) çevirir, iki AYRI round-trip GEREKMEZ.', olmasaydi: 'Önce kategori eşleşen WordConceptId\'ler AYRI bir sorguyla ÇEKİLİP sonra bellekte filtrelenseydi, büyük veri setlerinde İKİ sorgu + bellek transferi GEREKİRDİ.' },
+          { satir: '.Where(wc => wc.CategoryId == categoryId)', aciklama: 'Alt-sorgunun filtre koşulu — yalnızca istenen kategoriye ait bağ satırları.', neden: '`WordCategories` tablosu M:N ilişkiyi tutuyor, bir kelime BİRDEN FAZLA kategoriye ait olabilir — bu yüzden `WordConcepts` tablosuna DOĞRUDAN bir `CategoryId` kolonu EKLENMEDİ, ilişki AYRI bir tablo üzerinden kurgulanıyor.', olmasaydi: 'Bu koşul olmasaydı sorgu TÜM kategori bağlarını (hangi kategoriye ait olduğuna bakmaksızın) döndürürdü — filtre işlevsiz kalırdı.' },
+          { satir: '.Select(wc => wc.WordConceptId);', aciklama: 'Alt-sorgu yalnızca `WordConceptId` kolonunu projekte eder — TÜM satırı DEĞİL.', neden: 'Yalnızca ANA sorgunun `Contains` kontrolünde kullanılacak bir ID listesi gerekiyor — gereksiz kolonları (DisplayOrder, CreatedAt) ÇEKMEK performans israfı olurdu.', olmasaydi: 'Tüm satır seçilseydi (`.Select(wc => wc)`), `Contains` karşılaştırması yine ÇALIŞIRDI ama EF Core\'un ürettiği SQL gereksiz kolonlar TAŞIRDI.' },
+          { satir: 'query = query.Where(c => matchingConceptIds.Contains(c.Id));', satirIndex: 36, aciklama: 'Ana WordConcepts sorgusuna, yalnızca `matchingConceptIds` içinde olan kavramları BIRAKACAK filtre eklenir.', neden: 'Diğer üç filtrenin (`difficultyLevel`/`partOfSpeech`/`search`) AYNI satırı — proje genelinde "alt-sorgu ID listesiyle ana sorguyu filtrele" deseni TUTARLI şekilde tekrarlanıyor.', olmasaydi: 'Bu satır olmasaydı, yukarıda kurulan `matchingConceptIds` alt-sorgusu HİÇBİR ETKİ yapmazdı — hesaplanır ama KULLANILMAZDI.' },
+          { satir: 'var categoriesByConcept = await BuildCategoriesAsync(conceptIds, cancellationToken);', aciklama: 'Sayfadaki TÜM kavramlar için kategori verisini TEK seferde (N+1 sorgu YARATMADAN) çeker.', neden: '`BuildTranslationsAsync`\'in HEMEN ALTINDA, AYNI desende — sayfa başına 20 kelime varsa, kelime başına AYRI bir sorgu ATILMAZ, TEK bir `WHERE IN (...)` sorgusu TÜM kelimelerin kategorilerini getirir.', olmasaydi: 'Her kavram için AYRI bir `BuildCategoriesAsync([c.Id], ...)` çağrılsaydı, 20 kelimelik bir sayfa 20 AYRI DB sorgusuna (N+1 problemi) yol AÇARDI.' },
+          { satir: '.Select(c => new WordConceptAggregate(c, translationsByConcept.GetValueOrDefault(c.Id, [])))', aciklama: 'A-05\'teki hâli — iki alanlı aggregate kurulumu.', neden: 'O ana kadar `Categories` alanı yoktu.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: '.Select(c => new WordConceptAggregate(', aciklama: 'Üç parametreli constructor çağrısı — GetAggregateAsync\'teki İLE AYNI bölünme mantığı.', neden: 'Uzun satırın iki parçaya bölünmesi — okunabilirlik.', olmasaydi: 'Tek satır ÇALIŞIRDI ama yatay kaydırma GEREKTİRİRDİ.' },
+          { satir: 'c, translationsByConcept.GetValueOrDefault(c.Id, []), categoriesByConcept.GetValueOrDefault(c.Id, [])))', aciklama: 'Sayfa listesindeki HER kavram için kategori verisi de `GetValueOrDefault` ile GÜVENLİ şekilde eklenir.', neden: '`GetAggregateAsync`\'teki AYNI mantık — kategorisiz bir kelime İSTİSNA fırlatmadan boş bir `Categories` listesiyle DÖNER.', olmasaydi: 'Sözlük indeksleyicisi kullanılsaydı, kategorisiz herhangi bir kelime `GET /words` LİSTESİNİ TAMAMEN 500\'e DÜŞÜRÜRDÜ (tek bir eksik kayıt TÜM sayfayı bozardı).' },
+          { satir: 'public async Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default)', aciklama: 'Arayüzde (bir önceki slayt) tanımlanan sözleşmenin GERÇEK implementasyonu.', neden: 'Bölüm 8\'de `CreateWordCommand`/`UpdateWordCommand`\'ın çağıracağı metot — burada TANIMLANIYOR, orada KULLANILACAK.', olmasaydi: 'Arayüzde tanım olup implementasyon OLMASAYDI proje DERLENMEZDİ (interface implementasyonu eksik hatası).' },
+          { satir: 'var existing = await _context.WordCategories.Where(wc => wc.WordConceptId == wordConceptId).ToListAsync(cancellationToken);', aciklama: 'Bu kelimeye ait TÜM mevcut kategori bağlarını çeker — silinecek/değiştirilecek adaylar.', neden: '"Tam değişim" (replace) semantiği için ÖNCE mevcut durumun TAMAMI bilinmeli — hangi satırların ARTIK geçerli olmadığını belirlemenin tek yolu bu.', olmasaydi: 'Mevcut satırlar hiç ÇEKİLMESEYDİ, eski bağlar veritabanında SONSUZA dek KALIRDI — bir kelimeden bir kategori "kaldırma" işlemi HİÇ MÜMKÜN olmazdı.' },
+          { satir: '_context.WordCategories.RemoveRange(existing);', aciklama: 'Mevcut TÜM bağları HARD (kalıcı, geri dönüşü olmayan) siler.', neden: '`WordCategory` `BaseEntity`\'den TÜREMİYOR — `IsDeleted`/`DeletedAt` gibi soft-delete alanları YOK, bu yüzden `ReplaceExamplesAsync`\'in (A-05, WordExample\'ları `IsDeleted=true` yapan) AKSİNE burada gerçek bir DELETE gerekiyor.', olmasaydi: 'Soft-delete DENENSEYDİ (`IsDeleted=true` atanmaya çalışılsaydı), `WordCategory` sınıfında böyle bir alan OLMADIĞI için kod DERLENMEZDİ.' },
+          { satir: 'var newRows = categoryIds.Distinct().Select((categoryId, index) => new WordCategory', aciklama: 'İstemcinin gönderdiği ID listesinden (tekrarlar `Distinct()` ile ELENEREK) yeni bağ satırları kurar — `index` her satırın `DisplayOrder`\'ı olacak.', neden: '`Distinct()` — istemci yanlışlıkla AYNI kategoriyi iki kez gönderirse (`[2, 2, 3]`), `UQ_WordCategories` UNIQUE kısıtı ikinci satırda bir SQL HATASI fırlatırdı; `Distinct()` bunu DAHA istemcinin isteği İŞLENMEDEN, temiz bir şekilde ÖNLER.', olmasaydi: '`Distinct()` olmasaydı, tekrarlı bir categoryIds listesi `SaveChangesAsync`\'te HAM bir SQL UNIQUE constraint HATASI (500) fırlatırdı — istemciye anlamlı bir hata mesajı YERİNE ham bir veritabanı hatası SIZARDI.' },
+          { satir: 'WordConceptId = wordConceptId,', aciklama: 'Yeni bağın hangi kelimeye ait olduğu.', neden: 'Metot parametresinden GELEN değer — TÜM yeni satırlar AYNI kelimeye bağlanıyor (metodun amacı zaten "bir kelimenin kategorilerini değiştir").', olmasaydi: 'Bu alan atanmasaydı, `WordConceptId` varsayılan değeri (0) ile KAYDEDİLİRDİ — hiçbir gerçek kelimeye BAĞLANMAYAN, anlamsız bir satır oluşurdu.' },
+          { satir: 'CategoryId = categoryId,', aciklama: 'İstemcinin gönderdiği listedeki HER bir kategori ID\'si.', neden: '`Select` lambda\'sının `categoryId` parametresinden gelir — dışarıdaki (metot parametresi) `categoryIds` listesinin HER elemanı için AYRI bir satır üretilir.', olmasaydi: 'Bu alan atanmasaydı, hangi kategoriye bağlandığı BELİRSİZ, varsayılan (0) bir ID\'yle KAYDEDİLİRDİ — muhtemelen var olmayan bir kategori, FK kısıtı hatasına yol AÇARDI.' },
+          { satir: 'DisplayOrder = index,', aciklama: 'İstemcinin gönderdiği SIRAYA göre 0\'dan başlayan bir sıralama değeri.', neden: 'İstemcinin `categoryIds` dizisindeki SIRA anlamlı olabilir (ör. "birincil kategori önce") — bu sıra `DisplayOrder`\'a AYNEN YANSITILIYOR, kayıp EDİLMİYOR.', olmasaydi: '`DisplayOrder` hep `0` bırakılsaydı, admin panelin bir kelimenin kategorilerini SIRALI göstermesi (ör. "birincil kategori" vurgusu) MÜMKÜN olmazdı.' },
+          { satir: 'CreatedAt = DateTime.UtcNow', aciklama: 'Oluşturulma zamanı ELLE set edilir.', neden: '`WordCategory` `BaseEntity`\'den TÜREMEDİĞİ için `ZauselDbContext.SaveChangesAsync`\'in OTOMATİK zaman damgalama mekanizması (yalnızca `BaseEntity` türevlerini yakalayan `ChangeTracker.Entries<BaseEntity>()`) BU satırı YAKALAMAZ — DB\'deki `HasDefaultValueSql("GETUTCDATE()")` bir GÜVENLİK AĞI, ama kod açıkça DEĞERİ kendisi veriyor.', olmasaydi: 'Bu satır atlanıp yalnızca DB\'nin `GETUTCDATE()` varsayılanına güvenilseydi, EF Core `CreatedAt`\'in CLR varsayılanı (0001-01-01) olduğunu görüp o değeri EXPLICIT olarak GÖNDEREBİLİRDİ (DB varsayılanını GEÇERSİZ kılarak) — davranış EF Core sürümüne/konfigürasyona bağlı BELİRSİZLEŞİRDİ, elle atamak bu belirsizliği ORTADAN KALDIRIYOR.' },
+          { satir: 'await _context.WordCategories.AddRangeAsync(newRows, cancellationToken);', aciklama: 'Yeni satırların TAMAMINI TEK seferde change tracker\'a ekler.', neden: '`AddRangeAsync` TEK bir toplu ekleme — kategori başına AYRI bir `AddAsync` çağrısı YERİNE, tüm yeni bağlar TEK bir işlemde İZLENMEYE alınır.', olmasaydi: 'Döngüyle TEK TEK `AddAsync` çağrılsaydı, sonuç AYNI olurdu ama kod GEREKSİZ yere UZARDI — `AddRangeAsync` zaten bir liste ALACAK şekilde tasarlanmış.' },
+          { satir: 'private async Task<Dictionary<int, List<CategoryAggregate>>> BuildCategoriesAsync(', aciklama: 'YENİ private yardımcı metot — verilen WordConceptId listesi için TOPLU kategori verisi hazırlar.', neden: '`BuildTranslationsAsync`\'in (A-05) AYNI imzasal deseni: `List<int> id\'ler → Dictionary<int, List<...>>` — çağıran taraf (`GetAggregateAsync`/`GetPagedAsync`) bu sözlükten `GetValueOrDefault` ile KENDİ concept\'inin verisini ÇEKER.', olmasaydi: 'Ayrı bir yardımcı metot OLMASAYDI, `GetAggregateAsync` ve `GetPagedAsync` AYNI (kategori toplama) mantığını İKİ YERDE TEKRARLARDI — DRY ilkesinin ihlali, bir hata düzeltmesi İKİ yerde YAPILMASI gerekirdi.' },
+          { satir: 'List<int> wordConceptIds, CancellationToken cancellationToken)', aciklama: 'Metodun ikinci parametre satırı — çoklu ID desteği (tek bir kelime için de `[id]` şeklinde çağrılabilir).', neden: '`BuildTranslationsAsync` İLE AYNI imza şekli — kod tabanında TUTARLI bir "toplu veri hazırlama yardımcı metodu" kalıbı.', olmasaydi: 'Farklı bir imza (ör. tek bir `int`) kullanılsaydı, sayfa listesi (birden fazla concept) için AYRI bir metot daha YAZILMASI gerekirdi.' },
+          { satir: 'var links = await _context.WordCategories.Where(wc => wordConceptIds.Contains(wc.WordConceptId)).ToListAsync(cancellationToken);', aciklama: 'Verilen kelimelere ait TÜM kategori bağ satırlarını TEK sorguda çeker.', neden: 'İlk adım — önce "hangi kelime hangi kategoriye bağlı" bilgisi (yalnızca ID\'ler, henüz kategori DETAYI değil) alınır.', olmasaydi: 'Bu sorgu OLMASAYDI, hangi kelimenin hangi kategorilere bağlı olduğu BİLİNEMEZDİ — metodun GERİ KALANI çalışamazdı.' },
+          { satir: 'var categoryIds = links.Select(l => l.CategoryId).Distinct().ToList();', aciklama: 'Bağ satırlarından BENZERSİZ kategori ID\'lerini çıkarır — birden fazla kelime AYNI kategoriye bağlı olabileceği için tekrarlar `Distinct()` ile ELENİR.', neden: 'Aşağıdaki `Categories`/`CategoryTranslations` sorgularının GEREKSİZ yere tekrar eden ID\'lerle ÇALIŞMAMASI için — 20 kelime AYNI 3 kategoriye bağlıysa, kategori detayları yalnızca 3 KEZ (20 değil) sorgulanmalı.', olmasaydi: '`Distinct()` olmasaydı sonuç YİNE DOĞRU olurdu (SQL `IN` tekrarlı değerleri KENDİLİĞİNDEN sadeleştirir) ama sorgu metni GEREKSİZ yere UZARDI.' },
+          { satir: 'var categories = await _context.Categories.Where(c => categoryIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, cancellationToken);', aciklama: 'İlgili kategorilerin KENDİLERİNİ (Icon/Color/MinLevel gibi) TEK sorguda, ID\'ye göre erişilebilir bir sözlük olarak çeker.', neden: '`CategoryMapping`/`WordMapping`\'in bu kategorileri isme/renge göre SUNABİLMESİ için Category satırının KENDİSİNE (yalnızca ID\'sine değil) ihtiyaç var.', olmasaydi: 'Yalnızca ID\'ler bilinseydi, `CategoryAggregate` kurulurken hangi rengin/ikonun kullanılacağı BİLİNEMEZDİ.' },
+          { satir: 'var translations = await _context.CategoryTranslations.Where(t => categoryIds.Contains(t.CategoryId)).ToListAsync(cancellationToken);', aciklama: 'İlgili kategorilerin TÜM dillerdeki adlarını (de+tr) TEK sorguda çeker.', neden: '`WordCategoryTranslationResponse`\'un (Bölüm 7\'nin YENİ DTO\'su) hem `languageCode` hem `name` alanları için çeviri satırlarına ihtiyaç var.', olmasaydi: 'Çeviriler ÇEKİLMESEYDİ, kelime yanıtındaki `categories[].translations[]` alanı HER ZAMAN boş DÖNERDİ — kullanıcı hangi kategoriye ait olduğunu isim OLARAK GÖREMEZDİ, yalnızca ID görürdü.' },
+          { satir: 'var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);', aciklama: 'TÜM dilleri (yalnızca 2 tane, de+tr) bir sözlüğe alır — `BuildTranslationsAsync`\'teki İLE BİREBİR AYNI satır.', neden: 'Diller sabit ve az sayıda (2) olduğu için filtre YOK, TÜMÜ çekiliyor — `BuildTranslationsAsync`\'in AYNI ihtiyacı (LanguageId\'den Code\'a çevirmek) burada da TEKRARLANIYOR, ayrı bir metoda ÇIKARILMADI çünkü tek satırlık bir sorgu.', olmasaydi: 'Dil bilgisi ÇEKİLMESEYDİ, `CategoryTranslationAggregate`\'in `Language` alanı DOLDURULAMAZDI — yanıtta `languageCode` HİÇ görünmezdi.' },
+          { satir: 'var translationsByCategory = translations', aciklama: 'Çeviri listesini kategori ID\'sine göre gruplamanın başlangıcı.', neden: 'Aşağıdaki `CategoryAggregate` kurulumunda HER kategori kendi çevirilerini ARAYACAK — önce bu arama HIZLI olsun diye bir sözlük KURULUYOR.', olmasaydi: 'Gruplama OLMASAYDI, her kategori için `translations.Where(t => t.CategoryId == c.Id)` şeklinde AYRI bir LINQ taraması gerekirdi — O(n×m) karmaşıklık, gruplamayla O(n) düşer.' },
+          { satir: '.GroupBy(t => t.CategoryId)', aciklama: 'Çeviri listesini `CategoryId`\'ye göre gruplar.', neden: 'Bir kategorinin BİRDEN FAZLA çevirisi (de+tr) olduğu için gruplama gerekli — `CategoryTranslationConfiguration`\'daki (Bölüm 1) UNIQUE(CategoryId,LanguageId) kısıtı bu gruplamanın HER grupta EN FAZLA 2 eleman (de+tr) olacağını GARANTİLER.', olmasaydi: 'Gruplama OLMASAYDI, bir sonraki adımda "bu kategorinin çevirileri" sorusu YANITLANAMAZDI.' },
+          { satir: '.ToDictionary(g => g.Key, g => g.Select(t => new CategoryTranslationAggregate(t, languages[t.LanguageId])).ToList());', aciklama: 'Her grubu (kategori ID\'si → o kategorinin `CategoryTranslationAggregate` listesi) bir sözlüğe çevirir.', neden: '`languages[t.LanguageId]` — yukarıda hazırlanan dil sözlüğünden, bu çevirinin HANGİ dile ait olduğu (Code, NativeName) BULUNUR; `CategoryTranslationAggregate` (Bölüm 2) tam olarak "çeviri satırı + hangi dile ait olduğu" çiftini TAŞIYOR.', olmasaydi: 'Bu satır olmasaydı, çeviri satırları HAM (`CategoryTranslation` entity\'si, dil bilgisi olmadan) kalır, `WordCategoryTranslationResponse`\'un `languageCode` alanı DOLDURULAMAZDI.' },
+          { satir: 'return links', aciklama: 'Son adım — bağ satırlarını (WordConceptId → CategoryId eşlemesi) sonuca DÖNÜŞTÜRMENİN başlangıcı.', neden: 'Buraya kadar HAZIRLANAN `categories`/`translationsByCategory` sözlükleri, şimdi ASIL istenen çıktı şekline (`Dictionary<int, List<CategoryAggregate>>`, yani WordConceptId → CategoryAggregate listesi) DÖNÜŞTÜRÜLECEK.', olmasaydi: 'Bu son dönüşüm OLMASAYDI, metot yanlış şekilde bir veri döndürürdü (imza uyuşmazlığından DERLENMEZDİ).' },
+          { satir: '.GroupBy(l => l.WordConceptId)', aciklama: 'Bağ satırlarını bu kez `WordConceptId`\'ye göre gruplar — "bu kelimenin TÜM kategori bağları".', neden: 'Bir kelime BİRDEN FAZLA kategoriye ait olabilir (M:N) — çağıran taraf (`GetAggregateAsync`) "bu kelimenin kategorileri" sorusunu SORACAK, cevap bir LİSTE olmalı.', olmasaydi: 'Gruplama OLMASAYDI, HER bağ satırı için AYRI bir sözlük girdisi oluşurdu — bir kelimenin İKİNCİ kategorisi BİRİNCİSİNİN üzerine YAZARDI, veri KAYBOLURDU.' },
+          { satir: '.ToDictionary(', aciklama: 'Son `ToDictionary` çağrısının başlangıcı — iki satıra bölündü (anahtar ve değer seçici ayrı satırlarda).', neden: 'İki argümanlı bir `ToDictionary` (anahtar seçici + değer seçici) tek satırda ÇOK UZUN olurdu.', olmasaydi: 'Tek satırda yazılabilirdi ama okunabilirlik AZALIRDI.' },
+          { satir: 'g => g.Key,', aciklama: 'Sözlüğün anahtarı — grubun `WordConceptId`\'si.', neden: 'Çağıran tarafın (`GetAggregateAsync`/`GetPagedAsync`) `GetValueOrDefault(wordConceptId, [])` ile ARAYACAĞI anahtar TAM OLARAK bu.', olmasaydi: 'Yanlış bir anahtar seçilseydi (ör. `g.First().Id` gibi bağ satırının KENDİ ID\'si), çağıran taraf HİÇBİR ZAMAN doğru eşleşme BULAMAZDI.' },
+          { satir: 'g => g.Select(l => new CategoryAggregate(categories[l.CategoryId], translationsByCategory.GetValueOrDefault(l.CategoryId, [])))', aciklama: 'Sözlüğün değeri — o kelimenin HER kategori bağı için, o kategorinin KENDİSİNİ (`categories[...]`) ve çevirilerini (`translationsByCategory.GetValueOrDefault`) BİRLEŞTİREREK bir `CategoryAggregate` üretir.', neden: '`categories[l.CategoryId]` DOĞRUDAN indeksleyici (İSTİSNA fırlatabilir) KULLANILIYOR ÇÜNKÜ `categoryIds` ZATEN `links`\'ten türetildi (satır ~193) — yani `categories` sözlüğünde HER `l.CategoryId` GARANTİ olarak VAR, `GetValueOrDefault` gereksiz olurdu; `translationsByCategory` içinse `GetValueOrDefault` kullanılıyor ÇÜNKÜ bir kategorinin (teorik olarak) HİÇ çevirisi olmama ihtimali var (veri bütünlüğü sorunu, ama kod ÇÖKMEMELİ).', olmasaydi: '`categories[l.CategoryId]` yerine de `GetValueOrDefault` kullanılıp `null` dönebilseydi, `CategoryAggregate`\'in `Category` alanı (non-nullable) için AYRICA bir null kontrolü YAZILMASI gerekirdi — gereksiz bir savunma, çünkü bu senaryo VERİ BÜTÜNLÜĞÜ garantisiyle zaten İMKANSIZ.' },
+          { satir: '.ToList());', aciklama: 'Her kelimenin kategori listesini somutlaştırır.', neden: 'Çağıran taraf `List<CategoryAggregate>` bekliyor (aggregate\'in `Categories` alanının tipi) — `IEnumerable` DEĞİL.', olmasaydi: '`.ToList()` olmasaydı tip uyuşmazlığından DERLENMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'GetWordsQuery.cs — CategoryId Parametresi',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/GetWordsQuery.cs',
+        neden: 'A-05\'te bu dosyanın başında BİLİNÇLİ bir yorum vardı: "categoryId filtresi Category/WordCategory henüz yazılmadığı için YOK, A-06\'da eklenecek" — bu bölüm o notu yerine getirip yorumu KALDIRDI (artık doğru değil, gerçek bir alan VAR).',
+        diff: `-// categoryId filtresi BİLİNÇLİ olarak YOK — Category/WordCategory entity\'leri henüz yazılmadı (A-06),
+-// o task\'ta bu Query\'ye geriye dönük eklenecek (API_ENDPOINTS.md §6 notu).
+-public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int Page, int PageSize)
++public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int? CategoryId, int Page, int PageSize)
+     : IRequest<PagedResult<WordResponse>>;
+
+ public class GetWordsQueryHandler : IRequestHandler<GetWordsQuery, PagedResult<WordResponse>>
+ {
+     private readonly IWordConceptRepository _wordConceptRepository;
+
+     public GetWordsQueryHandler(IWordConceptRepository wordConceptRepository) => _wordConceptRepository = wordConceptRepository;
+
+     public async Task<PagedResult<WordResponse>> Handle(GetWordsQuery request, CancellationToken cancellationToken)
+     {
+         var partOfSpeech = request.PartOfSpeech is not null && Enum.TryParse<PartOfSpeech>(request.PartOfSpeech, out var parsed)
+             ? parsed
+             : (PartOfSpeech?)null;
+
+         var page = await _wordConceptRepository.GetPagedAsync(
+-            request.DifficultyLevel, partOfSpeech, request.Search, request.Page, request.PageSize, cancellationToken);
++            request.DifficultyLevel, partOfSpeech, request.Search, request.CategoryId, request.Page, request.PageSize, cancellationToken);
+
+         return new PagedResult<WordResponse>
+         {
+             Items = page.Items.Select(WordMapping.ToResponse).ToList(),
+             TotalCount = page.TotalCount,
+             Page = page.Page,
+             PageSize = page.PageSize
+         };
+     }
+ }`,
+        satirlar: [
+          { satir: 'public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int Page, int PageSize)', aciklama: 'A-05\'teki hâli — kategori filtresi YOK, "bilinçli olarak eklenmedi" yorumuyla açıklanmıştı.', neden: 'O zaman Category entity\'si henüz yazılmamıştı.', olmasaydi: 'Diff\'in ÖNCESİ hâli, artık geçerli değil.' },
+          { satir: 'public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int? CategoryId, int Page, int PageSize)', aciklama: 'Beşinci pozisyona (Page/PageSize\'dan ÖNCE) `int? CategoryId` eklendi.', neden: 'Diğer üç filtre (`DifficultyLevel`/`PartOfSpeech`/`Search`) ile AYNI grupta, sayfalama parametrelerinden (`Page`/`PageSize`) ÖNCE konumlandırıldı — "bunlar filtre, bunlar sayfalama" ayrımı parametre SIRASINDAN bile OKUNABİLİR.', olmasaydi: 'Bu alan eklenmeseydi, Controller\'ın aldığı `categoryId` query parametresi Query nesnesine hiç TAŞINAMAZDI — HTTP katmanında dursa bile Application katmanına hiç ULAŞMAZDI.' },
+          { satir: 'request.DifficultyLevel, partOfSpeech, request.Search, request.Page, request.PageSize, cancellationToken);', aciklama: 'A-05\'teki repository çağrısı — kategori filtresi YOK.', neden: 'Repository\'nin `GetPagedAsync` imzası o zaman `categoryId` almıyordu.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'request.DifficultyLevel, partOfSpeech, request.Search, request.CategoryId, request.Page, request.PageSize, cancellationToken);', aciklama: '`request.CategoryId` repository çağrısına eklendi — Query\'nin aldığı değer AYNEN repository\'ye AKTARILIYOR.', neden: 'Bu Handler\'ın TEK işi istekten repository\'ye köprü kurmak — kendi bir filtreleme MANTIĞI yok, tüm iş `WordConceptRepository.GetPagedAsync`\'e (bir önceki slayt) DEVREDİLİYOR.', olmasaydi: '`request.CategoryId` repository çağrısına eklenmeseydi, `GetWordsQuery`\'nin `CategoryId` alanı DOLU olsa bile hiçbir SQL sorgusuna YANSIMAZDI — "veri Query\'de var ama etkisiz" türünden sessiz bir hata.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordsController.cs — GetWords/Create/Update Üçü Birden',
+        dosyaYolu: 'backend/Zausel.API/Controllers/WordsController.cs',
+        neden: 'Bu dosyanın TEK bir diff\'i — `GetWords`e categoryId filtresi (bu bölümün konusu) İLE `Create`/`Update`e categoryIds yazma desteği (Bölüm 8\'in konusu) AYNI dosyada, AYNI oturumda değiştiği için TEK seferde, burada gösteriliyor. Bölüm 8 bu dosyaya AYRICA dokunmaz, yalnızca burada görülen `request.CategoryIds ?? []` satırına REFERANS verir.',
+        diff: `     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<WordResponse>>> GetWords(
+-        [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search,
++        [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search, [FromQuery] int? categoryId,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+-        var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, page, pageSize), cancellationToken);
++        var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, categoryId, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpGet("{id}")]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> GetById(int id, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GetWordByIdQuery(id), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Create(
+         WordCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+-            new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
++            new CreateWordCommand(
++                request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
++                request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPut("{id}")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Update(
+         int id, WordUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+-            new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),
++            new UpdateWordCommand(
++                id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
++                request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return Ok(result);
+     }`,
+        satirlar: [
+          { satir: '[FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search,', aciklama: 'A-05\'teki `GetWords` imzası — kategori filtresi YOK.', neden: 'O zaman `GetWordsQuery`nin de `CategoryId` alanı yoktu.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: '[FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search, [FromQuery] int? categoryId,', aciklama: 'HTTP query string\'inden `?categoryId=` okuyan yeni bir `[FromQuery]` parametresi.', neden: 'ASP.NET Core `[FromQuery]` ile HTTP query parametresini DOĞRUDAN metot parametresine BAĞLAR — Controller\'ın tek işi bu HAM değeri Query nesnesine TAŞIMAK, kendi bir doğrulama/dönüştürme YAPMIYOR.', olmasaydi: 'Bu parametre eklenmeseydi, `?categoryId=2` query string\'i ASP.NET Core tarafından YOKSAYILIRDI — istek 200 dönerdi ama filtre HİÇ uygulanmazdı.' },
+          { satir: 'var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, page, pageSize), cancellationToken);', aciklama: 'A-05\'teki Query oluşturma çağrısı — kategori parametresi YOK.', neden: 'O zaman `GetWordsQuery`nin constructor\'ı bu parametreyi ALMIYORDU.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, categoryId, page, pageSize), cancellationToken);', aciklama: 'HTTP katmanından gelen `categoryId`, `GetWordsQuery`nin (bir önceki slayt) yeni parametresine AYNEN aktarılır.', neden: 'Controller yalnızca bir "köprü" — HTTP\'den gelen ham değerleri MediatR\'ın Command/Query nesnesine PAKETLEYİP `_mediator.Send` ile Application katmanına DEVREDER, kendi bir iş mantığı YÜRÜTMEZ.', olmasaydi: 'Bu satır güncellenmeseydi (eski hâliyle kalsaydı), proje DERLENMEZDİ (constructor imza uyuşmazlığı) — kod HİÇ ÇALIŞMAZDI, sessiz bir hata bile OLMAZDI.' },
+          { satir: 'new CreateWordCommand(request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),', aciklama: 'A-05\'teki `Create` action\'ının Command oluşturma satırı — kategori YOK.', neden: 'O zaman `CreateWordCommand`nin `CategoryIds` alanı yoktu.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'new CreateWordCommand(', aciklama: 'Bölüm 8\'in konusu — `CreateWordCommand`nin artık 4 satıra bölünen, `CategoryIds` içeren çağrısının başlangıcı.', neden: 'Argüman sayısı arttıkça (8 parametre) tek satır OKUNAMAZ hale gelirdi — proje genelinde uzun constructor çağrıları BÖLÜNÜYOR.', olmasaydi: 'Tek satırda yazılabilirdi ama editörde yatay kaydırma GEREKTİRİRDİ.' },
+          { satir: 'request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,', aciklama: 'İlk dört argüman — A-05\'ten değişmeyen kısım, yalnızca satır BÖLÜNMESİ nedeniyle burada AYRI bir satırda.', neden: 'Okunabilirlik için gruplandı: "temel alanlar" bir satırda, "kategori+force+kimlik" bilgisi başka satırda.', olmasaydi: 'Tek satırda kalsaydı işlevsel bir fark OLMAZDI, yalnızca okunabilirlik ETKİLENİRDİ.' },
+          { satir: 'request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),', aciklama: '`request.CategoryIds` (Bölüm 8\'in DTO alanı, `List<int>?` — nullable) `?? []` ile "hiç gönderilmezse boş liste" varsayılanına DÜŞÜRÜLÜR, sonra `CreateWordCommand`nin non-nullable `List<int> CategoryIds` parametresine AKTARILIR.', neden: '`WordCreateRequest.CategoryIds` (Bölüm 8) `null` OLABİLİR (istemci hiç göndermeyebilir, "kategori atamıyorum" anlamına gelir) ama `CreateWordCommand.CategoryIds` `List<int>` (non-nullable) — Handler\'ın `request.CategoryIds.Count > 0` gibi kontrolleri HER ZAMAN güvenle YAZABİLMESİ için Controller sınırında bu null-to-empty dönüşümü YAPILIYOR.', olmasaydi: '`?? []` olmasaydı, `request.CategoryIds` `null` iken `CreateWordCommand`nin constructor\'ına `null` GEÇİLİRDİ — Handler\'daki `request.CategoryIds.Count` çağrısı bir `NullReferenceException` ile 500 DÖNERDİ.' },
+          { satir: 'new UpdateWordCommand(id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations, force, CurrentUserId, CurrentUserRole),', aciklama: 'A-05\'teki `Update` action\'ının Command oluşturma satırı — kategori YOK.', neden: 'O zaman `UpdateWordCommand`nin `CategoryIds` alanı yoktu.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'new UpdateWordCommand(', aciklama: '`Create` İLE AYNI bölünme/gerekçe — `Update` action\'ının Command çağrısı.', neden: 'Argüman sayısı arttı, tek satır okunmaz OLDU.', olmasaydi: 'Tek satırda yazılabilirdi ama yatay kaydırma GEREKİRDİ.' },
+          { satir: 'id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,', aciklama: 'İlk beş argüman (route\'tan gelen `id` dahil) — A-05\'ten değişmeyen kısım.', neden: '`Create`teki gruplamayla AYNI mantık, yalnızca `Update`e ÖZGÜ `id` parametresi başa eklendi (route\'tan `{id}` geliyor).', olmasaydi: 'Fonksiyonel bir fark OLMAZDI.' },
+          { satir: 'request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),', aciklama: '`Create`teki İLE BİREBİR AYNI `?? []` deseni — `Update`de de `WordUpdateRequest.CategoryIds` nullable, `UpdateWordCommand.CategoryIds` non-nullable.', neden: 'İki action AYNI DTO/Command tasarım kararını PAYLAŞIYOR — tutarlılık, bir sonraki geliştirici Create\'i anladıysa Update\'i de AYNI şekilde okuyabilir.', olmasaydi: 'Bu satır `?? []` OLMADAN yazılsaydı, `Update`de de AYNI `NullReferenceException` riski oluşurdu.' }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /words?categoryId= (Kategori Filtresi)',
+        yontem: 'GET',
+        url: 'http://localhost:5199/api/v1/words?categoryId=2',
+        aciklama: 'A-05\'teki `GET /words` postman örneğinin YANINA, bu bölümde eklenen `categoryId` filtresini gösteren YENİ bir örnek — eski örneğe DOKUNULMADI.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: 200,
+          govde: `{
+  "items": [
+    {
+      "wordConceptId": 7,
+      "partOfSpeech": "Noun",
+      "difficultyLevel": "A1",
+      "imageUrl": null,
+      "translations": [ /* ... */ ],
+      "categories": [
+        {
+          "categoryId": 2,
+          "translations": [
+            { "languageCode": "de", "name": "Familie" },
+            { "languageCode": "tr", "name": "Aile" }
+          ]
+        }
+      ]
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 20
+}`
+        },
+        notlar: [
+          'categoryId var olmayan bir kategoriye işaret ediyorsa (ör. ?categoryId=99) hata DÖNMEZ — 200 ile boş bir items[] ve totalCount:0 döner, çünkü filtre yalnızca "eşleşen bulunamadı" anlamına gelir, kategori kimliğinin geçerliliği KONTROL EDİLMEZ.',
+          'Yanıttaki her kelimenin categories[] alanı, o kelimenin AİT olduğu TÜM kategorileri gösterir — yalnızca filtrede kullanılanı DEĞİL (bir kelime birden fazla kategoriye ait olabilir).'
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordResponse.cs — Categories Alanı Eklendi',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/Words/WordResponse.cs',
+        neden: 'İstemciye giden JSON\'a `categories[]` alanının EKLENMESİ — WordConceptAggregate\'in (bu bölümün ilk slaydı) yeni `Categories` alanının DIŞARI açılan karşılığı.',
+        diff: `
+ public record WordResponse(
+     int WordConceptId,
+     string PartOfSpeech,
+     string DifficultyLevel,
+     string? ImageUrl,
+-    List<WordTranslationResponse> Translations);
++    List<WordTranslationResponse> Translations,
++    List<WordCategoryResponse> Categories);`,
+        satirlar: [
+          { satir: 'List<WordTranslationResponse> Translations);', aciklama: 'A-05\'teki hâli — son alan, kapanış parantezini TAŞIYOR.', neden: 'O zaman kategori alanı yoktu, `Translations` son parametreydi.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'List<WordTranslationResponse> Translations,', aciklama: '`Translations` artık SON parametre DEĞİL — sonuna virgül eklendi.', neden: 'Yeni bir alan EKLENDİĞİ için önceki son alan artık ARA bir alan oldu.', olmasaydi: 'Virgül eklenmeseydi ve doğrudan yeni satır yazılsaydı, C# sözdizimi HATASI (eksik ayraç) OLURDU.' },
+          { satir: 'List<WordCategoryResponse> Categories);', aciklama: 'Yeni, SON alan — `WordCategoryResponse` (bu bölümde AYRICA `kod` slaytıyla tanıtılacak YENİ bir DTO) listesi.', neden: 'İstemcinin (admin panel, mobil/web uygulama) bir kelimenin hangi kategorilere ait olduğunu GÖRMESİ için JSON yanıtına eklenen SON parça — WordMapping (birazdan) bu alanı DOLDURACAK.', olmasaydi: 'Bu alan eklenmeseydi, `WordConceptAggregate.Categories`\'teki veri (repository\'nin ÇEKTİĞİ) HİÇBİR ZAMAN JSON\'a SERİLEŞTİRİLMEZDİ — "veri var ama görünmüyor" sorunu.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'WordCategoryResponse.cs — Kelime Kartındaki Kategori Özeti',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/Words/WordCategoryResponse.cs',
+        nedenBuKlasor: 'DTOs/Words/ altında — bu tip yalnızca bir kelimenin YANITINDA gömülü olarak kullanılıyor, Category\'nin kendi CRUD\'undan (DTOs/Categories/) BAĞIMSIZ bir "görünüm" olduğu için Words klasöründe yaşıyor.',
+        kod: `namespace Zausel.Application.DTOs.Words;
+
+// CategoryResponse\'un (DTOs/Categories) HAFİF izdüşümü — kelime kartında hangi kategorilere ait
+// olduğunu göstermek için renk/ikon/hiyerarşi gerekmez, yalnızca kimlik + ad.
+public record WordCategoryResponse(int CategoryId, List<WordCategoryTranslationResponse> Translations);
+
+public record WordCategoryTranslationResponse(string LanguageCode, string Name);`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.DTOs.Words;', aciklama: 'Diğer TÜM Word DTO\'larıyla (WordResponse, WordTranslationResponse) AYNI klasör/namespace.', neden: 'Bir kelimenin yanıt şeklini oluşturan TÜM parçaların (translations, detail, examples, şimdi categories) TEK bir klasörde toplanması — "WordResponse\'un içindeki her alt-tip nerede" sorusu HER ZAMAN aynı klasöre bakılarak, başka hiçbir yer taranmadan yanıtlanabilsin diye BİLİNÇLİ bir tercih.', olmasaydi: 'Bu tip `DTOs/Categories/` altına konsaydı, "Word\'e ait DTO\'lar" arayan bir geliştirici Categories klasörünü de TARAMAK ZORUNDA kalırdı — bir kelimenin yanıt şeklini anlamak için İKİ klasöre bakmak gerekirdi.' },
+          { satir: 'public record WordCategoryResponse(int CategoryId, List<WordCategoryTranslationResponse> Translations);', aciklama: 'Kelime yanıtındaki HER kategori girdisi — yalnızca kimlik (`CategoryId`) ve isimler (`Translations`).', neden: 'Kelime kartında bir kategori "etiketi" olarak GÖSTERİLİR (ör. "Aile" rozet) — bunun için renk/ikon/MinLevel/hiyerarşi gibi `CategoryResponse`nin (Bölüm 3) TAŞIDIĞI ekstra bilgiye ihtiyaç YOK, tam `CategoryResponse` kullanılsaydı gereksiz alanlar TAŞINIRDI.', olmasaydi: '`CategoryResponse`nin KENDİSİ bu alanda kullanılsaydı, HER kelime yanıtı gereksiz yere `parentCategoryId`/`icon`/`color`/`children[]` gibi alanları da TAŞIRDI — kelime listesi endpoint\'inin yanıt boyutu GEREKSİZ yere BÜYÜRDÜ, özellikle `children[]` (rekürsif) potansiyel olarak ÇOK büyük bir yapı.' },
+          { satir: 'public record WordCategoryTranslationResponse(string LanguageCode, string Name);', aciklama: 'Kategori adının TEK bir dildeki karşılığı — `WordTranslationResponse`nin (Bölüm 4, A-05) minyatür bir eşi.', neden: 'Yalnızca `languageCode`+`name` — `CategoryTranslationResponse`nin (Bölüm 3) taşıdığı `description` alanına burada ihtiyaç YOK, kelime kartında bir kategori rozetinin AÇIKLAMASI GÖSTERİLMİYOR, yalnızca adı.', olmasaydi: '`CategoryTranslationResponse`nin KENDİSİ kullanılsaydı, `description` alanı HER ZAMAN `null` ya da GEREKSİZ olarak TAŞINIRDI.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordMapping.cs — ToResponse Artık Categories\'i de Eşliyor',
+        dosyaYolu: 'backend/Zausel.Application/Features/Words/WordMapping.cs',
+        neden: 'A-05\'te `ToResponse` yalnızca `Translations`i eşliyordu — `WordConceptAggregate.Categories` (bu bölümün ilk slaydı) ve `WordResponse.Categories` (birkaç slayt önce) ARASINDAKİ köprüyü BU metot kuruyor.',
+        diff: `
+ // AutoMapper Profile YAZILMADI — WordConceptAggregate dört farklı entity türünü (Concept/Word/
+ // Language/WordDetail/WordExample) TEK bir iç içe DTO\'ya birleştiriyor, AutoMapper\'ın düz
+ // property-property eşlemesi bu iç içe/çoklu-kaynaklı dönüşümü elle yazılmış koddan daha
+ // OKUNAKLI hale getirmez; dört Handler (Create/Update/GetById/GetWords) bu TEK metodu paylaşır.
+ public static class WordMapping
+ {
+     public static WordResponse ToResponse(WordConceptAggregate aggregate)
+     {
+         var concept = aggregate.Concept;
+         return new WordResponse(
+             concept.Id,
+             concept.PartOfSpeech.ToString(),
+             concept.DifficultyLevel,
+             concept.ImageUrl,
+-            aggregate.Translations.Select(ToTranslationResponse).ToList());
++            aggregate.Translations.Select(ToTranslationResponse).ToList(),
++            aggregate.Categories.Select(ToCategoryResponse).ToList());
+     }
+
++    private static WordCategoryResponse ToCategoryResponse(CategoryAggregate category) =>
++        new(category.Category.Id, category.Translations.Select(
++            t => new WordCategoryTranslationResponse(t.Language.Code, t.Translation.Name)).ToList());
++
+     private static WordTranslationResponse ToTranslationResponse(WordTranslationAggregate translation) =>
+         new(
+             translation.Language.Code,
+             translation.Word.Text,
+             translation.Word.Definition,
+             translation.Detail is null ? null : ToDetailResponse(translation.Detail),
+             translation.Examples.Select(ToExampleResponse).ToList());
+
+     private static WordDetailResponse ToDetailResponse(WordDetail detail) =>
+         new(detail.Pronunciation, detail.Notes, detail.CommonMistakes, ParseGrammarData(detail.GrammarData));
+
+     private static WordExampleResponse ToExampleResponse(WordExample example) =>
+         new(example.Id, example.SentenceText, example.Level, example.ExampleType.ToString(), example.PairedExampleId, example.DisplayOrder);`,
+        satirlar: [
+          { satir: 'aggregate.Translations.Select(ToTranslationResponse).ToList());', aciklama: 'A-05\'teki hâli — `WordResponse`nin SON argümanı, kapanış parantezini TAŞIYOR.', neden: 'O zaman `WordResponse`nin yalnızca 5 alanı vardı.', olmasaydi: 'Diff\'in ÖNCESİ hâli.' },
+          { satir: 'aggregate.Translations.Select(ToTranslationResponse).ToList(),', aciklama: 'Artık SON argüman DEĞİL — virgül eklendi.', neden: '`WordResponse`nin (bir önceki slayt) yeni `Categories` alanı YÜZÜNDEN bu artık ARA bir argüman.', olmasaydi: 'Virgül eklenmeseydi C# sözdizimi HATASI olurdu.' },
+          { satir: 'aggregate.Categories.Select(ToCategoryResponse).ToList());', aciklama: 'Yeni, SON argüman — aggregate\'in `Categories` listesindeki HER `CategoryAggregate`, aşağıdaki `ToCategoryResponse` yardımcı metoduyla `WordCategoryResponse`e ÇEVRİLİR.', neden: '`ToTranslationResponse` İLE AYNI desen — bir koleksiyonu `Select` ile eleman eleman DÖNÜŞTÜRMEK, sonra `ToList` ile somutlaştırmak; bu dosyadaki her DÖNÜŞÜM AYNI kalıbı izliyor.', olmasaydi: 'Bu satır eklenmeseydi, `WordResponse`nin (bir önceki slayt) `Categories` parametresi için değer VERİLMEZDİ — kod DERLENMEZDİ (eksik argüman).' },
+          { satir: 'private static WordCategoryResponse ToCategoryResponse(CategoryAggregate category) =>', aciklama: 'YENİ private yardımcı metot — `ToTranslationResponse`/`ToDetailResponse`/`ToExampleResponse` İLE AYNI seviyede, TEK bir kategori dönüşümünden SORUMLU.', neden: 'Her alt-tip dönüşümü KENDİ küçük metoduna AYRILMIŞ — `ToResponse` ana metodu OKUNABİLİR kalıyor, "bir kategori NASIL dönüştürülür" detayı kendi metoduna GİZLENİYOR.', olmasaydi: 'Bu dönüşüm `ToResponse`nin İÇİNE (satır içi bir lambda olarak) YAZILSAYDI, ana metot GİDEREK büyür, dört farklı alt-tipin dönüşüm mantığı TEK bir metotta KARIŞIRDI.' },
+          { satir: 'new(category.Category.Id, category.Translations.Select(', aciklama: '`WordCategoryResponse`nin İLK argümanı (`CategoryId`) — `category.Category.Id` (aggregate\'in İÇİNDEKİ gerçek Category entity\'sinin ID\'si).', neden: '`CategoryAggregate` (Bölüm 2) `Category` (entity) + `Translations` (çeviri listesi) ÇİFTİNİ taşıyor — `category.Category.Id` görünüşte tekrarlı GÖRÜNSE de, birincisi aggregate\'in kendisi, ikincisi İÇİNDEKİ entity, İSİM ÇAKIŞMASI DEĞİL bir İÇ İÇE erişim.', olmasaydi: 'Bu argüman YANLIŞ yazılsaydı (ör. `category.Id` gibi — `CategoryAggregate`nin KENDİSİNDE `Id` alanı YOK), kod DERLENMEZDİ.' },
+          { satir: 't => new WordCategoryTranslationResponse(t.Language.Code, t.Translation.Name)).ToList());', aciklama: 'İkinci argüman (`Translations`) — her `CategoryTranslationAggregate`i (Bölüm 2) `WordCategoryTranslationResponse`e ÇEVİREN lambda.', neden: '`t.Language.Code` (ör. "de") ve `t.Translation.Name` (ör. "Familie") — `CategoryTranslationAggregate`nin İKİ alanından (Translation entity\'si + Language entity\'si) yalnızca İSTENEN İKİ değer SEÇİLİYOR, `description` gibi diğer alanlar BİLEREK DIŞARIDA BIRAKILIYOR (bir önceki slaytta gerekçesi anlatıldı).', olmasaydi: 'Bu satır olmasaydı, `ToCategoryResponse`nin ikinci argümanı EKSİK kalır, kod DERLENMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'N+1 sorgu problemi', tanim: 'Bir liste için TEK bir sorgu yerine, listedeki HER eleman için AYRI bir sorgu atmak — 20 kelimelik bir sayfa için 20 AYRI "bu kelimenin kategorileri" sorgusu yerine TEK bir toplu sorgu (`BuildCategoriesAsync`) atmak bu problemi ÖNLER.' },
+          { terim: 'GetValueOrDefault', tanim: '.NET sözlüklerinin bir anahtarın YOK OLMA ihtimaline karşı GÜVENLİ erişim metodu — `[]` indeksleyicisinin AKSİNE, anahtar bulunamazsa istisna FIRLATMAK yerine belirtilen varsayılan değeri (burada boş liste `[]`) döner.' },
+          { terim: 'Hard delete / soft delete', tanim: 'Hard delete: satır veritabanından KALICI olarak silinir, geri getirilemez. Soft delete: satır `IsDeleted=true` işaretlenir, fiziksel olarak kalır ama sorgularda GİZLENİR (`BaseEntity`nin standart deseni). `WordCategory` BaseEntity olmadığı için hard delete kullanır.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          'A-05\'te TAM öğretilmiş 7 dosya (WordConceptAggregate, IWordConceptRepository, WordConceptRepository, GetWordsQuery, WordsController, WordResponse, WordMapping) `kod-degisiklik` slaytlarıyla GÜNCELLENDİ — hiçbiri sıfırdan yazılmadı, hepsi A-05\'in üzerine EKLEME yaptı.',
+          '`WordsController.cs`nin diff\'i TEK seferde, TÜM değişikliği (GetWords\'ün categoryId\'si VE Create/Update\'in categoryIds\'i) birlikte gösterdi — Bölüm 8 bu dosyaya AYRICA dokunmayacak.',
+          '`BuildCategoriesAsync` — `BuildTranslationsAsync`nin (A-05) AYNI "toplu veri hazırlama" deseniyle, N+1 sorgu problemi olmadan bir sayfa kelimenin TÜM kategori verisini TEK sorguda getiriyor.',
+          '`WordCategoryResponse` — `CategoryResponse`nin (Bölüm 3) HAFİF bir izdüşümü olarak YENİ eklendi, kelime yanıtına gereksiz alan (hiyerarşi/renk) TAŞITILMADI.',
+          'Canlı doğrulandı: `GET /words?categoryId=2` yalnızca o kategoriye bağlı kelimeleri (totalCount:1) döndü, `?categoryId=99` (var olmayan) hata VERMEDEN boş sonuç döndü.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

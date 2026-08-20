@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
         services.AddScoped<ILanguageRepository, LanguageRepository>();
         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
 
         return services;
     }

@@ -6,9 +6,7 @@ using Zausel.Domain.Enums.Content;
 
 namespace Zausel.Application.Features.Words;
 
-// categoryId filtresi BİLİNÇLİ olarak YOK — Category/WordCategory entity'leri henüz yazılmadı (A-06),
-// o task'ta bu Query'ye geriye dönük eklenecek (API_ENDPOINTS.md §6 notu).
-public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int Page, int PageSize)
+public record GetWordsQuery(string? DifficultyLevel, string? PartOfSpeech, string? Search, int? CategoryId, int Page, int PageSize)
     : IRequest<PagedResult<WordResponse>>;
 
 public class GetWordsQueryHandler : IRequestHandler<GetWordsQuery, PagedResult<WordResponse>>
@@ -24,7 +22,7 @@ public class GetWordsQueryHandler : IRequestHandler<GetWordsQuery, PagedResult<W
             : (PartOfSpeech?)null;
 
         var page = await _wordConceptRepository.GetPagedAsync(
-            request.DifficultyLevel, partOfSpeech, request.Search, request.Page, request.PageSize, cancellationToken);
+            request.DifficultyLevel, partOfSpeech, request.Search, request.CategoryId, request.Page, request.PageSize, cancellationToken);
 
         return new PagedResult<WordResponse>
         {

@@ -21,7 +21,7 @@ public class GetWordByIdQueryHandlerTests
         var concept = new WordConcept { Id = 1, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };
         var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
         var word = new Word { Id = 1, WordConceptId = 1, LanguageId = 1, Text = "Baum", Definition = "ağaç" };
-        var aggregate = new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);
+        var aggregate = new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])], []);
         _wordConceptRepository.Setup(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(aggregate);
         var handler = CreateHandler();
 

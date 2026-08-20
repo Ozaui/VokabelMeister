@@ -15,17 +15,18 @@ public class CreateWordCommandHandlerTests
 {
     private readonly Mock<IWordConceptRepository> _wordConceptRepository = new();
     private readonly Mock<ILanguageRepository> _languageRepository = new();
+    private readonly Mock<ICategoryRepository> _categoryRepository = new();
     private readonly Mock<IActivityLogger> _activityLogger = new();
 
     private CreateWordCommandHandler CreateHandler() =>
-        new(_wordConceptRepository.Object, _languageRepository.Object, _activityLogger.Object);
+        new(_wordConceptRepository.Object, _languageRepository.Object, _categoryRepository.Object, _activityLogger.Object);
 
     private static WordConceptAggregate BuildAggregate(int conceptId, string languageCode, string text)
     {
         var concept = new WordConcept { Id = conceptId, PartOfSpeech = PartOfSpeech.Noun, DifficultyLevel = "A1" };
         var language = new Language { Id = 1, Code = languageCode, Name = "German", NativeName = "Deutsch" };
         var word = new Word { Id = 1, WordConceptId = conceptId, LanguageId = 1, Text = text, Definition = "ağaç" };
-        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])]);
+        return new WordConceptAggregate(concept, [new WordTranslationAggregate(word, language, null, [])], []);
     }
 
     private void SetupGermanLanguage() =>
@@ -42,7 +43,7 @@ public class CreateWordCommandHandlerTests
         _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
         var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
-        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [], Force: false, UserId: 1, ActorRole: "Admin");
         var handler = CreateHandler();
 
         // ACT
@@ -62,7 +63,7 @@ public class CreateWordCommandHandlerTests
         _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Word { Id = 5, Text = "Baum" });
         var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
-        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [], Force: false, UserId: 1, ActorRole: "Admin");
         var handler = CreateHandler();
 
         // ACT
@@ -82,7 +83,7 @@ public class CreateWordCommandHandlerTests
         _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
         var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
-        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: true, UserId: 1, ActorRole: "Admin");
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [], Force: true, UserId: 1, ActorRole: "Admin");
         var handler = CreateHandler();
 
         // ACT
@@ -99,7 +100,45 @@ public class CreateWordCommandHandlerTests
         // ARRANGE
         _languageRepository.Setup(r => r.GetByCodeAsync("xx", It.IsAny<CancellationToken>())).ReturnsAsync((Language?)null);
         var translations = new List<WordTranslationRequest> { new("xx", "test", "anlam", null, null) };
-        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 1, ActorRole: "Admin");
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [], Force: false, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Handle_WithCategoryIds_ReplacesWordCategories()
+    {
+        // ARRANGE — A-06: categoryIds[] geçerliyse WordCategories yazılır
+        SetupGermanLanguage();
+        _categoryRepository.Setup(r => r.AllExistAsync(new List<int> { 1, 2 }, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _wordConceptRepository.Setup(r => r.FindWordByLanguageAndTextAsync(1, "Baum", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Word?)null);
+        _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [1, 2], Force: false, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(command, default);
+
+        // ASSERT
+        _wordConceptRepository.Verify(r => r.ReplaceWordCategoriesAsync(It.IsAny<int>(), new List<int> { 1, 2 }, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_UnknownCategoryId_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        SetupGermanLanguage();
+        _categoryRepository.Setup(r => r.AllExistAsync(new List<int> { 99 }, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [99], Force: false, UserId: 1, ActorRole: "Admin");
         var handler = CreateHandler();
 
         // ACT
@@ -119,7 +158,7 @@ public class CreateWordCommandHandlerTests
         _wordConceptRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(BuildAggregate(1, "de", "Baum"));
         var translations = new List<WordTranslationRequest> { new("de", "Baum", "ağaç", null, null) };
-        var command = new CreateWordCommand("Noun", "A1", null, translations, Force: false, UserId: 7, ActorRole: "Admin");
+        var command = new CreateWordCommand("Noun", "A1", null, translations, CategoryIds: [], Force: false, UserId: 7, ActorRole: "Admin");
         var handler = CreateHandler();
 
         // ACT

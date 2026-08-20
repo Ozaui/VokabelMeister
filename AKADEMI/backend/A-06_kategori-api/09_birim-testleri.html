@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'birim-testleri',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '08_categoryids-yazma-destegi.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 9',
+        baslik: '22 Yeni Test — A-06 Tamamlandı',
+        altBaslik: '4 Category Handler testi + 5 Word Handler\'ına eklenen categoryIds/categoryId testleri, temsili öğretimle.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Her Test Ayrı Bir Slaytta Değil?',
+        aciklama: '22 yeni test, 7 dosyaya (4\'ü tamamen yeni Category test sınıfı, 3\'ü A-05\'te var olan Word test sınıflarına eklenen yeni metotlar) yayılıyor. Bu bölüm HER testi TEK TEK göstermek yerine, her sınıftan en ÖZGÜN 1-2 senaryoyu (ör. "kategori taşıma", "döngü koruması") `kod` slaytıyla derinlemesine anlatıyor, geri kalanları kapanıştaki `sozluk` slaytında "aynı deseni izler" notuyla listeler.',
+        neden: 'Bu 22 testin BÜYÜK kısmı (happy path, EntityNotFoundException, ActivityLogger doğrulaması) A-05\'in 89 testinde ZATEN öğretilen Moq+FluentAssertions kalıbını TEKRARLIYOR — yalnızca mock edilen tip ve beklenen davranış değişiyor. Aynı kalıbı 22 kez TEKRAR ETMEK, okuyucuya yeni bir bilgi VERMEZ, yalnızca sayfa sayısını ARTIRIR.',
+        olmasaydi: 'Her test AYRI bir slaytta gösterilseydi, bu bölüm 22 neredeyse-özdeş `kod` slaytından oluşurdu — okuyucu 5. testten SONRA kalıbı zaten ÖĞRENMİŞ olur, kalan 17 slayt yalnızca "kaydırma" yapılan, bilgi TAŞIMAYAN bir yük olurdu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateCategoryCommandHandlerTests.cs — Temsili Senaryo',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Categories/CreateCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Categories/ — CODING_STANDARDS\'ın "Tests/{Services|Features|Helpers|Repositories}/" konum kuralına uyan, `Features/Categories/`deki üretim koduyla BİREBİR eşleşen bir test klasörü.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.DTOs.Categories;
+using Zausel.Application.Features.Categories;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Tests.Features.Categories;
+
+public class CreateCategoryCommandHandlerTests
+{
+    private readonly Mock<ICategoryRepository> _categoryRepository = new();
+    private readonly Mock<ILanguageRepository> _languageRepository = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    private CreateCategoryCommandHandler CreateHandler() =>
+        new(_categoryRepository.Object, _languageRepository.Object, _activityLogger.Object);
+
+    private static CategoryAggregate BuildAggregate(int categoryId, string name)
+    {
+        var category = new Category { Id = categoryId, DisplayOrder = 1, MinLevel = "A1" };
+        var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
+        var translation = new CategoryTranslation { Id = 1, CategoryId = categoryId, LanguageId = 1, Name = name };
+        return new CategoryAggregate(category, [new CategoryTranslationAggregate(translation, language)]);
+    }
+
+    private void SetupGermanLanguage() =>
+        _languageRepository.Setup(r => r.GetByCodeAsync("de", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" });
+
+    [Fact]
+    public async Task Handle_ValidRequest_CreatesCategoryAndReturnsResponse()
+    {
+        // ARRANGE
+        SetupGermanLanguage();
+        _categoryRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(BuildAggregate(1, "Tiere"));
+        var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };
+        var command = new CreateCategoryCommand(null, 1, "animal", "#FFFFFF", "A1", null, translations, UserId: 1, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.Translations.Should().ContainSingle(t => t.Name == "Tiere");
+        _categoryRepository.Verify(r => r.AddCategoryAsync(It.IsAny<Category>(), 1, It.IsAny<CancellationToken>()), Times.Once);
+        _categoryRepository.Verify(r => r.AddTranslationAsync(It.Is<CategoryTranslation>(t => t.Name == "Tiere"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimini sağlar.', neden: 'A-05\'in TÜM Handler testlerinde kullanılan STANDART assertion kütüphanesi — `Assert.Equal` gibi klasik xUnit assertion\'ları YERİNE, okunması daha kolay bir cümle yapısı (`result.Should().Be(...)`).', olmasaydi: 'Klasik xUnit assertion\'ları kullanılsaydı, kod tabanında İKİ FARKLI assertion stili KARIŞIRDI.' },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`Verify` — sahte (mock) bağımlılıklar kurmak için.', neden: 'Handler\'ı GERÇEK bir veritabanı OLMADAN test edebilmek için `ICategoryRepository`/`ILanguageRepository`/`IActivityLogger`nin SAHTE implementasyonları gerekiyor.', olmasaydi: 'Moq olmadan HER arayüz için elle YAZILMIŞ sahte sınıflar (`FakeCategoryRepository` gibi) gerekirdi — HER metot için manuel bir "çağrıldı mı" izleme mekanizması YAZILMASI gerekirdi.' },
+          { satir: 'using Zausel.Application.DTOs.Categories;', aciklama: '`CategoryTranslationRequest` bu namespace\'te.', neden: 'Test, gerçek Command\'ın (production kodun) kullandığı AYNI DTO tiplerini KULLANIR — sahte/basitleştirilmiş bir test-özel tip DEĞİL.', olmasaydi: 'Testin kendi DTO\'su OLSAYDI, production DTO\'sunda bir alan değiştiğinde test SESSİZCE senkron DIŞI kalabilirdi.' },
+          { satir: 'using Zausel.Application.Features.Categories;', aciklama: '`CreateCategoryCommand`/`CreateCategoryCommandHandler` bu namespace\'te.', neden: 'Test edilen SINIFIN kendisi.', olmasaydi: 'Bu import olmadan test dosyası DERLENMEZDİ.' },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Content;', aciklama: '`ICategoryRepository`/`ILanguageRepository`/`CategoryAggregate` bu namespace\'te.', neden: 'Mock\'lanacak arayüzler VE test verisi kurarken kullanılan aggregate tipleri.', olmasaydi: 'Mock\'lar KURULAMAZDI.' },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger` bu namespace\'te.', neden: 'Handler\'ın üçüncü bağımlılığı — audit log çağrısının GERÇEKLEŞTİĞİNİ doğrulamak için mock\'lanıyor.', olmasaydi: '`IActivityLogger` mock\'lanamazdı.' },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Category`/`Language`/`CategoryTranslation` entity\'leri bu namespace\'te.', neden: 'Test verisi (`BuildAggregate` yardımcı metodu) GERÇEK entity sınıflarını KULLANARAK kuruluyor — sahte/basitleştirilmiş bir test entity\'si DEĞİL.', olmasaydi: 'Entity\'ler import edilmeseydi test verisi HİÇ KURULAMAZDI.' },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException` bu namespace\'te (diğer testlerde kullanılıyor, bu dosyada da referans olarak gerekiyor).', neden: 'A-06\'nın TÜM "bulunamadı" senaryoları (parent/dil) bu STANDART istisnayı fırlatıyor.', olmasaydi: 'Diğer testler (`Handle_ParentCategoryNotFound_...`) bu tipi REFERANS ALAMAZDI.' },
+          { satir: 'namespace Zausel.Tests.Features.Categories;', aciklama: 'Üretim kodundaki `Zausel.Application.Features.Categories` İLE PARALEL bir test namespace\'i.', neden: 'Test projesinin klasör/namespace yapısı üretim kodunun YAPISINI BİREBİR YANSITIYOR — bir Handler\'ın testini bulmak için "aynı yol, Tests kökünden" kuralı YETERLİ.', olmasaydi: 'Test namespace\'leri üretim koduyla PARALEL olmasaydı, "bu Handler\'ın testi nerede" sorusu HER SEFERİNDE arama YAPMAYI gerektirirdi.' },
+          { satir: 'public class CreateCategoryCommandHandlerTests', aciklama: 'Test sınıfının adı — `{TestEdilenSınıf}Tests` deseni.', neden: 'Bu isimlendirme, hangi sınıfın test edildiğini dosya adından/sınıf adından ANINDA belli eder.', olmasaydi: 'Farklı bir adlandırma (ör. `CreateCategoryTests`) kullanılsaydı, "hangi sınıfın testi bu" sorusu dosya İÇERİĞİNE bakmadan YANITLANAMAZDI.' },
+          { satir: 'private readonly Mock<ICategoryRepository> _categoryRepository = new();', aciklama: 'Sınıf alanı olarak tanımlanan mock — HER test metodu KENDİ TEMİZ kopyasını (xUnit her `[Fact]` için sınıfı YENİDEN oluşturur) kullanır.', neden: 'xUnit\'in "her test kendi sınıf ÖRNEĞİNDE çalışır" davranışı sayesinde, bir testteki mock kurulumu BAŞKA bir testi ETKİLEMEZ — testler birbirinden İZOLE.', olmasaydi: 'Mock\'lar `static` ya da paylaşımlı olsaydı, bir testin `Setup`\'ı bir SONRAKİ testin sonucunu YANLIŞLIKLA ETKİLEYEBİLİRDİ.' },
+          { satir: 'private readonly Mock<ILanguageRepository> _languageRepository = new();', aciklama: 'İkinci bağımlılığın mock\'u.', neden: 'Handler dil kodunun (`de`/`tr`) geçerliliğini bu arayüz üzerinden kontrol ediyor.', olmasaydi: 'Handler dil çözümlemesi YAPAMAZDI, test derlenemezdi.' },
+          { satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();', aciklama: 'Üçüncü bağımlılığın mock\'u — audit log çağrısının doğrulanması İÇİN.', neden: '`Handle_Success_LogsCreateCategoryActivity` (bu sınıftaki DİĞER bir test, sözlükte listelenecek) bu mock\'un `Verify` edilmesiyle "CREATE_CATEGORY doğru loglandı mı" sorusunu YANITLIYOR.', olmasaydi: 'Audit log davranışı HİÇ test edilemezdi.' },
+          { satir: 'private CreateCategoryCommandHandler CreateHandler() =>', aciklama: 'Test edilen Handler\'ı üç mock ile KURAN yardımcı metot.', neden: 'HER test metodunda `new CreateCategoryCommandHandler(...)` TEKRAR YAZILMASINDANSA, kurulum TEK bir yerde toplanıyor — bir bağımlılık eklenirse/çıkarılırsa TEK satır değişir.', olmasaydi: '13 farklı test metodunda AYNI constructor çağrısı TEKRAR EDİLİRDİ — bir bağımlılık değişikliği 13 yerde GÜNCELLENMESİ gerekirdi.' },
+          { satir: 'new(_categoryRepository.Object, _languageRepository.Object, _activityLogger.Object);', aciklama: 'Mock nesnelerinin `.Object` özelliği — Moq\'un ÜRETTİĞİ sahte implementasyona erişim.', neden: '`Mock<T>` sınıfı KENDİSİ `T` DEĞİL, `.Object` özelliği GERÇEK `T` arayüzünü implemente eden sahte nesneyi verir — Handler constructor\'ı bu sahte nesneyi ALIR.', olmasaydi: '`.Object` unutulup doğrudan `_categoryRepository` geçilseydi, tip uyuşmazlığından DERLENMEZDİ (`Mock<ICategoryRepository>` ≠ `ICategoryRepository`).' },
+          { satir: 'private static CategoryAggregate BuildAggregate(int categoryId, string name)', aciklama: 'Test verisi kurma yardımcı metodu — parametre olarak yalnızca test için ÖNEMLİ olan iki alanı (ID, ad) alır, geri kalanı SABİT değerlerle DOLDURUR.', neden: '`static` — bu metot `_categoryRepository` gibi instance alanlarına ERİŞMİYOR, saf bir "veri üret" fonksiyonu.', olmasaydi: 'HER testte `CategoryAggregate` elle, TÜM alanlarıyla KURULSAYDI, test kodu ÇOK UZAR, hangi alanın bu TEST için ÖNEMLİ olduğu KAYBOLURDU.' },
+          { satir: 'var category = new Category { Id = categoryId, DisplayOrder = 1, MinLevel = "A1" };', aciklama: 'Sabit `DisplayOrder`/`MinLevel` değerleriyle basit bir Category nesnesi.', neden: 'Bu testlerde `DisplayOrder`/`MinLevel`in GERÇEK değeri ÖNEMLİ DEĞİL (yalnızca `Translations`/`AddCategoryAsync` çağrısı doğrulanıyor) — sabit, "makul" bir değer YETERLİ.', olmasaydi: 'Bu alanlar rastgele/boş bırakılsaydı da testler YİNE geçerdi — ama gerçekçi bir kategori GÖRÜNTÜSÜ vermek okunabilirlik açısından tercih edildi.' },
+          { satir: 'var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };', aciklama: 'Almanca dilini temsil eden sabit bir Language nesnesi.', neden: 'A-05\'in TÜM testlerinde AYNI sabit Almanca `Language` nesnesi kullanılıyor — proje genelinde test verisi TUTARLI.', olmasaydi: 'Her test dosyası kendi rastgele dil verisini ÜRETSEYDİ, testler arasında GEREKSİZ bir çeşitlilik olurdu.' },
+          { satir: 'var translation = new CategoryTranslation { Id = 1, CategoryId = categoryId, LanguageId = 1, Name = name };', aciklama: 'Verilen `name` ile TEK bir çeviri satırı.', neden: 'Test yalnızca TEK dilde bir çeviri gerektiriyor — çok dilli senaryo bu testin KONUSU DEĞİL.', olmasaydi: 'Çeviri hiç kurulmasaydı, `result.Translations.Should().ContainSingle(...)` assertion\'ı HER ZAMAN BAŞARISIZ olurdu.' },
+          { satir: 'return new CategoryAggregate(category, [new CategoryTranslationAggregate(translation, language)]);', aciklama: 'İki parçayı (Category + çeviri listesi) `CategoryAggregate`e SARAR.', neden: '`ICategoryRepository.GetAggregateAsync`in GERÇEKTE döndüreceği ŞEKİL — mock, GERÇEK repository\'nin sözleşmesine SADIK kalıyor.', olmasaydi: 'Farklı bir şekil dönseydi, mock GERÇEK davranışı YANLIŞ TEMSİL ederdi — test "yanlış bir varsayımla" GEÇERDİ.' },
+          { satir: 'private void SetupGermanLanguage() =>', aciklama: '"Almanca dili bulunabilir" mock kurulumunu TEK bir yardımcı metoda ÇIKARAN kısayol.', neden: 'BİRDEN FAZLA testte (happy path + activity log testi) AYNI kurulum TEKRARLANIYOR — tekrar eden 2 satırlık bir Setup\'ı isimli bir metoda ÇIKARMAK niyeti (intent) NET kılıyor.', olmasaydi: 'Bu kısayol olmasaydı, HER testte AYNI iki satır KOPYALA-YAPIŞTIR edilirdi.' },
+          { satir: '_languageRepository.Setup(r => r.GetByCodeAsync("de", It.IsAny<CancellationToken>()))', aciklama: 'Mock\'a "de" kodu SORULDUĞUNDA ne YAPACAĞINI ÖĞRETEN Setup çağrısının başlangıcı.', neden: '`It.IsAny<CancellationToken>()` — Handler\'ın GERÇEKTE hangi `CancellationToken` DEĞERİYLE çağıracağı ÖNEMLİ DEĞİL, testin bu parametreye KAYITSIZ kalması gerekiyor.', olmasaydi: 'Belirli bir `CancellationToken` değeri BEKLENSEYDİ (`default` gibi), Handler FARKLI bir token GEÇİRDİĞİNDE (ör. gerçek bir HTTP isteğinden gelen) mock EŞLEŞMEZ, test YANLIŞLIKLA BAŞARISIZ OLURDU.' },
+          { satir: '.ReturnsAsync(new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" });', aciklama: 'Mock\'un DÖNECEĞİ değer — sabit bir Almanca Language nesnesi.', neden: 'Handler\'ın `ResolveLanguagesAsync`e benzer bir dil çözümleme adımı VAR (CreateCategoryCommand da translations[] içindeki languageCode\'u çözer) — bu Setup o adımın BAŞARILI geçmesini sağlıyor.', olmasaydi: 'Bu Setup olmasaydı, Moq varsayılan olarak `null` DÖNERDİ, Handler `EntityNotFoundException` fırlatır, happy-path test BAŞARISIZ OLURDU.' },
+          { satir: '[Fact]', aciklama: 'xUnit\'in "bu bir test metodu" işaretleyicisi (attribute).', neden: 'xUnit test çalıştırıcısı yalnızca `[Fact]`/`[Theory]` işaretli metotları test olarak ÇALIŞTIRIR — sıradan bir `public` metot OTOMATİK test SAYILMAZ.', olmasaydi: 'Bu işaretleyici olmasaydı, `dotnet test` bu metodu HİÇ ÇALIŞTIRMAZDI — test SESSİZCE atlanırdı.' },
+          { satir: 'public async Task Handle_ValidRequest_CreatesCategoryAndReturnsResponse()', aciklama: 'Test adı — `{Metot}_{Senaryo}_{BeklenenSonuç}` deseni.', neden: 'Test adının KENDİSİ bir dokümantasyon: "Handle metodu, geçerli bir istekte kategoriyi oluşturur ve yanıt döner" — ayrı bir açıklama YAZMADAN test raporu okunabilir.', olmasaydi: 'Genel bir isim (`Test1`) kullanılsaydı, `dotnet test` çıktısında HANGİ senaryonun BAŞARISIZ olduğu ANLAŞILMAZDI.' },
+          { satir: 'SetupGermanLanguage();', aciklama: 'Dil çözümlemesinin BAŞARILI olacağı kurulumu ÇAĞIRIR.', neden: 'ARRANGE aşamasının İLK adımı — Handler\'ın çağıracağı İLK bağımlılık HAZIRLANIYOR.', olmasaydi: 'Bu çağrı ATLANSAYDI, dil çözümlemesi BAŞARISIZ olur, test happy-path\'i test ETMEK YERİNE bir istisna testine DÖNÜŞÜRDÜ.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAggregateAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))', aciklama: '"Hangi ID sorulursa sorulsun" (`It.IsAny<int>()`) bir aggregate DÖNDÜREN Setup.', neden: 'Gerçek Handler\'da `category.Id` yeni oluşturulan kategorinin ID\'sidir ve TEST ORTAMINDA bu ID\'nin GERÇEK değeri (Moq gerçek bir DB olmadığı için `AddCategoryAsync` sonrası `category.Id` HİÇ değişmez, `0` kalır) ÖNEMLİ DEĞİL — `It.IsAny<int>()` bu belirsizliği GÖRMEZDEN GELİR.', olmasaydi: 'Belirli bir ID (`GetAggregateAsync(1, ...)`) BEKLENSEYDİ, mock kurulan koşulla GERÇEK çağrı (ID=0, çünkü Moq gerçek bir Identity üretmiyor) EŞLEŞMEZ, `GetAggregateAsync` `null` DÖNER, Handler bir `EntityNotFoundException` fırlatırdı.' },
+          { satir: '.ReturnsAsync(BuildAggregate(1, "Tiere"));', aciklama: '"Tiere" adlı bir kategori aggregate\'i DÖNER.', neden: 'Handler `GetAggregateAsync`i (oluşturma SONRASI) çağırıp yanıtı KURUYOR — bu Setup o son adımın BAŞARILI olmasını sağlıyor.', olmasaydi: 'Bu Setup olmasaydı `null` dönerdi, Handler\'ın SON adımındaki `?? throw new EntityNotFoundException(...)` TETİKLENİRDİ.' },
+          { satir: 'var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };', aciklama: 'Tek dilli bir çeviri isteği listesi kurar.', neden: 'Command\'ın `Translations` parametresi İÇİN GEÇERLİ, minimal bir GİRDİ.', olmasaydi: 'Boş bir liste geçilseydi, Handler `foreach` döngüsünü HİÇ ÇALIŞTIRMAZ, `AddTranslationAsync` HİÇ ÇAĞRILMAZ, `Verify(..., Times.Once)` assertion\'ı BAŞARISIZ OLURDU.' },
+          { satir: 'var command = new CreateCategoryCommand(null, 1, "animal", "#FFFFFF", "A1", null, translations, UserId: 1, ActorRole: "Admin");', aciklama: 'Test edilen Command — `null` ParentCategoryId (kök kategori), diğer alanlar SABİT/gerçekçi.', neden: 'Bu test bir KÖK kategori oluşturmayı hedefliyor (`ParentCategoryId=null`) — parent kontrolü ile İLGİLİ DEĞİL, "başarılı oluşturma" senaryosu SADE tutulur.', olmasaydi: 'Bir `ParentCategoryId` DEĞERİ verilseydi, test AYRICA `GetAggregateAsync(parentId, ...)` mock\'u KURMAK ZORUNDA kalırdı — bu testin ODAĞINI dağıtırdı.' },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Yukarıda tanımlanan yardımcı metotla Handler\'ı KURAR.', neden: 'ARRANGE aşamasının SON adımı — mock\'lar HAZIR, şimdi test edilecek NESNE oluşturuluyor.', olmasaydi: 'Handler kurulmasaydı ACT aşaması ÇAĞRILAMAZDI.' },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'ACT — asıl test edilen ÇAĞRI.', neden: '`default` — `CancellationToken` için varsayılan (iptal EDİLMEMİŞ) değer; testte GERÇEK bir HTTP isteği/iptal senaryosu YOK.', olmasaydi: 'Bu satır olmasaydı, test hiçbir şeyi ÇALIŞTIRMAZ, `result` HİÇ TANIMLANMAZDI.' },
+          { satir: 'result.Translations.Should().ContainSingle(t => t.Name == "Tiere");', aciklama: 'ASSERT — dönen yanıtın çeviri listesinde TAM OLARAK "Tiere" adlı BİR girdi VAR.', neden: 'Bu, Handler\'ın `BuildAggregate`teki test verisini DOĞRU şekilde `CategoryResponse`e ÇEVİRDİĞİNİ (CategoryMapping\'in ÇALIŞTIĞINI) doğruluyor.', olmasaydi: 'Bu assertion olmasaydı, `CategoryMapping.ToResponse`in YANLIŞ çalışması (ör. çeviriyi HİÇ eşlememesi) test tarafından FARK EDİLMEZDİ.' },
+          { satir: '_categoryRepository.Verify(r => r.AddCategoryAsync(It.IsAny<Category>(), 1, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Kategorinin GERÇEKTEN eklenmeye ÇALIŞILDIĞINI (mock\'a `AddCategoryAsync` çağrısı YAPILDIĞINI), `UserId=1` ile, TEK seferde doğrular.', neden: '`Verify` — Moq\'un "bu metot beklenen argümanlarla ÇAĞRILDI MI" kontrolü; bir mock nesnesinin ÇAĞRILIP ÇAĞRILMADIĞINI GÖZLEMLEMENİN tek yolu bu (mock\'ların gerçek bir yan etkisi/DB durumu YOK).', olmasaydi: 'Bu `Verify` olmasaydı, Handler `AddCategoryAsync`i HİÇ ÇAĞIRMASA BİLE (bir kod hatasıyla atlanmış olsa bile) test YİNE DE geçerdi — `result`ın doğru gelmesi tek başına "kayıt gerçekten eklendi" ANLAMINA gelmez.' },
+          { satir: '_categoryRepository.Verify(r => r.AddTranslationAsync(It.Is<CategoryTranslation>(t => t.Name == "Tiere"), It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Çevirinin de "Tiere" adıyla TEK seferde EKLENMEYE ÇALIŞILDIĞINI doğrular.', neden: '`It.Is<CategoryTranslation>(t => t.Name == "Tiere")` — yalnızca "çağrıldı mı" DEĞİL, "DOĞRU değerle çağrıldı mı" kontrolü; Handler yanlışlıkla BOŞ bir isimle çeviri EKLESEYDİ bile `Times.Once` geçerdi ama BU daha SIKI kontrol yakalardı.', olmasaydi: '`It.IsAny<CategoryTranslation>()` kullanılsaydı, Handler YANLIŞ bir isimle (ör. boş string) çeviri eklese BİLE test farkETMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommandHandlerTests.cs — Kategori Taşıma',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Categories/UpdateCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Aynı Tests/Features/Categories/ klasörü.',
+        kod: `[Fact]
+public async Task Handle_ParentChangeWithoutCycle_MovesCategoryToNewParent()
+{
+    // ARRANGE — kategori 1 eskiden kök (ParentCategoryId=null), yeni istek 2\'ye taşıyor
+    var before = BuildAggregate(1, "Tiere");
+    var after = BuildAggregate(1, "Tiere", parentCategoryId: 2);
+    _categoryRepository.SetupSequence(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(before)
+        .ReturnsAsync(after);
+    _categoryRepository.Setup(r => r.GetAggregateAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(2, "Doğa"));
+    _categoryRepository.Setup(r => r.WouldCreateCycleAsync(1, 2, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+    SetupGermanTranslationRoundtrip(1, "Tiere");
+    var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };
+    var command = new UpdateCategoryCommand(1, 2, 1, null, null, "A1", null, translations, UserId: 1, ActorRole: "Admin");
+    var handler = CreateHandler();
+
+    // ACT
+    var result = await handler.Handle(command, default);
+
+    // ASSERT
+    result.ParentCategoryId.Should().Be(2);
+    _categoryRepository.Verify(r => r.UpdateCategoryAsync(It.Is<Category>(c => c.ParentCategoryId == 2), 1, It.IsAny<CancellationToken>()), Times.Once);
+}`,
+        satirlar: [
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: 'Önceki slaytla AYNI gerekçe.', olmasaydi: 'Test hiç ÇALIŞTIRILMAZDI.' },
+          { satir: 'public async Task Handle_ParentChangeWithoutCycle_MovesCategoryToNewParent()', aciklama: 'Test adı — "döngü OLMADAN ebeveyn değişimi, kategoriyi yeni ebeveyne TAŞIR" senaryosunu anlatıyor.', neden: 'A-06\'nın EN ÖZGÜN iş mantığını (kategori taşıma) doğrudan İSMİNDEN belli eden bir test.', olmasaydi: 'Genel bir isim bu testin NEYİ doğruladığını GİZLERDİ.' },
+          { satir: 'var before = BuildAggregate(1, "Tiere");', aciklama: 'Kategori 1\'in TAŞIMADAN ÖNCEKİ hâli — `parentCategoryId` parametresi VERİLMEDİĞİ için varsayılan `null` (kök).', neden: 'Handler\'ın "ParentCategoryId GERÇEKTEN DEĞİŞİYOR mu" kontrolü (`request.ParentCategoryId != category.ParentCategoryId`) için ÖNCEKİ durumun BİLİNMESİ gerekiyor.', olmasaydi: '`before` tanımlanmasaydı, `SetupSequence`in İLK dönüş değeri OLAMAZDI.' },
+          { satir: 'var after = BuildAggregate(1, "Tiere", parentCategoryId: 2);', aciklama: 'AYNI kategorinin TAŞINDIKTAN SONRAKİ (varsayımsal) hâli — `parentCategoryId: 2`.', neden: 'Handler, güncelleme SONRASI yanıtı OLUŞTURMAK için `GetAggregateAsync`i TEKRAR çağırıyor ("önce oku sonra değiştir" deseni) — bu SetupSequence\'in İKİNCİ dönüş değeri.', olmasaydi: '`after` olmasaydı, Handler\'ın İKİNCİ `GetAggregateAsync` çağrısı YİNE `before`ü DÖNERDİ (Moq\'un varsayılan davranışı: son Setup KALICI olur, ama SetupSequence AÇIKÇA sıralı dönüş SAĞLIYOR) — test yanlışlıkla `ParentCategoryId`nin DEĞİŞMEDİĞİNİ GÖRÜRDÜ.' },
+          { satir: '_categoryRepository.SetupSequence(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>()))', aciklama: 'AYNI çağrının (kategori 1 için `GetAggregateAsync`) FARKLI ZAMANLARDA FARKLI değer dönmesini kuran Moq özelliği.', neden: 'Handler bu metodu İKİ KEZ çağırıyor (başta ve sonda) — normal bir `Setup` HER ZAMAN AYNI değeri dönerdi, `SetupSequence` İLK ve İKİNCİ çağrının FARKLI olmasını SAĞLIYOR.', olmasaydi: 'Normal `Setup` kullanılsaydı, HER İKİ çağrı da AYNI (ya `before` ya `after`) değeri dönerdi — "önce oku sonra değiştir" desenini test EDEMEZDİK.' },
+          { satir: '.ReturnsAsync(before)', aciklama: 'Sıralı dönüşün İLK elemanı.', neden: 'Handler\'ın İLK `GetAggregateAsync` çağrısı (Bölüm 4\'teki `beforeAggregate`) bu değeri ALACAK.', olmasaydi: 'Sıra YANLIŞ olsaydı, Handler DEĞİŞMEMİŞ bir ParentCategoryId\'yle BAŞLARDI.' },
+          { satir: '.ReturnsAsync(after);', aciklama: 'Sıralı dönüşün İKİNCİ (ve son) elemanı.', neden: 'Handler\'ın SON `GetAggregateAsync` çağrısı (güncelleme SONRASI yanıt kurmak için) bu değeri ALACAK.', olmasaydi: 'İkinci değer OLMASAYDI, Moq üçüncü/sonraki çağrılarda İSTİSNA fırlatırdı (SetupSequence\'in tükenmesi) — ama burada zaten İKİ çağrı YETERLİ.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAggregateAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(2, "Doğa"));', aciklama: 'YENİ ebeveynin (kategori 2) var OLDUĞUNU doğrulayan mock.', neden: 'Handler, `ParentCategoryId` değişince YENİ ebeveynin GERÇEKTEN var olup olmadığını `GetAggregateAsync(2, ...)` ile KONTROL EDİYOR — bu Setup o kontrolün BAŞARILI geçmesini sağlıyor.', olmasaydi: 'Bu mock olmasaydı, `GetAggregateAsync(2, ...)` `null` dönerdi, Handler bir `EntityNotFoundException` fırlatırdı — taşıma BAŞARISIZ olurdu.' },
+          { satir: '_categoryRepository.Setup(r => r.WouldCreateCycleAsync(1, 2, It.IsAny<CancellationToken>())).ReturnsAsync(false);', aciklama: 'Bu taşımanın DÖNGÜ YARATMAYACAĞINI bildiren mock — `false`.', neden: 'Handler, yeni ebeveyn var OLDUKTAN SONRA döngü kontrolü YAPIYOR — bu Setup o kontrolün de BAŞARILI (döngü YOK) geçmesini sağlıyor.', olmasaydi: 'Bu mock olmasaydı, Moq varsayılan olarak `false` DÖNERDİ (bool için varsayılan) — YİNE ÇALIŞIRDI ama AÇIKÇA yazmak niyeti (intent) NET kılıyor ve testi kırılgan olmaktan ÇIKARIYOR (Moq\'un varsayılan davranışına GÜVENMEK yerine).' },
+          { satir: 'SetupGermanTranslationRoundtrip(1, "Tiere");', aciklama: 'Bu test sınıfına ÖZGÜ bir yardımcı metot — dil çözümlemesi + var olan çevirinin BULUNMASI kurulumunu TEK çağrıda YAPAR.', neden: 'Update akışı çeviriyi GÜNCELLEMEK için ÖNCE mevcut çeviriyi (`FindTranslationAsync`) ARIYOR — Create\'ten FARKLI olarak burada "var olan mı, yeni mi" ayrımı GEREKİYOR.', olmasaydi: 'Bu kurulum olmasaydı, `FindTranslationAsync` `null` dönerdi, Handler "yeni çeviri" DALINA girip `AddTranslationAsync` çağırırdı — GÜNCELLEME senaryosu YANLIŞ test EDİLİRDİ.' },
+          { satir: 'var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };', aciklama: 'Bu testte çeviri İÇERİĞİ DEĞİŞMİYOR (hâlâ "Tiere") — testin ODAĞI yalnızca ParentCategoryId.', neden: 'Bir testin TEK bir şeyi doğrulaması İYİ pratik — çeviri DEĞİŞİMİ AYRI bir testte (`Handle_Success_LogsUpdateCategoryActivityWithOldAndNewValue`, sözlükte listelenecek) ele ALINIYOR.', olmasaydi: 'Çeviri de DEĞİŞSEYDİ, test BAŞARISIZ olduğunda "hata ParentCategoryId\'de mi, çeviri mantığında mı" AYRIMI ZORLAŞIRDI.' },
+          { satir: 'var command = new UpdateCategoryCommand(1, 2, 1, null, null, "A1", null, translations, UserId: 1, ActorRole: "Admin");', aciklama: 'Test edilen Command — `CategoryId=1`, `ParentCategoryId=2` (YENİ ebeveyn).', neden: 'İkinci pozisyonel argüman (`2`) TAM OLARAK bu testin senaryosu: mevcut kök kategoriyi 2 numaralı kategorinin ALTINA taşımak.', olmasaydi: '`ParentCategoryId` DEĞİŞMESEYDİ (ör. `null` kalsaydı), Handler\'ın "taşıma" DALI hiç ÇALIŞMAZDI, test YANLIŞ senaryoyu doğrulardı.' },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ı kurar.', neden: 'Önceki test sınıfındaki İLE AYNI gerekçe.', olmasaydi: 'ACT aşaması ÇALIŞAMAZDI.' },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'ACT.', neden: 'Asıl test edilen çağrı.', olmasaydi: 'Test hiçbir şey doğrulayamazdı.' },
+          { satir: 'result.ParentCategoryId.Should().Be(2);', aciklama: 'ASSERT — dönen yanıtın `ParentCategoryId`si GERÇEKTEN 2 OLDU MU.', neden: 'Bu, taşımanın YANITTA doğru YANSIDIĞINI (yalnızca DB\'ye YAZILDIĞINI değil, İSTEMCİYE dönen JSON\'da da GÖRÜNDÜĞÜNÜ) doğruluyor.', olmasaydi: 'Bu assertion olmasaydı, `ParentCategoryId`nin YANITTA YANLIŞ (eski) kalması FARK EDİLMEZDİ.' },
+          { satir: '_categoryRepository.Verify(r => r.UpdateCategoryAsync(It.Is<Category>(c => c.ParentCategoryId == 2), 1, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'ASSERT — `UpdateCategoryAsync`in GERÇEKTEN `ParentCategoryId=2` OLAN bir Category nesnesiyle ÇAĞRILDIĞI.', neden: 'Bu, DEĞİŞİKLİĞİN veritabanına YAZILMAK ÜZERE GÖNDERİLDİĞİNİ doğruluyor — `result.ParentCategoryId`nin doğru olması TEK BAŞINA "DB\'ye de doğru yazıldı" ANLAMINA GELMEZ (mapping ayrı, persist ayrı bir adım).', olmasaydi: 'Yalnızca `result` doğrulansaydı, Handler DB\'ye YANLIŞ bir değer YAZSA BİLE (ör. bir kod hatasıyla ESKİ ParentCategoryId ile) test FARK ETMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateCategoryCommandHandlerTests.cs — Döngü Koruması',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Categories/UpdateCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Aynı test dosyası — bir üstteki "taşıma BAŞARILI" senaryosunun TAM ZITTI, AYNI dosyada.',
+        kod: `[Fact]
+public async Task Handle_ParentChangeWouldCreateCycle_ThrowsCategoryParentCycleException()
+{
+    // ARRANGE — WouldCreateCycleAsync true dönerse (ör. 3 kategori 1\'in altında) taşıma REDDEDİLİR
+    var before = BuildAggregate(1, "Tiere");
+    _categoryRepository.Setup(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(before);
+    _categoryRepository.Setup(r => r.GetAggregateAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(3, "AltKategori"));
+    _categoryRepository.Setup(r => r.WouldCreateCycleAsync(1, 3, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+    var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };
+    var command = new UpdateCategoryCommand(1, 3, 1, null, null, "A1", null, translations, UserId: 1, ActorRole: "Admin");
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(command, default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<CategoryParentCycleException>();
+}`,
+        satirlar: [
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: 'Bütün testlerle AYNI gerekçe.', olmasaydi: 'Test çalıştırılmazdı.' },
+          { satir: 'public async Task Handle_ParentChangeWouldCreateCycle_ThrowsCategoryParentCycleException()', aciklama: 'Test adı — "ebeveyn değişimi döngü YARATIRSA, CategoryParentCycleException FIRLAR" senaryosu.', neden: 'Bir ÖNCEKİ testin (taşıma başarılı) TAM ZITTI — AYNI iş mantığının İKİ farklı dalını (başarı/red) göstermek İÇİN bilinçli olarak yan yana seçildi.', olmasaydi: 'Yalnızca başarı senaryosu test edilseydi, `WouldCreateCycleAsync=true` dalının GERÇEKTEN istisna FIRLATTIĞI hiç DOĞRULANMAZDI — döngü koruması "yazılmış ama test EDİLMEMİŞ" kalırdı.' },
+          { satir: 'var before = BuildAggregate(1, "Tiere");', aciklama: 'Kategori 1\'in mevcut (taşımadan ÖNCEKİ) hâli.', neden: 'Handler\'ın `beforeAggregate` okuması İÇİN gerekli — istisna bu okumadan SONRA, döngü kontrolü SIRASINDA fırlıyor.', olmasaydi: 'Bu mock olmadan Handler EN BAŞTA bir `EntityNotFoundException` fırlatırdı (kategori 1 bulunamadı) — YANLIŞ istisna türü test EDİLİRDİ.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(before);', aciklama: 'Kategori 1 için TEK bir Setup — bu testte İKİNCİ bir `GetAggregateAsync(1,...)` çağrısı YOK (Handler istisna fırlatıp ERKEN çıkıyor).', neden: 'Bir ÖNCEKİ testin AKSİNE `SetupSequence` GEREKMİYOR — istisna, Handler "sonraki hâli" OKUMADAN ÖNCE fırlıyor.', olmasaydi: '`SetupSequence` kullanılsaydı da test YİNE geçerdi (İLK eleman kullanılırdı) ama gereksiz bir KARMAŞIKLIK EKLERDİ — kod NİYETİ (bu testte tek okuma YETERLİ) BULANIKLAŞIRDI.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAggregateAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(3, "AltKategori"));', aciklama: 'Yeni (denenen) ebeveynin (kategori 3) var OLDUĞUNU bildiren mock.', neden: 'Handler döngü kontrolünden ÖNCE "yeni ebeveyn var mı" kontrolünü YAPIYOR — bu adımın GEÇMESİ gerekiyor ki döngü kontrolüne ULAŞILSIN.', olmasaydi: 'Bu mock olmasaydı, Handler `EntityNotFoundException` fırlatırdı — DÖNGÜ istisnası hiç TEST EDİLEMEZDİ.' },
+          { satir: '_categoryRepository.Setup(r => r.WouldCreateCycleAsync(1, 3, It.IsAny<CancellationToken>())).ReturnsAsync(true);', aciklama: 'BU testin ASIL kurulumu — döngü kontrolü `true` (döngü VAR) döner.', neden: 'Gerçek senaryo: kategori 3, kategori 1\'in bir ALT kategorisiyse, 1\'i 3\'ün altına taşımak bir DÖNGÜ yaratır — bu mock bu durumu SİMÜLE EDİYOR (gerçek ağaç yürüme mantığı `CategoryRepository.WouldCreateCycleAsync`in KENDİSİNDE, bu SEVİYEDE test EDİLMİYOR, Handler\'ın bu SONUCA nasıl TEPKİ verdiği test EDİLİYOR).', olmasaydi: '`false` dönseydi (ya da hiç mock\'lanmasaydı, varsayılan `false`), Handler taşımaya İZİN VERİRDİ — `CategoryParentCycleException` HİÇ fırlamazdı, test BAŞARISIZ OLURDU.' },
+          { satir: 'var translations = new List<CategoryTranslationRequest> { new("de", "Tiere", null) };', aciklama: 'Zorunlu (validator tarafından istenen) çeviri listesi — bu testin ODAĞI DEĞİL.', neden: 'Command\'ın constructor\'ı bu parametreyi İSTİYOR, geçerli bir değer VERİLMESİ gerekiyor.', olmasaydi: 'Boş bir liste de GEÇERDİ (Handler çeviri döngüsüne hiç GİRMİYOR, istisna DAHA ÖNCE fırlıyor) — ama gerçekçi bir GİRDİ tercih EDİLDİ.' },
+          { satir: 'var command = new UpdateCategoryCommand(1, 3, 1, null, null, "A1", null, translations, UserId: 1, ActorRole: "Admin");', aciklama: 'Test edilen Command — `ParentCategoryId=3`, döngü YARATACAK taşıma isteği.', neden: 'İkinci argüman (`3`) bu testin SENARYOSU — kategori 1\'i kategori 3\'ün ALTINA taşıma DENEMESİ.', olmasaydi: 'Farklı bir `ParentCategoryId` verilseydi, `WouldCreateCycleAsync`in mock\'lanan argümanlarıyla (1, 3) EŞLEŞMEZDİ, Moq varsayılan `false` DÖNERDİ, test YANLIŞ sonuç ÜRETİRDİ.' },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ı kurar.', neden: 'Standart ARRANGE adımı.', olmasaydi: 'ACT çalışamazdı.' },
+          { satir: 'var act = () => handler.Handle(command, default);', aciklama: 'ACT — bu kez SONUCU DOĞRUDAN `await` ETMİYOR, bir LAMBDA\'ya SARIYOR.', neden: 'FluentAssertions\'ın `ThrowAsync` metodu bir `Func<Task>` BEKLİYOR — bir istisnanın FIRLADIĞINI test etmek için ÇAĞRIYI HEMEN ÇALIŞTIRMAK YERİNE, assertion\'ın KENDİSİNİN çalıştırıp YAKALAMASI GEREKİYOR.', olmasaydi: '`handler.Handle(...)` DOĞRUDAN `await` edilseydi, istisna TEST METODUNUN kendisinden FIRLARDI (xUnit bunu "test BAŞARISIZ" olarak İŞARETLERDİ, "beklenen bir istisna" olarak DEĞİL) — istisnanın TÜRÜNÜ doğrulamanın bir yolu OLMAZDI.' },
+          { satir: 'await act.Should().ThrowAsync<CategoryParentCycleException>();', aciklama: 'ASSERT — lambda ÇALIŞTIRILDIĞINDA, TAM OLARAK `CategoryParentCycleException` türünde bir istisna FIRLAMASI BEKLENİYOR.', neden: 'Yalnızca "BİR istisna fırladı" DEĞİL, "DOĞRU istisna türü fırladı" doğrulanıyor — Handler yanlışlıkla FARKLI bir istisna (ör. `EntityNotFoundException`) fırlatsaydı bu assertion YİNE BAŞARISIZ OLURDU.', olmasaydi: 'Genel bir `Exception` türü BEKLENSEYDİ, Handler\'daki bir KOD HATASI (yanlış istisna türü fırlatmak) bu test tarafından YAKALANAMAZDI.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'DeleteCategoryCommandHandlerTests.cs — Silme Koruması',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Categories/DeleteCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Categories/ — DeleteCategoryCommand\'ın karşılığı.',
+        kod: `[Fact]
+public async Task Handle_HasChildren_ThrowsCategoryHasChildrenException()
+{
+    // ARRANGE — "orphan terfi" YOK — çocuğu olan kategori silinemez
+    _categoryRepository.Setup(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(1, "Tiere"));
+    _categoryRepository.Setup(r => r.HasChildrenAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+    var command = new DeleteCategoryCommand(1, UserId: 1, ActorRole: "Admin");
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(command, default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<CategoryHasChildrenException>();
+    _categoryRepository.Verify(r => r.SoftDeleteCategoryAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+}`,
+        satirlar: [
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: 'Standart gerekçe.', olmasaydi: 'Çalıştırılmazdı.' },
+          { satir: 'public async Task Handle_HasChildren_ThrowsCategoryHasChildrenException()', aciklama: 'Test adı — çocuğu olan bir kategorinin SİLİNEMEDİĞİNİ doğrular.', neden: 'A-06\'nın "orphan terfi YOK" tasarım kararının (çocuğu olan kategori HİÇ silinemez, çocuk BAŞKA bir yere taşınmaz) doğrudan TESTİ.', olmasaydi: 'Bu koruma yazılmış OLSA bile TEST EDİLMESEYDİ, ileride bir kod değişikliği (ör. bir refactor) YANLIŞLIKLA bu kontrolü KALDIRABİLİRDİ, fark edilmezdi.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAggregateAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(BuildAggregate(1, "Tiere"));', aciklama: 'Silinmek İSTENEN kategorinin var OLDUĞUNU bildiren mock.', neden: 'Handler ÖNCE "kategori var mı" (audit log\'un `OldValue`si İÇİN de gerekli) kontrolünü YAPIYOR — bu adımın BAŞARILI geçmesi GEREKİYOR ki silme koruması KONTROLLERİNE ULAŞILSIN.', olmasaydi: 'Bu mock olmasaydı `EntityNotFoundException` fırlardı — çocuk koruması hiç TEST EDİLEMEZDİ.' },
+          { satir: '_categoryRepository.Setup(r => r.HasChildrenAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(true);', aciklama: 'BU testin ASIL kurulumu — kategorinin ÇOCUĞU OLDUĞUNU bildirir (`true`).', neden: 'Gerçek `CategoryRepository.HasChildrenAsync` bir SQL sorgusuyla (ParentCategoryId eşleşmesi) bu değeri HESAPLAR — burada Handler\'ın bu SONUCA nasıl TEPKİ verdiği test EDİLİYOR, sorgunun kendisi DEĞİL.', olmasaydi: '`false` dönseydi, Handler silme koruması UYGULAMADAN devam eder, `HasActiveWordsAsync`e GEÇERDİ — bu testin senaryosu (çocuk koruması) hiç TETİKLENMEZDİ.' },
+          { satir: 'var command = new DeleteCategoryCommand(1, UserId: 1, ActorRole: "Admin");', aciklama: 'Test edilen Command.', neden: 'Sade bir Command — Delete\'in yalnızca `CategoryId`/`UserId`/`ActorRole` alması, Create/Update\'in AKSİNE çeviri/kategori bilgisi TAŞIMAMASI.', olmasaydi: 'Fazladan alan gerektirseydi, testin GİRDİSİ gereksiz yere KARMAŞIKLAŞIRDI.' },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ı kurar.', neden: 'Standart ARRANGE adımı.', olmasaydi: 'ACT çalışamazdı.' },
+          { satir: 'var act = () => handler.Handle(command, default);', aciklama: 'ACT — istisna beklendiği için lambda\'ya SARILIYOR.', neden: '`ThrowAsync`in gerektirdiği desen — bir önceki kod slaydındaki İLE AYNI gerekçe.', olmasaydi: 'İstisnanın türü doğrulanamazdı.' },
+          { satir: 'await act.Should().ThrowAsync<CategoryHasChildrenException>();', aciklama: 'ASSERT — TAM OLARAK `CategoryHasChildrenException` türü BEKLENİYOR.', neden: 'Silme korumasının İKİ farklı istisnası (`CategoryHasChildrenException`/`CategoryHasActiveWordsException`) var — bu testin HANGİSİNİ test ETTİĞİ tür KONTROLÜYLE KESİNLEŞTİRİLİYOR.', olmasaydi: 'Genel bir istisna türü beklenseydi, Handler YANLIŞLIKLA `CategoryHasActiveWordsException` fırlatsa BİLE (kontrol SIRASI bir hatayla TERSİNE ÇEVRİLSE) bu test YİNE BAŞARILI GÖRÜNÜRDÜ.' },
+          { satir: '_categoryRepository.Verify(r => r.SoftDeleteCategoryAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'ASSERT — `SoftDeleteCategoryAsync`in HİÇ ÇAĞRILMADIĞI doğrulanıyor (`Times.Never`).', neden: 'Bu, silme korumasının GERÇEKTEN "hiçbir şey silinmeden" durduğunu KANITLIYOR — yalnızca bir istisna FIRLAMASI YETERLİ DEĞİL, istisna fırlamadan ÖNCE bir SİLME işlemi BAŞLAMIŞ da olabilirdi (yarım kalmış bir mutasyon).', olmasaydi: 'Bu `Verify` olmasaydı, Handler istisna fırlatmadan ÖNCE `SoftDeleteCategoryAsync`i ÇAĞIRSA BİLE (bir kod hatasıyla, sıralama YANLIŞ yazılsa) test bunu FARK ETMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetCategoriesQueryHandlerTests.cs — Hiyerarşi Kurma',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Categories/GetCategoriesQueryHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Categories/ — GetCategoriesQuery\'in karşılığı.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Features.Categories;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Tests.Features.Categories;
+
+public class GetCategoriesQueryHandlerTests
+{
+    private readonly Mock<ICategoryRepository> _categoryRepository = new();
+
+    private GetCategoriesQueryHandler CreateHandler() => new(_categoryRepository.Object);
+
+    private static CategoryAggregate BuildAggregate(int categoryId, string name, int? parentCategoryId = null, string? minLevel = "A1")
+    {
+        var category = new Category { Id = categoryId, ParentCategoryId = parentCategoryId, DisplayOrder = categoryId, MinLevel = minLevel };
+        var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };
+        var translation = new CategoryTranslation { Id = categoryId, CategoryId = categoryId, LanguageId = 1, Name = name };
+        return new CategoryAggregate(category, [new CategoryTranslationAggregate(translation, language)]);
+    }
+
+    [Fact]
+    public async Task Handle_FlatCategoriesWithParentChild_BuildsHierarchicalTree()
+    {
+        // ARRANGE — kategori 2, kategori 1\'in çocuğu
+        var root = BuildAggregate(1, "Menschen");
+        var child = BuildAggregate(2, "Familie", parentCategoryId: 1);
+        _categoryRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([root, child]);
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(new GetCategoriesQuery(null, false), default);
+
+        // ASSERT — düz liste yerine iç içe ağaç: yalnızca 1 kök, 2 onun children[]\'ında
+        result.Should().ContainSingle(c => c.Id == 1);
+        result[0].Children.Should().ContainSingle(c => c.Id == 2);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: 'Assertion sözdizimi.', neden: 'Diğer tüm test dosyalarıyla TUTARLI.', olmasaydi: '`Should()` çağrıları DERLENMEZDİ.' },
+          { satir: 'using Moq;', aciklama: 'Mock kurulumu.', neden: '`ICategoryRepository` GERÇEK bir DB olmadan test edilecek.', olmasaydi: 'Mock kurulamazdı.' },
+          { satir: 'using Zausel.Application.Features.Categories;', aciklama: '`GetCategoriesQuery`/`Handler` bu namespace\'te.', neden: 'Test edilen sınıfın kendisi.', olmasaydi: 'Derlenmezdi.' },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Content;', aciklama: '`ICategoryRepository`/`CategoryAggregate`.', neden: 'Mock ve test verisi tipleri.', olmasaydi: 'Mock kurulamazdı.' },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Category`/`Language`/`CategoryTranslation`.', neden: 'Test verisi bu entity\'lerle KURULUYOR.', olmasaydi: 'Test verisi kurulamazdı.' },
+          { satir: 'namespace Zausel.Tests.Features.Categories;', aciklama: 'Üretim koduyla PARALEL namespace.', neden: 'Diğer test dosyalarıyla TUTARLI konumlandırma.', olmasaydi: 'Bulunması ZORLAŞIRDI.' },
+          { satir: 'public class GetCategoriesQueryHandlerTests', aciklama: 'Test sınıfı adı.', neden: '`{TestEdilenSınıf}Tests` deseni.', olmasaydi: 'Hangi sınıfın testi olduğu BELİRSİZLEŞİRDİ.' },
+          { satir: 'private readonly Mock<ICategoryRepository> _categoryRepository = new();', aciklama: 'TEK bağımlılığın mock\'u — bu Query yalnızca OKUMA yapıyor.', neden: 'Diğer Category Handler\'larının AKSİNE (`ILanguageRepository`/`IActivityLogger` de gerektiriyorlardı), bu Query yalnızca `ICategoryRepository`ye BAĞIMLI.', olmasaydi: 'Gereksiz mock\'lar test kodunu ŞİŞİRİRDİ.' },
+          { satir: 'private GetCategoriesQueryHandler CreateHandler() => new(_categoryRepository.Object);', aciklama: 'Handler\'ı kuran yardımcı metot.', neden: 'Diğer test sınıflarıyla AYNI desen.', olmasaydi: 'Her testte `new GetCategoriesQueryHandler(...)` TEKRARLANIRDI.' },
+          { satir: 'private static CategoryAggregate BuildAggregate(int categoryId, string name, int? parentCategoryId = null, string? minLevel = "A1")', aciklama: 'Test verisi kurma yardımcı metodu — BU sınıfa ÖZGÜ olarak `parentCategoryId`/`minLevel` de PARAMETRE (diğer sınıflarda yoktu), çünkü hiyerarşi/seviye testleri BU alanları DEĞİŞTİRMEYİ gerektiriyor.', neden: 'Varsayılan parametre değerleri (`= null`, `= "A1"`) sayesinde ÇOĞU test bu iki alanı HİÇ BELİRTMEDEN çağırabiliyor (`BuildAggregate(1, "Tiere")`), yalnızca hiyerarşi/level testleri BU değerleri AÇIKÇA VERİYOR.', olmasaydi: 'Varsayılan değerler olmasaydı, HER `BuildAggregate` çağrısı 4 argümanı da AÇIKÇA yazmak ZORUNDA kalırdı — çoğu testte gereksiz TEKRAR.' },
+          { satir: 'var category = new Category { Id = categoryId, ParentCategoryId = parentCategoryId, DisplayOrder = categoryId, MinLevel = minLevel };', aciklama: '`DisplayOrder = categoryId` — sıralama testinde (bu slaytta GÖSTERİLMEYEN, sözlükte listelenecek) kategorilerin ID sırasına göre SIRALANDIĞINI doğrulamak için kasıtlı bir kısayol.', neden: 'ID ve DisplayOrder\'ı AYNI yapmak, "sıralama DOĞRU mu" testini YAZARKEN beklenen sırayı TAHMİN ETMEYİ KOLAYLAŞTIRIYOR.', olmasaydi: 'Rastgele bir DisplayOrder KULLANILSAYDI, sıralama testi YAZILIRKEN beklenen ÇIKTI SIRASI elle HESAPLANMASI gerekirdi.' },
+          { satir: 'var language = new Language { Id = 1, Code = "de", Name = "German", NativeName = "Deutsch" };', aciklama: 'Sabit Almanca dil verisi.', neden: 'Diğer TÜM test sınıflarıyla TUTARLI.', olmasaydi: 'Çeviri kurulamazdı.' },
+          { satir: 'var translation = new CategoryTranslation { Id = categoryId, CategoryId = categoryId, LanguageId = 1, Name = name };', aciklama: 'Verilen isimle tek bir çeviri.', neden: 'Ağaç kurma testinde kategori İSİMLERİNİN (Menschen/Familie) doğru şekilde `children[]`e YERLEŞTİĞİNİ görsel olarak DOĞRULAMAK için.', olmasaydi: 'İsim olmasaydı hangi kategorinin HANGİSİ olduğu ASSERT\'lerde ID\'YE bakmadan ANLAŞILAMAZDI.' },
+          { satir: 'return new CategoryAggregate(category, [new CategoryTranslationAggregate(translation, language)]);', aciklama: 'İki parçayı `CategoryAggregate`e sarar.', neden: '`ICategoryRepository.GetAllAsync`in GERÇEKTE döndüreceği şekil — bu testte TEK metot (`GetAllAsync`) mock\'lanıyor, diğer Handler\'ların AKSİNE.', olmasaydi: 'Yanlış şekil dönseydi test GERÇEK davranışı YANLIŞ temsil EDERDİ.' },
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: 'Standart gerekçe.', olmasaydi: 'Çalıştırılmazdı.' },
+          { satir: 'public async Task Handle_FlatCategoriesWithParentChild_BuildsHierarchicalTree()', aciklama: 'Test adı — "düz (parent-child ilişkili) kategoriler, hiyerarşik bir ağaca DÖNÜŞÜR" senaryosu.', neden: 'A-06\'nın EN TEMEL iş mantığını (ağaç kurma) doğrudan İSMİNDEN belli eder.', olmasaydi: 'Genel bir isim ağaç kurma mantığının test edildiğini GİZLERDİ.' },
+          { satir: 'var root = BuildAggregate(1, "Menschen");', aciklama: 'Kök kategori — `parentCategoryId` VERİLMEDİĞİ için varsayılan `null`.', neden: 'Gerçek seed verisindeki (Bölüm 1) kategorilerin TAMAMI kök — bu testin verisi GERÇEK durumu YANSITIYOR.', olmasaydi: 'Kök kategori TANIMLANMASAYDI ağaç HİÇ KURULAMAZDI (`BuildTree(null, ...)` boş dönerdi).' },
+          { satir: 'var child = BuildAggregate(2, "Familie", parentCategoryId: 1);', aciklama: 'Kategori 1\'in ÇOCUĞU olan kategori 2.', neden: 'Bu testin ASIL amacı — bir parent-child İLİŞKİSİNİN doğru şekilde iç içe (nested) bir yapıya DÖNÜŞTÜĞÜNÜ göstermek.', olmasaydi: 'Yalnızca kök kategoriler olsaydı, `Children` alanının GERÇEKTEN DOLDUĞU hiç TEST EDİLEMEZDİ.' },
+          { satir: '_categoryRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([root, child]);', aciklama: 'Repository\'nin DÜZ (iç içe OLMAYAN) bir liste DÖNDÜĞÜNÜ simüle eder — GERÇEK repository de TAM olarak böyle davranıyor (Bölüm 6).', neden: 'Bu, Handler\'ın "düz listeden ağaç KURMA" sorumluluğunu (repository\'nin DEĞİL) doğru TEMSİL ediyor — mock\'un dönüş şekli GERÇEK repository davranışıyla TUTARLI.', olmasaydi: 'Mock zaten iç içe bir yapı DÖNSEYDİ, Handler\'ın `ToLookup`/`BuildTree` mantığı hiç TEST EDİLEMEZDİ (ağaç zaten HAZIR gelirdi).' },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ı kurar.', neden: 'Standart adım.', olmasaydi: 'ACT çalışamazdı.' },
+          { satir: 'var result = await handler.Handle(new GetCategoriesQuery(null, false), default);', aciklama: 'ACT — `level=null` (filtre YOK), `includeWordCount=false`.', neden: 'Bu test SADECE ağaç kurmayı doğruluyor — level filtresi/wordCount AYRI testlerde (sözlükte listelenecek) ele ALINIYOR.', olmasaydi: 'Filtre/wordCount de test EDİLSEYDİ, bu testin BAŞARISIZLIĞI HANGİ mekanizmadan KAYNAKLANDIĞI belirsizleşirdi.' },
+          { satir: 'result.Should().ContainSingle(c => c.Id == 1);', aciklama: 'ASSERT — dönen KÖK liste TAM OLARAK BİR eleman İÇERİYOR (kategori 1).', neden: 'Kategori 2 kök seviyede GÖRÜNMEMELİ — o kategori 1\'in `Children[]`INDE olmalı, ANA listede DEĞİL.', olmasaydi: 'Bu assertion olmasaydı, Handler ağacı YANLIŞ kursa (ör. her iki kategoriyi de KÖK olarak DÖNSE) FARK EDİLMEZDİ.' },
+          { satir: 'result[0].Children.Should().ContainSingle(c => c.Id == 2);', aciklama: 'ASSERT — kök kategorinin `Children[]`i TAM OLARAK kategori 2\'yi İÇERİYOR.', neden: 'Bu, `BuildTree`nin REKÜRSİF çağrısının ÇALIŞTIĞINI ve doğru elemanı YERLEŞTİRDİĞİNİ doğrudan doğruluyor.', olmasaydi: 'Bu assertion olmasaydı, `Children` alanının HER ZAMAN boş KALMASI (rekürsiyonun HİÇ ÇALIŞMAMASI) fark EDİLMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Senaryolar ve Test Dosyaları — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'CreateCategoryCommandHandlerTests.cs — diğer 3 test', tanim: '`Handle_ParentCategoryNotFound_ThrowsEntityNotFoundException` (var olmayan bir ParentCategoryId), `Handle_UnknownLanguageCode_ThrowsEntityNotFoundException` (CreateWordCommandHandlerTests\'teki İLE AYNI desen), `Handle_Success_LogsCreateCategoryActivity` (CREATE_CATEGORY, OldValue=null, NewValue dolu — Create\'in tüm testlerinde AYNI "yeni kayıt" deseni).' },
+          { terim: 'UpdateCategoryCommandHandlerTests.cs — diğer 3 test', tanim: '`Handle_CategoryNotFound_ThrowsEntityNotFoundException`, `Handle_NewParentCategoryNotFound_ThrowsEntityNotFoundException` (YENİ ebeveyn var olmadığında — döngü kontrolüne HİÇ ULAŞILMADAN), `Handle_Success_LogsUpdateCategoryActivityWithOldAndNewValue` (UPDATE_CATEGORY, hem OldValue hem NewValue dolu — Update\'in "önce oku sonra değiştir" deseni).' },
+          { terim: 'DeleteCategoryCommandHandlerTests.cs — diğer 2 test', tanim: '`Handle_CategoryNotFound_ThrowsEntityNotFoundException`, `Handle_HasActiveWords_ThrowsCategoryHasActiveWordsException` (bu slaytta gösterilen `HasChildren` testinin İKİZİ — yalnızca `HasChildrenAsync=false`/`HasActiveWordsAsync=true` mock\'landığı ve `CategoryHasActiveWordsException` beklendiği İÇİN farklı; kontrol SIRASININ [önce children, sonra activeWords] doğru ÇALIŞTIĞINI TAMAMLAYICI olarak kanıtlar), `Handle_NoChildrenOrActiveWords_SoftDeletesAndLogsActivity` (silme korumasının HER İKİ dalı da TEMİZ geçince gerçek `SoftDeleteCategoryAsync` çağrısı + DELETE_CATEGORY log, OldValue dolu NewValue null — DeleteWordCommandHandlerTests\'teki İLE AYNI desen).' },
+          { terim: 'GetCategoriesQueryHandlerTests.cs — diğer 3 test', tanim: '`Handle_LevelFilterProvided_ExcludesNonMatchingCategories` (Bölüm 6\'nın `IsInRange` aralık mantığının Handler seviyesinde doğrulanması), `Handle_IncludeWordCountTrue_AttachesWordCounts`/`Handle_IncludeWordCountFalse_WordCountIsNullAndRepositoryNotCalled` (wordCount hesaplamasının yalnızca İSTENİNCE ÇALIŞTIĞI — `GetActiveWordCountsAsync`in `Times.Never` ile DOĞRULANMASI).' },
+          { terim: 'CreateWordCommandHandlerTests.cs — 2 yeni test', tanim: '`Handle_WithCategoryIds_ReplacesWordCategories` (categoryIds:[1,2] verildiğinde `ReplaceWordCategoriesAsync`in DOĞRU argümanlarla çağrıldığının `Verify` ile doğrulanması) ve `Handle_UnknownCategoryId_ThrowsEntityNotFoundException` (`AllExistAsync=false` iken 404 — Bölüm 8\'in doğrulama mantığının testi).' },
+          { terim: 'UpdateWordCommandHandlerTests.cs — 2 yeni test', tanim: 'CreateWordCommandHandlerTests\'teki İLE BİREBİR AYNI iki senaryo (`Handle_WithCategoryIds_ReplacesWordCategories`/`Handle_UnknownCategoryId_ThrowsEntityNotFoundException`), yalnızca Update akışına uyarlanmış.' },
+          { terim: 'GetWordsQueryHandlerTests.cs — 1 yeni test', tanim: '`Handle_CategoryIdFilterProvided_PassesToRepository` — Query\'nin `CategoryId` alanının repository\'nin `GetPagedAsync`ine (Bölüm 7) AYNEN geçtiğini `Verify` ile doğrular, GetWordsQuery\'nin diğer filtre parametreleriyle (level/partOfSpeech) AYNI test deseninde.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-06 Tamamlandı',
+        maddeler: [
+          '4 yeni Category Handler test sınıfı (Create/Update/Delete/GetCategories, 18 test) — `Mock<ICategoryRepository>`/`Mock<ILanguageRepository>`/`Mock<IActivityLogger>` ile A-05\'in Moq+FluentAssertions kalıbını izliyor.',
+          '`UpdateCategoryCommandHandlerTests` — kategori taşıma (`SetupSequence` ile önce/sonra hâli) VE döngü koruması (`WouldCreateCycleAsync=true` → `CategoryParentCycleException`) A-06\'nın en özgün iş mantığı olarak DERİNLEMESİNE test edildi.',
+          '`DeleteCategoryCommandHandlerTests` — silme korumasının HER İKİ dalı (children/activeWords) AYRI testlerle, kontrol SIRASI (önce children) `Handle_HasChildren` testinde `HasActiveWordsAsync`in HİÇ mock\'lanmamasıyla dolaylı olarak doğrulanıyor.',
+          '`GetCategoriesQueryHandlerTests` — düz listeden ağaç kurma, level filtresi (aralık mantığı), includeWordCount (opsiyonel hesaplama) AYRI AYRI test edildi.',
+          '5 mevcut Word test dosyasına (A-05) TOPLAM 5 yeni test eklendi — `categoryIds[]` yazma doğrulaması (Create/Update) ve `categoryId` okuma filtresi (GetWords), A-05\'in test desenini BOZMADAN GENİŞLETTİ.',
+          'Canlı doğrulama: `dotnet test` ile TÜM paket (önceki 165 + bu 22 yeni) 187/187 yeşil.',
+          'A-06 (Kategori API) TAMAMLANDI: Entity katmanı (Category self-ref + CategoryTranslation + WordCategory) → Repository katmanı → DTO/Mapping → CRUD komutları (taşıma+döngü) → Silme koruması+Controller → Hiyerarşik sorgu → Word entegrasyonu (categoryId filtresi+categories[]) → categoryIds[] yazma desteği → 22 birim testi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

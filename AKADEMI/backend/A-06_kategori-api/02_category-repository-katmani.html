@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-06 — Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'category-repository-katmani',
+    bolumBaslik: 'A-06 — Kategori API',
+    oncekiBolum: '01_category-entity-katmani.html',
+    sonrakiBolum: '03_category-dto-ve-mapping.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'ICategoryRepository — Aggregate-Repository Deseni',
+        altBaslik: 'Category tek başına anlamsız (adı olmadan gösterilecek bir şeyi yok) — IWordConceptRepository (A-05) ile AYNI desen: repository Category + TÜM dillerdeki çevirisini TEK bir çağrıda birlikte döndürür.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Generic IRepository<T> Değil de Özel Bir ICategoryRepository?',
+        aciklama: '`IRepository<T>` (A-02) yalnızca TEK bir entity türünü (`Category`) yönetebilir — ama bir kategori sorgusu neredeyse HER ZAMAN çevirisiyle (`CategoryTranslation`) BİRLİKTE gelmek zorunda, ayrıca hiyerarşi/silme koruması gibi kategoriye ÖZEL sorgular (`HasChildrenAsync`, `WouldCreateCycleAsync`) generic bir arayüzde YER ALAMAZ.',
+        neden: '`IWordConceptRepository` (A-05) TAM OLARAK aynı ihtiyaçtan doğdu — bir aggregate\'i (kavram+çevirileri) tek çağrıda döndürmek, Handler\'ın dört ayrı repository enjekte edip elle birleştirmesinden çok daha az hataya açık.',
+        olmasaydi: 'Generic `IRepository<Category>` kullanılsaydı, her Handler kendi başına `IRepository<CategoryTranslation>`\'ı da enjekte edip "bu kategorinin çevirilerini bul" sorgusunu TEKRAR TEKRAR yazardı — 4 Command/Query\'nin HER BİRİNDE aynı N+1 birleştirme mantığı kopyalanırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryAggregate.cs — Category + Çevirileri',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/CategoryAggregate.cs',
+        nedenBuKlasor: '`Interfaces/Repositories/Content/` — `WordConceptAggregate.cs` (A-05) ile AYNI klasör, aynı domain\'in repository sözleşmeleri.',
+        kod: `using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Application.Interfaces.Repositories.Content;
+
+// ICategoryRepository'nin okuma metotlarının döndürdüğü şekil — Category tek başına anlamsız
+// (adı olmadan gösterilecek bir şeyi yok), WordConceptAggregate'in Translations deseniyle AYNI.
+public record CategoryAggregate(Category Category, List<CategoryTranslationAggregate> Translations);
+
+// Her çeviri kendi CategoryTranslation'ı + hangi dile ait olduğu.
+public record CategoryTranslationAggregate(CategoryTranslation Translation, Language Language);`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`Category`/`CategoryTranslation`/`Language`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: 'CategoryAggregate.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — `ICategoryRepository`\'nin (aşağıda) dönüş tipi bu dosyada, arayüzle AYNI klasörde.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record CategoryAggregate(Category Category, List<CategoryTranslationAggregate> Translations);',
+            aciklama: '`record` seçimi — bu tip yalnızca VERİ taşır, davranışı yok; `WordConceptAggregate` (A-05) ile AYNI tasarım kararı, immutable bir DTO benzeri yapı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public record CategoryTranslationAggregate(CategoryTranslation Translation, Language Language);',
+            aciklama: '`WordTranslationAggregate`\'in (A-05, `Word`+`Language`+`Detail`+`Examples` taşır) HAFİF karşılığı — bir kategori çevirisi `WordDetail`/`WordExample` gibi ek alt-veri TAŞIMAZ, yalnızca `Translation`+`Language` yeterli.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ICategoryRepository.cs — Hiyerarşi + Silme Koruması Sözleşmesi',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/ICategoryRepository.cs',
+        nedenBuKlasor: 'backend/Zausel.Application/Interfaces/Repositories/Content/ altındaki diğer dosyalarla aynı klasör.',
+        kod: `using Zausel.Domain.Entities.Content;
+
+namespace Zausel.Application.Interfaces.Repositories.Content;
+
+// WordConceptRepository ile AYNI aggregate-repository deseni — Category tek başına, çevirisi
+// olmadan anlamsız (bkz. CategoryAggregate).
+public interface ICategoryRepository
+{
+    Task<List<CategoryAggregate>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<CategoryAggregate?> GetAggregateAsync(int categoryId, CancellationToken cancellationToken = default);
+
+    // includeWordCount=true isteyen GetCategoriesQuery için — CategoryId → o kategorideki AKTİF
+    // (silinmemiş) WordConcept sayısı, WordCategories üzerinden.
+    Task<Dictionary<int, int>> GetActiveWordCountsAsync(CancellationToken cancellationToken = default);
+
+    Task<bool> HasChildrenAsync(int categoryId, CancellationToken cancellationToken = default);
+    Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken cancellationToken = default);
+
+    // categoryId == newParentCategoryId (kendi kendinin altına taşınma) DAHİL kabul edilir — sıfır
+    // uzunluklu bir döngü de bir döngüdür, ayrı bir "self-parent" hata kodu AÇILMAZ.
+    Task<bool> WouldCreateCycleAsync(int categoryId, int newParentCategoryId, CancellationToken cancellationToken = default);
+
+    Task<bool> AllExistAsync(List<int> categoryIds, CancellationToken cancellationToken = default);
+
+    Task AddCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default);
+    Task UpdateCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default);
+    Task SoftDeleteCategoryAsync(int categoryId, int? userId, CancellationToken cancellationToken = default);
+
+    Task<CategoryTranslation?> FindTranslationAsync(int categoryId, int languageId, CancellationToken cancellationToken = default);
+    Task AddTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default);
+    Task UpdateTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`Category`/`CategoryTranslation`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: 'ICategoryRepository.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public interface ICategoryRepository',
+            aciklama: '`IWordConceptRepository` (A-05) ile AYNI desen — dar, aggregate\'e özel bir sözleşme, generic `IRepository<T>` DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<List<CategoryAggregate>> GetAllAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'TÜM kategorileri DÜZ liste olarak döner — hiyerarşiyi (ağacı) kuran mantık Handler\'da (bölüm 6), repository burada "dumb" tutulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<CategoryAggregate?> GetAggregateAsync(int categoryId, CancellationToken cancellationToken = default);',
+            aciklama: 'Tek bir kategoriyi + çevirilerini getirir — Create/Update/Delete Handler\'larının "önce oku sonra değiştir" akışında kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<Dictionary<int, int>> GetActiveWordCountsAsync(CancellationToken cancellationToken = default);',
+            aciklama: '`?includeWordCount=true` istenmediği sürece HİÇ ÇAĞRILMAZ (bölüm 6\'daki Handler bunu koşullu çağırır) — CategoryId → aktif kelime sayısı eşlemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<bool> HasChildrenAsync(int categoryId, CancellationToken cancellationToken = default);',
+            aciklama: 'Silme korumasının (bölüm 5) birinci kontrolü — bu kategorinin `ParentCategoryId`\'si olarak gösterilen başka bir kategori var mı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken cancellationToken = default);',
+            aciklama: 'Silme korumasının ikinci kontrolü — bu kategoriye `WordCategories` üzerinden bağlı, hâlâ `IsActive=true` olan bir kelime kavramı var mı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<bool> WouldCreateCycleAsync(int categoryId, int newParentCategoryId, CancellationToken cancellationToken = default);',
+            aciklama: 'Kategori taşıma (bölüm 4) sırasında çağrılır — `categoryId`\'nin `newParentCategoryId` zincirinin İÇİNDE olup olmadığını kontrol eder (kendi torunu haline gelmiş bir kategorinin altına taşınamaz).',
+            neden: '`categoryId==newParentCategoryId` (kendi kendinin altına taşınma) DAHİL kabul edilir — bu sıfır uzunluklu bir döngü, matematiksel olarak "A, A\'nın altında" ifadesi de bir çevrim SAYILIR.',
+            olmasaydi: 'Bu DAHİL edilmeseydi, ayrı bir "self-parent" hata kodu/kontrolü GEREKİRDİ — iki farklı hata kodu (biri kendine, biri torununa taşıma için) aynı sorunun (çevrim) İKİ AYRI temsili olurdu, gereksiz karmaşıklık.'
+          },
+          {
+            satir: 'Task<bool> AllExistAsync(List<int> categoryIds, CancellationToken cancellationToken = default);',
+            aciklama: 'Bölüm 8\'deki `categoryIds[]` yazma desteğinin doğrulama adımı — bir kelimeye atanmak istenen kategori ID\'lerinin GERÇEKTEN var olup olmadığını TEK sorguda kontrol eder.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Yeni bir `Category` satırı ekler — `userId` audit alanları (`CreatedByUserId`) için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task UpdateCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Var olan bir `Category`\'yi günceller.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task SoftDeleteCategoryAsync(int categoryId, int? userId, CancellationToken cancellationToken = default);',
+            aciklama: 'Soft delete — `WordConceptRepository.SoftDeleteConceptOnlyAsync` (A-05) ile AYNI desen, `IsDeleted`/`DeletedAt`/`DeletedByUserId` işaretlenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<CategoryTranslation?> FindTranslationAsync(int categoryId, int languageId, CancellationToken cancellationToken = default);',
+            aciklama: 'Güncelleme sırasında (bölüm 4) "bu dilde zaten bir çeviri var mı, yoksa yeni mi ekleniyor" kararını verir — `WordConceptRepository.FindWordAsync` (A-05) ile AYNI amaç.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task AddTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default);',
+            aciklama: 'Yeni bir dile çeviri ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task UpdateTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default);',
+            aciklama: 'Var olan bir çeviriyi günceller.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);',
+            aciklama: 'EF `DbContext.SaveChangesAsync`\'in dışa açılmış hâli — Handler\'ların birden fazla repository metodu çağırdıktan sonra TEK seferde commit etmesini sağlar.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CategoryRepository.cs — Uygulama',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/Content/CategoryRepository.cs',
+        nedenBuKlasor: '`Infrastructure/Repositories/Content/` — `WordConceptRepository` (A-05) ile AYNI klasör, arayüzün uygulaması.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Exceptions;
+using Zausel.Infrastructure.Data;
+
+namespace Zausel.Infrastructure.Repositories.Content;
+
+public class CategoryRepository : ICategoryRepository
+{
+    private readonly ZauselDbContext _context;
+
+    public CategoryRepository(ZauselDbContext context) => _context = context;
+
+    public async Task<List<CategoryAggregate>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        var categories = await _context.Categories.OrderBy(c => c.DisplayOrder).ToListAsync(cancellationToken);
+        var translationsByCategory = await BuildTranslationsAsync(categories.Select(c => c.Id).ToList(), cancellationToken);
+        return categories.Select(c => new CategoryAggregate(c, translationsByCategory.GetValueOrDefault(c.Id, []))).ToList();
+    }
+
+    public async Task<CategoryAggregate?> GetAggregateAsync(int categoryId, CancellationToken cancellationToken = default)
+    {
+        var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken);
+        if (category is null)
+            return null;
+
+        var translationsByCategory = await BuildTranslationsAsync([categoryId], cancellationToken);
+        return new CategoryAggregate(category, translationsByCategory.GetValueOrDefault(categoryId, []));
+    }
+
+    public async Task<Dictionary<int, int>> GetActiveWordCountsAsync(CancellationToken cancellationToken = default)
+    {
+        var activeConceptIds = _context.WordConcepts.Where(c => c.IsActive).Select(c => c.Id);
+        return await _context.WordCategories
+            .Where(wc => activeConceptIds.Contains(wc.WordConceptId))
+            .GroupBy(wc => wc.CategoryId)
+            .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CategoryId, x => x.Count, cancellationToken);
+    }
+
+    public async Task<bool> HasChildrenAsync(int categoryId, CancellationToken cancellationToken = default) =>
+        await _context.Categories.AnyAsync(c => c.ParentCategoryId == categoryId, cancellationToken);
+
+    public async Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken cancellationToken = default)
+    {
+        var activeConceptIds = _context.WordConcepts.Where(c => c.IsActive).Select(c => c.Id);
+        return await _context.WordCategories
+            .Where(wc => wc.CategoryId == categoryId)
+            .AnyAsync(wc => activeConceptIds.Contains(wc.WordConceptId), cancellationToken);
+    }
+
+    // categoryId == newParentCategoryId (sıfır uzunluklu döngü — kendi kendinin altına taşınma) DAHİL —
+    // ICategoryRepository'deki yorumla AYNI gerekçe.
+    public async Task<bool> WouldCreateCycleAsync(int categoryId, int newParentCategoryId, CancellationToken cancellationToken = default)
+    {
+        if (categoryId == newParentCategoryId)
+            return true;
+
+        var parentById = await _context.Categories.ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId, cancellationToken);
+
+        int? currentId = newParentCategoryId;
+        while (currentId is not null)
+        {
+            if (currentId == categoryId)
+                return true;
+            currentId = parentById.GetValueOrDefault(currentId.Value);
+        }
+
+        return false;
+    }
+
+    public async Task<bool> AllExistAsync(List<int> categoryIds, CancellationToken cancellationToken = default)
+    {
+        var distinctIds = categoryIds.Distinct().ToList();
+        if (distinctIds.Count == 0)
+            return true;
+
+        var existingCount = await _context.Categories.CountAsync(c => distinctIds.Contains(c.Id), cancellationToken);
+        return existingCount == distinctIds.Count;
+    }
+
+    public async Task AddCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default)
+    {
+        category.CreatedByUserId = userId;
+        category.UpdatedByUserId = userId;
+        await _context.Categories.AddAsync(category, cancellationToken);
+    }
+
+    public Task UpdateCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default)
+    {
+        category.UpdatedByUserId = userId;
+        _context.Categories.Update(category);
+        return Task.CompletedTask;
+    }
+
+    public async Task SoftDeleteCategoryAsync(int categoryId, int? userId, CancellationToken cancellationToken = default)
+    {
+        var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken)
+            ?? throw new EntityNotFoundException($"Category not found: Id={categoryId}");
+
+        category.IsDeleted = true;
+        category.DeletedAt = DateTime.UtcNow;
+        category.DeletedByUserId = userId;
+        category.UpdatedByUserId = userId;
+    }
+
+    public async Task<CategoryTranslation?> FindTranslationAsync(int categoryId, int languageId, CancellationToken cancellationToken = default) =>
+        await _context.CategoryTranslations.FirstOrDefaultAsync(
+            t => t.CategoryId == categoryId && t.LanguageId == languageId, cancellationToken);
+
+    public async Task AddTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default) =>
+        await _context.CategoryTranslations.AddAsync(translation, cancellationToken);
+
+    public Task UpdateTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default)
+    {
+        _context.CategoryTranslations.Update(translation);
+        return Task.CompletedTask;
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+
+    private async Task<Dictionary<int, List<CategoryTranslationAggregate>>> BuildTranslationsAsync(
+        List<int> categoryIds, CancellationToken cancellationToken)
+    {
+        var translations = await _context.CategoryTranslations.Where(t => categoryIds.Contains(t.CategoryId)).ToListAsync(cancellationToken);
+        var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);
+
+        return translations
+            .GroupBy(t => t.CategoryId)
+            .ToDictionary(g => g.Key, g => g.Select(t => new CategoryTranslationAggregate(t, languages[t.LanguageId])).ToList());
+    }
+}`,
+        satirlar: [
+          {
+            satir: 'using Microsoft.EntityFrameworkCore;',
+            aciklama: '`FirstOrDefaultAsync`/`ToListAsync`/`AnyAsync` gibi async LINQ operatörleri için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Application.Interfaces.Repositories.Content;',
+            aciklama: 'Uygulanan `ICategoryRepository` arayüzünün ve `CategoryAggregate`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Entities.Content;',
+            aciklama: '`Category`/`CategoryTranslation`\'ın ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Domain.Exceptions;',
+            aciklama: '`EntityNotFoundException` için gerekli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'using Zausel.Infrastructure.Data;',
+            aciklama: '`ZauselDbContext`\'in ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'namespace Zausel.Infrastructure.Repositories.Content;',
+            aciklama: 'CategoryRepository.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public class CategoryRepository : ICategoryRepository',
+            aciklama: '`WordConceptRepository` (A-05) ile AYNI isimlendirme deseni — arayüz adından `I` çıkarılmış hâli.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private readonly ZauselDbContext _context;',
+            aciklama: 'Tek bağımlılık — `WordConceptRepository` gibi doğrudan `DbContext`\'e erişir, `Repository<T>`\'nin (A-02) generic sarmalayıcısını KULLANMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public CategoryRepository(ZauselDbContext context) => _context = context;',
+            aciklama: 'Constructor injection — DI konteyner (A-02 `AddInfrastructureServices`) bu sınıfı `ICategoryRepository` için çözerken `ZauselDbContext`\'i otomatik sağlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<List<CategoryAggregate>> GetAllAsync(CancellationToken cancellationToken = default)',
+            aciklama: 'Filtre YOK — TÜM kategorileri döner, `level` filtresi (bölüm 6) Handler tarafında bellekte uygulanır çünkü kategori sayısı (12-30 civarı) DB\'de filtrelemeyi gerektirecek kadar büyük DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var categories = await _context.Categories.OrderBy(c => c.DisplayOrder).ToListAsync(cancellationToken);',
+            aciklama: 'Sıralama burada, DB seviyesinde yapılır — Handler\'ın ağaç kurma mantığı zaten `DisplayOrder`\'a güvenerek çocukları sıralı bekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translationsByCategory = await BuildTranslationsAsync(categories.Select(c => c.Id).ToList(), cancellationToken);',
+            aciklama: 'Aşağıdaki özel `BuildTranslationsAsync` yardımcı metoduna TÜM kategori ID\'lerini TEK seferde geçer — N+1 sorgu yerine 2 toplu sorgu (çeviriler + diller).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return categories.Select(c => new CategoryAggregate(c, translationsByCategory.GetValueOrDefault(c.Id, []))).ToList();',
+            aciklama: '`GetValueOrDefault(..., [])` — hiç çevirisi olmayan (teorik olarak, seed verisinde HER kategori 2 dilde çevrilidir) bir kategori boş liste alır, `null` referans hatası DOĞMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<CategoryAggregate?> GetAggregateAsync(int categoryId, CancellationToken cancellationToken = default)',
+            aciklama: 'Tek kategori — `WordConceptRepository.GetAggregateAsync` (A-05) ile AYNI imza deseni.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken);',
+            aciklama: 'Soft-delete filtresi (A-02, `ZauselDbContext.OnModelCreating`) OTOMATİK uygulanır — bu sorgu zaten `IsDeleted=false` olanları döner, elle `.Where` yazmaya gerek YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (category is null)',
+            aciklama: 'Bulunamama durumu — Handler\'lar bu `null`\'ı kendi `EntityNotFoundException`\'larına çevirir (bölüm 4/5).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return null;',
+            aciklama: 'Erken çıkış — çeviri sorgusu boşuna ÇALIŞTIRILMAZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translationsByCategory = await BuildTranslationsAsync([categoryId], cancellationToken);',
+            aciklama: 'Tek elemanlı liste geçilir — `BuildTranslationsAsync` hem tekli hem çoklu çağrıda AYNI toplu-sorgu mantığını çalıştırır, kod tekrarı YOK.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return new CategoryAggregate(category, translationsByCategory.GetValueOrDefault(categoryId, []));',
+            aciklama: 'Aggregate\'i kurup döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<Dictionary<int, int>> GetActiveWordCountsAsync(CancellationToken cancellationToken = default)',
+            aciklama: '`?includeWordCount=true` isteğinde (bölüm 6) çağrılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var activeConceptIds = _context.WordConcepts.Where(c => c.IsActive).Select(c => c.Id);',
+            aciklama: 'Yalnızca `IsActive=true` olan kelime kavramları sayılır — soft-delete edilmiş (`IsDeleted`) satırlar zaten global filtre ile elenmiş durumda, `IsActive` bunun ÜSTÜNE ikinci bir "geçici gizleme" katmanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return await _context.WordCategories',
+            aciklama: '`WordCategories` üzerinden gruplanan sayım sorgusunun başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(wc => activeConceptIds.Contains(wc.WordConceptId))',
+            aciklama: 'Yalnızca aktif kelimelere ait bağ satırları sayılır — silinmiş/pasif kelimeler kategori kartındaki sayaçta GÖRÜNMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.GroupBy(wc => wc.CategoryId)',
+            aciklama: 'Kategori bazında gruplama.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Select(g => new { CategoryId = g.Key, Count = g.Count() })',
+            aciklama: 'Her grup için (CategoryId, sayı) çifti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToDictionaryAsync(x => x.CategoryId, x => x.Count, cancellationToken);',
+            aciklama: 'Sonuç `Dictionary<int,int>`\'e çevrilir — Handler `wordCounts?.GetValueOrDefault(categoryId, 0)` ile O(1) erişir (bölüm 6).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<bool> HasChildrenAsync(int categoryId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Silme korumasının birinci kontrolü (bölüm 5).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Categories.AnyAsync(c => c.ParentCategoryId == categoryId, cancellationToken);',
+            aciklama: '`AnyAsync` — kaç çocuk olduğu ÖNEMLİ DEĞİL, yalnızca VAR MI sorusu soruluyor, `Count()>0` yerine `Any` DAHA VERİMLİ (ilk eşleşmede durur).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<bool> HasActiveWordsAsync(int categoryId, CancellationToken cancellationToken = default)',
+            aciklama: 'Silme korumasının ikinci kontrolü (bölüm 5).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return await _context.WordCategories',
+            aciklama: 'Bu kategoriye bağlı, aktif bir kelime var mı sorgusunun başlangıcı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.Where(wc => wc.CategoryId == categoryId)',
+            aciklama: 'Yalnızca bu kategoriye ait bağ satırları.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.AnyAsync(wc => activeConceptIds.Contains(wc.WordConceptId), cancellationToken);',
+            aciklama: 'Bu bağ satırlarından EN AZ biri aktif bir kelimeye mi ait — `GetActiveWordCountsAsync`\'teki AYNI `activeConceptIds` alt sorgusu burada da TEKRAR kullanılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<bool> WouldCreateCycleAsync(int categoryId, int newParentCategoryId, CancellationToken cancellationToken = default)',
+            aciklama: 'Kategori taşımanın (bölüm 4) döngü koruması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (categoryId == newParentCategoryId)',
+            aciklama: 'Sıfır uzunluklu döngü — kendi kendinin altına taşınma denemesi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return true;',
+            aciklama: 'Erken çıkış — geri kalan ebeveyn-zinciri yürüyüşü GEREKSİZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var parentById = await _context.Categories.ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId, cancellationToken);',
+            aciklama: 'TÜM kategorilerin (Id → ParentCategoryId) eşlemesi TEK sorguda çekilir — zincir yürüyüşü artık bellek içinde, her adımda YENİ bir DB sorgusu GEREKMEZ.',
+            neden: 'Kategori sayısı küçük (12-30 civarı) olduğu için TÜM tabloyu belleğe almak, zincirin HER adımında ayrı bir `WHERE Id=X` sorgusu atmaktan (potansiyel olarak derin bir hiyerarşide N sorgu) DAHA UCUZ.',
+            olmasaydi: 'Her adımda ayrı sorgu atılsaydı, derin bir hiyerarşide (ör. 5 seviyeli) taşıma işlemi 5 AYRI round-trip\'e mal olurdu — küçük bir tabloda gereksiz bir performans maliyeti.'
+          },
+          {
+            satir: 'int? currentId = newParentCategoryId;',
+            aciklama: 'Zincir yürüyüşü YENİ ebeveyn adayından BAŞLAR, `categoryId`\'nin kendisinden DEĞİL.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'while (currentId is not null)',
+            aciklama: 'Kök kategoriye (ParentCategoryId=null) ulaşana kadar YUKARI doğru yürür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (currentId == categoryId)',
+            aciklama: 'Yürüme sırasında `categoryId`\'nin KENDİSİNE rastlanırsa, bu `categoryId`\'nin kendi ALT AĞACINDA bir yere taşınmaya çalışıldığı anlamına gelir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'currentId = parentById.GetValueOrDefault(currentId.Value);',
+            aciklama: 'Bir üst seviyeye çık — sözlükte bulunamazsa (kök kategoriye ulaşıldıysa) `null` döner, döngü biter.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return false;',
+            aciklama: 'Zincir köke kadar `categoryId`\'ye hiç rastlamadan tamamlandıysa, taşıma GÜVENLİ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<bool> AllExistAsync(List<int> categoryIds, CancellationToken cancellationToken = default)',
+            aciklama: 'Bölüm 8\'in `categoryIds[]` doğrulaması için.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var distinctIds = categoryIds.Distinct().ToList();',
+            aciklama: 'Tekrar eden ID\'ler (ör. `[1,1,2]`) sayım karşılaştırmasını BOZMASIN diye önce tekilleştirilir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'if (distinctIds.Count == 0)',
+            aciklama: 'Boş liste (kategori atanmıyor) her zaman GEÇERLİ — bir kelimenin hiç kategorisi olmaması normal bir durum.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return true;',
+            aciklama: 'Erken çıkış — boş liste için DB\'ye hiç gidilmez.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var existingCount = await _context.Categories.CountAsync(c => distinctIds.Contains(c.Id), cancellationToken);',
+            aciklama: 'TEK sorguda kaç tanesinin GERÇEKTEN var olduğu sayılır.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return existingCount == distinctIds.Count;',
+            aciklama: 'Sayılar eşitse TÜMÜ var demektir — eşleşmezse en az bir ID geçersiz.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default)',
+            aciklama: '`WordConceptRepository.AddConceptAsync` (A-05) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.CreatedByUserId = userId;',
+            aciklama: 'Audit alanı — kaydı KİMİN oluşturduğu.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.UpdatedByUserId = userId;',
+            aciklama: 'Oluşturma anında `UpdatedByUserId` de AYNI kullanıcıyla başlar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.Categories.AddAsync(category, cancellationToken);',
+            aciklama: 'EF `ChangeTracker`\'a eklenir — henüz DB\'YE YAZILMAZ, `SaveChangesAsync` çağrılana kadar bekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task UpdateCategoryAsync(Category category, int? userId, CancellationToken cancellationToken = default)',
+            aciklama: 'Senkron gövdeli ama `Task` dönen bir metot — arayüz sözleşmesiyle TUTARLI kalmak için (`WordConceptRepository.UpdateConceptAsync` ile AYNI desen).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.UpdatedByUserId = userId;',
+            aciklama: 'Güncelleme audit\'i.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.Categories.Update(category);',
+            aciklama: 'EF `ChangeTracker`\'a "bu entity değişti" işareti — zaten `GetAggregateAsync` ile TAKİP EDİLEN bir entity olduğu için genelde bu çağrı gereksiz görünse de, farklı bir DbContext örneğinden gelen bir entity için GÜVENLİ bir varsayılan.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return Task.CompletedTask;',
+            aciklama: 'Senkron bir gövdeyi `Task` arayüzüne UYDURUR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task SoftDeleteCategoryAsync(int categoryId, int? userId, CancellationToken cancellationToken = default)',
+            aciklama: 'Silme korumasının kontrollerinden (bölüm 5) SONRA çağrılan gerçek soft-delete.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken)',
+            aciklama: 'Silinecek satır tekrar okunur — `DeleteCategoryCommandHandler` (bölüm 5) zaten `GetAggregateAsync` ile bir kez okumuştu, ama repository metotları birbirinden BAĞIMSIZ çalışabilmeli (yalnızca `SoftDeleteCategoryAsync` çağrılırsa da doğru davranmalı).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '?? throw new EntityNotFoundException($"Category not found: Id={categoryId}");',
+            aciklama: 'Bu noktada bulunamama TEORİK olarak imkansız (Handler zaten önce kontrol etti) ama savunma amaçlı — `WordConceptRepository.SoftDeleteConceptOnlyAsync` (A-05) ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.IsDeleted = true;',
+            aciklama: '`BaseEntity`\'nin soft-delete bayrağı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.DeletedAt = DateTime.UtcNow;',
+            aciklama: 'Silinme zamanı.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.DeletedByUserId = userId;',
+            aciklama: 'Silme audit\'i.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'category.UpdatedByUserId = userId;',
+            aciklama: '`UpdatedByUserId` de AYNI kullanıcıyla senkron tutulur.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task<CategoryTranslation?> FindTranslationAsync(int categoryId, int languageId, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Güncelleme akışının (bölüm 4) "var mı yok mu" kontrolü.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.CategoryTranslations.FirstOrDefaultAsync(',
+            aciklama: 'Belirli bir (kategori, dil) çiftine ait çeviriyi arar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 't => t.CategoryId == categoryId && t.LanguageId == languageId, cancellationToken);',
+            aciklama: 'İki kolonlu eşleşme — `CategoryTranslationConfiguration`\'daki `UQ_CategoryTranslations_Category_Language` benzersizlik kısıtıyla TUTARLI, en fazla TEK sonuç döner.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public async Task AddTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default) =>',
+            aciklama: 'Yeni bir çeviri satırı ekler.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'await _context.CategoryTranslations.AddAsync(translation, cancellationToken);',
+            aciklama: 'EF `ChangeTracker`\'a eklenir.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task UpdateTranslationAsync(CategoryTranslation translation, CancellationToken cancellationToken = default)',
+            aciklama: 'Var olan bir çeviriyi günceller.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.CategoryTranslations.Update(translation);',
+            aciklama: 'EF `ChangeTracker`\'a "bu entity değişti" işareti.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>',
+            aciklama: '`ICategoryRepository.SaveChangesAsync`\'in uygulaması.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '_context.SaveChangesAsync(cancellationToken);',
+            aciklama: 'EF `DbContext.SaveChangesAsync`\'in DOĞRUDAN yönlendirilmesi — `WordConceptRepository` ile AYNI desen.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'private async Task<Dictionary<int, List<CategoryTranslationAggregate>>> BuildTranslationsAsync(',
+            aciklama: '`WordConceptRepository.BuildTranslationsAsync` (A-05) ile AYNI isim ve AYNI desen — birden çok kategori için çevirileri TOPLU çeken özel yardımcı metot.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'List<int> categoryIds, CancellationToken cancellationToken)',
+            aciklama: 'Hem `GetAllAsync` (çoklu ID) hem `GetAggregateAsync` (tek elemanlı liste) tarafından ÇAĞRILIR.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var translations = await _context.CategoryTranslations.Where(t => categoryIds.Contains(t.CategoryId)).ToListAsync(cancellationToken);',
+            aciklama: 'Verilen TÜM kategori ID\'lerinin çevirileri TEK sorguda çekilir — döngü İÇİNDE ayrı ayrı sorgu ATILMAZ (N+1 önlenir).',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'var languages = await _context.Languages.ToDictionaryAsync(l => l.Id, cancellationToken: cancellationToken);',
+            aciklama: 'Diller (yalnızca 2 satır) TEK sorguda çekilip Id\'ye göre sözlüğe çevrilir — her çeviri satırı için AYRI bir `Language` sorgusu atmak yerine O(1) sözlük erişimi.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'return translations',
+            aciklama: 'Bellekteki çeviri listesi kategori bazında gruplanıp eşlemeye dönüştürülür.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.GroupBy(t => t.CategoryId)',
+            aciklama: 'Her kategorinin KENDİ çevirilerini bir arada toplar.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: '.ToDictionary(g => g.Key, g => g.Select(t => new CategoryTranslationAggregate(t, languages[t.LanguageId])).ToList());',
+            aciklama: 'Her grup, `CategoryTranslationAggregate` listesine (Translation+Language çiftleri) dönüştürülür — `languages[t.LanguageId]` sözlük indeksleme, DB\'ye TEKRAR gitmez.',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'DependencyInjection.cs — ICategoryRepository Kaydı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/DependencyInjection.cs',
+        neden: 'DI konteyner, bir arayüzü nasıl çözeceğini yalnızca AÇIKÇA kayıtlıysa bilir — `ICategoryRepository` yazıldı ama `AddInfrastructureServices` içinde `AddScoped` ile eşlenmezse, `CategoriesController` (bölüm 5) ilk isteğinde "no service registered" hatasıyla ÇÖKERdi.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using Zausel.Application.Interfaces.Repositories;
+ using Zausel.Application.Interfaces.Repositories.Auth;
+ using Zausel.Application.Interfaces.Repositories.Content;
+ using Zausel.Application.Interfaces.Repositories.Logging;
+ using Zausel.Infrastructure.Data;
+ using Zausel.Infrastructure.Repositories;
+ using Zausel.Infrastructure.Repositories.Auth;
+ using Zausel.Infrastructure.Repositories.Content;
+ using Zausel.Infrastructure.Repositories.Logging;
+
+ namespace Zausel.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<ZauselDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+         services.AddScoped<ILanguageRepository, LanguageRepository>();
+         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
++        services.AddScoped<ICategoryRepository, CategoryRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<ICategoryRepository, CategoryRepository>();',
+            aciklama: '`ICategoryRepository` istenen HER yerde (Handler constructor\'ları) `CategoryRepository`\'nin somutlaştırılmış hâli sağlanır — `AddScoped`, bir HTTP isteği BOYUNCA aynı örneğin paylaşılmasını sağlar (`AddTransient`\'in AKSİNE, aynı istekte birden fazla Handler AYNI DbContext/repository örneğini kullanır).',
+            neden: null,
+            olmasaydi: null
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Aggregate-repository', tanim: 'Bir entity\'yi TEK BAŞINA değil, anlamlı bir bütün oluşturan parçalarıyla (kategori+çevirileri) birlikte döndüren repository deseni — generic CRUD\'un AKSİNE.' },
+          { terim: 'N+1 sorgu', tanim: 'Bir liste + her elemanın ilişkili verisini AYRI AYRI sorgulama hatası (1 liste sorgusu + N ilişki sorgusu) — `BuildTranslationsAsync`\'in TOPLU sorgu yaklaşımı bunu önler.' },
+          { terim: 'Ebeveyn zinciri (parent chain)', tanim: 'Bir kategoriden köke kadar `ParentCategoryId` takip edilerek çıkılan yol — döngü koruması bu zinciri belleğe alıp yürür.' },
+          { terim: 'AddScoped', tanim: 'ASP.NET Core DI\'nin bir yaşam döngüsü seçeneği — AYNI HTTP isteği içinde AYNI örneğin paylaşıldığı, ama farklı isteklerde YENİ örnek oluşturulan kayıt türü.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`ICategoryRepository` — `IWordConceptRepository` ile AYNI aggregate-repository deseni, generic `IRepository<T>` DEĞİL.',
+          '`GetAllAsync` DÜZ liste döner — hiyerarşi kurma sorumluluğu Handler\'a (bölüm 6) bırakılır.',
+          '`WouldCreateCycleAsync` TÜM kategorileri belleğe alıp ebeveyn zincirini yürür — küçük veri setinde N ayrı sorgudan DAHA UCUZ.',
+          '`HasChildrenAsync`/`HasActiveWordsAsync` silme korumasının (bölüm 5) iki bağımsız kontrolü.',
+          '`AllExistAsync` bölüm 8\'in `categoryIds[]` doğrulamasının temeli.',
+          '`ICategoryRepository`, `AddInfrastructureServices`\'e (`DependencyInjection.cs`) `kod-degisiklik` ile eklendi — A-02\'de yazılmış bir dosyaya A-06\'nın tek satırlık eklemesi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
