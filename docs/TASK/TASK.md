@@ -47,12 +47,13 @@
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 | F | F-01…F-10 (+F-02.1, F-02.2, F-04.1…F-04.5) | Tanıtım Sitesi | ⬜ |
 
-**Sıradaki task:** `A-06` ✅ tamamlandı (Kategori API — Categories; `Category`/`CategoryTranslation`/
-`WordCategory` self-ref hiyerarşi + 12 kategori/24 çeviri seed, `ICategoryRepository`/4 Command/Query,
-silme koruması (409/400)/`CategoriesController`, `GET /words` `categoryId` filtresi+`categories[]` +
-kullanıcı kararıyla `categoryIds[]` yazma desteği, `IActivityLogger`, 22 birim testi — hepsi canlı
-doğrulandı, `TASK/A_backend.md` A-06 notuna işlendi). Sırada `A-07` (Medya/Dosya Yükleme API) →
-`TASK/A_backend.md`.
+**Sıradaki task:** `A-07` ✅ tamamlandı (Medya/Dosya Yükleme API — `IFileStorageService`/
+`LocalFileStorageService`: uzantı+boyut+magic bytes içerik doğrulaması, kullanıcı kararıyla
+amaç+tarih bazlı klasörleme [`uploads/<amaç>/<yıl>/<ay>/<guid>.ext`, A-10/A-13'teki yeniden
+kullanıma hazır], 3 yeni `AppException`, `UploadImageCommand`+`MediaController`
+[`POST /media/images/upload`, Admin-only], `/uploads` auth'tan önce herkese açık statik dosya
+sunumu, `IActivityLogger` [`UPLOAD_MEDIA`], 7 birim testi — hepsi canlı doğrulandı,
+`TASK/A_backend.md` A-07 notuna işlendi). Sırada `A-08` (Kişisel Kategori API) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
 
 (`A-03 — Auth API` ✅ tamamlandı 2026-08-14: `User`/`RefreshToken`/`QrLoginSession` entity'leri,

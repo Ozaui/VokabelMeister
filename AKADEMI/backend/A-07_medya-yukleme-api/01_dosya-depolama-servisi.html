@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-07 — Medya / Dosya Yükleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'dosya-depolama-servisi',
+    bolumBaslik: 'A-07 — Medya / Dosya Yükleme API',
+    oncekiBolum: '../A-06_kategori-api/09_birim-testleri.html',
+    sonrakiBolum: '02_upload-command-ve-controller.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'Dosya Depolama Servisi',
+        altBaslik: 'IFileStorageService/LocalFileStorageService — uzantı + boyut + MAGIC BYTES doğrulaması, amaç+tarih bazlı klasörleme, GUID tabanlı benzersiz ad üretimi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Yalnızca Uzantı Kontrolü Yetmez?',
+        aciklama: 'Bir dosyanın ".png" uzantısıyla yüklenmesi, içeriğinin GERÇEKTEN bir PNG resmi olduğu anlamına GELMEZ — istemci dosya adını DİLEDİĞİ gibi ayarlayabilir, bir ".exe" ya da script dosyası ".png" adıyla gönderilebilir. `LocalFileStorageService` bu yüzden İKİ AYRI kontrol yapar: (1) uzantı beyaz listesi (.jpg/.jpeg/.png/.webp), (2) dosyanın İLK BAYTLARININ (magic bytes/file signature) bildirilen türle GERÇEKTEN eşleştiği kontrolü.',
+        neden: 'Sunucu bu dosyayı `UseStaticFiles` ile HERKESE AÇIK bir klasörden (auth GEREKMEDEN) sunacak — yalnızca uzantı kontrolü yapılsaydı, bir saldırgan zararlı bir betiği ".png" adıyla yükleyip barındırma altyapısını (Admin\'in kendi hesabı üzerinden) KÖTÜYE KULLANABİLİRDİ.',
+        olmasaydi: 'Yalnızca uzantı kontrol edilseydi, `POST /media/images/upload` fiilen "Admin\'in imzasıyla herkese açık, TÜRÜ DOĞRULANMAMIŞ bir dosya barındırma servisi" haline gelirdi — dosya adı ".png" olsa bile SUNUCUDA ne barındırıldığı hiçbir zaman GARANTİ EDİLEMEZDİ.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Amaç + Tarih Bazlı Klasörleme? (Kullanıcı Kararı)',
+        aciklama: 'Dosyalar `uploads/<amaç>/<yıl>/<ay>/<guid>.ext` şeklinde alt klasörlere ayrılır — ör. bu bölümün ürettiği kelime görselleri `uploads/word-images/2026/08/...` altında. Düz (flat) TEK bir `uploads/<guid>.ext` klasörü YERİNE bu yapı seçildi.',
+        neden: 'Bu `IFileStorageService`, A-10\'da (kişisel kart görseli) ve A-13\'te (avatar) AYNEN yeniden kullanılacak — amaç ayrımı OLMASAYDI kelime görseli/kart görseli/avatar TEK bir klasörde KARIŞIRDI, admin\'in "bu dosya neyin görseliydi" sorusunu dosya adına (rastgele bir GUID) bakarak YANITLAMASI İMKANSIZ olurdu. Tarih (yıl/ay) bileşeni ise tek bir klasörde YIĞILAN dosya sayısını AYDA BİR sıfırlar — büyük ölçekte tek bir dizinde on binlerce dosya birikmesi (dosya sistemi/erişim performansı VE elle inceleme kolaylığı açısından) İYİ bir pratik DEĞİLDİR.',
+        olmasaydi: 'Düz bir yapı seçilseydi, A-10/A-13 geldiğinde ya arayüz SONRADAN KIRILARAK değiştirilecek (her iki mevcut çağrı yeri de güncellenecek) ya da TÜM görsel türleri aynı klasörde, yalnızca rastgele adlarla AYIRT EDİLEBİLİR biçimde BİRİKECEKTİ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IFileStorageService.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Services/IFileStorageService.cs',
+        nedenBuKlasor: 'Application/Interfaces/Services/ — `ITokenService`/`IEmailService` (A-03) ile AYNI, flat "servis arayüzleri" klasörü; dosya kaydetme birden fazla Handler\'ın (bu bölümde Word görseli, ileride kart görseli/avatar) paylaşacağı ORTAK bir sorumluluk olduğu için tek bir Feature klasörüne DEĞİL, tüm Application katmanının erişebildiği bu ortak klasöre konur.',
+        kod: `namespace Zausel.Application.Interfaces.Services;
+
+public interface IFileStorageService
+{
+    // purpose: dosyanın hangi amaçla yüklendiği (ör. "word-images", A-10'da "user-cards", A-13'te
+    // "avatars") — depolama yolunu uploads/<purpose>/<yyyy>/<MM>/<guid>.ext şeklinde alt klasörler,
+    // amaçlar birbirine karışmaz ve tek klasörde biriken dosya sayısı ayda bir sıfırlanır.
+    Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken);
+}`,
+        satirlar: [
+          {
+            satir: 'namespace Zausel.Application.Interfaces.Services;',
+            aciklama: 'Diğer servis arayüzleriyle (`ITokenService`, `IEmailService`) aynı ad alanı — bu servis arayüzlerini kullanacak bir Handler tek bir `using` ile HEPSİNE erişir.',
+            neden: 'Servis arayüzleri Feature\'lara göre DEĞİL, "hangi ORTAK yeteneği sağladıklarına" göre gruplanıyor — dosya kaydetme herhangi bir tek Feature\'a ait DEĞİL.',
+            olmasaydi: 'Her servis arayüzü kendi Feature namespace\'inde tanımlansaydı, birden fazla Feature\'ın PAYLAŞTIĞI bir servisi (ör. bu `IFileStorageService`) hangi Feature\'ın "sahiplendiği" belirsizleşirdi.'
+          },
+          {
+            satir: 'public interface IFileStorageService',
+            aciklama: 'Application katmanı bu arayüze bağımlı — GERÇEK implementasyon (`LocalFileStorageService`) de AYNI katmanda ama ileride bir bulut depolama (S3 vb.) implementasyonu eklenirse Handler HİÇ DEĞİŞMEZ.',
+            neden: null,
+            olmasaydi: null
+          },
+          {
+            satir: 'Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken);',
+            aciklama: 'Dönüş değeri `string` — kaydedilen dosyanın TAM, dışarıdan erişilebilir URL\'i (`WordConcept.ImageUrl`e YAZILACAK değer). `Stream`/`string`/`long` — bilinçli olarak `IFormFile` (ASP.NET Core türü) DEĞİL, saf BCL tipleri; Application katmanı ASP.NET Core\'a BAĞIMLI OLMAMALI.',
+            neden: '`content`/`originalFileName`/`contentLength` üçlüsü Controller\'daki `IFormFile`ın `OpenReadStream()`/`FileName`/`Length` özelliklerinden TÜRETİLİYOR — Command bu ham değerleri TAŞIYOR, ASP.NET Core türünü DEĞİL; Application katmanı Domain\'in ÜZERİNDE ama API/Infrastructure\'ın ALTINDA bir bağımlılık sırasında durur, bir Web framework türüne (`IFormFile`) bağımlı olsaydı bu sıra TERSİNE dönerdi.',
+            olmasaydi: 'Arayüz `IFormFile` alsaydı, `Zausel.Application` projesine `Microsoft.AspNetCore.Http` paket referansı EKLENMESİ gerekirdi — Application katmanının Web framework\'ünden BAĞIMSIZ kalması (ör. bir konsol uygulamasından da çağrılabilmesi) ilkesi BOZULURDU.'
+          }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LocalFileStorageService.cs',
+        dosyaYolu: 'backend/Zausel.Application/Services/LocalFileStorageService.cs',
+        nedenBuKlasor: 'Application/Services/ — `JwtTokenService`/`OtpService` ile AYNI, flat implementasyon klasörü (arayüzü Interfaces/Services/de, implementasyonu burada — A-03\'ün TÜM servisleriyle AYNI desen).',
+        kod: `using Microsoft.Extensions.Configuration;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.Interfaces.Services;
+
+namespace Zausel.Application.Services;
+
+// Yalnızca uzantı kontrolü GÜVENSİZ — bir .exe ".png" adıyla yüklenebilir; magic bytes ile
+// dosyanın GERÇEK ilk baytları da bildirdiği uzantıyla eşleşmeli (A_backend.md A-07 notu).
+public class LocalFileStorageService : IFileStorageService
+{
+    private const long MaxFileSizeBytes = 5 * 1024 * 1024;
+
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".webp"
+    };
+
+    private readonly IConfiguration _cfg;
+
+    public LocalFileStorageService(IConfiguration cfg) => _cfg = cfg;
+
+    public async Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken)
+    {
+        var extension = Path.GetExtension(originalFileName);
+        if (!AllowedExtensions.Contains(extension))
+            throw new UnsupportedFileTypeException();
+        if (contentLength > MaxFileSizeBytes)
+            throw new FileTooLargeException();
+
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken);
+        var bytes = buffer.ToArray();
+
+        if (!MatchesDeclaredType(bytes, extension))
+            throw new UnsupportedFileTypeException();
+
+        // uploads/<purpose>/<yyyy>/<MM>/<guid>.ext — amaca göre ayrışır, ayda bir yeni klasöre döner.
+        var now = DateTime.UtcNow;
+        var relativeDir = Path.Combine(purpose, now.Year.ToString(), now.Month.ToString("00"));
+        var uploadDir = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativeDir);
+        Directory.CreateDirectory(uploadDir);
+
+        var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+        await File.WriteAllBytesAsync(Path.Combine(uploadDir, fileName), bytes, cancellationToken);
+
+        var relativeUrl = string.Join('/', purpose, now.Year, now.Month.ToString("00"), fileName);
+        return $"{_cfg["FileStorage:BaseUrl"]!.TrimEnd('/')}/{relativeUrl}";
+    }
+
+    // Spoofing regresyonu: içerik bildirilen uzantıyla eşleşmiyorsa (ör. metin dosyası ".png" adıyla) reddedilir.
+    private static bool MatchesDeclaredType(byte[] bytes, string extension) => extension.ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+        ".png" => bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+                  && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A,
+        ".webp" => bytes.Length >= 12 && bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F' && bytes[3] == (byte)'F'
+                   && bytes[8] == (byte)'W' && bytes[9] == (byte)'E' && bytes[10] == (byte)'B' && bytes[11] == (byte)'P',
+        _ => false
+    };
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.Extensions.Configuration;', aciklama: '`IConfiguration` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common.Exceptions;', aciklama: 'Üç yeni istisnanın (`UnsupportedFileTypeException`/`FileTooLargeException`, ve Controller katmanındaki `FileRequiredException`) ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IFileStorageService`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Services;', aciklama: 'LocalFileStorageService.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LocalFileStorageService : IFileStorageService', aciklama: '"Local" — dosyalar sunucunun KENDİ disk sisteminde saklanıyor, bir bulut depolama (S3 vb.) DEĞİL; isim bu bilinçli sınırı BAŞTAN belli ediyor.', neden: null, olmasaydi: null },
+          { satir: 'private const long MaxFileSizeBytes = 5 * 1024 * 1024;', aciklama: '5 MB — istemciyle (admin panel formu) paylaşılan sabit üst sınır.', neden: 'Kelime kartı görselleri için 5 MB fazlasıyla yeterli (bir web sayfasında gösterilecek bir görsel genelde birkaç yüz KB) — daha büyük bir sınır sunucu diskini GEREKSİZ yere hızlı doldurur ve sayfa yükleme sürelerini uzatır.', olmasaydi: 'Bir üst sınır OLMASAYDI, bir admin yanlışlıkla (ör. sıkıştırılmamış bir kamera fotoğrafı) çok büyük bir dosya yükleyebilir, `wwwroot/uploads` disk kotasını KISA sürede DOLDURABİLİRDİ.' },
+          { satir: 'private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)', aciklama: '`StringComparer.OrdinalIgnoreCase` — ".PNG"/".png"/".Png" AYNI kabul edilir.', neden: 'Dosya adları büyük/küçük harf DUYARLI bir dosya sisteminden (ör. Linux) gelebilir — istemci uzantıyı BÜYÜK harfle gönderirse (bazı mobil kameralar ".JPG" üretir) reddedilmemeli.', olmasaydi: 'Varsayılan (case-sensitive) `HashSet<string>` kullanılsaydı, ".JPG" uzantılı GEÇERLİ bir dosya YANLIŞLIKLA `UnsupportedFileTypeException` alırdı.' },
+          { satir: '".jpg", ".jpeg", ".png", ".webp"', aciklama: '4 desteklenen uzantı — kelime kartı görselleri için yeterli, yaygın 3 raster format (JPEG/PNG/WebP).', neden: 'SVG gibi vektör formatları BİLİNÇLİ olarak dışarıda bırakıldı — bir SVG dosyası içine gömülü `<script>` etiketi taşıyabilir, tarayıcıda AÇILDIĞINDA çalıştırılabilir bir kod haline gelebilir.', olmasaydi: 'SVG\'ye izin verilseydi, `/uploads` altında herkese açık şekilde sunulan bir "resim" aslında ÇALIŞTIRILABİLİR bir betik taşıyabilirdi.' },
+          { satir: 'private readonly IConfiguration _cfg;', aciklama: '`FileStorage:UploadPath`/`FileStorage:BaseUrl` okumak için — `JwtTokenService` (A-03) ile AYNI, `IConfiguration`ı DOĞRUDAN enjekte etme deseni (ayrı bir `IOptions<T>` sınıfı YOK).', neden: null, olmasaydi: null },
+          { satir: 'public LocalFileStorageService(IConfiguration cfg) => _cfg = cfg;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken)', aciklama: 'Arayüzün TEK metodunun implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'var extension = Path.GetExtension(originalFileName);', aciklama: 'Dosya adından uzantıyı (nokta DAHİL, ör. ".png") çıkarır.', neden: null, olmasaydi: null },
+          { satir: 'if (!AllowedExtensions.Contains(extension))', aciklama: 'BİRİNCİ kontrol — en UCUZ kontrol EN ÖNCE: bir string karşılaştırması, dosya İÇERİĞİNİ hiç OKUMADAN yapılabilir.', neden: 'Kontroller PAHALIDAN UCUZA değil UCUZDAN PAHALIYA sıralanır — geçersiz bir uzantı, dosyanın TAMAMINI belleğe okumadan (aşağıdaki `CopyToAsync`) HEMEN reddedilir.', olmasaydi: 'Sıralama TERSİNE çevrilseydi (önce içerik okunsaydı), geçersiz uzantılı BÜYÜK bir dosya bile GEREKSİZ yere tamamen belleğe OKUNURDU.' },
+          { satir: 'throw new UnsupportedFileTypeException();', aciklama: 'Desteklenmeyen uzantı → 400 `UNSUPPORTED_FILE_TYPE`.', neden: null, olmasaydi: null },
+          { satir: 'if (contentLength > MaxFileSizeBytes)', aciklama: 'İKİNCİ kontrol — `IFormFile.Length`\'ten (ASP.NET Core\'un multipart parser\'ının HESAPLADIĞI, GÜVENİLİR bir değer) gelen boyut, hâlâ dosya İÇERİĞİ okunmadan kontrol edilir.', neden: null, olmasaydi: null },
+          { satir: 'throw new FileTooLargeException();', aciklama: '5 MB üstü → 400 `FILE_TOO_LARGE`.', neden: null, olmasaydi: null },
+          { satir: 'using var buffer = new MemoryStream();', aciklama: 'Dosya içeriğini belleğe TOPLAMAK için — hem magic bytes kontrolü hem diske YAZMA aynı bayt dizisini kullanacak.', neden: null, olmasaydi: null },
+          { satir: 'await content.CopyToAsync(buffer, cancellationToken);', aciklama: 'Gelen `Stream`\'i (Controller\'daki `file.OpenReadStream()`) TAMAMEN okur.', neden: null, olmasaydi: null },
+          { satir: 'var bytes = buffer.ToArray();', aciklama: 'Bellekteki içeriği bir bayt dizisine ÇEVİRİR — hem magic bytes kontrolü hem `File.WriteAllBytesAsync` bunu KULLANACAK.', neden: null, olmasaydi: null },
+          { satir: 'if (!MatchesDeclaredType(bytes, extension))', aciklama: 'ÜÇÜNCÜ (en PAHALI) kontrol — dosyanın TAMAMI zaten okunduktan SONRA, gerçek içerik uzantıyla KARŞILAŞTIRILIYOR.', neden: null, olmasaydi: null },
+          { satir: 'throw new UnsupportedFileTypeException();', aciklama: 'İçerik spoofing\'i → AYNI `UNSUPPORTED_FILE_TYPE` kodu (istemci açısından "bu bir resim dosyası DEĞİL" bilgisi, sebep AYRIMI ÖNEMLİ DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'var now = DateTime.UtcNow;', aciklama: 'Klasör yolundaki yıl/ay bileşenleri İÇİN — `UtcNow`, sunucunun yerel saat dilimine BAĞIMLI olmayan, proje genelindeki (A-02\'den beri) standart zaman kaynağı.', neden: null, olmasaydi: null },
+          { satir: 'var relativeDir = Path.Combine(purpose, now.Year.ToString(), now.Month.ToString("00"));', aciklama: '`"00"` biçimi — ay HER ZAMAN İKİ haneli (ör. "08", "12") olsun diye; `Path.Combine` işletim sistemine göre doğru ayırıcıyı (`/` ya da `\\`) kullanır.', neden: '`now.Month.ToString("00")`OLMASAYDI Ocak "1", Aralık "12" olurdu — klasör isimleri ALFABETİK sıralandığında ("1", "10", "11", "12", "2", ...) KRONOLOJİK sıradan SAPARDI.', olmasaydi: null },
+          { satir: 'var uploadDir = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativeDir);', aciklama: 'Kök yükleme klasörü (Program.cs\'te MUTLAK yola çözülmüş, bkz. Bölüm 2) + amaç/yıl/ay alt yolu.', neden: null, olmasaydi: null },
+          { satir: 'Directory.CreateDirectory(uploadDir);', aciklama: 'Klasör yoksa OLUŞTURUR (`CreateDirectory` zaten VARSA hiçbir şey YAPMAZ, hata FIRLATMAZ — idempotent).', neden: 'Her yeni ay/her yeni `purpose` İLK kullanıldığında bu alt klasör HENÜZ yok — dosya YAZILMADAN önce klasörün var olması GEREKİR.', olmasaydi: '`Directory.CreateDirectory` çağrılmasaydı, `File.WriteAllBytesAsync` bir `DirectoryNotFoundException` FIRLATIRDI (ilk yüklemede, ya da her yeni ayın İLK gününde).' },
+          { satir: 'var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";', aciklama: '`:N` formatı — GUID\'i TİRESİZ 32 karakterlik hex string olarak yazar (ör. "9e589c1c...b465c"); uzantı KÜÇÜK harfe çevrilir (URL\'lerde tutarlılık).', neden: 'Rastgele bir GUID, orijinal dosya adının (kullanıcı girdisi, path traversal — `../../etc/passwd` gibi — veya çakışma riski TAŞIYAN) HİÇBİR parçasını KORUMAZ.', olmasaydi: 'Orijinal dosya adı KULLANILSAYDI, iki farklı admin AYNI anda "resim.png" yüklerse İKİNCİSİ BİRİNCİSİNİ SESSİZCE ÜZERİNE YAZARDI; ayrıca dosya adı İÇİNDEKİ özel karakterler (`../`) bir path traversal AÇIĞINA dönüşebilirdi.' },
+          { satir: 'await File.WriteAllBytesAsync(Path.Combine(uploadDir, fileName), bytes, cancellationToken);', aciklama: 'Dosyayı diske YAZAR — hesaplanan amaç/yıl/ay klasörü İÇİNE, GUID adıyla.', neden: null, olmasaydi: null },
+          { satir: 'var relativeUrl = string.Join(\'/\', purpose, now.Year, now.Month.ToString("00"), fileName);', aciklama: 'URL her zaman `/` AYIRICI kullanır — `uploadDir`in AKSİNE (işletim sistemine göre DEĞİŞEBİLEN `Path.Combine`), bir HTTP yolu HER ZAMAN `/` kullanır.', neden: 'Sunucu Windows\'ta ÇALIŞSAYDI (bu projede olmuyor ama genel bir doğru), `Path.Combine` `\\` ÜRETİRDİ — bir URL\'de `\\` GEÇERSİZDİR.', olmasaydi: 'Doğrudan `uploadDir`in bir parçası URL\'e YAZILSAYDI, Windows\'ta ÇALIŞAN bir dağıtımda bozuk (`\\` içeren) URL\'ler ÜRETİLİRDİ.' },
+          { satir: 'return $"{_cfg["FileStorage:BaseUrl"]!.TrimEnd(\'/\')}/{relativeUrl}";', aciklama: 'Dışarıdan erişilebilir TAM URL — `BaseUrl` sonundaki OLASI fazladan `/` temizlenir, tek bir `/` ile `relativeUrl` EKLENİR (çift `//` OLUŞMASIN diye).', neden: null, olmasaydi: null },
+          { satir: 'private static bool MatchesDeclaredType(byte[] bytes, string extension) => extension.ToLowerInvariant() switch', aciklama: 'Uzantıya göre HANGİ magic bytes deseninin ARANACAĞINI seçen switch ifadesi.', neden: null, olmasaydi: null },
+          { satir: '".jpg" or ".jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,', aciklama: 'JPEG imzası — İLK 3 bayt HER ZAMAN `FF D8 FF`.', neden: null, olmasaydi: null },
+          { satir: '".png" => bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47', aciklama: 'PNG imzasının İLK 4 baytı (`89 50 4E 47`, "\\x89PNG" ASCII\'sinin karşılığı).', neden: null, olmasaydi: null },
+          { satir: '&& bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A,', aciklama: 'PNG imzasının KALAN 4 baytı — TÜM 8 bayt birlikte PNG standardının SABİT "dosya imzası"dır.', neden: null, olmasaydi: null },
+          { satir: '".webp" => bytes.Length >= 12 && bytes[0] == (byte)\'R\' && bytes[1] == (byte)\'I\' && bytes[2] == (byte)\'F\' && bytes[3] == (byte)\'F\'', aciklama: 'WEBP bir RIFF konteyneridir — İLK 4 bayt ASCII "RIFF".', neden: null, olmasaydi: null },
+          { satir: '&& bytes[8] == (byte)\'W\' && bytes[9] == (byte)\'E\' && bytes[10] == (byte)\'B\' && bytes[11] == (byte)\'P\',', aciklama: 'Bayt 4-7 dosya boyutunu TAŞIR (değişken, KONTROL EDİLMEZ) — bayt 8-11 ASCII "WEBP", format KİMLİĞİNİ doğrular.', neden: null, olmasaydi: null },
+          { satir: '_ => false', aciklama: 'Bilinmeyen/eşleşmeyen bir uzantı-içerik kombinasyonu HER ZAMAN reddedilir.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UnsupportedFileTypeException.cs — Temsili Örnek',
+        dosyaYolu: 'backend/Zausel.Application/Common/Exceptions/UnsupportedFileTypeException.cs',
+        nedenBuKlasor: 'Common/Exceptions/ — diğer TÜM `AppException` alt sınıflarıyla (`CategoryHasChildrenException`, `WordDuplicateException` vb.) AYNI klasör; bir hatanın türünü ARAYAN bir geliştirici tüm istisna sınıflarını TEK klasörde bulur.',
+        kod: `using System.Net;
+
+namespace Zausel.Application.Common.Exceptions;
+
+public class UnsupportedFileTypeException : AppException
+{
+    public UnsupportedFileTypeException() : base("UNSUPPORTED_FILE_TYPE", HttpStatusCode.BadRequest, "Unsupported file type")
+    {
+    }
+}`,
+        satirlar: [
+          { satir: 'using System.Net;', aciklama: '`HttpStatusCode` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Common.Exceptions;', aciklama: 'Diğer istisna sınıflarıyla paylaşılan ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UnsupportedFileTypeException : AppException', aciklama: '`CategoryHasChildrenException` ile AYNI, `AppException`\'dan türeyen bir alt sınıf.', neden: null, olmasaydi: null },
+          { satir: 'public UnsupportedFileTypeException() : base("UNSUPPORTED_FILE_TYPE", HttpStatusCode.BadRequest, "Unsupported file type")', aciklama: 'Parametresiz constructor — kategori istisnalarının AKSİNE (`categoryId` alıyorlardı) burada istemciye taşınacak EK bir bağlamsal veri (hangi dosya, hangi kayıt) YOK, bu yüzden hiçbir parametre gerekmiyor.', neden: '400 Bad Request — bu, sunucu tarafında GEÇİCİ bir durum çelişkisi (409 gibi) DEĞİL, isteğin kendisinin (yüklenen dosya) geçersiz olması.', olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ErrorMessages.cs — 3 Yeni Kod × 2 Dil',
+        dosyaYolu: 'backend/Zausel.Application/Common/ErrorMessages.cs',
+        neden: '`FileRequiredException`/`UnsupportedFileTypeException`/`FileTooLargeException`\'ın (bu bölüm + Bölüm 2) `Code`\'ları — `ExceptionHandlingMiddleware`nin `ErrorMessages.Resolve` çağrısı bunları BULAMAZSA istemciye Code\'un KENDİSİNİ (çözümlenmemiş ham metin) döndürürdü (A-02\'nin baştan kurduğu Code+dil sözlüğü deseni).',
+        diff: `             ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Sıralama değeri 0 veya daha büyük olmalı.",
++            ["FILE_REQUIRED"] = "Dosya zorunlu.",
++            ["UNSUPPORTED_FILE_TYPE"] = "Desteklenmeyen dosya türü.",
++            ["FILE_TOO_LARGE"] = "Dosya boyutu 5 MB'ı aşamaz.",
+         },
+         ["de"] = new()
+         {
+@@ 90 SATIR SONRA (Almanca sözlük, AYNI 3 kod) @@
+             ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Der Sortierwert muss 0 oder größer sein.",
++            ["FILE_REQUIRED"] = "Datei ist erforderlich.",
++            ["UNSUPPORTED_FILE_TYPE"] = "Nicht unterstützter Dateityp.",
++            ["FILE_TOO_LARGE"] = "Die Dateigröße darf 5 MB nicht überschreiten.",
+         },
+     };`,
+        satirlar: [
+          { satir: '["FILE_REQUIRED"] = "Dosya zorunlu.",', aciklama: '`FileRequiredException`\'ın (Bölüm 2) tr metni.', neden: null, olmasaydi: null },
+          { satir: '["UNSUPPORTED_FILE_TYPE"] = "Desteklenmeyen dosya türü.",', aciklama: '`UnsupportedFileTypeException`\'ın (bu bölüm) tr metni.', neden: null, olmasaydi: null },
+          { satir: '["FILE_TOO_LARGE"] = "Dosya boyutu 5 MB\'ı aşamaz.",', aciklama: '`FileTooLargeException`\'ın (bu bölüm) tr metni.', neden: null, olmasaydi: null },
+          { satir: '["FILE_REQUIRED"] = "Datei ist erforderlich.",', aciklama: '`FILE_REQUIRED`\'ın Almanca metni — Almanca sözlük TR sözlükten AYRI bir `Dictionary`, aynı Code için AYRI satır GEREKİR.', neden: null, olmasaydi: null },
+          { satir: '["UNSUPPORTED_FILE_TYPE"] = "Nicht unterstützter Dateityp.",', aciklama: '`UNSUPPORTED_FILE_TYPE`\'ın Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '["FILE_TOO_LARGE"] = "Die Dateigröße darf 5 MB nicht überschreiten.",', aciklama: '`FILE_TOO_LARGE`\'ın Almanca metni — 3 Code\'un Almanca çevirisinin sonuncusu.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — IFileStorageService Kaydı',
+        dosyaYolu: 'backend/Zausel.Application/DependencyInjection.cs',
+        neden: '`UploadImageCommandHandler`\'ın (Bölüm 2) constructor\'ı `IFileStorageService` İSTİYOR — DI konteynerine kayıt OLMADAN, uygulama başlangıçta ("no service registered for IFileStorageService") ÇÖKERDİ.',
+        diff: `         services.AddScoped<IActivityLogger, ActivityLogger>();
+         services.AddScoped<ISecurityLogger, SecurityLogger>();
++        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
+         return services;`,
+        satirlar: [
+          {
+            satir: 'services.AddScoped<IFileStorageService, LocalFileStorageService>();',
+            aciklama: 'A-03\'ün TÜM servis kayıtlarıyla (`ITokenService`, `IOtpService` vb.) AYNI ömür (`Scoped` — istek başına BİR örnek).',
+            neden: '`LocalFileStorageService` durumsuz (stateless) OLSA da, proje genelindeki TÜM Application servisleri (repository\'lerle AYNI) `Scoped` kaydediliyor — tutarlılık İÇİN, `Singleton`/`Transient` ayrımı bu projede YAPILMIYOR.',
+            olmasaydi: 'Kayıt hiç EKLENMESEYDİ, `UploadImageCommandHandler`ın DI\'dan ÇÖZÜLMESİ (resolve) başarısız OLURDU — uygulama AYAĞA HİÇ KALKAMAZDI (constructor bağımlılığı bulunamaz hatası).'
+          }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'FileRequiredException / FileTooLargeException', tanim: '`UnsupportedFileTypeException` ile AYNI deseni izleyen iki kardeş istisna — parametresiz constructor, 400 Bad Request, sırasıyla `FILE_REQUIRED` (dosya hiç gönderilmemiş, Bölüm 2\'de Controller\'ın kontrol ettiği durum) ve `FILE_TOO_LARGE` (boyut sınırı aşıldı) Code\'larını taşır.' },
+          { terim: 'Magic bytes (file signature)', tanim: 'Bir dosya formatının İLK birkaç baytında bulunan, o formatı TANIMLAYAN sabit bir bayt dizisi (ör. PNG için `89 50 4E 47 0D 0A 1A 0A`) — uzantıdan BAĞIMSIZ, dosyanın GERÇEK türünü doğrulamanın standart yolu.' },
+          { terim: 'Spoofing (içerik sahteciliği)', tanim: 'Bir dosyanın GERÇEK türünden farklı bir uzantıyla (ör. bir metin dosyasının ".png" adıyla) yüklenmeye çalışılması — magic bytes kontrolü bu saldırıyı ENGELLER.' },
+          { terim: 'Path traversal', tanim: 'Bir dosya adı/yolu içindeki `../` gibi ifadelerle, sunucudaki BEKLENMEYEN bir konuma (ör. sistem dosyalarına) erişmeye/yazmaya çalışan saldırı türü — GUID tabanlı, orijinal dosya adını HİÇ KULLANMAYAN bir adlandırma bu riski ORTADAN KALDIRIR.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`IFileStorageService` — Application katmanı, ASP.NET Core\'un `IFormFile`ından BAĞIMSIZ (`Stream`/`string`/`long` alır), ileride bir bulut depolama implementasyonuna GEÇİŞE açık bir arayüz.',
+          '`LocalFileStorageService` — UCUZDAN PAHALIYA sıralı 3 kontrol: uzantı beyaz listesi → boyut → magic bytes (spoofing koruması); TÜMÜ geçince GUID adıyla diske yazar.',
+          'Amaç + tarih bazlı klasörleme (`uploads/<purpose>/<yyyy>/<MM>/<guid>.ext`) — kullanıcı kararıyla, A-10/A-13\'teki GELECEKTEKİ yeniden kullanımı DÜŞÜNEREK baştan tasarlandı.',
+          '`ErrorMessages.cs`\'e 3 yeni Code × 2 dil, `DependencyInjection.cs`\'e `IFileStorageService` kaydı eklendi — ikisi de `kod-degisiklik` ile, önceki bölümlerde TAM öğretilmiş dosyalara GERİYE DÖNÜK ekleme.',
+          'Sırada: Bölüm 2 — bu servisi çağıran `UploadImageCommand`, `MediaController` ve `/uploads`\'ın herkese açık statik dosya sunumu.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

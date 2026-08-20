@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminSeedService, AdminSeedService>();
         services.AddScoped<IActivityLogger, ActivityLogger>();
         services.AddScoped<ISecurityLogger, SecurityLogger>();
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
         return services;
     }

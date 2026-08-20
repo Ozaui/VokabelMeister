@@ -387,24 +387,34 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > filtresi ve `categories[]` alanı doğru döndü, `ActivityLogs`'a 3 aksiyonun tamamı doğru yazıldı — test
 > verileri temizlendi (soft-delete edilen seed kategori 1 geri alındı). Sıradaki: `A-07` (Medya API).
 
-### A-07 — Medya / Dosya Yükleme API ⬜
+### A-07 — Medya / Dosya Yükleme API ✅
 **Referans:** REFERENCE/ENV.md §7
 **Frontend karşılığı:** B-03 (Admin — Kelime Yönetimi formundaki görsel yükleme)
 > `WordConcept.ImageUrl` alanı A-05'te zaten var — bu task yeni migration açmaz, yalnızca oraya
 > yazılacak URL'i üreten yükleme uç noktasını yazar.
-- [ ] `IFileStorageService`/`LocalFileStorageService` (uzantı jpg/jpeg/png/webp + 5 MB + **içerik**
+- [x] `IFileStorageService`/`LocalFileStorageService` (uzantı jpg/jpeg/png/webp + 5 MB + **içerik**
       [magic bytes] doğrulaması — yalnızca uzantı kontrolü GÜVENSİZ, bir `.exe` `.png` adıyla
       yüklenebilir), `Guid` tabanlı benzersiz ad üretimi
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `MediaController` (`POST /media/images/upload`, `[Authorize(Roles="Admin")]`, `IFormFile?`
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `MediaController` (`POST /media/images/upload`, `[Authorize(Roles="Admin")]`, `IFormFile?`
       nullable + `FileRequiredException` — eksik dosya projenin standart `ApiErrorResponse`
       şeklinde döner, ASP.NET'in ham hata şekli DEĞİL), `[RequestSizeLimit]`, `UseStaticFiles`
       (auth'tan ÖNCE, `/uploads` herkese açık)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **`IActivityLogger`:** `UPLOAD_MEDIA` (`EntityType=Word`)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** boyut/uzantı/içerik doğrulama (spoofing regresyonu dahil), benzersiz ad üretimi
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **`IActivityLogger`:** `UPLOAD_MEDIA` (`EntityType=Word`)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** boyut/uzantı/içerik doğrulama (spoofing regresyonu dahil), benzersiz ad üretimi
+- [x] ➜ **AKADEMI/backend'ye işle** — `AKADEMI/backend/A-07_medya-yukleme-api/03_birim-testleri-ozet-sozluk.html`
+
+> **A-07 tamamlandı (2026-08-21):** `IFileStorageService`/`LocalFileStorageService` (uzantı beyaz
+> listesi + 5 MB + magic bytes içerik doğrulaması, kullanıcı kararıyla `uploads/<amaç>/<yıl>/<ay>/
+> <guid>.ext` klasörleme — A-10/A-13'teki yeniden kullanıma hazır), 3 yeni `AppException` alt sınıfı
+> (`FileRequiredException`/`UnsupportedFileTypeException`/`FileTooLargeException`), `UploadImageCommand`
+> + `MediaController` (`POST /media/images/upload`, Admin-only), `Program.cs`'e yol çözümü + `/uploads`
+> statik dosya sunumu (auth'tan önce), `IActivityLogger` (`UPLOAD_MEDIA`), 7 birim testi — hepsi canlı
+> doğrulandı (gerçek PNG yükleme 201, eksik dosya/desteklenmeyen uzantı/spoofed içerik/yetkisiz erişim
+> senaryoları, `ActivityLogs`'a doğru yazıldığı sorguyla teyit edildi), tüm paket 194/194 yeşil,
+> `AKADEMI/backend/A-07_medya-yukleme-api/`e işlendi (3 bölüm). Sıradaki: `A-08` (Kişisel Kategori API).
 
 ### A-08 — Kişisel Kategori API ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §8

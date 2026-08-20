@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-07 — Medya / Dosya Yükleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'upload-command-ve-controller',
+    bolumBaslik: 'A-07 — Medya / Dosya Yükleme API',
+    oncekiBolum: '01_dosya-depolama-servisi.html',
+    sonrakiBolum: '03_birim-testleri-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'UploadImageCommand, MediaController ve Statik Dosya Sunumu',
+        altBaslik: 'Bölüm 1\'in servisini çağıran MediatR Command\'ı, tek endpoint\'li Controller ve /uploads\'ın auth\'tan ÖNCE herkese açık statik dosya sunumu.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UploadImageCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Media/UploadImageCommand.cs',
+        nedenBuKlasor: 'Application/Features/Media/ — Command+Handler AYNI dosyada, diğer TÜM feature\'ların (Categories/Words) izlediği dikey dilim düzeni; "Media" bu Command\'ın ait olduğu iş alanı.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Media;
+using Zausel.Application.Interfaces.Services;
+
+namespace Zausel.Application.Features.Media;
+
+public record UploadImageCommand(Stream Content, string FileName, long ContentLength, int? UserId, string? ActorRole)
+    : IRequest<MediaUploadResponse>;
+
+public class UploadImageCommandHandler : IRequestHandler<UploadImageCommand, MediaUploadResponse>
+{
+    private readonly IFileStorageService _fileStorageService;
+    private readonly IActivityLogger _activityLogger;
+
+    public UploadImageCommandHandler(IFileStorageService fileStorageService, IActivityLogger activityLogger)
+    {
+        _fileStorageService = fileStorageService;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<MediaUploadResponse> Handle(UploadImageCommand request, CancellationToken cancellationToken)
+    {
+        // Bu uç yalnızca kelime kavramı görseli içindir — A-10/A-13'teki kart görseli/avatar
+        // yüklemeleri kendi Command'larından IFileStorageService'i FARKLI bir purpose ile
+        // ("user-cards"/"avatars") çağırır, bu Command'ı yeniden kullanmaz.
+        var url = await _fileStorageService.SaveImageAsync(request.Content, request.FileName, request.ContentLength, "word-images", cancellationToken);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "UPLOAD_MEDIA", entityType: "Word", entityId: null,
+            oldValue: null, newValue: new { url }, cancellationToken: cancellationToken);
+
+        return new MediaUploadResponse(url);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<,>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Media;', aciklama: '`MediaUploadResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IFileStorageService` (Bölüm 1) ve `IActivityLogger`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Media;', aciklama: 'UploadImageCommand.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — ileride bu klasöre eklenecek başka bir medya Command\'ı (varsa) da BURADA toplanır.', neden: null, olmasaydi: null },
+          { satir: 'public record UploadImageCommand(Stream Content, string FileName, long ContentLength, int? UserId, string? ActorRole)', aciklama: '`Stream`/`string`/`long` — Bölüm 1\'deki `IFileStorageService.SaveImageAsync`in aldığı AYNI üç ham parametre + audit log için `UserId`/`ActorRole`.', neden: '`IFormFile` DEĞİL — bu Command da (arayüz gibi) ASP.NET Core türünden BAĞIMSIZ kalır; Controller (aşağıda) `IFormFile`ı bu üç parçaya AYIRIP Command\'a geçirir.', olmasaydi: 'Command doğrudan `IFormFile` alsaydı, `Zausel.Application` projesi YİNE ASP.NET Core\'a bağımlı hale gelirdi.' },
+          { satir: ': IRequest<MediaUploadResponse>;', aciklama: 'MediatR\'a bu Command\'ın işlendiğinde `MediaUploadResponse` DÖNDÜRECEĞİNİ bildirir.', neden: null, olmasaydi: null },
+          { satir: 'public class UploadImageCommandHandler : IRequestHandler<UploadImageCommand, MediaUploadResponse>', aciklama: 'MediatR bu sınıfı OTOMATİK bulur (assembly taraması) — Controller `IMediator.Send`i çağırdığında ÇALIŞACAK sınıf.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IFileStorageService _fileStorageService;', aciklama: 'Bölüm 1\'in servis arayüzü — Handler\'ın GERÇEK dosya kaydetme işini DELEGE ettiği bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'Audit log — `UPLOAD_MEDIA` olayının kaydı.', neden: null, olmasaydi: null },
+          { satir: 'public UploadImageCommandHandler(IFileStorageService fileStorageService, IActivityLogger activityLogger)', aciklama: 'Constructor injection — bu Handler bir REPOSITORY\'e BAĞIMLI DEĞİL, çünkü sonucu bir veritabanı satırı DEĞİL, disteki bir dosyanın URL\'i.', neden: null, olmasaydi: null },
+          { satir: '_fileStorageService = fileStorageService;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<MediaUploadResponse> Handle(UploadImageCommand request, CancellationToken cancellationToken)', aciklama: 'Handler\'ın tek metodu.', neden: null, olmasaydi: null },
+          { satir: 'var url = await _fileStorageService.SaveImageAsync(request.Content, request.FileName, request.ContentLength, "word-images", cancellationToken);', aciklama: '"word-images" — Bölüm 1\'in `purpose` parametresine SABİT bir değer geçilir, Command\'ın kendi alanı DEĞİL.', neden: 'Bu endpoint zaten YALNIZCA kelime görseli yüklemek için var — `purpose`u istemciden ALMAK, istemcinin (Admin panel formu) kontrol ETMEMESİ gereken bir depolama detayına karar VERMESİNE izin verirdi.', olmasaydi: '`purpose` bir Command alanı OLSAYDI, istemci yanlışlıkla (ya da kötü niyetle) "avatars" gibi bir değer GÖNDEREBİLİR, kelime görselleri YANLIŞ klasöre KARIŞIRDI.' },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: '"UPLOAD_MEDIA" olayı loglanır.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "UPLOAD_MEDIA", entityType: "Word", entityId: null,', aciklama: '`entityId: null` — bu yükleme HENÜZ hiçbir `WordConcept` satırına BAĞLI DEĞİL (admin önce görseli yükler, dönen URL\'i SONRA elle bir kelime formuna YAPIŞTIRIR); `entityType: "Word"` yine de HANGİ tür kayıtla İLİŞKİLİ olduğunu belirtir.', neden: 'Bu iki uç nokta (`POST /media/images/upload` ve `POST`/`PUT /words`) birbirinden BAĞIMSIZ çağrılar — aralarında otomatik bir bağ YOK, bu yüzden log ATILIRKEN henüz hangi `WordConcept`e ait olacağı BİLİNEMEZ.', olmasaydi: '`entityId` zorunlu (nullable OLMAYAN bir `int`) olsaydı, bu Handler HİÇBİR zaman geçerli bir değer VEREMEZDİ — audit log çağrısı ya DERLENMEZ ya da uydurma bir ID (0 gibi) ile YANILTICI bir kayıt BIRAKIRDI.' },
+          { satir: 'oldValue: null, newValue: new { url }, cancellationToken: cancellationToken);', aciklama: '`oldValue: null` — bu bir GÜNCELLEME değil, yeni bir dosya oluşturma; `newValue: new { url }` — kaydedilen görselin URL\'i, ilerideki bir admin incelemesinde (A-07 sonrası eklenecek log okuma ekranında) "hangi dosya yüklendi" sorusunu yanıtlar.', neden: null, olmasaydi: null },
+          { satir: 'return new MediaUploadResponse(url);', aciklama: 'İstemciye dönecek yanıt — TEK alan, kaydedilen görselin TAM URL\'i.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'MediaUploadResponse.cs',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/Media/MediaUploadResponse.cs',
+        nedenBuKlasor: 'Application/DTOs/Media/ — diğer TÜM feature\'ların (`DTOs/Categories/`, `DTOs/Words/`) izlediği, DTO\'ların Command/Query\'lerden AYRI, kendi feature alt klasöründe tutulduğu düzen.',
+        kod: `namespace Zausel.Application.DTOs.Media;
+
+public record MediaUploadResponse(string Url);`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.DTOs.Media;', aciklama: 'MediaUploadResponse.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — bu klasörde ileride başka bir medya DTO\'su (varsa) toplanır.', neden: null, olmasaydi: null },
+          { satir: 'public record MediaUploadResponse(string Url);', aciklama: 'Tek alanlı, DEĞİŞTİRİLEMEZ (immutable) bir `record` — istemciye dönecek `{ "url": "..." }` yanıt şeklinin karşılığı.', neden: 'AutoMapper Profile\'ı GEREKMEZ — bu DTO bir Entity\'den DEĞİL, Bölüm 1\'in servisinin döndürdüğü ham bir `string`\'ten elle inşa ediliyor.', olmasaydi: 'Bir AutoMapper Profile YAZILSAYDI, tek bir alanı KOPYALAYAN bir eşleme kuralı için gereksiz bir dosya/kayıt daha eklenmiş olurdu.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'MediaController.cs',
+        dosyaYolu: 'backend/Zausel.API/Controllers/MediaController.cs',
+        nedenBuKlasor: 'API/Controllers/ — TÜM Controller\'ların toplandığı, ASP.NET Core\'un `[ApiController]`/`ControllerBase` türetmesiyle (reflection ile) BULDUĞU, konumdan BAĞIMSIZ ama okunabilirlik için TEK klasörde tutulan yer.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.DTOs.Media;
+using Zausel.Application.Features.Media;
+
+namespace Zausel.API.Controllers;
+
+[Route("media")]
+public class MediaController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public MediaController(IMediator mediator) => _mediator = mediator;
+
+    // file: IFormFile? (nullable) — [ApiController]'ın ASP.NET'in kendi ham 400 gövdesini otomatik
+    // üretmesini engeller, eksik dosya bizim standart ApiErrorResponse şeklimize (FileRequiredException) düşer.
+    [HttpPost("images/upload")]
+    [Authorize(Roles = "Admin")]
+    [EnableRateLimiting("general")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<ActionResult<MediaUploadResponse>> UploadImage(IFormFile? file, CancellationToken cancellationToken)
+    {
+        if (file is null)
+            throw new FileRequiredException();
+
+        await using var stream = file.OpenReadStream();
+        var result = await _mediator.Send(
+            new UploadImageCommand(stream, file.FileName, file.Length, CurrentUserId, CurrentUserRole),
+            cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IMediator` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Authorization;', aciklama: '`[Authorize(Roles = ...)]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Mvc;', aciklama: '`[HttpPost]`/`ActionResult<T>`/`[RequestSizeLimit]` gibi MVC temel türleri için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.RateLimiting;', aciklama: '`[EnableRateLimiting]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common.Exceptions;', aciklama: '`FileRequiredException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Media;', aciklama: '`MediaUploadResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Media;', aciklama: '`UploadImageCommand`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.API.Controllers;', aciklama: 'MediaController.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: '[Route("media")]', aciklama: 'Bu Controller\'ın TEK action\'ı `/media` altında toplanır — `RoutePrefixConvention` baştaki `api/v1`\'i AYRICA ekler, gerçek yol `/api/v1/media/images/upload`.', neden: null, olmasaydi: null },
+          { satir: 'public class MediaController : ApiControllerBase', aciklama: '`CategoriesController`/`WordsController` ile AYNI temel sınıf — `CurrentUserId`/`CurrentUserRole` buradan gelir.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMediator _mediator;', aciklama: 'Tek bağımlılık — Controller kendisi hiçbir iş mantığı taşımaz.', neden: null, olmasaydi: null },
+          { satir: 'public MediaController(IMediator mediator) => _mediator = mediator;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: '[HttpPost("images/upload")]', aciklama: '`POST /media/images/upload` — bu Controller\'ın TEK route şablonu.', neden: null, olmasaydi: null },
+          { satir: '[Authorize(Roles = "Admin")]', aciklama: 'Yalnızca Admin rolündeki kullanıcılar dosya yükleyebilir — sıradan bir `User`ın çağıramayacağı, `CategoriesController`ın yazma uçlarıyla AYNI yetki seviyesi.', neden: null, olmasaydi: null },
+          { satir: '[EnableRateLimiting("general")]', aciklama: 'Genel rate limit policy\'si (dakikada 100 istek).', neden: null, olmasaydi: null },
+          { satir: '[RequestSizeLimit(5 * 1024 * 1024)]', aciklama: 'ASP.NET Core\'un KENDİ, Bölüm 1\'in kontrolünden BAĞIMSIZ ikinci bir 5 MB sınırı — istek gövdesi bu boyutu aşarsa, Handler\'a HİÇ ULAŞMADAN, sunucu seviyesinde reddedilir.', neden: 'Bölüm 1\'deki `LocalFileStorageService`nin boyut kontrolü, dosya ZATEN Handler\'a KADAR taşınmış OLMASINI gerektirir (bellek+ağ trafiği harcanmış olur) — `[RequestSizeLimit]` bunu request pipeline\'ının EN erken noktasında keser, aşırı büyük bir istek MediatR pipeline\'ına hiç GİRMEZ.', olmasaydi: 'Yalnızca Bölüm 1\'in kontrolüne güvenilseydi, çok büyük (ör. 500 MB) bir istek YİNE DE tamamen ALINIR, belleğe okunmaya ÇALIŞILIRDI — sunucu kaynakları BOŞA harcanırdı, `[RequestSizeLimit]` bu israfı EN BAŞTA önlüyor.' },
+          { satir: 'public async Task<ActionResult<MediaUploadResponse>> UploadImage(IFormFile? file, CancellationToken cancellationToken)', aciklama: '`file` parametresi NULLABLE (`IFormFile?`) — ASP.NET Core `multipart/form-data`daki "file" adlı alanı buraya OTOMATİK bağlar.', neden: '`[ApiController]` özniteliği, non-nullable bir reference type parametresini OTOMATİK olarak "zorunlu" sayıp kendi ham 400 gövdesini üretir — `IFormFile?` yazarak bu OTOMATİK davranış BİLİNÇLİ olarak devre dışı bırakılıyor, kontrol elle (aşağıdaki `if`) yapılıyor.', olmasaydi: 'Parametre `IFormFile file` (nullable OLMADAN) yazılsaydı, dosya eksik bir istekte ASP.NET Core kendi standart-DIŞI hata gövdesini (projenin `ApiErrorResponse` şeklinde OLMAYAN) dönerdi — istemci İKİ FARKLI hata şekliyle uğraşmak ZORUNDA kalırdı.' },
+          { satir: 'if (file is null)', aciklama: 'Dosya HİÇ gönderilmemiş mi kontrolü.', neden: null, olmasaydi: null },
+          { satir: 'throw new FileRequiredException();', aciklama: 'Eksik dosya → 400 `FILE_REQUIRED`, projenin standart hata gövdesiyle.', neden: null, olmasaydi: null },
+          { satir: 'await using var stream = file.OpenReadStream();', aciklama: '`IFormFile`ın ham baytlarına erişen bir `Stream` açar — `await using`, metot sona erdiğinde (Handler\'ın işini bitirmesinden SONRA) bu stream\'in OTOMATİK kapatılmasını sağlar.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Command MediatR pipeline\'ına gönderilir.', neden: null, olmasaydi: null },
+          { satir: 'new UploadImageCommand(stream, file.FileName, file.Length, CurrentUserId, CurrentUserRole),', aciklama: '`IFormFile`ın `FileName`/`Length`i + açılan `stream` — Bölüm 1\'in arayüzünün beklediği ham parametrelere BURADA (Controller\'da) çevriliyor.', neden: '`CurrentUserId`/`CurrentUserRole` — `ApiControllerBase`den gelen, JWT claim\'lerinden okunan HTTP-bağlamlı değerler; istemcinin GÖNDERDİĞİ bir alan DEĞİL (over-posting önlemi).', olmasaydi: 'Bu değerler istemciden bir form alanı olarak ALINSAYDI, bir kullanıcı KENDİ `UserId`sini BAŞKA bir admin\'inkiyle DEĞİŞTİREREK audit log\'u YANILTABİLİRDİ.' },
+          { satir: 'cancellationToken);', aciklama: 'Çağrının kapanışı.', neden: null, olmasaydi: null },
+          { satir: 'return StatusCode(StatusCodes.Status201Created, result);', aciklama: '201 Created — yeni bir kaynak (dosya) oluşturuldu, `CategoriesController.Create`/`WordsController.Create` ile AYNI durum kodu.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Program.cs — Yükleme Yolu Çözümü ve /uploads Statik Sunumu',
+        dosyaYolu: 'backend/Zausel.API/Program.cs',
+        neden: 'Bölüm 1\'in `LocalFileStorageService`si `FileStorage:UploadPath`i (appsettings\'te GÖRELİ bir yol, "wwwroot/uploads") MUTLAK bir yola çözülmüş olarak DI\'dan okumayı bekliyor; ayrıca kaydedilen dosyaların TARAYICIDAN erişilebilir olması için `/uploads` yolunun statik dosya middleware\'ine BAĞLANMASI gerekiyor — ikisi de bu görevde İLK kez ekleniyor.',
+        diff: ` using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+ using Microsoft.AspNetCore.RateLimiting;
+ using Microsoft.Extensions.Diagnostics.HealthChecks;
++using Microsoft.Extensions.FileProviders;
+ using Microsoft.IdentityModel.Tokens;
+@@ 20 SATIR SONRA @@
+ builder.Services.AddInfrastructureServices(builder.Configuration);
+ builder.Services.AddApplicationServices();
+ builder.Services.AddHealthChecks().AddDbContextCheck<ZauselDbContext>();
+
++// FileStorage:UploadPath göreli olabilir (dev: appsettings.Development.json'daki "wwwroot/uploads") —
++// LocalFileStorageService'in DI'dan aldığı IConfiguration'ın HER YERDE aynı mutlak yolu görmesi için
++// tek seferde burada çözülüp config'e geri yazılır (aşağıdaki UseStaticFiles de aynı değeri okur).
++var uploadPath = builder.Configuration["FileStorage:UploadPath"] ?? "wwwroot/uploads";
++var resolvedUploadPath = Path.IsPathRooted(uploadPath) ? uploadPath : Path.Combine(builder.Environment.ContentRootPath, uploadPath);
++builder.Configuration["FileStorage:UploadPath"] = resolvedUploadPath;
++Directory.CreateDirectory(resolvedUploadPath);
++
+ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+@@ 75 SATIR SONRA @@
+ app.UseMiddleware<RequestResponseLoggingMiddleware>();
+ app.UseMiddleware<ExceptionHandlingMiddleware>();
+ app.UseMiddleware<SecurityHeadersMiddleware>();
+ app.UseHttpsRedirection();
++// Auth'tan ÖNCE — /uploads herkese açık (kelime görselleri anonim de görüntülenebilmeli, ör. paylaşım linkleri).
++app.UseStaticFiles(new StaticFileOptions
++{
++    FileProvider = new PhysicalFileProvider(resolvedUploadPath),
++    RequestPath = "/uploads"
++});
+ app.UseCors("Default");`,
+        satirlar: [
+          { satir: 'using Microsoft.Extensions.FileProviders;', aciklama: '`PhysicalFileProvider` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'var uploadPath = builder.Configuration["FileStorage:UploadPath"] ?? "wwwroot/uploads";', aciklama: 'Yapılandırmadan ham (henüz çözülmemiş, göreli OLABİLECEK) değeri okur — `appsettings.Development.json`da "wwwroot/uploads" olarak tanımlı.', neden: null, olmasaydi: null },
+          { satir: 'var resolvedUploadPath = Path.IsPathRooted(uploadPath) ? uploadPath : Path.Combine(builder.Environment.ContentRootPath, uploadPath);', aciklama: 'Yol zaten mutlaksa (üretimde `FileStorage__UploadPath` ortam değişkeni "/var/app/uploads" gibi mutlak bir yol OLABİLİR) OLDUĞU gibi kullanılır; göreliyse uygulamanın kök dizinine (`ContentRootPath`) göre MUTLAKLAŞTIRILIR.', neden: '`LocalFileStorageService` içindeki `Directory.CreateDirectory`/`File.WriteAllBytesAsync` çağrıları, uygulamanın HANGİ dizinden ÇALIŞTIRILDIĞINA (`dotnet run`ın çalıştığı klasöre) göre DEĞİL, HER ZAMAN AYNI fiziksel konuma yazmalı.', olmasaydi: 'Göreli yol OLDUĞU gibi bırakılsaydı, `dotnet run` FARKLI bir dizinden (ör. `backend/` kökünden, `Zausel.API/` yerine) çalıştırıldığında dosyalar BEKLENMEYEN bir konuma yazılırdı.' },
+          { satir: 'builder.Configuration["FileStorage:UploadPath"] = resolvedUploadPath;', aciklama: 'Çözülmüş mutlak yolu YAPILANDIRMANIN KENDİSİNE geri yazar.', neden: '`LocalFileStorageService` DI\'dan `IConfiguration`ı ENJEKTE EDİYOR ve `FileStorage:UploadPath`i HER İSTEKTE tekrar okuyor — bu satır olmasaydı servis HÂLÂ göreli yolu görürdü.', olmasaydi: 'Bu satır atlansaydı, `LocalFileStorageService` göreli "wwwroot/uploads" değerini okurdu ve YİNE çalışma dizinine bağımlı KALIRDI — mutlaklaştırma boşa yapılmış olurdu.' },
+          { satir: 'Directory.CreateDirectory(resolvedUploadPath);', aciklama: 'Kök yükleme klasörünü UYGULAMA AÇILIRKEN oluşturur.', neden: 'Aşağıdaki `PhysicalFileProvider`ın constructor\'ı, verilen dizin DİSKTE YOKSA bir istisna FIRLATIR — statik dosya middleware\'i KURULMADAN önce klasörün VAR olması GEREKİR.', olmasaydi: 'Uygulama, `wwwroot/uploads` klasörü HİÇ oluşturulmamış temiz bir ortamda (ör. ilk kurulum) `PhysicalFileProvider` satırında AÇILIŞTA ÇÖKERDİ.' },
+          { satir: 'app.UseStaticFiles(new StaticFileOptions', aciklama: 'ASP.NET Core\'un yerleşik statik dosya sunma middleware\'i — belirtilen fiziksel klasördeki dosyaları HTTP GET ile erişilebilir yapar.', neden: null, olmasaydi: null },
+          { satir: 'FileProvider = new PhysicalFileProvider(resolvedUploadPath),', aciklama: 'Hangi fiziksel klasörün sunulacağı — Program.cs\'te YUKARIDA çözülmüş, LocalFileStorageService\'in de YAZDIĞI AYNI mutlak yol.', neden: null, olmasaydi: null },
+          { satir: 'RequestPath = "/uploads"', aciklama: 'Bu dosyaların TARAYICIDAN hangi URL öneki ALTINDA görüneceği — `resolvedUploadPath/word-images/2026/08/xxx.png` fiziksel dosyası `http://.../uploads/word-images/2026/08/xxx.png` olarak SUNULUR.', neden: null, olmasaydi: null },
+          { satir: '});', aciklama: '`UseStaticFiles` çağrısının kapanışı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/media/images/upload',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/media/images/upload',
+        aciklama: 'Gerçek bir PNG dosyasını "file" alanıyla yükler — dönen `url`, bir kelime kavramının `imageUrl` alanına ELLE yapıştırılacak değerdir.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        headers: [
+          { anahtar: 'Content-Type', deger: 'multipart/form-data (Postman bunu form-data sekmesinde OTOMATİK ayarlar)' }
+        ],
+        yanit: {
+          durum: 201,
+          govde: `{
+  "url": "http://localhost:5001/uploads/word-images/2026/08/9e589c1ccd314a55bf7fd1818bcb465c.png"
+}`
+        },
+        notlar: [
+          'Postman\'de Body sekmesinde `form-data` seçilir, anahtar adı TAM OLARAK "file" olmalı, tür (Text/File) "File" seçilip gerçek bir .png/.jpg/.webp dosyası eklenir.',
+          'Bu isteği atmadan önce `/auth/login` + `/auth/login/verify-otp` ile Admin rolünde bir `accessToken` al.',
+          'Dönen `url` doğrudan tarayıcıda AÇILABİLİR (anonim, auth GEREKMEZ) — bu senaryo canlı test edildi ve doğrulandı.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — Hata Senaryoları',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/media/images/upload',
+        aciklama: 'Aynı endpoint\'in üç ayrı reddedilme senaryosu.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: 400,
+          govde: `// "file" alanı hiç eklenmezse:
+{ "success": false, "error": { "code": "FILE_REQUIRED", "message": "Dosya zorunlu.", "details": null } }
+
+// bir .gif dosyası yüklenirse (uzantı beyaz listede yok):
+{ "success": false, "error": { "code": "UNSUPPORTED_FILE_TYPE", "message": "Desteklenmeyen dosya türü.", "details": null } }
+
+// ".png" adıyla ama içeriği düz metin olan bir dosya yüklenirse (spoofing):
+{ "success": false, "error": { "code": "UNSUPPORTED_FILE_TYPE", "message": "Desteklenmeyen dosya türü.", "details": null } }`
+        },
+        notlar: [
+          'Her üç senaryo da canlı test edildi ve doğrulandı — özellikle SPOOFING senaryosu (".png" uzantılı ama gerçek içeriği metin olan bir dosya) Bölüm 1\'in magic bytes kontrolünün GERÇEKTEN çalıştığını kanıtlıyor.',
+          'Token OLMADAN (`Authorization` header\'ı hiç eklenmeden) atılan istek 401 döner — bu, `[Authorize(Roles = "Admin")]`ın ASP.NET Core pipeline\'ında Controller\'a hiç ULAŞMADAN devreye girmesiyle gerçekleşir, canlı test edildi.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Over-posting', tanim: 'İstemcinin, sunucunun beklemediği/izin vermediği ekstra alanlar göndererek yetkisiz bir değeri değiştirmeye çalışması — `CurrentUserId`nin Request/Command\'da DEĞİL, JWT\'den okunması bu saldırıyı önler.' },
+          { terim: 'PhysicalFileProvider', tanim: 'ASP.NET Core\'un disk üzerindeki BELİRLİ bir klasörü statik dosya middleware\'ine bağlayan sınıfı — verilen klasör diskte YOKSA constructor\'ında istisna fırlatır.' },
+          { terim: 'RequestSizeLimit', tanim: 'Bir Controller action\'ına eklenen, istek gövdesinin BYTE cinsinden üst sınırını ASP.NET Core pipeline seviyesinde (Handler\'a hiç ulaşmadan) uygulayan öznitelik.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz',
+        maddeler: [
+          '`UploadImageCommand`/Handler — Bölüm 1\'in servisini SABİT bir "word-images" amacıyla çağırır, `UPLOAD_MEDIA` (`EntityType=Word`, `entityId=null`) olayını loglar.',
+          '`MediaController` — TEK endpoint (`POST /media/images/upload`), Admin-only, `IFormFile?` nullable deseniyle eksik dosyayı projenin KENDİ hata şekline (`FileRequiredException`) yönlendirir.',
+          '`[RequestSizeLimit]` — Bölüm 1\'in kontrolünden BAĞIMSIZ, pipeline\'ın EN ERKEN noktasındaki İKİNCİ bir 5 MB sınırı.',
+          '`Program.cs` — `FileStorage:UploadPath` göreli-den-mutlağa ÇÖZÜLÜP config\'e geri yazıldı, `/uploads` auth\'tan ÖNCE herkese açık statik dosya sunumuna BAĞLANDI.',
+          'Yükleme + hata senaryoları (eksik dosya, desteklenmeyen uzantı, spoofed içerik, yetkisiz erişim) canlı `curl` istekleriyle DOĞRULANDI.',
+          'Sırada: Bölüm 3 — birim testleri ve A-07\'nin kapanışı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

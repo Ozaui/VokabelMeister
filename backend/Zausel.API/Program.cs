@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Sinks.MSSqlServer;
@@ -64,6 +65,14 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddApplicationServices();
 builder.Services.AddHealthChecks().AddDbContextCheck<ZauselDbContext>();
+
+// FileStorage:UploadPath göreli olabilir (dev: appsettings.Development.json'daki "wwwroot/uploads") —
+// LocalFileStorageService'in DI'dan aldığı IConfiguration'ın HER YERDE aynı mutlak yolu görmesi için
+// tek seferde burada çözülüp config'e geri yazılır (aşağıdaki UseStaticFiles de aynı değeri okur).
+var uploadPath = builder.Configuration["FileStorage:UploadPath"] ?? "wwwroot/uploads";
+var resolvedUploadPath = Path.IsPathRooted(uploadPath) ? uploadPath : Path.Combine(builder.Environment.ContentRootPath, uploadPath);
+builder.Configuration["FileStorage:UploadPath"] = resolvedUploadPath;
+Directory.CreateDirectory(resolvedUploadPath);
 
 // IRepository<> marker olarak kullanılıyor çünkü o assembly'de kesin var olan, kararlı bir tür.
 // WordGrammarValidator FİLTRELENİR — bir Command'a değil WordGrammarInput'a bağlı, constructor'ı
@@ -147,6 +156,12 @@ app.UseMiddleware<RequestResponseLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseHttpsRedirection();
+// Auth'tan ÖNCE — /uploads herkese açık (kelime görselleri anonim de görüntülenebilmeli, ör. paylaşım linkleri).
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(resolvedUploadPath),
+    RequestPath = "/uploads"
+});
 app.UseCors("Default");
 app.UseAuthentication();
 app.UseAuthorization();

@@ -85,6 +85,9 @@ public static class ErrorMessages
             ["CATEGORY_TRANSLATIONS_REQUIRED"] = "En az bir dilde kategori adı girilmeli.",
             ["CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE"] = "Aynı dil birden fazla kez girilemez.",
             ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Sıralama değeri 0 veya daha büyük olmalı.",
+            ["FILE_REQUIRED"] = "Dosya zorunlu.",
+            ["UNSUPPORTED_FILE_TYPE"] = "Desteklenmeyen dosya türü.",
+            ["FILE_TOO_LARGE"] = "Dosya boyutu 5 MB'ı aşamaz.",
         },
         ["de"] = new()
         {
@@ -163,6 +166,9 @@ public static class ErrorMessages
             ["CATEGORY_TRANSLATIONS_REQUIRED"] = "Mindestens ein Kategoriename muss angegeben werden.",
             ["CATEGORY_TRANSLATIONS_LANGUAGE_DUPLICATE"] = "Dieselbe Sprache darf nicht mehrfach angegeben werden.",
             ["CATEGORY_DISPLAY_ORDER_INVALID"] = "Der Sortierwert muss 0 oder größer sein.",
+            ["FILE_REQUIRED"] = "Datei ist erforderlich.",
+            ["UNSUPPORTED_FILE_TYPE"] = "Nicht unterstützter Dateityp.",
+            ["FILE_TOO_LARGE"] = "Die Dateigröße darf 5 MB nicht überschreiten.",
         },
     };
 

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-07 — Medya / Dosya Yükleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'birim-testleri-ozet-sozluk',
+    bolumBaslik: 'A-07 — Medya / Dosya Yükleme API',
+    oncekiBolum: '02_upload-command-ve-controller.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: '7 Yeni Test — A-07 Tamamlandı',
+        altBaslik: '5 `LocalFileStorageServiceTests` (uzantı/boyut/spoofing/kayıt/benzersizlik) + 2 `UploadImageCommandHandlerTests`, temsili öğretimle.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Gerçek Bir Geçici Klasör Kullanılıyor, Mock Değil?',
+        aciklama: '`LocalFileStorageServiceTests` içindeki testler `IFileStorageService`i mock LAMAZ — `LocalFileStorageService`in KENDİSİNİ, işletim sisteminin geçici klasöründe (`Path.GetTempPath()`) her test çalıştırmasında YENİ, rastgele adlı bir klasörle test eder.',
+        neden: 'Bu sınıfın test edilmesi gereken ASIL davranışı (magic bytes karşılaştırması, dosyanın GERÇEKTEN diske yazılıp yazılmadığı, klasör yapısının doğru kurulup kurulmadığı) doğrudan dosya sistemiyle ETKİLEŞİME dayanıyor — bu davranış mock\'lansaydı, test "mock\'un ne DÖNDÜRDÜĞÜNÜ" doğrulardı, "servis GERÇEKTEN doğru dosyayı doğru yere yazdı mı" sorusunu asla YANITLAMAZDI.',
+        olmasaydi: '`IConfiguration` mock\'lanıp `File.WriteAllBytesAsync` gibi statik BCL çağrıları da SAHTELENSEYDİ (bu C#\'ta pratik değil, statik metotlar mock\'lanamaz), test yalnızca "hangi metotlar hangi sırayla çağrıldı" sorusunu yanıtlardı — dosyanın gerçekten VAR OLUP olmadığı, içeriğin doğru OLUP olmadığı hiçbir zaman doğrulanmazdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LocalFileStorageServiceTests.cs — Kurulum ve Spoofing Testi',
+        dosyaYolu: 'backend/Zausel.Tests/Services/LocalFileStorageServiceTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — test edilen sınıf (`LocalFileStorageService`) Application/Services/ altında olduğu için, üretim koduyla PARALEL bir test klasörü.',
+        kod: `using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.Services;
+
+namespace Zausel.Tests.Services;
+
+public class LocalFileStorageServiceTests : IDisposable
+{
+    private readonly string _uploadRoot = Path.Combine(Path.GetTempPath(), "zausel-tests-" + Guid.NewGuid().ToString("N"));
+
+    private LocalFileStorageService CreateService()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["FileStorage:UploadPath"] = _uploadRoot,
+            ["FileStorage:BaseUrl"] = "http://localhost:5001/uploads",
+        }).Build();
+        return new LocalFileStorageService(config);
+    }
+
+    // Gerçek dosya format imzaları (magic bytes) — spoofing testlerinde de kullanılıyor.
+    private static readonly byte[] ValidPngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
+
+    [Fact]
+    public async Task SaveImageAsync_ContentDoesNotMatchDeclaredExtension_ThrowsUnsupportedFileTypeException()
+    {
+        // Spoofing regresyonu: ".png" adıyla ama gerçek içeriği düz metin olan bir "dosya" — yalnızca
+        // uzantı kontrolü GEÇER ama magic bytes doğrulaması reddetmeli.
+        var service = CreateService();
+        var fakeBytes = "bu bir png degil"u8.ToArray();
+        using var stream = new MemoryStream(fakeBytes);
+
+        var act = () => service.SaveImageAsync(stream, "sahte.png", fakeBytes.Length, "word-images", default);
+
+        await act.Should().ThrowAsync<UnsupportedFileTypeException>();
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_uploadRoot))
+            Directory.Delete(_uploadRoot, recursive: true);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimini sağlar.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.Extensions.Configuration;', aciklama: '`ConfigurationBuilder`/`AddInMemoryCollection` — testin KENDİ `IConfiguration`ını, gerçek bir `appsettings.json` dosyası OKUMADAN bellekte kurmasını sağlar.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common.Exceptions;', aciklama: '`UnsupportedFileTypeException`/`FileTooLargeException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: 'Test edilen sınıfın (`LocalFileStorageService`) kendisi.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Services;', aciklama: 'Üretim kodundaki `Zausel.Application.Services` ile PARALEL bir test namespace\'i — bir servisin testini bulmak için "aynı yol, Tests kökünden" kuralı yeterli olsun diye.', neden: null, olmasaydi: null },
+          { satir: 'public class LocalFileStorageServiceTests : IDisposable', aciklama: '`IDisposable` — bu test sınıfı gerçek dosyalar/klasörler ÜRETİYOR, xUnit her test SONRASI bu kaynakları TEMİZLEMEK için `Dispose`ı otomatik çağırır.', neden: 'Diğer test sınıflarının (Moq tabanlı, gerçek bir yan etki BIRAKMAYAN) AKSİNE, bu sınıf DİSKE gerçekten yazıyor — test SONRASI bu geçici dosyalar TEMİZLENMEZSE, geliştirme makinesinde/CI\'da testler çalıştıkça geçici klasör YIĞILIR.', olmasaydi: '`IDisposable` implemente edilmeseydi (ya da `Dispose` çağrılmasaydı), HER test çalıştırmasında YENİ bir rastgele klasör oluşur ama HİÇBİRİ silinmezdi — zamanla makinenin geçici klasörü binlerce test artığıyla DOLARDI.' },
+          { satir: 'private readonly string _uploadRoot = Path.Combine(Path.GetTempPath(), "zausel-tests-" + Guid.NewGuid().ToString("N"));', aciklama: 'Her test SINIFI örneği (xUnit her `[Fact]` için sınıfı YENİDEN oluşturur) kendi BENZERSİZ geçici klasörünü alır.', neden: 'Testler PARALEL çalışabilir (xUnit\'in varsayılan davranışı) — SABİT bir klasör adı kullanılsaydı, iki test AYNI ANDA AYNI klasöre yazmaya çalışıp birbirinin dosyalarını GÖREBİLİR/SİLEBİLİRDİ.', olmasaydi: 'Sabit bir yol (ör. `/tmp/zausel-test-uploads`) kullanılsaydı, paralel çalışan iki test SINIFI aynı klasörü PAYLAŞIR, biri diğerinin `Dispose`ında SİLDİĞİ bir dosyaya YAZMAYA çalışabilirdi — testler ARADA SIRADA, tahmin EDİLEMEYEN şekilde başarısız olurdu (flaky test).' },
+          { satir: 'private LocalFileStorageService CreateService()', aciklama: 'Test edilen servisi KURAN yardımcı metot — her testte `new LocalFileStorageService(...)` TEKRAR YAZILMASINDANSA kurulum TEK yerde toplanır.', neden: null, olmasaydi: null },
+          { satir: 'var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>', aciklama: 'Gerçek bir `appsettings.json` dosyası OKUMADAN, doğrudan bellekte iki anahtar-değer çifti taşıyan bir `IConfiguration` kurar.', neden: 'Servis yalnızca `FileStorage:UploadPath`/`FileStorage:BaseUrl`e ihtiyaç duyuyor — dosya sistemine BAĞIMLI bir yapılandırma dosyası, testin GEÇİCİ klasör yolunu (her çalıştırmada FARKLI) İÇİNE YAZAMAZDI.', olmasaydi: 'Gerçek bir `appsettings.Test.json` dosyası kullanılsaydı, `_uploadRoot`taki RASTGELE GUID bu dosyaya HER TEST ÇALIŞTIRMASINDA yeniden YAZILMASI gerekirdi — pratik değil.' },
+          { satir: '["FileStorage:UploadPath"] = _uploadRoot,', aciklama: 'Servisin yazacağı kök klasör — testin KENDİ geçici klasörü.', neden: null, olmasaydi: null },
+          { satir: '["FileStorage:BaseUrl"] = "http://localhost:5001/uploads",', aciklama: 'Üretilecek URL\'lerin öneki — gerçek dev ortamındaki AYNI değer, testin ürettiği URL\'lerin GERÇEKÇİ görünmesi için.', neden: null, olmasaydi: null },
+          { satir: '}).Build();', aciklama: '`ConfigurationBuilder`ı KAPATIR, kullanılabilir bir `IConfiguration` nesnesi üretir.', neden: null, olmasaydi: null },
+          { satir: 'return new LocalFileStorageService(config);', aciklama: 'Servisi bu bellek-içi yapılandırmayla KURAR.', neden: null, olmasaydi: null },
+          { satir: 'private static readonly byte[] ValidPngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];', aciklama: 'Gerçek bir PNG dosyasının İLK 8 baytı (magic bytes) + 2 dolgu baytı — Bölüm 1\'deki `MatchesDeclaredType`in PNG dalını GEÇECEK, gerçekçi bir test verisi.', neden: 'Servis dosyanın GERÇEK içeriğini kontrol ediyor — rastgele/boş bir bayt dizisi kullanılsaydı, "geçerli bir PNG yüklenirse BAŞARILI olur" senaryosu HİÇ test EDİLEMEZDİ (her zaman `UnsupportedFileTypeException` fırlardı).', olmasaydi: 'Sahte/geçersiz baytlar kullanılsaydı, TÜM "başarılı yükleme" testleri (bu slaytın SONRAKİ testleri) YANLIŞLIKLA `UnsupportedFileTypeException` ile BAŞARISIZ olurdu.' },
+          { satir: '[Fact]', aciklama: 'xUnit\'in "bu bir test metodu" işaretleyicisi.', neden: 'xUnit test çalıştırıcısı yalnızca `[Fact]`/`[Theory]` işaretli metotları test olarak ÇALIŞTIRIR — sıradan bir `public` metot otomatik test SAYILMAZ.', olmasaydi: '`dotnet test` bu metodu HİÇ çalıştırmazdı — test sessizce ATLANIRDI.' },
+          { satir: 'public async Task SaveImageAsync_ContentDoesNotMatchDeclaredExtension_ThrowsUnsupportedFileTypeException()', aciklama: 'Test adı — "bildirilen uzantıyla İÇERİK eşleşmiyorsa, `UnsupportedFileTypeException` fırlar" senaryosu.', neden: 'Bölüm 1\'in EN kritik güvenlik davranışının (magic bytes kontrolü) doğrudan testi — bu koruma yazılmış OLSA bile TEST EDİLMESEYDİ, ileride bir REFACTOR bu kontrolü yanlışlıkla KALDIRABİLİRDİ, fark edilmezdi.', olmasaydi: null },
+          { satir: 'var service = CreateService();', aciklama: 'ARRANGE — servisi kurar.', neden: null, olmasaydi: null },
+          { satir: 'var fakeBytes = "bu bir png degil"u8.ToArray();', aciklama: '`u8` sonekiyle bir UTF-8 bayt dizisi literal\'i — düz metin, HİÇBİR resim formatının magic bytes\'ıyla EŞLEŞMEZ.', neden: null, olmasaydi: null },
+          { satir: 'using var stream = new MemoryStream(fakeBytes);', aciklama: 'Bu sahte içeriği bir `Stream`e sarar — servis arayüzünün beklediği tip.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => service.SaveImageAsync(stream, "sahte.png", fakeBytes.Length, "word-images", default);', aciklama: 'ACT — dosya adı "sahte.**png**" (uzantı kontrolünü GEÇER), içerik ise düz metin (magic bytes kontrolünü GEÇEMEZ) — TAM OLARAK spoofing senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<UnsupportedFileTypeException>();', aciklama: 'ASSERT — TAM OLARAK `UnsupportedFileTypeException` türü BEKLENİYOR.', neden: 'Servisin İKİ ayrı yerde AYNI istisnayı fırlattığı (uzantı reddi VE içerik reddi) biliniyor — bu test, dosyanın UZANTI kontrolünü GEÇTİĞİNİ (aksi halde bu test "yanlış nedenle" geçerdi) `fakeBytes` yerine gerçek olmayan bir uzantı KULLANMAYARAK dolaylı olarak garanti eder.', olmasaydi: 'Genel bir istisna türü beklenseydi, servisin magic bytes kontrolünü YANLIŞLIKLA hiç ÇALIŞTIRMAMASI (ör. bir kod hatasıyla erken `return` etmesi) bu test tarafından hiç YAKALANMAZDI.' },
+          { satir: 'public void Dispose()', aciklama: 'xUnit\'in her test SONRASI otomatik çağırdığı temizlik metodu.', neden: null, olmasaydi: null },
+          { satir: 'if (Directory.Exists(_uploadRoot))', aciklama: 'Bazı testler (ör. uzantı reddi) hiç dosya YAZMADAN başarısız/istisna ile SONLANIR — klasör hiç OLUŞMAMIŞ olabilir.', neden: null, olmasaydi: null },
+          { satir: 'Directory.Delete(_uploadRoot, recursive: true);', aciklama: 'Bu test sınıfının ÜRETTİĞİ TÜM geçici dosya/klasörleri (amaç/yıl/ay alt klasörleri DAHİL) tek çağrıda siler.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LocalFileStorageServiceTests.cs — Başarılı Kayıt ve URL Şekli',
+        dosyaYolu: 'backend/Zausel.Tests/Services/LocalFileStorageServiceTests.cs',
+        nedenBuKlasor: 'Aynı test dosyası — spoofing testinin TAM ZITTI, geçerli bir yüklemenin sonucu.',
+        kod: `[Fact]
+public async Task SaveImageAsync_ValidPng_SavesFileAndReturnsPurposeAndDateScopedUrl()
+{
+    var service = CreateService();
+    using var stream = new MemoryStream(ValidPngBytes);
+    var now = DateTime.UtcNow;
+
+    var url = await service.SaveImageAsync(stream, "resim.png", ValidPngBytes.Length, "word-images", default);
+
+    url.Should().StartWith($"http://localhost:5001/uploads/word-images/{now.Year}/{now.Month:00}/");
+    url.Should().EndWith(".png");
+    var savedFilePath = Path.Combine(_uploadRoot, "word-images", now.Year.ToString(), now.Month.ToString("00"),
+        url.Split('/')[^1]);
+    File.Exists(savedFilePath).Should().BeTrue();
+}`,
+        satirlar: [
+          { satir: '[Fact]', aciklama: 'xUnit\'in "bu bir test metodu" işaretleyicisi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task SaveImageAsync_ValidPng_SavesFileAndReturnsPurposeAndDateScopedUrl()', aciklama: 'Test adı — "geçerli bir PNG, amaç+tarih bazlı bir URL DÖNEREK kaydedilir" senaryosu.', neden: 'Bölüm 1\'in kullanıcı kararıyla eklenen klasörleme davranışının (`uploads/<purpose>/<yyyy>/<MM>/...`) doğrudan testi.', olmasaydi: null },
+          { satir: 'var service = CreateService();', aciklama: 'ARRANGE.', neden: null, olmasaydi: null },
+          { satir: 'using var stream = new MemoryStream(ValidPngBytes);', aciklama: 'Gerçek PNG magic bytes\'ını taşıyan, GEÇERLİ bir içerik.', neden: null, olmasaydi: null },
+          { satir: 'var now = DateTime.UtcNow;', aciklama: 'Servisin İÇİNDE de `DateTime.UtcNow` kullanıldığı için, testin beklediği yıl/ay değerinin servisinkiyle EŞLEŞMESİ İÇİN aynı kaynaktan okunur.', neden: 'Test ile servis SANİYELER arasında farklı bir `DateTime.UtcNow` çağrısı yapabilir (ör. tam ayın son saniyesinde) — pratikte bu YARIŞ (race condition) İHMAL EDİLEBİLİR derecede NADİR, testin sadeliği için AYRI bir "sahte saat" enjeksiyonu KURULMADI.', olmasaydi: 'Test SABİT bir tarih (ör. "2026-08-01") VARSAYSAYDI, GERÇEK çalıştırma anındaki ay FARKLIYSA (ör. Eylül\'de çalıştırılsaydı) test HER ZAMAN BAŞARISIZ olurdu.' },
+          { satir: 'var url = await service.SaveImageAsync(stream, "resim.png", ValidPngBytes.Length, "word-images", default);', aciklama: 'ACT — geçerli bir PNG, "word-images" amacıyla kaydedilir.', neden: null, olmasaydi: null },
+          { satir: 'url.Should().StartWith($"http://localhost:5001/uploads/word-images/{now.Year}/{now.Month:00}/");', aciklama: 'ASSERT #1 — dönen URL\'in ÖNEKİ, `BaseUrl` + amaç + yıl + İKİ haneli ay ile BAŞLIYOR mu.', neden: 'Bu, Bölüm 1\'deki klasörleme mantığının (özellikle `"00"` biçimindeki AY doldurması) DOĞRU çalıştığını doğrudan doğruluyor.', olmasaydi: 'Bu assertion olmasaydı, servis YANLIŞ bir klasör yoluna (ör. ay doldurması OLMADAN "8" yerine "08") yazsa bile FARK EDİLMEZDİ.' },
+          { satir: 'url.Should().EndWith(".png");', aciklama: 'ASSERT #2 — uzantının KORUNDUĞU (küçük harfe çevrilmiş olarak) doğrulanıyor.', neden: null, olmasaydi: null },
+          { satir: 'var savedFilePath = Path.Combine(_uploadRoot, "word-images", now.Year.ToString(), now.Month.ToString("00"),', aciklama: 'URL\'den DEĞİL, servisin YAZDIĞI iddia edilen fiziksel yoldan bağımsız olarak, BEKLENEN fiziksel yolu KENDİSİ hesaplar.', neden: 'URL doğru GÖRÜNSE bile, servis dosyayı GERÇEKTEN o fiziksel konuma YAZMAMIŞ olabilir (ör. bir hata nedeniyle sessizce atlanmış) — URL string\'inin doğruluğu TEK BAŞINA "dosya orada" ANLAMINA GELMEZ.', olmasaydi: 'Yalnızca `url`in ŞEKLİ doğrulansaydı, servis dosyayı DİSKE HİÇ YAZMASA bile (bir kod hatasıyla, `File.WriteAllBytesAsync` çağrısı ATLANSA) bu test YİNE DE BAŞARILI GÖRÜNÜRDÜ.' },
+          { satir: 'url.Split(\'/\')[^1]);', aciklama: 'URL\'in SON parçası (dosya adı) — `[^1]` C# 8\'in "sondan indeks" sözdizimi, `url.Split(\'/\')`in SON elemanına eşdeğer.', neden: null, olmasaydi: null },
+          { satir: 'File.Exists(savedFilePath).Should().BeTrue();', aciklama: 'ASSERT #3 — dosyanın GERÇEKTEN diskte VAR OLDUĞU, hesaplanan fiziksel yolda doğrulanıyor.', neden: 'Bu, Bölüm 1\'in `SaveImageAsync`inin yalnızca bir URL string\'i ÜRETMEDİĞİNİ, dosyayı GERÇEKTEN o konuma YAZDIĞINI kanıtlayan TEK assertion.', olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UploadImageCommandHandlerTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Media/UploadImageCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Media/ — Bölüm 2\'deki `Features/Media/`ile eşleşen test klasörü, diğer TÜM Handler testleriyle AYNI desen.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Features.Media;
+using Zausel.Application.Interfaces.Services;
+
+namespace Zausel.Tests.Features.Media;
+
+public class UploadImageCommandHandlerTests
+{
+    private readonly Mock<IFileStorageService> _fileStorageService = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    private UploadImageCommandHandler CreateHandler() => new(_fileStorageService.Object, _activityLogger.Object);
+
+    [Fact]
+    public async Task Handle_ValidFile_LogsUploadMediaActivity()
+    {
+        // ARRANGE
+        using var stream = new MemoryStream();
+        _fileStorageService
+            .Setup(s => s.SaveImageAsync(stream, "kelime.png", 1234, "word-images", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("http://localhost:5001/uploads/word-images/2026/08/abc.png");
+        var command = new UploadImageCommand(stream, "kelime.png", 1234, UserId: 7, ActorRole: "Admin");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(command, default);
+
+        // ASSERT
+        _activityLogger.Verify(l => l.LogAsync(
+            7, "Admin", "UPLOAD_MEDIA", "Word", null, null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`Verify` — Handler\'ı GERÇEK bir dosya sistemi/veritabanı OLMADAN test edebilmek için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Media;', aciklama: '`UploadImageCommand`/`Handler` bu ad alanında.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IFileStorageService`/`IActivityLogger` — mock\'lanacak İKİ arayüz.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Features.Media;', aciklama: 'Üretim kodundaki `Zausel.Application.Features.Media` ile PARALEL bir test namespace\'i.', neden: null, olmasaydi: null },
+          { satir: 'public class UploadImageCommandHandlerTests', aciklama: 'Test sınıfı adı — `{TestEdilenSınıf}Tests` deseni.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IFileStorageService> _fileStorageService = new();', aciklama: 'Bölüm 1\'in servisinin SAHTE (mock) hâli — bu testte GERÇEK dosya sistemi hiç DEVREYE girmez (bir üstteki `LocalFileStorageServiceTests`in AKSİNE).', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();', aciklama: 'İkinci bağımlılığın mock\'u — audit log çağrısının GERÇEKLEŞTİĞİNİ doğrulamak için.', neden: null, olmasaydi: null },
+          { satir: 'private UploadImageCommandHandler CreateHandler() => new(_fileStorageService.Object, _activityLogger.Object);', aciklama: 'Handler\'ı iki mock ile KURAN yardımcı metot.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidFile_LogsUploadMediaActivity()', aciklama: 'Test adı — "geçerli bir dosyada, UPLOAD_MEDIA olayı LOGLANIR" senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'using var stream = new MemoryStream();', aciklama: 'İÇERİĞİ ÖNEMLİ OLMAYAN, boş bir `Stream` — bu testte GERÇEK dosya doğrulaması `_fileStorageService` mock\'landığı için hiç ÇALIŞMAZ.', neden: 'Handler seviyesinde test edilen şey Bölüm 1\'in İÇERİK doğrulaması DEĞİL (o `LocalFileStorageServiceTests`te test edildi) — bu testin ODAĞI Handler\'ın audit log çağrısı.', olmasaydi: 'Gerçek bir PNG içeriği kullanılsaydı bile hiçbir FARK yaratmazdı (mock zaten HERHANGİ bir stream için AYNI sahte URL\'i döner) — gereksiz bir GERÇEKÇİLİK olurdu.' },
+          { satir: '_fileStorageService', aciklama: 'Mock kurulumunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Setup(s => s.SaveImageAsync(stream, "kelime.png", 1234, "word-images", It.IsAny<CancellationToken>()))', aciklama: '"word-images" — Handler\'ın Bölüm 2\'deki SABİT değeri GEÇTİĞİNİ doğrulayan bir BEKLENTİ; farklı bir `purpose` ile çağrılsaydı bu Setup EŞLEŞMEZ, mock varsayılan (`null`) DÖNERDİ.', neden: 'Bu, "Handler doğru `purpose`u geçiyor mu" sorusunu DOLAYLI olarak test ediyor — Setup\'ın parametreleri TAM eşleşmezse metot BEKLENEN değeri DÖNDÜRMEZ.', olmasaydi: '`It.IsAny<string>()` kullanılsaydı, Handler YANLIŞ bir `purpose` (ör. boş string) geçse BİLE bu test FARK ETMEZDİ.' },
+          { satir: '.ReturnsAsync("http://localhost:5001/uploads/word-images/2026/08/abc.png");', aciklama: 'Mock\'un DÖNECEĞİ sahte URL.', neden: null, olmasaydi: null },
+          { satir: 'var command = new UploadImageCommand(stream, "kelime.png", 1234, UserId: 7, ActorRole: "Admin");', aciklama: 'Test edilen Command — mock Setup\'ındaki AYNI `stream`/dosya adı/boyut.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'ARRANGE\'in son adımı.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(command, default);', aciklama: 'ACT.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger.Verify(l => l.LogAsync(', aciklama: 'ASSERT — `IActivityLogger.LogAsync`in BEKLENEN parametrelerle ÇAĞRILDIĞINI doğrular.', neden: null, olmasaydi: null },
+          { satir: '7, "Admin", "UPLOAD_MEDIA", "Word", null, null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),', aciklama: '`entityId` (5. parametre) `null` — Bölüm 2\'deki Handler kodunun İDDİA ettiği "bu yüklemenin henüz hiçbir kelimeye bağlı olmadığı" davranışının doğrudan testi; `newValue` (7. parametre) `It.IsAny<object>()` çünkü loglanan anonim `{ url }` nesnesinin TAM İÇERİĞİ bu testin odağı DEĞİL.', neden: 'Bu satır, Handler\'ın `entityId`yi YANLIŞLIKLA sabit bir değerle (ör. 0) DOLDURMADIĞINI kanıtlıyor — `entityId` zorunlu bir alan OLSAYDI bu "henüz bağlı değil" durumu HİÇ TEMSİL EDİLEMEZDİ.', olmasaydi: 'Bu `Verify` olmasaydı, Handler `UPLOAD_MEDIA`yı HİÇ LOGLAMASA bile (bir kod hatasıyla o satır SİLİNSE) test YİNE DE geçerdi.' },
+          { satir: 'Times.Once);', aciklama: 'Log çağrısının TAM OLARAK bir kez yapıldığı doğrulanır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Senaryolar ve Test Dosyaları — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'LocalFileStorageServiceTests.cs — diğer 3 test', tanim: '`SaveImageAsync_UnsupportedExtension_ThrowsUnsupportedFileTypeException` (".gif" gibi beyaz listede OLMAYAN bir uzantı), `SaveImageAsync_ContentLengthOverLimit_ThrowsFileTooLargeException` (5 MB üstü bir `contentLength`), `SaveImageAsync_CalledTwiceWithSameOriginalName_ProducesTwoDistinctFileNames` (AYNI orijinal dosya adıyla İKİ ayrı yükleme, GUID sayesinde ÇAKIŞMAYAN İKİ ayrı URL üretir — bu slaytlarda gösterilen "başarılı kayıt" testinin BENZERSİZLİK boyutunu tamamlar).' },
+          { terim: 'UploadImageCommandHandlerTests.cs — diğer 1 test', tanim: '`Handle_ValidFile_SavesViaFileStorageServiceWithWordImagesPurpose` — bu slaytta gösterilen testin İKİZİ, yalnızca `_activityLogger.Verify` yerine `_fileStorageService.Verify` ile "Handler doğru parametrelerle `SaveImageAsync`i ÇAĞIRDI mı" sorusuna odaklanır ve dönen `MediaUploadResponse.Url`in mock\'un ürettiği URL İLE eşleştiğini doğrular.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-07 Tamamlandı',
+        maddeler: [
+          '`LocalFileStorageServiceTests` — GERÇEK bir geçici klasörle, mock KULLANMADAN 5 senaryo: uzantı reddi, boyut reddi, spoofing reddi, başarılı kayıt (URL şekli + dosyanın diskte VAR OLDUĞU), benzersiz ad üretimi.',
+          '`UploadImageCommandHandlerTests` — Moq ile 2 senaryo: Bölüm 1\'in servisinin doğru `purpose` ile ÇAĞRILDIĞI, `UPLOAD_MEDIA` olayının `entityId=null` ile DOĞRU loglandığı.',
+          'Canlı doğrulama: gerçek bir PNG `curl` ile yüklendi (201), eksik dosya/desteklenmeyen uzantı/spoofed içerik/yetkisiz erişim senaryoları test edildi, `ActivityLogs` tablosunda `UPLOAD_MEDIA` satırı SORGUYLA doğrulandı.',
+          '`dotnet test` ile TÜM paket (önceki 187 + bu 7 yeni) 194/194 yeşil.',
+          'A-07 (Medya / Dosya Yükleme API) TAMAMLANDI: Dosya depolama servisi (uzantı+boyut+magic bytes, amaç+tarih klasörleme) → Upload Command/Handler+Controller+statik dosya sunumu → 7 birim testi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
