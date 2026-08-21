@@ -44,6 +44,9 @@ CREATE TABLE Users (
     IsAnonymized BIT NOT NULL DEFAULT 0,
     OriginalEmailHash VARCHAR(44) NULL,         -- SHA-256(eski email)→Base64, sabit 44 karakter — silinen e-posta ile tekrar kaydı blokla
     OneSignalPlayerId NVARCHAR(100) NULL,       -- Push
+    LastWeeklySummaryTotalXP INT NULL,          -- A-17 WeeklySummaryJob — bir önceki özette TotalXP snapshot'ı, XP artışı bu fark üzerinden hesaplanır
+    Last3DayReengagementNotifiedAt DATETIME2 NULL,  -- A-17 ReengagementJob — 3 günlük win-back mesajı en son ne zaman gitti
+    Last7DayReengagementNotifiedAt DATETIME2 NULL,  -- A-17 ReengagementJob — 7 günlük win-back mesajı en son ne zaman gitti (bu aşamadan sonra durur)
     Role NVARCHAR(20) NOT NULL DEFAULT 'User',  -- User|Admin
     IsDeleted BIT NOT NULL DEFAULT 0,
     DeletedAt DATETIME2 NULL,

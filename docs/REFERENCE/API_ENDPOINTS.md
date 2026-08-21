@@ -274,6 +274,7 @@ Akış → `SECURITY.md §1.3`. Onaylanınca `/auth/login/verify-otp` ile aynı 
 | POST | `/admin/words/import` | `{ rows: [{ partOfSpeech, difficultyLevel, imageUrl?, translation: { languageCode, text, definition?, wordDetail?, examples? }, categoryIds? }] }` — satır bazlı best-effort, yanıt `{ totalRows, importedCount, skippedCount, results: [{ rowIndex, languageCode, text, success, errorCode? }] }` |
 | GET/PUT | `/admin/smtp-settings` | Şifre `***` maskeli |
 | POST | `/admin/smtp-settings/test` | Test e-postası |
+| POST | `/admin/notifications/broadcast` | `{ targetType: All\|Specific\|Level\|Inactive, userIds?, level?, inactiveDays?, title, body }` → `{ recipientCount }` — yalnızca `OneSignalPlayerId` dolu VE `IsActive` kullanıcılara gider (A-17), geçmiş `/admin/logs/activity`'den izlenir |
 
 ### 11.1 Log Görüntüleme (B-08)
 

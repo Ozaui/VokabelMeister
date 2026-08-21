@@ -247,3 +247,22 @@ yalnızca bir token senkronizasyonu.
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] **Birim testleri:** `SmtpSettingsPage.test.tsx` (form validasyon, test e-postası akışı)
 - [ ] ➜ **Admin Akademi'ye işle**
+
+### B-10 — Bildirim Gönderme (Broadcast) Sayfası ⬜
+**Referans:** A-17 (`A_backend.md`), REFERENCE/API_ENDPOINTS.md §11
+> **Not:** Ayrı bir "gönderim geçmişi" listesi AÇILMAZ — her gönderim `IActivityLogger`'a
+> `SEND_NOTIFICATION_BROADCAST` olarak yazılır, geçmiş B-08 Log Görüntüleme Paneli'nin Activity
+> sekmesinden izlenir (YAGNI).
+- [ ] **Tip:** `NotificationBroadcastFormValues` (`notification.types.ts`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **API:** `notificationsApi` — `sendBroadcast` (axios + `useApiMutation`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Component:** `NotificationBroadcastPage` (form: başlık/mesaj + gönder), `AudienceSelector`
+      (hedef kitle tipi seçici — Tümü/Belirli Kullanıcı/Seviye/Pasif Kullanıcı — ve duruma göre alt
+      alan: kullanıcı arama, seviye [`A1`…`C2`] seçimi, pasiflik gün eşiği), gönder öncesi tahmini
+      alıcı sayısını gösteren bir onay adımı (yanlışlıkla tüm kullanıcıya gönderim riskini azaltmak için)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Route:** `/notifications/broadcast` (`App.tsx`)
+- [ ] ➜ **Admin Akademi'ye işle**
+- [ ] **Birim testleri:** `NotificationBroadcastPage.test.tsx` (hedef kitle değişince form alanları, onay adımı, gönder akışı)
+- [ ] ➜ **Admin Akademi'ye işle**
