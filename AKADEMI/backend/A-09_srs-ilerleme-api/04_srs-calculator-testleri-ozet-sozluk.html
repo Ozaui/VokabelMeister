@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'srs-calculator-testleri-ozet-sozluk',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '03_srs-calculator.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: '12 Yeni Test — SrsCalculator',
+        altBaslik: 'SM-2\'nin HER dalı (başarısız/başarılı, üç interval kuralı, EF tabanı, level tavanı) + Mastery formülü, mock\'suz doğrudan çağrıyla.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bu Kadar Çok Sınır Durumu Test Ediliyor?',
+        aciklama: '12 test metodundan (Theory\'lerle birlikte 18 senaryo) YALNIZCA biri "normal" bir başarılı cevabı test ediyor — geri kalanların HEPSİ bir sınır durumu hedefliyor: EF\'in 1.3 tabanı (İKİ ayrı dalda), Math.Round\'un tam ortada (2.5) nasıl davrandığı, level\'in 5\'te tavan yapması, repetitionNumber\'ın 0/1/2+ için ÜÇ farklı kuralı.',
+        neden: '`SrsCalculator`, UYGULAMADAKİ HER kelimenin HER review\'unda çalışacak — bu metotta gözden kaçan TEK bir sınır hatası (ör. EF\'in negatife düşmesi, ya da 2.5\'in yanlış yöne yuvarlanması) binlerce kullanıcının binlerce kelimesinin tekrar zamanlamasını SESSİZCE bozar, hatası GÜNLER/HAFTALAR sonra "bu kelime hiç review\'a gelmiyor" gibi dolaylı bir semptomla fark edilir.',
+        olmasaydi: 'Yalnızca "normal" senaryolar test edilseydi (ör. tek bir happy-path testi), `Math.Round(2.5m)`\'in AŞAĞI yuvarladığını (bankacı yuvarlaması, YUKARI DEĞİL) fark etmeden production\'a çıkardık — bu tür bir varsayım hatası derleyicinin YAKALAYAMAYACAĞI, yalnızca GERÇEK bir hesaplamayı çalıştırıp sonucu kontrol ederek bulunabilecek türden bir hatadır.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'SrsCalculatorTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Services/SrsCalculatorTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — `PasswordServiceTests`/`OtpServiceTests` ile AYNI flat klasör; `SrsCalculator` static olduğu için burada bir `Mock<...>` alanı/constructor YOK, testler doğrudan `SrsCalculator.Calculate(...)` çağırır.',
+        kod: `using FluentAssertions;
+using Zausel.Application.Services;
+
+namespace Zausel.Tests.Services;
+
+public class SrsCalculatorTests
+{
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Calculate_QualityBelowThree_ResetsIntervalAndLevelAndDecreasesEF(int quality)
+    {
+        // ARRANGE — 0/1/2'nin hepsi "başarısız" sayılır, hangisi olursa olsun AYNI sonucu üretmeli
+        // ACT
+        var (intervalDays, newLevel, newEF) = SrsCalculator.Calculate(
+            currentLevel: 3, repetitionNumber: 4, easinessFactor: 2.5m, quality);
+
+        // ASSERT — kelime "yeni öğreniliyormuş" gibi baştan başlar, EF 0.2 düşer
+        intervalDays.Should().Be(1);
+        newLevel.Should().Be(0);
+        newEF.Should().Be(2.3m);
+    }
+
+    [Fact]
+    public void Calculate_QualityBelowThree_EasinessFactorNeverDropsBelowFloor()
+    {
+        // ARRANGE — EF zaten tabana yakın (1.35), 0.2 düşse 1.15 olur ama 1.3'ün altına inmemeli
+        // ACT
+        var (_, _, newEF) = SrsCalculator.Calculate(
+            currentLevel: 2, repetitionNumber: 3, easinessFactor: 1.35m, quality: 0);
+
+        // ASSERT
+        newEF.Should().Be(1.3m);
+    }
+
+    [Fact]
+    public void Calculate_FirstRepetition_ReturnsOneDayInterval()
+    {
+        // ARRANGE — repetitionNumber=0, henüz hiç başarılı tekrar yok
+        // ACT
+        var (intervalDays, _, _) = SrsCalculator.Calculate(
+            currentLevel: 0, repetitionNumber: 0, easinessFactor: 2.5m, quality: 4);
+
+        // ASSERT — EF'ten BAĞIMSIZ, sabit 1 gün
+        intervalDays.Should().Be(1);
+    }
+
+    [Fact]
+    public void Calculate_SecondRepetition_ReturnsThreeDayInterval()
+    {
+        // ARRANGE — repetitionNumber=1, SM-2'nin sabit ikinci aralığı
+        // ACT
+        var (intervalDays, _, _) = SrsCalculator.Calculate(
+            currentLevel: 1, repetitionNumber: 1, easinessFactor: 2.5m, quality: 4);
+
+        // ASSERT — EF'ten BAĞIMSIZ, sabit 3 gün
+        intervalDays.Should().Be(3);
+    }
+
+    [Fact]
+    public void Calculate_ThirdRepetitionOnward_MultipliesPriorRepetitionsByEasinessFactor()
+    {
+        // ARRANGE — repetitionNumber=3 → (3-1)*2.36 = 4.72
+        // ACT
+        var (intervalDays, _, _) = SrsCalculator.Calculate(
+            currentLevel: 2, repetitionNumber: 3, easinessFactor: 2.36m, quality: 4);
+
+        // ASSERT — 4.72 normal yuvarlamayla 5'e gider
+        intervalDays.Should().Be(5);
+    }
+
+    [Fact]
+    public void Calculate_HalfwayIntervalResult_RoundsToNearestEven()
+    {
+        // ARRANGE — repetitionNumber=2 → (2-1)*2.5 = 2.5 TAM ORTADA, Math.Round bankacı yuvarlaması kullanır
+        // ACT
+        var (intervalDays, _, _) = SrsCalculator.Calculate(
+            currentLevel: 2, repetitionNumber: 2, easinessFactor: 2.5m, quality: 4);
+
+        // ASSERT — 2.5, en yakın ÇİFT sayı olan 2'ye yuvarlanır (3'e DEĞİL) — .NET'in decimal
+        // Math.Round varsayılanı MidpointRounding.ToEven, "her zaman yukarı" DEĞİL
+        intervalDays.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(5, 2.6)] // çok kolay → EF artar
+    [InlineData(4, 2.5)] // iyi → EF değişmez
+    [InlineData(3, 2.36)] // zar zor doğru → EF azalır
+    public void Calculate_SuccessfulQuality_AdjustsEasinessFactorPerSm2Formula(int quality, decimal expectedEF)
+    {
+        // ARRANGE — repetitionNumber=5 (interval formülüyle karışmasın diye 0/1 dışında sabit bir değer)
+        // ACT
+        var (_, _, newEF) = SrsCalculator.Calculate(
+            currentLevel: 2, repetitionNumber: 5, easinessFactor: 2.5m, quality);
+
+        // ASSERT
+        newEF.Should().Be(expectedEF);
+    }
+
+    [Fact]
+    public void Calculate_SuccessfulAnswer_EasinessFactorFloorAppliesOnSuccessToo()
+    {
+        // ARRANGE — quality=3'ün EF deltası -0.14, EF zaten 1.35 → 1.21 olur, 1.3'ün altına inmemeli
+        // ACT
+        var (_, _, newEF) = SrsCalculator.Calculate(
+            currentLevel: 1, repetitionNumber: 5, easinessFactor: 1.35m, quality: 3);
+
+        // ASSERT — taban yalnızca quality<3 dalında DEĞİL, başarılı dalda da geçerli
+        newEF.Should().Be(1.3m);
+    }
+
+    [Fact]
+    public void Calculate_SuccessfulAnswer_IncreasesLevelByOne()
+    {
+        // ARRANGE + ACT
+        var (_, newLevel, _) = SrsCalculator.Calculate(
+            currentLevel: 2, repetitionNumber: 5, easinessFactor: 2.5m, quality: 4);
+
+        // ASSERT
+        newLevel.Should().Be(3);
+    }
+
+    [Fact]
+    public void Calculate_LevelAtMaximum_DoesNotExceedFive()
+    {
+        // ARRANGE — currentLevel zaten 5 (otomatik hatırlama, en üst seviye)
+        // ACT
+        var (_, newLevel, _) = SrsCalculator.Calculate(
+            currentLevel: 5, repetitionNumber: 5, easinessFactor: 2.5m, quality: 5);
+
+        // ASSERT — 6'ya değil, 5'te KALIR
+        newLevel.Should().Be(5);
+    }
+
+    [Theory]
+    [InlineData(5, 100, 100.00)] // en üst seviye + kusursuz başarı → tam ustalık
+    [InlineData(0, 0, 0.00)] // hiç ilerlememiş + hiç başarı yok → sıfır
+    [InlineData(3, 50, 58.00)] // orta seviye + orta başarı
+    [InlineData(2, 73.5, 46.70)] // level baskın (32) + successRate ince ayar (14.7)
+    public void CalculateMastery_VariousLevelsAndSuccessRates_ReturnsWeightedPercentage(
+        int currentLevel, decimal successRate, decimal expectedMastery)
+    {
+        // ARRANGE + ACT
+        var mastery = SrsCalculator.CalculateMastery(currentLevel, successRate);
+
+        // ASSERT — %80 level + %20 successRate ağırlıklı ortalama, 2 ondalığa yuvarlı
+        mastery.Should().Be(expectedMastery);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: '`SrsCalculator`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Services;', aciklama: '`PasswordServiceTests`/`OtpServiceTests` ile AYNI test ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class SrsCalculatorTests', aciklama: '`{TestEdilenSınıf}Tests` deseni — burada bir `Mock<...>` alanı ya da constructor YOK, çünkü `SrsCalculator` static (test edilecek "bir örnek" yok, doğrudan tip üzerinden çağrılır).', neden: null, olmasaydi: null },
+          { satir: '[Theory]', aciklama: 'Birden fazla girdiyle AYNI test gövdesini TEKRAR çalıştıran xUnit özniteliği — bu dosyada ÜÇ kez kullanılıyor (quality<3 sıfırlaması, EF formülü, Mastery formülü), her biri `[InlineData]` satırlarıyla eşlenir.', neden: '`[Theory]`+`[InlineData]`, AYNI mantığı (ör. "0/1/2 kalitesi AYNI sonucu üretmeli") üç ayrı `[Fact]` olarak kopyalamak yerine TEK bir test gövdesinde, yalnızca girdileri değiştirerek ifade eder.', olmasaydi: 'Üç ayrı `[Fact]` yazılsaydı (`Calculate_QualityZero_...`, `Calculate_QualityOne_...`, `Calculate_QualityTwo_...`), test gövdesi ÜÇ kez KOPYALANIRDI — SM-2\'nin "quality<3 dalı" mantığı değişirse (ör. yeni bir kural eklense) üç yerde AYNI güncellemeyi yapmak GEREKİRDİ.' },
+          { satir: '[InlineData(0)]', aciklama: 'Bilmedim (en düşük kalite puanı) — `quality<3` dalının ALT sınırı.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(1)]', aciklama: 'Ara bir "başarısız" değer.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(2)]', aciklama: '`quality<3` dalının ÜST sınırı — 2 hâlâ başarısız sayılır, 3 (bir SONRAKİ test) başarılı sayılır; bu iki test BİRLİKTE eşiğin TAM sınırını doğrular.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_QualityBelowThree_ResetsIntervalAndLevelAndDecreasesEF(int quality)', aciklama: '`{Metot}_{Senaryo}_{BeklenenSonuç}` adlandırma deseni — `Calculate` metodunun quality<3 SENARYOSUNU test eder, `quality` parametresi `[InlineData]`\'lardan gelir.', neden: null, olmasaydi: null },
+          { satir: 'var (intervalDays, newLevel, newEF) = SrsCalculator.Calculate(', aciklama: 'C# tuple destructuring — `Calculate`\'in üç elemanlı dönüş değeri TEK satırda üç ayrı değişkene AYRIŞTIRILIR (bu testte ÜÇÜ de kullanılacağı için `_` ile ATLANMAZ).', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 3, repetitionNumber: 4, easinessFactor: 2.5m, quality);', aciklama: 'İsimlendirilmiş parametreler (`currentLevel:`/`repetitionNumber:` vb.) — dört `int`/`decimal` parametreyi SIRAYLA okumak yerine, her değerin HANGİ parametreye gittiği çağrı yerinde AÇIKÇA görünür.', neden: 'Dört ardışık sayısal parametre (`int, int, decimal, int`) isimsiz geçilseydi, `Calculate(3, 4, 2.5m, 0)` gibi bir çağrıda okuyucunun HANGİ sayının level, HANGİSİNİN repetition olduğunu METOT İMZASINA bakmadan ÇIKARAMAZ hâle gelirdi.', olmasaydi: null },
+          { satir: 'intervalDays.Should().Be(1);', aciklama: 'Başarısız cevapta interval\'in HER ZAMAN 1 güne dönmesi — bu satır dosyada birden fazla test metodunda (farklı senaryolarda `interval`in beklenen değerini doğrulamak için) tekrar eder, her tekrarında o testin KENDİ ARRANGE\'ine göre yorumlanır.', neden: null, olmasaydi: null },
+          { satir: 'newLevel.Should().Be(0);', aciklama: 'Başarısız cevapta level\'ın HER ZAMAN 0\'a (baştan) dönmesi.', neden: null, olmasaydi: null },
+          { satir: 'newEF.Should().Be(2.3m);', aciklama: 'EF\'in 0.2 düşmesi (2.5-0.2=2.3) — TABANA (1.3) henüz YAKLAŞMAYAN, "normal" bir düşüş senaryosu (taban testi AYRI bir metotta).', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Girdi almayan, TEK bir senaryoyu test eden xUnit özniteliği — bu dosyada `[Theory]` kullanmayan HER metot bunu taşır.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_QualityBelowThree_EasinessFactorNeverDropsBelowFloor()', aciklama: 'Bir ÖNCEKİ testten FARKLI olarak, EF\'in kendisi burada bilerek TABANA yakın (1.35) seçildi — amaç "normal düşüş" değil, "taban KIRILIYOR mu" sorusu.', neden: null, olmasaydi: null },
+          { satir: 'var (_, _, newEF) = SrsCalculator.Calculate(', aciklama: 'Bu testte yalnızca `newEF` İLGİ ALANI olduğu için `intervalDays`/`newLevel` `_` (discard) ile ATLANIR — C#\'ın kullanılmayan tuple elemanlarını isimlendirmeden BIRAKMA sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 2, repetitionNumber: 3, easinessFactor: 1.35m, quality: 0);', aciklama: 'EF=1.35 — 0.2 düşse 1.15 olur (tabanın ALTINA inerdi), bu yüzden `Math.Max(1.3, ...)`\'ın GERÇEKTEN devreye girip girmediğini test eder.', neden: null, olmasaydi: null },
+          { satir: 'newEF.Should().Be(1.3m);', aciklama: 'EF\'in HESAPLANAN değeri (1.15) DEĞİL, TABAN değeri (1.3) döndüğünün doğrulanması — bu satır İKİ ayrı testte (başarısız VE başarılı daldaki taban testlerinde) AYNI beklentiyi ifade eder.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_FirstRepetition_ReturnsOneDayInterval()', aciklama: 'SM-2\'nin İLK sabit interval kuralını (repetitionNumber=0 → 1 gün) test eder.', neden: null, olmasaydi: null },
+          { satir: 'var (intervalDays, _, _) = SrsCalculator.Calculate(', aciklama: 'Bu ve SONRAKİ birkaç testte yalnızca `intervalDays` İLGİ ALANI — `newLevel`/`newEF` `_` ile ATLANIR.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 0, repetitionNumber: 0, easinessFactor: 2.5m, quality: 4);', aciklama: 'repetitionNumber=0 — `Calculate`\'in ÜÇ interval dalından İLKİNİ (sabit 1 gün) tetikler.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_SecondRepetition_ReturnsThreeDayInterval()', aciklama: 'SM-2\'nin İKİNCİ sabit interval kuralını (repetitionNumber=1 → 3 gün) test eder.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 1, repetitionNumber: 1, easinessFactor: 2.5m, quality: 4);', aciklama: 'repetitionNumber=1 — ikinci interval dalını (sabit 3 gün) tetikler.', neden: null, olmasaydi: null },
+          { satir: 'intervalDays.Should().Be(3);', aciklama: 'İkinci tekrarın SABİT 3 gün olduğunun doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_ThirdRepetitionOnward_MultipliesPriorRepetitionsByEasinessFactor()', aciklama: 'SM-2\'nin ÜÇÜNCÜ interval dalını (EF ile ÇARPAN formül) test eder.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 2, repetitionNumber: 3, easinessFactor: 2.36m, quality: 4);', aciklama: 'repetitionNumber=3, EF=2.36 → (3-1)*2.36=4.72 — TAM sayı olmayan, normal yuvarlanan bir değer (bir SONRAKİ test ise BİLEREK tam ortada bir değer seçer).', neden: null, olmasaydi: null },
+          { satir: 'intervalDays.Should().Be(5);', aciklama: '4.72\'nin normal yuvarlamayla 5\'e gitmesi.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_HalfwayIntervalResult_RoundsToNearestEven()', aciklama: 'Bu bölümün EN kritik testi — `Math.Round`\'un TAM ortadaki (X.5) bir değeri NASIL yuvarladığını doğrular.', neden: 'C#\'ın `Math.Round(decimal)` varsayılanı `MidpointRounding.ToEven` (bankacı yuvarlaması) — "her zaman yukarı yuvarla" SEZGİSİNİN AKSİNE, 2.5 gibi bir değer en yakın ÇİFT sayıya (2\'ye, 3\'e DEĞİL) gider. Bu davranış SrsCalculator\'ın YAZARI tarafından fark edilmezse (ör. "elbette 3 olur" varsayılırsa), production\'daki gerçek interval\'ler sistematik olarak BEKLENENDEN 1 gün KISA çıkabilirdi.', olmasaydi: 'Bu test olmasaydı, birisi `Math.Round`\'u `Math.Ceiling`/`MidpointRounding.AwayFromZero` ile DEĞİŞTİRSE (ör. "yukarı yuvarlamak daha doğru" diye düşünüp) bu SESSİZ bir davranış değişikliği olur, hiçbir test KIRILMAZDI — bu test TAM OLARAK bu senaryoyu (2.5 girdisi) hedeflediği için, böyle bir değişiklik BURADA yakalanır.' },
+          { satir: 'currentLevel: 2, repetitionNumber: 2, easinessFactor: 2.5m, quality: 4);', aciklama: 'BİLEREK seçilmiş girdiler — (2-1)*2.5=2.5, TAM ortada bir sonuç üretir.', neden: null, olmasaydi: null },
+          { satir: 'intervalDays.Should().Be(2);', aciklama: '2.5\'in 3\'E DEĞİL, en yakın ÇİFT sayı olan 2\'ye yuvarlandığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(5, 2.6)] // çok kolay → EF artar', aciklama: 'quality=5 (en yüksek) → EF formülündeki `(5-quality)` terimi 0 olur, EF yalnızca +0.1 artar (2.5→2.6).', neden: null, olmasaydi: null },
+          { satir: '[InlineData(4, 2.5)] // iyi → EF değişmez', aciklama: 'quality=4 → `(5-quality)=1` terimi formülü TAM SIFIRLAR, EF AYNI kalır (2.5→2.5) — SM-2\'nin "iyi" cevabın EF\'i NÖTR bıraktığı özel nokta.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(3, 2.36)] // zar zor doğru → EF azalır', aciklama: 'quality=3 (başarılı sayılan EN DÜŞÜK puan) → EF 0.14 AZALIR (2.5→2.36) — "başarılı" olmak EF\'in ARTACAĞI anlamına GELMEZ.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_SuccessfulQuality_AdjustsEasinessFactorPerSm2Formula(int quality, decimal expectedEF)', aciklama: 'SM-2\'nin EF güncelleme formülünü ÜÇ farklı quality değeri için doğrulayan Theory.', neden: null, olmasaydi: null },
+          { satir: 'var (_, _, newEF) = SrsCalculator.Calculate(', aciklama: 'Bu Theory\'de de yalnızca `newEF` İLGİ ALANI.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 2, repetitionNumber: 5, easinessFactor: 2.5m, quality);', aciklama: 'repetitionNumber=5 — İNTERVAL formülünün (0/1/2+ dalları) bu testin SONUCUNU ETKİLEMEMESİ için BİLEREK 0/1 dışında sabit bir değer; `quality` parametreden gelir.', neden: null, olmasaydi: null },
+          { satir: 'newEF.Should().Be(expectedEF);', aciklama: '`[InlineData]`\'dan gelen beklenen EF ile GERÇEK sonucun karşılaştırılması.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_SuccessfulAnswer_EasinessFactorFloorAppliesOnSuccessToo()', aciklama: 'EF tabanının yalnızca BAŞARISIZ dalda DEĞİL, BAŞARILI dalda da geçerli olduğunu doğrular — üretim kodunda İKİ ayrı `Math.Max(1.3m, ...)` çağrısı var, bu test İKİNCİSİNİ (başarılı dal) hedefler.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 1, repetitionNumber: 5, easinessFactor: 1.35m, quality: 3);', aciklama: 'quality=3\'ün EF deltası (-0.14) + başlangıç EF (1.35) = 1.21, TABANIN (1.3) ALTINA düşerdi.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_SuccessfulAnswer_IncreasesLevelByOne()', aciklama: 'Level\'ın "normal" (tavana ÇARPMADAN) artışını test eder.', neden: null, olmasaydi: null },
+          { satir: 'var (_, newLevel, _) = SrsCalculator.Calculate(', aciklama: 'Bu ve SONRAKİ testte yalnızca `newLevel` İLGİ ALANI.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 2, repetitionNumber: 5, easinessFactor: 2.5m, quality: 4);', aciklama: 'currentLevel=2 (tavandan UZAK) — level\'ın normal şekilde 1 artacağı bir başlangıç noktası.', neden: null, olmasaydi: null },
+          { satir: 'newLevel.Should().Be(3);', aciklama: '2\'den 3\'e — beklenen basit artış.', neden: null, olmasaydi: null },
+          { satir: 'public void Calculate_LevelAtMaximum_DoesNotExceedFive()', aciklama: 'Level tavanını (`Math.Min(currentLevel+1, 5)`) hedefleyen sınır testi.', neden: null, olmasaydi: null },
+          { satir: 'currentLevel: 5, repetitionNumber: 5, easinessFactor: 2.5m, quality: 5);', aciklama: 'currentLevel=5 — TAVANDA başlayan bir kelime, bir BAŞARILI cevap daha alıyor.', neden: null, olmasaydi: null },
+          { satir: 'newLevel.Should().Be(5);', aciklama: '6\'ya DEĞİL, 5\'te KALDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(5, 100, 100.00)] // en üst seviye + kusursuz başarı → tam ustalık', aciklama: 'İki faktör de MAKSİMUMDA — Mastery\'nin tam 100 olduğu tek nokta.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(0, 0, 0.00)] // hiç ilerlememiş + hiç başarı yok → sıfır', aciklama: 'İki faktör de SIFIRDA — Mastery\'nin tam 0 olduğu tek nokta.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(3, 50, 58.00)] // orta seviye + orta başarı', aciklama: 'Orta bir level (3/5) + orta bir successRate (%50) — formülün İKİ terimini de KISMEN devreye sokan "normal" bir durum.', neden: null, olmasaydi: null },
+          { satir: '[InlineData(2, 73.5, 46.70)] // level baskın (32) + successRate ince ayar (14.7)', aciklama: 'Ondalıklı bir `successRate` (73.5) — formülün yuvarlama davranışını da (2 ondalık basamak) DOLAYLI olarak test eder.', neden: null, olmasaydi: null },
+          { satir: 'public void CalculateMastery_VariousLevelsAndSuccessRates_ReturnsWeightedPercentage(', aciklama: '`CalculateMastery`\'nin 80/20 ağırlıklı formülünü DÖRT farklı (level, successRate) çiftiyle doğrulayan Theory.', neden: null, olmasaydi: null },
+          { satir: 'int currentLevel, decimal successRate, decimal expectedMastery)', aciklama: 'Metot imzasının ikinci satırı — üç parametre `[InlineData]`\'daki üç değere SIRAYLA eşlenir.', neden: null, olmasaydi: null },
+          { satir: 'var mastery = SrsCalculator.CalculateMastery(currentLevel, successRate);', aciklama: '`Calculate`\'in AKSİNE tek bir `decimal` dönen, tuple GEREKTİRMEYEN basit bir çağrı.', neden: null, olmasaydi: null },
+          { satir: 'mastery.Should().Be(expectedMastery);', aciklama: 'Hesaplanan yüzdelik değerin beklenenle BİREBİR (2 ondalık dahil) eşleşmesi.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Tuple destructuring', tanim: '`var (a, b, c) = metot();` sözdizimi — `Calculate`\'in üç elemanlı dönüş değerini tek satırda ayrı değişkenlere ayırır; testin ilgilenmediği elemanlar `_` (discard) ile atlanır.' },
+          { terim: 'MidpointRounding.ToEven (bankacı yuvarlaması)', tanim: '.NET\'in `Math.Round(decimal)` varsayılan davranışı — X.5 gibi tam ortadaki bir değeri, "her zaman yukarı" değil en yakın ÇİFT tam sayıya yuvarlar (2.5→2, 3.5→4). `Calculate_HalfwayIntervalResult_RoundsToNearestEven` bu davranışı BİLEREK sabitler.' },
+          { terim: '[Theory] / [InlineData]', tanim: 'xUnit\'in parametreli test deseni — AYNI test gövdesini farklı girdilerle birden çok kez çalıştırır, her `[InlineData]` satırı ayrı bir test SONUCU olarak raporlanır.' },
+          { terim: 'Discard (_)', tanim: 'C#\'ın "bu değeri kullanmayacağım" işareti — tuple destructuring\'de ilgilenilmeyen elemanları isimlendirmeden atlamak için kullanılır.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-09 Şimdiye Kadar — Entity + Migration + SrsCalculator + Testleri',
+        maddeler: [
+          'Bölüm 1-2: `UserProgress`/`UserCardProgress` (BaseEntity, mutable SM-2 durumu), `LearningHistory`/`UserAchievement` (BaseEntity\'siz, insert-only), `Achievement` (BaseEntity\'siz, statik referans) + migration — gerçek `ZauselDB`\'ye uygulanıp canlı doğrulandı.',
+          'Bölüm 3: `SrsCalculator` (static, DI\'siz) — `Calculate` (quality<3 sıfırlama, EF 1.3 tabanı, repetitionNumber 0/1/2+ için üç farklı interval kuralı, level 0-5 sınırı) + `CalculateMastery` (80/20 ağırlıklı yüzdelik formül).',
+          'Bölüm 4: `SrsCalculatorTests` — 12 test metodu (Theory\'lerle 18 senaryo): quality<3 sıfırlama, EF tabanı (İKİ dalda), üç interval kuralı (+ bankacı yuvarlaması sınır testi), EF formülü (3 quality değeri), level tavanı, Mastery formülü (4 kombinasyon). Tüm paket 221/221 yeşil (203\'ten +18).',
+          'Kapsam DIŞI (A-09\'un SONRAKİ adımları): `IProgressService`/`ProgressService`/`ProgressController` (XP, streak, leech tespiti, Mastery bantlarının GERÇEK KULLANICI verisine UYGULANMASI), `IAchievementService`/`AchievementService` (seed veri + kilit açma mantığı) ve bunların testleri.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
