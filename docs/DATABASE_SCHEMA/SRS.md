@@ -84,9 +84,16 @@ CREATE TABLE LearningHistory (
 ```
 
 ### Achievements / UserAchievements
+> **[2026-08-22] Name/Description sütunu YOK:** rozetin görünen adı/açıklaması dile bağlı olduğu için
+> (tr/de + ileride eklenebilecek diller) `CLAUDE.md §1`'in "istemciye giden mesaj" istisnasına göre
+> `Application/Common/AchievementMessages.cs` sözlüğünden `Accept-Language`'a göre çözülür
+> (`ErrorMessages`/`SuccessMessages` ile AYNI desen — WordConcept/CategoryTranslations'ın DB-satırı-
+> başına-dil deseni DEĞİL, çünkü Achievement'ın admin CRUD'u yok, kodla sabit-seed edilen bir referans
+> tablosu). `Id`'ler `Application/Common/AchievementIds.cs`'te sabitlenir (`Languages`'teki Id=1/Id=2
+> seed deseniyle AYNI).
 ```sql
 CREATE TABLE Achievements (
-    Id INT PRIMARY KEY IDENTITY, Name NVARCHAR(100) NOT NULL, Description NVARCHAR(500) NULL,
+    Id INT PRIMARY KEY IDENTITY,
     Icon NVARCHAR(255) NULL,   -- resim URL'i (emoji değil)
     RewardXP INT NOT NULL DEFAULT 0,
     Rarity NVARCHAR(20) NOT NULL DEFAULT 'Common',  -- Common|Rare|Epic|Legendary

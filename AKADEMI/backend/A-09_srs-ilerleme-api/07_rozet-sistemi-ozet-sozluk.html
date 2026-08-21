@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'rozet-sistemi-ozet-sozluk',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '06_sorgular-komut-controller-ozet-sozluk.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 7',
+        baslik: 'Rozet Sistemi — AchievementService, GetMyAchievementsQuery ve AchievementsController',
+        altBaslik: 'Bölüm 6\'nın kapsam dışı bıraktığı son parça: IAchievementService/AchievementService, GET /achievements/me — A-09 bu bölümle TAMAMEN kapanıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Gerçek Bir Servis — Bölüm 6\'nın Terk Ettiği Deseni Burada Tekrar Kullanma Kararı',
+        aciklama: 'Bölüm 5-6\'daki Progress akışı "IProgressService/ProgressService" adında bir servis katmanını BİLEREK terk edip doğrudan MediatR Command/Handler\'a geçmişti. Bu bölümde rozet değerlendirmesi için ise TERSİNE, GERÇEK bir servis olarak `IAchievementService`/`AchievementService` yazıldı — aynı terk kararı burada TEKRARLANMADI.',
+        neden: 'Aradaki fark PAYLAŞIM — Progress\'in her sorgusu/komutu (`GetProgressSummaryQuery`, `ApplyWordLeechActionCommand`...) TEK bir Controller\'dan, TEK bir HTTP isteğine karşılık çağrılıyordu, aralarında tekrar eden bir iş mantığı YOKTU. Rozet değerlendirmesi ise TERSİNE — bu bölümdeki leech-action Reset akışı, A-10\'un kart öğrenme akışı VE A-11\'in oturum tamamlama akışı gibi birbirinden BAĞIMSIZ üç ayrı Handler\'ın AYNI eşik hesaplamasını (streak/kelime sayısı/ustalık/iyi bant) tekrar tekrar YAPMASI gerekiyor — bu tekrar, üç Handler\'a AYNI mantığı üç kez YAZDIRMAK yerine TEK bir arayüz+implementasyona ÇIKARILDI.',
+        olmasaydi: 'Ayrı bir servis YAZILMASAYDI, her üç Handler (leech-action Reset, A-10\'un kart öğrenme Handler\'ı, A-11\'in oturum tamamlama Handler\'ı) rozet eşiklerini (streak>=3/7/30, kelime sayısı>=50/200/500 vb.) KENDİ içinde YENİDEN hesaplardı — bir eşik DEĞİŞTİĞİNDE (ör. "İyi Bantta 100 Kelime" eşiği 100\'den 150\'ye çekilse) ÜÇ AYRI dosyanın GÜNCELLENMESİ gerekirdi, biri UNUTULURSA kullanıcı AYNI koşulu sağladığı hâlde bir akıştan rozet ALIRKEN diğerinden ALAMAZDI.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementIds.cs',
+        dosyaYolu: 'backend/Zausel.Application/Common/AchievementIds.cs',
+        nedenBuKlasor: 'Application/Common/ — `ErrorMessages`/`SuccessMessages` ile AYNI klasör: birden çok Handler/servisin PAYLAŞTIĞI, tek bir feature\'a ait OLMAYAN sabitler burada yaşar.',
+        kod: `namespace Zausel.Application.Common;
+
+// Achievements statik seed/referans tablosu olduğu için (Languages'teki Id=1/Id=2 ile AYNI desen)
+// Id'ler burada sabitlenir — AchievementConfiguration'ın HasData'sı, AchievementMessages'ın sözlük
+// anahtarları VE AchievementService'in eşik kontrolleri AYNI sabitlere referans verir, birden çok
+// yerde "magic number" tekrarlanmaz.
+public static class AchievementIds
+{
+    public const int Streak3 = 1;
+    public const int Streak7 = 2;
+    public const int Streak30 = 3;
+    public const int WordCount50 = 4;
+    public const int WordCount200 = 5;
+    public const int WordCount500 = 6;
+    public const int FirstMastery = 7;
+    public const int GoodBand100 = 8;
+    public const int FlawlessSession = 9;
+    public const int LeechRecovery = 10;
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.Common;', aciklama: '`ErrorMessages`/`SuccessMessages`\'ın yaşadığı ad alanı — sabitler tek bir feature\'a değil, birden çok Handler/servise ait.', neden: null, olmasaydi: null },
+          { satir: 'public static class AchievementIds', aciklama: 'Yalnızca `const int` alanları taşıyan statik bir sabit sınıfı — örneklenmez, DI\'a kaydedilmez.', neden: null, olmasaydi: null },
+          { satir: 'public const int Streak3 = 1;', aciklama: '`Languages` tablosundaki `Id=1`/`Id=2` seed deseniyle AYNI — bu sayı, `AchievementConfiguration.HasData`\'daki seed satırının `Id`siyle BİREBİR eşleşecek.', neden: 'Sayı, DEĞİL isim (`AchievementIds.Streak3`) referans verilerek kullanılır — kodun HERHANGİ bir yerinde `1` yazılmış OLSAYDI, bu `1`\'in "3 günlük seri" mi yoksa BAŞKA bir rozet mi olduğunu anlamak için `AchievementConfiguration`\'a GERİ dönmek gerekirdi.', olmasaydi: 'Bu sabit OLMASAYDI, `AchievementService`/`AchievementConfiguration`/`AchievementMessages` HER BİRİ kendi içinde `1`/`2`/`3`... gibi çıplak sayılar YAZARDI — bir rozet Id\'si DEĞİŞTİĞİNDE (ör. yeni bir rozet ARAYA eklenip mevcutlar KAYSA) üç dosyanın ÜÇÜNÜN de elle GÜNCELLENMESİ gerekirdi, biri UNUTULURSA sessiz bir eşleşme HATASI oluşurdu.' },
+          { satir: 'public const int Streak7 = 2;', aciklama: '7 günlük seri eşiği.', neden: null, olmasaydi: null },
+          { satir: 'public const int Streak30 = 3;', aciklama: '30 günlük seri eşiği.', neden: null, olmasaydi: null },
+          { satir: 'public const int WordCount50 = 4;', aciklama: '50 kelime eşiği.', neden: null, olmasaydi: null },
+          { satir: 'public const int WordCount200 = 5;', aciklama: '200 kelime eşiği.', neden: null, olmasaydi: null },
+          { satir: 'public const int WordCount500 = 6;', aciklama: '500 kelime eşiği.', neden: null, olmasaydi: null },
+          { satir: 'public const int FirstMastery = 7;', aciklama: 'Bir kelimenin ilk kez `CurrentLevel=5`\'e (otomatik hatırlama) ULAŞMASI.', neden: null, olmasaydi: null },
+          { satir: 'public const int GoodBand100 = 8;', aciklama: '100 kelimenin İyi bantta (Mastery>=70) OLMASI.', neden: null, olmasaydi: null },
+          { satir: 'public const int FlawlessSession = 9;', aciklama: 'Hatasız bir öğrenme oturumu — bu bölümde SEED edilir ama tespiti A-11\'e (LearningSession henüz yok) ERTELENİR.', neden: null, olmasaydi: null },
+          { satir: 'public const int LeechRecovery = 10;', aciklama: 'Leech kurtarma — bu bölümde GERÇEKTEN tetiklenebilen TEK rozet (leech-action Reset akışı ÜZERİNDEN).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementMessages.cs',
+        dosyaYolu: 'backend/Zausel.Application/Common/AchievementMessages.cs',
+        kod: `namespace Zausel.Application.Common;
+
+// ErrorMessages/SuccessMessages ile simetrik: Achievement tablosunda Name/Description sütunu YOK —
+// rozetin görünen adı/açıklaması Accept-Language'a göre bu sözlükten çözülür. Yeni dil = ErrorMessages
+// ile AYNI desen, sözlüğe yeni bir sütun eklemek (migration gerekmez).
+public static class AchievementMessages
+{
+    private const string DefaultLanguage = "tr";
+
+    private static readonly Dictionary<string, Dictionary<int, (string Name, string Description)>> Messages = new()
+    {
+        [DefaultLanguage] = new()
+        {
+            [AchievementIds.Streak3] = ("3 Günlük Seri", "3 gün üst üste çalıştın."),
+            [AchievementIds.Streak7] = ("7 Günlük Seri", "7 gün üst üste çalıştın."),
+            [AchievementIds.Streak30] = ("30 Günlük Seri", "30 gün üst üste çalıştın."),
+            [AchievementIds.WordCount50] = ("50 Kelime", "50 kelime öğrenmeye başladın."),
+            [AchievementIds.WordCount200] = ("200 Kelime", "200 kelime öğrenmeye başladın."),
+            [AchievementIds.WordCount500] = ("500 Kelime", "500 kelime öğrenmeye başladın."),
+            [AchievementIds.FirstMastery] = ("İlk Ustalık", "Bir kelimeyi ilk kez otomatik hatırlama seviyesine (5) taşıdın."),
+            [AchievementIds.GoodBand100] = ("100 Kelime İyi Bantta", "100 kelime %70 ve üzeri ustalık seviyesine ulaştı."),
+            [AchievementIds.FlawlessSession] = ("Hatasız Oturum", "Bir öğrenme oturumunu hiç hata yapmadan tamamladın."),
+            [AchievementIds.LeechRecovery] = ("Leech Kurtarma", "Takılıp kaldığın bir kelimeyi sıfırlayıp yeniden başlattın."),
+        },
+        ["de"] = new()
+        {
+            [AchievementIds.Streak3] = ("3-Tage-Serie", "Du hast 3 Tage in Folge gelernt."),
+            [AchievementIds.Streak7] = ("7-Tage-Serie", "Du hast 7 Tage in Folge gelernt."),
+            [AchievementIds.Streak30] = ("30-Tage-Serie", "Du hast 30 Tage in Folge gelernt."),
+            [AchievementIds.WordCount50] = ("50 Wörter", "Du hast begonnen, 50 Wörter zu lernen."),
+            [AchievementIds.WordCount200] = ("200 Wörter", "Du hast begonnen, 200 Wörter zu lernen."),
+            [AchievementIds.WordCount500] = ("500 Wörter", "Du hast begonnen, 500 Wörter zu lernen."),
+            [AchievementIds.FirstMastery] = ("Erste Meisterschaft", "Du hast ein Wort zum ersten Mal auf Stufe 5 (automatisches Erinnern) gebracht."),
+            [AchievementIds.GoodBand100] = ("100 Wörter im guten Bereich", "100 Wörter haben einen Beherrschungsgrad von 70% oder mehr erreicht."),
+            [AchievementIds.FlawlessSession] = ("Fehlerfreie Sitzung", "Du hast eine Lernsitzung ohne Fehler abgeschlossen."),
+            [AchievementIds.LeechRecovery] = ("Leech-Rettung", "Du hast ein feststeckendes Wort zurückgesetzt und neu gestartet."),
+        },
+    };
+
+    public static (string Name, string Description) Resolve(int achievementId, string? language)
+    {
+        var resolvedLanguage = language is not null && Messages.ContainsKey(language) ? language : DefaultLanguage;
+        return Messages[resolvedLanguage].TryGetValue(achievementId, out var text) ? text : Messages[DefaultLanguage][achievementId];
+    }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.Common;', aciklama: '`AchievementIds` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public static class AchievementMessages', aciklama: 'Statik bir çözümleme sınıfı — `ErrorMessages.Resolve`nin AYNI şeklini izler: Code/Id + dil GİRER, metin ÇIKAR.', neden: null, olmasaydi: null },
+          { satir: 'private const string DefaultLanguage = "tr";', aciklama: 'Desteklenmeyen/eksik bir dil geldiğinde DÜŞÜLECEK varsayılan — `ErrorMessages`\'ın AYNI "desteklenmiyorsa tr\'ye düş" kuralı.', neden: null, olmasaydi: null },
+          { satir: 'private static readonly Dictionary<string, Dictionary<int, (string Name, string Description)>> Messages = new()', aciklama: 'İki KATMANLI sözlük — dış anahtar dil kodu (`"tr"`/`"de"`), iç anahtar `AchievementId`, değer bir `(Name, Description)` tuple\'ı.', neden: 'Tek katmanlı bir sözlük (ör. `Dictionary<string, string>` anahtarı `"tr_1"` gibi BİRLEŞTİRİLMİŞ bir string) OLSAYDI, dil + Id kombinasyonunu ELLE string BİRLEŞTİRME/AYRIŞTIRMA gerektirirdi — iki katmanlı yapı, `Messages[dil][id]` gibi DOĞAL bir erişim sağlar.', olmasaydi: null },
+          { satir: '[DefaultLanguage] = new()', aciklama: 'Türkçe alt sözlüğün başlangıcı — dış sözlüğün `"tr"` anahtarı.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak3] = ("3 Günlük Seri", "3 gün üst üste çalıştın."),', aciklama: '3 günlük seri rozetinin Türkçe adı/açıklaması — anahtar `AchievementId` (magic number DEĞİL, `AchievementIds.Streak3`).', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak7] = ("7 Günlük Seri", "7 gün üst üste çalıştın."),', aciklama: '7 günlük seri rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak30] = ("30 Günlük Seri", "30 gün üst üste çalıştın."),', aciklama: '30 günlük seri rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount50] = ("50 Kelime", "50 kelime öğrenmeye başladın."),', aciklama: '50 kelime rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount200] = ("200 Kelime", "200 kelime öğrenmeye başladın."),', aciklama: '200 kelime rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount500] = ("500 Kelime", "500 kelime öğrenmeye başladın."),', aciklama: '500 kelime rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.FirstMastery] = ("İlk Ustalık", "Bir kelimeyi ilk kez otomatik hatırlama seviyesine (5) taşıdın."),', aciklama: 'İlk ustalık rozetinin Türkçe metni — "seviye 5" ifadesi, `SrsCalculator`\'ın (Bölüm 3) `CurrentLevel` tavanına karşılık gelir.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.GoodBand100] = ("100 Kelime İyi Bantta", "100 kelime %70 ve üzeri ustalık seviyesine ulaştı."),', aciklama: '100 kelime iyi bantta rozetinin Türkçe metni — "%70" ifadesi, Bölüm 6\'daki `GetProgressWordsQuery`\'nin "İyi" bant eşiğiyle (Mastery>=70) TUTARLI.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.FlawlessSession] = ("Hatasız Oturum", "Bir öğrenme oturumunu hiç hata yapmadan tamamladın."),', aciklama: 'Hatasız oturum rozetinin Türkçe metni — SEED edilir, tespiti A-11\'i bekler.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.LeechRecovery] = ("Leech Kurtarma", "Takılıp kaldığın bir kelimeyi sıfırlayıp yeniden başlattın."),', aciklama: 'Leech kurtarma rozetinin Türkçe metni.', neden: null, olmasaydi: null },
+          { satir: '["de"] = new()', aciklama: 'Almanca alt sözlüğün başlangıcı — dış sözlüğün `"de"` anahtarı, Türkçe alt sözlükten TAMAMEN AYRI bir `Dictionary` örneği.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak3] = ("3-Tage-Serie", "Du hast 3 Tage in Folge gelernt."),', aciklama: '3 günlük seri rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak7] = ("7-Tage-Serie", "Du hast 7 Tage in Folge gelernt."),', aciklama: '7 günlük seri rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.Streak30] = ("30-Tage-Serie", "Du hast 30 Tage in Folge gelernt."),', aciklama: '30 günlük seri rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount50] = ("50 Wörter", "Du hast begonnen, 50 Wörter zu lernen."),', aciklama: '50 kelime rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount200] = ("200 Wörter", "Du hast begonnen, 200 Wörter zu lernen."),', aciklama: '200 kelime rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.WordCount500] = ("500 Wörter", "Du hast begonnen, 500 Wörter zu lernen."),', aciklama: '500 kelime rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.FirstMastery] = ("Erste Meisterschaft", "Du hast ein Wort zum ersten Mal auf Stufe 5 (automatisches Erinnern) gebracht."),', aciklama: 'İlk ustalık rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.GoodBand100] = ("100 Wörter im guten Bereich", "100 Wörter haben einen Beherrschungsgrad von 70% oder mehr erreicht."),', aciklama: '100 kelime iyi bantta rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.FlawlessSession] = ("Fehlerfreie Sitzung", "Du hast eine Lernsitzung ohne Fehler abgeschlossen."),', aciklama: 'Hatasız oturum rozetinin Almanca metni.', neden: null, olmasaydi: null },
+          { satir: '[AchievementIds.LeechRecovery] = ("Leech-Rettung", "Du hast ein feststeckendes Wort zurückgesetzt und neu gestartet."),', aciklama: 'Leech kurtarma rozetinin Almanca metni — Almanca sözlüğün SON satırı.', neden: null, olmasaydi: null },
+          { satir: 'public static (string Name, string Description) Resolve(int achievementId, string? language)', aciklama: 'Dışarıya açılan TEK metot — `ErrorMessages.Resolve`nin AYNI imza deseni: bir kod/id + nullable dil GİRER, çözümlenmiş metin ÇIKAR.', neden: null, olmasaydi: null },
+          { satir: 'var resolvedLanguage = language is not null && Messages.ContainsKey(language) ? language : DefaultLanguage;', aciklama: 'Dil `null` İSE ya da sözlükte KARŞILIĞI YOKSA (ör. `"fr"` gibi desteklenmeyen bir dil) varsayılana DÜŞER.', neden: 'İstemci `Accept-Language` header\'ını hiç GÖNDERMEYEBİLİR (`null`) ya da desteklenmeyen bir dil GÖNDEREBİLİR — her iki durumda da uygulamanın bir `KeyNotFoundException` ile ÇÖKMESİ yerine sessizce Türkçeye DÜŞMESİ, kullanıcı deneyimini KESİNTİYE UĞRATMAZ.', olmasaydi: 'Bu düşme mantığı OLMASAYDI, desteklenmeyen bir `Accept-Language` değeriyle gelen bir istek `GET /achievements/me`\'yi 500 Internal Server Error\'a DÜŞÜRÜRDÜ — bir istemcinin YANLIŞ/beklenmeyen bir header göndermesi, TÜM endpoint\'i KULLANILAMAZ hale getirirdi.' },
+          { satir: 'return Messages[resolvedLanguage].TryGetValue(achievementId, out var text) ? text : Messages[DefaultLanguage][achievementId];', aciklama: 'İç sözlükte de bir GÜVENLİK ağı — `resolvedLanguage` geçerli OLSA bile (teorik olarak asla olmaması gereken) bir `achievementId` sözlükte YOKSA, yine Türkçeye DÜŞER (ikinci bir `KeyNotFoundException` riski daha ORTADAN KALKAR).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Achievement.cs — Nihai Hâli',
+        terimler: [
+          { terim: 'Achievement.cs (backend/Zausel.Domain/Entities/Srs/Achievement.cs)', tanim: '`public class Achievement { public int Id { get; set; } public string? Icon { get; set; } public int RewardXP { get; set; } public AchievementRarity Rarity { get; set; } = AchievementRarity.Common; public DateTime CreatedAt { get; set; } }` — Bölüm 2\'de `Name`/`Description` alanlarıyla TASLAK olarak yazılmıştı; rozet sistemi TAMAMLANIRKEN görünen metnin dile bağlı olması gerektiği ANLAŞILDIĞI için bu iki alan hiç veritabanına GİRMEDEN, TASARIM aşamasında bu bölümdeki `AchievementMessages` sözlüğüne (bir ÖNCEKİ kod slaydı) taşındı. `Icon`/`RewardXP`/`Rarity`/`CreatedAt` — Bölüm 2\'deki hâliyle DEĞİŞMEDEN kalır.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/AchievementConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/Srs/ — `UserProgressConfiguration`/`LearningHistoryConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı, entity ile BİREBİR eşleşen konfigürasyon dosyası.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Application.Common;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Enums.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
+{
+    // HasData migration-zamanında sabitlenir — DateTime.UtcNow burada KULLANILMAZ, her migration
+    // scaffold'unda farklı bir değer üretip sahte bir diff yaratırdı (CategoryConfiguration ile AYNI gerekçe).
+    private static readonly DateTime SeedTimestamp = new(2026, 8, 22, 0, 0, 0, DateTimeKind.Utc);
+
+    public void Configure(EntityTypeBuilder<Achievement> builder)
+    {
+        builder.ToTable("Achievements", tb =>
+        {
+            tb.HasCheckConstraint("CK_Achievements_Rarity", "Rarity IN ('Common','Rare','Epic','Legendary')");
+        });
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Icon).HasMaxLength(255);
+        builder.Property(x => x.RewardXP).HasDefaultValue(0);
+        builder.Property(x => x.Rarity).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(AchievementRarity.Common);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        // Seed — Id'ler AchievementIds sabitleriyle (AchievementService/AchievementMessages) birebir
+        // eşleşir (Languages'teki Id=1/Id=2 seed deseniyle AYNI). Name/Description sütunu YOK — rozetin
+        // görünen adı/açıklaması CLAUDE.md §1 "istemciye giden mesaj" istisnasına göre AchievementMessages
+        // sözlüğünden Accept-Language'a göre çözülür (ErrorMessages/SuccessMessages ile AYNI desen), yeni
+        // bir dil migration gerektirmeden yalnızca o sözlüğe eklenir. Icon şimdilik null — rozet görseli
+        // ayrı bir task (medya yükleme akışı yalnızca Admin'e açık, A-07).
+        builder.HasData(
+            new Achievement { Id = AchievementIds.Streak3, RewardXP = 10, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.Streak7, RewardXP = 25, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.Streak30, RewardXP = 50, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.WordCount50, RewardXP = 10, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.WordCount200, RewardXP = 25, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.WordCount500, RewardXP = 50, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.FirstMastery, RewardXP = 30, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.GoodBand100, RewardXP = 40, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.FlawlessSession, RewardXP = 20, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },
+            new Achievement { Id = AchievementIds.LeechRecovery, RewardXP = 15, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp }
+        );
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`ToTable`\'ın `tb =>` overload\'ı ve `HasConversion` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common;', aciklama: '`AchievementIds`\'in ad alanı — `HasData` çağrısı Id\'leri bu sabitlerden okuyacak.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`Achievement`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Enums.Srs;', aciklama: '`AchievementRarity`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: '`UserProgressConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private static readonly DateTime SeedTimestamp = new(2026, 8, 22, 0, 0, 0, DateTimeKind.Utc);', aciklama: 'On seed satırının HEPSİNİN paylaştığı SABİT bir zaman damgası.', neden: '`DateTime.UtcNow` her migration `add` komutunda o ANKİ zamanı YAKALARDI — migration dosyası bir KEZ üretilip GİT\'e commit edildikten sonra bir daha ASLA değişmemesi gerekirken, projeyi başka bir geliştiricinin YENİDEN scaffold ETMESİ (ör. bir migration\'ı geri alıp tekrar üretmesi) her seferinde FARKLI bir `CreatedAt` üretir, anlamsız bir git diff\'i YARATIRDI.', olmasaydi: 'Sabit bir zaman damgası KULLANILMASAYDI, migration dosyası DETERMİNİSTİK olmazdı — aynı kod tabanından iki AYRI geliştiricinin ÜRETTİĞİ migration dosyaları BİRBİRİNDEN farklı `InsertData` değerleri İÇERİRDİ.' },
+          { satir: 'public void Configure(EntityTypeBuilder<Achievement> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("Achievements", tb =>', aciklama: '`WordConceptConfiguration`daki `tb =>` blok deseni — tablo düzeyinde bir CHECK constraint eklemek için `ToTable`\'ın ikinci (opsiyonel) parametresi kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_Achievements_Rarity", "Rarity IN (\'Common\',\'Rare\',\'Epic\',\'Legendary\')");', aciklama: 'Enum\'ın C# tarafındaki KAPALI küme (4 değer) kısıtının veritabanı seviyesindeki GÜVENCESİ.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Icon).HasMaxLength(255);', aciklama: 'İkon dosya YOLU için üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.RewardXP).HasDefaultValue(0);', aciklama: 'Varsayılan 0 XP — seed sırasında HER başarım için AÇIKÇA bir değer verilecek, bu yalnızca bir GÜVENLİK ağı.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Rarity).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(AchievementRarity.Common);', aciklama: 'Enum veritabanında OKUNABİLİR bir metin (`"Common"`) olarak saklanır, sayısal bir index OLARAK DEĞİL.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasData(', aciklama: 'On sabit `Achievement` satırının TEK bir migration\'da, TEK seferde SEED edilmesinin başlangıcı — `LanguageConfiguration`\'ın (A-05) `Id=1`/`Id=2` seed deseniyle AYNI mekanizma.', neden: 'Rozet referans verisi (streak/kelime sayısı eşikleri, XP ödülleri) admin panelden GİRİLEN bir içerik DEĞİL — kodun KENDİSİNİN parçası, bu yüzden `Word`/`Category` gibi bir admin CRUD ekranı yerine migration\'ın İÇİNE gömülü sabit veri olarak seed edilir.', olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.Streak3, RewardXP = 10, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp },', aciklama: '3 günlük seri — en düşük eşik, en düşük ödül (`Common`, 10 XP).', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.Streak7, RewardXP = 25, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },', aciklama: '7 günlük seri — orta eşik, orta ödül (`Rare`, 25 XP).', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.Streak30, RewardXP = 50, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },', aciklama: '30 günlük seri — en yüksek seri eşiği, en yüksek seri ödülü (`Epic`, 50 XP).', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.WordCount50, RewardXP = 10, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp },', aciklama: '50 kelime — streak ile AYNI nadirlik/ödül BASAMAKLANDIRMASI (Common→Rare→Epic, 10→25→50 XP) kelime sayısı eşiğinde de TEKRARLANIR.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.WordCount200, RewardXP = 25, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },', aciklama: '200 kelime — orta basamak.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.WordCount500, RewardXP = 50, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },', aciklama: '500 kelime — üst basamak.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.FirstMastery, RewardXP = 30, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },', aciklama: 'İlk ustalık — tek seferlik bir kilometre taşı, `Rare` nadirlikte 30 XP.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.GoodBand100, RewardXP = 40, Rarity = AchievementRarity.Epic, CreatedAt = SeedTimestamp },', aciklama: '100 kelime iyi bantta — geniş bir kelime dağarcığının OLGUNLAŞMASINI temsil eden, `Epic` nadirlikte 40 XP\'lik bir hedef.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.FlawlessSession, RewardXP = 20, Rarity = AchievementRarity.Rare, CreatedAt = SeedTimestamp },', aciklama: 'Hatasız oturum — SEED edilir ama tespit mantığı A-11\'i BEKLER.', neden: null, olmasaydi: null },
+          { satir: 'new Achievement { Id = AchievementIds.LeechRecovery, RewardXP = 15, Rarity = AchievementRarity.Common, CreatedAt = SeedTimestamp }', aciklama: 'Leech kurtarma — bu bölümde GERÇEKTEN tetiklenebilen TEK rozet, `Common` nadirlikte 15 XP. Son satır olduğu için sonunda VİRGÜL YOK.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: AddAchievementSeed — Sütun Silme + 10 Satırlık Seed',
+        aciklama: '`dotnet ef migrations add AddAchievementSeed --project Zausel.Infrastructure --startup-project Zausel.API` çalıştırıldı. EF Core, bir ÖNCEKİ migration\'dan (Bölüm 2) bu yana `Achievement.Name`/`Description` property\'lerinin KALDIRILDIĞINI ve `AchievementConfiguration.HasData`\'nın YENİ eklendiğini karşılaştırıp iki `DropColumn` (`Name`, `Description`) + on ayrı `InsertData` çağrısı (her biri bir `AchievementIds` sabitine karşılık) üreten bir migration dosyası ürettü; `Down` metodu bu on satırı `DeleteData` ile geri ALIP iki sütunu `AddColumn` ile YENİDEN ekleyecek şekilde OTOMATİK üretildi.',
+        neden: 'Sütunları SİLMEK ile seed EKLEMEK aynı migration\'a TOPLANDI çünkü ikisi de AYNI kod değişikliğinin (Achievement.cs\'ten Name/Description property\'lerinin ÇIKARILMASI + AchievementConfiguration\'a HasData EKLENMESİ) doğrudan sonucu — EF Core\'un "önceki model snapshot\'ıyla şimdiki model\'i karşılaştır" mekanizması bu iki değişikliği TEK bir migration çalıştırmasında OTOMATİK yakaladı, elle iki ayrı migration AÇMAK gerekmedi.',
+        olmasaydi: 'HasData seed\'i AYRI bir migration\'a bırakılsaydı, `Name`/`Description` sütunları hâlâ NOT NULL/DOLU olarak dururken (bir ÖNCEKİ migration\'ın hâli) `AchievementConfiguration`\'ın kod tarafı bu sütunlara HİÇ değer VERMEYEN yeni bir `Achievement { Id = ..., RewardXP = ... }` nesnesi ÜRETMEYE çalışırdı — `Name` NOT NULL kısıtı OLDUĞU için migration ÇALIŞMA ZAMANINDA (insert anında) bir constraint ihlali HATASI verirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'IAchievementService.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Services/IAchievementService.cs',
+        nedenBuKlasor: 'Interfaces/Services/ — `IActivityLogger`/`IFileStorageService` ile AYNI FLAT klasör, tek bir feature\'a değil TÜM Application katmanına açık bir servis arayüzü.',
+        kod: `namespace Zausel.Application.Interfaces.Services;
+
+public interface IAchievementService
+{
+    // leechRecovered yalnızca leech-action Reset akışından true geçirilir — CurrentLevel/Mastery gibi
+    // her an sorgulanabilir bir DURUM değil, bir OLAY (Reset anı) olduğu için parametre olarak taşınır.
+    Task EvaluateAndUnlockAsync(int userId, bool leechRecovered = false, CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`/`IFileStorageService` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public interface IAchievementService', aciklama: 'TEK metotlu bir arayüz — Application katmanı bu arayüze bağımlı, GERÇEK implementasyon (bir SONRAKİ kod slaydı) testte Moq ile SAHTELENEBİLİR.', neden: null, olmasaydi: null },
+          { satir: 'Task EvaluateAndUnlockAsync(int userId, bool leechRecovered = false, CancellationToken cancellationToken = default);', aciklama: 'Dönüş tipi `Task` (`Task<T>` DEĞİL) — bu metot bir DEĞER hesaplamaz, yalnızca YAN ETKİ (rozet kilidi açma) üretir; `leechRecovered` VARSAYILAN `false` olduğu için A-10/A-11\'in çağıracağı SIRADAN kullanım (`EvaluateAndUnlockAsync(userId, cancellationToken: ct)`) bu parametreyi HİÇ belirtmek ZORUNDA kalmaz.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'AchievementUnlockItem.cs ve IUserAchievementRepository.cs',
+        terimler: [
+          { terim: 'AchievementUnlockItem.cs (backend/Zausel.Application/Interfaces/Repositories/Srs/AchievementUnlockItem.cs)', tanim: '`public record AchievementUnlockItem(int AchievementId, string? Icon, int RewardXP, string Rarity, DateTime UnlockedAt);` — `ProgressSnapshot`/`WordProgressItem` (Bölüm 5) ile AYNI desen: repository\'nin döndürdüğü şekil, arayüzle AYNI klasörde AYRI bir dosyada yaşar. `Name`/`Description` TAŞIMAZ (Achievement tablosunda o sütunlar YOK) — çağıran Handler, `AchievementMessages.Resolve`\'u `AchievementId` + `Accept-Language` ile AYRICA çağırıp görünen metni üretir.' },
+          { terim: 'IUserAchievementRepository.cs (backend/Zausel.Application/Interfaces/Repositories/Srs/IUserAchievementRepository.cs)', tanim: 'Dört metotlu bir arayüz: `HasUnlockedAsync(userId, achievementId, ct)` (kilit AÇIK MI kontrolü), `AddAsync(userId, achievementId, ct)` (yeni bir kilit açma — `UnlockedAt` veritabanı varsayılanıyla `GETUTCDATE()` dolar, çağıran `SaveChangesAsync`\'i AYRI çağırır, `AchievementService` birden çok rozeti TEK `SaveChanges`\'te TOPLU yazabilsin diye), `GetUnlockedForUserAsync(userId, ct)` (kullanıcının TÜM açık rozetleri, `List<AchievementUnlockItem>`), `SaveChangesAsync(ct)` — `IUserCategoryRepository`\'nin (A-08) AYNI "commit kontrolü Handler\'da kalır" deseni.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementService.cs',
+        dosyaYolu: 'backend/Zausel.Application/Services/AchievementService.cs',
+        nedenBuKlasor: 'Application/Services/ — `LocalFileStorageService`/`ActivityLogger`\'ın (A-07/A-04) yaşadığı FLAT klasör, `Application/Interfaces/Services/`deki arayüzün implementasyonu.',
+        kod: `using Zausel.Application.Common;
+using Zausel.Application.Interfaces.Repositories.Auth;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+
+namespace Zausel.Application.Services;
+
+// EvaluateAndUnlockAsync durum-tabanlı (event-tabanlı DEĞİL) çalışır: her çağrıda TÜM eşikleri
+// kullanıcının GÜNCEL UserProgress/UserCardProgress/User durumundan yeniden hesaplar — bu yüzden
+// A-10 (learn-system-word) ve A-11 (review-answer/oturum tamamlama) yazıldığında, o Handler'lar da
+// kendi mutasyonlarından SONRA AYNI metodu çağırarak rozet kilidini açabilir; ayrı bir event/queue
+// sistemi gerekmez. Şu an TEK çağıran ApplyWordLeechActionCommandHandler (Reset akışı).
+public class AchievementService : IAchievementService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IUserProgressRepository _userProgressRepository;
+    private readonly IUserCardProgressRepository _userCardProgressRepository;
+    private readonly IUserAchievementRepository _userAchievementRepository;
+
+    public AchievementService(
+        IUserRepository userRepository,
+        IUserProgressRepository userProgressRepository,
+        IUserCardProgressRepository userCardProgressRepository,
+        IUserAchievementRepository userAchievementRepository)
+    {
+        _userRepository = userRepository;
+        _userProgressRepository = userProgressRepository;
+        _userCardProgressRepository = userCardProgressRepository;
+        _userAchievementRepository = userAchievementRepository;
+    }
+
+    public async Task EvaluateAndUnlockAsync(int userId, bool leechRecovered = false, CancellationToken cancellationToken = default)
+    {
+        var wordSnapshots = await _userProgressRepository.GetSnapshotsAsync(userId, cancellationToken);
+        var cardSnapshots = await _userCardProgressRepository.GetSnapshotsAsync(userId, cancellationToken);
+        var snapshots = wordSnapshots.Concat(cardSnapshots).ToList();
+
+        var wordCount = snapshots.Count;
+        var goodBandCount = snapshots.Count(s => s.Mastery >= 70);
+        var hasFirstMastery = snapshots.Any(s => s.CurrentLevel >= 5);
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        var streakDays = user?.StreakDays ?? 0;
+
+        var qualifiedAchievementIds = new List<int>();
+
+        if (streakDays >= 3) qualifiedAchievementIds.Add(AchievementIds.Streak3);
+        if (streakDays >= 7) qualifiedAchievementIds.Add(AchievementIds.Streak7);
+        if (streakDays >= 30) qualifiedAchievementIds.Add(AchievementIds.Streak30);
+
+        if (wordCount >= 50) qualifiedAchievementIds.Add(AchievementIds.WordCount50);
+        if (wordCount >= 200) qualifiedAchievementIds.Add(AchievementIds.WordCount200);
+        if (wordCount >= 500) qualifiedAchievementIds.Add(AchievementIds.WordCount500);
+
+        if (hasFirstMastery) qualifiedAchievementIds.Add(AchievementIds.FirstMastery);
+        if (goodBandCount >= 100) qualifiedAchievementIds.Add(AchievementIds.GoodBand100);
+
+        if (leechRecovered) qualifiedAchievementIds.Add(AchievementIds.LeechRecovery);
+
+        // FlawlessSession burada YOK — hatasız oturum bir "oturum tamamlandı" OLAYINA bağlı, LearningSession
+        // (A-11) henüz yazılmadığı için tespit edilecek bir veri yok; A-11'in oturum-tamamlama Handler'ı
+        // yazılınca bu metoda bir "sessionWasFlawless" parametresi eklenip aynı desenle işlenecek.
+
+        var unlockedAny = false;
+        foreach (var achievementId in qualifiedAchievementIds)
+        {
+            if (await _userAchievementRepository.HasUnlockedAsync(userId, achievementId, cancellationToken))
+                continue;
+
+            await _userAchievementRepository.AddAsync(userId, achievementId, cancellationToken);
+            unlockedAny = true;
+        }
+
+        // Rozet açılışı ActivityLogger'a YAZILMAZ — UserAchievement satırının kendisi (UnlockedAt ile)
+        // zaten insert-only bir log, LearningHistory'yle AYNI gerekçe.
+        if (unlockedAny)
+            await _userAchievementRepository.SaveChangesAsync(cancellationToken);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Application.Common;', aciklama: '`AchievementIds`\'in ad alanı — eşik kontrollerinde referans verilir.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`\'nin ad alanı — `User.StreakDays`\'e erişmek için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`/`IUserCardProgressRepository`/`IUserAchievementRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: 'Implemente edilen `IAchievementService`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Services;', aciklama: '`ActivityLogger`/`LocalFileStorageService` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class AchievementService : IAchievementService', aciklama: 'Arayüzün TEK implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserRepository _userRepository;', aciklama: 'Birinci bağımlılık — streak bilgisi için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'İkinci bağımlılık — sistem kelimesi ilerlemesi için (Bölüm 5\'teki `GetSnapshotsAsync`).', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserCardProgressRepository _userCardProgressRepository;', aciklama: 'Üçüncü bağımlılık — kişisel kart ilerlemesi için (AYNI `GetSnapshotsAsync` imzası).', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserAchievementRepository _userAchievementRepository;', aciklama: 'Dördüncü bağımlılık — kilit açma/okuma.', neden: null, olmasaydi: null },
+          { satir: 'public AchievementService(', aciklama: 'Dört bağımlılıklı constructor\'ın başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'IUserRepository userRepository,', aciklama: 'İlk parametre.', neden: null, olmasaydi: null },
+          { satir: 'IUserProgressRepository userProgressRepository,', aciklama: 'İkinci parametre.', neden: null, olmasaydi: null },
+          { satir: 'IUserCardProgressRepository userCardProgressRepository,', aciklama: 'Üçüncü parametre.', neden: null, olmasaydi: null },
+          { satir: 'IUserAchievementRepository userAchievementRepository)', aciklama: 'Dördüncü ve son parametre — dört bağımlılık olduğu için imza BİRDEN FAZLA satıra BÖLÜNDÜ, `ApplyWordLeechActionCommandHandler`\'ın (bu bölümün SONRAKİ bir kod slaydı) ÜÇ bağımlılıklı constructor\'ıyla AYNI biçimlendirme kuralı.', neden: null, olmasaydi: null },
+          { satir: '_userRepository = userRepository;', aciklama: 'Birinci alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'İkinci alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_userCardProgressRepository = userCardProgressRepository;', aciklama: 'Üçüncü alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository = userAchievementRepository;', aciklama: 'Dördüncü alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task EvaluateAndUnlockAsync(int userId, bool leechRecovered = false, CancellationToken cancellationToken = default)', aciklama: 'Arayüzdeki imzanın BİREBİR implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'var wordSnapshots = await _userProgressRepository.GetSnapshotsAsync(userId, cancellationToken);', aciklama: 'Sistem kelimesi ilerlemesinin özeti — Bölüm 5\'te `GetProgressSummaryQuery` için yazılan AYNI metot, burada İKİNCİ bir amaçla (rozet eşiği) tekrar KULLANILIYOR.', neden: null, olmasaydi: null },
+          { satir: 'var cardSnapshots = await _userCardProgressRepository.GetSnapshotsAsync(userId, cancellationToken);', aciklama: 'Kişisel kart ilerlemesinin özeti — AYNI desen, farklı tablo.', neden: null, olmasaydi: null },
+          { satir: 'var snapshots = wordSnapshots.Concat(cardSnapshots).ToList();', aciklama: 'İki AYRI kaynaktan gelen listeler, `GetProgressSummaryQueryHandler`\'daki (Bölüm 5) `Concat` deseniyle AYNI şekilde TEK bir listede birleştirilir.', neden: '`ProgressSnapshot`\'ın `CurrentLevel` alanı taşıması (bir SONRAKİ sözlük slaydı) sayesinde, rozet değerlendirmesi kelime sayısını VE ustalık seviyesini AYNI birleşik listeden okuyabiliyor — iki AYRI döngü YAZMAK yerine.', olmasaydi: 'İki liste AYRI AYRI işlenseydi, `wordCount`/`goodBandCount`/`hasFirstMastery` hesaplamalarının HER BİRİ iki KEZ (bir kere UserProgress için, bir kere UserCardProgress için) YAZILIP SONUÇLARI toplanmak ZORUNDA kalırdı.' },
+          { satir: 'var wordCount = snapshots.Count;', aciklama: 'Birleşik listenin TOPLAM eleman sayısı — "50/200/500 kelime" eşiklerinin PAYDASI.', neden: null, olmasaydi: null },
+          { satir: 'var goodBandCount = snapshots.Count(s => s.Mastery >= 70);', aciklama: 'Mastery>=70 (İyi bant) olan satırların sayısı — Bölüm 6\'daki `GetProgressWordsQuery`\'nin "İyi" bant eşiğiyle (`min:70, max:null`) BİREBİR AYNI sınır.', neden: null, olmasaydi: null },
+          { satir: 'var hasFirstMastery = snapshots.Any(s => s.CurrentLevel >= 5);', aciklama: '`Any` — TEK bir kelimenin bile seviye 5\'e ulaşması YETERLİ, "ilk ustalık" ÇOĞUL bir sayım DEĞİL.', neden: null, olmasaydi: null },
+          { satir: 'var user = await _userRepository.GetByIdAsync(userId, cancellationToken);', aciklama: 'Streak bilgisi için `User` satırının okunması.', neden: null, olmasaydi: null },
+          { satir: 'var streakDays = user?.StreakDays ?? 0;', aciklama: 'Null-conditional + null-coalescing — `user` teorik olarak `null` DÖNMEZ (bu metot her zaman GEÇERLİ bir `userId` ile çağrılır) ama savunmacı bir ALIŞKANLIK, `user` `null` OLSA bile streak eşikleri sessizce 0\'dan başlar.', neden: null, olmasaydi: null },
+          { satir: 'var qualifiedAchievementIds = new List<int>();', aciklama: 'Bu çağrıda hak KAZANILAN (henüz "yeni açılan" DEĞİL, yalnızca KOŞULU sağlayan) rozet Id\'lerinin biriktirileceği liste.', neden: null, olmasaydi: null },
+          { satir: 'if (streakDays >= 3) qualifiedAchievementIds.Add(AchievementIds.Streak3);', aciklama: 'Üç streak eşiğinin İLKİ — `>=` (tam eşitlik DEĞİL) kullanılır, böylece 3\'ü AŞAN bir streak de (ör. 10 gün) rozeti KAÇIRMAZ.', neden: null, olmasaydi: null },
+          { satir: 'if (streakDays >= 7) qualifiedAchievementIds.Add(AchievementIds.Streak7);', aciklama: 'İkinci streak eşiği — birinciyle BAĞIMSIZ bir `if`, bir `else if` ZİNCİRİ DEĞİL: 10 günlük bir streak HEM Streak3 HEM Streak7\'yi (İKİSİNİ BİRDEN) hak EDER.', neden: 'Rozetler KÜMÜLATİF — bir kullanıcı 30 gün streak yaptığında Streak3/Streak7/Streak30\'un ÜÇÜNÜ de açması BEKLENİR, yalnızca EN YÜKSEK eşiği DEĞİL.', olmasaydi: '`else if` zinciri KULLANILSAYDI, 30 günlük bir streak yalnızca Streak30\'u tetikler, Streak3/Streak7 rozetleri HİÇBİR ZAMAN açılmazdı — kullanıcı düşük eşikleri "atlayarak" geçmiş olsa bile o rozetleri HAK ETTİĞİ hâlde ALAMAZDI.' },
+          { satir: 'if (streakDays >= 30) qualifiedAchievementIds.Add(AchievementIds.Streak30);', aciklama: 'Üçüncü streak eşiği — AYNI bağımsız `if` deseni.', neden: null, olmasaydi: null },
+          { satir: 'if (wordCount >= 50) qualifiedAchievementIds.Add(AchievementIds.WordCount50);', aciklama: 'Kelime sayısı eşiklerinin İLKİ — streak\'le AYNI kümülatif/bağımsız `if` mantığı.', neden: null, olmasaydi: null },
+          { satir: 'if (wordCount >= 200) qualifiedAchievementIds.Add(AchievementIds.WordCount200);', aciklama: 'İkinci kelime sayısı eşiği.', neden: null, olmasaydi: null },
+          { satir: 'if (wordCount >= 500) qualifiedAchievementIds.Add(AchievementIds.WordCount500);', aciklama: 'Üçüncü kelime sayısı eşiği.', neden: null, olmasaydi: null },
+          { satir: 'if (hasFirstMastery) qualifiedAchievementIds.Add(AchievementIds.FirstMastery);', aciklama: 'Boolean bir koşul — sayısal bir eşik DEĞİL, "en az bir kez GERÇEKLEŞTİ mi" sorusu.', neden: null, olmasaydi: null },
+          { satir: 'if (goodBandCount >= 100) qualifiedAchievementIds.Add(AchievementIds.GoodBand100);', aciklama: 'İyi bant eşiği.', neden: null, olmasaydi: null },
+          { satir: 'if (leechRecovered) qualifiedAchievementIds.Add(AchievementIds.LeechRecovery);', aciklama: 'TEK olay-tabanlı (durum-tabanlı DEĞİL) koşul — bu metodun parametre olarak ALDIĞI `leechRecovered` bayrağına doğrudan BAĞLI, kullanıcının GÜNCEL durumundan (snapshot\'lardan) HESAPLANMAZ.', neden: null, olmasaydi: null },
+          { satir: 'var unlockedAny = false;', aciklama: 'Döngü SONUNDA `SaveChangesAsync`\'in gerçekten GEREKİP gerekmediğini izleyen bayrak.', neden: null, olmasaydi: null },
+          { satir: 'foreach (var achievementId in qualifiedAchievementIds)', aciklama: 'Hak KAZANILAN her rozet için — bu liste bu ÇAĞRIDA hak kazanılanları taşır, ZATEN açık olanları henüz FİLTRELEMEMİŞTİR (filtre bir SONRAKİ satırda).', neden: null, olmasaydi: null },
+          { satir: 'if (await _userAchievementRepository.HasUnlockedAsync(userId, achievementId, cancellationToken))', aciklama: 'Bu rozet DAHA ÖNCE açılmış MI kontrolü — `EvaluateAndUnlockAsync` HER çağrıda TÜM eşikleri yeniden hesapladığı için (durum-tabanlı tasarım), zaten AÇIK bir rozetin tekrar tekrar "hak kazanıldı" listesine GİRMESİ NORMAL, asıl önemli olan burada TEKRAR eklenmemesi.', neden: 'Bu kontrol OLMADAN, `AddAsync` AYNI (userId, achievementId) çiftini bir dahaki `EvaluateAndUnlockAsync` çağrısında TEKRAR eklemeye ÇALIŞIRDI — `UserAchievementConfiguration`\'ın (Bölüm 2) `(UserId, AchievementId)` UNIQUE index\'i bu ikinci insert\'i veritabanı SEVİYESİNDE bir HATAYLA REDDEDERDİ.', olmasaydi: 'Bu kontrol OLMASAYDI VE UNIQUE index de OLMASAYDI, kullanıcı AYNI rozeti HER `EvaluateAndUnlockAsync` çağrısında YENİDEN açar, `UserAchievements` tablosu AYNI (userId, achievementId) çifti için ONLARCA tekrar eden satır BİRİKTİRİRDİ.' },
+          { satir: 'continue;', aciklama: 'Zaten açık bir rozet için döngünün BİR SONRAKİ elemana GEÇMESİ — `AddAsync`/`unlockedAny = true` ATLANARAK.', neden: null, olmasaydi: null },
+          { satir: 'await _userAchievementRepository.AddAsync(userId, achievementId, cancellationToken);', aciklama: 'Yeni bir kilit açma — DEĞİŞİKLİK İZLEYİCİYE eklenir, henüz veritabanına YAZILMAZ (`SaveChangesAsync` döngü BİTTİKTEN sonra çağrılır).', neden: null, olmasaydi: null },
+          { satir: 'unlockedAny = true;', aciklama: 'En az bir YENİ rozet açıldığının işaretlenmesi.', neden: null, olmasaydi: null },
+          { satir: 'if (unlockedAny)', aciklama: 'Döngü boyunca HİÇ yeni rozet açılmadıysa (`qualifiedAchievementIds` boş VEYA hepsi zaten açıksa) bu blok hiç ÇALIŞMAZ.', neden: 'Gereksiz bir `SaveChangesAsync` çağrısı — DEĞİŞİKLİK İZLEYİCİDE hiçbir kayıtlı DEĞİŞİKLİK yokken bile EF Core\'un veritabanına GİDİP "kaydedilecek bir şey var mı" diye SORMASI (küçük ama gereksiz bir round-trip) — her leech-action Reset çağrısında (rozet zaten açıksa) ÖNLENİR.', olmasaydi: 'Bu koşul OLMASAYDI, `SaveChangesAsync` HER `EvaluateAndUnlockAsync` çağrısında (hiçbir yeni rozet açılmasa BİLE) çağrılırdı — pratikte ZARARSIZ ama gereksiz bir veritabanı GİDİŞ-DÖNÜŞÜ, yüksek trafikte KÜÇÜK bir performans MALİYETİ eklerdi.' },
+          { satir: 'await _userAchievementRepository.SaveChangesAsync(cancellationToken);', aciklama: 'Gerçek veritabanı yazımı — döngüde BİRİKEN TÜM yeni `AddAsync` çağrıları TEK bir transaction\'da COMMIT edilir.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserAchievementRepository.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/Srs/UserAchievementRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/Srs/ — arayüzün Application klasörüyle BİREBİR eşleşen implementasyon klasörü, `UserProgressRepository`/`UserCardProgressRepository` ile AYNI dizin.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Infrastructure.Data;
+
+namespace Zausel.Infrastructure.Repositories.Srs;
+
+public class UserAchievementRepository : IUserAchievementRepository
+{
+    private readonly ZauselDbContext _context;
+
+    public UserAchievementRepository(ZauselDbContext context) => _context = context;
+
+    public async Task<bool> HasUnlockedAsync(int userId, int achievementId, CancellationToken cancellationToken = default) =>
+        await _context.UserAchievements.AnyAsync(a => a.UserId == userId && a.AchievementId == achievementId, cancellationToken);
+
+    public Task AddAsync(int userId, int achievementId, CancellationToken cancellationToken = default)
+    {
+        _context.UserAchievements.Add(new UserAchievement { UserId = userId, AchievementId = achievementId });
+        return Task.CompletedTask;
+    }
+
+    public async Task<List<AchievementUnlockItem>> GetUnlockedForUserAsync(int userId, CancellationToken cancellationToken = default) =>
+        await _context.UserAchievements
+            .Where(ua => ua.UserId == userId)
+            .Join(_context.Achievements, ua => ua.AchievementId, a => a.Id, (ua, a) =>
+                new AchievementUnlockItem(a.Id, a.Icon, a.RewardXP, a.Rarity.ToString(), ua.UnlockedAt))
+            .OrderByDescending(item => item.UnlockedAt)
+            .ToListAsync(cancellationToken);
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`AnyAsync`/`ToListAsync` gibi async LINQ uzantı metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'Implemente edilen arayüzün VE `AchievementUnlockItem`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserAchievement`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Data;', aciklama: '`ZauselDbContext`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Repositories.Srs;', aciklama: '`UserProgressRepository`/`UserCardProgressRepository` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserAchievementRepository : IUserAchievementRepository', aciklama: 'Arayüzün TEK implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ZauselDbContext _context;', aciklama: 'EF Core DbContext — diğer TÜM repository\'lerle AYNI, tek bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'public UserAchievementRepository(ZauselDbContext context) => _context = context;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<bool> HasUnlockedAsync(int userId, int achievementId, CancellationToken cancellationToken = default) =>', aciklama: 'Kilit-açık-mı kontrolü — expression-body.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserAchievements.AnyAsync(a => a.UserId == userId && a.AchievementId == achievementId, cancellationToken);', aciklama: '`AnyAsync` — kaydın TAMAMINI çekmek yerine yalnızca VAR/YOK bilgisini SQL\'de `EXISTS` sorgusuna ÇEVİRİR, `AchievementService`\'in döngü içinde her rozet için ÇAĞIRDIĞI bu metodun ucuz kalmasını sağlar.', neden: null, olmasaydi: null },
+          { satir: 'public Task AddAsync(int userId, int achievementId, CancellationToken cancellationToken = default)', aciklama: 'Kilit açma metodu — `async` DEĞİL, içinde `await` edilen bir çağrı YOK (`Add` senkron).', neden: null, olmasaydi: null },
+          { satir: '_context.UserAchievements.Add(new UserAchievement { UserId = userId, AchievementId = achievementId });', aciklama: '`UnlockedAt` BURADA elle atanmaz — `UserAchievementConfiguration`\'ın (Bölüm 2) `HasDefaultValueSql("GETUTCDATE()")` varsayılanı devreye girer.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Senkron bir metodun `Task` dönen arayüzü KARŞILAMASI için tamamlanmış bir Task döner.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<AchievementUnlockItem>> GetUnlockedForUserAsync(int userId, CancellationToken cancellationToken = default) =>', aciklama: '`GET /achievements/me`\'nin temel veri kaynağı.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserAchievements', aciklama: 'Sorgunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Where(ua => ua.UserId == userId)', aciklama: 'Sahiplik filtresi — yalnızca ÇAĞIRAN kullanıcının kendi rozetleri.', neden: null, olmasaydi: null },
+          { satir: '.Join(_context.Achievements, ua => ua.AchievementId, a => a.Id, (ua, a) =>', aciklama: 'EF Core navigation property KULLANMADAN, elle bir SQL JOIN — `UserProgressRepository.JoinWithWordsAsync`\'in (Bölüm 5) AKSİNE burada in-memory Dictionary DEĞİL, GERÇEK bir LINQ `Join` (SQL tarafında bir `INNER JOIN`\'e ÇEVRİLİR) kullanılır.', neden: '`Achievements` sabit/küçük (yalnızca 10 satır) bir referans tablosu olduğu için Dictionary-tabanlı iki-adımlı bir yaklaşıma (Bölüm 5\'teki `JoinWithWordsAsync` gibi) GEREK yok — tek bir SQL JOIN, on satırlık bir tabloya karşı zaten UCUZ.', olmasaydi: null },
+          { satir: 'new AchievementUnlockItem(a.Id, a.Icon, a.RewardXP, a.Rarity.ToString(), ua.UnlockedAt))', aciklama: '`a.Rarity.ToString()` — enum, DTO\'ya STRING olarak taşınır (`AchievementConfiguration`\'ın veritabanında SAKLADIĞI AYNI okunabilir metin: `"Common"`/`"Rare"`...).', neden: null, olmasaydi: null },
+          { satir: '.OrderByDescending(item => item.UnlockedAt)', aciklama: 'En SON açılan rozet EN ÜSTTE — kullanıcı arayüzünün "son kazanımlar" listesi için doğal bir SIRALAMA.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken);', aciklama: 'Sorguyu GERÇEKTEN çalıştıran, `IQueryable`\'ı `List`e çeviren çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>', aciklama: 'Metot gövdesi expression-body.', neden: null, olmasaydi: null },
+          { satir: '_context.SaveChangesAsync(cancellationToken);', aciklama: 'DbContext\'in gerçek kaydetme çağrısı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'ProgressSnapshot.cs, UserProgressRepository.cs ve UserCardProgressRepository.cs — Nihai Hâlleri',
+        terimler: [
+          { terim: 'ProgressSnapshot.cs (backend/Zausel.Application/Interfaces/Repositories/Srs/ProgressSnapshot.cs)', tanim: '`public record ProgressSnapshot(decimal Mastery, DateTime? NextReviewAt, bool IsSuspended, int CurrentLevel = 0);` — Bölüm 5\'te özet SAYIMI için üç alanla TASLAK olarak yazılmıştı; `AchievementService`\'in "ilk ustalık" değerlendirmesi (`CurrentLevel`\'a ihtiyaç duyar) TASARLANIRKEN dördüncü alan EKLENDİ. `= 0` varsayılanı, `GetProgressSummaryQueryHandlerTests`teki (Bölüm 5) üç-parametreli çağrıların DERLENMEYE devam etmesini sağlar.' },
+          { terim: 'UserProgressRepository.cs — GetSnapshotsAsync (backend/Zausel.Infrastructure/Repositories/Srs/UserProgressRepository.cs)', tanim: 'Bölüm 5\'te tam öğretilen dosyanın TEK satırı — `.Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended, p.CurrentLevel))` — artık dördüncü alanı da (`p.CurrentLevel`) taşıyor, EF Core SQL tarafında bu sütunu da ÇEKER. Dosyanın geri kalanı (Bölüm 5\'te öğretilen `GetByMasteryRangeAsync`/`GetSuspendedAsync`/`JoinWithWordsAsync` vb.) DEĞİŞMEDİ.' },
+          { terim: 'UserCardProgressRepository.cs — GetSnapshotsAsync (backend/Zausel.Infrastructure/Repositories/Srs/UserCardProgressRepository.cs)', tanim: 'AYNI tek-satırlık genişleme, `UserCardProgress` tablosu için: `.Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended, p.CurrentLevel))` — `UserCards` henüz olmadığı için (A-10) bu tablonun satırları şu an hep boş dönse de, projeksiyon şekli iki repository arasında TUTARLI kalır; `AchievementService`\'in `Concat`\'i (bir ÖNCEKİ kod slaydı) bu tutarlılığa GÜVENİR.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplyWordLeechActionCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Progress/ApplyWordLeechActionCommand.cs',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Application.Services;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.Progress;
+
+public record ApplyWordLeechActionCommand(int WordId, string Action, int UserId, string? ActorRole) : IRequest<LeechActionResponse>;
+
+public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeechActionCommand, LeechActionResponse>
+{
+    private readonly IUserProgressRepository _userProgressRepository;
+    private readonly IActivityLogger _activityLogger;
+    private readonly IAchievementService _achievementService;
+
+    public ApplyWordLeechActionCommandHandler(
+        IUserProgressRepository userProgressRepository, IActivityLogger activityLogger, IAchievementService achievementService)
+    {
+        _userProgressRepository = userProgressRepository;
+        _activityLogger = activityLogger;
+        _achievementService = achievementService;
+    }
+
+    public async Task<LeechActionResponse> Handle(ApplyWordLeechActionCommand request, CancellationToken cancellationToken)
+    {
+        var userProgress = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken)
+            ?? throw new EntityNotFoundException($"UserProgress not found: WordId={request.WordId}");
+
+        // Continue hiçbir alanı DEĞİŞTİRMEZ — kullanıcı "biliyorum, YİNE DE bu şekilde devam et" der,
+        // veritabanına yazılacak bir şey yok, yalnızca istemciye bir onay dönülür.
+        if (request.Action == "Continue")
+            return new LeechActionResponse(IsSuspended: null, CurrentLevel: null, NextReviewAt: null, Acknowledged: true);
+
+        var oldValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };
+
+        LeechActionResponse response;
+        if (request.Action == "Suspend")
+        {
+            userProgress.IsSuspended = true;
+            response = new LeechActionResponse(IsSuspended: true, CurrentLevel: null, NextReviewAt: null, Acknowledged: null);
+        }
+        else
+        {
+            // Reset — SM-2 durumu SIFIRLANIR (yeni bir kelimeymiş gibi baştan başlar), TimesCorrect/
+            // TimesIncorrect/SuccessRate gibi geçmiş istatistikler KORUNUR (yalnızca ileri gidiş sıfırlanır).
+            userProgress.CurrentLevel = 0;
+            userProgress.Mastery = SrsCalculator.CalculateMastery(0, userProgress.SuccessRate);
+            userProgress.EasinessFactor = 2.5m;
+            userProgress.IntervalDays = 1;
+            userProgress.RepetitionNumber = 0;
+            userProgress.ConsecutiveIncorrect = 0;
+            userProgress.IsSuspended = false;
+            userProgress.NextReviewAt = null;
+            response = new LeechActionResponse(IsSuspended: null, CurrentLevel: 0, NextReviewAt: null, Acknowledged: null);
+        }
+
+        await _userProgressRepository.UpdateAsync(userProgress, request.UserId, cancellationToken);
+        await _userProgressRepository.SaveChangesAsync(cancellationToken);
+
+        var newValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "APPLY_LEECH_ACTION", entityType: "UserProgress", entityId: userProgress.Id,
+            oldValue: oldValue, newValue: newValue, cancellationToken: cancellationToken);
+
+        // "Leech Kurtarma" rozeti yalnızca Reset'te değerlendirilir — Suspend bir kelimeyi leech
+        // durumuna SOKAR, kurtarmaz; gereksiz sorgu yapmamak için Suspend'te AchievementService HİÇ çağrılmaz.
+        if (request.Action == "Reset")
+            await _achievementService.EvaluateAndUnlockAsync(request.UserId, leechRecovered: true, cancellationToken);
+
+        return response;
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`LeechActionResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`/`IAchievementService`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: '`SrsCalculator`\'ın (Bölüm 3) ad alanı — `Reset` dalının Mastery YENİDEN hesaplaması için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Progress;', aciklama: 'Leech aksiyonu URL sözleşmesi gereği `WordsController`dan çağrılsa da, bu Command DOSYA olarak Progress feature\'ının içinde yaşar — hangi Controller\'ın çağırdığı, bir Command\'ın hangi klasörde YAŞAYACAĞINI BELİRLEMEZ, kavramsal olarak AİT olduğu iş alanı (Progress) belirler.', neden: null, olmasaydi: null },
+          { satir: 'public record ApplyWordLeechActionCommand(int WordId, string Action, int UserId, string? ActorRole) : IRequest<LeechActionResponse>;', aciklama: 'Dört parametreli bir komut — `WordId` (route\'tan), `Action` (request body\'den), `UserId`/`ActorRole` (Controller\'dan, `IActivityLogger` için).', neden: null, olmasaydi: null },
+          { satir: 'public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeechActionCommand, LeechActionResponse>', aciklama: 'MediatR\'ın standart Handler arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'Birinci bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'İkinci bağımlılık — yalnızca Suspend/Reset dallarında ÇAĞRILIR, Continue\'da HİÇ kullanılmaz.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IAchievementService _achievementService;', aciklama: 'Üçüncü bağımlılık — yalnızca Reset dalından SONRA (Suspend/Continue\'da hiç) kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'public ApplyWordLeechActionCommandHandler(', aciklama: 'Constructor\'ın başlangıcı — ÜÇ bağımlılık olduğu için imza İKİ satıra bölündü.', neden: null, olmasaydi: null },
+          { satir: 'IUserProgressRepository userProgressRepository, IActivityLogger activityLogger, IAchievementService achievementService)', aciklama: 'İmzanın ikinci satırı.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_achievementService = achievementService;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<LeechActionResponse> Handle(ApplyWordLeechActionCommand request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın `Send()` çağrısında ÇALIŞTIRDIĞI metot.', neden: null, olmasaydi: null },
+          { satir: 'var userProgress = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken)', aciklama: 'Sahiplik filtresi GÖMÜLÜ okuma — `DeleteUserCategoryCommandHandler` (A-08) ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException($"UserProgress not found: WordId={request.WordId}");', aciklama: 'Kayıt YOKSA (ya da başka bir kullanıcıya AİTSE) 404.', neden: null, olmasaydi: null },
+          { satir: 'if (request.Action == "Continue")', aciklama: 'Continue dalı EN BAŞTA ele alınır — bu dal HİÇBİR mutasyon/kaydetme/loglama/rozet değerlendirmesi İÇERMEDİĞİ için, aşağıdaki genel akıştan TAMAMEN AYRI, erken bir `return` ile ÇIKAR.', neden: null, olmasaydi: null },
+          { satir: 'return new LeechActionResponse(IsSuspended: null, CurrentLevel: null, NextReviewAt: null, Acknowledged: true);', aciklama: 'Yalnızca `Acknowledged: true` dolu, DİĞER üç alan `null`.', neden: null, olmasaydi: null },
+          { satir: 'var oldValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };', aciklama: 'Continue dalından SONRA geldiği için yalnızca Suspend/Reset\'in ULAŞTIĞI bir satır.', neden: null, olmasaydi: null },
+          { satir: 'LeechActionResponse response;', aciklama: 'İki dalın (Suspend/Reset) İKİSİNİN de dolduracağı, blok SONUNDA `return` edilecek değişken.', neden: null, olmasaydi: null },
+          { satir: 'if (request.Action == "Suspend")', aciklama: 'İkinci dal ayrımı — Continue ZATEN elenmiş olduğu için burada yalnızca Suspend/Reset KALIR.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IsSuspended = true;', aciklama: 'TEK alan mutasyonu — `ConsecutiveIncorrect` BİLEREK dokunulmaz.', neden: null, olmasaydi: null },
+          { satir: 'response = new LeechActionResponse(IsSuspended: true, CurrentLevel: null, NextReviewAt: null, Acknowledged: null);', aciklama: 'Yalnızca `IsSuspended: true` dolu.', neden: null, olmasaydi: null },
+          { satir: 'else', aciklama: 'Kalan TEK olasılık: Reset (validator zaten Action\'ın üç değerden biri OLDUĞUNU garanti eder).', neden: null, olmasaydi: null },
+          { satir: 'userProgress.CurrentLevel = 0;', aciklama: 'SM-2 seviyesi baştan başlar.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.Mastery = SrsCalculator.CalculateMastery(0, userProgress.SuccessRate);', aciklama: 'Mastery, YENİ CurrentLevel (0) ile MEVCUT SuccessRate kullanılarak YENİDEN hesaplanır.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.EasinessFactor = 2.5m;', aciklama: 'SM-2\'nin standart BAŞLANGIÇ değeri.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IntervalDays = 1;', aciklama: 'İlk tekrar aralığı.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.RepetitionNumber = 0;', aciklama: 'Ardışık başarı sayacı sıfırlanır.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.ConsecutiveIncorrect = 0;', aciklama: 'Leech tespitini TETİKLEYEN sayaç sıfırlanır.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IsSuspended = false;', aciklama: 'Kelime daha önce Suspend EDİLMİŞ olabilir — Reset bu bayrağı da AÇAR.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.NextReviewAt = null;', aciklama: 'Yeni kelime havuzuna DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'response = new LeechActionResponse(IsSuspended: null, CurrentLevel: 0, NextReviewAt: null, Acknowledged: null);', aciklama: 'Yalnızca `CurrentLevel`/`NextReviewAt` dolu.', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.UpdateAsync(userProgress, request.UserId, cancellationToken);', aciklama: 'Değişiklik izleyiciye İŞARETLENİR.', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.SaveChangesAsync(cancellationToken);', aciklama: 'Gerçek veritabanı YAZIMI.', neden: null, olmasaydi: null },
+          { satir: 'var newValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };', aciklama: 'Kaydetmeden SONRAKİ hâl.', neden: null, olmasaydi: null },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: 'Audit log çağrısının başlangıcı — yalnızca Suspend/Reset dallarına ULAŞAN bu satıra, Continue HİÇ gelmez.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "APPLY_LEECH_ACTION", entityType: "UserProgress", entityId: userProgress.Id,', aciklama: 'Tek bir Action kodu HEM Suspend HEM Reset için kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'oldValue: oldValue, newValue: newValue, cancellationToken: cancellationToken);', aciklama: 'Çağrının son parametreleri.', neden: null, olmasaydi: null },
+          { satir: 'if (request.Action == "Reset")', aciklama: 'Rozet değerlendirmesi yalnızca Reset dalı için — audit log çağrısından SONRA, `return response;`\'tan HEMEN önce.', neden: 'Suspend bir kelimeyi leech durumuna SOKAR (kurtarmaz), Continue ise HİÇBİR ŞEYİ değiştirmez (zaten erken `return` ile ÇIKAR) — rozet değerlendirmesi yalnızca kullanıcının GERÇEKTEN bir leech kelimesini "kurtardığı" tek an olan Reset\'te ANLAMLI, diğer iki dalda gereksiz bir sorgu SETİ (streak/kelime sayısı/ustalık okuma) ÇALIŞTIRMAK hem YANLIŞ hem MALİYETLİ olurdu.', olmasaydi: 'Bu koşul OLMASAYDI (ör. `EvaluateAndUnlockAsync` HER üç dalda da çağrılsaydı), Suspend akışı da (kelimeyi leech durumuna SOKAN, kurtarmayan bir eylem) `leechRecovered: true` ile çağrılırdı — kullanıcı bir kelimeyi ASKIYA ALDIĞI hâlde "Leech Kurtarma" rozetini YANLIŞLIKLA kazanırdı.' },
+          { satir: 'await _achievementService.EvaluateAndUnlockAsync(request.UserId, leechRecovered: true, cancellationToken);', aciklama: '`leechRecovered: true` — bu çağrının Reset olduğu, `AchievementService`\'e AÇIKÇA bildirilir.', neden: null, olmasaydi: null },
+          { satir: 'return response;', aciklama: 'İlgili dalda İNŞA edilen response döner.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'AchievementResponse.cs',
+        terimler: [
+          { terim: 'AchievementResponse.cs (backend/Zausel.Application/DTOs/Achievements/AchievementResponse.cs)', tanim: '`public record AchievementResponse(int AchievementId, string Name, string Description, string? Icon, int RewardXP, string Rarity, DateTime UnlockedAt);` — `AchievementUnlockItem`\'ın (bu bölümün önceki bir sözlük slaydı) taşıdığı BEŞ alana, `AchievementMessages.Resolve`\'den gelen `Name`/`Description` EKLENMİŞ hâli; `GetMyAchievementsQueryHandler`\'ın (bir SONRAKİ kod slaydı) döndürdüğü DTO.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetMyAchievementsQuery.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Achievements/GetMyAchievementsQuery.cs',
+        nedenBuKlasor: 'Application/Features/Achievements/ — projenin İLK "Achievements" feature klasörü, `Features/Progress/` (Bölüm 5-6) ile AYNI desen: Command/Query+Handler AYNI dosyada.',
+        kod: `using MediatR;
+using Zausel.Application.Common;
+using Zausel.Application.DTOs.Achievements;
+using Zausel.Application.Interfaces.Repositories.Srs;
+
+namespace Zausel.Application.Features.Achievements;
+
+public record GetMyAchievementsQuery(int UserId, string? AcceptLanguage) : IRequest<List<AchievementResponse>>;
+
+public class GetMyAchievementsQueryHandler : IRequestHandler<GetMyAchievementsQuery, List<AchievementResponse>>
+{
+    private readonly IUserAchievementRepository _userAchievementRepository;
+
+    public GetMyAchievementsQueryHandler(IUserAchievementRepository userAchievementRepository) =>
+        _userAchievementRepository = userAchievementRepository;
+
+    public async Task<List<AchievementResponse>> Handle(GetMyAchievementsQuery request, CancellationToken cancellationToken)
+    {
+        var items = await _userAchievementRepository.GetUnlockedForUserAsync(request.UserId, cancellationToken);
+
+        return items.Select(item =>
+        {
+            var (name, description) = AchievementMessages.Resolve(item.AchievementId, request.AcceptLanguage);
+            return new AchievementResponse(item.AchievementId, name, description, item.Icon, item.RewardXP, item.Rarity, item.UnlockedAt);
+        }).ToList();
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common;', aciklama: '`AchievementMessages`\'ın ad alanı — dil çözümlemesi için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Achievements;', aciklama: '`AchievementResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserAchievementRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Achievements;', aciklama: 'Projenin İLK "Achievements" feature ad alanı — `Features/Progress/` ile KARDEŞ bir klasör.', neden: null, olmasaydi: null },
+          { satir: 'public record GetMyAchievementsQuery(int UserId, string? AcceptLanguage) : IRequest<List<AchievementResponse>>;', aciklama: 'İki parametreli bir sorgu — `UserId` (JWT\'den) VE `AcceptLanguage` (istek header\'ından) — dil bilgisinin Handler\'a TAŞINMASI GEREKTİĞİ için, diğer Progress sorgularının (yalnızca `UserId` alan) AKSİNE burada İKİNCİ bir parametre VAR.', neden: null, olmasaydi: null },
+          { satir: 'public class GetMyAchievementsQueryHandler : IRequestHandler<GetMyAchievementsQuery, List<AchievementResponse>>', aciklama: 'MediatR\'ın standart Handler arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserAchievementRepository _userAchievementRepository;', aciklama: 'Tek bağımlılık — `AchievementMessages` statik bir sınıf olduğu için (DI\'a kaydedilmez) burada bir bağımlılık OLARAK GÖRÜNMEZ, doğrudan çağrılır.', neden: null, olmasaydi: null },
+          { satir: 'public GetMyAchievementsQueryHandler(IUserAchievementRepository userAchievementRepository) =>', aciklama: 'Constructor — expression-body.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository = userAchievementRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<AchievementResponse>> Handle(GetMyAchievementsQuery request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın `Send()` çağrısında ÇALIŞTIRDIĞI metot.', neden: null, olmasaydi: null },
+          { satir: 'var items = await _userAchievementRepository.GetUnlockedForUserAsync(request.UserId, cancellationToken);', aciklama: 'Kullanıcının açtığı TÜM rozetlerin ham (henüz dil ÇÖZÜLMEMİŞ) listesi.', neden: null, olmasaydi: null },
+          { satir: 'return items.Select(item =>', aciklama: 'Her `AchievementUnlockItem`\'ı bir `AchievementResponse`\'a ÇEVİREN dönüşümün başlangıcı — burada AutoMapper KULLANILMADI (bu projede AutoMapper Profile yalnızca ENTITY→DTO dönüşümlerinde kullanılır, bu bir DTO→DTO+dil-çözümleme dönüşümü).', neden: null, olmasaydi: null },
+          { satir: 'var (name, description) = AchievementMessages.Resolve(item.AchievementId, request.AcceptLanguage);', aciklama: 'Tuple destructuring — `Resolve`\'un döndürdüğü `(string Name, string Description)` çifti İKİ AYRI değişkene AÇILIR.', neden: null, olmasaydi: null },
+          { satir: 'return new AchievementResponse(item.AchievementId, name, description, item.Icon, item.RewardXP, item.Rarity, item.UnlockedAt);', aciklama: 'Yedi alanlı DTO\'nun inşası — İKİSİ (`name`/`description`) az önce ÇÖZÜLEN dil metni, BEŞİ `item`\'dan doğrudan TAŞINAN alanlar.', neden: null, olmasaydi: null },
+          { satir: '}).ToList();', aciklama: '`Select`\'in lambda gövdesinin kapanışı + LINQ zincirini SONLANDIRAN `ToList()` — lambda BLOK gövdeli olduğu için (tek ifade DEĞİL, iki satır) `=>` yerine `{ }` kullanıldı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementsController.cs',
+        dosyaYolu: 'backend/Zausel.API/Controllers/AchievementsController.cs',
+        nedenBuKlasor: 'API/Controllers/ — ASP.NET Core\'un Controller keşfi assembly taraması ile çalışır, `[Route]`/`[HttpGet]` özniteliklerini taşıyan HERHANGİ bir sınıfı bulur; tüm Controller\'ların TEK bir klasörde toplanması yalnızca bir sonraki geliştiricinin "hangi endpoint nerede" sorusunu TEK bir dizine bakarak yanıtlayabilmesi içindir.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Zausel.Application.DTOs.Achievements;
+using Zausel.Application.Features.Achievements;
+
+namespace Zausel.API.Controllers;
+
+[Route("achievements")]
+[Authorize]
+public class AchievementsController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public AchievementsController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet("me")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<List<AchievementResponse>>> GetMine(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyAchievementsQuery(CurrentUserId, AcceptLanguage), cancellationToken);
+        return Ok(result);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IMediator` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Authorization;', aciklama: '`[Authorize]` özniteliği için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Mvc;', aciklama: '`[Route]`/`[HttpGet]`/`ActionResult<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.RateLimiting;', aciklama: '`[EnableRateLimiting]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Achievements;', aciklama: '`AchievementResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Achievements;', aciklama: '`GetMyAchievementsQuery`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.API.Controllers;', aciklama: 'Diğer TÜM Controller\'larla AYNI klasördeki dosyaların paylaştığı ad alanı — routing bu ad alanına DEĞİL, `[Route]` özniteliğine bakar.', neden: null, olmasaydi: null },
+          { satir: '[Route("achievements")]', aciklama: 'Tek endpoint\'in ön eki — `/achievements/me`.', neden: null, olmasaydi: null },
+          { satir: '[Authorize]', aciklama: 'Controller SEVİYESİNDE — `ProgressController` (Bölüm 6) ile AYNI desen, Admin DEĞİL herhangi bir giriş yapmış kullanıcı kendi rozetlerini görebilir.', neden: null, olmasaydi: null },
+          { satir: 'public class AchievementsController : ApiControllerBase', aciklama: '`ApiControllerBase`\'den türer — `CurrentUserId`/`AcceptLanguage` buradan gelir.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMediator _mediator;', aciklama: 'MediatR\'ın gönderim arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public AchievementsController(IMediator mediator) => _mediator = mediator;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet("me")]', aciklama: '`GET /achievements/me` — `/me` son eki, `AuthController`\'daki (A-03) "çağıranın kendi kaydı" deseniyle AYNI.', neden: null, olmasaydi: null },
+          { satir: '[EnableRateLimiting("general")]', aciklama: 'Projenin genel rate-limit politikası — diğer TÜM `[Authorize]` endpoint\'leriyle AYNI.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<List<AchievementResponse>>> GetMine(CancellationToken cancellationToken)', aciklama: 'Parametre YOK — tüm veri `CurrentUserId`/`AcceptLanguage`\'den (JWT claim\'i + header) gelir.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetMyAchievementsQuery(CurrentUserId, AcceptLanguage), cancellationToken);', aciklama: '`AcceptLanguage`, `ApiControllerBase`\'in (A-03\'ten beri var olan) `HttpContext.GetLanguage()` okuyucusundan gelir — bu Controller YENİ bir dil okuma mantığı İCAT ETMEZ, VAR OLANI kullanır.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 + gövde.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/achievements/me',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/achievements/me',
+        aciklama: 'Çağıranın açtığı TÜM rozetleri, en son açılan EN ÜSTTE olacak şekilde döner.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        headers: [
+          { anahtar: 'Accept-Language', deger: 'de' }
+        ],
+        yanit: {
+          durum: 200,
+          govde: `[
+  {
+    "achievementId": 10,
+    "name": "Leech-Rettung",
+    "description": "Du hast ein feststeckendes Wort zurückgesetzt und neu gestartet.",
+    "icon": null,
+    "rewardXP": 15,
+    "rarity": "Common",
+    "unlockedAt": "2026-08-22T14:03:11.427Z"
+  }
+]`
+        },
+        notlar: [
+          '`Accept-Language: de` gönderilmezse (ya da desteklenmeyen bir dil gönderilirse) `name`/`description` Türkçe döner — `AchievementMessages.Resolve`\'un varsayılan-dile-düşme davranışı.',
+          'Şu an gerçek bir kullanıcı için bu listeyi DOLU görebilmenin TEK yolu — `POST /words/{id}/leech-action` isteğini `{"action":"Reset"}` gövdesiyle, daha önce `ConsecutiveIncorrect>=5` olmuş (leech durumuna düşmüş) bir kelime için çağırmak (Bölüm 6); streak/kelime sayısı/ustalık rozetleri A-10/A-11 yazılana kadar TETİKLENEMEZ.',
+          'Hiç rozet açılmamışsa boş dizi (`[]`) döner.'
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Application/DependencyInjection.cs — IAchievementService Kaydı',
+        dosyaYolu: 'backend/Zausel.Application/DependencyInjection.cs',
+        neden: '`AchievementService`, `IAchievementService` arayüzü ÜZERİNDEN DI konteynerine kayıtlı OLMADAN `ApplyWordLeechActionCommandHandler`\'a enjekte EDİLEMEZ — uygulama başlangıçta ("no service registered for IAchievementService") ÇÖKERDİ.',
+        diff: ` using Microsoft.Extensions.DependencyInjection;
+ using Zausel.Application.Interfaces.Services;
+ using Zausel.Application.Services;
+
+ namespace Zausel.Application;
+
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+     {
+         services.AddScoped<IPasswordService, PasswordService>();
+         services.AddScoped<ITokenService, JwtTokenService>();
+         services.AddScoped<IOtpService, OtpService>();
+         services.AddScoped<ILoginCompletionService, LoginCompletionService>();
+         services.AddScoped<IEmailService, DevEmailService>(); // prod: A-20'de SmtpEmailService
+         services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+         services.AddSingleton<HttpClient>(); // AppleTokenValidator'ın JWKS isteği için
+         services.AddScoped<IAppleTokenValidator, AppleTokenValidator>();
+         services.AddScoped<IAdminSeedService, AdminSeedService>();
+         services.AddScoped<IActivityLogger, ActivityLogger>();
+         services.AddScoped<ISecurityLogger, SecurityLogger>();
+         services.AddScoped<IFileStorageService, LocalFileStorageService>();
++        services.AddScoped<IAchievementService, AchievementService>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          { satir: 'services.AddScoped<IAchievementService, AchievementService>();', aciklama: 'Diğer TÜM servis kayıtlarıyla AYNI ömür (`Scoped`) — yeni bir `using` GEREKMEDİ, çünkü `IAchievementService`/`AchievementService` ZATEN import edilmiş `Zausel.Application.Interfaces.Services`/`Zausel.Application.Services` ad alanlarında yaşıyor.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'Infrastructure/DependencyInjection.cs — IUserAchievementRepository Kaydı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/DependencyInjection.cs',
+        neden: '`UserAchievementRepository`, arayüzü ÜZERİNDEN DI konteynerine kayıtlı OLMADAN `AchievementService`\'e enjekte EDİLEMEZ — repository\'ler MediatR Handler\'ların AKSİNE reflection\'la OTOMATİK bulunmaz, elle EŞLENİR (A-08/Bölüm 6\'nın AYNI gerekçesi).',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using Zausel.Application.Interfaces.Repositories;
+ using Zausel.Application.Interfaces.Repositories.Auth;
+ using Zausel.Application.Interfaces.Repositories.Content;
+ using Zausel.Application.Interfaces.Repositories.Logging;
+ using Zausel.Application.Interfaces.Repositories.PersonalContent;
+ using Zausel.Application.Interfaces.Repositories.Srs;
+ using Zausel.Infrastructure.Data;
+ using Zausel.Infrastructure.Repositories;
+ using Zausel.Infrastructure.Repositories.Auth;
+ using Zausel.Infrastructure.Repositories.Content;
+ using Zausel.Infrastructure.Repositories.Logging;
+ using Zausel.Infrastructure.Repositories.PersonalContent;
+ using Zausel.Infrastructure.Repositories.Srs;
+
+ namespace Zausel.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<ZauselDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+         services.AddScoped<ILanguageRepository, LanguageRepository>();
+         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
+         services.AddScoped<ICategoryRepository, CategoryRepository>();
+         services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
+         services.AddScoped<IUserProgressRepository, UserProgressRepository>();
+         services.AddScoped<IUserCardProgressRepository, UserCardProgressRepository>();
++        services.AddScoped<IUserAchievementRepository, UserAchievementRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          { satir: 'services.AddScoped<IUserAchievementRepository, UserAchievementRepository>();', aciklama: 'Diğer TÜM repository kayıtlarıyla AYNI ömür (`Scoped`) — yeni bir `using` GEREKMEDİ, `IUserAchievementRepository`/`UserAchievementRepository` ZATEN import edilmiş `...Repositories.Srs` ad alanlarında yaşıyor.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementServiceTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Services/AchievementServiceTests.cs',
+        nedenBuKlasor: 'Tests/Services/ — `SrsCalculatorTests` (Bölüm 4) ile AYNI flat klasör, test edilen sınıf `Application/Services/`de yaşadığı için.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Common;
+using Zausel.Application.Interfaces.Repositories.Auth;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Services;
+using Zausel.Domain.Entities.Auth;
+
+namespace Zausel.Tests.Services;
+
+public class AchievementServiceTests
+{
+    private readonly Mock<IUserRepository> _userRepository = new();
+    private readonly Mock<IUserProgressRepository> _userProgressRepository = new();
+    private readonly Mock<IUserCardProgressRepository> _userCardProgressRepository = new();
+    private readonly Mock<IUserAchievementRepository> _userAchievementRepository = new();
+
+    private AchievementService CreateService() =>
+        new(_userRepository.Object, _userProgressRepository.Object, _userCardProgressRepository.Object, _userAchievementRepository.Object);
+
+    private void SetupEmptyProgress(int userId = 1)
+    {
+        _userRepository.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = userId, StreakDays = 0 });
+        _userProgressRepository.Setup(r => r.GetSnapshotsAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _userCardProgressRepository.Setup(r => r.GetSnapshotsAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+    }
+
+    [Fact]
+    public async Task Handle_StreakDays3_UnlocksOnlyStreak3()
+    {
+        // ARRANGE — 3 gün eşiği geçildi ama 7/30 GEÇİLMEDİ, yalnızca Streak3 açılmalı
+        SetupEmptyProgress();
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 3 });
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>()), Times.Once);
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak7, It.IsAny<CancellationToken>()), Times.Never);
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak30, It.IsAny<CancellationToken>()), Times.Never);
+        _userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WordAndCardSnapshotsCombinedReach50_UnlocksWordCount50()
+    {
+        // ARRANGE — UserProgress'ten 30 + UserCardProgress'ten 20 = TOPLAM 50, iki tablo BİRLEŞİK sayılmalı
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 0 });
+        _userProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 30).Select(_ => new ProgressSnapshot(10m, null, false)).ToList());
+        _userCardProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 20).Select(_ => new ProgressSnapshot(10m, null, false)).ToList());
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.WordCount50, It.IsAny<CancellationToken>()), Times.Once);
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.WordCount200, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_AnySnapshotAtCurrentLevel5_UnlocksFirstMastery()
+    {
+        // ARRANGE
+        SetupEmptyProgress();
+        _userProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new ProgressSnapshot(100m, null, false, CurrentLevel: 5)]);
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.FirstMastery, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_100SnapshotsInGoodBand_UnlocksGoodBand100()
+    {
+        // ARRANGE — Mastery>=70 olan TAM 100 satır (İyi bant eşiği)
+        SetupEmptyProgress();
+        _userProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 100).Select(_ => new ProgressSnapshot(70m, null, false)).ToList());
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.GoodBand100, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_LeechRecoveredTrue_UnlocksLeechRecovery()
+    {
+        // ARRANGE
+        SetupEmptyProgress();
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, leechRecovered: true, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.LeechRecovery, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_LeechRecoveredFalse_DoesNotUnlockLeechRecovery()
+    {
+        // ARRANGE
+        SetupEmptyProgress();
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.LeechRecovery, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_AlreadyUnlocked_SkipsReAddingAndReSaving()
+    {
+        // ARRANGE — Streak3 zaten açık, TEKRAR AddAsync/SaveChangesAsync çağrılmamalı
+        SetupEmptyProgress();
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 3 });
+        _userAchievementRepository.Setup(r => r.HasUnlockedAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>()), Times.Never);
+        _userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_NoQualifyingAchievements_NeverSaves()
+    {
+        // ARRANGE
+        SetupEmptyProgress();
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_MultipleNewAchievements_SavesOnceForAll()
+    {
+        // ARRANGE — Streak3 VE Streak7 İKİSİ BİRDEN yeni açılıyor, SaveChangesAsync TEK SEFER çağrılmalı
+        SetupEmptyProgress();
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 7 });
+        var service = CreateService();
+
+        // ACT
+        await service.EvaluateAndUnlockAsync(1, cancellationToken: default);
+
+        // ASSERT
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>()), Times.Once);
+        _userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak7, It.IsAny<CancellationToken>()), Times.Once);
+        _userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`Verify` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common;', aciklama: '`AchievementIds`\'in ad alanı — beklenen Id\'lere referans vermek için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Auth;', aciklama: '`IUserRepository`\'nin ad alanı — mock\'lanacak arayüzlerden biri.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'Üç repository arayüzünün (`IUserProgressRepository`/`IUserCardProgressRepository`/`IUserAchievementRepository`) VE `ProgressSnapshot`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: 'Test edilen `AchievementService`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — `StreakDays` alanına sahte değer atamak için.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Services;', aciklama: 'Üretim kodundaki `Zausel.Application.Services` ile PARALEL bir test namespace\'i.', neden: null, olmasaydi: null },
+          { satir: 'public class AchievementServiceTests', aciklama: '`{TestEdilenSınıf}Tests` deseni.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserRepository> _userRepository = new();', aciklama: 'Birinci mock.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserProgressRepository> _userProgressRepository = new();', aciklama: 'İkinci mock.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserCardProgressRepository> _userCardProgressRepository = new();', aciklama: 'Üçüncü mock.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserAchievementRepository> _userAchievementRepository = new();', aciklama: 'Dördüncü mock.', neden: null, olmasaydi: null },
+          { satir: 'private AchievementService CreateService() =>', aciklama: 'Handler yerine SERVİS kuran yardımcı — bu dosyadaki DOKUZ testin HEPSİNDE kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'new(_userRepository.Object, _userProgressRepository.Object, _userCardProgressRepository.Object, _userAchievementRepository.Object);', aciklama: 'Dört mock\'un `.Object`\'i, constructor\'ın AYNI SIRAYLA geçirilir.', neden: null, olmasaydi: null },
+          { satir: 'private void SetupEmptyProgress(int userId = 1)', aciklama: 'İkinci yardımcı — "boş bir kullanıcı" (streak 0, hiç ilerleme YOK) kurulumunu TEKRARLAMAMAK için, sekiz testin YEDİSİ bu yardımcıyı çağırır.', neden: 'Dokuz testin ÇOĞU yalnızca TEK bir koşulu (ör. streak) test ETMEK istiyor, geri kalan ÜÇ bağımlılığın "boş/sıfır" olması YETERLİ — her testte üç ayrı `Setup` çağrısını TEKRAR YAZMAK yerine, ortak "temiz durum" TEK bir yerde toplanır.', olmasaydi: 'Bu yardımcı OLMASAYDI, dokuz testin HER BİRİ üç AYRI `Setup` çağrısını (User/UserProgress/UserCardProgress) KENDİ içinde TEKRAR yazardı — bir bağımlılığın varsayılan kurulumu DEĞİŞTİĞİNDE (ör. `User`\'a yeni bir zorunlu alan eklense) DOKUZ testin DOKUZU da GÜNCELLENMESİ gerekirdi.' },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = userId, StreakDays = 0 });', aciklama: 'Streak\'i sıfırda TUTAN varsayılan kullanıcı kurulumu.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetSnapshotsAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync([]);', aciklama: 'Boş bir sistem kelimesi ilerlemesi.', neden: null, olmasaydi: null },
+          { satir: '_userCardProgressRepository.Setup(r => r.GetSnapshotsAsync(userId, It.IsAny<CancellationToken>())).ReturnsAsync([]);', aciklama: 'Boş bir kişisel kart ilerlemesi.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Girdi almayan, TEK bir senaryoyu test eden xUnit özniteliği — bu dosyadaki DOKUZ testin HEPSİNİN üzerinde.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_StreakDays3_UnlocksOnlyStreak3()', aciklama: 'Streak eşiklerinin BAĞIMSIZ (kümülatif OLMAYAN, ama her biri AYRI `if`) değerlendirildiğini doğrulayan test — 3 gün YETERLİ olmalı, 7/30 YETERSİZ kalmalı.', neden: null, olmasaydi: null },
+          { satir: 'SetupEmptyProgress();', aciklama: '"Temiz durum" kurulumu — SEKİZ testte tekrar eder (yalnızca ikinci test, İKİ progress repository\'yi elle FARKLI kurduğu için bunu ÇAĞIRMAZ).', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 3 });', aciklama: '`SetupEmptyProgress`\'in varsayılanını EZEREK, streak\'i 3\'e YÜKSELTİR — Moq\'ta AYNI çağrı imzasına yapılan İKİNCİ bir `Setup`, SONUNCUSUNU geçerli KILAR. Bu satır "Zaten Açık" testinde de AYNI şekilde kullanılır (o testte de streak\'in 3 OLMASI gerekiyor).', neden: null, olmasaydi: null },
+          { satir: 'var service = CreateService();', aciklama: 'Servisin KURULMASI — DOKUZ testin HEPSİNDE tekrar eder.', neden: null, olmasaydi: null },
+          { satir: 'await service.EvaluateAndUnlockAsync(1, cancellationToken: default);', aciklama: 'Test edilen metodun GERÇEKTEN çağrılması — `leechRecovered` parametresi belirtilmediği için VARSAYILAN `false` ile çalışır; bu çağrı SEKİZ testte (leech testi HARİÇ, o `leechRecovered: true` geçer) tekrar eder.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Streak3\'ün AÇILDIĞININ doğrulanması — "Çoklu Yeni Rozet" testinde de AYNI çağrı, AYNI beklentiyle tekrar eder.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak7, It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Streak7\'nin AÇILMADIĞININ doğrulanması — streak\'in 3 (7\'den KÜÇÜK) olduğu bu testte.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak30, It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Streak30\'un da AÇILMADIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'En az bir rozet AÇILDIĞI için `SaveChangesAsync`\'in TAM BİR KEZ çağrıldığının doğrulanması — "Çoklu Yeni Rozet" testinde de AYNI çağrı (İKİ rozet açılsa BİLE `SaveChangesAsync` yine TEK sefer).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_WordAndCardSnapshotsCombinedReach50_UnlocksWordCount50()', aciklama: '`AchievementService`\'in `Concat`\'inin (kod slaydındaki en kritik satırlardan biri) GERÇEKTEN İKİ tabloyu BİRLEŞTİRDİĞİNİ doğrulayan test — 30+20=50, İKİSİ AYRI AYRI 50\'ye ULAŞMASA bile TOPLAMDA eşiği geçmeli.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 0 });', aciklama: 'Bu testin KENDİ, elle yazılmış kullanıcı kurulumu — `SetupEmptyProgress` yerine burada AYRICA yazıldı, çünkü progress repository\'lerin İKİSİ de FARKLI (boş DEĞİL, 30/20 elemanlı) kurulacak.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))', aciklama: 'Sistem kelimesi ilerlemesi kurulumunun İMZA satırı — bu ÜÇ testte (bu test + "İlk Ustalık" + "İyi Bantta 100") AYNI imza TEKRARLANIR, farkı bir SONRAKİ satırdaki `.ReturnsAsync(...)` içeriğinde.', neden: null, olmasaydi: null },
+          { satir: '.ReturnsAsync(Enumerable.Range(0, 30).Select(_ => new ProgressSnapshot(10m, null, false)).ToList());', aciklama: '30 elemanlı, Mastery\'si DÜŞÜK (10) — yalnızca SAYI önemli, bu testin amacı bant DEĞİL kelime SAYISI eşiği.', neden: null, olmasaydi: null },
+          { satir: '_userCardProgressRepository.Setup(r => r.GetSnapshotsAsync(1, It.IsAny<CancellationToken>()))', aciklama: 'Kişisel kart ilerlemesi kurulumunun imza satırı — bu dosyada YALNIZCA bu testte `UserCardProgressRepository` boş DIŞINDA bir değer döner.', neden: null, olmasaydi: null },
+          { satir: '.ReturnsAsync(Enumerable.Range(0, 20).Select(_ => new ProgressSnapshot(10m, null, false)).ToList());', aciklama: '20 elemanlı — 30+20=50, TAM eşik.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.WordCount50, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'WordCount50\'nin AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.WordCount200, It.IsAny<CancellationToken>()), Times.Never);', aciklama: '50 elemanla WordCount200\'ün (eşik 200) AÇILMADIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_AnySnapshotAtCurrentLevel5_UnlocksFirstMastery()', aciklama: '`hasFirstMastery`\'nin boolean (SAYISAL DEĞİL) bir koşul olduğunu doğrulayan test — TEK bir snapshot bile YETERLİ.', neden: null, olmasaydi: null },
+          { satir: '.ReturnsAsync([new ProgressSnapshot(100m, null, false, CurrentLevel: 5)]);', aciklama: 'TEK elemanlı liste, `CurrentLevel: 5` — bu bölümün EKLEDİĞİ dördüncü `ProgressSnapshot` alanının, isimli argümanla (named argument) AÇIKÇA belirtilmesi.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.FirstMastery, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'FirstMastery\'nin AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_100SnapshotsInGoodBand_UnlocksGoodBand100()', aciklama: 'İyi bant SAYIMININ (Mastery>=70) doğru ÇALIŞTIĞINI doğrulayan test.', neden: null, olmasaydi: null },
+          { satir: '.ReturnsAsync(Enumerable.Range(0, 100).Select(_ => new ProgressSnapshot(70m, null, false)).ToList());', aciklama: '100 elemanlı, HEPSİ Mastery=70 (İyi bandın ALT SINIRI, dahil) — TAM eşik.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.GoodBand100, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'GoodBand100\'ün AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_LeechRecoveredTrue_UnlocksLeechRecovery()', aciklama: 'Olay-tabanlı (durum-tabanlı DEĞİL) TEK koşulun testi — `leechRecovered` parametresi `true` GEÇİLDİĞİNDE.', neden: null, olmasaydi: null },
+          { satir: 'await service.EvaluateAndUnlockAsync(1, leechRecovered: true, cancellationToken: default);', aciklama: 'İsimli argümanla `leechRecovered: true` — bu dosyadaki DİĞER sekiz çağrının AKSİNE, bu bölümdeki İKİ testin (bu + bir SONRAKİ) TEK farkı.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.LeechRecovery, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'LeechRecovery\'nin AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_LeechRecoveredFalse_DoesNotUnlockLeechRecovery()', aciklama: 'Bir ÖNCEKİ testin AYNASI — `leechRecovered` belirtilmediğinde (varsayılan `false`) rozetin AÇILMADIĞI.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.LeechRecovery, It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'LeechRecovery\'nin AÇILMADIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_AlreadyUnlocked_SkipsReAddingAndReSaving()', aciklama: '`HasUnlockedAsync`\'in İDEMPOTENSİ garantisinin testi — kod slaydındaki `continue` dalının doğrudan KARŞILIĞI.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Setup(r => r.HasUnlockedAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>())).ReturnsAsync(true);', aciklama: 'Streak3\'ün ZATEN açık OLDUĞUNU simüle eder — `AchievementService`\'in `HasUnlockedAsync` kontrolünün `true` DÖNMESİ durumu.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak3, It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Streak3 koşulu SAĞLANDIĞI hâlde (streakDays=3) `AddAsync`\'in TEKRAR ÇAĞRILMADIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Yeni AÇILAN hiçbir rozet olmadığı için `SaveChangesAsync`\'in HİÇ çağrılmadığının doğrulanması — "Hak Kazanan Yok" testinde de AYNI çağrı, AYNI beklentiyle tekrar eder.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_NoQualifyingAchievements_NeverSaves()', aciklama: 'TÜM eşiklerin ALTINDA kalan bir kullanıcı için hiçbir rozetin AÇILMADIĞI, dolayısıyla HİÇBİR şeyin KAYDEDİLMEDİĞİ negatif senaryo.', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: '`AddAsync`\'in HİÇBİR argüman kombinasyonuyla (`It.IsAny` HER iki parametrede) ÇAĞRILMADIĞININ doğrulanması — önceki testlerin AKSİNE burada belirli bir `AchievementId` DEĞİL, TÜMÜYLE hiçbir çağrı BEKLENMİYOR.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_MultipleNewAchievements_SavesOnceForAll()', aciklama: 'Döngüdeki `unlockedAny` bayrağının, BİRDEN FAZLA yeni rozet AÇILSA bile `SaveChangesAsync`\'i TEK SEFER çağırdığını doğrulayan test.', neden: null, olmasaydi: null },
+          { satir: '_userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(new User { Id = 1, StreakDays = 7 });', aciklama: 'Streak 7 — Streak3 VE Streak7 İKİSİNİ BİRDEN tetikleyen bir değer (Streak30 HARİÇ).', neden: null, olmasaydi: null },
+          { satir: '_userAchievementRepository.Verify(r => r.AddAsync(1, AchievementIds.Streak7, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Streak7\'nin de AÇILDIĞININ doğrulanması — bir ÖNCEKİ (Streak3) satırla BİRLİKTE, İKİ rozetin AYNI çağrıda AÇILDIĞININ kanıtı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplyWordLeechActionCommandHandlerTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Progress/ApplyWordLeechActionCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Progress/ — Bölüm 5\'teki Application/Features/Progress/ ile eşleşen test klasörü, diğer TÜM Handler testleriyle AYNI desen.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Features.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Application.Services;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Tests.Features.Progress;
+
+public class ApplyWordLeechActionCommandHandlerTests
+{
+    private readonly Mock<IUserProgressRepository> _userProgressRepository = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+    private readonly Mock<IAchievementService> _achievementService = new();
+
+    private ApplyWordLeechActionCommandHandler CreateHandler() =>
+        new(_userProgressRepository.Object, _activityLogger.Object, _achievementService.Object);
+
+    [Fact]
+    public async Task Handle_NotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(1, 99, It.IsAny<CancellationToken>())).ReturnsAsync((UserProgress?)null);
+        var command = new ApplyWordLeechActionCommand(99, "Suspend", UserId: 1, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+        _userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_SuspendAction_SetsIsSuspendedAndLogsActivity()
+    {
+        // ARRANGE
+        var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, IsSuspended = false, ConsecutiveIncorrect = 5 };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Suspend", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT — yalnızca IsSuspended döner, diğer alanlar ETKİLENMEZ (ConsecutiveIncorrect KORUNUR)
+        result.IsSuspended.Should().BeTrue();
+        result.CurrentLevel.Should().BeNull();
+        result.Acknowledged.Should().BeNull();
+        existing.IsSuspended.Should().BeTrue();
+        existing.ConsecutiveIncorrect.Should().Be(5);
+        _userProgressRepository.Verify(r => r.UpdateAsync(existing, 5, It.IsAny<CancellationToken>()), Times.Once);
+        _userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _activityLogger.Verify(l => l.LogAsync(
+            5, "User", "APPLY_LEECH_ACTION", "UserProgress", 1, It.IsAny<object>(), It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+        // Suspend bir kelimeyi leech durumuna SOKAR, kurtarmaz — AchievementService HİÇ çağrılmamalı.
+        _achievementService.Verify(
+            s => s.EvaluateAndUnlockAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ResetAction_ResetsSm2StateAndPreservesHistoricalStats()
+    {
+        // ARRANGE — geçmiş istatistikler (TimesCorrect/TimesIncorrect/SuccessRate) KORUNMALI, yalnızca SM-2 durumu sıfırlanmalı
+        var existing = new UserProgress
+        {
+            Id = 1, UserId = 5, WordId = 5, CurrentLevel = 4, EasinessFactor = 1.9m, IntervalDays = 15,
+            RepetitionNumber = 6, ConsecutiveIncorrect = 5, IsSuspended = true, NextReviewAt = DateTime.UtcNow,
+            TimesCorrect = 12, TimesIncorrect = 6, SuccessRate = 66.67m
+        };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Reset", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.CurrentLevel.Should().Be(0);
+        result.NextReviewAt.Should().BeNull();
+        existing.CurrentLevel.Should().Be(0);
+        existing.EasinessFactor.Should().Be(2.5m);
+        existing.IntervalDays.Should().Be(1);
+        existing.RepetitionNumber.Should().Be(0);
+        existing.ConsecutiveIncorrect.Should().Be(0);
+        existing.IsSuspended.Should().BeFalse();
+        existing.NextReviewAt.Should().BeNull();
+        // Mastery, SrsCalculator.CalculateMastery(0, 66.67) ile YENİDEN hesaplanır — SuccessRate'in kendisi DEĞİŞMEZ
+        existing.Mastery.Should().Be(SrsCalculator.CalculateMastery(0, 66.67m));
+        existing.TimesCorrect.Should().Be(12);
+        existing.TimesIncorrect.Should().Be(6);
+        existing.SuccessRate.Should().Be(66.67m);
+        // Reset = leech kurtarma OLAYI — AchievementService leechRecovered:true ile TAM BİR KEZ çağrılmalı.
+        _achievementService.Verify(s => s.EvaluateAndUnlockAsync(5, true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ContinueAction_DoesNotMutateOrPersistAnything()
+    {
+        // ARRANGE
+        var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, ConsecutiveIncorrect = 7, IsSuspended = false };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Continue", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT — yalnızca onay döner, HİÇBİR alan değişmez, veritabanına YAZILMAZ
+        result.Acknowledged.Should().BeTrue();
+        result.IsSuspended.Should().BeNull();
+        existing.ConsecutiveIncorrect.Should().Be(7);
+        _userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _activityLogger.Verify(l => l.LogAsync(
+            It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _achievementService.Verify(
+            s => s.EvaluateAndUnlockAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`Verify` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: 'Test edilen Command/Handler\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı — mock\'lanacak arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`/`IAchievementService`\'in ad alanı — mock\'lanacak İKİ arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: '`SrsCalculator`\'ın ad alanı — Reset testinin beklenen Mastery değerini HESAPLAMAK için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Features.Progress;', aciklama: 'Üretim kodundaki `Zausel.Application.Features.Progress` ile PARALEL bir test namespace\'i.', neden: null, olmasaydi: null },
+          { satir: 'public class ApplyWordLeechActionCommandHandlerTests', aciklama: '`{TestEdilenSınıf}Tests` deseni.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserProgressRepository> _userProgressRepository = new();', aciklama: 'Repository\'nin SAHTE hâli.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();', aciklama: 'İkinci bağımlılığın mock\'u.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IAchievementService> _achievementService = new();', aciklama: 'Üçüncü bağımlılığın mock\'u.', neden: null, olmasaydi: null },
+          { satir: 'private ApplyWordLeechActionCommandHandler CreateHandler() =>', aciklama: 'Handler\'ı KURAN yardımcı — ÜÇ bağımlılık olduğu için gövde bir SONRAKİ satıra taşındı.', neden: null, olmasaydi: null },
+          { satir: 'new(_userProgressRepository.Object, _activityLogger.Object, _achievementService.Object);', aciklama: 'Üç mock\'un `.Object`\'i, Handler\'ın constructor SIRASIYLA geçirilir.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Girdi almayan, TEK bir senaryoyu test eden xUnit özniteliği — bu dosyadaki DÖRT testin HEPSİNİN üzerinde.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_NotFound_ThrowsEntityNotFoundException()', aciklama: 'Minimum kapsamın "bulunamadı" senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ın KURULMASI — bu dosyadaki DÖRT testin HEPSİNDE tekrar eder.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetByUserAndWordAsync(1, 99, It.IsAny<CancellationToken>())).ReturnsAsync((UserProgress?)null);', aciklama: 'Repository `null` DÖNDÜĞÜNDE Handler\'ın `EntityNotFoundException` FIRLATMASI beklenir.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(99, "Suspend", UserId: 1, ActorRole: "User");', aciklama: 'Action DEĞERİ bu testte ÖNEMSİZ (hiçbir dala ULAŞILMIYOR) — "Suspend" keyfi bir SEÇİM.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(command, default);', aciklama: 'FluentAssertions\'ın `ThrowAsync` deseni — çağrı HEMEN değil, `Should()` içinde ÇALIŞTIRILIR.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();', aciklama: 'Beklenen istisna tipinin doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Kayıt YOKSA `UpdateAsync`\'in HİÇ çağrılmadığının doğrulanması — Continue testinde de AYNI satır, AYNI beklentiyle tekrar eder.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_SuspendAction_SetsIsSuspendedAndLogsActivity()', aciklama: 'Suspend dalının HAPPY PATH\'i.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, IsSuspended = false, ConsecutiveIncorrect = 5 };', aciklama: '`ConsecutiveIncorrect = 5` BİLEREK seçildi — testin ASSERT\'i bu değerin Suspend SONRASI da 5 KALDIĞINI doğrulayacak.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);', aciklama: 'Repository bu SEFERKİ `existing` nesneyi döner.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Suspend", UserId: 5, ActorRole: "User");', aciklama: 'Suspend aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'Handler\'ın GERÇEKTEN çağrılması.', neden: null, olmasaydi: null },
+          { satir: 'result.IsSuspended.Should().BeTrue();', aciklama: 'Response\'un dolu OLMASI beklenen alanı.', neden: null, olmasaydi: null },
+          { satir: 'result.CurrentLevel.Should().BeNull();', aciklama: 'Response\'un BOŞ kalması beklenen alanlarından biri.', neden: null, olmasaydi: null },
+          { satir: 'result.Acknowledged.Should().BeNull();', aciklama: 'İKİNCİ boş kalması beklenen alan.', neden: null, olmasaydi: null },
+          { satir: 'existing.IsSuspended.Should().BeTrue();', aciklama: 'Entity\'nin KENDİSİNİN de doğru mutasyona uğradığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(5);', aciklama: 'Suspend\'in `ConsecutiveIncorrect`\'e DOKUNMADIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.UpdateAsync(existing, 5, It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`UpdateAsync`\'in DOĞRU nesne ve DOĞRU userId ile TAM BİR KEZ çağrıldığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Kaydetmenin GERÇEKTEN çağrıldığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger.Verify(l => l.LogAsync(', aciklama: 'Audit log çağrısının doğrulanmasının başlangıcı — bu satır Continue testinde de tekrar eder, orada `Times.Never` bekler.', neden: null, olmasaydi: null },
+          { satir: '5, "User", "APPLY_LEECH_ACTION", "UserProgress", 1, It.IsAny<object>(), It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),', aciklama: 'Action kodu + EntityType + EntityId TAM olarak eşleşmeli, oldValue/newValue içeriği `It.IsAny<object>()` ile GEVŞEK doğrulanır.', neden: null, olmasaydi: null },
+          { satir: 'Times.Once);', aciklama: '`LogAsync`\'in TAM BİR KEZ çağrıldığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_achievementService.Verify(', aciklama: 'AchievementService\'in ÇAĞRILIP ÇAĞRILMADIĞININ doğrulanmasının başlangıcı — bu satır Continue testinde de AYNEN geçer, İKİSİ de `Times.Never` bekler ama FARKLI senaryolar için (biri "askıya alma kurtarma DEĞİLDİR", diğeri "içerik değiştirmeyen eylem rozet TETİKLEMEZ").', neden: null, olmasaydi: null },
+          { satir: 's => s.EvaluateAndUnlockAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Suspend VE Continue senaryolarının İKİSİNDE de — `EvaluateAndUnlockAsync`\'in HİÇBİR argüman kombinasyonuyla ÇAĞRILMADIĞININ doğrulanması (kod slaydındaki `if (request.Action == "Reset")` koşulunun HER İKİ dalı da EZDİĞİNİN kanıtı).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ResetAction_ResetsSm2StateAndPreservesHistoricalStats()', aciklama: 'Reset dalının EN kapsamlı testi — bu dosyadaki TEK test, entity\'nin SEKİZ farklı alanını BİRDEN doğrular.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress', aciklama: 'YOĞUN bir başlangıç durumu — SM-2 alanları İLERİ, askıya ALINMIŞ, geçmiş istatistikler DOLU.', neden: null, olmasaydi: null },
+          { satir: 'Id = 1, UserId = 5, WordId = 5, CurrentLevel = 4, EasinessFactor = 1.9m, IntervalDays = 15,', aciklama: 'SM-2 alanlarının İLERİ bir durumda BAŞLATILMASI.', neden: null, olmasaydi: null },
+          { satir: 'RepetitionNumber = 6, ConsecutiveIncorrect = 5, IsSuspended = true, NextReviewAt = DateTime.UtcNow,', aciklama: '`IsSuspended = true` BİLEREK — Reset\'in bu bayrağı da AÇTIĞINI doğrulamak için.', neden: null, olmasaydi: null },
+          { satir: 'TimesCorrect = 12, TimesIncorrect = 6, SuccessRate = 66.67m', aciklama: 'Geçmiş istatistikler — bu ÜÇÜNÜN Reset SONRASI da AYNI KALDIĞI ayrıca doğrulanacak.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Reset", UserId: 5, ActorRole: "User");', aciklama: 'Reset aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'result.CurrentLevel.Should().Be(0);', aciklama: 'Response\'un dolu OLMASI beklenen alanlarından biri.', neden: null, olmasaydi: null },
+          { satir: 'result.NextReviewAt.Should().BeNull();', aciklama: 'Response\'un İKİNCİ dolu alanı — `null` DEĞERİN KENDİSİ "yeni kelime havuzu" anlamına geldiği için, bu BAŞARILI bir doğrulama.', neden: null, olmasaydi: null },
+          { satir: 'existing.CurrentLevel.Should().Be(0);', aciklama: 'Entity\'nin KENDİSİNİN de sıfırlandığı.', neden: null, olmasaydi: null },
+          { satir: 'existing.EasinessFactor.Should().Be(2.5m);', aciklama: 'Standart BAŞLANGIÇ değerine DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.IntervalDays.Should().Be(1);', aciklama: 'Standart BAŞLANGIÇ değerine DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.RepetitionNumber.Should().Be(0);', aciklama: 'Sıfırlanma.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(0);', aciklama: 'Leech tetikleyicisinin SIFIRLANMASI.', neden: null, olmasaydi: null },
+          { satir: 'existing.IsSuspended.Should().BeFalse();', aciklama: 'Askıya alma bayrağının da AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.NextReviewAt.Should().BeNull();', aciklama: 'Yeni kelime havuzuna DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.Mastery.Should().Be(SrsCalculator.CalculateMastery(0, 66.67m));', aciklama: 'Beklenen değer ELLE hesaplanmış bir sabit DEĞİL, GERÇEK `SrsCalculator.CalculateMastery` çağrısı.', neden: null, olmasaydi: null },
+          { satir: 'existing.TimesCorrect.Should().Be(12);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.TimesIncorrect.Should().Be(6);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.SuccessRate.Should().Be(66.67m);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması — bu ÜÇ satır BİRLİKTE Reset\'in "yalnızca ileri gidişi sıfırla, geçmişi KORU" tasarımını KANITLAR.', neden: null, olmasaydi: null },
+          { satir: '_achievementService.Verify(s => s.EvaluateAndUnlockAsync(5, true, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Reset senaryosunda — `userId=5` VE `leechRecovered=true` ile TAM olarak BİR KEZ çağrıldığının doğrulanması; bu satır Suspend/Continue\'daki `It.IsAny` doğrulamalarının AKSİNE, argümanları GEVŞEK DEĞİL TAM olarak belirtir.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ContinueAction_DoesNotMutateOrPersistAnything()', aciklama: 'Continue dalının testi — bu bölümdeki TEK "hiçbir şey OLMADIĞINI" doğrulayan test.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, ConsecutiveIncorrect = 7, IsSuspended = false };', aciklama: '`ConsecutiveIncorrect = 7` — Continue SONRASI da AYNI KALMASI beklenir.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Continue", UserId: 5, ActorRole: "User");', aciklama: 'Continue aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'result.Acknowledged.Should().BeTrue();', aciklama: 'Response\'un dolu OLMASI beklenen TEK alanı.', neden: null, olmasaydi: null },
+          { satir: 'result.IsSuspended.Should().BeNull();', aciklama: 'Diğer üç alanın HEPSİNİN boş KALDIĞI — TEMSİLİ bir tanesi kontrol edilir.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(7);', aciklama: 'Entity\'nin HİÇBİR alanının değişmediğinin (temsili olarak) doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Continue\'nin `SaveChangesAsync`\'i HİÇ çağırmadığının doğrulanması — veritabanına HİÇBİR yazma GİTMEDİĞİNİN kanıtı.', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>(),', aciklama: '`LogAsync`\'in İLK beş parametresi — Continue testinde HEPSİ `It.IsAny<...>()`, çünkü bu çağrının HİÇ YAPILMAYACAĞI doğrulanıyor.', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),', aciklama: '`LogAsync`\'in TÜM parametreleri `It.IsAny<...>()` — hangi ARGÜMANLARLA çağrıldığı ÖNEMSİZ, ÖNEMLİ olan HİÇ ÇAĞRILMAMASI.', neden: null, olmasaydi: null },
+          { satir: 'Times.Never);', aciklama: 'Continue\'nin audit log YAZMADIĞININ doğrulanması.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'GetMyAchievementsQueryHandlerTests.cs — 3 Test',
+        terimler: [
+          { terim: 'GetMyAchievementsQueryHandlerTests.cs (backend/Zausel.Tests/Features/Achievements/GetMyAchievementsQueryHandlerTests.cs)', tanim: '`Handle_NoAcceptLanguage_ResolvesTextInDefaultTurkish` (dil header\'ı `null` geldiğinde `AchievementMessages.Resolve`\'un Türkçeye DÜŞTÜĞÜ, dönen `AchievementResponse`\'un `Name`/`RewardXP`/`Rarity`/`UnlockedAt` alanlarının repository\'den gelen `AchievementUnlockItem`\'la BİREBİR eştiği), `Handle_GermanAcceptLanguage_ResolvesGermanText` (`"de"` geldiğinde Almanca metnin döndüğü — `AchievementIds.LeechRecovery` ile "Leech-Rettung" doğrulanır), `Handle_NoUnlockedAchievements_ReturnsEmptyList` (repository boş liste döndüğünde Handler\'ın da boş liste döndürdüğü, istisna FIRLATMADIĞI). Üçü de TEK bağımlılığı (`IUserAchievementRepository`) mock\'lar, `AchievementMessages` statik olduğu için AYRICA sahtelenmez.' }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Migration Uygulandı, 246/246 Test Yeşil',
+        aciklama: '`AddAchievementSeed` migration\'ı `dotnet ef database update` ile GERÇEK `ZauselDB`\'ye uygulandı — `Achievements` tablosunun `Name`/`Description` sütunlarının KALKTIĞI, on satırın (`AchievementIds.Streak3`…`LeechRecovery`) `RewardXP`/`Rarity` değerleriyle BİREBİR seed EDİLDİĞİ `sqlcmd` ile doğrudan SORGULANARAK teyit edildi. Ardından TÜM test paketi çalıştırıldı: `dotnet test` 246/246 yeşil döndü — bu bölümün eklediği DOKUZ `AchievementServiceTests` + ÜÇ `GetMyAchievementsQueryHandlerTests` + Bölüm 6\'nın `ApplyWordLeechActionCommandHandlerTests`\'ine eklenen ÜÇ yeni doğrulama, Bölüm 6 sonundaki 234 testin ÜZERİNE tam 12 test olarak EKLENDİ.',
+        neden: 'Migration\'ın GERÇEKTEN uygulanıp uygulanmadığı (yalnızca dosyanın OLUŞMASI DEĞİL) yalnızca `database update` ÇALIŞTIRILARAK doğrulanabilir — `AchievementConfiguration.HasData`\'nın on satırının BEKLENEN `RewardXP`/`Rarity` değerleriyle GERÇEKTEN veritabanına YAZILDIĞINI görmeden, `AchievementService`\'in birim testleri (mock repository KULLANDIĞI için) bu satırların VAR OLDUĞUNU asla DOĞRULAYAMAZDI.',
+        olmasaydi: 'Migration yalnızca `dotnet build` ile doğrulansaydı (ÇALIŞTIRILMASAYDI), `Name`/`Description` sütunlarının GERÇEK veritabanında hâlâ VAR olup olmadığı ya da seed satırlarının DOĞRU değerlerle yazılıp YAZILMADIĞI bilinmezdi — `GET /achievements/me`\'nin ilk gerçek çağrısında (canlı ortamda) bir şema uyuşmazlığı ile KARŞILAŞILABİLİRDİ.'
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-09 — SRS / İlerleme API TAMAMLANDI',
+        maddeler: [
+          '`IAchievementService`/`AchievementService` — durum-tabanlı (event-tabanlı DEĞİL) `EvaluateAndUnlockAsync`, kullanıcının GÜNCEL `UserProgress`/`UserCardProgress`/`User` durumundan streak/kelime-sayısı/ilk-ustalık/iyi-bant/leech-kurtarma eşiklerinin TAMAMINI her çağrıda YENİDEN hesaplar — A-08\'in "servis terk edildi" kararının TERSİNE, A-10/A-11\'in de çağıracağı PAYLAŞILAN mantık olduğu için GERÇEK bir servis olarak yazıldı.',
+          '`Achievement` tablosunda `Name`/`Description` sütunu YOK — görünen metin `AchievementMessages` sözlüğünden Accept-Language\'a göre çözülür, `ErrorMessages`/`SuccessMessages` ile AYNI desen; `AchievementIds` on sabiti `AchievementConfiguration.HasData`/`AchievementMessages`/`AchievementService`nin ÜÇÜNÜN de referans verdiği TEK doğruluk kaynağı.',
+          '`GetMyAchievementsQuery`/`AchievementsController` → `GET /achievements/me` — kullanıcının açtığı rozetleri en YENİ önce döner, dil çözümlemesi istek ANINDA (Accept-Language) yapılır.',
+          '"Hatasız Oturum" (`FlawlessSession`) SEED edildi ama tespiti A-11\'e (LearningSession henüz yok) ERTELENDİ — şu an GERÇEKTEN tetiklenebilen TEK rozet "Leech Kurtarma", leech-action Reset akışı ÜZERİNDEN.',
+          '12 yeni birim testi (`AchievementServiceTests` 9, `GetMyAchievementsQueryHandlerTests` 3) + Bölüm 6\'nın `ApplyWordLeechActionCommandHandlerTests`\'ine 3 yeni doğrulama — tüm paket 246/246 yeşil. Migration gerçek `ZauselDB`\'ye uygulandı, `sqlcmd` ile teyit edildi.',
+          'A-09 bu bölümle TAMAMEN kapandı — sırada `A-10` (Kişisel Kart API, `UserCard` entity\'si) var; `UserCardProgressRepository`nin "aktif kart" filtresi VE `IUserCardProgressRepository`\'ye bant/askıya-alınmış listeleme metotları da A-10\'da eklenecek.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

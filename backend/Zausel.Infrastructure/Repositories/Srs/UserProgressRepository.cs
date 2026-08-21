@@ -20,7 +20,7 @@ public class UserProgressRepository : IUserProgressRepository
         var activeWordIds = _context.Words.Select(w => w.Id);
         return await _context.UserProgress
             .Where(p => p.UserId == userId && activeWordIds.Contains(p.WordId))
-            .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended))
+            .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended, p.CurrentLevel))
             .ToListAsync(cancellationToken);
     }
 

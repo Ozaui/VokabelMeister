@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<IActivityLogger, ActivityLogger>();
         services.AddScoped<ISecurityLogger, SecurityLogger>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<IAchievementService, AchievementService>();
 
         return services;
     }

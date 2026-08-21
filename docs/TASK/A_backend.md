@@ -502,11 +502,38 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       leech tespiti `ConsecutiveIncorrect>=5` → Suspend/Reset/Continue), `ProgressController`
       (`GET /progress/summary`, `GET /progress/words`, `GET /progress/suspended`, leech-action endpoint'leri)
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IAchievementService`/`AchievementService` (seed: streak 3/7/30, kelime sayısı 50/200/500, ilk
+- [x] `IAchievementService`/`AchievementService` (seed: streak 3/7/30, kelime sayısı 50/200/500, ilk
       `CurrentLevel=5`, 100 kelime İyi bantta, hatasız oturum, leech kurtarma), `GET /achievements/me`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `ProgressServiceTests` (XP/streak, `NextReviewAt`, bant eşikleri, leech), `AchievementServiceTests`
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** `ProgressServiceTests` (XP/streak, `NextReviewAt`, bant eşikleri, leech), `AchievementServiceTests`
+- [x] ➜ **AKADEMI/backend'ye işle**
+> ⚠️ **[2026-08-22] `IAchievementService` bu kez YAZILDI (IProgressService'in TERSİNE, bkz. yukarıdaki
+> not) — CLAUDE.md §3'ün "paylaşılan mantık birden çok Handler'da gerekiyorsa küçük bir arayüz+impl'e
+> çıkarılır" gerekçesiyle: rozet değerlendirmesi ileride A-10 (learn-system-word) VE A-11 (review-answer/
+> oturum tamamlama) Handler'larının da çağıracağı ORTAK mantık, Progress'teki gibi tek-endpoint'e özgü değil.**
+> **Durum-tabanlı (event-tabanlı DEĞİL) tasarım:** `EvaluateAndUnlockAsync(userId, leechRecovered)` her
+> çağrıda TÜM eşikleri (streak `User.StreakDays`, kelime sayısı + İyi bant `UserProgress`+`UserCardProgress`
+> `GetSnapshotsAsync`'in BİRLEŞİMİnden, ilk `CurrentLevel=5`) kullanıcının GÜNCEL durumundan yeniden
+> hesaplar — ayrı bir event/queue sistemi YOK, A-10/A-11 kendi mutasyonlarından SONRA AYNI metodu
+> çağıracak. **Şu an TEK çağıran** `ApplyWordLeechActionCommandHandler`'ın Reset dalı
+> (`leechRecovered: true` — Suspend/Continue'da HİÇ çağrılmaz), çünkü streak/kelime-sayısı/ilk-ustalık/
+> iyi-bant koşullarını gerçekten artıracak bir mutasyon noktası (UserCard/learn-system-word, review-answer)
+> henüz yok (A-10/A-11 yazılmadı) — bu yüzden pratikte bu 4 koşul A-10/A-11 yazılana kadar boşta kalır,
+> yalnızca "Leech Kurtarma" (`Id=10`) bugün gerçekten tetiklenebilir. **"Hatasız Oturum" (`Id=9`) SEED
+> EDİLDİ ama tespit mantığı YAZILMADI** — `LearningSession` (A-11) henüz yok, oturum tamamlanma OLAYI
+> tespit edilecek bir veri taşımıyor; A-11'in oturum-tamamlama Handler'ı yazılınca `EvaluateAndUnlockAsync`'e
+> bir `sessionWasFlawless` parametresi eklenip AYNI desenle işlenecek.
+> **Name/Description sütunu Achievements tablosundan ÇIKARILDI** (kullanıcı düzeltmesi, 2026-08-22):
+> ilk taslak rozet adını tek dilde (Türkçe) doğrudan `Achievement.Name` sütununa yazmıştı — tr/de VE
+> ileride eklenebilecek diğer diller için bu YANLIŞ desendi. `CLAUDE.md §1`'in "istemciye giden mesaj"
+> istisnasına göre (`ErrorMessages`/`SuccessMessages` ile AYNI) düzeltildi: `Application/Common/
+> AchievementMessages.cs` sözlüğünden `Accept-Language`'a göre çözülür, DB'de hiç saklanmaz — yeni dil
+> yalnızca bu sözlüğe bir sütun eklemekle desteklenir, migration gerekmez. `Application/Common/
+> AchievementIds.cs`'teki sabit `Id`ler (1-10) `Languages`'teki `Id=1`/`Id=2` seed deseniyle AYNI —
+> `AchievementConfiguration`'ın `HasData`'sı VE `AchievementMessages`'ın sözlük anahtarları bu sabitlere
+> referans verir. Rozet açılışı `IActivityLogger`'a YAZILMAZ (`UserAchievement.UnlockedAt` zaten
+> insert-only bir log, `LearningHistory` ile AYNI gerekçe). `DATABASE_SCHEMA/SRS.md` ve migration
+> (`AddAchievementSeed`) güncellendi, `dotnet ef database update` yerel DB'ye uygulandı.
 
 ### A-10 — Kişisel Kart API (UserCard) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §7

@@ -13,6 +13,6 @@ public class UserCardProgressRepository : IUserCardProgressRepository
     public async Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default) =>
         await _context.UserCardProgress
             .Where(p => p.UserId == userId)
-            .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended))
+            .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended, p.CurrentLevel))
             .ToListAsync(cancellationToken);
 }

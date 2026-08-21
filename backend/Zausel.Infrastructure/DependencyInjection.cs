@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
         services.AddScoped<IUserProgressRepository, UserProgressRepository>();
         services.AddScoped<IUserCardProgressRepository, UserCardProgressRepository>();
+        services.AddScoped<IUserAchievementRepository, UserAchievementRepository>();
 
         return services;
     }

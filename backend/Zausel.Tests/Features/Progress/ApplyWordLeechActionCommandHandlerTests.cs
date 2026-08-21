@@ -13,8 +13,10 @@ public class ApplyWordLeechActionCommandHandlerTests
 {
     private readonly Mock<IUserProgressRepository> _userProgressRepository = new();
     private readonly Mock<IActivityLogger> _activityLogger = new();
+    private readonly Mock<IAchievementService> _achievementService = new();
 
-    private ApplyWordLeechActionCommandHandler CreateHandler() => new(_userProgressRepository.Object, _activityLogger.Object);
+    private ApplyWordLeechActionCommandHandler CreateHandler() =>
+        new(_userProgressRepository.Object, _activityLogger.Object, _achievementService.Object);
 
     [Fact]
     public async Task Handle_NotFound_ThrowsEntityNotFoundException()
@@ -55,6 +57,9 @@ public class ApplyWordLeechActionCommandHandlerTests
         _activityLogger.Verify(l => l.LogAsync(
             5, "User", "APPLY_LEECH_ACTION", "UserProgress", 1, It.IsAny<object>(), It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
             Times.Once);
+        // Suspend bir kelimeyi leech durumuna SOKAR, kurtarmaz — AchievementService HİÇ çağrılmamalı.
+        _achievementService.Verify(
+            s => s.EvaluateAndUnlockAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -89,6 +94,8 @@ public class ApplyWordLeechActionCommandHandlerTests
         existing.TimesCorrect.Should().Be(12);
         existing.TimesIncorrect.Should().Be(6);
         existing.SuccessRate.Should().Be(66.67m);
+        // Reset = leech kurtarma OLAYI — AchievementService leechRecovered:true ile TAM BİR KEZ çağrılmalı.
+        _achievementService.Verify(s => s.EvaluateAndUnlockAsync(5, true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -113,5 +120,7 @@ public class ApplyWordLeechActionCommandHandlerTests
             It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>(),
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        _achievementService.Verify(
+            s => s.EvaluateAndUnlockAsync(It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

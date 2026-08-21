@@ -13,11 +13,14 @@ public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeech
 {
     private readonly IUserProgressRepository _userProgressRepository;
     private readonly IActivityLogger _activityLogger;
+    private readonly IAchievementService _achievementService;
 
-    public ApplyWordLeechActionCommandHandler(IUserProgressRepository userProgressRepository, IActivityLogger activityLogger)
+    public ApplyWordLeechActionCommandHandler(
+        IUserProgressRepository userProgressRepository, IActivityLogger activityLogger, IAchievementService achievementService)
     {
         _userProgressRepository = userProgressRepository;
         _activityLogger = activityLogger;
+        _achievementService = achievementService;
     }
 
     public async Task<LeechActionResponse> Handle(ApplyWordLeechActionCommand request, CancellationToken cancellationToken)
@@ -60,6 +63,11 @@ public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeech
         await _activityLogger.LogAsync(
             request.UserId, request.ActorRole, "APPLY_LEECH_ACTION", entityType: "UserProgress", entityId: userProgress.Id,
             oldValue: oldValue, newValue: newValue, cancellationToken: cancellationToken);
+
+        // "Leech Kurtarma" rozeti yalnızca Reset'te değerlendirilir — Suspend bir kelimeyi leech
+        // durumuna SOKAR, kurtarmaz; gereksiz sorgu yapmamak için Suspend'te AchievementService HİÇ çağrılmaz.
+        if (request.Action == "Reset")
+            await _achievementService.EvaluateAndUnlockAsync(request.UserId, leechRecovered: true, cancellationToken);
 
         return response;
     }
