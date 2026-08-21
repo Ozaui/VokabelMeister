@@ -6,6 +6,10 @@
 > aynı renk/tipografi/radius token'larını kullanır, tek bir Tailwind `@theme` kaynağından türer.
 > **Mobil (Faz D)** aynı renk/tipografi kararlarını native bileşenlere (React Native `StyleSheet`)
 > uyarlar — piksel-birebir Tailwind eşleşmesi şart değil, ama token değerleri (hex/px) aynı kalır.
+> **[2026-08-21] Kod karşılığı:** Bu dokümandaki token'lar `frontend/packages/design-tokens`'ta
+> (tek kaynak), Admin+Web+Site'ın paylaştığı component'ler `frontend/packages/ui-web`'te yaşar —
+> bkz. `docs/TASK/00_ortak_frontend_altyapisi.md`. Tanıtım Sitesi (Faz F, Next.js) da aynı
+> `frontend/` pnpm monorepo'suna dahildir ve mümkün olduğunca aynı paketleri tüketir.
 
 > **Not (2026-08-06 — Tasarım sistemi baştan yazıldı):** Önceki renk paleti tamamen değiştirildi. Karar
 > süreci: kullanıcı Apple'ın modern, sade ve presizli estetiği ile Duolingo'nun samimi, neşeli ve
@@ -13,19 +17,22 @@
 > ana aksan rengi Canlı Turuncu (`#FF6B00`), bol nefes alanı, yüksek yuvarlatılmış samimi kartlar
 > ve düşük kontrastlı kenarlıklar/hafif süzülen gölgeler**. Aşağıdaki her karar bu prensipten türer. Bu not,
 > önceki değişiklik notları gibi kalıcı bir karar kaydıdır — silinmez, üstüne yazılır.
-> **Etkilenen kod:** `admin/src/index.css` (`@theme` + `.dark` override) B-01'de zaten yazılmıştı,
+> **Etkilenen kod:** `frontend/admin/src/index.css` (`@theme` + `.dark` override) B-01'de zaten yazılmıştı,
 > bu doküman değiştiğinde o dosya da senkronize edilmeli (B-01'e "🔄 palet güncellemesi" notu
 > düşülür — B-01 tekrar ⬜'e alınmaz, yalnızca bir alt-görev olarak palet token'ları güncellenir).
 
-> **⚠️ Not (2026-08-16 — yasaklı desen listesiyle çelişki, ÇÖZÜLMEDİ):** `CLAUDE.md §1`'e
-> eklenen "Görsel tasarım — yasaklı desenler" kuralı (Admin+Web+Mobil ortak, kapsam kullanıcı
-> kararıyla netleşti) bu dosyadaki üç mevcut kararla çelişiyor: **§4** (radius skalası — "yumuşak/
-> yuvarlak köşe, Squircle" felsefesi ↔ yasaklı "soft corner radius"), **§5** (Apple çizgisi için
-> "hafif süzülen" gölgeler ↔ yasaklı "drop shadows") ve **§7/§8** (`lucide-react` ikon kütüphanesi
-> ↔ yasaklı "lucide icons"). Bu üçü burada **kendiliğinden çözülmedi** — admin (`B-01`) yeniden
-> yazılırken veya Web tasarımı somutlaşırken kullanıcıyla birlikte yeniden karara bağlanacak. O
-> karara kadar §4/§5/§7/§8'deki değerler **taslak/referans** sayılır; kod bunları birebir
-> uygulamaya başlamadan önce bu notun hâlâ güncel olup olmadığı kontrol edilmeli.
+> **⚠️ Not (2026-08-16 — yasaklı desen listesiyle çelişki, KISMEN ÇÖZÜLDÜ):** `CLAUDE.md §1`'e
+> eklenen "Görsel tasarım — yasaklı desenler" kuralı (Admin+Web+Mobil+Site ortak) bu dosyadaki üç
+> mevcut kararla çelişiyordu: **§4** (radius skalası — "yumuşak/yuvarlak köşe, Squircle" felsefesi
+> ↔ yasaklı "soft corner radius"), **§5** (Apple çizgisi için "hafif süzülen" gölgeler ↔ yasaklı
+> "drop shadows") ve **§7/§8** (`lucide-react` ikon kütüphanesi ↔ yasaklı "lucide icons").
+> **[2026-08-21] İkon kısmı çözüldü:** `lucide-react` yerine `@phosphor-icons/react`/
+> `phosphor-react-native` seçildi (bkz. §7/§8) — bu artık çelişki değil.
+> **§4/§5 (radius/gölge) hâlâ AÇIK** — admin (`B-01`) yeniden yazılırken veya Web tasarımı
+> somutlaşırken kullanıcıyla birlikte karara bağlanacak. O karara kadar §4/§5'teki değerler
+> **taslak/referans** sayılır; `frontend/packages/design-tokens`'a yazılan radius/gölge sayıları da
+> bu netleşene kadar provisional kabul edilir — kod bunları birebir uygulamaya başlamadan önce bu
+> notun hâlâ güncel olup olmadığı kontrol edilmeli.
 
 > **Not (2026-08-17 — accent rengi maskota hizalandı):** `accent`/`accent-hover` artık maskot
 > Zausel'in kendi paletinden birebir alınıyor (`TASK/F_tanitim_sitesi.md` F-02.1) — light `accent`
@@ -172,7 +179,7 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 
 | Kütüphane       | Kullanım Amacı                                                               |
 | --------------- | ---------------------------------------------------------------------------- |
-| ~~`lucide-react`~~ | ⚠️ YASAKLI (CLAUDE.md §1) — bkz. dosya başındaki 2026-08-16 uyarı notu, alternatif henüz seçilmedi |
+| `@phosphor-icons/react` | **[2026-08-21 karar]** İkon kütüphanesi — Admin/Web/Site. `lucide-react` YASAK (CLAUDE.md §1) yerine seçildi: MIT, tree-shakeable, 6 ağırlık (thin/regular/bold/duotone/fill) lucide'ın tek-ağırlıklı jenerik hissinden ayrışır. Mobil karşılığı: `phosphor-react-native` (resmi paket). |
 | `framer-motion` | Kart çevirme (flip), yaylanma (`spring`) ve sarsılma (`shake`) animasyonları |
 | `use-sound`     | Kart çevirme, buton tıklama ve doğru/yanlış geribildirim ses efektleri       |
 
@@ -181,7 +188,7 @@ Tasarım sistemini ve kart mimarisindeki samimi etkileşimleri desteklemek için
 - **İkon kullanımı:** yalnızca nav linki, ses oynatma butonları ve birincil aksiyon butonlarında (ekle/sil/düzenle/ara)
   işlevsel olduğu yerde ikon kullanılır. Dekoratif ikon yok. Görsel/fotoğraf bulunamadığında ikon
   türetme/elle çizme **yok** — nötr placeholder (gri blok, baş harf rozeti) kullanılır.
-- **İkon kütüphanesi:** ~~`lucide-react`~~ ⚠️ yasaklandı (bkz. dosya başındaki 2026-08-16 uyarı notu) — alternatif henüz seçilmedi.
+- **İkon kütüphanesi:** `@phosphor-icons/react` (Admin/Web/Site) / `phosphor-react-native` (Mobil) — **[2026-08-21]** `lucide-react` yasağının yerine karara bağlandı, bkz. §7.
 - **Durum/rol bilgisi** (aktif/donduran, admin/user, log seviyesi) renkle birlikte etiket metniyle
   de gösterilir — yalnızca renge güvenilmez (kontrast erişilebilirliği).
 - **Responsive:** masaüstünde sidebar + geniş tablo (Admin) / geniş içerik ve ortalanmış ana çalışma kartı (Web);
@@ -220,9 +227,14 @@ Bkz. ilgili dosyadaki C-03 → C-12 başlıkları — aynı token setini kullan�
 | F-07 | Hesap/Veri Silme Talimatı       | `/delete-account`              |
 | F-08 | Destek/İletişim                 | `/support`                     |
 
-Admin/Web ile **aynı marka rengi** kullanır (§1/§2) ama Next.js ayrı bir proje olduğu için kendi
-`tailwind.config`/`globals.css`'ine sahiptir — token değerleri elle senkron tutulur (ortak bir npm
-paketine çıkarma YAGNI, üç proje de henüz bunu gerektirecek kadar sık değişmiyor).
+Admin/Web ile **aynı marka rengi** kullanır (§1/§2). **[2026-08-21 karar güncellemesi]** Önceki
+"ortak npm paketine çıkarma YAGNI" kararı geçersiz: artık gerçek bir ilk tüketici (Admin B-01) olduğu
+için literal paylaşım kararlaştırıldı — bkz. `docs/TASK/00_ortak_frontend_altyapisi.md`. Admin+Web
+`frontend/packages/ui-web` component'lerini birebir aynı kodla kullanır; **Next.js sitesi de aynı
+pnpm monorepo'ya (`frontend/`) dahil edilir**, `frontend/packages/design-tokens`'ı ve mümkün olduğunca
+`ui-web`'i tüketir (Next.js `next.config.js`'de `transpilePackages` zorunlu — Next varsayılan olarak
+`node_modules` altını transpile etmez). Mobil (RN, farklı runtime) `ui-web`'i çalıştıramaz, yalnızca
+`design-tokens`'ı tüketir ve aynı prop sözleşmesiyle kendi native component'lerini yazar.
 
 Diğer agent'a verilen tam tasarım brief'i (ekran detayları + kısıtlar) bu paletle birebir aynıdır —
 bu doküman o brief'in kalıcı, kod-tarafı referans halidir.

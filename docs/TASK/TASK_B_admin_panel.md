@@ -26,6 +26,9 @@
 
 ### B-01 — Kurulum ⬜
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §2, REFERENCE/DEVELOPMENT_SETUP.md §6, REFERENCE/DESIGN_SYSTEM.md
+> **[2026-08-21] Ön koşul:** B-01 başlamadan önce `TASK/00_ortak_frontend_altyapisi.md` tamamlanır
+> (`frontend/` pnpm monorepo + `packages/design-tokens` + ilk 6 component `packages/ui-web`'de) —
+> Admin bu paketleri `workspace:*` ile tüketerek başlar, component'leri sıfırdan kendi içinde yazmaz.
 - [ ] React + Vite + TS, TailwindCSS, Axios + Formik/Yup + React Router DOM + Redux Toolkit kurulumu (bkz. `CLAUDE.md` §4.1 — ortak kütüphane listesi)
 - [ ] ➜ **Admin Akademi'ye işle**
 - [ ] Tasarım sistemi uygulaması — `DESIGN_SYSTEM.md`'deki ortak palet (Primary/accent `#5B54F0`
@@ -54,7 +57,7 @@ yazılıyor, eski "A-07.1 ertelendi" retrofit'i artık yok, bkz. `A_backend.md` 
 🔄 **2026-08-06 — Palet güncellemesi:** `DESIGN_SYSTEM.md`'deki renk/tipografi/radius/gölge sistemi
 "Turkuaz+Mor" temelinden "Apple + Duolingo" temeline (accent `#FF6B00` Canlı Turuncu, font Plus
 Jakarta Sans, radius skalası genişletildi — ör. `--radius-control` yerine ayrı `--radius-input`/
-`--radius-button`) yeniden yazıldı. `admin/src/index.css`, `App.tsx`, `LanguageSwitcher`/
+`--radius-button`) yeniden yazıldı. `frontend/admin/src/index.css`, `App.tsx`, `LanguageSwitcher`/
 `ThemeSwitcher` (`rounded-control`→`rounded-button`) senkronlandı, `AKADEMI/admin/B-01_kurulum/`
 bölümleri (02, 04, 05, 06) yeni token değerleriyle güncellendi. B-01 tekrar ⬜'e alınmadı — bu
 yalnızca bir token senkronizasyonu.

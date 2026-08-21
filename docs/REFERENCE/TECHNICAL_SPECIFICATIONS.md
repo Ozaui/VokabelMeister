@@ -41,31 +41,47 @@
 <PackageReference Include="coverlet.collector" Version="6.0.2" />          <!-- Coverage (E-01) -->
 ```
 
-## 2. npm Paketleri
+## 2. Frontend Paketleri (pnpm monorepo — `frontend/`, bkz. `TASK/00_ortak_frontend_altyapisi.md`)
 
 ```bash
-# Web (/web) — ortak React kütüphane seti admin ile aynı (bkz. CLAUDE.md §4.1)
-npm create vite@latest web -- --template react-ts && cd web
-npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next @react-oauth/google
-npm i qrcode.react react-toastify   # QR ile giriş / toast bildirim
-npm i <ikon-kütüphanesi>   # ⚠️ seçilecek — lucide-react YASAK (CLAUDE.md §1)
-npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
+# Kök kurulum (workspace kökü frontend/'te yaşar)
+cd frontend && pnpm install
 
-# Admin (/admin) — Google/Apple yok, QR ile giriş VAR (bkz. CLAUDE.md §4.1)
-npm create vite@latest admin -- --template react-ts && cd admin
-npm i @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next
-npm i qrcode.react   # QR ile giriş — admin QR görselini bundan üretir (B-02.1)
-npm i date-fns       # B-08 log paneli tarih filtre/biçimlendirme
-npm i <ikon-kütüphanesi> # ⚠️ seçilecek — lucide-react YASAK (CLAUDE.md §1)
-npm i react-toastify # başarı/hata toast bildirimleri
-npm i -D tailwindcss postcss autoprefixer && npx tailwindcss init -p
+# packages/design-tokens (@zausel/design-tokens) — renk/radius/spacing/gölge/tipografi tek kaynağı
+# packages/ui-web (@zausel/ui-web) — Button/Input/Card/Badge/Modal/Skeleton, react/react-dom PEER dep
+# İkisi de 00_ortak_frontend_altyapisi.md'de kurulur, aşağıdaki app'ler workspace:* ile tüketir.
 
-# Mobil (/mobile) — form/state/i18n admin/web ile aynı; routing React Navigation (mobil-özel, react-router-dom değil)
+# Web (/frontend/web) — ortak React kütüphane seti admin ile aynı (bkz. CLAUDE.md §4.1)
+pnpm create vite web -- --template react-ts && cd web
+pnpm add @zausel/design-tokens @zausel/ui-web  # workspace:*
+pnpm add @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next @react-oauth/google
+pnpm add qrcode.react react-toastify   # QR ile giriş / toast bildirim
+pnpm add @phosphor-icons/react         # ikon kütüphanesi (lucide-react YASAK, bkz. CLAUDE.md §1)
+pnpm add -D tailwindcss postcss autoprefixer
+
+# Admin (/frontend/admin) — Google/Apple yok, QR ile giriş VAR (bkz. CLAUDE.md §4.1)
+pnpm create vite admin -- --template react-ts && cd admin
+pnpm add @zausel/design-tokens @zausel/ui-web  # workspace:*
+pnpm add @reduxjs/toolkit react-redux axios formik yup react-router-dom i18next react-i18next
+pnpm add qrcode.react   # QR ile giriş — admin QR görselini bundan üretir (B-02.1)
+pnpm add date-fns       # B-08 log paneli tarih filtre/biçimlendirme
+pnpm add @phosphor-icons/react # ikon kütüphanesi (lucide-react YASAK, bkz. CLAUDE.md §1)
+pnpm add react-toastify # başarı/hata toast bildirimleri
+pnpm add -D tailwindcss postcss autoprefixer
+
+# Site (/frontend/site) — Next.js, Faz F, ürün akışından ayrı (bkz. F_tanitim_sitesi.md)
+pnpm create next-app site --typescript && cd site
+pnpm add @zausel/design-tokens @zausel/ui-web  # workspace:* — next.config.js'de transpilePackages ZORUNLU
+pnpm add @phosphor-icons/react
+
+# Mobil (/frontend/mobile) — form/state/i18n admin/web ile aynı; routing React Navigation (mobil-özel, react-router-dom değil)
 npx create-expo-app mobile --template expo-template-blank-typescript && cd mobile
-npm i @reduxjs/toolkit react-redux axios formik yup i18next react-i18next
+pnpm add @zausel/design-tokens  # ui-web DEĞİL — RN farklı runtime, kendi native component'lerini yazar (aynı prop sözleşmesiyle)
+pnpm add @reduxjs/toolkit react-redux axios formik yup i18next react-i18next
+pnpm add phosphor-react-native react-native-svg  # ikon kütüphanesi — resmi RN paketi
 npx expo install expo-secure-store expo-image-picker expo-apple-authentication expo-camera
 npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/stack
-npm i @react-native-google-signin/google-signin
+pnpm add @react-native-google-signin/google-signin
 # expo-camera: QR ile giriş — mobil web'deki QR'ı bununla okur
 # expo-speech: [2026-08-15 ERTELENDİ] kelime kartı telaffuzu (D-06) için planlanmıştı, kullanıcı
 # kararıyla kapsam dışı bırakıldı — istenirse eklendiğinde bu satır geri gelir

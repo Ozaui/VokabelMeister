@@ -4,7 +4,7 @@
 
 ## 1. Araçlar
 ```
-Node.js 18.17+ LTS · .NET 9 SDK · SQL Server 2019+ (SSMS) · VS 2022 / VS Code · Git 2.40+
+Node.js 20+ LTS · pnpm 9+ (frontend monorepo) · .NET 9 SDK · SQL Server 2019+ (SSMS) · VS 2022 / VS Code · Git 2.40+
 ```
 
 ## 2. Projeyi Al
@@ -13,8 +13,8 @@ git clone https://github.com/kullanici/Zausel.git && cd Zausel/backend && dotnet
 ```
 
 ## 3. Backend İskeleti (A-01)
-`Zausel.sln` ve `global.json`, kök dizindeki `admin/`/`web/`/`mobile/` ile karışmasın diye
-`backend/` altında yaşar — SDK sürümü de yalnızca backend'i kapsar, frontend'i etkilemez.
+`Zausel.sln` ve `global.json`, kök dizindeki `frontend/` (pnpm monorepo — `admin/`/`web/`/`mobile/`/`site/`)
+ile karışmasın diye `backend/` altında yaşar — SDK sürümü de yalnızca backend'i kapsar, frontend'i etkilemez.
 ```bash
 cd backend
 dotnet new sln -n Zausel
@@ -43,12 +43,17 @@ dotnet ef database update --project Zausel.Infrastructure --startup-project Zaus
 
 ## 5. Çalıştırma
 ```bash
-cd backend && dotnet run --project Zausel.API   # Swagger: http://localhost:5001/swagger
-cd admin && npm run dev                    # http://localhost:5173  (yalnızca e-posta+şifre, Admin rolü)
-cd web && npm run dev                      # http://localhost:5174  (token localStorage; Apple yok)
-cd mobile && npx expo start                # token Expo Secure Store
+cd backend && dotnet run --project Zausel.API        # Swagger: http://localhost:5001/swagger
+
+cd frontend && pnpm install                          # tek kurulum, tüm workspace paketleri
+pnpm --filter @zausel/design-tokens build            # dist/tailwind.css üretir — Admin/Web/Site'tan önce şart
+pnpm --filter admin dev                              # http://localhost:5173  (yalnızca e-posta+şifre, Admin rolü)
+pnpm --filter web dev                                # http://localhost:5174  (token localStorage; Apple yok)
+pnpm --filter mobile exec expo start                 # token Expo Secure Store
+pnpm --filter site dev                                # Next.js (Faz F)
 ```
-Frontend `.env.development`: `VITE_API_URL` / `EXPO_PUBLIC_API_URL = http://localhost:5001/api/v1` (+ web `VITE_GOOGLE_CLIENT_ID`).
+`design-tokens` değiştiğinde `pnpm --filter @zausel/design-tokens build` tekrar çalıştırılmalı (CSS çıktısı `dist/`'te, otomatik izlenmiyor).
+Frontend `.env.development`: `VITE_API_URL` / `EXPO_PUBLIC_API_URL` / `NEXT_PUBLIC_API_URL = http://localhost:5001/api/v1` (+ web `VITE_GOOGLE_CLIENT_ID`).
 
 ## 6. Google / Apple Giriş (backend doğrulama)
 ```csharp
@@ -63,7 +68,7 @@ var claims = await ValidateAppleTokenAsync(identityToken);
 ```bash
 dotnet publish backend/Zausel.API -c Release -r win-x64 --self-contained false -o ./publish/api
 ```
-App Pool → **No Managed Code** (Kestrel + IIS reverse proxy, URL Rewrite gerekli). Frontend: `npm run build` → `dist/`; React Router için `web.config`'e SPA rewrite.
+App Pool → **No Managed Code** (Kestrel + IIS reverse proxy, URL Rewrite gerekli). Frontend: `pnpm --filter <app> build` → `dist/`; React Router için `web.config`'e SPA rewrite.
 
 ## 8. Git Akışı
 ```
@@ -74,7 +79,12 @@ Commit: Türkçe, task no ile başlar → `CLAUDE.md §7` (ör. `A-03: AuthContr
 ## 9. Klasör Yapısı
 ```
 Zausel/
-├── CLAUDE.md · docs/
+├── CLAUDE.md · docs/ · AKADEMI/
 ├── backend/{Zausel.sln, global.json, Zausel.API, .Application, .Infrastructure, .Domain, .Tests}
-├── admin/ · web/ · mobile/
+└── frontend/                         # pnpm monorepo (workspace kökü)
+    ├── pnpm-workspace.yaml · package.json · tsconfig.base.json
+    ├── packages/
+    │   ├── design-tokens/             # @zausel/design-tokens — renk/radius/spacing/gölge/tipografi tek kaynağı
+    │   └── ui-web/                    # @zausel/ui-web — Admin+Web+Site'ın paylaştığı React component'leri
+    ├── admin/ · web/ · mobile/ · site/
 ```

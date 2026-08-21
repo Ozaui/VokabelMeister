@@ -19,7 +19,7 @@
 - **İngilizce:** method/class/property/DB kolon/JS değişken adları, test metodu adları, `_logger.Log*` mesajları, exception `.Message`, hata `Code` sabitleri (ör. `INVALID_CREDENTIALS`).
 - **İstisna — istemciye giden mesaj:** `AppException.Code`/FluentValidation `ErrorCode`, isteğin `Accept-Language`'ına göre `ErrorMessages` sözlüğünden çözülür. Şu an yalnızca **tr/de** dolu (hedef kitle DE↔TR); sözlük dile göre anahtarlandığı için yeni bir dil (ör. `en`) yalnızca `ErrorMessages`/`SuccessMessages` sözlüklerine bir sütun eklemekle desteklenir, başka hiçbir koda dokunulmaz. Kullanıcı seçtiği dili görür (desteklenmiyorsa tr'ye düşer); DB/log/geliştirici İngilizce görür. Ayrı iki kanal.
 - **İkinci istisna — `ActivityLog`/`SecurityLog`'un admin'e görünen alanları:** `Action`/`EventType` sabit/dilden bağımsız kod kalır (`_logger.Log*` ile aynı kural) ama `Detail`/`OldValue`/`NewValue` **admin panelin kendisi bir istemci olduğu için** (admin de dil tercihine sahip) serbest metin yerine bir **Code** olarak yazılır — log satırı yazılırken (ör. anonim bir isteğin `Accept-Language`'ıyla) hangi admin'in ne zaman hangi dille okuyacağı bilinmediğinden, tr/de çözümü ancak admin `GET /admin/logs/*` (A-07) ile okurken KENDİ `Accept-Language`'ıyla yapılabilir — `ErrorMessages` ile birebir aynı Code-sonra-çöz deseni, yalnızca çözme anı farklı (istek anı değil, okuma anı).
-- **Admin panelin kendi dil tercihi (B-01'den itibaren):** `admin/src/store/slices/languageSlice.ts` (tr/de, `localStorage` persist, varsayılan **tr** — `ErrorMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `admin/src/store/api.ts` her istekte bu tercihi `Accept-Language` header'ı olarak backend'e yollar (yukarıdaki iki istisnanın frontend tarafı budur — backend mesajları VE log okuma bu sayede admin'in seçtiği dilde döner). Admin panelin KENDİ statik arayüz metinleri (buton/etiket, backend'den gelmeyen) `react-i18next` ile ayrıca tr/de çevrilir — bu backend `ErrorMessages`'tan bağımsız, saf frontend kopyası (`admin/src/i18n/locales/{tr,de}.json`). Web/Mobil (Faz C/D) aynı deseni kendi fazları başladığında kurar.
+- **Admin panelin kendi dil tercihi (B-01'den itibaren):** `frontend/admin/src/store/slices/languageSlice.ts` (tr/de, `localStorage` persist, varsayılan **tr** — `ErrorMessages` ile aynı "desteklenmiyorsa tr'ye düş" kuralı), `frontend/admin/src/store/api.ts` her istekte bu tercihi `Accept-Language` header'ı olarak backend'e yollar (yukarıdaki iki istisnanın frontend tarafı budur — backend mesajları VE log okuma bu sayede admin'in seçtiği dilde döner). Admin panelin KENDİ statik arayüz metinleri (buton/etiket, backend'den gelmeyen) `react-i18next` ile ayrıca tr/de çevrilir — bu backend `ErrorMessages`'tan bağımsız, saf frontend kopyası (`frontend/admin/src/i18n/locales/{tr,de}.json`). Web/Mobil (Faz C/D) aynı deseni kendi fazları başladığında kurar.
 
 **Yorum satırları**
 - Kod kendini anlatır (iyi isimlendirme). Yorum yalnızca kodun anlatamadığını açıklar: gizli bir kısıt, non-obvious bir NEDEN, bilerek alınmış bir karar. NE yaptığını değil NEDEN öyle yaptığını anlat.
@@ -68,10 +68,12 @@
   skeleton loaders, radial orbs, dot grids, sparkle icons, animated arrows, no TOS, no privacy
   policy, hover animations, neon colors, basic pastel colors.
 - Somut renk/tipografi/radius/gölge/spacing kararları → `REFERENCE/DESIGN_SYSTEM.md`; o dosya bu
-  listeyle çelişmeyecek şekilde güncel tutulur. ⚠️ **2026-08-16 itibarıyla o dosyadaki `lucide-react`
-  ikon kütüphanesi kararı ve radius/gölge skalasının bir kısmı bu listeyle çelişiyor** (bkz. o
-  dosyanın başındaki uyarı notu) — admin (B-01) yeniden yazılırken veya Web/Mobil tasarımı
-  somutlaşırken kullanıcıyla birlikte çözülecek, o güne kadar §4/§5/§7/§8 taslak sayılır.
+  listeyle çelişmeyecek şekilde güncel tutulur. **[2026-08-21] İkon kütüphanesi çelişkisi çözüldü:**
+  `lucide-react` yerine `@phosphor-icons/react`/`phosphor-react-native` seçildi (bkz. §4.1 ve
+  `DESIGN_SYSTEM.md §7/§8`). ⚠️ **Radius/gölge skalası hâlâ açık** — `DESIGN_SYSTEM.md`'nin
+  `§4`/`§5`'i bu listedeki "soft corner radius"/"drop shadows" maddeleriyle çelişiyor, admin (B-01)
+  yeniden yazılırken veya Web tasarımı somutlaşırken kullanıcıyla birlikte çözülecek, o güne kadar
+  §4/§5 taslak sayılır.
 
 **Test**
 - Her public servis/Handler metodunun birim testi **aynı task içinde** yazılır (Faz E'ye bırakma). Standart → `REFERENCE/CODING_STANDARDS.md §6`.
@@ -96,6 +98,7 @@ Bu dosyayı okuduktan sonra, task'a göre **yalnızca** ilgili dosyayı aç:
 | Kelime kartı gramer JSON'u (Almanca) | `REFERENCE/GERMAN_LANGUAGE_FEATURES.md` |
 | Kelime kartı gramer JSON'u (Türkçe) | `REFERENCE/TURKISH_LANGUAGE_FEATURES.md` |
 | Frontend görsel tasarımı (renk/tipografi/radius/gölge/boşluk) | `REFERENCE/DESIGN_SYSTEM.md` — **Admin + Web ortak** (Mobil aynı token'ları native'e uyarlar) |
+| Paylaşılan frontend component/token yazacağım (`frontend/packages/*`) | `TASK/00_ortak_frontend_altyapisi.md` + `REFERENCE/DESIGN_SYSTEM.md` |
 
 ---
 
@@ -181,7 +184,7 @@ deseni):
 | Form + Validasyon | `formik` + `yup` | `react-hook-form` **kullanılmaz** — üç alanda da tek form deseni |
 | HTTP | `axios` | Ortak `apiClient` + `Authorization`/`Accept-Language` interceptor'ı |
 | i18n | `i18next` + `react-i18next` | Admin panelin dil tercihi deseni (`languageSlice`, CLAUDE.md §1) üçünde de aynı |
-| İkon | ⚠️ **seçilecek** — `lucide-react`/`lucide-react-native` YASAK (bkz. §1 "Görsel tasarım — yasaklı desenler") | Admin/Web/Mobil ortak, alternatif henüz seçilmedi |
+| İkon | `@phosphor-icons/react` (Admin/Web/Site) · `phosphor-react-native` (Mobil) | **[2026-08-21]** `lucide-react`/`lucide-react-native` YASAK (§1) yerine seçildi — Admin/Web/Mobil/Site ortak, tek karar bu dördünü de kapsar |
 | Bildirim | `react-toastify` (Admin/Web) | Başarı/hata toast'ları (ör. "Kelime eklendi", 409 çakışma mesajı) — Mobil'in kendi eşdeğeri (ör. `react-native-toast-message`) ilgili faz başladığında seçilir, DOM tabanlı `react-toastify` React Native'de çalışmaz |
 | Test | `vitest` + `@testing-library/react` + `jsdom` (Mobil: `@testing-library/react-native`) | |
 

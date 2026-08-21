@@ -13,6 +13,7 @@
 
 | Faz | Ne | Neden | Dosya |
 |-----|----|----|-------|
+| **00** | Ortak Frontend Altyapısı (`frontend/` pnpm monorepo — `packages/design-tokens`+`packages/ui-web`) | Admin/Web/Mobil/Site aynı button/component/token'ı paylaşsın diye B-01'den önce bir kez kurulur; Faz A'ya bağımlı değil, yalnızca B-01'i bloklar | `TASK/00_ortak_frontend_altyapisi.md` |
 | **A** | Backend (`.NET 9 Web API`, tek/ortak — admin/web/mobil ayrımı yok) | Endpoint'ler önce | `TASK/A_backend.md` |
 | **B** | Admin panel (`/admin`) | Kelime/kategori girilir, API gerçek veriyle test edilir | `TASK/TASK_B_admin_panel.md` |
 | **C** | Web app (`/web`) | Tarayıcıda hızlı test, mobile referans | `TASK/TASK_C_web_app.md` |
@@ -36,10 +37,18 @@
 > içerik olarak C/D'deki gerçek ürün özelliklerine referans verir) ama kod olarak A-E'den
 > **bağımsızdır** — istenirse daha erken de başlanabilir.
 
+> **Not (2026-08-21 — Faz 00 eklendi):** Admin/Web/Mobil/Site'nin aynı button/component/token'ı
+> paylaşması için `frontend/` pnpm monorepo'su (`packages/design-tokens` + `packages/ui-web`) B-01'den
+> önce kurulur — harf dizisinin (A/B/C/D/F) dışında/önünde `00` olarak numaralandı çünkü hiçbir tek
+> faza ait değil, dördünün ortak zemini. Faz A'ya bağımlı değil (paralel yürüyebilir), yalnızca
+> B-01'i bloklar (B-01 `frontend/packages/*`'i gerçek ilk tüketici olarak kullanır). İkon kütüphanesi
+> kararı (Phosphor Icons) da bu fazda netleşti — bkz. `CLAUDE.md §4.1`, `DESIGN_SYSTEM.md §7/§8`.
+
 ## İlerleme Durumu
 
 | Faz | Task Aralığı | Başlık | Durum |
 |-----|--------------|--------|-------|
+| 00 | 00-01…00-04 | Ortak Frontend Altyapısı | ⬜ |
 | A | A-01…A-20 | Backend | 🔄 |
 | B | B-01…B-09 (+B-02.1) | Admin Panel | 🔄 |
 | C | C-01…C-12 | Web App | ⬜ |

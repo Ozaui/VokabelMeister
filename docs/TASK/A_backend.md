@@ -513,7 +513,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       `ISecurityLogger` mevcut `LogEventType.PasswordReset`'i yeniden kullanır (yeni enum değeri
       AÇILMAZ — Detail Code'u `PASSWORD_CHANGED` ile `PASSWORD_RESET`'ten ayrışır)
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Admin panel bağlantısı:** `admin/src/store/slices/languageSlice.ts`/`themeSlice.ts` (B-01'de
+- [ ] **Admin panel bağlantısı:** `frontend/admin/src/store/slices/languageSlice.ts`/`themeSlice.ts` (B-01'de
       yalnızca `localStorage`'a yazıyordu) bu API'ye bağlanır — dil/tema değiştirildiğinde hem
       `localStorage` hem backend güncellenir, başka cihazda login'de `AuthUserDto`'dan senkron okunur
 - [ ] ➜ **AKADEMI/backend'ye işle**
