@@ -480,8 +480,8 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       havuzu, + `ConsecutiveIncorrect`/`IsSuspended` leech alanları), `LearningHistory` (+
       `HintUsed`/`IsExtraPractice`/`MasteryBefore`/`MasteryAfter`), `Achievements`/`UserAchievements` + migration
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5 + `CalculateMastery` yüzdelik formülü)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5 + `CalculateMastery` yüzdelik formülü)
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları, Mastery formülü)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IProgressService`/`ProgressService` (XP, streak **yalnızca günlük yeni kelime hedefine

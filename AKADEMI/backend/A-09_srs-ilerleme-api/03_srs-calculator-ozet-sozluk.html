@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'srs-calculator-ozet-sozluk',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '02_gecmis-basarim-migration.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'SrsCalculator — SM-2 Algoritması',
+        altBaslik: 'Bölüm 1-2\'de yalnızca DURUMU tutulan SM-2 alanlarını (EasinessFactor/IntervalDays/CurrentLevel) gerçekten HESAPLAYAN saf fonksiyon.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Bir Servis Arayüzü Değil, Static Bir Sınıf?',
+        aciklama: 'Projedeki diğer TÜM servisler (`OtpService`, `PasswordService`, `ActivityLogger`...) bir arayüz (`IOtpService` vb.) üzerinden DI konteynerine kayıtlı, instance tabanlı sınıflar. `SrsCalculator` bu desenin DIŞINDA — `ISrsCalculator` arayüzü YOK, `services.AddScoped<...>` ile kayıt YOK, doğrudan `SrsCalculator.Calculate(...)` olarak çağrılıyor.',
+        neden: 'Diğer servisler I/O\'ya (e-posta gönderme, veritabanı, dış API) ya da DEĞİŞEBİLEN bir duruma (OTP\'nin süresi, token\'ın geçerliliği) bağımlı — testte GERÇEK bir e-posta göndermemek ya da GERÇEK bir saat beklememek için mock\'lanmaları GEREKİR. `SrsCalculator` ise saf bir matematik fonksiyonu: AYNI dört sayı (currentLevel/repetitionNumber/easinessFactor/quality) HER ZAMAN AYNI sonucu üretir, hiçbir dış kaynağa DOKUNMAZ — mock\'lanacak bir şey YOK, testler doğrudan gerçek metodu çağırıp sonucu KARŞILAŞTIRIR.',
+        olmasaydi: 'Bir `ISrsCalculator` arayüzü + DI kaydı yazılsaydı, `ProgressService`/`LearningSessionService`\'in (A-09\'un SONRAKİ bölümleri) HER TEST DOSYASI bu arayüzü Moq ile SAHTELEMEK zorunda kalırdı — gerçek SM-2 matematiğini test ETMEDEN, yalnızca "doğru parametrelerle çağrıldı mı" diye YÜZEYSEL bir kontrol yapılmış olurdu; static çağrı ise GERÇEK hesaplamayı her testte ÇALIŞTIRIR.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'SM-2\'nin İki Dalı: Başarısız Cevap (quality<3) ve Başarılı Cevap (quality>=3)',
+        aciklama: '`Calculate` tek bir `if` ile ikiye ayrılır: `quality<3` (0/1/2 — bilmedim/zor/yanlış) tamamen FARKLI bir davranış izler (interval SIFIRLANIR, level SIFIRLANIR), `quality>=3` (3/4/5 — doğru/iyi/çok kolay) ise interval\'i BÜYÜTÜR, level\'i 1 artırır.',
+        neden: 'SM-2\'nin temel varsayımı: bir kelimeyi YANLIŞ hatırlamak, o kelimenin daha önce KATEDİLEN mesafeyi (repetition geçmişi) GEÇERSİZ kılar — kullanıcı 10 kez üst üste doğru bilse bile, 11. seferde YANLIŞ yaparsa bu kelime yeniden "YENİ öğreniliyormuş" gibi ele ALINIR (level 0, interval 1 gün).',
+        olmasaydi: 'Başarısız cevapta interval/level SIFIRLANMASAYDI (ör. yalnızca biraz KÜÇÜLTÜLSEYDİ), bir kelimeyi GERÇEKTEN unutan bir kullanıcı hâlâ UZUN bir aralıkla (ör. 20 gün sonra) tekrar EDERDİ — kelime tam UNUTULMUŞKEN bir sonraki karşılaşma ÇOK GEÇ gelir, kullanıcı o kelimeyi TAMAMEN kaybederdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'SrsCalculator.cs',
+        dosyaYolu: 'backend/Zausel.Application/Services/SrsCalculator.cs',
+        nedenBuKlasor: 'Application/Services/ — diğer TÜM servislerle (OtpService, PasswordService...) AYNI flat klasör; static olup arayüzsüz olması yalnızca BU dosyanın YANINDA bir `Interfaces/Services/ISrsCalculator.cs` dosyası OLMAMASI anlamına gelir, klasör konumunu DEĞİŞTİRMEZ.',
+        kod: `namespace Zausel.Application.Services;
+
+public static class SrsCalculator
+{
+    // SM-2 — quality: 0-5 (kullanıcı öz değerlendirmesi)
+    public static (int intervalDays, int newLevel, decimal newEF) Calculate(
+        int currentLevel, int repetitionNumber, decimal easinessFactor, int quality)
+    {
+        // quality < 3 → yanlış/çok zor → başa dön (EF düşer ama 1.3'ün altına inmez)
+        if (quality < 3)
+            return (1, 0, Math.Max(1.3m, easinessFactor - 0.2m));
+
+        int interval = repetitionNumber == 0 ? 1
+                     : repetitionNumber == 1 ? 3
+                     : (int)Math.Round((repetitionNumber - 1) * easinessFactor);
+
+        // EF = EF + (0.1 - (5-q)*(0.08 + (5-q)*0.02))
+        decimal newEF = easinessFactor + (0.1m - (5 - quality) * (0.08m + (5 - quality) * 0.02m));
+        newEF = Math.Max(1.3m, newEF);
+        return (interval, Math.Min(currentLevel + 1, 5), newEF);
+    }
+
+    // Mastery: yüzdelik (0-100), CurrentLevel baskın + SuccessRate ince ayar
+    public static decimal CalculateMastery(int currentLevel, decimal successRate) =>
+        Math.Round((currentLevel / 5.0m) * 80 + (successRate / 100.0m) * 20, 2);
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.Services;', aciklama: 'Diğer TÜM servislerle (`OtpService`, `PasswordService`...) AYNI flat ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public static class SrsCalculator', aciklama: 'Static — instance oluşturulmaz, DI kaydı YOK; bir üstteki kavram slaydının gerekçesi: saf, dış bağımlılığı olmayan bir hesaplama.', neden: null, olmasaydi: null },
+          { satir: 'public static (int intervalDays, int newLevel, decimal newEF) Calculate(', aciklama: 'Üç değeri (yeni aralık, yeni seviye, yeni EF) TEK çağrıda dönen bir C# tuple — bu üç değer HER ZAMAN BİRLİKTE üretilip BİRLİKTE kullanıldığı için (çağıran taraf UserProgress\'in üç alanını da AYNI review sonucuna göre günceller) ayrı bir `SrsResult` sınıfı yazmaya GEREK yok.', neden: 'Bu üç değer birbirinden BAĞIMSIZ hesaplanamaz — `newLevel` ve `newEF`, `interval`in DAYANDIĞI aynı `quality` girdisine bağlı, üç ayrı metoda BÖLÜNSEYDİ ya AYNI hesaplama (quality<3 kontrolü) üç kez TEKRARLANIRDI ya da üçü ARASINDA tutarlılığı sağlamak çağıran koda DÜŞERDİ.', olmasaydi: 'Ayrı bir `SrsResult` sınıfı yazılsaydı, YALNIZCA bu tek metodun dönüş değeri için var olan, başka HİÇBİR yerde kullanılmayan bir tip projeye eklenmiş olurdu — üç elemanlı bir tuple, C#\'ın isimlendirilmiş alanlarıyla (`intervalDays`/`newLevel`/`newEF`) AYNI okunabilirliği, fazladan bir dosya OLMADAN sağlıyor.' },
+          { satir: 'int currentLevel, int repetitionNumber, decimal easinessFactor, int quality)', aciklama: 'Dört saf değer parametresi — bir `UserProgress`/`UserCardProgress` NESNESİ değil, yalnızca gereken dört alan ayrı ayrı geçilir.', neden: 'Bu metodun hem `UserProgress` hem `UserCardProgress`\'ten (Bölüm 1) çağrılabilmesi gerekiyor — bir entity parametresi alsaydı (ör. `Calculate(UserProgress progress, int quality)`), Application katmanındaki bu saf hesaplama sınıfı Domain\'deki BELİRLİ bir entity tipine BAĞIMLI olurdu ve UserCardProgress için ya AYNI metot tekrar yazılır ya da uydurma bir ortak arayüz (`IProgressEntity`) eklenirdi.', olmasaydi: 'Entity parametresi alsaydı, `SrsCalculatorTests` (bir SONRAKİ adım) her test senaryosu için TAM bir `UserProgress` nesnesi KURMAK zorunda kalırdı (Id/UserId/WordId gibi bu hesaplamayla İLGİSİZ alanları da doldurarak) — dört saf sayı ile çağırmak, testin YALNIZCA SM-2 matematiğine odaklanmasını sağlar.' },
+          { satir: 'if (quality < 3)', aciklama: 'SM-2\'nin başarı eşiği — 0/1/2 "başarısız", 3/4/5 "başarılı" sayılır (3, "biraz zorlanarak ama doğru hatırlama"nın ALT sınırı).', neden: null, olmasaydi: null },
+          { satir: 'return (1, 0, Math.Max(1.3m, easinessFactor - 0.2m));', aciklama: 'Başarısız cevap: interval 1 güne, level 0\'a (baştan) DÖNER; EF 0.2 düşer ama `Math.Max` ile 1.3\'ün altına ASLA inmez.', neden: 'EF\'in bir TABANI olmazsa, sürekli yanlış cevaplanan bir kelimenin EF\'i sınırsız KÜÇÜLÜR — bu değer aşağıdaki `interval` formülünde (repetitionNumber>=2 dalı) ÇARPAN olarak kullanıldığı için, EF çok küçülürse interval NEREDEYSE SIFIRA ya da negatife yakınsardı.', olmasaydi: '1.3 tabanı olmasaydı, `(int)Math.Round((repetitionNumber-1)*easinessFactor)` formülü NEGATİF ya da SIFIR bir interval üretebilirdi — "yarın tekrar et" yerine GEÇMİŞTE bir tarihe işaret eden, `NextReviewAt`\'i ANLAMSIZ kılan bir sonuç ortaya çıkardı.' },
+          { satir: 'int interval = repetitionNumber == 0 ? 1', aciklama: 'İlk BAŞARILI tekrar: sabit 1 gün sonra.', neden: null, olmasaydi: null },
+          { satir: ': repetitionNumber == 1 ? 3', aciklama: 'İkinci BAŞARILI tekrar: sabit 3 gün sonra — SM-2\'nin standart, EF\'ten BAĞIMSIZ ikinci aralığı.', neden: 'SM-2 ilk iki tekrarı SABİT tutar, EF\'i henüz devreye SOKMAZ — EF\'in güvenilir bir sinyal OLABİLMESİ için birkaç tekrarlık bir geçmişe (kullanıcının bu kelimeyle ne kadar ZORLANDIĞINA dair veri) ihtiyacı vardır, ilk 1-2 tekrarda bu veri henüz YOKTUR.', olmasaydi: 'İlk tekrardan itibaren EF ile çarpılan bir formül kullanılsaydı, EF\'in henüz varsayılan (2.5) değerinde olduğu bir anda hesaplanan interval GERÇEK zorluk seviyesini YANSITMAZDI — ilk birkaç tekrar SM-2\'nin "ısınma" evresidir.' },
+          { satir: ': (int)Math.Round((repetitionNumber - 1) * easinessFactor);', aciklama: 'Üçüncü ve sonraki BAŞARILI tekrarlarda interval, ÖNCEKİ tekrar sayısının EF katı kadar UZAR — kullanıcı bir kelimeyi ne kadar KOLAY buluyorsa (yüksek EF), aralık o kadar HIZLI büyür.', neden: 'Bu, SM-2\'nin "her başarılı tekrarda aralığı KATLANARAK artır" prensibinin matematiksel karşılığı — sabit bir çarpan (ör. HER ZAMAN ×2) yerine KİŞİSEL bir EF kullanmak, kolay ve zor kelimelerin FARKLI tempoda ilerlemesini sağlar.', olmasaydi: 'Sabit bir katsayı kullanılsaydı, kullanıcının BİR kelimeyi ne kadar kolay/zor bulduğuna dair TÜM geçmiş (EF\'in kendisi) hesaplamaya hiç KATILMAZDI — SM-2\'nin "kişiye ve kelimeye ÖZGÜ tempo" fikri kaybolur, sistem düz bir sabit-aralıklı tekrara İNERDİ.' },
+          { satir: 'decimal newEF = easinessFactor + (0.1m - (5 - quality) * (0.08m + (5 - quality) * 0.02m));', aciklama: 'EF\'in kalite puanına göre GÜNCELLENMESİ — `(5-quality)` terimi "mükemmellikten UZAKLIK"ı ölçer: quality=5\'te bu terim 0 (EF yalnızca +0.1 artar), quality=3\'te bu terim 2 (parantez içi negatif bir düzeltme YAPAR, EF AZALIR).', neden: 'SM-2\'nin orijinal formülü budur — EF\'in "çok kolay" cevaplarda YÜKSELİP "zar zor doğru" cevaplarda DÜŞMESİ, bir SONRAKİ interval hesaplamasının kullanıcının GERÇEK zorluk algısını YANSITMASINI sağlar.', olmasaydi: 'EF sabit kalsaydı (ör. hep 2.5), yukarıdaki `interval` formülü TÜM kelimeler için AYNI hızda büyürdü — SM-2\'nin "zor kelimeler daha SIK, kolay kelimeler daha SEYREK tekrar edilir" temel vaadi YERİNE GELMEZDİ.' },
+          { satir: 'newEF = Math.Max(1.3m, newEF);', aciklama: 'BAŞARILI cevap dalında da AYNI 1.3 tabanı — düşük ama YİNE DE başarılı sayılan bir quality (3) ile bile EF\'in 1.3\'ün altına inmemesi garanti edilir.', neden: null, olmasaydi: null },
+          { satir: 'return (interval, Math.Min(currentLevel + 1, 5), newEF);', aciklama: 'Level HER başarılı cevapta 1 artar ama `Math.Min` ile 5\'i (otomatik hatırlama, en üst seviye) AŞMAZ.', neden: '`CurrentLevel`\'ın 0-5 aralığında KALMASI, `UserProgress.CurrentLevel`\'ın (Bölüm 1) belgelenen anlamıyla ("0=hiç görülmedi..5=otomatik hatırlama") BİREBİR eşleşir.', olmasaydi: 'Bu üst sınır olmasaydı, sürekli doğru cevaplanan bir kelimenin level\'ı 6, 7, 100\'e kadar SINIRSIZ artardı — `ProgressService`\'in (A-09\'un SONRAKİ bir bölümü) "0-5 aralığında bir seviye" varsayımına dayanan HER KOD (ör. bir ilerleme çubuğu `level/5` oranıyla çizen Web/Mobil ekranı) YANLIŞ bir değer GÖSTERİRDİ.' },
+          { satir: 'public static decimal CalculateMastery(int currentLevel, decimal successRate) =>', aciklama: 'Mastery hesaplayan ikinci, `Calculate`\'ten BAĞIMSIZ metot — bir review SONRASI değil, `GET /progress/summary` gibi bir OKUMA anında da çağrılabilir (yalnızca mevcut `CurrentLevel`/`SuccessRate`\'e ihtiyaç duyar, review geçmişine DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'Math.Round((currentLevel / 5.0m) * 80 + (successRate / 100.0m) * 20, 2);', aciklama: '80/20 ağırlıklı ortalama — `CurrentLevel` (0-5, /5 ile yüzdeye çevrilip ×80) BASKIN faktör, `SuccessRate` (zaten yüzde, ×20) İNCE AYAR.', neden: 'Mastery\'nin ÇOĞUNLUĞUNUN (80 puanlık kısım) "bu kelime SM-2 sürecinde ne kadar İLERLEDİ" (level) sorusuna bağlı olması, YALNIZCA şans eseri birkaç doğru cevapla (yüksek SuccessRate ama düşük level) yüksek bir Mastery\'ye ULAŞILMASINI engeller — asıl ilerleme SİNYALİ level\'dır, SuccessRate yalnızca AYNI level\'daki iki kullanıcıyı birbirinden AYIRAN bir düzeltmedir.', olmasaydi: 'Yalnızca SuccessRate kullanılsaydı, bir kelimeyi SADECE 2 kez görüp İKİSİNDE de doğru cevaplayan bir kullanıcı (%100 SuccessRate, level muhtemelen 1) o kelimeyi 20 kez görüp SM-2\'nin ÜST seviyelerine TAŞIMIŞ (level 5) bir kullanıcıyla AYNI Mastery\'yi (100) gösterirdi — "ustalık" kavramı YANLIŞ temsil edilirdi.' }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'SM-2', tanim: 'Bölüm 1\'de entity seviyesinde yalnızca DURUMU tutulan (`EasinessFactor`/`IntervalDays`/`RepetitionNumber`/`NextReviewAt`), bu bölümde `SrsCalculator.Calculate` ile GERÇEKTEN hesaplanan aralıklı tekrar algoritması — her başarılı cevapta tekrar aralığını EF\'e göre UZATIR, her başarısız cevapta level/interval\'i SIFIRLAR.' },
+          { terim: 'Quality (0-5)', tanim: 'Kullanıcının bir soruya verdiği cevabın "kalite puanı" — `Calculate`\'in dördüncü parametresi. Kaynağı soru tipine göre değişir: `Flashcard`\'da kullanıcı DOĞRUDAN seçer (🔴 Bilmedim=0 · 🟠 Zor=2 · 🟢 İyi=4 · 🔵 Çok Kolay=5), objektif tiplerde (`MultipleChoice` vb.) `IsCorrect`+`ResponseTime`+`HintUsed`\'den OTOMATİK hesaplanır (A-09\'un SONRAKİ bir bölümü) — bu bölüm yalnızca puan ZATEN hesaplanmışken SM-2\'yi nasıl GÜNCELLEDİĞİNİ kapsar.' },
+          { terim: 'Leech', tanim: 'Bir türlü öğrenilemeyen, ardışık yanlış cevap alan kelime — `ConsecutiveIncorrect>=5` eşiği (A-09\'un SONRAKİ bir bölümündeki `ProgressService`\'te) bu kelimeleri tespit edip `IsSuspended` bayrağıyla review havuzundan GEÇİCİ olarak ÇIKARIR; `SrsCalculator`\'ın KENDİSİ leech tespiti YAPMAZ, yalnızca `ConsecutiveIncorrect`\'i hangi review\'un ARTIRDIĞINI/sıfırladığını belirleyen `quality<3` dalını sağlar.' },
+          { terim: 'Mastery bantları', tanim: '`CalculateMastery`\'nin ürettiği 0-100 değerin `ProgressService`\'te (A-09\'un SONRAKİ bir bölümü) yorumlanma şekli — 🔴 Zayıf 0-40 · 🟡 Orta 40-70 · 🟢 İyi 70-100, bu bölümde HENÜZ uygulanmadı, yalnızca ham SAYI üretiliyor.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-09 Şimdiye Kadar — Entity + Migration + SrsCalculator',
+        maddeler: [
+          'Bölüm 1-2: `UserProgress`/`UserCardProgress` (BaseEntity, mutable SM-2 durumu), `LearningHistory`/`UserAchievement` (BaseEntity\'siz, insert-only), `Achievement` (BaseEntity\'siz, statik referans) + migration — gerçek `ZauselDB`\'ye uygulanıp canlı doğrulandı.',
+          'Bölüm 3: `SrsCalculator` (static, DI\'siz) — `Calculate` (quality<3 sıfırlama, EF 1.3 tabanı, repetitionNumber 0/1/2+ için üç farklı interval kuralı, level 0-5 sınırı) + `CalculateMastery` (80/20 ağırlıklı yüzdelik formül).',
+          'Kapsam DIŞI (A-09\'un SONRAKİ adımları): `SrsCalculatorTests` (bir SONRAKİ görev — bu bölümde YAZILMADI), `IProgressService`/`ProgressService`/`ProgressController` (XP, streak, leech tespiti, Mastery bantlarının UYGULANMASI), `IAchievementService`/`AchievementService` (seed veri + kilit açma mantığı).',
+          'Tüm paket (`dotnet build`) SrsCalculator eklendikten sonra da hatasız derlendi — bu bölümde birim test YAZILMADIĞI için `dotnet test` sonucu bir ÖNCEKİ bölümle (203/203) AYNI kaldı.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
