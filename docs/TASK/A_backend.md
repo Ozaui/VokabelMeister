@@ -484,11 +484,24 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [x] ➜ **AKADEMI/backend'ye işle**
 - [x] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları, Mastery formülü)
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IProgressService`/`ProgressService` (XP, streak **yalnızca günlük yeni kelime hedefine
+> ⚠️ **[2026-08-21] Gerçekleşen tasarım, madde metninden 3 noktada saptı (kayıt altına alınmış
+> kararlar):** (1) `IProgressService`/`Service` deseni **yazılmadı** — A-08'deki AYNI gerekçeyle
+> kanonik MediatR Query/Command deseni izlendi: `GetProgressSummaryQuery`/`GetProgressWordsQuery`/
+> `GetSuspendedWordsQuery`/`ApplyWordLeechActionCommand`. (2) "XP, streak yalnızca günlük yeni
+> kelime hedefine bağlı" ve "yeni kelime seçim sorgusu" **bilerek eklenmedi** — bu görevin dört
+> controller endpoint'inin (summary/words/suspended/leech-action) HİÇBİRİ bu mantığı tetiklemiyor;
+> XP/streak'in gerçek yazma noktası (bir review tamamlandığında) A-11'in `LearningSessionService`'i,
+> yeni kelime seçimi A-11'in `mode: New` oturum başlatması — o handler'lar yazılmadan bu mantığı
+> BAŞTAN kodlamak spekülatif olurdu. (3) `/user-cards/{cardId}/leech-action` **eklenmedi** —
+> `UserCard`/`UserCardController` A-10'da gelene kadar hedef entity/route yok; yalnızca
+> `/words/{wordId}/leech-action` (`WordsController`'a eklendi) bu görevde yazıldı. Leech **tespiti**
+> (ConsecutiveIncorrect≥5'e ulaşma) de A-11'in review-yazma akışının işi — bu görev yalnızca ZATEN
+> tespit edilmiş bir leech'e Suspend/Reset/Continue AKSİYONUNU uygular.
+- [x] `IProgressService`/`ProgressService` (XP, streak **yalnızca günlük yeni kelime hedefine
       bağlı**, Mastery bantları Zayıf/Orta/İyi 0-40/40-70/70-100, yeni kelime seçim sorgusu,
       leech tespiti `ConsecutiveIncorrect>=5` → Suspend/Reset/Continue), `ProgressController`
       (`GET /progress/summary`, `GET /progress/words`, `GET /progress/suspended`, leech-action endpoint'leri)
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IAchievementService`/`AchievementService` (seed: streak 3/7/30, kelime sayısı 50/200/500, ilk
       `CurrentLevel=5`, 100 kelime İyi bantta, hatasız oturum, leech kurtarma), `GET /achievements/me`
 - [ ] ➜ **AKADEMI/backend'ye işle**

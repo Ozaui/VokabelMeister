@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-ve-summary',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '04_srs-calculator-testleri.html',
+    sonrakiBolum: '06_sorgular-komut-controller-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'Repository Katmanı ve GetProgressSummaryQuery',
+        altBaslik: 'Bölüm 1-4\'te yalnızca TUTULAN SM-2 durumu, artık ProgressController\'ın (Bölüm 6) okuyacağı gerçek sorgulara dönüşüyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden İki Ayrı Repository, Neden Biri Çok Daha Dar?',
+        aciklama: '`IUserProgressRepository` beş metotla (özet sayımı, bant/askıya-alınmış listeleme, leech aksiyonu için tekil okuma, güncelleme, kaydetme) geniş bir yüzey sunarken, `IUserCardProgressRepository` YALNIZCA `GetSnapshotsAsync` — TEK bir metot — taşır.',
+        neden: 'Bant/askıya-alınmış LİSTELEME (`GetByMasteryRangeAsync`/`GetSuspendedAsync`), kelimenin GÖRÜNTÜ metnini (`Word.Text`) gerektirir — sistem kelimesi için bu `Words` tablosuna JOIN ile mümkün, ama kişisel kart için gereken `UserCards` tablosu HENÜZ yok (A-10\'da gelir). ÖZET sayımı (`GetSnapshotsAsync`) ise yalnızca `Mastery`/`NextReviewAt`/`IsSuspended` sayısal alanlarına ihtiyaç duyar — METİN gerektirmediği için `UserCards` beklemeden BUGÜN yazılabilir.',
+        olmasaydi: '`IUserCardProgressRepository`\'ye de bant/askıya-alınmış listeleme metotları EKLENSEYDİ, bu metotlar ya derlenemeyen bir `UserCards` JOIN\'i içerirdi ya da metin alanları hep `null`/boş dönen, hiçbir zaman GERÇEK bir istemcinin kullanamayacağı YARIM bir sözleşme olurdu — ikisi de A-10 gelene kadar test EDİLEMEYEN, spekülatif kod anlamına gelirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'ProgressSnapshot.cs ve WordProgressItem.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Srs/ProgressSnapshot.cs',
+        nedenBuKlasor: 'Interfaces/Repositories/Srs/ — `CategoryAggregate`\'in (A-06) Content domain\'indeki AYNI deseni: repository\'nin döndürdüğü şekil, arayüzle AYNI klasörde AYRI bir dosyada yaşar.',
+        kod: `namespace Zausel.Application.Interfaces.Repositories.Srs;
+
+// GetProgressSummaryQuery'nin bant/due sayımı için ihtiyaç duyduğu üç alan — UserProgress VE
+// UserCardProgress'in İKİSİNDEN de AYNI şekilde üretilir, iki tabloyu TEK bir sayım mantığında birleştirir.
+public record ProgressSnapshot(decimal Mastery, DateTime? NextReviewAt, bool IsSuspended);
+
+namespace Zausel.Application.Interfaces.Repositories.Srs;
+
+// UserProgressRepository'nin bant/askıya-alınmış listeleme metotlarının döndürdüğü şekil —
+// UserProgress tek başına anlamsız (kelimenin metnini taşımaz), Word'le CategoryAggregate'in
+// Translations deseniyle AYNI şekilde (navigation property YOK) elle birleştirilir.
+public record WordProgressItem(
+    int WordId, string Text, string? Definition, int CurrentLevel, decimal Mastery,
+    DateTime? NextReviewAt, bool IsSuspended, int ConsecutiveIncorrect);`,
+        satirlar: [
+          { satir: 'namespace Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'İki kaydın da (ProgressSnapshot, WordProgressItem — İKİ AYRI dosyada) yaşadığı ad alanı — arayüzle (`IUserProgressRepository`) AYNI ad alanında olmaları, Handler\'ların bu kayıtları arayüzle BİRLİKTE, ayrı bir `using` EKLEMEDEN kullanabilmesini sağlar.', neden: null, olmasaydi: null },
+          { satir: 'public record ProgressSnapshot(decimal Mastery, DateTime? NextReviewAt, bool IsSuspended);', aciklama: 'Üç alanlı, MİNİMAL bir projeksiyon — `UserProgress`/`UserCardProgress`\'in TAMAMI değil, yalnızca özet SAYIMI için gereken üç alan.', neden: 'Repository `UserProgress` nesnelerinin TAMAMINI döndürseydi, EF Core veritabanından TÜM sütunları (TimesCorrect, EasinessFactor, IntervalDays...) çekerdi — sayım için yalnızca ÜÇ alan gerekirken, kullanılmayan onlarca alanı ağdan TAŞIMAK gereksiz bir maliyet olurdu.', olmasaydi: 'Tam entity döndürülseydi, `GetProgressSummaryQueryHandler`\'ın `Concat` ile birleştirdiği İKİ liste (UserProgress + UserCardProgress) FARKLI tiplerde (`UserProgress` vs `UserCardProgress`) olurdu — TEK bir `foreach` döngüsünde İKİSİNİ de işlemek İMKANSIZ olurdu, ayrı ayrı iki döngü YAZILMASI gerekirdi.' },
+          { satir: 'public record WordProgressItem(', aciklama: 'Sekiz alanlı, DAHA GENİŞ bir projeksiyon — `ProgressWordResponse`/`SuspendedWordResponse`\'un (Bölüm 6) İKİSİNİN de ihtiyaç duyduğu TÜM alanları TEK bir tipte toplar, Handler\'lar yalnızca kullanmadıkları alanı GÖRMEZDEN gelir.', neden: null, olmasaydi: null },
+          { satir: 'int WordId, string Text, string? Definition, int CurrentLevel, decimal Mastery,', aciklama: '`WordId`/`Text`/`Definition` — Word JOIN\'inden gelen alanlar; `CurrentLevel`/`Mastery` — UserProgress\'in kendi alanları.', neden: null, olmasaydi: null },
+          { satir: 'DateTime? NextReviewAt, bool IsSuspended, int ConsecutiveIncorrect);', aciklama: '`NextReviewAt` yalnızca `ProgressWordResponse`\'ta, `ConsecutiveIncorrect` yalnızca `SuspendedWordResponse`\'ta kullanılır — İKİSİ de BURADA taşınır, hangi Handler\'ın hangisini SEÇECEĞİ Bölüm 6\'da belli olur.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserProgressRepository.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Srs/IUserProgressRepository.cs',
+        kod: `using Zausel.Domain.Entities.Srs;
+
+namespace Zausel.Application.Interfaces.Repositories.Srs;
+
+public interface IUserProgressRepository
+{
+    // GetProgressSummaryQuery'nin bant/due sayımı için — UserCardProgressRepository'nin AYNI
+    // metoduyla BİRLEŞTİRİLİR (bkz. ProgressSnapshot).
+    Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default);
+
+    // maxExclusive=null → üst sınır yok ("İyi" bandı, Mastery hiçbir zaman 100'ü aşmaz).
+    Task<List<WordProgressItem>> GetByMasteryRangeAsync(
+        int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default);
+
+    Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default);
+
+    // Leech aksiyonu (Suspend/Reset/Continue) için — sahiplik filtresi (UserId+WordId) gömülü.
+    Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default);
+
+    Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı — `GetByUserAndWordAsync`/`UpdateAsync`\'in dönüş/parametre tipi.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'Bölüm 1\'de Domain/Entities/Srs/ için kurulan desenin Application katmanındaki KARŞILIĞI.', neden: null, olmasaydi: null },
+          { satir: 'public interface IUserProgressRepository', aciklama: '`IUserCategoryRepository` ile AYNI desen — Application katmanı bu arayüze bağımlı, GERÇEK implementasyon testte Moq ile SAHTELENEBİLİR.', neden: null, olmasaydi: null },
+          { satir: 'Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default);', aciklama: '`GET /progress/summary`\'nin temel veri kaynağı.', neden: null, olmasaydi: null },
+          { satir: 'Task<List<WordProgressItem>> GetByMasteryRangeAsync(', aciklama: '`GET /progress/words?band=`\'in temel veri kaynağı — bant AD olarak DEĞİL, ZATEN hesaplanmış `min`/`max` Mastery sınırları olarak geçirilir (bant→aralık dönüşümü Handler\'ın işi, Bölüm 6).', neden: 'Repository\'nin "Weak"/"Medium"/"Good" gibi bir STRING almak yerine SAYISAL bir aralık alması, bant EŞİKLERİNİN (0-40/40-70/70-100) iş kuralı olarak Handler\'da KALMASINI sağlar — repository yalnızca "bu aralıktaki satırları GETİR" bilir, bandın NE anlama geldiğini BİLMEZ.', olmasaydi: 'Repository bant adını ALSAYDI, eşik değerleri (0/40/70/100) Infrastructure katmanına SIZARDI — bu sayılar DEĞİŞTİĞİNDE (ör. ileride "Zayıf" eşiği 0-40\'tan 0-35\'e çekilse) bir Infrastructure dosyasının da GÜNCELLENMESİ gerekirdi, iş kuralı TEK bir yerde YAŞAMAZDI.' },
+          { satir: 'int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default);', aciklama: 'İmzanın ikinci satırı — `maxExclusive` NULLABLE, "İyi" bandının üst sınırsız olduğunu (Mastery formülü hiçbir zaman 100\'ü AŞMAZ) sözleşmeye TAŞIR.', neden: null, olmasaydi: null },
+          { satir: 'Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default);', aciklama: '`GET /progress/suspended`\'ın temel veri kaynağı.', neden: null, olmasaydi: null },
+          { satir: 'Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default);', aciklama: 'Nullable dönüş — `IUserCategoryRepository.GetByIdForUserAsync` ile AYNI desen: kayıt YOKSA ya da başka bir kullanıcıya AİTSE (bu tabloda pratikte İKİNCİSİ olmaz, WordId+UserId birlikte ARANDIĞI için) `null`, Handler bunu 404\'e ÇEVİRİR.', neden: null, olmasaydi: null },
+          { satir: 'Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);', aciklama: 'Leech aksiyonunun (Suspend/Reset) MUTASYONUNU değişiklik izleyiciye işaretler.', neden: null, olmasaydi: null },
+          { satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);', aciklama: '`IUserCategoryRepository` ile AYNI desen — gerçek veritabanı yazımı Handler\'ın KONTROLÜNDE kalır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserProgressRepository.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/Srs/UserProgressRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/Srs/ — arayüzün Application klasörüyle BİREBİR eşleşen implementasyon klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Infrastructure.Data;
+
+namespace Zausel.Infrastructure.Repositories.Srs;
+
+public class UserProgressRepository : IUserProgressRepository
+{
+    private readonly ZauselDbContext _context;
+
+    public UserProgressRepository(ZauselDbContext context) => _context = context;
+
+    public async Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        // Silinmiş (IsDeleted) bir kelimenin ilerlemesi sayıma girmez — aksi halde bant/due sayıları,
+        // GetByMasteryRangeAsync/GetSuspendedAsync'in (Word'e JOIN yaptığı için zaten hariç tuttuğu)
+        // listelerle TUTARSIZ bir toplam gösterirdi.
+        var activeWordIds = _context.Words.Select(w => w.Id);
+        return await _context.UserProgress
+            .Where(p => p.UserId == userId && activeWordIds.Contains(p.WordId))
+            .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<WordProgressItem>> GetByMasteryRangeAsync(
+        int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default)
+    {
+        var query = _context.UserProgress.Where(p => p.UserId == userId && p.Mastery >= minInclusive);
+        if (maxExclusive.HasValue)
+            query = query.Where(p => p.Mastery < maxExclusive.Value);
+
+        var progressRows = await query.ToListAsync(cancellationToken);
+        return await JoinWithWordsAsync(progressRows, cancellationToken);
+    }
+
+    public async Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var progressRows = await _context.UserProgress
+            .Where(p => p.UserId == userId && p.IsSuspended)
+            .ToListAsync(cancellationToken);
+        return await JoinWithWordsAsync(progressRows, cancellationToken);
+    }
+
+    public async Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default) =>
+        await _context.UserProgress.FirstOrDefaultAsync(p => p.UserId == userId && p.WordId == wordId, cancellationToken);
+
+    public Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)
+    {
+        userProgress.UpdatedByUserId = userId;
+        _context.UserProgress.Update(userProgress);
+        return Task.CompletedTask;
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+
+    // Word navigation property'si yok (CategoryRepository'nin Language/Translation birleştirmesiyle
+    // AYNI desen) — kelime metnini almak için ayrı bir sorgu + in-memory Dictionary eşleşmesi.
+    private async Task<List<WordProgressItem>> JoinWithWordsAsync(List<UserProgress> progressRows, CancellationToken cancellationToken)
+    {
+        var wordIds = progressRows.Select(p => p.WordId).Distinct().ToList();
+        var wordsById = await _context.Words.Where(w => wordIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, cancellationToken);
+
+        return progressRows
+            .Where(p => wordsById.ContainsKey(p.WordId))
+            .Select(p =>
+            {
+                var word = wordsById[p.WordId];
+                return new WordProgressItem(
+                    p.WordId, word.Text, word.Definition, p.CurrentLevel, p.Mastery,
+                    p.NextReviewAt, p.IsSuspended, p.ConsecutiveIncorrect);
+            })
+            .ToList();
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`ToListAsync`/`ToDictionaryAsync`/`FirstOrDefaultAsync` gibi async LINQ uzantı metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'Implemente edilen arayüzün VE `ProgressSnapshot`/`WordProgressItem`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Word`\'ün ad alanı — `JoinWithWordsAsync`\'in dönüş tipini INŞA ederken kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Data;', aciklama: '`ZauselDbContext`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Repositories.Srs;', aciklama: 'UserProgressRepository.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserProgressRepository : IUserProgressRepository', aciklama: 'Arayüzün TEK implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ZauselDbContext _context;', aciklama: 'EF Core DbContext — `CategoryRepository`/`UserCategoryRepository` ile AYNI, tek bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'public UserProgressRepository(ZauselDbContext context) => _context = context;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default)', aciklama: 'Özet sayımı metodu — gövdesi expression-body DEĞİL, çünkü içinde İKİ AYRI sorgu adımı (aktif WordId\'leri bulma + filtreleme) var.', neden: null, olmasaydi: null },
+          { satir: 'var activeWordIds = _context.Words.Select(w => w.Id);', aciklama: '`CategoryRepository.GetActiveWordCountsAsync`daki (A-06) `activeConceptIds` ile BİREBİR AYNI desen — bu satır HENÜZ veritabanına gitmez (LINQ ifadesi, `IQueryable`), bir SONRAKİ sorguya ALT SORGU olarak GÖMÜLÜR.', neden: null, olmasaydi: null },
+          { satir: 'return await _context.UserProgress', aciklama: 'Ana sorgunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Where(p => p.UserId == userId && activeWordIds.Contains(p.WordId))', aciklama: 'Bu satır CANLI doğrulamada bir GERÇEK tutarsızlığı DÜZELTTİ — bir SONRAKİ kavram slaydında ayrıntısı var.', neden: 'İlk yazılan hâlinde bu `Where` yalnızca `p.UserId == userId` içeriyordu — silinmiş bir kelimeye ait `UserProgress` satırı da SAYILIYORDU, oysa `GetByMasteryRangeAsync`/`GetSuspendedAsync` (Word\'e JOIN yaptığı için) böyle bir satırı zaten GÖSTERMİYORDU. Sonuç: özet sayısı (`weak: 2`) ile bant listesinin GERÇEK eleman sayısı (`1`) BİRBİRİNİ TUTMUYORDU.', olmasaydi: 'Bu düzeltme yapılmasaydı, Web/Mobil\'in ana ekranı ("12 zayıf kelime VAR") ile İncele ekranının GERÇEKTEN gösterdiği liste ("11 kelime GÖRÜNÜYOR") arasında kullanıcının fark edeceği bir SAYI TUTARSIZLIĞI kalıcı olarak YAŞARDI.' },
+          { satir: '.Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended))', aciklama: 'Sadece üç alanı SEÇEN projeksiyon — EF Core bu sayede SQL tarafında da yalnızca üç SÜTUNU çeker, tüm satırı DEĞİL.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken);', aciklama: 'Sorguyu GERÇEKTEN çalıştıran, `IQueryable`\'ı `List`e çeviren çağrı.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<WordProgressItem>> GetByMasteryRangeAsync(', aciklama: 'Bant listeleme metodu.', neden: null, olmasaydi: null },
+          { satir: 'int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default)', aciklama: 'İmzanın ikinci satırı.', neden: null, olmasaydi: null },
+          { satir: 'var query = _context.UserProgress.Where(p => p.UserId == userId && p.Mastery >= minInclusive);', aciklama: 'Alt sınır HER ZAMAN uygulanır — `IQueryable` değişkene atanır, HENÜZ çalıştırılmaz.', neden: null, olmasaydi: null },
+          { satir: 'if (maxExclusive.HasValue)', aciklama: '"İyi" bandı için `maxExclusive` `null` geldiğinde bu blok ATLANIR — üst sınır UYGULANMAZ.', neden: null, olmasaydi: null },
+          { satir: 'query = query.Where(p => p.Mastery < maxExclusive.Value);', aciklama: 'Üst sınır YALNIZCA varsa EKLENİR — `IQueryable` üzerinde `Where` zincirleme, SQL\'e TEK bir sorgu olarak ÇEVRİLİR (iki ayrı sorgu DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'var progressRows = await query.ToListAsync(cancellationToken);', aciklama: 'Sorgu burada GERÇEKTEN çalışır.', neden: null, olmasaydi: null },
+          { satir: 'return await JoinWithWordsAsync(progressRows, cancellationToken);', aciklama: 'Kelime metnini EKLEYEN ortak yardımcı metoda devredilir — `GetSuspendedAsync` da AYNI yardımcıyı kullanır.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default)', aciklama: 'Askıya alınmış kelimeleri listeleme metodu.', neden: null, olmasaydi: null },
+          { satir: 'var progressRows = await _context.UserProgress', aciklama: 'Sorgunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Where(p => p.UserId == userId && p.IsSuspended)', aciklama: 'Yalnızca askıya alınmış satırlar — Mastery aralığı FİLTRESİ YOK (bir kelime hangi bantta olursa olsun askıya alınmış olabilir).', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken);', aciklama: 'Sorgu burada çalışır.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default) =>', aciklama: 'Leech aksiyonu için tekil okuma — expression-body (tek satırlık sorgu).', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserProgress.FirstOrDefaultAsync(p => p.UserId == userId && p.WordId == wordId, cancellationToken);', aciklama: 'İKİ koşul (UserId VE WordId) AYNI WHERE\'de — `UserCategoryRepository.GetByIdForUserAsync` ile AYNI desen, sahiplik filtresi TEK sorguda.', neden: null, olmasaydi: null },
+          { satir: 'public Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)', aciklama: 'Güncelleme metodu — `async` DEĞİL, `Update` senkron.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.UpdatedByUserId = userId;', aciklama: 'Audit alanı — leech aksiyonunu KİMİN uyguladığı.', neden: null, olmasaydi: null },
+          { satir: '_context.UserProgress.Update(userProgress);', aciklama: 'Değişiklik izleyiciye İŞARETLER.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Senkron bir metodun `Task` dönen arayüzü KARŞILAMASI için.', neden: null, olmasaydi: null },
+          { satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>', aciklama: 'Metot gövdesi expression-body.', neden: null, olmasaydi: null },
+          { satir: '_context.SaveChangesAsync(cancellationToken);', aciklama: 'DbContext\'in gerçek kaydetme çağrısı.', neden: null, olmasaydi: null },
+          { satir: 'private async Task<List<WordProgressItem>> JoinWithWordsAsync(List<UserProgress> progressRows, CancellationToken cancellationToken)', aciklama: 'Private yardımcı — `GetByMasteryRangeAsync` VE `GetSuspendedAsync`\'in PAYLAŞTIĞI, "kelime metnini EKLE" mantığı.', neden: 'Bu mantık İKİ metotta da AYNI (WordId\'lere göre Words\'ü toplu ÇEK, in-memory Dictionary\'yle EŞLEŞTİR) — TEKRARLANMASI yerine tek bir yerde YAŞAR.', olmasaydi: 'Ortak metot OLMASAYDI, `GetByMasteryRangeAsync` ve `GetSuspendedAsync`\'in HER İKİSİ de AYNI 6 satırlık JOIN mantığını KENDİ içinde tekrar YAZARDI — bir gün bu mantık DEĞİŞTİĞİNDE (ör. silinmiş kelime davranışı gibi) İKİ yeri de GÜNCELLEMEK gerekirdi.' },
+          { satir: 'var wordIds = progressRows.Select(p => p.WordId).Distinct().ToList();', aciklama: '`Distinct()` — teorik olarak AYNI WordId iki kez GEÇMEZ (UserProgress zaten UserId+WordId\'de UNIQUE) ama savunmacı bir ALIŞKANLIK, ekstra maliyeti YOK.', neden: null, olmasaydi: null },
+          { satir: 'var wordsById = await _context.Words.Where(w => wordIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, cancellationToken);', aciklama: 'TÜM ilgili kelimeler TEK sorguda, Id\'ye göre bir Dictionary\'ye ÇEKİLİR — `CategoryRepository.BuildTranslationsAsync`daki (A-06) `languages` sözlüğüyle AYNI desen.', neden: 'Her `progressRows` elemanı için AYRI bir `Words` sorgusu (bir N+1 sorgu deseni) YAZILSAYDI, 50 kelimelik bir bant listesi 50 AYRI veritabanı GİDİŞ-DÖNÜŞÜ yapardı — TEK toplu sorgu + in-memory eşleştirme bunu BİR sorguya İNDİRİR.', olmasaydi: 'N+1 deseni seçilseydi, kullanıcının kelime dağarcığı büyüdükçe (yüzlerce kelime) `GET /progress/words` GİDEREK yavaşlardı — her ek kelime bir EK veritabanı GİDİŞ-DÖNÜŞÜ demek olurdu.' },
+          { satir: 'return progressRows', aciklama: 'Sonuç listesinin inşası.', neden: null, olmasaydi: null },
+          { satir: '.Where(p => wordsById.ContainsKey(p.WordId))', aciklama: 'Silinmiş bir kelimeye ait `UserProgress` satırı (Dictionary\'de KARŞILIĞI olmayan) sessizce ATLANIR — `GetSnapshotsAsync`daki `activeWordIds.Contains` filtresiyle TUTARLI bir davranış, yalnızca burada FİLTRELEME SQL\'de değil in-memory yapılır (çünkü Dictionary zaten kurulu).', neden: null, olmasaydi: null },
+          { satir: '.Select(p =>', aciklama: 'Her satırı `WordProgressItem`\'a ÇEVİREN dönüşümün başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'var word = wordsById[p.WordId];', aciklama: 'Bir ÖNCEKİ `Where` bu anahtarın Dictionary\'de VAR olduğunu ZATEN garanti ettiği için burada güvenle indeksleme YAPILIR (bir `TryGetValue` GEREKMEZ).', neden: null, olmasaydi: null },
+          { satir: 'return new WordProgressItem(', aciklama: 'Sekiz alanlı kaydın İNŞASI.', neden: null, olmasaydi: null },
+          { satir: 'p.WordId, word.Text, word.Definition, p.CurrentLevel, p.Mastery,', aciklama: 'İlk beş alan — `WordId`/`Text`/`Definition` Word\'den, `CurrentLevel`/`Mastery` UserProgress\'ten.', neden: null, olmasaydi: null },
+          { satir: 'p.NextReviewAt, p.IsSuspended, p.ConsecutiveIncorrect);', aciklama: 'Son üç alan — TÜMÜ UserProgress\'ten.', neden: null, olmasaydi: null },
+          { satir: '.ToList();', aciklama: 'LINQ zincirini SONLANDIRAN, `List<WordProgressItem>`e ÇEVİREN çağrı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama Bir Tutarsızlığı Yakaladı — Silinmiş Kelimenin İlerlemesi',
+        aciklama: 'Endpoint\'ler canlı olarak denenirken (Bölüm 6\'da ayrıntısı) `GET /progress/summary` `{"weak":2}` derken `GET /progress/words?band=Weak` yalnızca BİR eleman DÖNDÜ. Sebep: test verisindeki iki "zayıf" kelimeden biri (`Mann`) veritabanında ZATEN soft-delete EDİLMİŞTİ — özet sayımı (o anki hâliyle) `Words`\'e HİÇ bakmıyordu, bant listeleme ise (`JoinWithWordsAsync`) ZATEN Word\'e JOIN yaptığı için silinmiş kelimeyi doğal olarak DIŞLIYORDU.',
+        neden: 'Bu iki metot (`GetSnapshotsAsync` ile `GetByMasteryRangeAsync`/`GetSuspendedAsync`) AYNI temel veriyi (kullanıcının ilerleme kayıtları) FARKLI açılardan SAYIYOR/LİSTELİYOR — birinin "aktif kelime" filtresi UYGULAYIP diğerinin UYGULAMAMASI, iki endpoint\'in AYNI kullanıcı için ÇELİŞEN bir gerçeklik anlatmasına yol AÇAR.',
+        olmasaydi: 'Bu tutarsızlık canlı veriyle DENENMEDEN fark edilmeseydi (ör. yalnızca `dotnet build`/birim testleriyle YETİNİLSEYDİ — birim testleri mock repository KULLANDIĞI için bu İKİ metodun GERÇEK SQL davranışı ARASINDAKİ farkı hiç ORTAYA ÇIKARMAZ), Web/Mobil\'in ana ekranı ile İncele ekranı arasında kullanıcının fark edeceği bir SAYI TUTARSIZLIĞI production\'a KADAR giderdi.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'IUserCardProgressRepository / UserCardProgressRepository — Aynı Deseni İzler (Çok Daha Dar)',
+        terimler: [
+          { terim: 'IUserCardProgressRepository.cs (backend/Zausel.Application/Interfaces/Repositories/Srs/IUserCardProgressRepository.cs)', tanim: 'TEK metotlu bir arayüz: `Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default);` — `IUserProgressRepository`nin AYNI-imzalı metoduyla BİREBİR, yalnızca bant/askıya-alınmış listeleme YOK (kavram slaydındaki gerekçe: `UserCards` tablosu A-10\'da gelene kadar metin JOIN\'i mümkün değil).' },
+          { terim: 'UserCardProgressRepository.cs (backend/Zausel.Infrastructure/Repositories/Srs/UserCardProgressRepository.cs)', tanim: 'Tek metotlu implementasyon: `_context.UserCardProgress.Where(p => p.UserId == userId).Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended)).ToListAsync(...)` — `UserProgressRepository.GetSnapshotsAsync`ın AYNI deseni, TEK farkla: `UserCards` henüz yok olduğu için "aktif kart" filtresi (silinmiş-kelime filtresiyle EŞDEĞER) buraya EKLENMEDİ, A-10\'da `UserCards` gelince aynı gerekçeyle eklenecek.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetProgressSummaryQuery.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Progress/GetProgressSummaryQuery.cs',
+        nedenBuKlasor: 'Application/Features/Progress/ — projenin İLK Progress feature\'ı; `ProgressController`\'ın (Bölüm 6) yanı sıra `WordsController`\'a eklenecek leech-action Command\'ı da (Bölüm 6) BURAYA, kavramsal "Progress" alanına eklenecek — hangi Controller\'ın çağırdığından BAĞIMSIZ.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+
+namespace Zausel.Application.Features.Progress;
+
+public record GetProgressSummaryQuery(int UserId) : IRequest<ProgressSummaryResponse>;
+
+public class GetProgressSummaryQueryHandler : IRequestHandler<GetProgressSummaryQuery, ProgressSummaryResponse>
+{
+    private readonly IUserProgressRepository _userProgressRepository;
+    private readonly IUserCardProgressRepository _userCardProgressRepository;
+
+    public GetProgressSummaryQueryHandler(
+        IUserProgressRepository userProgressRepository, IUserCardProgressRepository userCardProgressRepository)
+    {
+        _userProgressRepository = userProgressRepository;
+        _userCardProgressRepository = userCardProgressRepository;
+    }
+
+    public async Task<ProgressSummaryResponse> Handle(GetProgressSummaryQuery request, CancellationToken cancellationToken)
+    {
+        var wordSnapshots = await _userProgressRepository.GetSnapshotsAsync(request.UserId, cancellationToken);
+        var cardSnapshots = await _userCardProgressRepository.GetSnapshotsAsync(request.UserId, cancellationToken);
+
+        int weak = 0, medium = 0, good = 0, dueNow = 0;
+        var now = DateTime.UtcNow;
+
+        foreach (var snapshot in wordSnapshots.Concat(cardSnapshots))
+        {
+            if (snapshot.Mastery < 40) weak++;
+            else if (snapshot.Mastery < 70) medium++;
+            else good++;
+
+            // Askıya alınmış (leech) kayıtlar due sayımından hariç — UserProgressConfiguration'daki
+            // "due sorgusundan hariç" kuralının özet sayımdaki karşılığı.
+            if (!snapshot.IsSuspended && snapshot.NextReviewAt is { } nextReviewAt && nextReviewAt <= now)
+                dueNow++;
+        }
+
+        return new ProgressSummaryResponse(weak, medium, good, dueNow);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`ProgressSummaryResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'İki repository arayüzünün de ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Progress;', aciklama: 'Bu bölümdeki TÜM Progress feature dosyalarının PAYLAŞTIĞI ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public record GetProgressSummaryQuery(int UserId) : IRequest<ProgressSummaryResponse>;', aciklama: '`GetUserCategoriesQuery` ile AYNI desen — parametresiz bir okuma, yalnızca `UserId` taşır (Controller `CurrentUserId`\'den geçirir).', neden: null, olmasaydi: null },
+          { satir: 'public class GetProgressSummaryQueryHandler : IRequestHandler<GetProgressSummaryQuery, ProgressSummaryResponse>', aciklama: 'MediatR\'ın standart Handler arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'Birinci bağımlılık — sistem kelimesi ilerlemesi.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserCardProgressRepository _userCardProgressRepository;', aciklama: 'İkinci bağımlılık — kişisel kart ilerlemesi; İKİSİ de TEK bir özet SAYIMINDA birleşecek.', neden: null, olmasaydi: null },
+          { satir: 'public GetProgressSummaryQueryHandler(', aciklama: 'Constructor — iki bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'IUserProgressRepository userProgressRepository, IUserCardProgressRepository userCardProgressRepository)', aciklama: 'İmzanın ikinci satırı.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_userCardProgressRepository = userCardProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ProgressSummaryResponse> Handle(GetProgressSummaryQuery request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın `Send()` çağrısında ÇALIŞTIRDIĞI metot.', neden: null, olmasaydi: null },
+          { satir: 'var wordSnapshots = await _userProgressRepository.GetSnapshotsAsync(request.UserId, cancellationToken);', aciklama: 'Sistem kelimesi ilerlemesinin ÖZETİ.', neden: null, olmasaydi: null },
+          { satir: 'var cardSnapshots = await _userCardProgressRepository.GetSnapshotsAsync(request.UserId, cancellationToken);', aciklama: 'Kişisel kart ilerlemesinin ÖZETİ — iki AYRI SQL sorgusu, iki AYRI tablo.', neden: null, olmasaydi: null },
+          { satir: 'int weak = 0, medium = 0, good = 0, dueNow = 0;', aciklama: 'Dört sayaç, TEK satırda tanımlanır.', neden: null, olmasaydi: null },
+          { satir: 'var now = DateTime.UtcNow;', aciklama: 'Döngü İÇİNDE her seferinde YENİDEN çağrılmak yerine BİR KEZ alınır — hem küçük bir performans kazancı hem de TÜM satırların AYNI "şimdi" anına göre değerlendirilmesini garanti eder.', neden: null, olmasaydi: null },
+          { satir: 'foreach (var snapshot in wordSnapshots.Concat(cardSnapshots))', aciklama: '`Concat` — iki FARKLI kaynaktan gelen (ama AYNI `ProgressSnapshot` şeklindeki) listeleri TEK bir diziye BİRLEŞTİRİR, döngü İKİSİNİ de AYNI mantıkla işler.', neden: '`ProgressSnapshot`\'ın Bölüm 5\'in başındaki kavram slaydında açıklanan "iki tablodan da AYNI şekilde üretilir" tasarımı TAM OLARAK bu satırı MÜMKÜN kılar — iki FARKLI entity tipi (UserProgress/UserCardProgress) olsaydı `Concat` DERLENMEZDİ.', olmasaydi: null },
+          { satir: 'if (snapshot.Mastery < 40) weak++;', aciklama: 'Zayıf bandı — [0, 40) aralığı.', neden: null, olmasaydi: null },
+          { satir: 'else if (snapshot.Mastery < 70) medium++;', aciklama: 'Orta bandı — [40, 70) aralığı (bir ÖNCEKİ `if` zaten <40\'ı ELEDİĞİ için burada yalnızca >=40 kalır).', neden: null, olmasaydi: null },
+          { satir: 'else good++;', aciklama: 'İyi bandı — [70, 100] aralığı, üst sınır KONTROLÜ gerekmez (Mastery hiçbir zaman 100\'ü aşmaz).', neden: null, olmasaydi: null },
+          { satir: 'if (!snapshot.IsSuspended && snapshot.NextReviewAt is { } nextReviewAt && nextReviewAt <= now)', aciklama: 'Üç koşul BİRDEN: askıya ALINMAMIŞ, bir tekrar tarihi ZATEN VAR (`is { }` — pattern matching, `null` değilse `nextReviewAt` değişkenine BAĞLAR), VE o tarih GEÇMİŞ/ŞİMDİ.', neden: 'Askıya alınmış bir kayıt due sayımına GİRSEYDİ, kullanıcı "bugün tekrar edilecek 14 kelime var" görüp GERÇEKTE bunlardan biri (veya birkaçı) leech OLDUĞU için zaten review HAVUZUNDAN çıkarılmış olurdu — sayı ile GERÇEK review akışı ÇELİŞİRDİ.', olmasaydi: 'IsSuspended kontrolü OLMASAYDI, `GET /progress/summary`\'nin `dueNow` sayısı ile A-11\'in GERÇEKTEN sunacağı review listesinin uzunluğu (leech\'leri HARİÇ tutan) HER ZAMAN BİRBİRİNDEN FARKLI olurdu — Bölüm 5\'in başındaki "silinmiş kelime" hikâyesiyle AYNI TÜRDEN bir tutarsızlık, bu kez leech YÜZÜNDEN.' },
+          { satir: 'dueNow++;', aciklama: 'Üç koşul da SAĞLANDIYSA sayaç artar.', neden: null, olmasaydi: null },
+          { satir: 'return new ProgressSummaryResponse(weak, medium, good, dueNow);', aciklama: 'Dört sayaç, DOĞRUDAN response\'a — `IMapper` GEREKMEZ (tek bir entity\'den DEĞİL, hesaplanmış sayaçlardan İNŞA edilen bir DTO, A-08\'in AutoMapper koşulunun DIŞINDA kalır).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'ProgressSummaryResponse.cs — Dört Sayaçlık Sabit DTO',
+        terimler: [
+          { terim: 'ProgressSummaryResponse.cs (backend/Zausel.Application/DTOs/Progress/ProgressSummaryResponse.cs)', tanim: '`public record ProgressSummaryResponse(int Weak, int Medium, int Good, int DueNow);` — TEK satırlık, dört `int` alanlı bir record; `GetProgressSummaryQueryHandler`\'ın (yukarıdaki kod slaydı) `return` satırının inşa ettiği DTO. Diğer dört DTO (ProgressWordResponse, SuspendedWordResponse, LeechActionRequest/Response) Bölüm 6\'da kullanıldıkları Query/Command\'ların YANINDA tanıtılıyor.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

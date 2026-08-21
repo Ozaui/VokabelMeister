@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'sorgular-komut-controller-ozet-sozluk',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '05_repository-ve-summary.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 6',
+        baslik: 'Kalan Sorgular, Leech Aksiyonu ve ProgressController',
+        altBaslik: 'GET /progress/words, GET /progress/suspended, POST /words/{id}/leech-action — ProgressService/ProgressController madde metni MediatR Query/Command\'a çevrilerek tamamlandı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'GetProgressWordsQuery.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Progress/GetProgressWordsQuery.cs',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+
+namespace Zausel.Application.Features.Progress;
+
+public record GetProgressWordsQuery(int UserId, string Band) : IRequest<List<ProgressWordResponse>>;
+
+public class GetProgressWordsQueryHandler : IRequestHandler<GetProgressWordsQuery, List<ProgressWordResponse>>
+{
+    private readonly IUserProgressRepository _userProgressRepository;
+
+    public GetProgressWordsQueryHandler(IUserProgressRepository userProgressRepository) =>
+        _userProgressRepository = userProgressRepository;
+
+    public async Task<List<ProgressWordResponse>> Handle(GetProgressWordsQuery request, CancellationToken cancellationToken)
+    {
+        // Zayıf/Orta/İyi 0-40/40-70/70-100 — üst sınır "İyi" için yok, Mastery hiçbir zaman 100'ü aşmaz.
+        var (min, max) = request.Band switch
+        {
+            "Weak" => (0m, (decimal?)40m),
+            "Medium" => (40m, (decimal?)70m),
+            "Good" => (70m, (decimal?)null),
+            _ => throw new ArgumentOutOfRangeException(nameof(request.Band), request.Band, "Beklenmeyen bant değeri — validator bunu ENGELLEMİŞ olmalıydı.")
+        };
+
+        var items = await _userProgressRepository.GetByMasteryRangeAsync(request.UserId, min, max, cancellationToken);
+        return items
+            .Select(i => new ProgressWordResponse(i.WordId, i.Text, i.Definition, i.CurrentLevel, i.Mastery, i.NextReviewAt, i.IsSuspended))
+            .ToList();
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`ProgressWordResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Progress;', aciklama: 'Bölüm 5\'teki `GetProgressSummaryQuery` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public record GetProgressWordsQuery(int UserId, string Band) : IRequest<List<ProgressWordResponse>>;', aciklama: 'İki parametreli bir sorgu — `UserId` (Controller\'dan) + `Band` (query string\'den) — `GetWordsQuery`nin (A-05) filtre PARAMETRELERİ deseniyle AYNI.', neden: null, olmasaydi: null },
+          { satir: 'public class GetProgressWordsQueryHandler : IRequestHandler<GetProgressWordsQuery, List<ProgressWordResponse>>', aciklama: 'MediatR\'ın standart Handler arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'Tek bağımlılık — `UserCardProgress` burada YOK, çünkü kişisel kart bant listelemesi henüz mümkün DEĞİL (Bölüm 5\'in kavram slaydı).', neden: null, olmasaydi: null },
+          { satir: 'public GetProgressWordsQueryHandler(IUserProgressRepository userProgressRepository) =>', aciklama: 'Constructor — expression-body (tek bağımlılık atamak dışında bir şey YAPMIYOR).', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<ProgressWordResponse>> Handle(GetProgressWordsQuery request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın `Send()` çağrısında ÇALIŞTIRDIĞI metot.', neden: null, olmasaydi: null },
+          { satir: 'var (min, max) = request.Band switch', aciklama: 'C# switch İFADESİ (switch statement DEĞİL) — dört DAL, dördü de bir `(decimal, decimal?)` tuple ÜRETİR, sonuç doğrudan `min`/`max`\'a DESTRUCTURE edilir.', neden: null, olmasaydi: null },
+          { satir: '{', aciklama: 'Switch ifadesinin gövdesi.', neden: null, olmasaydi: null },
+          { satir: '"Weak" => (0m, (decimal?)40m),', aciklama: 'Zayıf bandı — [0, 40).', neden: null, olmasaydi: null },
+          { satir: '"Medium" => (40m, (decimal?)70m),', aciklama: 'Orta bandı — [40, 70).', neden: null, olmasaydi: null },
+          { satir: '"Good" => (70m, (decimal?)null),', aciklama: 'İyi bandı — alt sınır 70, üst sınır YOK (`null`).', neden: null, olmasaydi: null },
+          { satir: '_ => throw new ArgumentOutOfRangeException(nameof(request.Band), request.Band, "Beklenmeyen bant değeri — validator bunu ENGELLEMİŞ olmalıydı.")', aciklama: 'C#\'ın switch ifadesi TÜM olası dalları (exhaustive) İSTER — bu `_` (discard) dalı olmadan derleyici "olası TÜM durumlar ele alınmadı" UYARISI verirdi.', neden: '`GetProgressWordsQueryValidator` (bir SONRAKİ sözlük slaydı) zaten `Band`\'in yalnızca üç değerden biri OLABİLECEĞİNİ garanti ediyor — bu satır PRATİKTE hiç ÇALIŞMAZ, yalnızca derleyicinin exhaustiveness kuralını KARŞILAMAK ve "validator BİR GÜN bypass edilirse SESSİZCE yanlış bir aralık kullanmak yerine GÜRÜLTÜLÜ patlamak" için VAR.', olmasaydi: '`_` dalı OLMASAYDI kod DERLENMEZDİ — switch ifadeleri (switch STATEMENT\'ların aksine) her zaman bir DEĞER üretmek ZORUNDA, "hiçbir dal eşleşmedi" durumunun BİR sonucu olması GEREKİR.' },
+          { satir: '};', aciklama: 'Switch ifadesinin kapanışı.', neden: null, olmasaydi: null },
+          { satir: 'var items = await _userProgressRepository.GetByMasteryRangeAsync(request.UserId, min, max, cancellationToken);', aciklama: 'Bölüm 5\'te yazılan repository metodu — `min`/`max` burada, İŞ KURALI (bant eşikleri) Handler\'da HESAPLANMIŞ olarak geçirilir.', neden: null, olmasaydi: null },
+          { satir: 'return items', aciklama: 'Dönüşümün başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Select(i => new ProgressWordResponse(i.WordId, i.Text, i.Definition, i.CurrentLevel, i.Mastery, i.NextReviewAt, i.IsSuspended))', aciklama: '`WordProgressItem`\'ın (Bölüm 5) sekiz alanından YEDİSİ — `ConsecutiveIncorrect` burada YOK, `ProgressWordResponse`\'un sözleşmesinde bu alan hiç TANIMLI değil (yalnızca `SuspendedWordResponse` taşır).', neden: null, olmasaydi: null },
+          { satir: '.ToList();', aciklama: 'LINQ zincirini SONLANDIRAN çağrı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'GetSuspendedWordsQuery ve İki Response DTO\'su',
+        terimler: [
+          { terim: 'ProgressWordResponse.cs (backend/Zausel.Application/DTOs/Progress/ProgressWordResponse.cs)', tanim: '`public record ProgressWordResponse(int WordId, string Text, string? Definition, int CurrentLevel, decimal Mastery, DateTime? NextReviewAt, bool IsSuspended);` — bir ÖNCEKİ kod slaydındaki `GetProgressWordsQueryHandler`\'ın döndürdüğü DTO, `WordProgressItem`\'ın (Bölüm 5) YEDİ alanını (ConsecutiveIncorrect HARİÇ) birebir taşır.' },
+          { terim: 'GetSuspendedWordsQuery.cs (backend/Zausel.Application/Features/Progress/GetSuspendedWordsQuery.cs)', tanim: 'GetProgressWordsQuery ile AYNI iskelet (`record` + Handler + tek `IUserProgressRepository` bağımlılığı), İKİ farkla: (1) `Band` parametresi YOK, dolayısıyla switch-mapping YOK — doğrudan `_userProgressRepository.GetSuspendedAsync(request.UserId, cancellationToken)` çağrılır; (2) dönüşüm `WordProgressItem`\'ın YEDİ değil ALTI alanını seçer (`i.WordId, i.Text, i.Definition, i.CurrentLevel, i.Mastery, i.ConsecutiveIncorrect`).' },
+          { terim: 'SuspendedWordResponse.cs (backend/Zausel.Application/DTOs/Progress/SuspendedWordResponse.cs)', tanim: '`public record SuspendedWordResponse(int WordId, string Text, string? Definition, int CurrentLevel, decimal Mastery, int ConsecutiveIncorrect);` — ProgressWordResponse\'tan farkı: `NextReviewAt` YOK (askıya alınmış bir kelimenin zaten zamanlanmış bir tekrarı yoktur), `ConsecutiveIncorrect` VAR (kullanıcı "bu kelime kaç kez üst üste yanlış gitti" bilgisini görür — leech-action kararını bu sayı üzerinden verir).' }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'LeechActionResponse Neden "Şekli Aksiyona Göre Değişen" Bir DTO?',
+        aciklama: '`POST /words/{id}/leech-action` TEK bir DTO (`LeechActionResponse`) döner ama Suspend/Reset/Continue\'nin ÜÇÜ de FARKLI alanları doldurur: Suspend yalnızca `IsSuspended`, Reset yalnızca `CurrentLevel`+`NextReviewAt`, Continue yalnızca `Acknowledged`.',
+        neden: 'Üç aksiyon kavramsal olarak BAMBAŞKA sonuçlar üretir — Suspend/Reset veritabanını GERÇEKTEN değiştirirken Continue HİÇBİR ŞEYİ değiştirmez; istemciye "ne değiştiyse SADECE onu" göstermek, kullanıcı arayüzünün (ör. Web\'in `BandWordListPage`\'i) yalnızca İLGİLİ alanı okumasını, kullanılmayanları GÖRMEZDEN gelmesini sağlar.',
+        olmasaydi: 'Üç aksiyon için üç AYRI endpoint/response tipi yazılsaydı (`SuspendResponse`/`ResetResponse`/`ContinueResponse`), Web/Mobil TEK bir "leech aksiyonu uygula" fonksiyonu YAZAMAZDI — her aksiyon için AYRI bir istek fonksiyonu ve AYRI bir yanıt işleme dalı GEREKİRDİ, oysa TEK bir DTO ile istemci "hangi alan doluysa ONU göster" gibi TEK bir genel mantık yazabilir.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'LeechActionRequest.cs ve LeechActionResponse.cs',
+        terimler: [
+          { terim: 'LeechActionRequest.cs (backend/Zausel.Application/DTOs/Progress/LeechActionRequest.cs)', tanim: '`public record LeechActionRequest(string Action);` — TEK alanlı, `POST /words/{id}/leech-action`\'ın gövdesi (`{"action":"Suspend"}`), `WordsController.LeechAction`\'ın (bir SONRAKİ kod-degisiklik slaydı) parametre tipi.' },
+          { terim: 'LeechActionResponse.cs (backend/Zausel.Application/DTOs/Progress/LeechActionResponse.cs)', tanim: '`public record LeechActionResponse(bool? IsSuspended, int? CurrentLevel, DateTime? NextReviewAt, bool? Acknowledged);` — yukarıdaki kavram slaydının "şekli aksiyona göre değişir" tasarımının DTO karşılığı, DÖRT alanın TAMAMI nullable.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplyWordLeechActionCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Progress/ApplyWordLeechActionCommand.cs',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Application.Services;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.Progress;
+
+public record ApplyWordLeechActionCommand(int WordId, string Action, int UserId, string? ActorRole) : IRequest<LeechActionResponse>;
+
+public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeechActionCommand, LeechActionResponse>
+{
+    private readonly IUserProgressRepository _userProgressRepository;
+    private readonly IActivityLogger _activityLogger;
+
+    public ApplyWordLeechActionCommandHandler(IUserProgressRepository userProgressRepository, IActivityLogger activityLogger)
+    {
+        _userProgressRepository = userProgressRepository;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<LeechActionResponse> Handle(ApplyWordLeechActionCommand request, CancellationToken cancellationToken)
+    {
+        var userProgress = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken)
+            ?? throw new EntityNotFoundException($"UserProgress not found: WordId={request.WordId}");
+
+        // Continue hiçbir alanı DEĞİŞTİRMEZ — kullanıcı "biliyorum, YİNE DE bu şekilde devam et" der,
+        // veritabanına yazılacak bir şey yok, yalnızca istemciye bir onay dönülür.
+        if (request.Action == "Continue")
+            return new LeechActionResponse(IsSuspended: null, CurrentLevel: null, NextReviewAt: null, Acknowledged: true);
+
+        var oldValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };
+
+        LeechActionResponse response;
+        if (request.Action == "Suspend")
+        {
+            userProgress.IsSuspended = true;
+            response = new LeechActionResponse(IsSuspended: true, CurrentLevel: null, NextReviewAt: null, Acknowledged: null);
+        }
+        else
+        {
+            // Reset — SM-2 durumu SIFIRLANIR (yeni bir kelimeymiş gibi baştan başlar), TimesCorrect/
+            // TimesIncorrect/SuccessRate gibi geçmiş istatistikler KORUNUR (yalnızca ileri gidiş sıfırlanır).
+            userProgress.CurrentLevel = 0;
+            userProgress.Mastery = SrsCalculator.CalculateMastery(0, userProgress.SuccessRate);
+            userProgress.EasinessFactor = 2.5m;
+            userProgress.IntervalDays = 1;
+            userProgress.RepetitionNumber = 0;
+            userProgress.ConsecutiveIncorrect = 0;
+            userProgress.IsSuspended = false;
+            userProgress.NextReviewAt = null;
+            response = new LeechActionResponse(IsSuspended: null, CurrentLevel: 0, NextReviewAt: null, Acknowledged: null);
+        }
+
+        await _userProgressRepository.UpdateAsync(userProgress, request.UserId, cancellationToken);
+        await _userProgressRepository.SaveChangesAsync(cancellationToken);
+
+        var newValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "APPLY_LEECH_ACTION", entityType: "UserProgress", entityId: userProgress.Id,
+            oldValue: oldValue, newValue: newValue, cancellationToken: cancellationToken);
+
+        return response;
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest,TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`LeechActionResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: '`SrsCalculator`\'ın (Bölüm 3) ad alanı — `Reset` dalının Mastery YENİDEN hesaplaması için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Progress;', aciklama: 'Leech aksiyonu URL sözleşmesi gereği `WordsController`dan çağrılsa da (bir SONRAKİ kod-degisiklik slaydı), bu Command DOSYA olarak Progress feature\'ının içinde yaşar — hangi Controller\'ın çağırdığı, bir Command\'ın hangi klasörde YAŞAYACAĞINI BELİRLEMEZ, kavramsal olarak AİT olduğu iş alanı (Progress) belirler.', neden: null, olmasaydi: null },
+          { satir: 'public record ApplyWordLeechActionCommand(int WordId, string Action, int UserId, string? ActorRole) : IRequest<LeechActionResponse>;', aciklama: 'Dört parametreli bir komut — `WordId` (route\'tan), `Action` (request body\'den), `UserId`/`ActorRole` (Controller\'dan, `IActivityLogger` için).', neden: null, olmasaydi: null },
+          { satir: 'public class ApplyWordLeechActionCommandHandler : IRequestHandler<ApplyWordLeechActionCommand, LeechActionResponse>', aciklama: 'MediatR\'ın standart Handler arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'Birinci bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'İkinci bağımlılık — yalnızca Suspend/Reset dallarında ÇAĞRILIR, Continue\'da HİÇ kullanılmaz.', neden: null, olmasaydi: null },
+          { satir: 'public ApplyWordLeechActionCommandHandler(IUserProgressRepository userProgressRepository, IActivityLogger activityLogger)', aciklama: 'Constructor — iki bağımlılık.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<LeechActionResponse> Handle(ApplyWordLeechActionCommand request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın `Send()` çağrısında ÇALIŞTIRDIĞI metot.', neden: null, olmasaydi: null },
+          { satir: 'var userProgress = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken)', aciklama: 'Sahiplik filtresi GÖMÜLÜ okuma — `DeleteUserCategoryCommandHandler` (A-08) ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException($"UserProgress not found: WordId={request.WordId}");', aciklama: 'Kayıt YOKSA (ya da başka bir kullanıcıya AİTSE) 404 — `ApiControllerBase`\'in AYNI istisna zincirine düşer.', neden: null, olmasaydi: null },
+          { satir: 'if (request.Action == "Continue")', aciklama: 'Continue dalı EN BAŞTA ele alınır — bu dal HİÇBİR mutasyon/kaydetme/loglama İÇERMEDİĞİ için, aşağıdaki genel akıştan (oldValue yakalama, güncelleme, loglama) TAMAMEN AYRI, erken bir `return` ile ÇIKAR.', neden: null, olmasaydi: null },
+          { satir: 'return new LeechActionResponse(IsSuspended: null, CurrentLevel: null, NextReviewAt: null, Acknowledged: true);', aciklama: 'Yalnızca `Acknowledged: true` dolu, DİĞER üç alan `null` — kavram slaydındaki "şekli aksiyona göre değişir" tasarımının İLK örneği.', neden: null, olmasaydi: null },
+          { satir: 'var oldValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };', aciklama: 'Continue dalından SONRA geldiği için yalnızca Suspend/Reset\'in ULAŞTIĞI bir satır — anonim tip, `ActivityLogger`ın (A-04) `object?` parametresine JSON\'a SERİLEŞTİRİLEREK geçilir.', neden: null, olmasaydi: null },
+          { satir: 'LeechActionResponse response;', aciklama: 'İki dalın (Suspend/Reset) İKİSİNİN de dolduracağı, blok SONUNDA `return` edilecek değişken.', neden: null, olmasaydi: null },
+          { satir: 'if (request.Action == "Suspend")', aciklama: 'İkinci dal ayrımı — Continue ZATEN elenmiş olduğu için burada yalnızca Suspend/Reset KALIR.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IsSuspended = true;', aciklama: 'TEK alan mutasyonu — `ConsecutiveIncorrect` BİLEREK dokunulmaz (leech tespitinin NEDEN olduğu sayı, askıya alma bu sayıyı SIFIRLAMAZ).', neden: null, olmasaydi: null },
+          { satir: 'response = new LeechActionResponse(IsSuspended: true, CurrentLevel: null, NextReviewAt: null, Acknowledged: null);', aciklama: 'Yalnızca `IsSuspended: true` dolu.', neden: null, olmasaydi: null },
+          { satir: 'else', aciklama: 'Kalan TEK olasılık: Reset (validator zaten Action\'ın üç değerden biri OLDUĞUNU garanti eder, bu yüzden üçüncü bir `if` GEREKMEZ).', neden: null, olmasaydi: null },
+          { satir: 'userProgress.CurrentLevel = 0;', aciklama: 'SM-2 seviyesi baştan başlar — leech "yeni bir kelimeymiş gibi" yeniden ÖĞRENİLMEYE başlanır.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.Mastery = SrsCalculator.CalculateMastery(0, userProgress.SuccessRate);', aciklama: 'Mastery, YENİ CurrentLevel (0) ile MEVCUT (değişmeyen) SuccessRate kullanılarak YENİDEN hesaplanır — Bölüm 3\'teki formülün İLK gerçek çağrı NOKTASI.', neden: 'CurrentLevel SIFIRLANDIĞI hâlde Mastery eski (yüksek) değerinde KALSAYDI, `GET /progress/summary`nin bant sayımı (Bölüm 5) bu kelimeyi HÂLÂ "İyi" bantta GÖSTERİRDİ — CurrentLevel 0\'a düşmüş bir kelime MANTIKEN artık "İyi" OLAMAZ.', olmasaydi: 'Mastery elle SIFIRLANSAYDI (ör. doğrudan `0` atansaydı), `SuccessRate`\'in katkısı (formülün %20\'lik kısmı) KAYBOLURDU — bir kelimeyi geçmişte SIK doğru cevaplamış bir kullanıcı, HİÇ doğru cevaplamamış biriyle AYNI (0) Mastery\'den başlardı, oysa CalculateMastery formülü BİLEREK SuccessRate\'e küçük bir AĞIRLIK verir.' },
+          { satir: 'userProgress.EasinessFactor = 2.5m;', aciklama: 'SM-2\'nin standart BAŞLANGIÇ değeri — `UserProgress.EasinessFactor`ın (Bölüm 1) C# tarafındaki varsayılanıyla AYNI sayı.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IntervalDays = 1;', aciklama: 'İlk tekrar aralığı — Bölüm 3\'teki `Calculate`\'in `repetitionNumber==0` dalıyla AYNI değer.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.RepetitionNumber = 0;', aciklama: 'Ardışık başarı sayacı sıfırlanır.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.ConsecutiveIncorrect = 0;', aciklama: 'Leech tespitini TETİKLEYEN sayaç — Reset\'in TEK amacı bu sayacı SIFIRLAMAK olduğu için burada MUTLAKA sıfırlanır (Suspend\'in AKSİNE).', neden: null, olmasaydi: null },
+          { satir: 'userProgress.IsSuspended = false;', aciklama: 'Kelime daha önce Suspend EDİLMİŞ olabilir — Reset bu bayrağı da AÇAR, aksi hâlde kullanıcı "sıfırladım ama HÂLÂ review\'a gelmiyor" diye ŞAŞIRIRDI.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.NextReviewAt = null;', aciklama: 'Yeni kelime havuzuna DÖNÜŞ — Bölüm 1\'deki "NULL=yeni kelime havuzu" yorumunun BİREBİR karşılığı.', neden: null, olmasaydi: null },
+          { satir: 'response = new LeechActionResponse(IsSuspended: null, CurrentLevel: 0, NextReviewAt: null, Acknowledged: null);', aciklama: 'Yalnızca `CurrentLevel`/`NextReviewAt` dolu — `IsSuspended` de DEĞİŞTİĞİ hâlde (true\'dan false\'a) response\'ta YOK, çünkü Reset\'in istemciye VAAT ettiği sözleşme yalnızca bu ikisidir; `IsSuspended`\'ın değiştiği bilgisi istemci için ZATEN gereksizdir (Reset\'in KENDİSİ zaten "artık askıda değil" anlamına gelir, ayrıca teyit gerektirmez).', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.UpdateAsync(userProgress, request.UserId, cancellationToken);', aciklama: 'Değişiklik izleyiciye İŞARETLENİR — HANGİ dal çalıştıysa çalışsın (Suspend/Reset), AYNI güncelleme çağrısı.', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.SaveChangesAsync(cancellationToken);', aciklama: 'Gerçek veritabanı YAZIMI.', neden: null, olmasaydi: null },
+          { satir: 'var newValue = new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt };', aciklama: 'Kaydetmeden SONRAKİ hâl — `oldValue` ile AYNI üç alan, `ActivityLogger`ın (A-04) diff GÖRÜNÜMÜ için.', neden: null, olmasaydi: null },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: 'Audit log çağrısının başlangıcı — yalnızca Suspend/Reset dallarına ULAŞAN bu satıra, Continue HİÇ gelmez.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "APPLY_LEECH_ACTION", entityType: "UserProgress", entityId: userProgress.Id,', aciklama: 'Tek bir Action kodu (`APPLY_LEECH_ACTION`) HEM Suspend HEM Reset için kullanılır — HANGİ aksiyon olduğu `newValue`nun İÇİNDEN (ör. `IsSuspended:true` mı `CurrentLevel:0` mı DEĞİŞTİ) OKUNABİLİR, ayrı bir Action kodu GEREKMEZ.', neden: null, olmasaydi: null },
+          { satir: 'oldValue: oldValue, newValue: newValue, cancellationToken: cancellationToken);', aciklama: 'Çağrının son parametreleri.', neden: null, olmasaydi: null },
+          { satir: 'return response;', aciklama: 'İlgili dalda İNŞA edilen response döner.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Validator\'lar — Tek Satırlık Kural, Ayrı Birim Testi Yok',
+        terimler: [
+          { terim: 'GetProgressWordsQueryValidator.cs (backend/Zausel.Application/Validators/Progress/GetProgressWordsQueryValidator.cs)', tanim: '`RuleFor(x => x.Band).Must(b => b is "Weak" or "Medium" or "Good").WithErrorCode("PROGRESS_BAND_INVALID");` — C#\'ın `is` PATTERN (birden fazla değeri `or` ile birleştirme) ile üç değerin DIŞINDA her şeyi reddeder. `CreateUserCategoryCommandValidator`\'daki (A-08) tek-satırlık `RuleFor` deseninin AYNISI.' },
+          { terim: 'ApplyWordLeechActionCommandValidator.cs (backend/Zausel.Application/Validators/Progress/ApplyWordLeechActionCommandValidator.cs)', tanim: '`RuleFor(x => x.Action).Must(a => a is "Suspend" or "Reset" or "Continue").WithErrorCode("LEECH_ACTION_INVALID");` — Band validator\'ıyla BİREBİR AYNI desen, farklı alan/değer kümesi.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ProgressController.cs',
+        dosyaYolu: 'backend/Zausel.API/Controllers/ProgressController.cs',
+        nedenBuKlasor: 'API/Controllers/ — projenin İLK "Progress" Controller\'ı; leech-action Command\'ı (bu bölüm) KAVRAMSAL olarak Progress feature\'ına ait olsa da, URL sözleşmesi (`/words/{id}/leech-action`) gereği BU controller\'da DEĞİL, WordsController\'da (bir sonraki slayt) çağrılır.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Features.Progress;
+
+namespace Zausel.API.Controllers;
+
+[Route("progress")]
+[Authorize]
+public class ProgressController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public ProgressController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet("summary")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<ProgressSummaryResponse>> GetSummary(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetProgressSummaryQuery(CurrentUserId), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("words")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<List<ProgressWordResponse>>> GetWords([FromQuery] string band, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetProgressWordsQuery(CurrentUserId, band), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("suspended")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<List<SuspendedWordResponse>>> GetSuspended(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetSuspendedWordsQuery(CurrentUserId), cancellationToken);
+        return Ok(result);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IMediator` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Authorization;', aciklama: '`[Authorize]` özniteliği için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Mvc;', aciklama: '`[Route]`/`[HttpGet]`/`ActionResult<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.RateLimiting;', aciklama: '`[EnableRateLimiting]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: 'Üç response tipinin (`ProgressSummaryResponse`/`ProgressWordResponse`/`SuspendedWordResponse`) ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: 'Üç Query tipinin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.API.Controllers;', aciklama: 'ASP.NET Core\'un Controller KEŞFİ (`app.MapControllers()`) assembly TARAMASIYLA çalışır, hangi ad alanında OLDUĞUNA bakmaz — bu ad alanı yalnızca diğer TÜM Controller\'larla (WordsController, UserCategoriesController...) AYNI klasörde/dosyada YAŞADIĞINI okunabilir kılar, routing\'i ETKİLEMEZ (routing yalnızca `[Route]`/`[HttpGet]` özniteliklerinden gelir).', neden: null, olmasaydi: null },
+          { satir: '[Route("progress")]', aciklama: 'Tüm endpoint\'lerin ORTAK ön eki — `/progress/summary`, `/progress/words`, `/progress/suspended`.', neden: null, olmasaydi: null },
+          { satir: '[Authorize]', aciklama: 'Controller SEVİYESİNDE — `UserCategoriesController` (A-08) ile AYNI desen, Admin DEĞİL herhangi bir giriş yapmış kullanıcı.', neden: null, olmasaydi: null },
+          { satir: 'public class ProgressController : ApiControllerBase', aciklama: '`ApiControllerBase`\'den türer — `CurrentUserId` buradan gelir.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMediator _mediator;', aciklama: 'MediatR\'ın gönderim arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public ProgressController(IMediator mediator) => _mediator = mediator;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet("summary")]', aciklama: '`GET /progress/summary`.', neden: null, olmasaydi: null },
+          { satir: '[EnableRateLimiting("general")]', aciklama: 'Tüm endpoint\'lerde TEKRARLANAN, projenin genel rate-limit politikası.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<ProgressSummaryResponse>> GetSummary(CancellationToken cancellationToken)', aciklama: 'Parametre YOK — tüm veri `CurrentUserId`\'den (JWT claim\'i) gelir.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetProgressSummaryQuery(CurrentUserId), cancellationToken);', aciklama: 'Bölüm 5\'te yazılan sorgunun ÇAĞRILMASI.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 + gövde.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet("words")]', aciklama: '`GET /progress/words`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<List<ProgressWordResponse>>> GetWords([FromQuery] string band, CancellationToken cancellationToken)', aciklama: '`band` ZORUNLU bir query string parametresi — `string?` DEĞİL `string`, eksikse ASP.NET Core model binding kendiliğinden 400 döner (validator\'a bile ULAŞMADAN).', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetProgressWordsQuery(CurrentUserId, band), cancellationToken);', aciklama: 'Bu bölümde yazılan sorgunun ÇAĞRILMASI.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet("suspended")]', aciklama: '`GET /progress/suspended`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<List<SuspendedWordResponse>>> GetSuspended(CancellationToken cancellationToken)', aciklama: 'Parametre YOK — `words` endpoint\'inin AKSİNE bant filtresi yok, TÜM askıya alınmışlar döner.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetSuspendedWordsQuery(CurrentUserId), cancellationToken);', aciklama: 'Bu bölümde yazılan sorgunun ÇAĞRILMASI.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'WordsController.cs — Leech Aksiyonu Endpoint\'i',
+        dosyaYolu: 'backend/Zausel.API/Controllers/WordsController.cs',
+        neden: 'Rota `POST /words/{wordId}/leech-action` — `/progress/` ALTINDA DEĞİL — leech aksiyonu kavramsal olarak "bu KELİMEYE ne yapılsın" sorusu, `WordsController`\'ın (A-05) VAR OLAN kaynağının bir ALT-EYLEMİ, yeni bir "Progress" kaynağının DEĞİL.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
+ using Zausel.Application.DTOs;
++using Zausel.Application.DTOs.Progress;
+ using Zausel.Application.DTOs.Words;
++using Zausel.Application.Features.Progress;
+ using Zausel.Application.Features.Words;
+
+ namespace Zausel.API.Controllers;
+
+ [Route("words")]
+ public class WordsController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public WordsController(IMediator mediator) => _mediator = mediator;
+
+     [HttpGet]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<WordResponse>>> GetWords(
+         [FromQuery] string? level, [FromQuery] string? partOfSpeech, [FromQuery] string? search, [FromQuery] int? categoryId,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+         var result = await _mediator.Send(new GetWordsQuery(level, partOfSpeech, search, categoryId, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpGet("{id}")]
+     [Authorize]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> GetById(int id, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GetWordByIdQuery(id), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Create(
+         WordCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+             new CreateWordCommand(
+                 request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
+                 request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPut("{id}")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Update(
+         int id, WordUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+             new UpdateWordCommand(
+                 id, request.PartOfSpeech, request.DifficultyLevel, request.ImageUrl, request.Translations,
+                 request.CategoryIds ?? [], force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpDelete("{id}")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new DeleteWordCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
+         return NoContent();
+     }
+
+     [HttpGet("unmatched")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<UnmatchedWordResponse>>> GetUnmatched(
+         [FromQuery] int languageId, [FromQuery] string? search,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+         var result = await _mediator.Send(new GetUnmatchedWordConceptsQuery(languageId, search, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost("pair")]
+     [Authorize(Roles = "Admin")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<WordResponse>> Pair(PairWordConceptsRequest request, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+             new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId, CurrentUserRole), cancellationToken);
+         return Ok(result);
+     }
++
++    [HttpPost("{id}/leech-action")]
++    [Authorize]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<LeechActionResponse>> LeechAction(int id, LeechActionRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(
++            new ApplyWordLeechActionCommand(id, request.Action, CurrentUserId, CurrentUserRole), cancellationToken);
++        return Ok(result);
++    }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`LeechActionRequest`/`LeechActionResponse`\'un ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: '`ApplyWordLeechActionCommand`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: '[HttpPost("{id}/leech-action")]', aciklama: '`{id}`, `GetById`/`Update`/`Delete` (A-05) ile AYNI route parametresi — `WordsController`\'ın KENDİ kaynak kimliği, `ProgressController`\'dan BAĞIMSIZ bir URL alanı.', neden: null, olmasaydi: null },
+          { satir: '[Authorize]', satirIndex: 98, aciklama: 'Bu metot SEVİYESİNDE — sınıf seviyesinde bir `[Authorize]`/Admin kısıtı OLMADIĞI için (WordsController\'ın KENDİSİ [Authorize] taşımıyor, her metot KENDİ yetkisini bildiriyor) burada AÇIKÇA belirtilir.', neden: 'Bu controller\'ın DİĞER metotları (`Create`/`Update`/`Delete`) `Roles="Admin"` iken, leech aksiyonu SIRADAN bir kullanıcının KENDİ ilerlemesi üzerinde uyguladığı bir eylem — Admin kısıtı OLSAYDI hiçbir normal kullanıcı KENDİ leech kelimesini yönetemezdi.', olmasaydi: null },
+          { satir: 'public async Task<ActionResult<LeechActionResponse>> LeechAction(int id, LeechActionRequest request, CancellationToken cancellationToken)', aciklama: '`id` route\'tan (WordId), `request` gövdeden (`{"action":"..."}`), MediatR\'a GEÇMEDEN önce ikisi de burada TOPLANIR.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', satirIndex: 102, aciklama: 'Komutun gönderilmesi.', neden: null, olmasaydi: null },
+          { satir: 'new ApplyWordLeechActionCommand(id, request.Action, CurrentUserId, CurrentUserRole), cancellationToken);', aciklama: 'Dört parametre — `id`+`request.Action` gövdeden/route\'tan, `CurrentUserId`+`CurrentUserRole` JWT\'den.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'DependencyInjection.cs — 2 Yeni Repository Kaydı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/DependencyInjection.cs',
+        neden: 'Bölüm 5\'te yazılan `UserProgressRepository`/`UserCardProgressRepository`, arayüzleri ÜZERİNDEN DI konteynerine kayıtlı OLMADAN Handler\'lara enjekte EDİLEMEZ — MediatR Handler\'ların AKSİNE repository\'ler elle EŞLENİR (A-08\'in AYNI gerekçesi).',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using Zausel.Application.Interfaces.Repositories;
+ using Zausel.Application.Interfaces.Repositories.Auth;
+ using Zausel.Application.Interfaces.Repositories.Content;
+ using Zausel.Application.Interfaces.Repositories.Logging;
+ using Zausel.Application.Interfaces.Repositories.PersonalContent;
++using Zausel.Application.Interfaces.Repositories.Srs;
+ using Zausel.Infrastructure.Data;
+ using Zausel.Infrastructure.Repositories;
+ using Zausel.Infrastructure.Repositories.Auth;
+ using Zausel.Infrastructure.Repositories.Content;
+ using Zausel.Infrastructure.Repositories.Logging;
+ using Zausel.Infrastructure.Repositories.PersonalContent;
++using Zausel.Infrastructure.Repositories.Srs;
+
+ namespace Zausel.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<ZauselDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+         services.AddScoped<ILanguageRepository, LanguageRepository>();
+         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
+         services.AddScoped<ICategoryRepository, CategoryRepository>();
+         services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
++        services.AddScoped<IUserProgressRepository, UserProgressRepository>();
++        services.AddScoped<IUserCardProgressRepository, UserCardProgressRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: 'İki repository arayüzünün de ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Repositories.Srs;', aciklama: 'İki implementasyonun da ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'services.AddScoped<IUserProgressRepository, UserProgressRepository>();', aciklama: 'Diğer TÜM repository kayıtlarıyla AYNI ömür (`Scoped`).', neden: null, olmasaydi: null },
+          { satir: 'services.AddScoped<IUserCardProgressRepository, UserCardProgressRepository>();', aciklama: 'İkinci kayıt — AYNI desen.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Bant/Aksiyon Değerleri Neden Çevrilmiyor — ve Hata Mesajı Neden Bunları Saymıyor',
+        aciklama: '`band=Weak`/`action=Suspend` gibi sözleşme değerleri, tıpkı `PartOfSpeech` (`Noun`/`Verb`...) veya `AchievementRarity` (`Common`/`Rare`...) gibi API\'nin SABİT, İngilizce kod değerleridir — kullanıcıya DOĞRUDAN gösterilmezler, Web/Mobil kendi arayüz çevirisinde (`i18next`) bunları görüntü metnine (ör. "Weak" → "Zayıf") çevirir. `PROGRESS_BAND_INVALID`/`LEECH_ACTION_INVALID` hata mesajları da bu yüzden (`PART_OF_SPEECH_INVALID`/`EXAMPLE_TYPE_INVALID` ile AYNI emsalle) geçerli değerleri Türkçe/Almanca cümle İÇİNE GÖMMEZ, jenerik "Geçersiz X." der.',
+        neden: 'İngilizce sabit değer + ayrı frontend çevirisi, yeni bir dil eklendiğinde `ErrorMessages` sözlüğüne yalnızca bir SÜTUN (yeni dil anahtarı) eklenmesini yeterli kılar — API sözleşmesinin KENDİSİNE (route değerleri, enum kodları) hiç DOKUNULMAZ, yalnızca frontend\'in çeviri dosyasına bir satır EKLENİR, backend değişmez.',
+        olmasaydi: 'Hata mesajı geçerli değerleri ("Weak, Medium veya Good olmalı" gibi) sözlü olarak SAYSAYDI, bu cümle YANLIŞLIKLA bir "kullanıcıya gösterilen İngilizce kod" izlenimi YARATIRDI — hem tr/de çeviri disiplini hem de "sabit kod değerleri API sözleşmesinde İngilizce kalır" ilkesiyle ÇELİŞEN, tutarsız bir örnek olurdu.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ErrorMessages.cs — 2 Yeni Kod × 2 Dil',
+        dosyaYolu: 'backend/Zausel.Application/Common/ErrorMessages.cs',
+        neden: '`GetProgressWordsQueryValidator`/`ApplyWordLeechActionCommandValidator`\'ın (bir ÖNCEKİ sözlük slaydı) ürettiği `PROGRESS_BAND_INVALID`/`LEECH_ACTION_INVALID` Code\'ları bu sözlükte YOKTU — `ExceptionHandlingMiddleware`\'in `ErrorMessages.Resolve` çağrısı bunları BULAMAZSA istemciye Code\'un KENDİSİNİ (çözümlenmemiş ham metin) döndürürdü.',
+        diff: `            ["FILE_REQUIRED"] = "Dosya zorunlu.",
+            ["UNSUPPORTED_FILE_TYPE"] = "Desteklenmeyen dosya türü.",
+            ["FILE_TOO_LARGE"] = "Dosya boyutu 5 MB'ı aşamaz.",
+            ["USER_CATEGORY_ID_INVALID"] = "Geçersiz kişisel kategori kimliği.",
+            ["USER_CATEGORY_NAME_REQUIRED"] = "Kategori adı zorunlu.",
+            ["USER_CATEGORY_NAME_TOO_LONG"] = "Kategori adı en fazla 100 karakter olabilir.",
+            ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Açıklama en fazla 500 karakter olabilir.",
+            ["USER_CATEGORY_COLOR_TOO_LONG"] = "Renk değeri en fazla 10 karakter olabilir.",
+            ["USER_CATEGORY_ICON_TOO_LONG"] = "İkon adı en fazla 100 karakter olabilir.",
++           ["PROGRESS_BAND_INVALID"] = "Geçersiz bant değeri.",
++           ["LEECH_ACTION_INVALID"] = "Geçersiz aksiyon.",
+        },
+        ["de"] = new()
+        {
+@@ 90 SATIR SONRA (Almanca sözlük, AYNI 2 kod) @@
+            ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Die Beschreibung darf höchstens 500 Zeichen lang sein.",
+            ["USER_CATEGORY_COLOR_TOO_LONG"] = "Der Farbwert darf höchstens 10 Zeichen lang sein.",
+            ["USER_CATEGORY_ICON_TOO_LONG"] = "Der Icon-Name darf höchstens 100 Zeichen lang sein.",
++           ["PROGRESS_BAND_INVALID"] = "Ungültiger Bandwert.",
++           ["LEECH_ACTION_INVALID"] = "Ungültige Aktion.",
+        },
+    };`,
+        satirlar: [
+          { satir: '["PROGRESS_BAND_INVALID"] = "Geçersiz bant değeri.",', aciklama: '`GetProgressWordsQueryValidator`\'ın (bu bölüm) tr metni — `PART_OF_SPEECH_INVALID` ile AYNI jenerik "Geçersiz X." kalıbı, geçerli değerleri (Weak/Medium/Good) SAYMAZ.', neden: null, olmasaydi: null },
+          { satir: '["LEECH_ACTION_INVALID"] = "Geçersiz aksiyon.",', aciklama: '`ApplyWordLeechActionCommandValidator`\'ın (bu bölüm) tr metni.', neden: null, olmasaydi: null },
+          { satir: '["PROGRESS_BAND_INVALID"] = "Ungültiger Bandwert.",', aciklama: '`PROGRESS_BAND_INVALID`\'in Almanca metni — Almanca sözlük tr sözlükten AYRI bir `Dictionary`, aynı Code için AYRI bir satır gerekir.', neden: null, olmasaydi: null },
+          { satir: '["LEECH_ACTION_INVALID"] = "Ungültige Aktion.",', aciklama: '`LEECH_ACTION_INVALID`\'in Almanca metni.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'ApplyWordLeechActionCommandHandlerTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Features/Progress/ApplyWordLeechActionCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/Progress/ — Bölüm 5\'teki Application/Features/Progress/ ile eşleşen test klasörü, diğer TÜM Handler testleriyle AYNI desen.',
+        kod: `using FluentAssertions;
+using Moq;
+using Zausel.Application.Features.Progress;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Application.Services;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Tests.Features.Progress;
+
+public class ApplyWordLeechActionCommandHandlerTests
+{
+    private readonly Mock<IUserProgressRepository> _userProgressRepository = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+
+    private ApplyWordLeechActionCommandHandler CreateHandler() => new(_userProgressRepository.Object, _activityLogger.Object);
+
+    [Fact]
+    public async Task Handle_NotFound_ThrowsEntityNotFoundException()
+    {
+        // ARRANGE
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(1, 99, It.IsAny<CancellationToken>())).ReturnsAsync((UserProgress?)null);
+        var command = new ApplyWordLeechActionCommand(99, "Suspend", UserId: 1, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var act = () => handler.Handle(command, default);
+
+        // ASSERT
+        await act.Should().ThrowAsync<EntityNotFoundException>();
+        _userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_SuspendAction_SetsIsSuspendedAndLogsActivity()
+    {
+        // ARRANGE
+        var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, IsSuspended = false, ConsecutiveIncorrect = 5 };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Suspend", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT — yalnızca IsSuspended döner, diğer alanlar ETKİLENMEZ (ConsecutiveIncorrect KORUNUR)
+        result.IsSuspended.Should().BeTrue();
+        result.CurrentLevel.Should().BeNull();
+        result.Acknowledged.Should().BeNull();
+        existing.IsSuspended.Should().BeTrue();
+        existing.ConsecutiveIncorrect.Should().Be(5);
+        _userProgressRepository.Verify(r => r.UpdateAsync(existing, 5, It.IsAny<CancellationToken>()), Times.Once);
+        _userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _activityLogger.Verify(l => l.LogAsync(
+            5, "User", "APPLY_LEECH_ACTION", "UserProgress", 1, It.IsAny<object>(), It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ResetAction_ResetsSm2StateAndPreservesHistoricalStats()
+    {
+        // ARRANGE — geçmiş istatistikler (TimesCorrect/TimesIncorrect/SuccessRate) KORUNMALI, yalnızca SM-2 durumu sıfırlanmalı
+        var existing = new UserProgress
+        {
+            Id = 1, UserId = 5, WordId = 5, CurrentLevel = 4, EasinessFactor = 1.9m, IntervalDays = 15,
+            RepetitionNumber = 6, ConsecutiveIncorrect = 5, IsSuspended = true, NextReviewAt = DateTime.UtcNow,
+            TimesCorrect = 12, TimesIncorrect = 6, SuccessRate = 66.67m
+        };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Reset", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.CurrentLevel.Should().Be(0);
+        result.NextReviewAt.Should().BeNull();
+        existing.CurrentLevel.Should().Be(0);
+        existing.EasinessFactor.Should().Be(2.5m);
+        existing.IntervalDays.Should().Be(1);
+        existing.RepetitionNumber.Should().Be(0);
+        existing.ConsecutiveIncorrect.Should().Be(0);
+        existing.IsSuspended.Should().BeFalse();
+        existing.NextReviewAt.Should().BeNull();
+        // Mastery, SrsCalculator.CalculateMastery(0, 66.67) ile YENİDEN hesaplanır — SuccessRate'in kendisi DEĞİŞMEZ
+        existing.Mastery.Should().Be(SrsCalculator.CalculateMastery(0, 66.67m));
+        existing.TimesCorrect.Should().Be(12);
+        existing.TimesIncorrect.Should().Be(6);
+        existing.SuccessRate.Should().Be(66.67m);
+    }
+
+    [Fact]
+    public async Task Handle_ContinueAction_DoesNotMutateOrPersistAnything()
+    {
+        // ARRANGE
+        var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, ConsecutiveIncorrect = 7, IsSuspended = false };
+        _userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        var command = new ApplyWordLeechActionCommand(5, "Continue", UserId: 5, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT — yalnızca onay döner, HİÇBİR alan değişmez, veritabanına YAZILMAZ
+        result.Acknowledged.Should().BeTrue();
+        result.IsSuspended.Should().BeNull();
+        existing.ConsecutiveIncorrect.Should().Be(7);
+        _userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _activityLogger.Verify(l => l.LogAsync(
+            It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`Verify` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: 'Test edilen Command/Handler\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı — mock\'lanacak arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`\'ın ad alanı — mock\'lanacak ikinci arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Services;', aciklama: '`SrsCalculator`\'ın ad alanı — Reset testinin beklenen Mastery değerini HESAPLAMAK için (elle hesaplanmış bir sabit YERİNE, GERÇEK formül çağrılır).', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Features.Progress;', aciklama: 'Üretim kodundaki `Zausel.Application.Features.Progress` ile PARALEL bir test namespace\'i — xUnit test KEŞFİ de assembly TARAMASIYLA çalışır, bu paralellik yalnızca bir GEZİNME kolaylığıdır (hangi üretim dosyasının testinin nerede olduğunu TAHMİN edilebilir kılar).', neden: null, olmasaydi: null },
+          { satir: 'public class ApplyWordLeechActionCommandHandlerTests', aciklama: '`{TestEdilenSınıf}Tests` deseni.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserProgressRepository> _userProgressRepository = new();', aciklama: 'Repository\'nin SAHTE hâli.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();', aciklama: 'İkinci bağımlılığın mock\'u.', neden: null, olmasaydi: null },
+          { satir: 'private ApplyWordLeechActionCommandHandler CreateHandler() => new(_userProgressRepository.Object, _activityLogger.Object);', aciklama: 'Handler\'ı KURAN yardımcı — her test AYRI bir `existing` UserProgress ile ÇAĞIRIR.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'Girdi almayan, TEK bir senaryoyu test eden xUnit özniteliği — bu dosyadaki DÖRT testin HEPSİNİN üzerinde (Theory YOK, çünkü her senaryo FARKLI bir kurulum/beklenti gerektiriyor).', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_NotFound_ThrowsEntityNotFoundException()', aciklama: 'Minimum kapsamın "bulunamadı" senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'Handler\'ın KURULMASI — bu dosyadaki DÖRT testin HEPSİNDE tekrar eder, her seferinde AYNI (mock\'lar test METODU başına YENİDEN oluşturulan alanlar olduğu için) TEMİZ bir handler.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetByUserAndWordAsync(1, 99, It.IsAny<CancellationToken>())).ReturnsAsync((UserProgress?)null);', aciklama: 'Repository `null` DÖNDÜĞÜNDE Handler\'ın `EntityNotFoundException` FIRLATMASI beklenir.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(99, "Suspend", UserId: 1, ActorRole: "User");', aciklama: 'Action DEĞERİ bu testte ÖNEMSİZ (hiçbir dala ULAŞILMIYOR) — "Suspend" keyfi bir SEÇİM.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(command, default);', aciklama: 'FluentAssertions\'ın `ThrowAsync` deseni — çağrı HEMEN değil, `Should()` içinde ÇALIŞTIRILIR.', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();', aciklama: 'Beklenen istisna tipinin doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Kayıt YOKSA `UpdateAsync`\'in HİÇ çağrılmadığının doğrulanması — `DeleteUserCategoryCommandHandlerTests`teki (A-08) AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_SuspendAction_SetsIsSuspendedAndLogsActivity()', aciklama: 'Suspend dalının HAPPY PATH\'i.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, IsSuspended = false, ConsecutiveIncorrect = 5 };', aciklama: '`ConsecutiveIncorrect = 5` BİLEREK seçildi — testin ASSERT\'i bu değerin Suspend SONRASI da 5 KALDIĞINI (dokunulmadığını) doğrulayacak.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Setup(r => r.GetByUserAndWordAsync(5, 5, It.IsAny<CancellationToken>())).ReturnsAsync(existing);', aciklama: 'Repository bu SEFERKİ `existing` nesneyi döner.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Suspend", UserId: 5, ActorRole: "User");', aciklama: 'Suspend aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'Handler\'ın GERÇEKTEN çağrılması.', neden: null, olmasaydi: null },
+          { satir: 'result.IsSuspended.Should().BeTrue();', aciklama: 'Response\'un dolu OLMASI beklenen alanı.', neden: null, olmasaydi: null },
+          { satir: 'result.CurrentLevel.Should().BeNull();', aciklama: 'Response\'un BOŞ kalması beklenen alanlarından biri — "şekli aksiyona göre değişir" tasarımının TEST karşılığı.', neden: null, olmasaydi: null },
+          { satir: 'result.Acknowledged.Should().BeNull();', aciklama: 'İKİNCİ boş kalması beklenen alan.', neden: null, olmasaydi: null },
+          { satir: 'existing.IsSuspended.Should().BeTrue();', aciklama: 'Entity\'nin KENDİSİNİN de (yalnızca response\'un DEĞİL) doğru mutasyona uğradığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(5);', aciklama: 'Suspend\'in `ConsecutiveIncorrect`\'e DOKUNMADIĞININ doğrulanması — Reset testindeki AYNI alanın SIFIRLANDIĞI davranışla TEZAT.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.UpdateAsync(existing, 5, It.IsAny<CancellationToken>()), Times.Once);', aciklama: '`UpdateAsync`\'in DOĞRU nesne ve DOĞRU userId ile TAM BİR KEZ çağrıldığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'Kaydetmenin GERÇEKTEN çağrıldığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger.Verify(l => l.LogAsync(', aciklama: 'Audit log çağrısının doğrulanmasının başlangıcı — bu satır Suspend HEM Continue testinde tekrar eder, İKİSİNDE de "Verify" çağrısının başlangıcıdır (Suspend\'de `Times.Once`, Continue\'da `Times.Never` bekler).', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int?>(),', aciklama: '`LogAsync`\'in İLK beş parametresi — Continue testinde HEPSİ `It.IsAny<...>()`, çünkü bu çağrının HİÇ YAPILMAYACAĞI (`Times.Never`) doğrulanıyor, argümanların İÇERİĞİ ÖNEMSİZ.', neden: null, olmasaydi: null },
+          { satir: '5, "User", "APPLY_LEECH_ACTION", "UserProgress", 1, It.IsAny<object>(), It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),', aciklama: 'Action kodu (`APPLY_LEECH_ACTION`) + EntityType (`UserProgress`) + EntityId (`1`, `existing.Id`) TAM olarak eşleşmeli, oldValue/newValue içeriği `It.IsAny<object>()` ile GEVŞEK doğrulanır (anonim tiplerin İÇİNİ birebir eşleştirmek KIRILGAN olurdu).', neden: null, olmasaydi: null },
+          { satir: 'Times.Once);', aciklama: '`LogAsync`\'in TAM BİR KEZ çağrıldığının doğrulanması — çağrının kendisi (Verify) ile bu satır ARASINDA argüman listesi olduğu için ayrı bir satıra DÜŞER.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ResetAction_ResetsSm2StateAndPreservesHistoricalStats()', aciklama: 'Reset dalının EN kapsamlı testi — bu bölümdeki TEK test, entity\'nin SEKİZ farklı alanını BİRDEN doğrular.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress', aciklama: 'YOĞUN bir başlangıç durumu — SM-2 alanları İLERİ (level 4, interval 15, EF 1.9), askıya ALINMIŞ, geçmiş istatistikler DOLU.', neden: null, olmasaydi: null },
+          { satir: 'Id = 1, UserId = 5, WordId = 5, CurrentLevel = 4, EasinessFactor = 1.9m, IntervalDays = 15,', aciklama: 'SM-2 alanlarının İLERİ bir durumda BAŞLATILMASI — Reset\'in bunların HEPSİNİ BAŞLANGIÇ değerlerine döndürdüğünü göstermek için.', neden: null, olmasaydi: null },
+          { satir: 'RepetitionNumber = 6, ConsecutiveIncorrect = 5, IsSuspended = true, NextReviewAt = DateTime.UtcNow,', aciklama: '`IsSuspended = true` BİLEREK — Reset\'in bu bayrağı da AÇTIĞINI (kavram slaydındaki gerekçe) doğrulamak için.', neden: null, olmasaydi: null },
+          { satir: 'TimesCorrect = 12, TimesIncorrect = 6, SuccessRate = 66.67m', aciklama: 'Geçmiş istatistikler — bu ÜÇÜNÜN Reset SONRASI da AYNI KALDIĞI ayrıca doğrulanacak.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Reset", UserId: 5, ActorRole: "User");', aciklama: 'Reset aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'result.CurrentLevel.Should().Be(0);', aciklama: 'Response\'un dolu OLMASI beklenen alanlarından biri.', neden: null, olmasaydi: null },
+          { satir: 'result.NextReviewAt.Should().BeNull();', aciklama: 'Response\'un İKİNCİ dolu alanı — `null` DEĞERİN KENDİSİ "yeni kelime havuzu" anlamına geldiği için, `Should().BeNull()` burada BAŞARILI bir doğrulama, bir EKSİKLİK değil.', neden: null, olmasaydi: null },
+          { satir: 'existing.CurrentLevel.Should().Be(0);', aciklama: 'Entity\'nin KENDİSİNİN de sıfırlandığı.', neden: null, olmasaydi: null },
+          { satir: 'existing.EasinessFactor.Should().Be(2.5m);', aciklama: 'Standart BAŞLANGIÇ değerine DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.IntervalDays.Should().Be(1);', aciklama: 'Standart BAŞLANGIÇ değerine DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.RepetitionNumber.Should().Be(0);', aciklama: 'Sıfırlanma.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(0);', aciklama: 'Leech tetikleyicisinin SIFIRLANMASI — Suspend testindeki AYNI alanın KORUNDUĞU davranışla TEZAT.', neden: null, olmasaydi: null },
+          { satir: 'existing.IsSuspended.Should().BeFalse();', aciklama: 'Askıya alma bayrağının da AÇILDIĞININ doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.NextReviewAt.Should().BeNull();', aciklama: 'Yeni kelime havuzuna DÖNÜŞ.', neden: null, olmasaydi: null },
+          { satir: 'existing.Mastery.Should().Be(SrsCalculator.CalculateMastery(0, 66.67m));', aciklama: 'Beklenen değer ELLE hesaplanmış bir sabit DEĞİL, GERÇEK `SrsCalculator.CalculateMastery` çağrısı — test, Handler\'ın DOĞRU formülü DOĞRU parametrelerle ÇAĞIRDIĞINI, formülün KENDİSİNİ (Bölüm 3\'te ZATEN test edildi) DEĞİL doğrular.', neden: null, olmasaydi: null },
+          { satir: 'existing.TimesCorrect.Should().Be(12);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.TimesIncorrect.Should().Be(6);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması.', neden: null, olmasaydi: null },
+          { satir: 'existing.SuccessRate.Should().Be(66.67m);', aciklama: 'Geçmiş istatistiğin KORUNDUĞUNUN doğrulanması — bu ÜÇ satır BİRLİKTE Reset\'in "yalnızca ileri gidişi sıfırla, geçmişi KORU" tasarımını KANITLAR.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ContinueAction_DoesNotMutateOrPersistAnything()', aciklama: 'Continue dalının testi — bu bölümdeki TEK "hiçbir şey OLMADIĞINI" doğrulayan test.', neden: null, olmasaydi: null },
+          { satir: 'var existing = new UserProgress { Id = 1, UserId = 5, WordId = 5, ConsecutiveIncorrect = 7, IsSuspended = false };', aciklama: '`ConsecutiveIncorrect = 7` — Continue SONRASI da AYNI KALMASI beklenir.', neden: null, olmasaydi: null },
+          { satir: 'var command = new ApplyWordLeechActionCommand(5, "Continue", UserId: 5, ActorRole: "User");', aciklama: 'Continue aksiyonu.', neden: null, olmasaydi: null },
+          { satir: 'result.Acknowledged.Should().BeTrue();', aciklama: 'Response\'un dolu OLMASI beklenen TEK alanı.', neden: null, olmasaydi: null },
+          { satir: 'result.IsSuspended.Should().BeNull();', aciklama: 'Diğer üç alanın (`IsSuspended` örneği) HEPSİNİN boş KALDIĞI — üç ayrı `Should().BeNull()` yerine TEMSİLİ bir tanesi kontrol edilir, kalanı response record\'unun KENDİSİ (Bölüm 5) zaten garanti eder.', neden: null, olmasaydi: null },
+          { satir: 'existing.ConsecutiveIncorrect.Should().Be(7);', aciklama: 'Entity\'nin HİÇBİR alanının değişmediğinin (temsili olarak) doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.UpdateAsync(It.IsAny<UserProgress>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Continue\'nin `UpdateAsync`\'i HİÇ çağırmadığının doğrulanması.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);', aciklama: 'Continue\'nin `SaveChangesAsync`\'i HİÇ çağırmadığının doğrulanması — veritabanına HİÇBİR yazma GİTMEDİĞİNİN kanıtı.', neden: null, olmasaydi: null },
+          { satir: 'It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),', aciklama: '`LogAsync`\'in TÜM parametreleri `It.IsAny<...>()` — hangi ARGÜMANLARLA çağrıldığı ÖNEMSİZ, ÖNEMLİ olan HİÇ ÇAĞRILMAMASI (`Times.Never`, bir SONRAKİ satır).', neden: null, olmasaydi: null },
+          { satir: 'Times.Never);', aciklama: 'Continue\'nin audit log YAZMADIĞININ doğrulanması — ApplyWordLeechActionCommand.cs\'teki "içerik DEĞİŞTİRMEYEN eylem LOGLANMAZ" tasarım kararının TEST karşılığı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer 3 Test Dosyası — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'GetProgressSummaryQueryHandlerTests.cs (backend/Zausel.Tests/Features/Progress/GetProgressSummaryQueryHandlerTests.cs — 4 test)', tanim: '`Handle_MixesWordAndCardSnapshots_ReturnsCombinedBandCounts` (İKİ repository\'den gelen snapshot\'ların TEK sayımda birleştiği), `Handle_SuspendedItemPastDue_ExcludedFromDueCount`/`Handle_NotSuspendedPastDue_IncludedInDueCount` (due sayımının IsSuspended\'a göre İKİ YÖNLÜ doğrulanması — Bölüm 5\'in `dueNow` satırının TAM karşılığı), `Handle_NoSnapshots_ReturnsAllZero` (boş liste durumunda istisna FIRLAMADIĞI).' },
+          { terim: 'GetProgressWordsQueryHandlerTests.cs (backend/Zausel.Tests/Features/Progress/GetProgressWordsQueryHandlerTests.cs — 3 test)', tanim: '`Handle_WeakBand_QueriesZeroToFortyExclusiveRange`/`Handle_GoodBand_QueriesWithNoUpperBound` (switch ifadesinin İKİ UÇ dalının repository\'ye DOĞRU aralığı geçirdiğinin `Verify` ile doğrulanması), `Handle_RepositoryReturnsItems_MapsAllFieldsToResponse` (WordProgressItem→ProgressWordResponse dönüşümünün doğru ÇALIŞTIĞI).' },
+          { terim: 'GetSuspendedWordsQueryHandlerTests.cs (backend/Zausel.Tests/Features/Progress/GetSuspendedWordsQueryHandlerTests.cs — 2 test)', tanim: '`Handle_RepositoryReturnsSuspendedItems_MapsToResponseWithConsecutiveIncorrect` (dönüşümün `ConsecutiveIncorrect`\'i DOĞRU taşıdığı), `Handle_NoSuspendedWords_ReturnsEmptyList` (boş liste durumu).' }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Gerçek Sunucu, Gerçek Veri, Bir Tutarsızlık Bulundu ve Düzeltildi',
+        aciklama: 'API gerçek `ZauselDB`\'ye karşı BAŞLATILDI, admin OTP akışıyla giriş yapıldı, dört test `UserProgress` satırı ELLE eklendi (zayıf/orta/iyi/askıya-alınmış birer örnek). `GET /progress/summary`, `GET /progress/words?band=Weak|Medium|Good`, `GET /progress/suspended` ve `POST /words/{id}/leech-action` (Suspend/Reset/Continue + 404 + 400) curl ile TEK TEK denendi; `ActivityLogs` sorgusuyla Suspend/Reset\'in old/new diff\'inin DOĞRU yazıldığı (Mastery\'nin `CalculateMastery(0, 14.00)=2.80` ile BİREBİR eştiği) teyit edildi.',
+        neden: 'Bu deneme sırasında Bölüm 5\'teki tutarsızlık (özet `weak:2` derken bant listesi TEK eleman DÖNMESİ) GERÇEK bir veritabanı satırının soft-delete EDİLMİŞ olmasından KAYNAKLANDIĞI ANLAŞILDI — birim testleri (mock repository kullandığı İÇİN) bu farkı asla YAKALAYAMAZDI, yalnızca GERÇEK SQL sorgularının FARKLI davranması bu hatayı ORTAYA ÇIKARDI.',
+        olmasaydi: 'Canlı doğrulama atlanıp yalnızca `dotnet test`le YETİNİLSEYDİ, bu tutarsızlık Web/Mobil GELİŞTİRİLİRKEN (ana ekran SAYISI ile İncele listesi SAYISI TUTMADIĞINDA) fark edilirdi — o noktada hatanın backend\'de mi frontend\'de mi olduğunu ANLAMAK çok daha UZUN sürerdi.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Switch ifadesi (switch expression)', tanim: '`request.Band switch { "Weak" => ..., _ => throw ... }` — C#\'ın deyim (statement) DEĞİL, İFADE (expression) olarak switch\'i, bir DEĞER üretir ve exhaustive (TÜM dalları kapsayan) olmak ZORUNDADIR.' },
+          { terim: 'Anonim tip (anonymous type)', tanim: '`new { userProgress.IsSuspended, userProgress.CurrentLevel, userProgress.NextReviewAt }` — adı OLMAYAN, yalnızca bu satırda VAR olan geçici bir tip; `IActivityLogger.LogAsync`ın `object?` parametresine geçilip JSON\'a SERİLEŞTİRİLİR.' },
+          { terim: 'Sabit kod değeri (fixed vocabulary)', tanim: '`band`/`action` gibi API sözleşmesinin İngilizce, ÇEVRİLMEYEN değerleri — `PartOfSpeech`/`AchievementRarity` ile AYNI kategori, kullanıcıya gösterilecek ÇEVİRİSİ frontend\'in KENDİ i18n dosyasında YAŞAR.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'A-09 — ProgressService/ProgressController Tamamlandı',
+        maddeler: [
+          '`IUserProgressRepository`/`UserProgressRepository` (5 metot, Word JOIN\'i navigation property OLMADAN) + `IUserCardProgressRepository`/`UserCardProgressRepository` (1 metot, `UserCards` A-10\'u bekliyor) — canlı doğrulama sırasında bulunan bir tutarsızlık (`GetSnapshotsAsync`\'in silinmiş kelimeleri SAYMASI) düzeltildi.',
+          '`GetProgressSummaryQuery`/`GetProgressWordsQuery`/`GetSuspendedWordsQuery`/`ApplyWordLeechActionCommand` — MediatR Query/Command deseni (madde metnindeki "IProgressService/ProgressService" ifadesi A-08\'deki AYNI gerekçeyle terk edildi), `LeechActionResponse`in aksiyona göre değişen şekli.',
+          '`ProgressController` (`/progress/summary`, `/progress/words`, `/progress/suspended`) + `WordsController`\'a eklenen `POST /words/{id}/leech-action` — rota sözleşmesi leech aksiyonunu BİLEREK `/progress/` DIŞINDA tutar.',
+          '13 yeni birim testi (4 Handler dosyası) — tüm paket 234/234 yeşil. Gerçek sunucuya karşı curl ile canlı doğrulandı, `ActivityLogs` sorgusuyla teyit edildi.',
+          'Kapsam DIŞI — A-09\'un SON adımı: `IAchievementService`/`AchievementService` (seed veri: streak 3/7/30, kelime sayısı 50/200/500, ilk `CurrentLevel=5`, 100 kelime İyi bantta, hatasız oturum, leech kurtarma) + `GET /achievements/me` + testleri.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

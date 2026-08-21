@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Zausel.Application.DTOs;
+using Zausel.Application.DTOs.Progress;
 using Zausel.Application.DTOs.Words;
+using Zausel.Application.Features.Progress;
 using Zausel.Application.Features.Words;
 
 namespace Zausel.API.Controllers;
@@ -90,6 +92,16 @@ public class WordsController : ApiControllerBase
     {
         var result = await _mediator.Send(
             new PairWordConceptsCommand(request.PrimaryId, request.OtherConceptId, CurrentUserId, CurrentUserRole), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("{id}/leech-action")]
+    [Authorize]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<LeechActionResponse>> LeechAction(int id, LeechActionRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ApplyWordLeechActionCommand(id, request.Action, CurrentUserId, CurrentUserRole), cancellationToken);
         return Ok(result);
     }
 }

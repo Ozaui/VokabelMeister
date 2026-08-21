@@ -94,6 +94,8 @@ public static class ErrorMessages
             ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Açıklama en fazla 500 karakter olabilir.",
             ["USER_CATEGORY_COLOR_TOO_LONG"] = "Renk değeri en fazla 10 karakter olabilir.",
             ["USER_CATEGORY_ICON_TOO_LONG"] = "İkon adı en fazla 100 karakter olabilir.",
+            ["PROGRESS_BAND_INVALID"] = "Geçersiz bant değeri.",
+            ["LEECH_ACTION_INVALID"] = "Geçersiz aksiyon.",
         },
         ["de"] = new()
         {
@@ -181,6 +183,8 @@ public static class ErrorMessages
             ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Die Beschreibung darf höchstens 500 Zeichen lang sein.",
             ["USER_CATEGORY_COLOR_TOO_LONG"] = "Der Farbwert darf höchstens 10 Zeichen lang sein.",
             ["USER_CATEGORY_ICON_TOO_LONG"] = "Der Icon-Name darf höchstens 100 Zeichen lang sein.",
+            ["PROGRESS_BAND_INVALID"] = "Ungültiger Bandwert.",
+            ["LEECH_ACTION_INVALID"] = "Ungültige Aktion.",
         },
     };
 
