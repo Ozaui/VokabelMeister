@@ -4,6 +4,7 @@ using Zausel.Domain.Entities;
 using Zausel.Domain.Entities.Auth;
 using Zausel.Domain.Entities.Content;
 using Zausel.Domain.Entities.Logging;
+using Zausel.Domain.Entities.PersonalContent;
 
 namespace Zausel.Infrastructure.Data;
 
@@ -27,6 +28,7 @@ public class ZauselDbContext : DbContext
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+    public DbSet<UserCategory> UserCategories => Set<UserCategory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

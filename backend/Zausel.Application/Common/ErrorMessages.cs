@@ -88,6 +88,12 @@ public static class ErrorMessages
             ["FILE_REQUIRED"] = "Dosya zorunlu.",
             ["UNSUPPORTED_FILE_TYPE"] = "Desteklenmeyen dosya türü.",
             ["FILE_TOO_LARGE"] = "Dosya boyutu 5 MB'ı aşamaz.",
+            ["USER_CATEGORY_ID_INVALID"] = "Geçersiz kişisel kategori kimliği.",
+            ["USER_CATEGORY_NAME_REQUIRED"] = "Kategori adı zorunlu.",
+            ["USER_CATEGORY_NAME_TOO_LONG"] = "Kategori adı en fazla 100 karakter olabilir.",
+            ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Açıklama en fazla 500 karakter olabilir.",
+            ["USER_CATEGORY_COLOR_TOO_LONG"] = "Renk değeri en fazla 10 karakter olabilir.",
+            ["USER_CATEGORY_ICON_TOO_LONG"] = "İkon adı en fazla 100 karakter olabilir.",
         },
         ["de"] = new()
         {
@@ -169,6 +175,12 @@ public static class ErrorMessages
             ["FILE_REQUIRED"] = "Datei ist erforderlich.",
             ["UNSUPPORTED_FILE_TYPE"] = "Nicht unterstützter Dateityp.",
             ["FILE_TOO_LARGE"] = "Die Dateigröße darf 5 MB nicht überschreiten.",
+            ["USER_CATEGORY_ID_INVALID"] = "Ungültige persönliche Kategorie-ID.",
+            ["USER_CATEGORY_NAME_REQUIRED"] = "Der Kategoriename ist erforderlich.",
+            ["USER_CATEGORY_NAME_TOO_LONG"] = "Der Kategoriename darf höchstens 100 Zeichen lang sein.",
+            ["USER_CATEGORY_DESCRIPTION_TOO_LONG"] = "Die Beschreibung darf höchstens 500 Zeichen lang sein.",
+            ["USER_CATEGORY_COLOR_TOO_LONG"] = "Der Farbwert darf höchstens 10 Zeichen lang sein.",
+            ["USER_CATEGORY_ICON_TOO_LONG"] = "Der Icon-Name darf höchstens 100 Zeichen lang sein.",
         },
     };
 

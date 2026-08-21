@@ -83,6 +83,7 @@ builder.Services.AddValidatorsFromAssembly(typeof(IRepository<>).Assembly,
     filter: result => result.ValidatorType != typeof(WordGrammarValidator));
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(IRepository<>).Assembly));
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+builder.Services.AddAutoMapper(typeof(IRepository<>).Assembly);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
     options.TokenValidationParameters = new TokenValidationParameters

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-08 — Kişisel Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'birim-testleri-ozet-sozluk',
+    bolumBaslik: 'A-08 — Kişisel Kategori API',
+    oncekiBolum: '03_controller-postman.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: '9 Yeni Test — A-08 Tamamlandı',
+        altBaslik: '4 CreateUserCategoryCommandHandlerTests + 3 UpdateUserCategoryCommandHandlerTests + Delete/Get testleri, gerçek AutoMapper konfigürasyonuyla.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Testte de Mock Değil, Gerçek Bir MapperConfiguration?',
+        aciklama: 'Bu bölümdeki HİÇBİR test `IMapper`ı Moq ile SAHTELEMİYOR — hepsi `new MapperConfiguration(cfg => cfg.AddProfile<UserCategoryProfile>()).CreateMapper()` ile GERÇEK bir mapper kuruyor ve Handler\'a bunu geçiyor.',
+        neden: 'Mock\'lanan bir `IMapper`, "Map çağrıldı mı" sorusunu yanıtlar ama "Bölüm 2\'deki `UserCategoryProfile`daki eşleme kuralı GERÇEKTEN doğru mu" sorusunu asla test ETMEZ — `CreateMap<UserCategory, UserCategoryResponse>()` satırındaki bir YAZIM/eşleme hatası mock\'lu bir testte HİÇBİR ZAMAN yakalanmaz.',
+        olmasaydi: '`IMapper` mock\'lansaydı, `UserCategoryProfile`ın GERÇEK eşleme mantığı test kapsamı DIŞINDA kalırdı — Profile bozulsa bile (ör. bir alan yanlışlıkla `Ignore()` edilse) TÜM testler YİNE DE yeşil görünürdü, yalnızca gerçek bir API çağrısında (canlı ortamda, Bölüm 3\'teki gibi) fark edilirdi.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateUserCategoryCommandHandlerTests.cs',
+        dosyaYolu: 'backend/Zausel.Tests/Features/UserCategories/CreateUserCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Tests/Features/UserCategories/ — Bölüm 2\'deki `Features/UserCategories/` ile eşleşen test klasörü, diğer TÜM Handler testleriyle AYNI desen.',
+        kod: `using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Zausel.Application.Features.UserCategories;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Tests.Features.UserCategories;
+
+public class CreateUserCategoryCommandHandlerTests
+{
+    private readonly Mock<IUserCategoryRepository> _userCategoryRepository = new();
+    private readonly Mock<IActivityLogger> _activityLogger = new();
+    private readonly IMapper _mapper = new MapperConfiguration(cfg => cfg.AddProfile<UserCategoryProfile>()).CreateMapper();
+
+    private CreateUserCategoryCommandHandler CreateHandler() => new(_userCategoryRepository.Object, _mapper, _activityLogger.Object);
+
+    [Fact]
+    public async Task Handle_ValidRequest_CreatesUserCategoryAndReturnsResponse()
+    {
+        // ARRANGE
+        var command = new CreateUserCategoryCommand("Hayvanlar", "Ev hayvanları", "#FF6B00", "paw", UserId: 1, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        var result = await handler.Handle(command, default);
+
+        // ASSERT
+        result.Name.Should().Be("Hayvanlar");
+        result.Description.Should().Be("Ev hayvanları");
+        result.Color.Should().Be("#FF6B00");
+        result.Icon.Should().Be("paw");
+        _userCategoryRepository.Verify(r => r.AddAsync(It.Is<UserCategory>(c => c.UserId == 1 && c.Name == "Hayvanlar"), 1, It.IsAny<CancellationToken>()), Times.Once);
+        _userCategoryRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_Success_LogsCreateUserCategoryActivity()
+    {
+        // ARRANGE
+        var command = new CreateUserCategoryCommand("Hayvanlar", null, null, null, UserId: 7, ActorRole: "User");
+        var handler = CreateHandler();
+
+        // ACT
+        await handler.Handle(command, default);
+
+        // ASSERT — OldValue=null (yeni kayıt), NewValue dolu
+        _activityLogger.Verify(l => l.LogAsync(
+            7, "User", "CREATE_USER_CATEGORY", "UserCategory", It.IsAny<int?>(), null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+}`,
+        satirlar: [
+          { satir: 'using AutoMapper;', aciklama: '`IMapper`/`MapperConfiguration` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using FluentAssertions;', aciklama: '`Should()` akıcı doğrulama sözdizimi.', neden: null, olmasaydi: null },
+          { satir: 'using Moq;', aciklama: '`Mock<T>`/`It.IsAny`/`It.Is`/`Verify` — repository ve activity logger\'ı GERÇEK bir veritabanı OLMADAN test edebilmek için.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.UserCategories;', aciklama: '`CreateUserCategoryCommand`/Handler/`UserCategoryProfile` bu ad alanında.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCategoryRepository` — mock\'lanacak arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger` — mock\'lanacak ikinci arayüz.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory` — `It.Is<UserCategory>` doğrulamasında kullanılıyor.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Tests.Features.UserCategories;', aciklama: 'Üretim kodundaki `Zausel.Application.Features.UserCategories` ile PARALEL bir test namespace\'i.', neden: null, olmasaydi: null },
+          { satir: 'public class CreateUserCategoryCommandHandlerTests', aciklama: '`{TestEdilenSınıf}Tests` deseni.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IUserCategoryRepository> _userCategoryRepository = new();', aciklama: 'Repository\'nin SAHTE (mock) hâli — gerçek veritabanı bu testte hiç DEVREYE girmez.', neden: null, olmasaydi: null },
+          { satir: 'private readonly Mock<IActivityLogger> _activityLogger = new();', aciklama: 'İkinci bağımlılığın mock\'u.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMapper _mapper = new MapperConfiguration(cfg => cfg.AddProfile<UserCategoryProfile>()).CreateMapper();', aciklama: 'GERÇEK mapper — bir önceki `kavram` slaytındaki gerekçeyle, mock DEĞİL.', neden: null, olmasaydi: null },
+          { satir: 'private CreateUserCategoryCommandHandler CreateHandler() => new(_userCategoryRepository.Object, _mapper, _activityLogger.Object);', aciklama: 'Handler\'ı üç bağımlılıkla KURAN yardımcı metot.', neden: null, olmasaydi: null },
+          { satir: '[Fact]', aciklama: 'xUnit\'in "bu bir test metodu" işaretleyicisi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_ValidRequest_CreatesUserCategoryAndReturnsResponse()', aciklama: 'Test adı — "geçerli bir istekte, kategori oluşturulur ve response DÖNER" senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'var command = new CreateUserCategoryCommand("Hayvanlar", "Ev hayvanları", "#FF6B00", "paw", UserId: 1, ActorRole: "User");', aciklama: 'ARRANGE — DÖRT alan da dolu, ActorRole "User" (Admin DEĞİL, bu Controller\'ın gerçek kullanım senaryosu).', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'ARRANGE\'in son adımı.', neden: null, olmasaydi: null },
+          { satir: 'var result = await handler.Handle(command, default);', aciklama: 'ACT.', neden: null, olmasaydi: null },
+          { satir: 'result.Name.Should().Be("Hayvanlar");', aciklama: 'ASSERT #1 — dönen DTO\'nun `Name`i, `UserCategoryProfile`ın GERÇEKTEN eşlediğini kanıtlar.', neden: null, olmasaydi: null },
+          { satir: 'result.Description.Should().Be("Ev hayvanları");', aciklama: 'ASSERT #2.', neden: null, olmasaydi: null },
+          { satir: 'result.Color.Should().Be("#FF6B00");', aciklama: 'ASSERT #3.', neden: null, olmasaydi: null },
+          { satir: 'result.Icon.Should().Be("paw");', aciklama: 'ASSERT #4 — beş alanın DÖRDÜ (Id hariç, o veritabanı IDENTITY\'sinden gelir ve bu mock\'lu testte 0 kalır) burada doğrulanıyor, `UserCategoryProfile`ın TÜM eşleme kurallarını KAPSAR.', neden: null, olmasaydi: null },
+          { satir: '_userCategoryRepository.Verify(r => r.AddAsync(It.Is<UserCategory>(c => c.UserId == 1 && c.Name == "Hayvanlar"), 1, It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'ASSERT #5 — Handler\'ın repository\'ye geçtiği entity\'nin `UserId`sinin GERÇEKTEN `command.UserId`ye eşit olduğunu doğrular (Bölüm 1\'deki sahiplik alanının Handler\'da DOĞRU atandığının testi).', neden: 'Bu doğrulama olmasaydı, Handler `UserId`yi YANLIŞLIKLA sabit bir değerle (ör. 0) doldursa bile test YİNE DE geçerdi — sahiplik ataması BU testin asıl ODAĞI.', olmasaydi: null },
+          { satir: '_userCategoryRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);', aciklama: 'ASSERT #6 — kaydın GERÇEKTEN "kaydedildiği" (change tracker\'a eklenmekle YETİNİLMEDİĞİ) doğrulanır.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_Success_LogsCreateUserCategoryActivity()', aciklama: 'Test adı — "başarılı oluşturmada, CREATE_USER_CATEGORY olayı LOGLANIR" senaryosu.', neden: null, olmasaydi: null },
+          { satir: 'var command = new CreateUserCategoryCommand("Hayvanlar", null, null, null, UserId: 7, ActorRole: "User");', aciklama: 'ARRANGE — bu testin ODAĞI audit log olduğu için Description/Color/Icon BİLEREK null (içeriklerinin bu testle İLGİSİ YOK).', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'ARRANGE\'in son adımı.', neden: null, olmasaydi: null },
+          { satir: 'await handler.Handle(command, default);', aciklama: 'ACT.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger.Verify(l => l.LogAsync(', aciklama: 'ASSERT — `IActivityLogger.LogAsync`in BEKLENEN parametrelerle ÇAĞRILDIĞINI doğrular.', neden: null, olmasaydi: null },
+          { satir: '7, "User", "CREATE_USER_CATEGORY", "UserCategory", It.IsAny<int?>(), null, It.IsAny<object>(), null, null, It.IsAny<CancellationToken>()),', aciklama: '`entityId` (5. parametre) `It.IsAny<int?>()` — mock\'lu bir repository ile ÇALIŞAN yeni entity\'nin `Id`si GERÇEK bir IDENTITY DEĞERİ ALAMAZ (0 kalır), bu testin ODAĞI o değerin TAM OLARAK ne olduğu DEĞİL; `oldValue` (6. parametre) `null` — yeni kayıt.', neden: null, olmasaydi: null },
+          { satir: 'Times.Once);', aciklama: 'Log çağrısının TAM OLARAK bir kez yapıldığı doğrulanır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UpdateUserCategoryCommandHandlerTests.cs — Sahiplik Kontrolü Testi',
+        dosyaYolu: 'backend/Zausel.Tests/Features/UserCategories/UpdateUserCategoryCommandHandlerTests.cs',
+        nedenBuKlasor: 'Aynı test dosyası — Bölüm 3\'teki 404 postman senaryosunun BİRİM test karşılığı.',
+        kod: `[Fact]
+public async Task Handle_NotFoundOrNotOwned_ThrowsEntityNotFoundException()
+{
+    // ARRANGE — repository sahiplik filtresini kendi içinde uygular, başkasının kategorisi de burada null döner.
+    _userCategoryRepository.Setup(r => r.GetByIdForUserAsync(99, 1, It.IsAny<CancellationToken>())).ReturnsAsync((UserCategory?)null);
+    var command = new UpdateUserCategoryCommand(99, "Hayvanlar", null, null, null, UserId: 1, ActorRole: "User");
+    var handler = CreateHandler();
+
+    // ACT
+    var act = () => handler.Handle(command, default);
+
+    // ASSERT
+    await act.Should().ThrowAsync<EntityNotFoundException>();
+}`,
+        satirlar: [
+          { satir: '[Fact]', aciklama: 'xUnit test işaretleyicisi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task Handle_NotFoundOrNotOwned_ThrowsEntityNotFoundException()', aciklama: 'Test adı — bilerek "NotFound**Or**NotOwned" — TEK bir test, İKİ farklı gerçek senaryoyu (kayıt hiç yok / kayıt var ama başkasının) AYNI davranışla kapsadığını isminde TAŞIR.', neden: 'Bölüm 1\'deki `GetByIdForUserAsync` bu iki durumu zaten AYNI `null` dönüşüne indirgiyor — Handler\'ın bakış açısından ikisi arasında hiçbir FARK yok, bu yüzden ayrı iki test yazmak GEREKSİZ tekrar olurdu.', olmasaydi: null },
+          { satir: '_userCategoryRepository.Setup(r => r.GetByIdForUserAsync(99, 1, It.IsAny<CancellationToken>())).ReturnsAsync((UserCategory?)null);', aciklama: 'ARRANGE — mock, `userCategoryId=99, userId=1` kombinasyonu için `null` DÖNDÜRECEK şekilde kurulur (gerçek repository\'nin sahiplik filtresi BAŞARISIZ olduğunda üreteceği SONUÇ simüle edilir).', neden: null, olmasaydi: null },
+          { satir: 'var command = new UpdateUserCategoryCommand(99, "Hayvanlar", null, null, null, UserId: 1, ActorRole: "User");', aciklama: 'ARRANGE — Command\'daki `UserCategoryId=99`/`UserId=1`, mock Setup\'ındaki AYNI iki değer.', neden: null, olmasaydi: null },
+          { satir: 'var handler = CreateHandler();', aciklama: 'ARRANGE\'in son adımı.', neden: null, olmasaydi: null },
+          { satir: 'var act = () => handler.Handle(command, default);', aciklama: 'ACT — çağrı HEMEN yapılmaz, bir delege olarak SAKLANIR (FluentAssertions\'ın istisna yakalama deseni).', neden: null, olmasaydi: null },
+          { satir: 'await act.Should().ThrowAsync<EntityNotFoundException>();', aciklama: 'ASSERT — TAM OLARAK `EntityNotFoundException` türü BEKLENİYOR, `CategoryHasChildrenException` gibi BAŞKA bir istisna türü DEĞİL.', neden: 'Bu tür kontrolü, ExceptionHandlingMiddleware\'in bu istisnayı DOĞRU HTTP durum koduna (404) çevirdiğinden EMİN olmanın ilk adımı — yanlış bir istisna türü fırlatılsaydı yanıt 404 YERİNE 500 dönerdi.', olmasaydi: 'Genel bir `Exception` türü beklenseydi, Handler\'ın YANLIŞLIKLA BAŞKA bir istisna (ör. bir `NullReferenceException`, sahiplik kontrolü BAŞARISIZ olduğunda kodun `userCategory.Name` gibi bir alana erişmeye ÇALIŞMASI sonucu) fırlatması bu test tarafından hiç YAKALANMAZDI — istemci 404 yerine 500 GÖRÜRDÜ.' }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Diğer Senaryolar ve Test Dosyaları — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'UpdateUserCategoryCommandHandlerTests.cs — diğer 2 test', tanim: '`Handle_ValidRequest_UpdatesFieldsAndReturnsResponse` (alanların GERÇEKTEN güncellendiği + `UpdateAsync`in doğru parametrelerle çağrıldığı) ve `Handle_Success_LogsUpdateUserCategoryActivity` (`UPDATE_USER_CATEGORY` olayının `oldValue`/`newValue` İKİSİ de dolu şekilde loglandığı) — bu slaytta gösterilen sahiplik testinin İKİZLERİ, `CreateUserCategoryCommandHandlerTests`teki İKİ testle AYNI deseni izler.' },
+          { terim: 'DeleteUserCategoryCommandHandlerTests.cs — 2 test', tanim: '`Handle_NotFoundOrNotOwned_ThrowsEntityNotFoundException` (bu slaytta gösterilen testin BİREBİR aynı deseni, `SoftDeleteAsync`in HİÇ çağrılmadığı AYRICA doğrulanır) ve `Handle_Owned_SoftDeletesAndLogsActivity` (`SoftDeleteAsync` doğru parametrelerle çağrıldı + `DELETE_USER_CATEGORY` olayı `oldValue` dolu/`newValue` null ile loglandı, `DeleteCategoryCommandHandlerTests`teki (A-06) desenin AYNISI).' },
+          { terim: 'GetUserCategoriesQueryHandlerTests.cs — 2 test', tanim: '`Handle_ReturnsOnlyRequestedUsersCategories` (Handler\'ın `GetByUserIdAsync`e doğru `UserId`yi geçtiği + dönen listenin GERÇEKTEN mapped olduğu) ve `Handle_NoCategories_ReturnsEmptyList` (boş liste durumunda istisna FIRLAMADIĞI, sade bir boş dizi döndüğü) — Bölüm 3\'teki `GET /user-categories`in ilk-çağrı (`[]`) senaryosunun birim test karşılığı.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — A-08 Tamamlandı',
+        maddeler: [
+          '`CreateUserCategoryCommandHandlerTests` — 2 senaryo: alan eşlemesi + sahiplik ataması, `CREATE_USER_CATEGORY` audit logu; İKİSİ de GERÇEK bir `MapperConfiguration` ile, `IMapper` mock\'lanmadan.',
+          '`UpdateUserCategoryCommandHandlerTests` — 3 senaryo: sahiplik kontrolü (`NotFoundOrNotOwned`, kayıt-yok ve başkasının-kaydı TEK testte), alan güncellemesi, audit logu.',
+          '`DeleteUserCategoryCommandHandlerTests`/`GetUserCategoriesQueryHandlerTests` — temsili öğretimle özetlendi, AYNI desenleri izler.',
+          'Canlı doğrulama (Bölüm 3): create/list/update/delete akışı 200/201/204, boş isim 400 (`USER_CATEGORY_NAME_REQUIRED`), token\'sız istek 401, başkasının/olmayan kaydı 404, `ActivityLogs`ta 3 satır (`CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`) sorguyla doğrulandı.',
+          '`dotnet test` ile TÜM paket (önceki 194 + bu 9 yeni) 203/203 yeşil.',
+          'A-08 (Kişisel Kategori API) TAMAMLANDI: `PersonalContent` domain\'i (`UserCategory`) → Repository (sahiplik filtresi gömülü) → Projenin ilk `AutoMapper` Profile\'ı → 4 Command/Query+Handler → `UserCategoriesController` (`[Authorize]`, Admin değil) → 9 birim testi. `CardCount` A-10\'a (Kişisel Kart API) BİLEREK ertelendi.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

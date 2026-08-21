@@ -416,19 +416,49 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > senaryoları, `ActivityLogs`'a doğru yazıldığı sorguyla teyit edildi), tüm paket 194/194 yeşil,
 > `AKADEMI/backend/A-07_medya-yukleme-api/`e işlendi (3 bölüm). Sıradaki: `A-08` (Kişisel Kategori API).
 
-### A-08 — Kişisel Kategori API ⬜
+### A-08 — Kişisel Kategori API ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §8
 **Frontend karşılığı:** C-06 (Web — Kategoriler Sayfası, kişisel sekme), D-08 (Mobil — Kategoriler Ekranı)
 > A-10'daki (Kişisel Kart) `UserCardUserCategory` ara tablosunun FK verdiği `UserCategory`
 > entity'si önce hazır olmalı — dikey dilim bütünlüğü için Kişisel Kart'tan ÖNCE gelir.
 > ⚠️ **[2026-08-12]** Ara tablo adı `UserCardUserCategory` (tekil) olarak standartlaştırıldı — A-10'daki
 > entity listesiyle birebir eşleşsin diye (önceki sürümde burada yanlışlıkla çoğul `UserCardUserCategories` yazılıydı).
-- [ ] **Entity:** `UserCategory` + migration, `IUserCategoryService`/`UserCategoryController` (yalnızca sahibi, `UserId` filtresi zorunlu)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **`IActivityLogger`:** `CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** sahiplik filtresi, CRUD
-- [ ] ➜ **AKADEMI/backend'ye işle**
+> ⚠️ **[2026-08-21] Gerçekleşen tasarım, madde metninden 2 noktada saptı (kayıt altına alınmış
+> kararlar):** (1) `IUserCategoryService`/`Service` deseni **yazılmadı** — CLAUDE.md §3'teki güncel
+> kanonik desen (MediatR Command+Handler) izlendi: `CreateUserCategoryCommand`/`UpdateUserCategoryCommand`/
+> `DeleteUserCategoryCommand`/`GetUserCategoriesQuery`, madde metnindeki "Servis" ifadesi eski/terk
+> edilmiş bir sözleşmeden kalma. (2) `GET /user-categories`'in API_ENDPOINTS.md §8'de belirttiği
+> `cardCount` alanı **bilerek eklenmedi** — kaynağı olan `UserCardUserCategories` ara tablosu henüz yok
+> (`UserCard` A-10'da gelir, bu yüzden dikey dilim sırası UserCategory'yi önce ister). A-10'da
+> `GetUserCategoriesQueryHandler`'a eklenecek, ayrı bir retrofit task'ı DEĞİL — A-10'un doğal
+> kapsamının bir parçası. Ayrıca: projenin **İLK gerçek `AutoMapper` kullanımı** burada — CLAUDE.md
+> §3 koşulu (tek entity → tek DTO, aggregate/çeviri birleştirmesi yok) ilk kez sağlandı
+> (`UserCategoryProfile`, `Program.cs`'e `AddAutoMapper` eklendi).
+- [x] **Entity:** `UserCategory` + migration (`Zausel.Domain/Entities/PersonalContent/`, ilk
+      `PersonalContent` domain'i — DB şemasındaki `Kisisel_Icerik.md`'nin İngilizce karşılığı),
+      `IUserCategoryRepository`/`UserCategoryRepository` (sahiplik filtresi `GetByIdForUserAsync`'te
+      gömülü — başkasının kategorisi de null/404 döner), `UserCategoriesController`
+      (`[Authorize]`, Admin DEĞİL — CLAUDE.md §1 "yalnızca sahibi")
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **`IActivityLogger`:** `CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** sahiplik filtresi (404 not-owned), CRUD — 9 test, hepsi yeşil
+- [x] ➜ **AKADEMI/backend'ye işle**
+
+> **A-08 tamamlandı (2026-08-21):** `UserCategory` entity'si (Id/UserId/Name/Description/Color/Icon),
+> `UserCategoryConfiguration` (Cascade FK→Users, `UserCategories` tablosu), `IUserCategoryRepository`/
+> `UserCategoryRepository` (`GetByUserIdAsync`/`GetByIdForUserAsync` sahiplik filtresi gömülü),
+> `UserCategoryProfile` (projenin ilk `AutoMapper` Profile'ı), 4 Command/Query (`Create`/`Update`/
+> `Delete`/`GetUserCategories`) + Handler'ları, 3 Validator, `UserCategoriesController`
+> (`GET/POST/PUT/DELETE /user-categories`, `[Authorize]`), `ErrorMessages`'a 6 yeni Code (tr/de) —
+> canlı doğrulandı (create/list/update/delete akışı 200/201/204, boş isim 400
+> `USER_CATEGORY_NAME_REQUIRED`, token'sız istek 401, başkasının/olmayan kaydı 404,
+> `ActivityLogs`'a 3 satır [`CREATE_USER_CATEGORY`/`UPDATE_USER_CATEGORY`/`DELETE_USER_CATEGORY`]
+> doğru yazıldığı sorguyla teyit edildi), 9 birim testi — tüm paket 203/203 yeşil,
+> `AKADEMI/backend/A-08_kisisel-kategori-api/`e işlendi. **Frontend notu (kullanıcı kararı):** C-06/D-08
+> task'larına `color` alanının serbest metin DEĞİL bir renk seçici (color picker) component'iyle
+> doldurulacağı notu eklendi (backend'de değişiklik gerekmiyor, alan zaten opsiyonel serbest string).
+> Sıradaki: `A-09` (SRS / İlerleme API).
 
 ### A-09 — SRS / İlerleme API (UserProgress) ⬜
 **Referans:** REFERENCE/TECHNICAL_SPECIFICATIONS.md §8
@@ -605,13 +635,78 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-17 — Push Notification (OneSignal) + Bakım Görevleri ⬜
-**Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire)
-**Frontend karşılığı:** D-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok)
+**Referans:** REFERENCE/ENV.md §6, REFERENCE/TECHNICAL_SPECIFICATIONS.md §1 (Hangfire), REFERENCE/API_ENDPOINTS.md §11 (admin broadcast), A-09 (Achievement), A-12 (Profil/Seviye), A-15 (Sınıf), A-16 (Arkadaş) — event-driven tetikleyicilerin kancalandığı yerler
+**Frontend karşılığı:** D-14 (Mobil — Profil Ekranı, device token kaydı; Web'de push yok), B-10 (Admin — Bildirim Gönderme Sayfası)
 - [ ] `INotificationService`/`OneSignalNotificationService`, `User.OneSignalPlayerId` + migration, `PUT /users/me/device-token`
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] Hangfire (SQL Server storage, dashboard) + recurring job'lar: günlük hatırlatma (hedef
-      tamamlanmadıysa), due hatırlatması (eşik geçince günde 1), streak riski (gün sonuna
-      yaklaşırken hedef eksikse); achievement bildirimi event-driven (A-09'un `AchievementService`'i tetikleyince anlık)
+- [ ] ⚠️ **[2026-08-21] Zamanlanmış tetikleyiciler — TEK job, tek gönderim ilkesi:** Hangfire (SQL
+      Server storage, dashboard) kurulur. Önceki tasarımda üç bağımsız recurring job (günlük
+      hatırlatma/due/streak) aynı akşam aynı kullanıcıda üst üste ateşlenip 3 ayrı push
+      gönderebiliyordu — bu birleştirildi: TEK `DailyEngagementJob`, öncelik sırasına göre
+      değerlendirir ve kullanıcı başına günde **en fazla 1** zamanlanmış push gönderir:
+      **(1) streak riski** (gün sonuna yaklaşırken hedef eksikse) **> (2) due hatırlatması**
+      (eşik geçmiş kart varsa) **> (3) günlük hatırlatma** (hedef tamamlanmadıysa) — birden fazla
+      koşul aynı gün sağlanırsa yalnızca en yüksek öncelikli mesaj gider.
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-21] Event-driven (anlık) tetikleyiciler:** her biri kendi Handler'ının SONUNDA
+      `INotificationService`'i çağırır, ayrı bir job GEREKMEZ — **achievement kazanıldığında**
+      (A-09 `AchievementService` tetikleyince), **seviye atlandığında** (A-12
+      `UpdateProfileCommand` — `CurrentLevel` önceki değerden YÜKSEK bir değere değiştiğinde;
+      kullanıcı kendi isteğiyle seviyeyi düşürürse bildirim GİTMEZ), **arkadaşlık isteği
+      alındığında** (A-16 `FriendshipService` — istek gönderilince hedef kullanıcıya),
+      **bir üye davet koduyla bir sınıfa katıldığında** (A-15 `ClassService.Join` — sınıf sahibine
+      "X sınıfınıza katıldı"; sınıf sisteminde ayrı bir "davet gönder" akışı olmadığından yalnızca
+      katılım anı tetiklenir, davet ANI değil).
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-21] Sessiz saatler:** gece 22:00–08:00 bandında hiçbir otomatik push
+      gönderilmez — bu bantta tetiklenen event-driven bildirimler DÜŞÜRÜLMEZ, Hangfire'da
+      gecikmeli job olarak bir sonraki uygun saate yeniden kuyruklanır. ⚠️ **Açık bağımlılık:**
+      bandı kullanıcının yerel saatine göre uygulamak `Users.TimeZoneId` gerektirir, şema şu an bu
+      alanı taşımıyor — MVP'de sabit bir UTC penceresi kullanılır, gerçek kullanıcı bazlı saat
+      dilimi yalnızca gerçek talep/şikayet gelirse ayrı bir task olarak eklenir (YAGNI).
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Haftalık özet: `WeeklySummaryJob` (Hangfire, haftada 1 — Pazartesi sabahı) — o hafta öğrenilen
+      kelime sayısı (`UserProgress`/`UserCard` `CreatedAt` son 7 gün) + XP artışı
+      (`Users.LastWeeklySummaryTotalXP` yeni nullable sütun + migration — job her göndermede
+      `TotalXP`'yi bu sütuna yazar, bir sonraki hafta farkı buradan hesaplar) + güncel
+      `StreakDays`; o hafta hiç yeni kelime öğrenilmemişse GÖNDERİLMEZ (boş/negatif özet motive
+      etmez, caydırır)
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] Kademeli re-engagement (win-back): `ReengagementJob` (Hangfire, günlük) — `Users`'a iki yeni
+      nullable sütun (`Last3DayReengagementNotifiedAt`, `Last7DayReengagementNotifiedAt`) +
+      migration. `LastLoginAt` üzerinden 3 gün geçmiş VE (`Last3DayReengagementNotifiedAt IS NULL`
+      OR bu sütun `LastLoginAt`'tan ESKİ) ise 3-gün mesajı gönderilir, sütun güncellenir; 7 gün
+      geçmiş VE aynı koşul 7-gün sütunu için sağlanıyorsa 7-gün mesajı gönderilir — **SONRASINDA
+      DURULUR**, üçüncü bir hatırlatma YOK. Kullanıcı tekrar giriş yapınca `LastLoginAt` ileri
+      gittiği için karşılaştırma kendiliğinden sıfırlanır, ayrı bir "reset" adımı gerekmez.
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-21] Bildirim metni ilkesi:** kayıp-kaçınma dili ("Serini kaybediyorsun!" vb.)
+      yalnızca gerçek streak riski anında ve TEK tetikleyicide (yukarıdaki öncelik #1) kullanılır,
+      başka hiçbir mesajda tekrarlanmaz — sık kullanımı manipülatif hissettirir, güveni aşındırır.
+      Tüm bildirim metinleri `NotificationMessages.cs`'te (tr/de, `EmailTemplates.cs` ile aynı
+      desen — CLAUDE.md §1'in istemciye giden mesaj kuralı) merkezi tutulur, dil tonu tek yerden
+      denetlenir.
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-21] Admin broadcast bu günlük-tek-gönderim tavanına DAHİL DEĞİLDİR** — admin'in
+      bilinçli/seyrek kullanması beklenen ayrı bir kanal; günlük otomatik tetikleyicilerle aynı
+      güne denk gelirse kullanıcı 2 push alabilir, bu kabul edilebilir (admin eylemi istisnai).
+      B-10'daki "gönder öncesi alıcı sayısı onayı" bu kanalın sık kullanılmasına karşı tek
+      sürtünme noktasıdır — sıklığı zorlayan bir backend kısıtı (rate limit/cooldown) YOK,
+      bilinçli ürün kararı.
+- [ ] ➜ **AKADEMI/backend'ye işle**
+- [ ] ⚠️ **[2026-08-21] Admin broadcast — yeni entity/migration gerekmez:** hedef kitle var olan
+      `Users` alanlarından (`OneSignalPlayerId IS NOT NULL AND IsActive=1` + duruma göre
+      `CurrentLevel`/`LastLoginAt`) filtrelenir. `SendNotificationBroadcastCommand`
+      (`targetType: All|Specific|Level|Inactive` — sırasıyla ek parametre yok / `userIds: int[]` /
+      `level: string` / `inactiveDays: int`, artı `title`+`body`), `IUserRepository`'ye hedef kitleyi
+      dönen bir sorgu eklenir, `INotificationService`'e OneSignal'ın `include_player_ids`'iyle toplu
+      gönderim yapan `SendBulkAsync` eklenir (OneSignal'ın tek istekteki alıcı üst sınırını aşarsa
+      dahili batch'lenir). `NotificationController` → `POST /admin/notifications/broadcast`
+      (`[Authorize(Roles="Admin")]`, yanıt `{ recipientCount }`) — hedef kitle boşsa (ör. hiç
+      `OneSignalPlayerId` yoksa) 0 `recipientCount` ile başarı döner, hata FIRLATILMAZ. TEK
+      `SEND_NOTIFICATION_BROADCAST` `IActivityLogger` kaydı (`NewValue` = targetType+filtre+title+
+      recipientCount — alıcıların kimliği/e-postası YAZILMAZ). Ayrı bir "gönderim geçmişi" listesi
+      AÇILMAZ — geçmiş zaten B-08 Log Görüntüleme Paneli'nin Activity sekmesinden izlenir (YAGNI).
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] ⚠️ **[2026-08-12] Süresi geçmiş kayıt temizliği:** `ExpiredTokenCleanupJob` — Hangfire'a eklenen
       günlük recurring job, üç tabloyu temizler: (1) `RefreshTokens` — `ExpiresAt` geçmiş VE
@@ -621,7 +716,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
       — `PendingOtpExpiresAt` geçmiş kayıtlarda OTP alanları NULL'lanır (kullanıcı satırı silinmez).
       Bu iş A-17'ye eklendi çünkü zaten Hangfire altyapısını kuran task bu.
 - [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock), `NotificationTriggerJobTests` (her tetikleyici koşulu), `ExpiredTokenCleanupJobTests` (üç tablo için ayrı senaryo)
+- [ ] **Birim testleri:** `OneSignalNotificationServiceTests` (HTTP client mock), `DailyEngagementJobTests` (öncelik sırası + tek-gönderim), `WeeklySummaryJobTests` (XP delta hesabı, boş hafta atlama), `ReengagementJobTests` (3/7 gün aşamaları + tekrar giriş sonrası sıfırlanma), event-driven kancalar (`AchievementService`/`UpdateProfileCommand`/`FriendshipService`/`ClassService.Join` içindeki bildirim çağrısı mock ile doğrulanır — ayrı test sınıfı açılmaz, ilgili Handler testine eklenir), `SendNotificationBroadcastCommandHandlerTests` (her `targetType` + boş hedef kitle senaryosu), `ExpiredTokenCleanupJobTests` (üç tablo için ayrı senaryo)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-18 — Admin API (Kullanıcı Yönetimi + İstatistik + Toplu Import + Log Görüntüleme + İçerik Moderasyonu) ⬜

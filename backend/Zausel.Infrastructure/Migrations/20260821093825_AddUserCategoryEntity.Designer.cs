@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Zausel.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Zausel.Infrastructure.Data;
 namespace Zausel.Infrastructure.Migrations
 {
     [DbContext(typeof(ZauselDbContext))]
-    partial class ZauselDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260821093825_AddUserCategoryEntity")]
+    partial class AddUserCategoryEntity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

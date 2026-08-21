@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-08 — Kişisel Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-ve-repository',
+    bolumBaslik: 'A-08 — Kişisel Kategori API',
+    oncekiBolum: '../A-07_medya-yukleme-api/03_birim-testleri-ozet-sozluk.html',
+    sonrakiBolum: '02_automapper-ve-komutlar.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'UserCategory Entity ve Repository Katmanı',
+        altBaslik: 'Kullanıcının kendi kartlarını gruplamak için kullandığı, sistem Category\'sinden bağımsız kişisel kategori — projenin ilk PersonalContent domain\'i.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden UserCategory Ayrı Bir Domain (PersonalContent), Content\'in İçinde Değil?',
+        aciklama: 'UserCategory, A-05/A-06\'daki Category/WordConcept\'in yaşadığı Domain/Entities/Content/ klasörüne DEĞİL, yeni bir Domain/Entities/PersonalContent/ klasörüne eklendi.',
+        neden: 'Content domain\'i (Category/Word/WordConcept) yalnızca Admin\'in küratörlüğünü yaptığı, TÜM kullanıcıların ORTAK gördüğü içerik; UserCategory ise her kullanıcının YALNIZCA kendi yazdığı, kendi gördüğü içerik — ikisi AYNI "kim okuyabilir/kim yazabilir" kuralına tabi DEĞİL. Ayrı bir klasör, bu iki grubu dosya sisteminde de ayırır: bir sonraki geliştirici "bu entity sistem içeriği mi yoksa kullanıcı içeriği mi" sorusunu kodun İÇİNE bakmadan, klasör adına bakarak yanıtlayabilir.',
+        olmasaydi: 'UserCategory Content/ altına eklenseydi, ileride "TÜM content\'i" toplu işleyen bir kod (ör. bir admin export özelliği, ya da içerik istatistiği çıkaran bir rapor) YANLIŞLIKLA kullanıcıların ÖZEL kategorilerini de kapsardı — izin sınırları klasör sınırlarıyla ÖRTÜŞMEYEN, gözden kaçması KOLAY bir karışıklık doğardı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Sahiplik Filtresi Neden Repository\'de Gömülü, Handler\'da Ayrı Bir Kontrol Değil?',
+        aciklama: 'IUserCategoryRepository.GetByIdForUserAsync hem userCategoryId hem userId\'yi TEK sorguda WHERE\'e koyar — başkasının kategorisi sonucun İÇİNDE hiç görünmez (null döner). Handler daha SONRA ayrıca "bulunan kayıt gerçekten bu kullanıcıya mı ait" diye İKİNCİ bir kontrol YAPMAZ.',
+        neden: 'Kişisel içerikte her sorguda UserId filtresinin zorunlu olması kuralının TEK bir yerde (repository metodunun imzasında) uygulanması, bu kuralı her yeni Handler yazan geliştiricinin HATIRLAMASINA bağımlı olmaktan çıkarır — kural kod ile DAYATILIR, disiplin ile DEĞİL.',
+        olmasaydi: 'Handler önce yalnızca ID\'ye göre kaydı çekip SONRA "if (record.UserId != request.UserId) throw" yazsaydı, A-10\'daki UserCard gibi ileride eklenecek HER yeni Handler bu iki satırı YENİDEN yazmak ZORUNDA kalırdı — biri unutursa (ör. bir kopyala-yapıştır hatası) başka bir kullanıcının kaydına erişim/değişiklik AÇILIRDI (IDOR — Insecure Direct Object Reference güvenlik açığı).'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCategory.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/PersonalContent/UserCategory.cs',
+        nedenBuKlasor: 'Domain/Entities/PersonalContent/ — projenin İLK personal-content entity\'si; DATABASE_SCHEMA\'daki "Kişisel İçerik" domain\'inin (UserCard/UserCategory) İngilizce karşılığı, A-10\'da UserCard da bu klasöre eklenecek.',
+        kod: `using Zausel.Domain.Entities;
+
+namespace Zausel.Domain.Entities.PersonalContent;
+
+// Kullanıcının kendi kartlarını gruplamak için kişisel kategori — sistem Category'sinden (Content
+// domain'i) bağımsız, çeviri taşımaz (kullanıcı tek dilde kendi ismini yazar).
+public class UserCategory : BaseEntity
+{
+    public int UserId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Color { get; set; }
+    public string? Icon { get; set; }
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities;', aciklama: '`BaseEntity`\'nin ad alanı — Id/CreatedAt/UpdatedAt/IsDeleted/DeletedAt/CreatedByUserId/UpdatedByUserId/DeletedByUserId bu miras üzerinden gelir.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Domain.Entities.PersonalContent;', aciklama: 'Yeni domain klasörünün ad alanı — bu satırın kendisi bir sonraki personal-content entity\'sinin (A-10 UserCard) nereye ekleneceğini de İŞARET eder.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCategory : BaseEntity', aciklama: '`Category`/`Word` ile AYNI temel sınıftan türer — soft delete/audit alanları TEKRAR yazılmaz.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Sahiplik alanı — bu kişisel kategorinin HANGİ kullanıcıya ait olduğu, her sorguda filtrelenmesi ZORUNLU olan tek alan.', neden: '`Category`\'nin Admin-yazdığı Command\'larındaki `int? UserId`nin AKSİNE BİLEREK non-nullable (`int`) — kişisel içerikte sahip HER ZAMAN zorunlu, `[Authorize]` olmayan (anonim) bir yaratma senaryosu YOK.', olmasaydi: '`UserId` nullable OLSAYDI, "sahibi olmayan bir kişisel kategori" gibi ANLAMSIZ bir durum derleme zamanında ENGELLENEMEZDİ — her okuma noktasında ayrıca bir null kontrolü GEREKİRDİ.' },
+          { satir: 'public string Name { get; set; } = string.Empty;', aciklama: 'Zorunlu alan — boş varsayılan değer, `required` anahtar sözcüğü yerine EF Core\'un nullable reference type uyarılarını bastırmak için (validator zaten boş string\'i `CreateUserCategoryCommandValidator`da reddeder).', neden: null, olmasaydi: null },
+          { satir: 'public string? Description { get; set; }', aciklama: 'Opsiyonel not — DATABASE_SCHEMA/Kisisel_Icerik.md\'deki `UserCategories.Description` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'public string? Color { get; set; }', aciklama: 'Opsiyonel hex renk kodu — kullanıcı bunu ELLE yazmaz, Web/Mobil\'de bir renk seçici (color picker) component\'i doldurur; backend tarafında serbest, kısa bir string olmasının nedeni budur.', neden: null, olmasaydi: null },
+          { satir: 'public string? Icon { get; set; }', aciklama: 'Opsiyonel ikon adı (ör. Phosphor Icons\'tan bir isim) — Web/Mobil\'in kişisel kategori kartında göstereceği simge.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCategoryConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/PersonalContent/UserCategoryConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/PersonalContent/ — Entity\'nin Domain klasörüyle BİREBİR eşleşen bir Infrastructure alt klasörü, `ZauselDbContext.OnModelCreating`\'in `ApplyConfigurationsFromAssembly`si bu konumdan BAĞIMSIZ tüm konfigürasyonları otomatik bulur, klasörleme yalnızca okunabilirlik içindir.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;
+
+public class UserCategoryConfiguration : IEntityTypeConfiguration<UserCategory>
+{
+    public void Configure(EntityTypeBuilder<UserCategory> builder)
+    {
+        builder.ToTable("UserCategories");
+
+        builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(500);
+        builder.Property(x => x.Color).HasMaxLength(10);
+        builder.Property(x => x.Icon).HasMaxLength(100);
+
+        builder.HasIndex(x => x.UserId);
+
+        // Cascade — DATABASE_SCHEMA/Kisisel_Icerik.md ile birebir: kullanıcı silinince kişisel
+        // kategorileri de gider (UserCards ile AYNI kural).
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;', aciklama: 'UserCategoryConfiguration.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCategoryConfiguration : IEntityTypeConfiguration<UserCategory>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserCategory> builder)', aciklama: 'EF Core bu metodu model kurulurken (uygulama başlarken) BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserCategories");', aciklama: 'Tablo adı — DATABASE_SCHEMA/Kisisel_Icerik.md\'deki `UserCategories` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Name).HasMaxLength(100).IsRequired();', aciklama: 'Veritabanı seviyesinde de zorunlu + 100 karakter sınırı — `CreateUserCategoryCommandValidator`daki AYNI sınırın veritabanı tarafındaki GÜVENCESİ.', neden: 'Validator yalnızca API üzerinden gelen istekleri KAPSAR — ileride bir arka plan işi/migration script\'i entity\'yi DOĞRUDAN kaydetmeye çalışırsa, validator ARADA yer ALMAZ.', olmasaydi: 'Yalnızca validator\'a güvenilseydi, API DIŞINDAN (ör. bir seed script\'i, ya da ileride bir toplu içe aktarma özelliği) yazılan bir satır 100 karakteri AŞABİLİR, `nvarchar(100)` sütununda SESSİZCE KIRPILIR ya da veritabanı hatası fırlatırdı.' },
+          { satir: 'builder.Property(x => x.Description).HasMaxLength(500);', aciklama: 'Opsiyonel alan, 500 karakter sınırı.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Color).HasMaxLength(10);', aciklama: 'Bir hex renk kodunun ("#FF6B00") en fazla 7-9 karakter tutması için yeterli, kısa bir üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Icon).HasMaxLength(100);', aciklama: 'İkon adı için üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.UserId);', aciklama: '`GetByUserIdAsync`/`GetByIdForUserAsync`\'in WHERE UserId=... sorgularını hızlandıran index.', neden: 'Bu tablo, HER kullanıcının kişisel kategorilerini TUTTUĞU için satır sayısı kullanıcı sayısıyla BİRLİKTE büyür — index olmadan `GET /user-categories` her çağrıldığında TÜM tabloyu tarardı.', olmasaydi: 'Index olmasaydı, kullanıcı sayısı arttıkça (ör. on binlerce kullanıcı) her `GET /user-categories` isteği YAVAŞLARDI — sorgu planı tam tablo taramasına (table scan) DÜŞERDİ.' },
+          { satir: 'builder.HasOne<User>()', aciklama: 'FK ilişkisinin başlangıcı — `RefreshTokenConfiguration` ile AYNI desen (`HasOne<User>().WithMany()`, `User` entity\'sinde karşılık gelen bir navigation property YOK).', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`User` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz — ilişki yalnızca FK sütunu ÜZERİNDEN kurulur.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu — `UserCategory.UserId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince (hesap anonimleştirme akışında) kişisel kategorileri de OTOMATİK silinir.', neden: 'DATABASE_SCHEMA/Kisisel_Icerik.md\'nin belirttiği kural, `UserCards`/`RefreshTokens` gibi diğer TÜM kullanıcıya-özel tablolarla AYNI davranış — bir kullanıcı hesabı kalıcı silindiğinde ARKASINDA sahipsiz kişisel kategori satırları KALMAMALI.', olmasaydi: '`DeleteBehavior.Restrict` (varsayılan davranışlardan biri) seçilseydi, bir kullanıcıyı silme işlemi hâlâ kişisel kategorisi VARSA veritabanı hatasıyla BAŞARISIZ olurdu — hesap silme akışı (A-17\'deki anonimleştirme) bu satırları ELLE önce silmek ZORUNDA kalırdı.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserCategoryRepository.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/PersonalContent/IUserCategoryRepository.cs',
+        nedenBuKlasor: 'Application/Interfaces/Repositories/PersonalContent/ — `Interfaces/Repositories/Content/` (Category/Word) ile AYNI desen, domain klasörlemesi Application katmanında da BİREBİR tekrar eder.',
+        kod: `using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Application.Interfaces.Repositories.PersonalContent;
+
+public interface IUserCategoryRepository
+{
+    Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default);
+
+    // Sahiplik filtresi burada gömülü — başkasının kategorisi null döner, Handler'da EntityNotFoundException'a çevrilir.
+    Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default);
+
+    Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+    Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+    Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: 'IUserCategoryRepository.cs ile aynı klasördeki dosyaların paylaştığı ad alanı — A-10\'daki `IUserCardRepository` da BURAYA eklenecek.', neden: null, olmasaydi: null },
+          { satir: 'public interface IUserCategoryRepository', aciklama: 'Application katmanı bu arayüze bağımlı — GERÇEK implementasyon (Infrastructure\'daki `UserCategoryRepository`) test edilirken Moq ile SAHTELENEBİLİR.', neden: null, olmasaydi: null },
+          { satir: 'Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default);', aciklama: '`GET /user-categories` — bir kullanıcının TÜM kişisel kategorilerini döner.', neden: null, olmasaydi: null },
+          { satir: 'Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default);', aciklama: 'Nullable dönüş — kayıt hiç YOKSA VEYA başka bir kullanıcıya AİTSE, ikisi de AYNI `null` sonucunu üretir; çağıran taraf (Update/Delete Handler\'ları) bu ikisini AYIRT ETMEZ.', neden: 'İki durumu (var-ama-başkasının / hiç-yok) AYNI 404 yanıtına indirmek, bir saldırganın 403 ile 404 arasındaki FARKTAN "bu ID GERÇEKTEN var, sadece benim değil" bilgisini ÇIKARMASINI ENGELLER.', olmasaydi: 'Kayıt var ama başkasınınsa 403, hiç yoksa 404 dönseydi, bir saldırgan sırayla ID deneyerek SİSTEMDE hangi ID\'lerin GERÇEKTEN var olduğunu (başka kullanıcılara ait olsa bile) ÖĞRENEBİLİRDİ — bilgi sızıntısı (information disclosure).' },
+          { satir: 'Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);', aciklama: 'Oluşturma — `userId` audit alanlarını (`CreatedByUserId`/`UpdatedByUserId`) doldurmak için AYRICA geçilir (entity\'nin kendi `UserId`sinden BAĞIMSIZ, teoride bir admin başka bir kullanıcı adına oluşturabilseydi bu ikisi FARKLI olurdu — şu an pratikte HER ZAMAN aynı değer).', neden: null, olmasaydi: null },
+          { satir: 'Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);', aciklama: 'Güncelleme — `userId` yalnızca `UpdatedByUserId` audit alanı için.', neden: null, olmasaydi: null },
+          { satir: 'Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);', aciklama: 'Yumuşak silme — `CategoryRepository.SoftDeleteCategoryAsync`in AKSİNE bir `int categoryId` DEĞİL, doğrudan zaten ÇEKİLMİŞ bir `UserCategory` nesnesi alır.', neden: 'Update/Delete Handler\'larının İKİSİ de ÖNCE `GetByIdForUserAsync` ile kaydı çekmek ZORUNDA (sahiplik kontrolü için) — kayıt ZATEN elde varken, silme metoduna yalnızca ID geçip metodun kaydı TEKRAR sorgulamasını istemek gereksiz bir veritabanı gidiş-dönüşü olurdu.', olmasaydi: '`SoftDeleteAsync(int id, int userId)` imzası kullanılsaydı, metot İÇERİDE kaydı TEKRAR çekmek zorunda kalırdı — Handler zaten sahiplik kontrolü için bir kez çekmişken, bu İKİNCİ sorgu gereksiz bir round-trip olurdu.' },
+          { satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);', aciklama: '`ICategoryRepository`/`IWordConceptRepository` ile AYNI desen — Add/Update/SoftDelete yalnızca DbContext\'in change tracker\'ına işaretler, gerçek `SaveChangesAsync` çağrısı Handler\'ın KONTROLÜNDE kalır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCategoryRepository.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/PersonalContent/UserCategoryRepository.cs',
+        nedenBuKlasor: 'Infrastructure/Repositories/PersonalContent/ — arayüzün Application klasörüyle BİREBİR eşleşen implementasyon klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Domain.Entities.PersonalContent;
+using Zausel.Infrastructure.Data;
+
+namespace Zausel.Infrastructure.Repositories.PersonalContent;
+
+public class UserCategoryRepository : IUserCategoryRepository
+{
+    private readonly ZauselDbContext _context;
+
+    public UserCategoryRepository(ZauselDbContext context) => _context = context;
+
+    public async Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default) =>
+        await _context.UserCategories.Where(c => c.UserId == userId).OrderBy(c => c.Name).ToListAsync(cancellationToken);
+
+    public async Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default) =>
+        await _context.UserCategories.FirstOrDefaultAsync(c => c.Id == userCategoryId && c.UserId == userId, cancellationToken);
+
+    public async Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+    {
+        userCategory.CreatedByUserId = userId;
+        userCategory.UpdatedByUserId = userId;
+        await _context.UserCategories.AddAsync(userCategory, cancellationToken);
+    }
+
+    public Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+    {
+        userCategory.UpdatedByUserId = userId;
+        _context.UserCategories.Update(userCategory);
+        return Task.CompletedTask;
+    }
+
+    public Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+    {
+        userCategory.IsDeleted = true;
+        userCategory.DeletedAt = DateTime.UtcNow;
+        userCategory.DeletedByUserId = userId;
+        userCategory.UpdatedByUserId = userId;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`FirstOrDefaultAsync`/`ToListAsync` gibi async LINQ uzantı metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: 'Implemente edilen arayüzün ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Data;', aciklama: '`ZauselDbContext`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Repositories.PersonalContent;', aciklama: 'UserCategoryRepository.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCategoryRepository : IUserCategoryRepository', aciklama: 'Arayüzün TEK implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ZauselDbContext _context;', aciklama: 'EF Core DbContext — `CategoryRepository`/`WordConceptRepository` ile AYNI, tek bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'public UserCategoryRepository(ZauselDbContext context) => _context = context;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default) =>', aciklama: 'Metot gövdesi expression-body — tek bir LINQ sorgusundan ibaret.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCategories.Where(c => c.UserId == userId).OrderBy(c => c.Name).ToListAsync(cancellationToken);', aciklama: 'Sahiplik filtresi (`Where(UserId==...)`) + alfabetik sıralama — `Category`\'nin `DisplayOrder`ının AKSİNE UserCategory\'de manuel bir sıra alanı YOK, kullanıcı kendi listesini isim sırasıyla görür.', neden: 'Soft-delete filtresi (`IsDeleted=false`) `ZauselDbContext.OnModelCreating`\'in TÜM `BaseEntity` türevlerine OTOMATİK uyguladığı global query filter üzerinden ZATEN devrede — burada AYRICA `!IsDeleted` yazılmaz.', olmasaydi: 'Global query filter OLMASAYDI, bu sorgu silinmiş (soft-deleted) kategorileri de DÖNERDİ — kullanıcı sildiği bir kategoriyi listede GÖRMEYE devam ederdi.' },
+          { satir: 'public async Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default) =>', aciklama: 'Metot gövdesi expression-body.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCategories.FirstOrDefaultAsync(c => c.Id == userCategoryId && c.UserId == userId, cancellationToken);', aciklama: 'İKİ koşul da (Id VE UserId) AYNI WHERE\'de — sahiplik filtresi arayüzdeki yorumda açıklandığı gibi burada, tek bir sorguda uygulanır.', neden: null, olmasaydi: null },
+          { satir: 'public async Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)', aciklama: 'Oluşturma metodu.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.CreatedByUserId = userId;', aciklama: 'Audit alanı — bu kaydı KİMİN oluşturduğu.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.UpdatedByUserId = userId;', aciklama: 'Oluşturma anında `UpdatedByUserId` de AYNI değeri alır (henüz güncellenmemiş bir kayıt için "son güncelleyen" oluşturanın kendisidir).', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCategories.AddAsync(userCategory, cancellationToken);', aciklama: 'EF Core\'un change tracker\'ına ekler — `SaveChangesAsync` çağrılana kadar veritabanına YAZILMAZ.', neden: null, olmasaydi: null },
+          { satir: 'public Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)', aciklama: 'Güncelleme metodu — `async` DEĞİL, çünkü içinde `await` edilen bir çağrı yok (`Update` senkron).', neden: null, olmasaydi: null },
+          { satir: 'userCategory.UpdatedByUserId = userId;', aciklama: 'Audit alanı — bu güncellemeyi KİMİN yaptığı.', neden: null, olmasaydi: null },
+          { satir: '_context.UserCategories.Update(userCategory);', aciklama: 'EF Core\'a bu nesnenin DEĞİŞTİĞİNİ işaretler — pratikte `GetByIdForUserAsync` ZATEN aynı DbContext üzerinden tracking\'e alınmış bir nesne döndürdüğü için bu satır çoğu zaman GEREKSİZ ama açık niyet için yazılır.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Senkron bir metodun `Task` dönen arayüzü KARŞILAMASI için tamamlanmış bir Task döner.', neden: null, olmasaydi: null },
+          { satir: 'public Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)', aciklama: 'Yumuşak silme metodu.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.IsDeleted = true;', aciklama: 'Global query filter\'ın (`!IsDeleted`) ARTIK bu satırı gizleyeceği işaret.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.DeletedAt = DateTime.UtcNow;', aciklama: 'Silinme zamanı.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.DeletedByUserId = userId;', aciklama: 'Audit alanı — kim sildi.', neden: null, olmasaydi: null },
+          { satir: 'userCategory.UpdatedByUserId = userId;', aciklama: 'Silme de bir güncelleme SAYILIR, `UpdatedByUserId` de eşlenir.', neden: null, olmasaydi: null },
+          { satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>', aciklama: 'Metot gövdesi expression-body.', neden: null, olmasaydi: null },
+          { satir: '_context.SaveChangesAsync(cancellationToken);', aciklama: 'DbContext\'in gerçek kaydetme çağrısı — `ZauselDbContext.SaveChangesAsync` override\'ı burada TÜM `BaseEntity` nesnelerinin `CreatedAt`/`UpdatedAt`ını da OTOMATİK doldurur.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ZauselDbContext.cs — 1 Yeni DbSet',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/ZauselDbContext.cs',
+        neden: 'A-08\'de yeni bir entity (`UserCategory`) eklendi — `DbSet<T>` property\'si olmadan EF Core bu tipi hiç TANIMAZ, repository\'deki `_context.UserCategories` çağrısı DERLENMEZDİ.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using Zausel.Domain.Entities;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Logging;
++using Zausel.Domain.Entities.PersonalContent;
+
+ namespace Zausel.Infrastructure.Data;
+
+ public class ZauselDbContext : DbContext
+ {
+     public ZauselDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+     public DbSet<Language> Languages => Set<Language>();
+     public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+     public DbSet<Word> Words => Set<Word>();
+     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+     public DbSet<WordExample> WordExamples => Set<WordExample>();
+     public DbSet<Category> Categories => Set<Category>();
+     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
++    public DbSet<UserCategory> UserCategories => Set<UserCategory>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ZauselDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(ZauselDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserCategory> UserCategories => Set<UserCategory>();', aciklama: 'Diğer TÜM `DbSet<T>` property\'leriyle AYNI desen — `Set<UserCategory>()` çağrısı EF Core\'un runtime\'da bu tip için bir sorgu yüzeyi (queryable) ÜRETMESİNİ sağlar.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'DependencyInjection.cs — 1 Yeni Repository Kaydı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/DependencyInjection.cs',
+        neden: '`UserCategoryRepository`, `IUserCategoryRepository` arayüzü ÜZERİNDEN DI konteynerine kayıtlı OLMADAN Handler\'lara enjekte EDİLEMEZ — MediatR Command/Handler ve FluentValidation validator\'larının AKSİNE (onlar assembly taramasıyla OTOMATİK bulunur), repository arayüzleri somut implementasyonlarıyla HER ZAMAN elle eşlenir; reflection\'ın "hangi arayüz hangi sınıfa eşlenir" kararını OTOMATİK vermesi (birden fazla implementasyon olabileceği için) güvenilir DEĞİLDİR.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.Extensions.Configuration;
+ using Microsoft.Extensions.DependencyInjection;
+ using Zausel.Application.Interfaces.Repositories;
+ using Zausel.Application.Interfaces.Repositories.Auth;
+ using Zausel.Application.Interfaces.Repositories.Content;
+ using Zausel.Application.Interfaces.Repositories.Logging;
++using Zausel.Application.Interfaces.Repositories.PersonalContent;
+ using Zausel.Infrastructure.Data;
+ using Zausel.Infrastructure.Repositories;
+ using Zausel.Infrastructure.Repositories.Auth;
+ using Zausel.Infrastructure.Repositories.Content;
+ using Zausel.Infrastructure.Repositories.Logging;
++using Zausel.Infrastructure.Repositories.PersonalContent;
+
+ namespace Zausel.Infrastructure;
+
+ // Repo + DbContext kaydı TEK bu metotta toplanır — Program.cs iki ayrı çağrı yerine tek satır yazar.
+ public static class DependencyInjection
+ {
+     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+     {
+         services.AddDbContext<ZauselDbContext>(options =>
+             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+
+         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+         services.AddScoped<IUserRepository, UserRepository>();
+         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+         services.AddScoped<IQrLoginSessionRepository, QrLoginSessionRepository>();
+         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+         services.AddScoped<ISecurityLogRepository, SecurityLogRepository>();
+         services.AddScoped<IApplicationLogRepository, ApplicationLogRepository>();
+         services.AddScoped<ILanguageRepository, LanguageRepository>();
+         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
+         services.AddScoped<ICategoryRepository, CategoryRepository>();
++        services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
+
+         return services;
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCategoryRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Repositories.PersonalContent;', aciklama: '`UserCategoryRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();', aciklama: 'Diğer TÜM repository kayıtlarıyla AYNI ömür (`Scoped`) — bir HTTP isteği boyunca AYNI DbContext örneğini (dolayısıyla AYNI repository örneğini) paylaşır.', neden: null, olmasaydi: null }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

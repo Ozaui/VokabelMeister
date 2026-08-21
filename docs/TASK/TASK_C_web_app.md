@@ -20,6 +20,16 @@
 > A-09=SRS/İlerleme, A-08=Kişisel Kategori, A-10=Kişisel Kart, A-12=Profil, A-13=Avatar,
 > A-14=Paylaşım, A-15=Sınıf, A-16=Arkadaş, A-17=Push — eski C-0X numaralarının karşılığı.
 
+> ⚠️ **[2026-08-21] Web'de uygulama-içi bildirim toast'ı YOK (bilinçli karar):** Mobil'de
+> uygulama açıkken (foreground) gelen push, OneSignal SDK'sı yakalanıp kendi toast'ımıza
+> çevrilebiliyor (bkz. `D_mobil.md` D-14) çünkü OneSignal zaten mobile bu olayı anlık iletiyor.
+> Web'de karşılığı olan bir gerçek-zamanlı kanal (SignalR/polling) **bilinçli olarak YAGNI
+> kapsamında bırakıldı** — kurulacaksa ayrı bir task olarak (yeni `Notifications` tablosu +
+> polling/WebSocket) sonradan açılır. Web kullanıcısı için "Web'de push yok" kararı (A-17)
+> zaten var; bu not onu netleştiriyor — yalnızca native push'un değil, foreground toast'ın da
+> Web'de kapsam dışı olduğunu belirtiyor. Web kullanıcısı ilgili değişikliği ancak normal
+> sayfa/veri yenilemesinde (ör. dashboard'u yeniden açtığında) görür.
+
 ### C-01 — Kurulum ⬜
 - [ ] React + Vite + TS, Tailwind, Redux Toolkit (yalnızca local/UI state — bkz. `CLAUDE.md` §4.1), React Router v6, Formik + Yup, Axios
 - [ ] Tasarım sistemi uygulaması — `REFERENCE/DESIGN_SYSTEM.md`'deki Admin ile ortak palet
@@ -154,6 +164,9 @@
   sayısı, `includeWordCount`] + kişisel kategoriler sekmesi, kişisel sekmede düzenle/sil aksiyonu —
   bir sistem kategorisine tıklamak `/dictionary?categoryId={id}`'ye yönlendirir, kategorinin
   kelimelerini KENDİSİ listelemez; bkz. C-06.1 notu), `UserCategoryFormModal` (ekle **ve** düzenle ortak akışı)
+  — ⚠️ **[2026-08-21 — kullanıcı kararı]** `color` alanı serbest metin/hex kutusu DEĞİL, görsel bir
+  renk seçici (`<input type="color">` veya eşdeğer bir picker component'i) ile seçilir; kullanıcı
+  hex kodu elle girmek ZORUNDA değildir (backend `Color` alanı zaten opsiyonel serbest string, A-08)
 - [ ] ➜ **AKADEMI/web'e işle**
 - [ ] **Route:** `/categories` (`App.tsx`)
 - [ ] ➜ **AKADEMI/web'e işle**

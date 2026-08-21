@@ -5,11 +5,13 @@ using Zausel.Application.Interfaces.Repositories;
 using Zausel.Application.Interfaces.Repositories.Auth;
 using Zausel.Application.Interfaces.Repositories.Content;
 using Zausel.Application.Interfaces.Repositories.Logging;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
 using Zausel.Infrastructure.Data;
 using Zausel.Infrastructure.Repositories;
 using Zausel.Infrastructure.Repositories.Auth;
 using Zausel.Infrastructure.Repositories.Content;
 using Zausel.Infrastructure.Repositories.Logging;
+using Zausel.Infrastructure.Repositories.PersonalContent;
 
 namespace Zausel.Infrastructure;
 
@@ -31,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<ILanguageRepository, LanguageRepository>();
         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
 
         return services;
     }

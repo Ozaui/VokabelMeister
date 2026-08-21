@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-08 — Kişisel Kategori API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-postman',
+    bolumBaslik: 'A-08 — Kişisel Kategori API',
+    oncekiBolum: '02_automapper-ve-komutlar.html',
+    sonrakiBolum: '04_birim-testleri-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'UserCategoriesController ve Canlı Doğrulama',
+        altBaslik: '4 endpoint (GET/POST/PUT/DELETE), [Authorize] — Admin DEĞİL, kişisel içeriğin kuralı — ve gerçek curl istekleriyle doğrulanan senaryolar.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCategoriesController.cs',
+        dosyaYolu: 'backend/Zausel.API/Controllers/UserCategoriesController.cs',
+        nedenBuKlasor: 'API/Controllers/ — TÜM Controller\'ların toplandığı, ASP.NET Core\'un `[ApiController]`/`ControllerBase` türetmesiyle (reflection ile) BULDUĞU, konumdan BAĞIMSIZ ama okunabilirlik için TEK klasörde tutulan yer.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Zausel.Application.DTOs.UserCategories;
+using Zausel.Application.Features.UserCategories;
+
+namespace Zausel.API.Controllers;
+
+[Route("user-categories")]
+[Authorize]
+public class UserCategoriesController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public UserCategoriesController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<List<UserCategoryResponse>>> GetUserCategories(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetUserCategoriesQuery(CurrentUserId), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<UserCategoryResponse>> Create(UserCategoryCreateRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new CreateUserCategoryCommand(request.Name, request.Description, request.Color, request.Icon, CurrentUserId, CurrentUserRole),
+            cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    [HttpPut("{id}")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<UserCategoryResponse>> Update(int id, UserCategoryUpdateRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdateUserCategoryCommand(id, request.Name, request.Description, request.Color, request.Icon, CurrentUserId, CurrentUserRole),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpDelete("{id}")]
+    [EnableRateLimiting("general")]
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+    {
+        await _mediator.Send(new DeleteUserCategoryCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
+        return NoContent();
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IMediator` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Authorization;', aciklama: '`[Authorize]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Mvc;', aciklama: '`[HttpGet]`/`[HttpPost]`/`ActionResult<T>` gibi MVC temel türleri için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.RateLimiting;', aciklama: '`[EnableRateLimiting]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.UserCategories;', aciklama: 'Request/Response DTO\'larının ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.UserCategories;', aciklama: '4 Command/Query\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.API.Controllers;', aciklama: 'UserCategoriesController.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: '[Route("user-categories")]', aciklama: 'Bu Controller\'ın TÜM action\'larının kök yolu — `RoutePrefixConvention` baştaki `api/v1`\'i AYRICA ekler, gerçek yol `/api/v1/user-categories`.', neden: null, olmasaydi: null },
+          { satir: '[Authorize]', aciklama: 'SINIF seviyesinde, Roles PARAMETRESİ OLMADAN — `CategoriesController`/`MediaController`\'ın `[Authorize(Roles = "Admin")]`ının AKSİNE, kimliği doğrulanmış HER kullanıcı (herhangi bir rol) bu Controller\'ı çağırabilir.', neden: 'Kişisel kategori Admin\'in küratörlüğündeki bir kaynak DEĞİL — her `User` kendi kategorisini yönetir; sahiplik kontrolü (kimin HANGİ kaydı görebileceği) rol seviyesinde DEĞİL, Bölüm 1\'deki repository\'nin `UserId` filtresi seviyesinde yapılır.', olmasaydi: '`[Authorize(Roles = "Admin")]` yazılsaydı, sıradan `User` rolündeki HİÇBİR kullanıcı kendi kişisel kategorisini OLUŞTURAMAZDI — bu özelliğin TÜM amacı (her kullanıcının kendi kartlarını gruplaması) ORTADAN kalkardı.' },
+          { satir: 'public class UserCategoriesController : ApiControllerBase', aciklama: '`CategoriesController`/`MediaController` ile AYNI temel sınıf — `CurrentUserId`/`CurrentUserRole` buradan gelir.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMediator _mediator;', aciklama: 'Tek bağımlılık — Controller kendisi hiçbir iş mantığı taşımaz.', neden: null, olmasaydi: null },
+          { satir: 'public UserCategoriesController(IMediator mediator) => _mediator = mediator;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet]', aciklama: '`GET /user-categories` — route şablonu SINIF seviyesindeki `[Route]`tan GELİYOR, action üzerinde EK bir alt yol YOK.', neden: null, olmasaydi: null },
+          { satir: '[EnableRateLimiting("general")]', aciklama: 'Genel rate limit policy\'si (dakikada 100 istek) — bu Controller\'ın TÜM action\'larında AYNI policy.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<List<UserCategoryResponse>>> GetUserCategories(CancellationToken cancellationToken)', aciklama: 'Parametre listesinde `[FromQuery]` bir filtre YOK — `Category`\'nin `level`/`includeWordCount` sorgu parametrelerinin AKSİNE, bu liste hiçbir şekilde filtrelenmez, HER ZAMAN çağıranın TÜM kategorileri.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetUserCategoriesQuery(CurrentUserId), cancellationToken);', aciklama: '`CurrentUserId` — `ApiControllerBase`\'den gelen, JWT claim\'inden okunan değer; istemcinin gönderdiği bir parametre DEĞİL (over-posting önlemi, bir kullanıcı BAŞKA bir `userId` sorgu parametresi göndererek başkasının listesini İSTEYEMEZ).', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 OK.', neden: null, olmasaydi: null },
+          { satir: '[HttpPost]', aciklama: '`POST /user-categories`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCategoryResponse>> Create(UserCategoryCreateRequest request, CancellationToken cancellationToken)', aciklama: '`[ApiController]` (ApiControllerBase üzerinden) `request`i JSON gövdesinden OTOMATİK bağlar.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Command MediatR pipeline\'ına gönderilir — `ValidationBehavior` Handler\'dan ÖNCE otomatik ÇALIŞIR.', neden: null, olmasaydi: null },
+          { satir: 'new CreateUserCategoryCommand(request.Name, request.Description, request.Color, request.Icon, CurrentUserId, CurrentUserRole),', aciklama: 'İstemcinin gönderdiği DÖRT alan (Name/Description/Color/Icon) + Controller\'ın JWT\'den okuduğu İKİ alan (`CurrentUserId`/`CurrentUserRole`) — sahiplik istemciden ASLA alınmaz.', neden: null, olmasaydi: null },
+          { satir: 'cancellationToken);', aciklama: 'Çağrının kapanışı.', neden: null, olmasaydi: null },
+          { satir: 'return StatusCode(StatusCodes.Status201Created, result);', aciklama: '201 Created — `CategoriesController.Create`/`MediaController.UploadImage` ile AYNI durum kodu, yeni bir kaynak oluşturuldu.', neden: null, olmasaydi: null },
+          { satir: '[HttpPut("{id}")]', aciklama: '`PUT /user-categories/{id}` — `{id}` route parametresi action\'ın `int id` parametresine OTOMATİK bağlanır.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCategoryResponse>> Update(int id, UserCategoryUpdateRequest request, CancellationToken cancellationToken)', aciklama: 'İki ayrı kaynaktan bağlanan iki parametre — `id` route\'tan, `request` gövdeden.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Command gönderimi.', neden: null, olmasaydi: null },
+          { satir: 'new UpdateUserCategoryCommand(id, request.Name, request.Description, request.Color, request.Icon, CurrentUserId, CurrentUserRole),', aciklama: '`id` route\'tan gelen hedef kaydın kimliği; `CurrentUserId` yine JWT\'den — Bölüm 1\'deki `GetByIdForUserAsync` bu ikisini (hedef ID + gerçek sahip) BİRLİKTE sorgulayarak sahiplik kontrolünü yapar.', neden: null, olmasaydi: null },
+          { satir: 'cancellationToken);', aciklama: 'Çağrının kapanışı.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 OK — güncelleme, yeni bir kaynak OLUŞTURMAZ.', neden: null, olmasaydi: null },
+          { satir: '[HttpDelete("{id}")]', aciklama: '`DELETE /user-categories/{id}`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)', aciklama: 'Dönüş tipi `ActionResult<T>` DEĞİL, sade `IActionResult` — silme işleminin geri döneceği bir DTO YOK.', neden: null, olmasaydi: null },
+          { satir: 'await _mediator.Send(new DeleteUserCategoryCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);', aciklama: 'Command\'ın dönüş değeri (`Unit`) burada KULLANILMAZ — silme başarılıysa herhangi bir istisna FIRLAMAZ, başarısızsa (bulunamadı/başkasının) `EntityNotFoundException` FIRLAR.', neden: null, olmasaydi: null },
+          { satir: 'return NoContent();', aciklama: '204 No Content — `CategoriesController.Delete` ile AYNI durum kodu.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — GET /api/v1/user-categories',
+        yontem: 'GET',
+        url: 'http://localhost:5001/api/v1/user-categories',
+        aciklama: 'Çağıranın TÜM kişisel kategorilerini, alfabetik sırayla döner.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: 200,
+          govde: `[
+  {
+    "id": 1,
+    "name": "Hayvanlar",
+    "description": "Ev hayvanları",
+    "color": "#FF6B00",
+    "icon": "paw"
+  }
+]`
+        },
+        notlar: [
+          'Hiç kategori yoksa boş dizi (`[]`) döner — canlı test edildi, ilk çağrıda `[]`, `POST` sonrası bu satırdaki tek elemanlı hâl.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — POST /api/v1/user-categories',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/user-categories',
+        aciklama: 'Yeni bir kişisel kategori oluşturur.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: `{
+  "name": "Hayvanlar",
+  "description": "Ev hayvanları",
+  "color": "#FF6B00",
+  "icon": "paw"
+}`,
+        yanit: {
+          durum: 201,
+          govde: `{
+  "id": 1,
+  "name": "Hayvanlar",
+  "description": "Ev hayvanları",
+  "color": "#FF6B00",
+  "icon": "paw"
+}`
+        },
+        notlar: [
+          '`color` alanı burada bir hex string olarak gönderiliyor ama gerçek Web/Mobil arayüzünde kullanıcı bunu bir renk seçiciden (color picker) SEÇER, elle YAZMAZ — Postman\'den test ederken bu alan elle yazılabilir.',
+          'Canlı test edildi — `ActivityLogs` tablosunda `CREATE_USER_CATEGORY` satırı sorguyla doğrulandı.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — PUT /api/v1/user-categories/1',
+        yontem: 'PUT',
+        url: 'http://localhost:5001/api/v1/user-categories/1',
+        aciklama: 'Var olan bir kişisel kategoriyi günceller.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: `{
+  "name": "Hayvanlar Guncel",
+  "description": null,
+  "color": "#00FF00",
+  "icon": "cat"
+}`,
+        yanit: {
+          durum: 200,
+          govde: `{
+  "id": 1,
+  "name": "Hayvanlar Guncel",
+  "description": null,
+  "color": "#00FF00",
+  "icon": "cat"
+}`
+        },
+        notlar: [
+          'Canlı test edildi — `ActivityLogs`ta `UPDATE_USER_CATEGORY` satırı, `OldValue`/`NewValue` ikisi de dolu şekilde doğrulandı.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — DELETE /api/v1/user-categories/1',
+        yontem: 'DELETE',
+        url: 'http://localhost:5001/api/v1/user-categories/1',
+        aciklama: 'Kişisel kategoriyi yumuşak siler.',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        yanit: {
+          durum: 204,
+          govde: '(gövde yok)'
+        },
+        notlar: [
+          'Silme SONRASI `GET /user-categories` tekrar `[]` döner — canlı test edildi.',
+          '`ActivityLogs`ta `DELETE_USER_CATEGORY` satırı, `OldValue` dolu/`NewValue` null ile doğrulandı.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'Postman\'dan Dene — Hata Senaryoları',
+        yontem: 'POST',
+        url: 'http://localhost:5001/api/v1/user-categories',
+        aciklama: 'Üç ayrı reddedilme senaryosu — validasyon, kimlik doğrulama, sahiplik.',
+        yanit: {
+          durum: 400,
+          govde: `// name boş gönderilirse (POST /user-categories, Authorization header'ı İLE):
+{ "success": false, "error": { "code": "USER_CATEGORY_NAME_REQUIRED", "message": "Kategori adı zorunlu.", "details": [ { "field": "name", "code": "USER_CATEGORY_NAME_REQUIRED", "message": "Kategori adı zorunlu." } ] } }
+
+// Authorization header'ı HİÇ eklenmezse (GET /user-categories):
+// HTTP 401, gövde yok
+
+// başkasının veya hiç var olmayan bir id'ye PUT/DELETE atılırsa (ör. DELETE /user-categories/999):
+// HTTP 404`
+        },
+        notlar: [
+          'Üçü de canlı `curl` ile test edildi ve doğrulandı — özellikle 404 senaryosu, Bölüm 1\'deki `GetByIdForUserAsync`nin sahiplik filtresinin GERÇEKTEN çalıştığını (var-ama-başkasının / hiç-yok ayrımı yapılmadan AYNI 404) kanıtlıyor.'
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'Over-posting', tanim: 'İstemcinin, sunucunun beklemediği/izin vermediği ekstra alanlar göndererek yetkisiz bir değeri değiştirmeye çalışması — `CurrentUserId`nin Request/Command\'da DEĞİL, JWT\'den okunması bu saldırıyı önler.' },
+          { terim: 'IDOR (Insecure Direct Object Reference)', tanim: 'Bir kullanıcının, yalnızca bir ID\'yi DEĞİŞTİREREK başka bir kullanıcıya ait kaynağa erişebilmesi/onu değiştirebilmesi — Bölüm 1\'deki `GetByIdForUserAsync`nin sahiplik filtresi bu sınıf açığı ENGELLER.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

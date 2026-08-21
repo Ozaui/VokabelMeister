@@ -133,7 +133,9 @@
 - [ ] **Component (Ekran):** `CategoriesScreen` (sistem + kişisel sekmeleri [kart üzerinde kelime
   sayısı], kişisel sekmede düzenle/sil aksiyonu — bir sistem kategorisine dokunmak `DictionaryScreen`'e
   `categoryId` parametresiyle navigate eder, kategorinin kelimelerini KENDİSİ listelemez; bkz. D-08.1
-  notu), `UserCategoryFormModal` (ekle **ve** düzenle ortak akışı)
+  notu), `UserCategoryFormModal` (ekle **ve** düzenle ortak akışı) — ⚠️ **[2026-08-21 — kullanıcı
+  kararı]** `color` alanı serbest metin/hex kutusu DEĞİL, native bir renk seçici component'i ile
+  seçilir (bkz. C-06'daki aynı not); backend `Color` alanı zaten opsiyonel serbest string (A-08)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Route:** `MainTabNavigator`'a ekran kaydı
 - [ ] ➜ **AKADEMI/mobile'a işle**
@@ -270,6 +272,14 @@
   butonu, "diğer tüm cihazlardan çıkış" toplu aksiyonu — Web C-12 ile aynı component sözleşmesi)
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Route:** `MainTabNavigator`'a ekran kaydı
+- [ ] ➜ **AKADEMI/mobile'a işle**
+- [ ] ⚠️ **[2026-08-21] Foreground bildirim → özel toast:** OneSignal SDK'nın foreground bildirim
+      olayı (`OneSignal.Notifications.addEventListener('foregroundWillDisplay', ...)`) yakalanır,
+      sistem bildirimi `event.preventDefault()` ile bastırılır, yerine mobilin kendi toast
+      kütüphanesiyle (CLAUDE.md §4.1 — `react-native-toast-message` veya D-01'de seçilecek eşdeğeri)
+      render edilen bir `NotificationToast` gösterilir. Dinleyici uygulama kökünde (D-04
+      navigasyon init) bir kez kaydedilir; OneSignal entegrasyonunun bir parçası olduğu için D-14
+      altında izlenir. **Web'de karşılığı YOK** — bilinçli karar, bkz. `TASK_C_web_app.md`.
 - [ ] ➜ **AKADEMI/mobile'a işle**
 - [ ] **Birim testleri:** `ProfileScreen.test.tsx`, `DeleteAccountModal.test.tsx`, `SessionsList.test.tsx`
 - [ ] ➜ **AKADEMI/mobile'a işle**
