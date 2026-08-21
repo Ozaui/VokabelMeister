@@ -5,6 +5,7 @@ using Zausel.Domain.Entities.Auth;
 using Zausel.Domain.Entities.Content;
 using Zausel.Domain.Entities.Logging;
 using Zausel.Domain.Entities.PersonalContent;
+using Zausel.Domain.Entities.Srs;
 
 namespace Zausel.Infrastructure.Data;
 
@@ -29,6 +30,11 @@ public class ZauselDbContext : DbContext
     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
     public DbSet<UserCategory> UserCategories => Set<UserCategory>();
+    public DbSet<UserProgress> UserProgress => Set<UserProgress>();
+    public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
+    public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
+    public DbSet<Achievement> Achievements => Set<Achievement>();
+    public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

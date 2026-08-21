@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'gecmis-basarim-migration-ozet-sozluk',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '01_ilerleme-entity-leri.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'LearningHistory, Achievement/UserAchievement ve Migration',
+        altBaslik: 'İnsert-only geçmiş kaydı, statik başarım referans tablosu ve beş yeni tabloyu üreten migration — canlı doğrulamayla.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningHistory.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/LearningHistory.cs',
+        nedenBuKlasor: 'Domain/Entities/Srs/ — Bölüm 1\'deki UserProgress/UserCardProgress ile AYNI klasör, farklı karakterde (insert-only) bir entity.',
+        kod: `namespace Zausel.Domain.Entities.Srs;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — her cevap denemesinin insert-only kaydı, soft
+// delete/UpdatedAt anlamsız (bir geçmiş satırı ne silinir ne güncellenir); DATABASE_SCHEMA/SRS.md'deki
+// LearningHistory tablosuyla birebir eşleşir.
+public class LearningHistory
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+
+    // İkisi birden NULL olamaz (uygulama kontrolü) — hangi kaynaktan sorulduğunu ayırır.
+    public int? WordId { get; set; }
+    public int? UserCardId { get; set; }
+
+    // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
+    public int? LearningSessionId { get; set; }
+    public string? SessionType { get; set; }
+
+    public bool IsCorrect { get; set; }
+    public int? ResponseTime { get; set; }
+    public int? TimeSpentSeconds { get; set; }
+    public string? UserResponse { get; set; }
+    public string? CorrectResponse { get; set; }
+
+    // İpucu istendi mi — quality tavanını düşürür.
+    public bool HintUsed { get; set; }
+    // "Aynı Kelimelerle Tekrar Et" — SM-2 güncellemez, yalnızca istatistik.
+    public bool IsExtraPractice { get; set; }
+
+    // Yalnızca IsExtraPractice=false iken dolar.
+    public decimal? MasteryBefore { get; set; }
+    public decimal? MasteryAfter { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Entities.Srs;', aciklama: 'Bölüm 1\'deki UserProgress ile AYNI klasör — bir `using Zausel.Domain.Entities;` YOK, çünkü bu entity `BaseEntity`\'den türemiyor.', neden: null, olmasaydi: null },
+          { satir: 'public class LearningHistory', aciklama: 'Herhangi bir temel sınıftan TÜREMEZ — `ActivityLog` ile AYNI gerekçe: insert-only bir olay kaydı.', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — `BaseEntity`\'den GELMEDİĞİ için elle tanımlanır.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Bu cevap denemesini YAPAN kullanıcı.', neden: null, olmasaydi: null },
+          { satir: 'public int? WordId { get; set; }', aciklama: 'Sorulan sistem kelimesi — nullable, çünkü soru bir `UserCard`\'tan da gelebilir.', neden: null, olmasaydi: null },
+          { satir: 'public int? UserCardId { get; set; }', aciklama: 'Sorulan kişisel kart — nullable, WordId\'nin TERSİ durumda dolar.', neden: 'İki ayrı nullable FK (WordId/UserCardId) yerine tek bir "polymorphic" sütun (ör. `SourceType` + `SourceId`) da düşünülebilirdi, ama bu durumda veritabanı seviyesinde GERÇEK bir FK kısıtı KURULAMAZDI (SourceId hangi tabloya bağlı olduğu ÇALIŞMA ZAMANINDA belli olur) — iki ayrı nullable FK, WordId için gerçek bir FK kısıtının (aşağıdaki config) var OLMASINI sağlar.', olmasaydi: 'Polymorphic tek sütun seçilseydi, silinmiş/hiç var olmamış bir WordId\'ye işaret eden ÇÜRÜK bir geçmiş satırı veritabanı seviyesinde HİÇBİR ZAMAN yakalanamazdı — yalnızca uygulama kodu HATASIZ çalışırsa tutarlılık korunurdu.' },
+          { satir: 'public int? LearningSessionId { get; set; }', aciklama: 'Bu cevabın ait olduğu öğrenme oturumu — A-11\'de `LearningSession` entity\'si yazılınca FK kısıtı EKLENECEK, şimdilik yalnızca bir int sütun.', neden: 'Dikey dilim disiplini bir görevin TÜM katmanlarını bitirip diğerine geçmeyi ister — LearningSession entity\'sini BURADA (A-09\'da) erkenden yazmak, A-11\'in kendi Entity/Handler/Controller sırasını BOZAR ve henüz hiçbir Handler\'ın kullanmadığı bir tabloyu spekülatif olarak açardı.', olmasaydi: 'LearningSessionId hiç eklenmeseydi, A-11 geldiğinde LearningHistory tablosuna SONRADAN bir sütun eklemek için AYRI bir migration gerekirdi — kolon önceden (nullable, FK\'siz) açılınca A-11 yalnızca FK kısıtını EKLEYEN küçük bir migration yazacak.' },
+          { satir: 'public string? SessionType { get; set; }', aciklama: 'Bu SORUNUN rastgele atanan gerçek formatı (Flashcard/MultipleChoice/...) — `LearningSession.SessionType`\'tan (oturumun GENEL türü) FARKLI, her soru kendi formatını taşıyabilir (A-11\'in "Mixed" review\'unda).', neden: null, olmasaydi: null },
+          { satir: 'public bool IsCorrect { get; set; }', aciklama: 'Cevap doğru mu — SrsCalculator\'ın quality hesaplamasının temel girdisi.', neden: null, olmasaydi: null },
+          { satir: 'public int? ResponseTime { get; set; }', aciklama: 'Yanıt süresi (ms) — nullable, bazı soru formatlarında ölçülmeyebilir.', neden: null, olmasaydi: null },
+          { satir: 'public int? TimeSpentSeconds { get; set; }', aciklama: 'Soruda geçirilen toplam süre (saniye).', neden: null, olmasaydi: null },
+          { satir: 'public string? UserResponse { get; set; }', aciklama: 'Kullanıcının verdiği cevap metni — serbest yanıt formatlarında (TranslationQuiz gibi) dolar.', neden: null, olmasaydi: null },
+          { satir: 'public string? CorrectResponse { get; set; }', aciklama: 'Doğru cevabın metni — kullanıcıya "doğrusu buydu" göstermek için.', neden: null, olmasaydi: null },
+          { satir: 'public bool HintUsed { get; set; }', aciklama: 'İpucu istendi mi.', neden: 'SM-2\'nin kalite puanı (0-5) yalnızca doğru/yanlışa değil, cevaba ULAŞMA biçimine de bakar — ipucuyla bulunan doğru bir cevap, ipucusuz bulunanla AYNI "kolaylık" sinyalini VERMEMELİDİR.', olmasaydi: 'HintUsed izlenmeseydi, bir kullanıcı HER SEFERİNDE ipucuna bakıp "doğru" cevap verse bile SrsCalculator bunu GERÇEK bir ustalık sanır, kelimeyi OLDUĞUNDAN erken "öğrenildi" işaretlerdi.' },
+          { satir: 'public bool IsExtraPractice { get; set; }', aciklama: '"Aynı Kelimelerle Tekrar Et" — günde birden fazla kez pratik yapılabilir ama SM-2 durumu (NextReviewAt/EasinessFactor) GÜNDE YALNIZCA BİR resmi review ile değişir.', neden: '"Günde tek resmi review" kuralı olmadan bir kullanıcı AYNI kelimeyi art arda 10 kez tekrar ederek EasinessFactor\'ı yapay olarak ŞİŞİREBİLİR (gerçek uzun-vadeli hatırlama yerine kısa-vadeli ezber ölçülmüş olurdu) — SM-2\'nin BAŞARILI olması için tekrarlar ARALIKLI olmalı.', olmasaydi: 'IsExtraPractice ayrımı olmasaydı, "biraz daha pratik yapmak isteyen" bir kullanıcı KENDİ isteğiyle algoritmanın matematiğini BOZARDI — bu bayrak, ekstra pratiği İSTATİSTİK olarak SAKLARKEN SM-2\'yi ONDAN İZOLE eder.' },
+          { satir: 'public decimal? MasteryBefore { get; set; }', aciklama: 'Bu cevaptan ÖNCEKİ Mastery değeri — yalnızca resmi review\'larda (`IsExtraPractice=false`) dolar.', neden: null, olmasaydi: null },
+          { satir: 'public decimal? MasteryAfter { get; set; }', aciklama: 'Bu cevaptan SONRAKİ Mastery değeri — ikisi birlikte "bu tek cevap ustalığı ne kadar değiştirdi" sorusuna, ayrı bir hesaplama YAPMADAN cevap verir.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime CreatedAt { get; set; }', aciklama: 'Bu cevabın VERİLDİĞİ an — `ActivityLog.CreatedAt` ile AYNI rol, insert-only bir tablonun TEK zaman damgası (UpdatedAt YOK, çünkü satır hiç değişmiyor).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningHistoryConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/LearningHistoryConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHistory>
+{
+    public void Configure(EntityTypeBuilder<LearningHistory> builder)
+    {
+        builder.ToTable("LearningHistory");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.SessionType).HasMaxLength(50);
+        builder.Property(x => x.UserResponse).HasMaxLength(500);
+        builder.Property(x => x.CorrectResponse).HasMaxLength(500);
+        builder.Property(x => x.MasteryBefore).HasPrecision(5, 2);
+        builder.Property(x => x.MasteryAfter).HasPrecision(5, 2);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.CreatedAt).IsDescending();
+
+        // Kullanıcı silinince (Cascade) geçmişi de gider — tek cascade yolu bu, WordId'nin
+        // NoAction olması bir "multiple cascade paths" çakışması yaratmaz.
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Word'ün soft/hard silinmesi geçmiş kaydını etkilemez — bilinçli NoAction.
+        builder.HasOne<Word>()
+            .WithMany()
+            .HasForeignKey(x => x.WordId)
+            .OnDelete(DeleteBehavior.NoAction)
+            .IsRequired(false);
+
+        // UserCard ve LearningSession entity'leri henüz yok (sırasıyla A-10/A-11'de gelir) —
+        // FK constraint'leri o zaman eklenir, şimdilik düz sütun.
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı ve `HasPrecision`/`IsDescending` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Word`\'ün ad alanı — opsiyonel FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`LearningHistory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: 'Bölüm 1\'deki `UserProgressConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHistory>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<LearningHistory> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("LearningHistory");', aciklama: 'Tablo adı — DATABASE_SCHEMA/SRS.md\'deki `LearningHistory` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`ActivityLogConfiguration` ile AYNI desen — `BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtar EF Core convention\'ına (property adı `Id`) güvenilse de AÇIKÇA belirtilir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SessionType).HasMaxLength(50);', aciklama: 'Format adlarının (Flashcard/MultipleChoice/...) en uzunu için yeterli üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.UserResponse).HasMaxLength(500);', aciklama: 'Serbest yanıt metni için üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CorrectResponse).HasMaxLength(500);', aciklama: 'UserResponse ile AYNI sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.MasteryBefore).HasPrecision(5, 2);', aciklama: '`UserProgress.Mastery` ile AYNI hassasiyet — iki tablo AYNI yüzdelik ölçeği paylaşır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.MasteryAfter).HasPrecision(5, 2);', aciklama: 'MasteryBefore ile AYNI hassasiyet.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: '`ActivityLog.CreatedAt` ile AYNI desen — veritabanı seviyesinde varsayılan, uygulama kodu her INSERT\'te elle DateTime.UtcNow YAZMAK ZORUNDA kalmaz.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.UserId);', aciklama: '"Bir kullanıcının TÜM geçmişi" sorgusunu (`GET /learning-history/today/*`, A-11) hızlandırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.CreatedAt).IsDescending();', aciklama: '`ActivityLogConfiguration`daki `IX_ActivityLogs_CreatedAt` ile AYNI desen — "en son N kayıt" sorguları ZATEN ters kronolojik sırayla ihtiyaç duyar, azalan index bu sıralamayı EK bir SORT adımı OLMADAN verir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<User>()', aciklama: 'FK ilişkisinin başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`User` tarafında navigation property YOK.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince geçmişi de gider.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<Word>()', aciklama: 'İkinci, OPSİYONEL FK ilişkisi.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.WordId)', aciklama: 'FK sütunu — nullable `WordId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction)', aciklama: 'Bir kelime hard-silinirse geçmiş kaydı OTOMATİK silinmez/null\'lanmaz — geçmiş, o anki durumun bir FOTOĞRAFI, kelime SONRADAN silinse bile "bu kullanıcı bu soruyu şu şekilde cevapladı" gerçeği DEĞİŞMEZ.', neden: 'Bir `Cascade` seçilseydi, TEK bir kelimenin hard-silinmesi o kelimeyle ilgili TÜM geçmiş cevap kayıtlarını da BERABERİNDE silerdi — kullanıcının GEÇMİŞ istatistikleri (toplam doğru/yanlış sayısı, XP geçmişi) GERİYE DÖNÜK olarak BOZULURDU.', olmasaydi: 'NoAction yerine `SetNull` seçilseydi (ActivityLog.UserId\'deki gibi) veri kaybı olmazdı ama BURADA WordId zaten nullable OLDUĞU için SetNull ile NoAction arasındaki pratik fark, yalnızca "kelime silinirken geçmiş kaydı SessionType/UserResponse gibi diğer alanlarını KORUR mu" sorusuna indirgenir — proje şu an kelimeleri hard-DELETE etmediği (yalnızca soft-delete) için bu ayrım pratikte TETİKLENMEZ, NoAction niyet olarak "geçmişe DOKUNMA" ilkesini en AÇIK şekilde ifade eder.' },
+          { satir: '.IsRequired(false);', aciklama: 'FK\'nin OPSİYONEL olduğunu (nullable `WordId`) EF Core\'a AÇIKÇA bildirir — `WordExample.PairedExampleId` konfigürasyonundaki AYNI desen.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementRarity.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Enums/Srs/AchievementRarity.cs',
+        nedenBuKlasor: 'Domain/Enums/Srs/ — `Content` domain\'indeki `PartOfSpeech`/`ExampleType` ile AYNI desen, enum\'lar entity\'lerinin YANINDA değil ayrı bir Enums/<Domain>/ klasöründe yaşar.',
+        kod: `namespace Zausel.Domain.Enums.Srs;
+
+public enum AchievementRarity
+{
+    Common,
+    Rare,
+    Epic,
+    Legendary
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Enums.Srs;', aciklama: 'Entity\'lerin yaşadığı `Domain.Entities.Srs`\'ten AYRI bir ad alanı — `Domain.Enums.Srs`.', neden: null, olmasaydi: null },
+          { satir: 'public enum AchievementRarity', aciklama: 'Bir başarımın nadirliği — `RewardXP` ile BİRLİKTE kullanıcıya "bu başarım ne kadar ÖZEL" sinyalini verir (Web/Mobil\'de FARKLI bir renk/çerçeve ile gösterilecek, o task henüz YAZILMADI).', neden: null, olmasaydi: null },
+          { satir: 'Common,', aciklama: 'Varsayılan/en yaygın seviye — `Achievement.Rarity`\'nin C# tarafındaki varsayılanı.', neden: null, olmasaydi: null },
+          { satir: 'Rare,', aciklama: 'İkinci nadirlik seviyesi.', neden: null, olmasaydi: null },
+          { satir: 'Epic,', aciklama: 'Üçüncü nadirlik seviyesi.', neden: null, olmasaydi: null },
+          { satir: 'Legendary', aciklama: 'En nadir seviye — dizideki SON değer olduğu için virgülsüz.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'Achievement.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/Achievement.cs',
+        kod: `using Zausel.Domain.Enums.Srs;
+
+namespace Zausel.Domain.Entities.Srs;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — statik seed/referans tablosu (streak/kelime sayısı
+// eşikleri admin panelden değil kodla seed edilir), audit/soft-delete anlamsız; DATABASE_SCHEMA/
+// SRS.md'deki Achievements tablosuyla birebir eşleşir.
+public class Achievement
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    // Resim URL'i (emoji değil) — CLAUDE.md görsel tasarım kurallarında emoji yasak.
+    public string? Icon { get; set; }
+    public int RewardXP { get; set; }
+    public AchievementRarity Rarity { get; set; } = AchievementRarity.Common;
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Enums.Srs;', aciklama: '`AchievementRarity`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Domain.Entities.Srs;', aciklama: 'Klasörleme veri DOMAİNİNE göre yapılır, entity\'nin BaseEntity\'den türeyip türemediğine göre DEĞİL — Achievement, Bölüm 1\'deki mutable UserProgress ile TASARIM olarak farklı olsa da, İKİSİ de DATABASE_SCHEMA/SRS.md\'nin kapsadığı AYNI SRS domain\'ine ait olduğu için aynı klasörde yaşar.', neden: null, olmasaydi: null },
+          { satir: 'public class Achievement', aciklama: 'Herhangi bir temel sınıftan TÜREMEZ — `Language` ile AYNI gerekçe: statik, admin panelinden CRUD EDİLMEYEN bir referans tablosu (başarımlar A-09\'un SONRAKİ bir bölümünde `AchievementService` tarafından kodla seed edilecek).', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — elle tanımlı.', neden: null, olmasaydi: null },
+          { satir: 'public string Name { get; set; } = string.Empty;', aciklama: 'Başarımın adı (ör. "7 Günlük Seri").', neden: null, olmasaydi: null },
+          { satir: 'public string? Description { get; set; }', aciklama: 'Opsiyonel açıklama metni.', neden: null, olmasaydi: null },
+          { satir: 'public string? Icon { get; set; }', aciklama: 'Görsel URL\'i — bir emoji DEĞİL, gerçek bir görsel dosyasına işaret eder.', neden: 'Bir emoji karakteri platformdan platforma (iOS/Android/Web/farklı font sürümleri) FARKLI render edilir, tutarlı bir marka görünümü SAĞLAMAZ — `WordConcept.ImageUrl` (A-05) ile AYNI gerekçe: görsel, tasarımı KONTROL EDİLEBİLİR bir dosya olmalı.', olmasaydi: 'Icon bir emoji karakteri olsaydı, Web\'de bir işletim sisteminde gördüğü başarım rozeti Mobil\'de FARKLI bir görünüme (farklı emoji seti) sahip olurdu — kullanıcı AYNI başarımı iki platformda FARKLI bir simgeyle görürdü.' },
+          { satir: 'public int RewardXP { get; set; }', aciklama: 'Bu başarım açıldığında kullanıcıya verilecek ekstra XP — `User.TotalXP`/`LifetimeXP`\'ye A-09\'un SONRAKİ bir bölümündeki `AchievementService` tarafından EKLENECEK.', neden: null, olmasaydi: null },
+          { satir: 'public AchievementRarity Rarity { get; set; } = AchievementRarity.Common;', aciklama: 'Nadirlik seviyesi — enum, veritabanında `nvarchar` olarak SAKLANACAK (aşağıdaki config\'te `HasConversion<string>`).', neden: null, olmasaydi: null },
+          { satir: 'public DateTime CreatedAt { get; set; }', aciklama: 'Seed edildiği an.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'AchievementConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/AchievementConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Enums.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>
+{
+    public void Configure(EntityTypeBuilder<Achievement> builder)
+    {
+        builder.ToTable("Achievements", tb =>
+        {
+            tb.HasCheckConstraint("CK_Achievements_Rarity", "Rarity IN ('Common','Rare','Epic','Legendary')");
+        });
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(500);
+        builder.Property(x => x.Icon).HasMaxLength(255);
+        builder.Property(x => x.RewardXP).HasDefaultValue(0);
+        builder.Property(x => x.Rarity).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(AchievementRarity.Common);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`ToTable`\'ın `tb =>` overload\'ı ve `HasConversion` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`Achievement`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Enums.Srs;', aciklama: '`AchievementRarity`\'nin ad alanı — `HasDefaultValue(AchievementRarity.Common)` çağrısı için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: 'Bölüm 1\'deki `UserProgressConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class AchievementConfiguration : IEntityTypeConfiguration<Achievement>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<Achievement> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi — `LearningHistoryConfiguration` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("Achievements", tb =>', aciklama: '`WordConceptConfiguration`daki `tb =>` blok deseni — tablo düzeyinde bir CHECK constraint eklemek için `ToTable`\'ın ikinci (opsiyonel) parametresi kullanılır.', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_Achievements_Rarity", "Rarity IN (\'Common\',\'Rare\',\'Epic\',\'Legendary\')");', aciklama: 'Enum\'ın C# tarafındaki KAPALI küme (4 değer) kısıtının veritabanı seviyesindeki GÜVENCESİ.', neden: 'C# `enum` derleme zamanında geçersiz bir değeri ENGELLER, ama veritabanına DOĞRUDAN (ör. bir SQL script\'i veya başka bir uygulamadan) yazılan bir satır bu garantiden YARARLANAMAZ — CHECK constraint bu garantiyi ŞEMAYA taşır.', olmasaydi: 'CHECK constraint olmasaydı, `Rarity` sütununa `nvarchar(20)` olduğu için TEKNİK olarak herhangi bir 20 karakterlik metin (ör. yazım hatasıyla "Comon") YAZILABİLİRDİ — `HasConversion<string>()` bu değeri C# tarafına geri OKURKEN bir enum eşleme HATASI fırlatırdı.' },
+          { satir: 'builder.Property(x => x.Name).HasMaxLength(100).IsRequired();', aciklama: 'Zorunlu alan, 100 karakter — `Category`/`UserCategory` isim alanlarıyla AYNI üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Description).HasMaxLength(500);', aciklama: 'Opsiyonel açıklama, 500 karakter.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Icon).HasMaxLength(255);', aciklama: '`WordConcept.ImageUrl`\'den DAHA KISA bir üst sınır (255 vs 500) — ikon dosya YOLLARI, kelime görsellerinin AKSİNE, genelde sabit/kısa bir CDN/statik dosya yapısını izler.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.RewardXP).HasDefaultValue(0);', aciklama: 'Varsayılan 0 XP — seed sırasında HER başarım için AÇIKÇA bir değer verilecek, bu yalnızca bir GÜVENLİK ağı.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Rarity).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(AchievementRarity.Common);', aciklama: '`WordConceptConfiguration.PartOfSpeech` ile AYNI desen — enum veritabanında OKUNABİLİR bir metin (`"Common"`) olarak saklanır, sayısal bir index (0,1,2,3) OLARAK DEĞİL.', neden: 'Sayısal saklama seçilseydi, enum\'a YENİ bir değer arada bir yere EKLENDİĞİNDE (ör. Common/Rare arasına yeni bir seviye) TÜM sonraki sayısal değerler KAYAR, veritabanındaki eski satırlar YANLIŞ bir nadirliğe işaret etmeye BAŞLARDI.', olmasaydi: 'String saklama olmasaydı, veritabanını DOĞRUDAN sorgulayan bir admin (ör. bir SQL raporu) `Rarity=2` gibi ANLAMSIZ bir sayı GÖRÜRDÜ, hangi nadirliğe karşılık geldiğini KOD OKUMADAN bilemezdi.' },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserAchievement.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/UserAchievement.cs',
+        kod: `namespace Zausel.Domain.Entities.Srs;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — kilit açma insert-only bir olay, soft delete/UpdatedAt
+// anlamsız (bir başarım ne geri alınır ne güncellenir); DATABASE_SCHEMA/SRS.md'deki
+// UserAchievements tablosuyla birebir eşleşir.
+public class UserAchievement
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int AchievementId { get; set; }
+    public DateTime UnlockedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Entities.Srs;', aciklama: 'UserAchievement de (LearningHistory/Achievement gibi) veri DOMAİNİNE göre bu klasördedir — insert-only bir olay kaydı olması, hangi klasörde yaşayacağını DEĞİL, hangi temel sınıftan türeyeceğini (hiçbirinden) belirler.', neden: null, olmasaydi: null },
+          { satir: 'public class UserAchievement', aciklama: 'Herhangi bir temel sınıftan TÜREMEZ — `LearningHistory` ile AYNI gerekçe: bir "kilit açıldı" olayı, YAZILDIKTAN sonra asla değişmez/silinmez.', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — elle tanımlı.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Başarımı açan kullanıcı.', neden: null, olmasaydi: null },
+          { satir: 'public int AchievementId { get; set; }', aciklama: 'Açılan başarım — `Achievement` referans tablosuna FK.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime UnlockedAt { get; set; }', aciklama: 'Açılma anı — `CreatedAt` yerine domain\'e ÖZGÜ bir isim (`ActivityLog.CreatedAt`in AKSİNE bu satır bir "olay logu" değil, kullanıcıya GÖSTERİLECEK bir başarı anı, isim bunu YANSITIR).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserAchievementConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/UserAchievementConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class UserAchievementConfiguration : IEntityTypeConfiguration<UserAchievement>
+{
+    public void Configure(EntityTypeBuilder<UserAchievement> builder)
+    {
+        builder.ToTable("UserAchievements");
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.UnlockedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        // Aynı başarım bir kullanıcıya iki kez açılmaz.
+        builder.HasIndex(x => new { x.UserId, x.AchievementId }).IsUnique();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Achievement>()
+            .WithMany()
+            .HasForeignKey(x => x.AchievementId)
+            .OnDelete(DeleteBehavior.NoAction);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserAchievement`/`Achievement`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: 'Bölüm 1\'deki `UserProgressConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserAchievementConfiguration : IEntityTypeConfiguration<UserAchievement>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserAchievement> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserAchievements");', aciklama: 'Tablo adı — DATABASE_SCHEMA/SRS.md\'deki `UserAchievements` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.UnlockedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan — `AchievementService` (A-09\'un SONRAKİ bir bölümü) genelde AÇIKÇA `DateTime.UtcNow` geçecek, bu yalnızca bir GÜVENLİK ağı.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => new { x.UserId, x.AchievementId }).IsUnique();', aciklama: 'Bir kullanıcı AYNI başarımı İKİ KEZ açamaz — `UserProgress`\'teki `(UserId, WordId)` UNIQUE kısıtıyla AYNI mantık, farklı bir çift üzerinde.', neden: 'Bu kısıt olmadan, `AchievementService`\'in "kullanıcı ZATEN bu başarıma sahip mi" kontrolü ile GERÇEK insert ARASINDAKİ bir yarış durumu (ör. eşzamanlı iki istek streak=7\'ye AYNI ANDA ulaşırsa) AYNI başarımı İKİ KEZ AÇAR, kullanıcıya YANLIŞLIKLA çift XP verilirdi.', olmasaydi: null },
+          { satir: 'builder.HasOne<User>()', aciklama: 'İlk FK ilişkisinin başlangıcı — kullanıcıya.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: 'Hem `User` hem `Achievement` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz — ilişki yalnızca FK sütunu ÜZERİNDEN kurulur (bu dosyada İKİ kez geçer, ikisi de AYNI gerekçeyle).', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu — `UserAchievement.UserId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince açtığı başarımlar da OTOMATİK silinir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<Achievement>()', aciklama: 'İkinci FK ilişkisinin başlangıcı — `Achievement`\'a.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.AchievementId)', aciklama: 'FK sütunu.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction);', aciklama: '`Achievement` bir REFERANS tablosu olduğu için pratikte HİÇ silinmez, ama `Cascade` yerine `NoAction` seçilmesi "bu tabloyu ASLA silme" niyetini ŞEMAYA da taşır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ZauselDbContext.cs — 5 Yeni DbSet',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/ZauselDbContext.cs',
+        neden: 'A-09\'da beş yeni entity (`UserProgress`, `UserCardProgress`, `LearningHistory`, `Achievement`, `UserAchievement`) eklendi — `DbSet<T>` property\'si olmadan EF Core bu tipleri hiç TANIMAZ, `ApplyConfigurationsFromAssembly` bulsa BİLE model içinde bir sorgu yüzeyi OLUŞMAZDI.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using Zausel.Domain.Entities;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Logging;
+ using Zausel.Domain.Entities.PersonalContent;
++using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data;
+
+ public class ZauselDbContext : DbContext
+ {
+     public ZauselDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+     public DbSet<Language> Languages => Set<Language>();
+     public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+     public DbSet<Word> Words => Set<Word>();
+     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+     public DbSet<WordExample> WordExamples => Set<WordExample>();
+     public DbSet<Category> Categories => Set<Category>();
+     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+     public DbSet<UserCategory> UserCategories => Set<UserCategory>();
++    public DbSet<UserProgress> UserProgress => Set<UserProgress>();
++    public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
++    public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
++    public DbSet<Achievement> Achievements => Set<Achievement>();
++    public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ZauselDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(ZauselDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: 'Beş yeni entity\'nin (`UserProgress`/`UserCardProgress`/`LearningHistory`/`Achievement`/`UserAchievement`) hepsi bu ad alanında yaşıyor — derleyici aşağıdaki `DbSet<T>` property\'lerindeki tip adlarını bu TEK `using` üzerinden çözümler.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserProgress> UserProgress => Set<UserProgress>();', aciklama: 'Property adı entity adıyla AYNI (`UserProgress`) — C#\'ta bir property ile bir sınıfın AYNI adı taşıması geçerlidir (ikisi farklı bir isim UZAYINDA), `Languages`/`Categories` gibi ÇOĞUL bir isim bulunamadığı için (tablo adı zaten SRS.md\'de tekil "UserProgress") burada TEKİL bırakıldı.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();', aciklama: 'UserProgress ile AYNI isimlendirme gerekçesi.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();', aciklama: 'AYNI gerekçe — SRS.md\'deki tablo adı zaten tekil ("LearningHistory", bir yığın/kütle ismi).', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<Achievement> Achievements => Set<Achievement>();', aciklama: 'Bu ikisi (Achievement/UserAchievement) ise `Categories`/`Languages` gibi normal ÇOĞUL isimlendirmeyi izler — SRS.md\'deki tablo adları da zaten çoğul ("Achievements").', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();', aciklama: 'Achievements ile AYNI çoğul isimlendirme.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: 5 Tablo, 2 FK\'siz Sütun, 1 CHECK Constraint',
+        aciklama: 'Yukarıdaki 5 entity + 5 config yazıldıktan sonra `dotnet ef migrations add AddSrsProgressEntities --project Zausel.Infrastructure --startup-project Zausel.API` çalıştırıldı. EF Core, `ApplyConfigurationsFromAssembly` ile TÜM `IEntityTypeConfiguration<T>` sınıflarını TARAYIP beş `CreateTable` (UserProgress/UserCardProgress/LearningHistory/Achievements/UserAchievements) + 12 `CreateIndex` + 1 `CheckConstraint` (`CK_Achievements_Rarity`) içeren bir migration dosyası ürettü — `LearningHistory.LearningSessionId` ve `UserCardProgress.UserCardId` (A-10/A-11 beklendiği için FK\'siz bırakılan iki sütun) migration\'da SIRADAN birer `int`/`int?` kolon olarak, hiçbir `ForeignKey` çağrısı OLMADAN üretildi.',
+        neden: 'Migration dosyasının KENDİSİ elle YAZILMAZ — bu görevde de (A-06\'daki gibi) EF Core\'un "önceki model snapshot\'ı ile şu anki entity/config kümesini karşılaştır" mekanizmasına güvenildi; 5 tablo × ortalama 15 sütun elle yazılsaydı bir yazım hatası (ör. bir index\'in unutulması) kolayca gözden KAÇARDI.',
+        olmasaydi: 'Migration elle yazılsaydı, yukarıdaki `HasPrecision`/`HasIndex`/`HasCheckConstraint` çağrılarının HER BİRİNİN SQL karşılığı elle yeniden üretilmek ZORUNDA kalınırdı — C# config ile elle SQL ZAMANLA birbirinden SAPARDI.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Gerçek ZauselDB\'ye Uygulandı',
+        aciklama: 'Migration `dotnet ef database update` ile gerçek `ZauselDB`\'ye uygulandı, ardından `sqlcmd` ile doğrudan sorgulandı: `sys.tables`/`sys.foreign_keys`/`sys.indexes` sorgusu beş tablonun (`UserProgress`, `UserCardProgress`, `LearningHistory`, `Achievements`, `UserAchievements`) VAR olduğunu ve FK/index sayılarının beklenenle eşleştiğini (`UserProgress`: 2 FK/3 index, `LearningHistory`: 2 FK/3 index, `UserCardProgress`: 1 FK/2 index [UserCard FK\'si henüz yok], `UserAchievements`: 2 FK/2 index, `Achievements`: 0 FK/0 index) doğruladı; `sys.check_constraints` sorgusu da `CK_Achievements_Rarity`nin dört değeri (`Common`/`Rare`/`Epic`/`Legendary`) TAM olarak kapsadığını gösterdi. Tüm paket (203 test) migration sonrası da yeşil kaldı.',
+        neden: 'Yalnızca "derlendi, migration dosyası oluştu" ile yetinilseydi, ör. bir index\'in yanlış sütunlar üzerine KURULMASI ya da bir CHECK constraint\'in beklenenden FARKLI bir SQL\'e çevrilmesi (`HasConversion<string>` gibi biraz DOLAYLI bir çağrının gerçek SQL karşılığı) yalnızca `database update` GERÇEKTEN çalıştırılınca ortaya çıkardı.',
+        olmasaydi: 'Canlı doğrulama atlanıp yalnızca `dotnet build` ile yetinilseydi, migration dosyasının KENDİSİ derleme HATASI vermeyeceği için (bir migration her zaman derlenir, çalışıp çalışmaması AYRI bir konu) örneğin bir FK\'nin YANLIŞ tabloya bağlanması gibi bir hata yalnızca bir SONRAKİ görev bu tabloyu KULLANMAYA çalıştığında, çok daha GEÇ fark edilirdi.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Bu Bölümde Geçen Terimler',
+        terimler: [
+          { terim: 'SM-2', tanim: 'Bu bölümde entity seviyesinde DURUMU tutulan (`EasinessFactor`/`IntervalDays`/`RepetitionNumber`/`NextReviewAt`), ama hesaplama mantığı henüz YAZILMAMIŞ (SrsCalculator, A-09\'un SONRAKİ bir bölümü) aralıklı tekrar algoritması — her doğru cevapta tekrar aralığını UZATIR, her yanlışta sıfırlar.' },
+          { terim: 'Leech', tanim: 'Bir türlü öğrenilemeyen, ardışık yanlış cevap alan kelime — `ConsecutiveIncorrect>=5` eşiği (A-09\'un SONRAKİ bir bölümündeki `ProgressService`\'te) bu kelimeleri tespit edip `IsSuspended` bayrağıyla review havuzundan GEÇİCİ olarak ÇIKARIR.' },
+          { terim: 'Insert-only tablo', tanim: 'Bir satır YAZILDIKTAN sonra hiç güncellenmeyen/silinmeyen tablo (`LearningHistory`, `UserAchievements`, `ActivityLog`) — `BaseEntity`\'den BİLİNÇLİ türemez, çünkü audit/soft-delete alanları bu tablolarda hiçbir zaman KULLANILMAZ.' },
+          { terim: 'Statik referans tablosu', tanim: 'Admin panelinden CRUD EDİLMEYEN, kodla seed edilen tablo (`Achievement`, `Language`) — `BaseEntity`\'den BİLİNÇLİ türemez, "kim ne zaman değiştirdi" sorusu bu tablolar için ANLAMSIZDIR.' }
+        ]
+      },
+      {
+        tur: 'ozet',
+        baslik: 'Bu Bölümde Öğrendiklerimiz — Entity Katmanı ve Migration Tamamlandı',
+        maddeler: [
+          '`UserProgress`/`UserCardProgress` (`BaseEntity`) — sistem kelimesi/kişisel kart ilerlemesi, `NextReviewAt` nullable (NULL=yeni kelime havuzu), leech alanları (`ConsecutiveIncorrect`/`IsSuspended`), `UNIQUE (UserId, WordId|UserCardId)` + `(UserId, NextReviewAt)` composite index.',
+          '`LearningHistory` (BaseEntity\'siz, insert-only) — her cevap denemesinin geçmiş kaydı, `HintUsed`/`IsExtraPractice`/`MasteryBefore`/`MasteryAfter`; `WordId` NoAction FK, `UserCardId`/`LearningSessionId` A-10/A-11\'i bekleyen FK\'siz sütunlar.',
+          '`Achievement` (BaseEntity\'siz, statik referans) + `AchievementRarity` enum (Common/Rare/Epic/Legendary, CHECK constraint\'le güvenceli) — `UserAchievement` (BaseEntity\'siz, insert-only) `UNIQUE (UserId, AchievementId)` ile çift açılmayı engeller.',
+          '`ZauselDbContext`\'e 5 yeni `DbSet<T>` eklendi — migration (`AddSrsProgressEntities`) gerçek `ZauselDB`\'ye uygulanıp `sys.tables`/`sys.foreign_keys`/`sys.indexes`/`sys.check_constraints` sorgularıyla canlı doğrulandı, tüm paket (203 test) yeşil kaldı.',
+          'Kapsam DIŞI (A-09\'un SONRAKİ bölümleri): `SrsCalculator` (SM-2 hesaplaması), `ProgressService`/`ProgressController`, `AchievementService`/seed veri, ilgili birim testleri — bu bölüm YALNIZCA entity + migration katmanını kapsar.'
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

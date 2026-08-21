@@ -465,10 +465,21 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 **Frontend karşılığı:** C-11 (Web — İlerleme Sayfası), D-13 (Mobil — İlerleme Ekranı); C-05/D-07 (Öğrenme/Sınav) bu API'nin sonuçlarını dolaylı kullanır (bkz. A-11)
 > `POST /user-cards/learn-system-word` (A-10'da yazılacak) bu entity'yi (`UserProgress`) kullanır
 > — bu yüzden Kişisel Kart API'sından ÖNCE bitirilmesi gerekir.
-- [ ] **Entity:** `UserProgress`, `UserCardProgress` (`NextReviewAt` **nullable** — NULL=yeni kelime
+> ⚠️ **[2026-08-21] Entity katmanında BaseEntity kararı:** SRS.md'nin abbreviated SQL'i
+> UserProgress/UserCardProgress için yalnızca `CreatedAt`/`UpdatedAt` gösteriyor (`IsDeleted`/
+> `DeletedAt` yazılmamış) ama bu iki tablo MUTABLE (her review'da güncelleniyor) olduğu için genel
+> BaseEntity kuralına göre TAM `BaseEntity`den türetildi — soft-delete/audit alanlarının
+> eksik gösterilmesi SQL doküman kısaltması, bilinçli bir tasarım kararı değil (WordConcepts/
+> UserCards/UserCategories'te de aynı kısaltma var, onlarda da BaseEntity tam uygulanıyor).
+> `LearningHistory`/`UserAchievement` (insert-only log, `ActivityLog` ile aynı gerekçe) ve
+> `Achievement` (statik seed/referans, `Language` ile aynı gerekçe) BaseEntity'den BİLİNÇLİ
+> türemiyor. `UserCardProgress.UserCardId` ve `LearningHistory.UserCardId`/`LearningSessionId`
+> henüz var olmayan tablolara (`UserCard` A-10'da, `LearningSession` A-11'de) işaret ettiği için
+> şimdilik FK'siz düz sütun — ilgili görev geldiğinde FK constraint'i eklenecek.
+- [x] **Entity:** `UserProgress`, `UserCardProgress` (`NextReviewAt` **nullable** — NULL=yeni kelime
       havuzu, + `ConsecutiveIncorrect`/`IsSuspended` leech alanları), `LearningHistory` (+
       `HintUsed`/`IsExtraPractice`/`MasteryBefore`/`MasteryAfter`), `Achievements`/`UserAchievements` + migration
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `SrsCalculator` (SM-2: interval, easiness factor, mastery 0-5 + `CalculateMastery` yüzdelik formülü)
 - [ ] ➜ **AKADEMI/backend'ye işle**
 - [ ] **Birim testleri:** `SrsCalculatorTests` (quality<3 sıfırlama, EF alt sınır 1.3, interval hesapları, Mastery formülü)

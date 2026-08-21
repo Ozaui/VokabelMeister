@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-09 — SRS / İlerleme API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'ilerleme-entity-leri',
+    bolumBaslik: 'A-09 — SRS / İlerleme API',
+    oncekiBolum: '../A-08_kisisel-kategori-api/04_birim-testleri-ozet-sozluk.html',
+    sonrakiBolum: '02_gecmis-basarim-migration-ozet-sozluk.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'UserProgress / UserCardProgress Entity Katmanı',
+        altBaslik: 'SM-2 tekrar algoritmasının durumunu tutan iki tablo — sistem kelimesi ve kişisel kart ilerlemesi ayrı ayrı izlenir.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Beş Yeni Entity, Neden Hepsi BaseEntity\'den Türemiyor?',
+        aciklama: 'SRS domain\'i beş yeni entity getiriyor: UserProgress ve UserCardProgress (BaseEntity\'den türer), LearningHistory ve UserAchievement (BİLİNÇLİ türemez, ActivityLog ile AYNI gerekçe), Achievement (BİLİNÇLİ türemez, Language ile AYNI gerekçe).',
+        neden: 'Ayrım üç farklı veri karakterine dayanır: (1) UserProgress/UserCardProgress MUTABLE — her review\'da UPDATE edilir, "kim ne zaman değiştirdi" ve "gerekirse geri alınabilir mi" soruları anlamlı, bu yüzden BaseEntity\'nin audit+soft-delete alanları GEREKLİ; (2) LearningHistory/UserAchievement INSERT-ONLY birer olay kaydı — bir cevap denemesi ya da bir başarımın açılma anı YAZILDIKTAN sonra ne güncellenir ne silinir; (3) Achievement statik bir referans tablosu — admin panelden CRUD edilmez, kodla seed edilir, tıpkı Language gibi.',
+        olmasaydi: 'LearningHistory de BaseEntity\'den türeseydi, her sorguda gizli bir soft-delete filtresi (`WHERE IsDeleted=0`) ve hiçbir zaman dolmayacak bir `UpdatedAt` sütunu taşınırdı — şema, "bu satır bir daha ASLA değişmeyecek" garantisini YANSITMAZ, bir sonraki geliştirici "bu geçmiş kaydını güncelleyebilir miyim" diye YANLIŞ bir soru sorabilirdi.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'UserProgress ve UserCardProgress Neden Ayrı Tablolar?',
+        aciklama: 'Sistem kelimesi ilerlemesi (UserProgress, WordId\'ye bağlı) ile kişisel kart ilerlemesi (UserCardProgress, UserCardId\'ye bağlı) BİREBİR aynı alan kümesini taşıdığı halde tek bir tabloda birleştirilmedi.',
+        neden: 'Tek tabloda WordId/UserCardId\'nin İKİSİ de nullable olur, "bir satırda TAM OLARAK biri dolu" kuralı UNIQUE (UserId, WordId) kısıtıyla GÜVENCEYE alınamaz — SQL Server\'da UNIQUE kısıt, karşılaştırılan sütun NULL olduğunda o satırı YOK SAYAR, yani aynı kullanıcının aynı UserCard\'ı için (WordId=NULL sabit) birden fazla satır oluşmasını ENGELLEYEMEZ.',
+        olmasaydi: 'Tek tablo seçilseydi, bir uygulama hatası (ör. çift tıklama ile iki kez "öğrenmeye başla" isteği) aynı kullanıcı+UserCard çifti için İKİ farklı ilerleme satırı YARATABİLİRDİ — SM-2 hesaplaması hangi satırı güncelleyeceğini KESTİREMEZ, kullanıcının ilerlemesi rastgele iki satır arasında BÖLÜNÜRDÜ.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserProgress.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/UserProgress.cs',
+        nedenBuKlasor: 'Domain/Entities/Srs/ — projenin İLK SRS entity\'si; DATABASE_SCHEMA/SRS.md\'nin İngilizce karşılığı, bu görevdeki diğer 4 entity de (UserCardProgress, LearningHistory, Achievement, UserAchievement) AYNI klasöre eklenecek.',
+        kod: `using Zausel.Domain.Entities;
+
+namespace Zausel.Domain.Entities.Srs;
+
+// Sistem kelimesi (Word) ilerlemesi — bir kullanıcı+kelime çifti için TEK satır, SM-2 durumu burada
+// tutulur (hesaplama SrsCalculator'da yapılır, bu entity yalnızca sonucu saklar).
+public class UserProgress : BaseEntity
+{
+    public int UserId { get; set; }
+    public int WordId { get; set; }
+
+    public int CurrentLevel { get; set; }
+    public decimal Mastery { get; set; }
+    public decimal EasinessFactor { get; set; } = 2.5m;
+
+    public int TimesCorrect { get; set; }
+    public int TimesIncorrect { get; set; }
+    public int TotalAttempts { get; set; }
+    public decimal SuccessRate { get; set; }
+
+    public DateTime? LastReviewedAt { get; set; }
+    // NULL = hiç zamanlanmadı, yeni kelime havuzunda — SM-2 ilk tekrarı henüz hesaplanmadı.
+    public DateTime? NextReviewAt { get; set; }
+
+    public int IntervalDays { get; set; } = 1;
+    public int RepetitionNumber { get; set; }
+
+    // Leech tespiti — quality>=3 olan her doğru cevapta 0'a döner.
+    public int ConsecutiveIncorrect { get; set; }
+    public bool IsSuspended { get; set; }
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities;', aciklama: '`BaseEntity`\'nin ad alanı — Id/CreatedAt/UpdatedAt/IsDeleted/DeletedAt/CreatedByUserId/UpdatedByUserId/DeletedByUserId bu miras üzerinden gelir.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Domain.Entities.Srs;', aciklama: 'Yeni domain klasörünün ad alanı — SRS.md\'deki tüm tabloların İngilizce karşılığı BURADA yaşayacak.', neden: null, olmasaydi: null },
+          { satir: 'public class UserProgress : BaseEntity', aciklama: '`UserCategory`/`Word` ile AYNI temel sınıftan türer — mutable bir kayıt olduğu için audit+soft-delete alanları anlamlı.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Sahiplik alanı — her sorguda filtrelenmesi zorunlu.', neden: null, olmasaydi: null },
+          { satir: 'public int WordId { get; set; }', aciklama: 'İlerlemenin ait olduğu sistem kelimesi — `WordConcept` değil doğrudan `Word` (dile özel), çünkü SM-2 durumu bir DİLDEKİ karşılığa özgü (de→tr ve tr→de ayrı ilerler).', neden: null, olmasaydi: null },
+          { satir: 'public int CurrentLevel { get; set; }', aciklama: '0=hiç görülmedi..5=otomatik hatırlama — istatistik/UI amaçlı bir seviye etiketi, SM-2\'nin kendi durumu (EasinessFactor/IntervalDays) bu sayıdan BAĞIMSIZ ayrıca tutulur.', neden: null, olmasaydi: null },
+          { satir: 'public decimal Mastery { get; set; }', aciklama: '0-100 yüzdelik ustalık skoru — A-09\'un `ProgressService`\'inin Zayıf/Orta/İyi (0-40/40-70/70-100) bantlarına ayıracağı değer, bu bölümde yalnızca SAKLANIYOR, hesaplama SONRAKİ bir bültende gelecek.', neden: null, olmasaydi: null },
+          { satir: 'public decimal EasinessFactor { get; set; } = 2.5m;', aciklama: 'SM-2\'nin kolaylık katsayısı — 2.5, algoritmanın standart başlangıç değeri (SrsCalculator bu değeri her review\'da yeniden hesaplar, hiçbir zaman 1.3\'ün altına düşmez).', neden: null, olmasaydi: null },
+          { satir: 'public int TimesCorrect { get; set; }', aciklama: 'Doğru cevap sayacı — istatistik amaçlı, SM-2 hesaplamasını DOĞRUDAN etkilemez.', neden: null, olmasaydi: null },
+          { satir: 'public int TimesIncorrect { get; set; }', aciklama: 'Yanlış cevap sayacı.', neden: null, olmasaydi: null },
+          { satir: 'public int TotalAttempts { get; set; }', aciklama: 'Toplam deneme sayısı — `TimesCorrect + TimesIncorrect` ile TUTARLI tutulması Handler\'ın sorumluluğu (entity seviyesinde bir hesaplanan alan/computed property DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'public decimal SuccessRate { get; set; }', aciklama: 'Başarı yüzdesi — her review sonrası yeniden hesaplanıp buraya YAZILIR (okuma anında hesaplanan bir değer DEĞİL, bu sayede `GET /progress/summary` ekstra bir hesaplama YAPMADAN doğrudan okur).', neden: null, olmasaydi: null },
+          { satir: 'public DateTime? LastReviewedAt { get; set; }', aciklama: 'Son tekrar zamanı — nullable, çünkü hiç review edilmemiş bir kelimenin son tekrarı YOKTUR.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime? NextReviewAt { get; set; }', aciklama: 'Bir sonraki tekrar zamanı — `IX_UserProgress_UserId_NextReviewAt` index\'i ÜZERİNDEN "bugün tekrar edilecekler" (`due`) sorgusunun temeli.', neden: 'NULL, "hiç zamanlanmadı" anlamına gelir ve YENİ KELİME HAVUZUNU temsil eder — sabit bir tarih (ör. `DateTime.MinValue`) yerine NULL kullanmak, "henüz hiç öğrenilmeye başlanmamış" ile "geçmişte bir tarihte tekrar edilmesi GEREKİYORDU" durumlarını AYNI sorguda birbirinden AYIRT EDİLEBİLİR kılar.', olmasaydi: 'Sabit bir minimum tarih kullanılsaydı, "yeni kelime havuzu" sorgusu (`WHERE NextReviewAt IS NULL`) ile "gecikmiş review" sorgusu (`WHERE NextReviewAt < NOW`) AYNI satırları YAKALARDI — ikisi kavramsal olarak FARKLI (biri hiç başlanmamış, diğeri BAŞLANMIŞ ama geciken) olduğu için bu bir mantık hatası doğururdu.' },
+          { satir: 'public int IntervalDays { get; set; } = 1;', aciklama: 'SM-2\'nin bir sonraki tekrara kaç gün kala planlayacağı — varsayılan 1 (ilk review ertesi gün).', neden: null, olmasaydi: null },
+          { satir: 'public int RepetitionNumber { get; set; }', aciklama: 'Ardışık BAŞARILI tekrar sayısı — SM-2\'nin interval hesaplamasında kullandığı sayaç, bir yanlış cevapta sıfırlanır (SrsCalculator\'da, bu bültende DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'public int ConsecutiveIncorrect { get; set; }', aciklama: 'Ardışık YANLIŞ cevap sayacı — `TimesIncorrect`\'ten FARKLI: `TimesIncorrect` HİÇ sıfırlanmayan bir toplam, bu ise doğru bir cevapta 0\'a döner.', neden: '"Leech" (bir türlü öğrenilemeyen kelime) tespiti tek bir global sayaçla YAPILAMAZ — bir kullanıcı 20 kez doğru, arada 4 kez yanlış cevap vermiş olabilir, bu ÖĞRENME sürecinin normal bir parçasıdır; asıl uyarı sinyali ARDIŞIK başarısızlıktır.', olmasaydi: 'Yalnızca `TimesIncorrect` kullanılsaydı, uzun süredir aktif ve genelde başarılı bir kelime de (ör. 100 doğru, 6 yanlış, ama HİÇBİRİ art arda değil) yanlışlıkla "leech" olarak İŞARETLENEBİLİRDİ — ConsecutiveIncorrect ise yalnızca GERÇEKTEN art arda başarısız olan kelimeleri yakalar.' },
+          { satir: 'public bool IsSuspended { get; set; }', aciklama: 'Leech "Askıya Al" bayrağı — true olduğunda kelime `due` (tekrar zamanı gelen) sorgusundan HARİÇ tutulur, kullanıcı istemeden aynı zor kelimeyle sürekli KARŞILAŞMAZ.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserProgressConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/UserProgressConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/Srs/ — Entity\'nin Domain klasörüyle BİREBİR eşleşen Infrastructure alt klasörü, diğer domainlerle AYNI desen.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class UserProgressConfiguration : IEntityTypeConfiguration<UserProgress>
+{
+    public void Configure(EntityTypeBuilder<UserProgress> builder)
+    {
+        builder.ToTable("UserProgress");
+
+        builder.Property(x => x.Mastery).HasPrecision(5, 2).HasDefaultValue(0m);
+        builder.Property(x => x.EasinessFactor).HasPrecision(4, 2).HasDefaultValue(2.5m);
+        builder.Property(x => x.SuccessRate).HasPrecision(5, 2).HasDefaultValue(0m);
+        builder.Property(x => x.IntervalDays).HasDefaultValue(1);
+
+        // Bir kullanıcı bir kelimeyi yalnızca BİR kez öğrenmeye başlar — ikinci kayıt yerine
+        // var olan satır güncellenir.
+        builder.HasIndex(x => new { x.UserId, x.WordId }).IsUnique();
+        // Due sorgusu (\`WHERE UserId=@ ORDER BY NextReviewAt\`) bu index'i doğrudan kullanır.
+        builder.HasIndex(x => new { x.UserId, x.NextReviewAt });
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Word>()
+            .WithMany()
+            .HasForeignKey(x => x.WordId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı ve `HasPrecision` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli — `Configure` metodunun parametre tipi.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Word`\'ün ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: 'UserProgressConfiguration.cs ile aynı klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserProgressConfiguration : IEntityTypeConfiguration<UserProgress>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserProgress> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserProgress");', aciklama: 'Tablo adı — DATABASE_SCHEMA/SRS.md\'deki `UserProgress` ile birebir (çoğul EKLENMEZ, "Progress" zaten bir yığın/kütle ismi).', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Mastery).HasPrecision(5, 2).HasDefaultValue(0m);', aciklama: '`decimal(5,2)` — en fazla 999.99, yüzdelik bir değer (0-100) için FAZLASIYLA yeterli üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.EasinessFactor).HasPrecision(4, 2).HasDefaultValue(2.5m);', aciklama: '`decimal(4,2)` — en fazla 99.99, SM-2\'nin kolaylık katsayısı pratikte 1.3-3.0 aralığında kalır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SuccessRate).HasPrecision(5, 2).HasDefaultValue(0m);', aciklama: 'Mastery ile AYNI hassasiyet (yüzdelik değer).', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.IntervalDays).HasDefaultValue(1);', aciklama: 'Entity\'deki `= 1` varsayılanının veritabanı seviyesindeki KARŞILIĞI — EF Core C# tarafındaki varsayılanı OTOMATİK DB varsayılanına ÇEVİRMEZ, ayrıca yazılması gerekir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => new { x.UserId, x.WordId }).IsUnique();', aciklama: 'Bir kullanıcı+kelime çifti için EN FAZLA bir satır olabileceğinin veritabanı seviyesindeki GARANTİSİ.', neden: 'Bu kısıt olmadan, uygulama katmanındaki bir yarış durumu (ör. aynı kelimeyi öğrenmeye başlatan iki eşzamanlı istek) İKİ satır YARATABİLİRDİ — Handler\'ın "önce var mı diye bak, yoksa oluştur" mantığı, iki istek TAM O ANDA çakışırsa yeterli DEĞİLDİR.', olmasaydi: 'UNIQUE kısıt olmasaydı, kavramsal §2\'deki senaryonun AYNISI (SM-2 hangi satırı güncelleyeceğini bilemez) burada da tekil kelime seviyesinde YAŞANIRDI.' },
+          { satir: 'builder.HasIndex(x => new { x.UserId, x.NextReviewAt });', aciklama: '"Bugün tekrar edilecek kelimeler" sorgusunun (`WHERE UserId=@ AND NextReviewAt<=NOW ORDER BY NextReviewAt`) doğrudan kullanacağı composite index.', neden: 'Bu tablo HER kullanıcının HER kelimesi için bir satır tuttuğu için (potansiyel olarak on binlerce satır/kullanıcı) index olmadan `due` sorgusu TAM TABLO TARAMASINA düşerdi.', olmasaydi: 'Index olmasaydı, kullanıcı sayısı ve kelime dağarcığı büyüdükçe A-11\'deki Öğrenme/Sınav API\'sinin başlangıç sorgusu (hangi kelimeler tekrar edilecek) GİDEREK YAVAŞLARDI.' },
+          { satir: 'builder.HasOne<User>()', aciklama: 'FK ilişkisinin başlangıcı — `UserCategoryConfiguration` ile AYNI desen (`User`\'da karşılık gelen bir navigation property YOK).', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`User` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu — `UserProgress.UserId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince (hesap anonimleştirme akışında) ilerleme kayıtları da OTOMATİK silinir — `UserCategory`/`UserCard` ile AYNI kural.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<Word>()', aciklama: 'İkinci FK ilişkisi — sistem kelimesine.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.WordId)', aciklama: 'FK sütunu — `UserProgress.WordId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Bir kelime kalıcı silinirse (hard delete — admin panelde bu ÇOK nadir, günlük akış soft-delete kullanır) ona ait TÜM kullanıcıların ilerleme kayıtları da gider, sahipsiz/anlamsız bir `WordId` referansı KALMAZ.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'UserCardProgress — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'UserCardProgress.cs (backend/Zausel.Domain/Entities/Srs/UserCardProgress.cs)', tanim: 'UserProgress ile BİREBİR aynı SM-2 alan kümesini taşır, TEK farkla: `WordId` yerine `UserCardId` (kullanıcının kendi kartına referans). Aynı şekilde `BaseEntity`\'den türer — kişisel kart ilerlemesi de sistem kelimesi ilerlemesi kadar MUTABLE.' },
+          { terim: 'UserCardProgressConfiguration.cs (backend/Zausel.Infrastructure/Data/Configurations/Srs/UserCardProgressConfiguration.cs)', tanim: 'UserProgressConfiguration ile AYNI hassasiyet/varsayılan/index deseni (`UNIQUE (UserId, UserCardId)` + `(UserId, NextReviewAt)` composite index), yalnızca `User`\'a olan FK (Cascade) kurulur. `UserCard` entity\'si henüz YOK (A-10\'da gelir) — `UserCardId` sütunu şimdilik DÜZ bir int, FK constraint\'i A-10\'da UserCard tablosu oluşunca EKLENECEK; bu, LearningHistory.LearningSessionId\'nin A-11\'i beklemesiyle AYNI "vertical slice sırası" deseni (bkz. Bölüm 2).' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>
