@@ -12,7 +12,6 @@ public class LearningHistory
     public int? WordId { get; set; }
     public int? UserCardId { get; set; }
 
-    // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
     public int? LearningSessionId { get; set; }
     public string? SessionType { get; set; }
 

@@ -46,6 +46,12 @@ public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHis
             .OnDelete(DeleteBehavior.NoAction)
             .IsRequired(false);
 
-        // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
+        // Oturumun (soft) silinmesi diye bir şey yok ama Word/UserCard ile AYNI bilinçli NoAction —
+        // geçmiş kaydı oturumdan bağımsız yaşar.
+        builder.HasOne<LearningSession>()
+            .WithMany()
+            .HasForeignKey(x => x.LearningSessionId)
+            .OnDelete(DeleteBehavior.NoAction)
+            .IsRequired(false);
     }
 }

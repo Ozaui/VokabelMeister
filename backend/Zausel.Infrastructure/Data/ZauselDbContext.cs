@@ -37,6 +37,7 @@ public class ZauselDbContext : DbContext
     public DbSet<UserProgress> UserProgress => Set<UserProgress>();
     public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
     public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
+    public DbSet<LearningSession> LearningSessions => Set<LearningSession>();
     public DbSet<Achievement> Achievements => Set<Achievement>();
     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
 

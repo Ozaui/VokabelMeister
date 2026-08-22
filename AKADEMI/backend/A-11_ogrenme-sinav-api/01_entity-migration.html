@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-11 — Öğrenme / Sınav API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-migration',
+    bolumBaslik: 'A-11 — Öğrenme / Sınav API',
+    oncekiBolum: '../A-10_kisisel-kart-api/05_controller-eklentileri-canli-dogrulama.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'LearningSession Entity Katmanı ve Migration',
+        altBaslik: 'Bir öğrenme/sınav oturumunun kendisi — hangi yönde, hangi kaynaktan, hangi formatta başladığı ve nasıl sonuçlandığının tek satırlık kaydı. LearningHistory (A-09) artık bu oturuma gerçek bir foreign key ile bağlanıyor.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden LearningSession BaseEntity\'den Türemiyor?',
+        aciklama: 'DATABASE_SCHEMA/SRS.md\'deki LearningSessions tablosu Achievement/LearningHistory\'nin (A-09) izlediği desende: IsDeleted/DeletedAt/CreatedByUserId/UpdatedByUserId/DeletedByUserId sütunlarının HİÇBİRİ tabloda yok, bunun yerine kendi alan adlarını taşıyan StartedAt/CompletedAt/Status üçlüsü var. Entity de bu yüzden `BaseEntity`\'den türemiyor, kendi Id/StartedAt alanlarını elle tanımlıyor.',
+        neden: 'UserProgress/UserCard gibi tablolar `BaseEntity`\'yi TAM uyguluyor çünkü onlarda "bu satırı kim ne zaman SİLDİ/DEĞİŞTİRDİ" sorusu anlamlı — bir kullanıcı kartını admin işlemi gibi düzenleyebilir, geri alınabilir bir soft-delete\'e ihtiyaç duyar. Bir LearningSession\'ı KİMSE silmez/düzenlemez — yalnızca SAHİBİ tarafından, önceden tanımlı ÜÇ yoldan biriyle (tamamla/bırak/zaman aşımı) SONLANDIRILIR; bu sonlanma zaten kendi `Status`/`CompletedAt` alanlarıyla ifade ediliyor, ayrı bir "kim değiştirdi" audit zincirine gerek yok.',
+        olmasaydi: '`BaseEntity`\'den türeseydi, her oturum kaydı hiçbir ekranın hiçbir zaman okumayacağı beş sütun (`IsDeleted`, `DeletedAt`, `CreatedByUserId`, `UpdatedByUserId`, `DeletedByUserId`) taşırdı — üstelik bir oturumun "soft silinmesi" gibi hiç var olmayan bir akış için sorgulara gereksiz bir `WHERE IsDeleted=0` filtresi eklerdi (ZauselDbContext\'in otomatik soft-delete filtresi tüm `BaseEntity` türevlerine BİNİR), bu da tabloyu hiç ihtiyacı olmayan bir davranışa bağlardı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningSessionType.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Enums/Srs/LearningSessionType.cs',
+        nedenBuKlasor: 'Domain/Enums/Srs/ — `AchievementRarity`\'nin (A-09) YAŞADIĞI AYNI klasör, enum\'lar entity\'lerinin yanına değil domain\'in ortak Enums/<Domain>/ klasörüne yazılır.',
+        kod: `namespace Zausel.Domain.Enums.Srs;
+
+// Yeni kelime oturumu = Flashcard sabit; review oturumunun sorusu-başına gerçek formatı
+// backend'de bu 6 değer arasından rastgele atanır (bkz. LearningHistory.SessionType).
+public enum LearningSessionType
+{
+    Flashcard,
+    MultipleChoice,
+    ArticleQuiz,
+    PluralQuiz,
+    TranslationQuiz,
+    TrueFalse
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Enums.Srs;', aciklama: 'Entity\'lerin yaşadığı `Domain.Entities.Srs`\'ten AYRI bir ad alanı — `AchievementRarity` ile AYNI Enums/Srs klasörü.', neden: null, olmasaydi: null },
+          { satir: 'public enum LearningSessionType', aciklama: 'Bir oturumun genel formatı — yeni kelime öğrenirken sabit `Flashcard`, review\'de her sorunun GERÇEK formatı bu altı değer arasından rastgele atanır ve o tekil atama `LearningHistory.SessionType`\'a (A-09\'da string olarak yazıldı) kaydedilir.', neden: null, olmasaydi: null },
+          { satir: 'Flashcard,', aciklama: 'Kartın ön yüzünü göster, kullanıcı kendi kendine "bildim/bilmedim" der — yeni kelime tanıtımında SABİT kullanılan format.', neden: null, olmasaydi: null },
+          { satir: 'MultipleChoice,', aciklama: 'Doğru çeviriyi birkaç seçenek arasından seçtirir.', neden: null, olmasaydi: null },
+          { satir: 'ArticleQuiz,', aciklama: 'Almanca ismin artikelini (der/die/das) sorar — yalnızca hedef dil Almanca olan oturumlarda anlamlı.', neden: null, olmasaydi: null },
+          { satir: 'PluralQuiz,', aciklama: 'Kelimenin çoğul hâlini sorar — ArticleQuiz ile AYNI şekilde gramer bilgisi gerektiren, yalnızca ilgili WordDetail JSON\'u doluysa atanabilecek bir format.', neden: null, olmasaydi: null },
+          { satir: 'TranslationQuiz,', aciklama: 'Kullanıcı çeviriyi seçenek arasından DEĞİL, kendi yazar — MultipleChoice\'ten daha zor bir hatırlama testi.', neden: null, olmasaydi: null },
+          { satir: 'TrueFalse', aciklama: 'Bir çevirinin doğru/yanlış olduğunu sorar — dizideki SON değer olduğu için virgülsüz.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningSessionSourceType.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Enums/Srs/LearningSessionSourceType.cs',
+        kod: `namespace Zausel.Domain.Enums.Srs;
+
+// Kelime havuzu hangi kaynaktan geliyor — sistem kelimesi, kişisel kart ya da ikisinin birleşimi.
+public enum LearningSessionSourceType
+{
+    SystemWords,
+    UserCards,
+    Mixed
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Enums.Srs;', aciklama: '`LearningSessionType` ile AYNI klasör — bu iki enum kavramsal olarak BAĞIMSIZ (biri oturumun soru FORMATını, diğeri kelime HAVUZUnun kaynağını taşır), aynı LearningSession satırında yan yana iki AYRI sütuna karşılık gelirler.', neden: null, olmasaydi: null },
+          { satir: 'public enum LearningSessionSourceType', aciklama: 'Bir oturumun kelime havuzunu nereden çektiğini belirler — `UserCardsController`\'ın (A-10) `learn-system-word` akışındaki "sistem kelimesi mi kişisel kart mı" ayrımının, artık bir OTURUM seviyesindeki karşılığı.', neden: null, olmasaydi: null },
+          { satir: 'SystemWords,', aciklama: 'Havuz yalnızca eşleşmiş (iki dilli) `WordConcept`\'lerden — A-09\'un `UserProgress` ilerlemesini kullanan oturumlar.', neden: null, olmasaydi: null },
+          { satir: 'UserCards,', aciklama: 'Havuz yalnızca kullanıcının kendi `UserCard`\'larından (A-10) — `UserCardProgress` ilerlemesini kullanır.', neden: null, olmasaydi: null },
+          { satir: 'Mixed', aciklama: 'İkisi birden — review oturumlarında varsayılan, çünkü kullanıcı hem sistem kelimelerini hem kişisel kartlarını AYNI tekrar akışında görmek ister; dizideki SON değer olduğu için virgülsüz.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningSessionStatus.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Enums/Srs/LearningSessionStatus.cs',
+        kod: `namespace Zausel.Domain.Enums.Srs;
+
+public enum LearningSessionStatus
+{
+    Active,
+    Completed,
+    Abandoned
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Enums.Srs;', aciklama: '`LearningSessionType`/`LearningSessionSourceType` ile AYNI klasör — üçü de LearningSession satırının BAĞIMSIZ birer boyutunu (format/kaynak/durum) taşır.', neden: null, olmasaydi: null },
+          { satir: 'public enum LearningSessionStatus', aciklama: 'Bir oturumun yaşam döngüsü — QrLoginSession\'ın (A-03) `QrLoginStatus`\'u gibi, `BaseEntity`\'nin soft-delete\'i YERİNE geçen kendi durum makinesi.', neden: null, olmasaydi: null },
+          { satir: 'Active,', aciklama: 'Oturum devam ediyor — `LearningSession.Status`\'un C# tarafındaki varsayılanı, bir oturum yaratıldığı anki tek olası değer.', neden: null, olmasaydi: null },
+          { satir: 'Completed,', aciklama: 'Kullanıcı oturumu sonuna kadar getirdi — `CompletedAt`/`DurationSeconds`/`XPEarned` bu geçişte doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'Abandoned', aciklama: 'Kullanıcı oturumu yarıda bıraktı — dizideki SON değer olduğu için virgülsüz.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningSession.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/LearningSession.cs',
+        nedenBuKlasor: 'Domain/Entities/Srs/ — `UserProgress`/`LearningHistory`/`Achievement`\'ın (A-09) YAŞADIĞI AYNI klasör, SRS/ilerleme domaininin tüm entity\'leri burada toplanır.',
+        kod: `using Zausel.Domain.Enums.Srs;
+
+namespace Zausel.Domain.Entities.Srs;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — DATABASE_SCHEMA/SRS.md'deki LearningSessions tablosu
+// audit/soft-delete alanlarını hiç taşımıyor (Achievement/LearningHistory ile AYNI gerekçe): bir
+// oturum kimse tarafından silinmez/düzenlenmez, yalnızca sahibi tarafından tamamlanır/bırakılır.
+public class LearningSession
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+
+    // Hangi yönde öğreniliyor (de→tr mi tr→de mi) — bu dilin Words/WordDetail'i "ön yüz" (gramer
+    // test edilir), diğer dilin Words.Text/Definition yalnızca çeviri olarak gösterilir.
+    public int TargetLanguageId { get; set; }
+
+    public LearningSessionType SessionType { get; set; }
+    public LearningSessionSourceType SourceType { get; set; }
+
+    public string? LevelFilter { get; set; }
+    // JSON [1,3,5] — filtre seçimleri, ayrı bir ara tabloya çıkarılmaz (sorgu değil, yalnızca
+    // oturumun nasıl başlatıldığının kaydı).
+    public string? CategoryIds { get; set; }
+    public string? UserCategoryIds { get; set; }
+
+    public DateTime StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public int? DurationSeconds { get; set; }
+
+    public int TotalWords { get; set; }
+    public int CorrectAnswers { get; set; }
+    public int IncorrectAnswers { get; set; }
+    public decimal? SuccessRate { get; set; }
+    public int XPEarned { get; set; }
+
+    public LearningSessionStatus Status { get; set; } = LearningSessionStatus.Active;
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Enums.Srs;', aciklama: 'Aşağıdaki üç `LearningSession*` enum\'ının ad alanı — `SessionType`/`SourceType`/`Status` property\'leri bu türlere yazılıyor.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`/`LearningHistory`/`Achievement` ile AYNI domain klasörü.', neden: null, olmasaydi: null },
+          { satir: 'public class LearningSession', aciklama: 'Herhangi bir temel sınıftan TÜREMEZ — üstteki kavram slaydındaki gerekçe: audit/soft-delete alanları bu tabloda hiç yok.', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — `BaseEntity`\'den GELMEDİĞİ için elle tanımlanır.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Sahiplik alanı — bir oturum yalnızca kendi sahibi tarafından okunur/başlatılır/bitirilir.', neden: null, olmasaydi: null },
+          { satir: 'public int TargetLanguageId { get; set; }', aciklama: 'Oturumun hangi yönde ilerlediği — hedef dilin gramer detayları test edilirken, karşı dilin metni yalnızca çeviri olarak gösterilir.', neden: 'Kullanıcının profilinde SABİT tek bir "hedef dil" alanı yok, çünkü `UserProgress`/`UserCardProgress` kayıtları `WordId`/`UserCardId` üzerinden (dile özel) tutuluyor — bu da bir kullanıcının de→tr ve tr→de yönlerinde AYNI ANDA, birbirinden bağımsız iki ilerleme geçmişi biriktirebileceği anlamına gelir. Bu yüzden "hangi yönde" sorusunun cevabı kullanıcıda değil, HER OTURUMDA ayrı ayrı sorulur.', olmasaydi: 'Kullanıcı profiline sabit bir "hedef dilim Almanca" alanı eklenseydi, bir kullanıcının BİR gün Almanca öğrenip ERTESİ gün Türkçe pratik yapmak istediği (ya da ikisini karışık sürdürdüğü) bir akış ya hiç DESTEKLENEMEZDİ ya da profildeki alanın her oturum öncesi ELLE değiştirilmesini gerektirirdi.' },
+          { satir: 'public LearningSessionType SessionType { get; set; }', aciklama: 'Oturumun genel formatı — yeni kelime oturumlarında sabit `Flashcard`, review oturumlarının HANGİ karma formatta olduğunu (A-11\'in ileride yazılacak `ILearningSessionService`\'i belirler) taşır.', neden: null, olmasaydi: null },
+          { satir: 'public LearningSessionSourceType SourceType { get; set; }', aciklama: 'Kelime havuzunun kaynağı — SystemWords/UserCards/Mixed.', neden: null, olmasaydi: null },
+          { satir: 'public string? LevelFilter { get; set; }', aciklama: 'Opsiyonel CEFR seviye filtresi (`A1`..`C2`) — kullanıcı oturumu belirli bir seviyeyle SINIRLI başlattıysa dolar, `Category`\'nin `MinLevel`/`MaxLevel`\'ı ile AYNI iki karakterlik format.', neden: null, olmasaydi: null },
+          { satir: 'public string? CategoryIds { get; set; }', aciklama: 'Oturum belirli sistem kategorileriyle SINIRLI başlatıldıysa, o kategori Id\'lerinin JSON dizisi (`[1,3,5]`).', neden: 'Ayrı bir ara tablo (ör. `LearningSessionCategory`) YERİNE düz bir JSON sütunu seçildi — bu liste yalnızca "oturum NASIL başlatıldı" bilgisinin bir KAYDI, kendi başına SORGULANMAYACAK (ör. "hangi oturumlar Hayvanlar kategorisiyle başladı" gibi bir rapor ekranı YOK); `WordCategory`/`UserCardCategory` gibi GERÇEKTEN JOIN\'lenen M:N ilişkilerden farkı bu.', olmasaydi: 'Ayrı bir ara tablo açılsaydı, her oturum başlatma isteği (muhtemelen 0-5 kategori seçimi) birkaç EK INSERT gerektirirdi VE bu satırların hiçbiri asla tek başına SORGULANMAYACAKTI — yalnızca "oturum hangi filtrelerle başladı" bilgisini geri okumak için var olan bir kayıt için gereksiz bir normalizasyon olurdu.' },
+          { satir: 'public string? UserCategoryIds { get; set; }', aciklama: 'CategoryIds ile AYNI gerekçe, yalnızca kullanıcının KENDİ kategorileri (`UserCategory`, A-08) için.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime StartedAt { get; set; }', aciklama: 'Oturumun başladığı an.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime? CompletedAt { get; set; }', aciklama: 'NULL = oturum hâlâ `Active` ya da `Abandoned` (hiç tamamlanmadı) — yalnızca `Status=Completed`\'a geçişte doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'public int? DurationSeconds { get; set; }', aciklama: 'Oturumun ne kadar sürdüğü — CompletedAt ile AYNI anda, tamamlanma ANINDA hesaplanıp doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'public int TotalWords { get; set; }', aciklama: 'Oturumda sorulan toplam kelime sayısı — istemcinin ilerleme çubuğunu ("5/20") çizmesi için.', neden: null, olmasaydi: null },
+          { satir: 'public int CorrectAnswers { get; set; }', aciklama: 'Doğru cevap sayısı.', neden: null, olmasaydi: null },
+          { satir: 'public int IncorrectAnswers { get; set; }', aciklama: 'Yanlış cevap sayısı.', neden: null, olmasaydi: null },
+          { satir: 'public decimal? SuccessRate { get; set; }', aciklama: 'NULL = henüz hiç soru cevaplanmadı — CorrectAnswers/TotalWords\'ten türeyen bir yüzde, oturum sonunda (ya da ilerledikçe) doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'public int XPEarned { get; set; }', aciklama: 'Bu oturumdan kazanılan XP — `IProgressService`\'in (A-09) genel XP sayacına EKLENECEK miktarın, oturuma özel kaydı.', neden: null, olmasaydi: null },
+          { satir: 'public LearningSessionStatus Status { get; set; } = LearningSessionStatus.Active;', aciklama: 'Oturum yaratıldığı anda varsayılan olarak devam ediyor — bir sonraki geçiş (Completed/Abandoned) A-11\'in servis katmanının işi.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearningSessionConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/LearningSessionConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/Srs/ — Domain/Entities/Srs/ klasörüyle BİREBİR eşleşen Infrastructure alt klasörü; bir config dosyası hangi entity\'yi yapılandırdığı SRS domainine ait olduğu için, o entity\'nin YAŞADIĞI klasöre PARALEL bir yol izler, controller\'ın çağırdığı Feature\'a göre DEĞİL.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Enums.Srs;
+
+namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+public class LearningSessionConfiguration : IEntityTypeConfiguration<LearningSession>
+{
+    public void Configure(EntityTypeBuilder<LearningSession> builder)
+    {
+        builder.ToTable("LearningSessions", tb =>
+        {
+            tb.HasCheckConstraint("CK_LearningSessions_SessionType",
+                "SessionType IN ('Flashcard','MultipleChoice','ArticleQuiz','PluralQuiz','TranslationQuiz','TrueFalse')");
+            tb.HasCheckConstraint("CK_LearningSessions_SourceType", "SourceType IN ('SystemWords','UserCards','Mixed')");
+            tb.HasCheckConstraint("CK_LearningSessions_LevelFilter", "LevelFilter IS NULL OR LevelFilter IN ('A1','A2','B1','B2','C1','C2')");
+            tb.HasCheckConstraint("CK_LearningSessions_Status", "Status IN ('Active','Completed','Abandoned')");
+        });
+
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.SessionType).HasConversion<string>().HasMaxLength(50).IsRequired();
+        builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.LevelFilter).HasMaxLength(2);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(LearningSessionStatus.Active);
+
+        builder.Property(x => x.StartedAt).HasDefaultValueSql("GETUTCDATE()");
+        builder.Property(x => x.TotalWords).HasDefaultValue(0);
+        builder.Property(x => x.CorrectAnswers).HasDefaultValue(0);
+        builder.Property(x => x.IncorrectAnswers).HasDefaultValue(0);
+        builder.Property(x => x.SuccessRate).HasPrecision(5, 2);
+        builder.Property(x => x.XPEarned).HasDefaultValue(0);
+
+        builder.HasIndex(x => x.UserId);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Word'ün Language FK'ıyla AYNI bilinçli Restrict — bir dil kaydı, ona bağlı oturum geçmişi
+        // varken silinemez.
+        builder.HasOne<Language>()
+            .WithMany()
+            .HasForeignKey(x => x.TargetLanguageId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı ve `HasMaxLength`/`HasDefaultValue`/`HasConversion` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — ilk FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Language`\'ın ad alanı — ikinci FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`LearningSession`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Enums.Srs;', aciklama: '`LearningSessionStatus`\'un ad alanı — aşağıdaki `HasDefaultValue(LearningSessionStatus.Active)` çağrısı bu türe ihtiyaç duyar.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.Srs;', aciklama: '`LearningHistoryConfiguration`/`UserProgressConfiguration` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LearningSessionConfiguration : IEntityTypeConfiguration<LearningSession>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<LearningSession> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("LearningSessions", tb =>', aciklama: 'Tablo adı — DATABASE_SCHEMA/SRS.md\'deki `LearningSessions` ile birebir; ikinci parametre (`tb =>`) dört CHECK kısıtının tanımlandığı bir yapılandırma bloğu açar — `AchievementConfiguration`\'daki AYNI iki parametreli `ToTable` deseni.', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_LearningSessions_SessionType",', aciklama: 'Entity\'deki `LearningSessionType` enum\'ının C# tarafındaki kısıtını (yalnızca 6 tanımlı değer) veritabanı SEVİYESİNE de taşır.', neden: 'EF Core\'un `HasConversion<string>()`\'ı enum\'ı bir `nvarchar` sütununa yazar, ama bu dönüşüm TEK BAŞINA veritabanını KORUMAZ — bir başka araçla (ör. elle çalıştırılan bir SQL script\'i, ya da ileride yazılacak bir toplu import) tabloya DOĞRUDAN geçersiz bir metin (`"Foo"`) yazılabilirdi; CHECK kısıtı bunu veritabanı SEVİYESİNDE reddeder.', olmasaydi: 'CHECK kısıtı olmasaydı, C# tarafındaki enum güvencesi yalnızca UYGULAMA KODU üzerinden yazılan satırlar için geçerli olurdu — veritabanına DOĞRUDAN erişen (ör. bir raporlama script\'i, ya da ileride yazılacak bir admin toplu-düzeltme aracı) herhangi bir kod yolu, tabloyu sessizce geçersiz bir `SessionType` değeriyle KİRLETEBİLİRDİ.' },
+          { satir: '"SessionType IN (\'Flashcard\',\'MultipleChoice\',\'ArticleQuiz\',\'PluralQuiz\',\'TranslationQuiz\',\'TrueFalse\')");', aciklama: 'Kısıtın gerçek SQL ifadesi — `LearningSessionType` enum\'ındaki ALTI değerin (bkz. yukarıdaki enum kod slaydı) birebir aynı yazımı, sıralaması ÖNEMLİ değil.', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_LearningSessions_SourceType", "SourceType IN (\'SystemWords\',\'UserCards\',\'Mixed\')");', aciklama: 'SessionType kısıtıyla AYNI gerekçe, `LearningSessionSourceType`\'ın ÜÇ değeri için — bu satır tek satıra sığdığı için `HasCheckConstraint`\'in İKİ parametresi ayrı satırlara BÖLÜNMEDİ (SessionType\'ın kısıt metni daha UZUN olduğu için oradaki bölünmeyle görsel bir TUTARSIZLIK yaratmıyor, ikisi de aynı metotun farklı çağrıları).', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_LearningSessions_LevelFilter", "LevelFilter IS NULL OR LevelFilter IN (\'A1\',\'A2\',\'B1\',\'B2\',\'C1\',\'C2\')");', aciklama: '`Category.MinLevel`/`MaxLevel`\'ın (A-06) AYNI `IS NULL OR IN (...)` deseni — `LevelFilter` OPSİYONEL olduğu için (kullanıcı seviye filtresiz de oturum başlatabilir) NULL\'a İZİN VERİLİR, ama doluysa yalnızca altı geçerli CEFR seviyesinden biri olabilir.', neden: null, olmasaydi: null },
+          { satir: 'tb.HasCheckConstraint("CK_LearningSessions_Status", "Status IN (\'Active\',\'Completed\',\'Abandoned\')");', aciklama: '`LearningSessionStatus`\'un ÜÇ değeri için AYNI kısıt deseni.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi — `AchievementConfiguration`/`LearningHistoryConfiguration` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SessionType).HasConversion<string>().HasMaxLength(50).IsRequired();', aciklama: 'Enum\'ı veritabanında OKUNABİLİR bir metin olarak saklar (`0`/`1`/`2` gibi bir tamsayı DEĞİL) — `AchievementConfiguration`\'daki `Rarity` dönüşümüyle AYNI desen, 50 karakter üst sınırı en uzun değer olan `TranslationQuiz`\'i (15 karakter) rahatça karşılar.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(20).IsRequired();', aciklama: 'SessionType ile AYNI dönüşüm deseni, daha kısa bir üst sınırla (en uzun değer `SystemWords`, 11 karakter).', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.LevelFilter).HasMaxLength(2);', aciklama: '`Category.MinLevel`/`MaxLevel` ile AYNI iki karakterlik üst sınır — `IsRequired()` ÇAĞRILMAZ, `string?` zaten nullable olduğunu EF Core\'a bildirir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired().HasDefaultValue(LearningSessionStatus.Active);', aciklama: 'SessionType/SourceType ile AYNI dönüşüm deseni, EK olarak `HasDefaultValue` — entity\'deki C# varsayılanının (`= LearningSessionStatus.Active`) veritabanı SEVİYESİNDEKİ karşılığı, EF Core bunu otomatik ÇEVİRMEZ.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.StartedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası — `UserCardExampleConfiguration`\'ın (A-10) `CreatedAt` alanındaki AYNI desen: `BaseEntity`\'den türemeyen bu entity için `ZauselDbContext.SaveChangesAsync`\'in otomatik doldurduğu `CreatedAt` mekanizması BURADA çalışmaz, bu DB varsayılanı bir GÜVENLİK ağı — asıl değer A-11\'in servis katmanında `DateTime.UtcNow` ile elle yazılacak.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.TotalWords).HasDefaultValue(0);', aciklama: 'Entity\'deki C# varsayılanının (0, `int` için örtük) veritabanı seviyesindeki karşılığı — bir oturum yaratıldığı anda henüz hiçbir kelime SORULMADI.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CorrectAnswers).HasDefaultValue(0);', aciklama: 'TotalWords ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.IncorrectAnswers).HasDefaultValue(0);', aciklama: 'TotalWords ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SuccessRate).HasPrecision(5, 2);', aciklama: '`UserProgress.SuccessRate`/`Mastery` ile AYNI hassasiyet (5 basamak, 2 ondalık) — `HasDefaultValue` ÇAĞRILMAZ, alan `decimal?` (nullable) olduğu için "hiç hesaplanmadı" durumu C# tarafındaki `null` varsayılanıyla zaten karşılanıyor.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.XPEarned).HasDefaultValue(0);', aciklama: 'TotalWords ile AYNI gerekçe — oturum başında henüz hiç XP KAZANILMADI.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.UserId);', aciklama: '"Bir kullanıcının TÜM oturumları" sorgusunu (A-11\'in ileride yazılacak oturum geçmişi/aktif-oturum sorguları) hızlandırır — `UserCardConfiguration`daki AYNI index deseni.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<User>()', aciklama: 'FK ilişkisinin başlangıcı — `User`\'da karşılık gelen bir navigation property YOK.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`User`/`Language` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz — bu dosyada İKİ kez geçer, ikisi de AYNI gerekçeyle.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu — `LearningSession.UserId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince (hesap anonimleştirme akışında) oturum geçmişi de OTOMATİK silinir — `UserCard`/`UserCategory` ile AYNI kural.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<Language>()', aciklama: 'İkinci FK ilişkisinin başlangıcı — hedef dile.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.TargetLanguageId)', aciklama: 'FK sütunu — `LearningSession.TargetLanguageId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Restrict);', aciklama: '`WordConfiguration`\'daki `Language` FK\'siyle (A-05) BİREBİR AYNI karar: `Languages` tablosu yalnızca `de`/`tr` gibi İKİ sabit satırdan oluşan, pratikte HİÇ silinmeyen bir referans tablosu — Cascade/NoAction yerine Restrict seçilmesi, bir dil kaydının ona bağlı oturum geçmişi VARKEN yanlışlıkla silinmesini veritabanı seviyesinde ENGELLER.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LearningHistory.cs — A-11\'i Bekleyen Notun Kaldırılması',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/Srs/LearningHistory.cs',
+        neden: '`LearningSession` entity\'si artık VAR — A-09\'da `LearningSessionId` sütununun üstüne bırakılan "bu entity henüz yok, A-11\'i bekliyor" notu artık YANLIŞ bir bilgi taşıyor, bu bölümde kaldırılıyor. Sütunun kendisi (`int? LearningSessionId`) DEĞİŞMEDİ — yalnızca gerçek foreign key\'in aşağıdaki `LearningHistoryConfiguration.cs` slaydında KURULMASI gerekiyordu.',
+        diff: ` namespace Zausel.Domain.Entities.Srs;
+
+ // BaseEntity'den BİLİNÇLİ olarak türemez — her cevap denemesinin insert-only kaydı, soft
+ // delete/UpdatedAt anlamsız (bir geçmiş satırı ne silinir ne güncellenir); DATABASE_SCHEMA/SRS.md'deki
+ // LearningHistory tablosuyla birebir eşleşir.
+ public class LearningHistory
+ {
+     public int Id { get; set; }
+     public int UserId { get; set; }
+
+     // İkisi birden NULL olamaz (uygulama kontrolü) — hangi kaynaktan sorulduğunu ayırır.
+     public int? WordId { get; set; }
+     public int? UserCardId { get; set; }
+
+-    // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
+     public int? LearningSessionId { get; set; }
+     public string? SessionType { get; set; }
+
+     public bool IsCorrect { get; set; }
+     public int? ResponseTime { get; set; }
+     public int? TimeSpentSeconds { get; set; }
+     public string? UserResponse { get; set; }
+     public string? CorrectResponse { get; set; }
+
+     // İpucu istendi mi — quality tavanını düşürür.
+     public bool HintUsed { get; set; }
+     // "Aynı Kelimelerle Tekrar Et" — SM-2 güncellemez, yalnızca istatistik.
+     public bool IsExtraPractice { get; set; }
+
+     // Yalnızca IsExtraPractice=false iken dolar.
+     public decimal? MasteryBefore { get; set; }
+     public decimal? MasteryAfter { get; set; }
+
+     public DateTime CreatedAt { get; set; }
+ }`
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LearningHistoryConfiguration.cs — Üçüncü ve Son Bekleyen FK Tamamlandı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/LearningHistoryConfiguration.cs',
+        neden: 'A-09\'da `LearningHistory.LearningSessionId` `LearningSession` entity\'si henüz yazılmadığı için FK\'siz bırakılmıştı (A-10\'da AYNI notun `UserCardId` için tamamlandığı bölümle KARŞILAŞTIR). `LearningSession` artık bu bölümde yazıldığına göre, üç bekleyen FK\'den SONUNCUSU da kurulabiliyor.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+ public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHistory>
+ {
+     public void Configure(EntityTypeBuilder<LearningHistory> builder)
+     {
+         builder.ToTable("LearningHistory");
+
+         builder.HasKey(x => x.Id);
+
+         builder.Property(x => x.SessionType).HasMaxLength(50);
+         builder.Property(x => x.UserResponse).HasMaxLength(500);
+         builder.Property(x => x.CorrectResponse).HasMaxLength(500);
+         builder.Property(x => x.MasteryBefore).HasPrecision(5, 2);
+         builder.Property(x => x.MasteryAfter).HasPrecision(5, 2);
+         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+         builder.HasIndex(x => x.UserId);
+         builder.HasIndex(x => x.CreatedAt).IsDescending();
+
+         // Kullanıcı silinince (Cascade) geçmişi de gider — tek cascade yolu bu, WordId'nin
+         // NoAction olması bir "multiple cascade paths" çakışması yaratmaz.
+         builder.HasOne<User>()
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+         // Word'ün soft/hard silinmesi geçmiş kaydını etkilemez — bilinçli NoAction.
+         builder.HasOne<Word>()
+             .WithMany()
+             .HasForeignKey(x => x.WordId)
+             .OnDelete(DeleteBehavior.NoAction)
+             .IsRequired(false);
+
+         // UserCard'ın soft/hard silinmesi geçmiş kaydını etkilemez — Word ile AYNI bilinçli NoAction.
+         builder.HasOne<UserCard>()
+             .WithMany()
+             .HasForeignKey(x => x.UserCardId)
+             .OnDelete(DeleteBehavior.NoAction)
+             .IsRequired(false);
+
+-        // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
++        // Oturumun (soft) silinmesi diye bir şey yok ama Word/UserCard ile AYNI bilinçli NoAction —
++        // geçmiş kaydı oturumdan bağımsız yaşar.
++        builder.HasOne<LearningSession>()
++            .WithMany()
++            .HasForeignKey(x => x.LearningSessionId)
++            .OnDelete(DeleteBehavior.NoAction)
++            .IsRequired(false);
+     }
+ }`,
+        satirlar: [
+          { satir: 'builder.HasOne<LearningSession>()', aciklama: 'YENİ, dördüncü FK ilişkisinin başlangıcı — `LearningHistory.LearningSessionId`\'nin artık gerçek bir `LearningSessions` tablosuna işaret ettiğini kurar. Bu dosyanın import listesine EK bir `using` GEREKMEDİ — `LearningSession` zaten `Zausel.Domain.Entities.Srs` ad alanında yaşıyor, bu dosya bu ad alanını `LearningHistory`\'nin kendisi için zaten satır 6\'da import EDİYORDU.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`LearningSession` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz — bir üstteki `User`/`Word`/`UserCard` FK\'lerindeki AYNI desenin dördüncü tekrarı.', neden: null, olmasaydi: null, satirIndex: 52 },
+          { satir: '.HasForeignKey(x => x.LearningSessionId)', aciklama: 'FK sütunu — `LearningHistory.LearningSessionId`, artık düz bir `int?` DEĞİL gerçek bir foreign key.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction)', aciklama: 'CASCADE DEĞİL NoAction seçildi — bir üstteki `Word`/`UserCard` FK\'leriyle AYNI gerekçe: bir oturum kaydı (bugün hiç silinmese de, ileride) ortadan kalksa bile geçmiş satırı o ANKİ durumun bir FOTOĞRAFI olarak kalmalı, oturuma bağımlı olarak SİLİNMEMELİ.', neden: null, olmasaydi: null, satirIndex: 54 },
+          { satir: '.IsRequired(false);', aciklama: 'FK\'nin OPSİYONEL olduğunu (nullable `LearningSessionId`) EF Core\'a AÇIKÇA bildirir — `Word`/`UserCard` FK\'lerindeki AYNI desen; bir `LearningHistory` satırı `LearningSessionId=NULL` ile de var OLABİLİR (ör. ileride oturum dışı bir "tek soru pratik" akışı eklenirse).', neden: null, olmasaydi: null, satirIndex: 55 }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ZauselDbContext.cs — Beşinci Yeni DbSet',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/ZauselDbContext.cs',
+        neden: 'A-11\'de yeni bir entity (`LearningSession`) eklendi — `DbSet<T>` property\'si olmadan EF Core bu tipi hiç TANIMAZ, `ApplyConfigurationsFromAssembly` yukarıdaki config\'i BULSA BİLE model içinde bir sorgu yüzeyi OLUŞMAZDI. `Zausel.Domain.Entities.Srs` ad alanı zaten A-09\'dan beri IMPORT edilmiş olduğu için (UserProgress/LearningHistory/Achievement) bu değişiklik yeni bir `using` GEREKTİRMEDİ.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using Zausel.Domain.Entities;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Logging;
+ using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data;
+
+ public class ZauselDbContext : DbContext
+ {
+     public ZauselDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+     public DbSet<Language> Languages => Set<Language>();
+     public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+     public DbSet<Word> Words => Set<Word>();
+     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+     public DbSet<WordExample> WordExamples => Set<WordExample>();
+     public DbSet<Category> Categories => Set<Category>();
+     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+     public DbSet<UserCategory> UserCategories => Set<UserCategory>();
+     public DbSet<UserCard> UserCards => Set<UserCard>();
+     public DbSet<UserCardExample> UserCardExamples => Set<UserCardExample>();
+     public DbSet<UserCardCategory> UserCardCategories => Set<UserCardCategory>();
+     public DbSet<UserCardUserCategory> UserCardUserCategories => Set<UserCardUserCategory>();
+     public DbSet<UserProgress> UserProgress => Set<UserProgress>();
+     public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
+     public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
++    public DbSet<LearningSession> LearningSessions => Set<LearningSession>();
+     public DbSet<Achievement> Achievements => Set<Achievement>();
+     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ZauselDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(ZauselDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          { satir: 'public DbSet<LearningSession> LearningSessions => Set<LearningSession>();', aciklama: 'LearningSession için sorgu yüzeyi — `UserCards` ile AYNI çoğul isimlendirme (`LearningHistory` tekil KALDI çünkü A-09\'da o kayıt ailesinin C# tarafında zaten `List<LearningHistory>` gibi bir koleksiyon ADI kullanılmıyordu, `DbSet` adı doğrudan sınıf adının çoğuluna GEÇMEDİ); LearningSession ise `UserCard` gibi kendi başına anlamlı, "kaç tane VAR" sorusu SORULACAK bir kayıt olduğu için çoğul seçildi.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: 1 Yeni Tablo + Üçüncü Bekleyen FK\'nin Tamamlanması',
+        aciklama: 'Yukarıdaki entity + config yazıldıktan ve A-09\'da FK\'siz bırakılan `LearningHistory.LearningSessionId` sütununa gerçek foreign key eklendikten sonra `dotnet ef migrations add AddLearningSessionEntity --project Zausel.Infrastructure --startup-project Zausel.API` çalıştırıldı. EF Core tek bir `CreateTable` (LearningSessions, 4 CHECK kısıtı + 2 FK ile), üç `CreateIndex` (LearningHistory.LearningSessionId + LearningSessions.TargetLanguageId + LearningSessions.UserId) ve `LearningHistory` tablosuna tek bir `AddForeignKey` içeren bir migration dosyası ürettü.',
+        neden: 'Migration dosyasının KENDİSİ elle YAZILMAZ — EF Core\'un "önceki model snapshot\'ı ile şu anki entity/config kümesini karşılaştır" mekanizmasına güvenildi; dört CHECK kısıtının SQL metni, iki `ReferentialAction` (Restrict/Cascade) kararı ve `LearningHistory` üzerindeki EK indeks elle yeniden üretilseydi bir karakterlik bir yazım hatası (ör. tek bir tırnak işaretinin kaçması) migration derlenirken DEĞİL, ancak veritabanına uygulanırken fark EDİLİRDİ.',
+        olmasaydi: 'Migration elle yazılsaydı, `LearningSessionConfiguration`\'daki `HasCheckConstraint`/`HasConversion<string>`/`OnDelete` çağrılarının HER BİRİNİN SQL karşılığı elle yeniden üretilmek ZORUNDA kalınırdı — C# config ile elle yazılan SQL zamanla birbirinden SAPARDI, özellikle bir CHECK kısıtındaki bir enum değerinin YANLIŞ kopyalanması (ör. `TrueFalse` yerine `TrueOrFalse`) uygulama BAŞARIYLA derlenip çalışırken veritabanının GEÇERLİ bir `SessionType` değerini REDDETMESİNE yol açardı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Gerçek ZauselDB\'ye Uygulandı',
+        aciklama: 'Migration `dotnet ef database update` ile gerçek `ZauselDB`\'ye uygulandı (hata vermeden tamamlandı), ardından `sqlcmd` ile `sys.tables`/`sys.foreign_keys`/`sys.indexes`/`sys.check_constraints` doğrudan sorgulandı: `LearningSessions` 2 FK (`Users`/`Languages`) + 3 index (PK + UserId + TargetLanguageId) + 4 CHECK kısıtı (SessionType/SourceType/LevelFilter/Status) ile OLUŞTU; `LearningHistory` 3 FK\'den (Users/Words/UserCards) 4 FK\'ye çıktı (yeni `FK_LearningHistory_LearningSessions_LearningSessionId`), EF Core\'un `LearningSessionId` sütunu için OTOMATİK açtığı `IX_LearningHistory_LearningSessionId` indeksiyle BİRLİKTE. Tüm paket (268 test) migration sonrası da yeşil kaldı.',
+        neden: 'Yalnızca "derlendi, migration dosyası oluştu" ile yetinilseydi, `LearningSessions.TargetLanguageId`\'nin `Restrict` kararının GERÇEKTEN doğru bir `ReferentialAction`\'a karşılık gelip gelmediği (SQL Server tarafında bir "cycle/multiple cascade paths" hatasına yol AÇIP açmadığı) yalnızca `database update` FİİLEN çalıştırılınca ortaya çıkardı — bir migration dosyasının derlenmesi, o dosyanın SQL Server\'da BAŞARIYLA uygulanacağının garantisi DEĞİLDİR.',
+        olmasaydi: 'Canlı doğrulama atlanıp yalnızca `dotnet build`/`dotnet ef migrations add` ile yetinilseydi, dört CHECK kısıtından birinin YANLIŞ bir sütun adına (ör. bir yazım hatasıyla `SessionTyp`) BAĞLANMASI gibi bir hata migration DOSYASI oluşturulduktan SONRA, ancak gerçek veritabanına uygulanırken ya da (daha kötüsü) A-11\'in servis katmanı GERÇEKTEN bir oturum yaratmaya ÇALIŞTIĞINDA çok daha GEÇ fark edilirdi.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

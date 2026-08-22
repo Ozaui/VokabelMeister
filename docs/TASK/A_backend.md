@@ -578,11 +578,11 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > Sıradaki: `A-11` (Öğrenme/Sınav API).
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
-### A-11 — Öğrenme / Sınav API ⬜
+### A-11 — Öğrenme / Sınav API 🔄
 **Referans:** REFERENCE/API_ENDPOINTS.md §9
 **Frontend karşılığı:** C-05 (Web — Öğrenme/Sınav Sayfası), D-07 (Mobil — Öğrenme/Sınav Ekranı)
-- [ ] **Entity:** `LearningSession` (+ `TargetLanguageId` FK `Languages`, 6 `SessionType` — MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse/Flashcard) + migration
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] **Entity:** `LearningSession` (+ `TargetLanguageId` FK `Languages`, 6 `SessionType` — MultipleChoice/TranslationQuiz/ArticleQuiz/PluralQuiz/TrueFalse/Flashcard) + migration
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `ILearningSessionService`/`LearningSessionService` (başlat — `mode: New|Due|Band|Mixed` +
       zorunlu `targetLanguageId` [her oturum kendi yönünü seçer, `UserProgress`/`UserCardProgress`
       `WordId`'ye [dile özel] bağlı olduğu için iki yön bağımsız ilerler — şema değişikliği
