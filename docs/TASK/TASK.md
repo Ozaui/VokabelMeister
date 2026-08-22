@@ -56,16 +56,19 @@
 | E | E-01…E-04 | Test & Yayın | ⬜ |
 | F | F-01…F-10 (+F-02.1, F-02.2, F-04.1…F-04.5) | Tanıtım Sitesi | ⬜ |
 
-**Sıradaki task:** `A-09` ✅ tamamlandı (SRS / İlerleme API — `UserProgress`/`UserCardProgress`/
-`LearningHistory`/`Achievement`/`UserAchievement` entity katmanı + migration, `SrsCalculator` [SM-2],
-`GetProgressSummaryQuery`/`GetProgressWordsQuery`/`GetSuspendedWordsQuery`/`ApplyWordLeechActionCommand`
-[`IProgressService` deseni BİLEREK terk edildi, A-08 gerekçesiyle AYNI], `ProgressController`, GERÇEK
-bir servis olarak yazılan `IAchievementService`/`AchievementService` [durum-tabanlı `EvaluateAndUnlockAsync`,
-şu an tek çağıran leech-action Reset'i, A-10/A-11 yazılınca aynı metodu çağıracak], `GET /achievements/me`
-[`Achievement.Name`/`Description` sütunu YOK — `AchievementMessages` sözlüğünden Accept-Language'a göre
-çözülür, `ErrorMessages`/`SuccessMessages` ile AYNI desen], "Hatasız Oturum" seed edildi ama tespiti
-A-11'e ertelendi — hepsi canlı + birim testleriyle doğrulandı, `TASK/A_backend.md` A-09 notuna işlendi).
-Sırada `A-10` (Kişisel Kart API) → `TASK/A_backend.md`.
+**Sıradaki task:** `A-10` ✅ tamamlandı (Kişisel Kart API — `UserCard`/`UserCardExample` + iki ara
+tablo [`UserCardCategory`/`UserCardUserCategory`, `UserCardUserCategory`'nin NoAction FK'si ile
+"multiple cascade paths" tuzağı çözüldü] entity katmanı + migration, `IUserCardRepository`/
+`UserCardRepository` + 5 Command/Query [`IUserCardService` deseni BİLEREK terk edildi, A-08
+gerekçesiyle AYNI] — liste/detay/CRUD, duplikat 409+`?force=true`, dile bakılmaksızın sistem
+eşleşme önerisi (`suggestedSystemWordId`), `UserCardsController`, A-09'un FK'siz bıraktığı
+`UserCardProgress`/`LearningHistory.UserCardId` sütunlarının tamamlanması, A-08'in bıraktığı
+`UserCategoryResponse.CardCount` notunun kapatılması, `learn-system-word` [`UserCard` DEĞİL
+`UserProgress` açar, projenin `UserProgress`'i İLK KEZ yarattığı yer, Almanca çeviriyi
+`germanWord` olarak döner, `IAchievementService` tetiklenir], kart görseli yükleme
+[`IFileStorageService`'e eklenen `DeleteImageAsync` ile eski dosya silinir] — hepsi canlı +
+22 yeni birim testiyle (268/268 paket) doğrulandı, `TASK/A_backend.md` A-10 notuna işlendi).
+Sırada `A-11` (Öğrenme / Sınav API) → `TASK/A_backend.md`.
 Faz A tamamlanınca kaldığı yerden **B-02** ⬜ (Auth Sayfaları) → `TASK/TASK_B_admin_panel.md` devam eder.
 
 (`A-03 — Auth API` ✅ tamamlandı 2026-08-14: `User`/`RefreshToken`/`QrLoginSession` entity'leri,

@@ -535,7 +535,7 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 > insert-only bir log, `LearningHistory` ile AYNI gerekçe). `DATABASE_SCHEMA/SRS.md` ve migration
 > (`AddAchievementSeed`) güncellendi, `dotnet ef database update` yerel DB'ye uygulandı.
 
-### A-10 — Kişisel Kart API (UserCard) ⬜
+### A-10 — Kişisel Kart API (UserCard) ✅
 **Referans:** REFERENCE/API_ENDPOINTS.md §7
 **Frontend karşılığı:** C-07 (Web — Kişisel Kartlar Sayfası), D-09 (Mobil — Kişisel Kartlar Ekranı)
 - [x] **Entity:** `UserCard`, `UserCardExample` + ara tablolar (`UserCardCategory`, `UserCardUserCategory`) + migration
