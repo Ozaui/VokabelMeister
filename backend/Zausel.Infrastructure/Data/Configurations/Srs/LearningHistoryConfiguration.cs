@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zausel.Domain.Entities.Auth;
 using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.PersonalContent;
 using Zausel.Domain.Entities.Srs;
 
 namespace Zausel.Infrastructure.Data.Configurations.Srs;
@@ -38,7 +39,13 @@ public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHis
             .OnDelete(DeleteBehavior.NoAction)
             .IsRequired(false);
 
-        // UserCard ve LearningSession entity'leri henüz yok (sırasıyla A-10/A-11'de gelir) —
-        // FK constraint'leri o zaman eklenir, şimdilik düz sütun.
+        // UserCard'ın soft/hard silinmesi geçmiş kaydını etkilemez — Word ile AYNI bilinçli NoAction.
+        builder.HasOne<UserCard>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCardId)
+            .OnDelete(DeleteBehavior.NoAction)
+            .IsRequired(false);
+
+        // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
     }
 }

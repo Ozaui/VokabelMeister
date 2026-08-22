@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-10 — Kişisel Kart API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'entity-migration',
+    bolumBaslik: 'A-10 — Kişisel Kart API',
+    oncekiBolum: '../A-09_srs-ilerleme-api/07_rozet-sistemi-ozet-sozluk.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 1',
+        baslik: 'UserCard Entity Katmanı ve Migration',
+        altBaslik: 'Kullanıcının kendi eklediği kelime kartı, örnek cümlesi ve iki ara tablo — sistem Word/Category\'sinden tamamen bağımsız, kişisel bir içerik ağacı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden Dört Yeni Entity, Neden Yalnızca Biri BaseEntity\'den Türüyor?',
+        aciklama: 'Kişisel Kart domaini dört yeni entity getiriyor: UserCard (BaseEntity\'den türer), UserCardExample (BİLİNÇLİ türemez — CreatedAt+UpdatedAt taşır ama audit/soft-delete taşımaz), UserCardCategory ve UserCardUserCategory (BİLİNÇLİ türemez, WordCategory ile AYNI gerekçe: saf M:N bağ satırları).',
+        neden: 'Ayrım, bir satırın UserCard\'ın KENDİSİ mi yoksa ona bağlı bir alt kayıt/bağ mı olduğuna dayanır: (1) UserCard sahiplik + soft-delete + "kim ne zaman değiştirdi" sorularının anlamlı olduğu BİRİNCİL bir kayıt — UserCategory (A-08) ile AYNI karakter; (2) UserCardExample kartın ALTINDA yaşayan, kartın DIŞINDA asla tek başına sorgulanmayan bir alt satır — kart silinince cascade ile o da gider; (3) UserCardCategory/UserCardUserCategory ise bir kartın hangi kategorilere ait olduğunu tutan, kendi audit geçmişi olmayan basit ilişki tabloları.',
+        olmasaydi: 'UserCardExample de BaseEntity\'den türeseydi, hiçbir zaman anlamlı olmayacak bir soft-delete filtresi + CreatedByUserId/UpdatedByUserId/DeletedByUserId sütunları taşırdı ("bu örnek cümleyi kim sildi" sorusu asla sorulmaz, kart zaten tek sahibine ait); ara tablolar BaseEntity\'den türeseydi, bir M:N çıkarma işlemi gerçek bir DELETE yerine bir soft-delete UPDATE\'e dönerdi ve aynı (UserCardId, CategoryId) çiftinin tekrar eklenmesi UNIQUE kısıtına TAKILIRDI (silinmiş satır hâlâ orada dururdu).'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCard.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/PersonalContent/UserCard.cs',
+        nedenBuKlasor: 'Domain/Entities/PersonalContent/ — UserCategory\'nin (A-08) YAŞADIĞI AYNI klasör, kullanıcının kendi ürettiği içerik burada toplanır; sistem içeriği (Word/Category) ayrı bir Content domaininde yaşar.',
+        kod: `using Zausel.Domain.Entities;
+
+namespace Zausel.Domain.Entities.PersonalContent;
+
+// Kullanıcının kendi eklediği kelime kartı — sistem Word'ünden bağımsız, tek kullanıcıya ait.
+// Ses: ayrı bir AudioUrl sütunu yok, istemci TTS'i FrontText/BackText üzerinden doğrudan çalışır.
+public class UserCard : BaseEntity
+{
+    public int UserId { get; set; }
+    public string FrontText { get; set; } = string.Empty;
+    public string BackText { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public string? ImageUrl { get; set; }
+    public bool IsActive { get; set; } = true;
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities;', aciklama: '`BaseEntity`\'nin ad alanı — Id/CreatedAt/UpdatedAt/IsDeleted/DeletedAt/CreatedByUserId/UpdatedByUserId/DeletedByUserId bu miras üzerinden gelir.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCategory` (A-08) ile AYNI domain klasörü — kullanıcının kendi ürettiği içerik (kart+kategori) burada, sistem içeriği (Word/Category) ayrı bir Content domaininde yaşar.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCard : BaseEntity', aciklama: '`UserCategory` ile AYNI temel sınıftan türer — mutable ve sahipli bir kayıt: kullanıcı kartını istediği an düzenler/siler, "kim ne zaman değiştirdi" sorusu anlamlıdır.', neden: null, olmasaydi: null },
+          { satir: 'public int UserId { get; set; }', aciklama: 'Sahiplik alanı — her sorguda filtrelenmesi zorunlu, başka bir kullanıcının kartı bu sorgunun sonucuna asla karışmamalı.', neden: null, olmasaydi: null },
+          { satir: 'public string FrontText { get; set; } = string.Empty;', aciklama: 'Kartın ön yüzü.', neden: 'Sistem kelimesindeki WordConcept+Words ayrımı (bir kavramın HER dildeki karşılığı ayrı bir satır) burada YOK — kullanıcı kişisel kartı yalnızca KENDİ yazdığı iki metni (ön/arka) saklar, sistemin çok-dilli kürasyon ihtiyacı kişisel içerik için geçerli DEĞİL.', olmasaydi: 'WordConcept+Words ayrımı buraya da taşınsaydı, kullanıcı basit bir "kelime + çevirisi" kartı eklemek için önce bir "kavram" satırı, sonra ona bağlı dil satırları oluşturmak ZORUNDA kalırdı — kişisel bir not defterine kelime eklemek gereksiz yere sistem kelimesi kadar KARMAŞIK bir akış olurdu.' },
+          { satir: 'public string BackText { get; set; } = string.Empty;', aciklama: 'Kartın arka yüzü (cevap/çeviri) — FrontText ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'public string? Notes { get; set; }', aciklama: 'Opsiyonel serbest not alanı — kullanıcının kart hakkında kendi hatırlatıcısını yazabileceği yer.', neden: null, olmasaydi: null },
+          { satir: 'public string? ImageUrl { get; set; }', aciklama: 'Opsiyonel kart görseli — bu bölümde yalnızca sütun olarak açılıyor, onu dolduracak yükleme uç noktası (`POST /user-cards/{id}/image`) A-10\'un SONRAKİ bir bölümünde eklenecek.', neden: null, olmasaydi: null },
+          { satir: 'public bool IsActive { get; set; } = true;', aciklama: 'Soft-delete\'ten (`IsDeleted`) FARKLI, geri döndürülebilir bir "askıya al" bayrağı.', neden: 'Bir kullanıcı bir kartı KALICI olarak silmeden, geçici olarak öğrenme havuzundan çıkarmak isteyebilir (ör. bir süre çalışmak istemediği bir kart) — `IsDeleted` GERİ ALINAMAYAN bir işlemken (`DeletedAt` damgası kalıcıdır), `IsActive=false` istenildiği an TEKRAR `true` yapılabilir.', olmasaydi: 'Yalnızca `IsDeleted` olsaydı, "bu kartı bir süreliğine görmek istemiyorum ama silmek de istemiyorum" isteği ancak kartı SİLİP sonra yeniden EKLEYEREK karşılanabilirdi — bu da kartın `Id`\'sinin (ve ona bağlı `UserCardProgress`/geçmişinin) değişmesine yol açardı.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/PersonalContent/UserCardConfiguration.cs',
+        nedenBuKlasor: 'Infrastructure/Data/Configurations/PersonalContent/ — `UserCategoryConfiguration`\'ın (A-08) YAŞADIĞI AYNI klasör, Domain klasörüyle birebir eşleşen Infrastructure alt klasörü.',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;
+
+public class UserCardConfiguration : IEntityTypeConfiguration<UserCard>
+{
+    public void Configure(EntityTypeBuilder<UserCard> builder)
+    {
+        builder.ToTable("UserCards");
+
+        builder.Property(x => x.FrontText).HasMaxLength(500).IsRequired();
+        builder.Property(x => x.BackText).HasMaxLength(500).IsRequired();
+        builder.Property(x => x.ImageUrl).HasMaxLength(500);
+        builder.Property(x => x.IsActive).HasDefaultValue(true);
+
+        builder.HasIndex(x => x.UserId);
+
+        // Cascade — kullanıcı silinince kişisel kartları da gider (UserCategories ile AYNI kural).
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı ve `HasMaxLength`/`HasDefaultValue` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli — `Configure` metodunun parametre tipi.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Auth;', aciklama: '`User`\'ın ad alanı — FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;', aciklama: '`UserCategoryConfiguration.cs` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardConfiguration : IEntityTypeConfiguration<UserCard>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserCard> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserCards");', aciklama: 'Tablo adı — DATABASE_SCHEMA/Kisisel_Icerik.md\'deki `UserCards` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.FrontText).HasMaxLength(500).IsRequired();', aciklama: 'Zorunlu alan, 500 karakter üst sınır — `WordConcept.ImageUrl`/`Category` alanlarıyla AYNI ölçek.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.BackText).HasMaxLength(500).IsRequired();', aciklama: 'FrontText ile AYNI üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.ImageUrl).HasMaxLength(500);', aciklama: 'Opsiyonel — `IsRequired()` çağrılmaz, `string?` zaten nullable olduğunu EF Core\'a bildirir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.IsActive).HasDefaultValue(true);', aciklama: 'Entity\'deki `= true` varsayılanının veritabanı seviyesindeki KARŞILIĞI — EF Core, C# tarafındaki varsayılanı otomatik DB varsayılanına çevirmez, ayrıca yazılması gerekir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.UserId);', aciklama: '"Bir kullanıcının TÜM kartları" sorgusunu (kartlar listesi, A-10\'un sonraki bölümündeki `IUserCardService`) hızlandırır — `UserCategoryConfiguration`daki AYNI index deseni.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<User>()', aciklama: 'FK ilişkisinin başlangıcı — `User`\'da karşılık gelen bir navigation property YOK.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`User` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserId)', aciklama: 'FK sütunu — `UserCard.UserId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kullanıcı silinince (hesap anonimleştirme akışında) kişisel kartları da OTOMATİK silinir — `UserCategory` ile AYNI kural.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardExample.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/PersonalContent/UserCardExample.cs',
+        kod: `namespace Zausel.Domain.Entities.PersonalContent;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — UserCard'ın sahibi dışında kimse görmediği/düzenlemediği
+// bir alt satır, kimin değiştirdiği/geri alınabilirliği anlamsız; yaşam döngüsü tamamen UserCard'a
+// bağlı (cascade silinir). UpdatedAt'in varlığı WordExample'dan (BaseEntity) FARKLI: kullanıcı kendi
+// örnek cümlesini yerinde düzenleyebilir (mutable), ama bunun için tam audit zinciri gerekmez.
+public class UserCardExample
+{
+    public int Id { get; set; }
+    public int UserCardId { get; set; }
+    public string SentenceFront { get; set; } = string.Empty;
+    public string SentenceBack { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard` ile AYNI klasör — bir `using Zausel.Domain.Entities;` YOK, çünkü bu entity `BaseEntity`\'den türemiyor.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardExample', aciklama: 'Herhangi bir temel sınıftan TÜREMEZ.', neden: 'Bu satırın soft-delete\'i (`IsDeleted`) veya "kim sildi" (`DeletedByUserId`) sorusu HİÇBİR ZAMAN sorulmaz — bir örnek cümle yalnızca kartın SAHİBİ tarafından görülür/düzenlenir, kartın kendisi silinince (cascade) bu satır zaten OTOMATİK gider; ayrı bir audit zincirine gerek yok.', olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — `BaseEntity`\'den GELMEDİĞİ için elle tanımlanır.', neden: null, olmasaydi: null },
+          { satir: 'public int UserCardId { get; set; }', aciklama: 'Ait olduğu kart — bu satırın TEK sahiplik referansı, `UserId` AYRICA taşınmaz (kartın kendi `UserId`\'sinden dolaylı olarak zaten bilinir).', neden: null, olmasaydi: null },
+          { satir: 'public string SentenceFront { get; set; } = string.Empty;', aciklama: 'Örnek cümlenin ön yüzdeki (kartın FrontText\'iyle AYNI dil) hâli.', neden: null, olmasaydi: null },
+          { satir: 'public string SentenceBack { get; set; } = string.Empty;', aciklama: 'Aynı cümlenin arka yüzdeki (kartın BackText\'iyle AYNI dil) çevirisi.', neden: null, olmasaydi: null },
+          { satir: 'public int DisplayOrder { get; set; }', aciklama: 'Bir kartın BİRDEN FAZLA örneği olabileceği için gösterim sırası — `WordExample.DisplayOrder` ile AYNI rol.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime CreatedAt { get; set; }', aciklama: 'Oluşturulma anı.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime UpdatedAt { get; set; }', aciklama: 'Son düzenlenme anı — bu satırın MUTABLE olduğunu (kullanıcı örnek cümlesini yerinde düzenleyebilir) gösterir, `LearningHistory`/`WordCategory` gibi insert-only bir kayıt OLSAYDI bu sütun hiç OLMAZDI.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardExampleConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/PersonalContent/UserCardExampleConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;
+
+public class UserCardExampleConfiguration : IEntityTypeConfiguration<UserCardExample>
+{
+    public void Configure(EntityTypeBuilder<UserCardExample> builder)
+    {
+        builder.ToTable("UserCardExamples");
+
+        builder.Property(x => x.SentenceFront).IsRequired();
+        builder.Property(x => x.SentenceBack).IsRequired();
+        builder.Property(x => x.DisplayOrder).HasDefaultValue(0);
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => x.UserCardId);
+
+        builder.HasOne<UserCard>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCardId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı ve `HasDefaultValueSql` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardExample`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;', aciklama: '`UserCardConfiguration.cs` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardExampleConfiguration : IEntityTypeConfiguration<UserCardExample>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserCardExample> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserCardExamples");', aciklama: 'Tablo adı — Kisisel_Icerik.md\'deki `UserCardExamples` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SentenceFront).IsRequired();', aciklama: 'Zorunlu alan — `nvarchar(max)`, bir üst sınır YOK (örnek cümleler `WordExample.SentenceText` gibi uzun olabilir).', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.SentenceBack).IsRequired();', aciklama: 'SentenceFront ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.DisplayOrder).HasDefaultValue(0);', aciklama: 'Entity\'deki C# varsayılanının (0, `int` için örtük) veritabanı seviyesindeki KARŞILIĞI.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası — `BaseEntity`\'den türemediği için `ZauselDbContext.SaveChangesAsync`\'in OTOMATİK doldurduğu `CreatedAt` mekanizması BURADA çalışmaz, uygulama kodu Handler\'da elle `DateTime.UtcNow` YAZMALI; bu DB varsayılanı yalnızca bir GÜVENLİK ağı.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'CreatedAt ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => x.UserCardId);', aciklama: '"Bir kartın TÜM örnekleri" sorgusunu (kart detay ekranı) hızlandırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<UserCard>()', aciklama: 'FK ilişkisinin başlangıcı — ebeveyn `UserCard`\'a.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`UserCard` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserCardId)', aciklama: 'FK sütunu — `UserCardExample.UserCardId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kart silinince örnek cümleleri de OTOMATİK silinir — bu satırın kart DIŞINDA hiçbir anlamı yok.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardCategory.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/PersonalContent/UserCardCategory.cs',
+        kod: `namespace Zausel.Domain.Entities.PersonalContent;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — WordCategory ile AYNI desen: UserCard↔sistem Category
+// arasında saf M:N bağ satırı, kendi audit/soft-delete geçmişi yok.
+public class UserCardCategory
+{
+    public int Id { get; set; }
+    public int UserCardId { get; set; }
+    public int CategoryId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Entities.PersonalContent;', aciklama: 'Bağın SAHİBİ tarafı olan `UserCard` ile AYNI klasör — `Category` (karşı taraf) ayrı bir Content domaininde yaşasa da, ilişkinin kendisi kişisel içerik tarafına ait sayılır.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardCategory', aciklama: '`WordCategory` (A-06, WordConcept↔Category bağı) ile AYNI temel sınıfsızlık gerekçesi — saf bir ilişki satırı, kendi geçmişi yok.', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — elle tanımlı.', neden: null, olmasaydi: null },
+          { satir: 'public int UserCardId { get; set; }', aciklama: 'Bağlanan kişisel kart.', neden: null, olmasaydi: null },
+          { satir: 'public int CategoryId { get; set; }', aciklama: 'Bağlanan sistem kategorisi — kullanıcı kendi kartını sistemin hazır kategori ağacına (ör. "Hayvanlar") ekleyebilir.', neden: null, olmasaydi: null },
+          { satir: 'public DateTime CreatedAt { get; set; }', aciklama: 'Bağın kurulduğu an.', neden: 'Bu entity `WordCategory`\'nin AKSİNE bir `DisplayOrder` TAŞIMAZ — `WordCategory`deki sıralama admin\'in bir kategori sayfasında kelimeleri hangi sırayla göstereceğini kürasyon amaçlı belirlediği bir alan, kullanıcının KENDİ kartları için böyle bir editoryal kürasyon ihtiyacı yok (kartlar listesi başka bir alana, ör. son eklenme veya alfabetik sıraya göre gösterilir).', olmasaydi: 'DisplayOrder gereksiz yere eklenseydi, bu M:N bağını yazan HER kod yolu (ör. bir kartı 3 kategoriye BİRDEN eklerken) anlamsız bir sıralama değeri ATAMAK zorunda kalırdı — hiçbir ekranın gerçekten OKUMADIĞI bir alanı doldurmak zorunda kalmak, YAGNI\'nin tam tersi bir spekülatif alan olurdu.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardCategoryConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/PersonalContent/UserCardCategoryConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.Content;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;
+
+public class UserCardCategoryConfiguration : IEntityTypeConfiguration<UserCardCategory>
+{
+    public void Configure(EntityTypeBuilder<UserCardCategory> builder)
+    {
+        builder.ToTable("UserCardCategories");
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => new { x.UserCardId, x.CategoryId }).IsUnique();
+
+        builder.HasOne<UserCard>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Category>()
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Content;', aciklama: '`Category`\'nin ad alanı — ikinci FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;', aciklama: 'Bu bölümdeki diğer config\'lerle AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardCategoryConfiguration : IEntityTypeConfiguration<UserCardCategory>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserCardCategory> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserCardCategories");', aciklama: 'Tablo adı — Kisisel_Icerik.md\'deki `UserCardCategories` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi — `WordCategoryConfiguration` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => new { x.UserCardId, x.CategoryId }).IsUnique();', aciklama: 'Aynı kart AYNI kategoriye İKİ KEZ eklenemez.', neden: '`WordCategoryConfiguration`daki `(WordConceptId, CategoryId)` UNIQUE kısıtıyla AYNI mantık: bu kısıt olmadan bir kullanıcının "bu kartı Hayvanlar kategorisine ekle" isteğini iki kez tıklaması aynı bağı İKİ satır olarak yaratırdı.', olmasaydi: null },
+          { satir: 'builder.HasOne<UserCard>()', aciklama: 'FK ilişkisinin başlangıcı — bağlanan kişisel karta.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`UserCard` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserCardId)', aciklama: 'FK sütunu — `UserCardCategory.UserCardId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kart silinince bu kategoriye bağları da OTOMATİK silinir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<Category>()', aciklama: 'İkinci FK ilişkisinin başlangıcı — sistem kategorisine.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.CategoryId)', aciklama: 'FK sütunu — `UserCardCategory.CategoryId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: '`WordCategoryConfiguration`daki `Category` FK\'siyle AYNI kural — bu ilişkide `Category` tarafında `User`\'a giden bir cascade zinciri YOK, bu yüzden CASCADE burada "multiple cascade paths" sorunu YARATMAZ (aşağıdaki `UserCardUserCategory` slaydındaki durumdan FARKLI).', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardUserCategory.cs',
+        dosyaYolu: 'backend/Zausel.Domain/Entities/PersonalContent/UserCardUserCategory.cs',
+        kod: `namespace Zausel.Domain.Entities.PersonalContent;
+
+// BaseEntity'den BİLİNÇLİ olarak türemez — WordCategory/UserCardCategory ile AYNI desen: UserCard↔
+// kişisel UserCategory arasında saf M:N bağ satırı. UserCategoryId FK'si bilinçli NO ACTION —
+// Users silindiğinde hem UserCards hem UserCategories üzerinden CASCADE ulaşılsaydı "multiple
+// cascade paths" hatası olurdu; UserCardId cascade zincirini taşır (bkz. Kisisel_Icerik.md).
+public class UserCardUserCategory
+{
+    public int Id { get; set; }
+    public int UserCardId { get; set; }
+    public int UserCategoryId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}`,
+        satirlar: [
+          { satir: 'namespace Zausel.Domain.Entities.PersonalContent;', aciklama: 'Hem `UserCard` hem `UserCategory` (karşı taraf) ile AYNI klasör — bu bağ, iki tarafı da PersonalContent domaininde yaşayan tek entity.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardUserCategory', aciklama: '`UserCardCategory` ile AYNI temel sınıfsızlık gerekçesi — saf bir ilişki satırı.', neden: null, olmasaydi: null },
+          { satir: 'public int Id { get; set; }', aciklama: 'Birincil anahtar — elle tanımlı.', neden: null, olmasaydi: null },
+          { satir: 'public int UserCardId { get; set; }', aciklama: 'Bağlanan kişisel kart.', neden: null, olmasaydi: null },
+          { satir: 'public int UserCategoryId { get; set; }', aciklama: 'Bağlanan kişisel kategori — kullanıcı kendi kartını KENDİ oluşturduğu bir gruba (`UserCategory`, A-08) ekleyebilir.', neden: 'Bu bağ `UserCardCategory`den (sistem kategorisine bağ) AYRI bir tabloda tutulur, çünkü karşı taraf FARKLI bir tablo (`UserCategories` vs `Categories`) — tek bir tabloda iki farklı FK\'yi (biri sistem, biri kişisel kategoriye) nullable olarak tutmak, `UserProgress`/`UserCardProgress` ayrımındaki (Bölüm A-09) AYNI "iki nullable FK\'de UNIQUE kısıt güvenilmez olur" sorununu doğururdu.', olmasaydi: 'Tek tabloda birleştirilseydi, "bir kart AYNI kategoriye iki kez eklenemez" UNIQUE kısıtı hangi FK\'nin (sistem mi kişisel mi) dolu olduğuna göre FARKLI davranmak zorunda kalırdı — SQL Server\'ın UNIQUE kısıtı NULL değerleri farklı satır SAYDIĞI için bu güvence GERÇEKTEN kurulamazdı.' },
+          { satir: 'public DateTime CreatedAt { get; set; }', aciklama: 'Bağın kurulduğu an.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardUserCategoryConfiguration.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/PersonalContent/UserCardUserCategoryConfiguration.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;
+
+public class UserCardUserCategoryConfiguration : IEntityTypeConfiguration<UserCardUserCategory>
+{
+    public void Configure(EntityTypeBuilder<UserCardUserCategory> builder)
+    {
+        builder.ToTable("UserCardUserCategories");
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+        builder.HasIndex(x => new { x.UserCardId, x.UserCategoryId }).IsUnique();
+
+        builder.HasOne<UserCard>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // NO ACTION — Users silindiğinde hem UserCards hem UserCategories üzerinden CASCADE
+        // ulaşılsaydı "multiple cascade paths" hatası olurdu; UserCardId cascade zincirini taşır.
+        builder.HasOne<UserCategory>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCategoryId)
+            .OnDelete(DeleteBehavior.NoAction);
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`DeleteBehavior` enum\'ı için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.EntityFrameworkCore.Metadata.Builders;', aciklama: '`EntityTypeBuilder<T>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: 'Bu tek satır hem `UserCard` hem `UserCategory` hem `UserCardUserCategory` tiplerini çözmeye yeter — üçü de AYNI klasörde yaşadığı için (bkz. Bölüm 1\'in kavram slaytı) ayrı ayrı `using` satırları GEREKMEDİ.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Data.Configurations.PersonalContent;', aciklama: 'Bu bölümdeki diğer config\'lerle AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardUserCategoryConfiguration : IEntityTypeConfiguration<UserCardUserCategory>', aciklama: '`ApplyConfigurationsFromAssembly`\'nin reflection ile OTOMATİK bulduğu, EF Core\'un standart konfigürasyon arayüzü.', neden: null, olmasaydi: null },
+          { satir: 'public void Configure(EntityTypeBuilder<UserCardUserCategory> builder)', aciklama: 'EF Core bu metodu model kurulurken BİR KEZ çağırır.', neden: null, olmasaydi: null },
+          { satir: 'builder.ToTable("UserCardUserCategories");', aciklama: 'Tablo adı — Kisisel_Icerik.md\'deki `UserCardUserCategories` ile birebir.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasKey(x => x.Id);', aciklama: '`BaseEntity`\'den TÜREMEYEN entity\'lerde birincil anahtarın AÇIKÇA belirtilmesi.', neden: null, olmasaydi: null },
+          { satir: 'builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");', aciklama: 'Veritabanı seviyesinde varsayılan zaman damgası.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasIndex(x => new { x.UserCardId, x.UserCategoryId }).IsUnique();', aciklama: 'Aynı kart AYNI kişisel kategoriye İKİ KEZ eklenemez — `UserCardCategoryConfiguration`daki AYNI mantık.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<UserCard>()', aciklama: 'FK ilişkisinin başlangıcı — bağlanan kişisel karta.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`UserCard` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz (bu dosyada İKİ kez geçer, ikisi de AYNI gerekçeyle).', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserCardId)', aciklama: 'FK sütunu — `UserCardUserCategory.UserCardId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.Cascade);', aciklama: 'Kart silinince bu kişisel kategoriye bağları da OTOMATİK silinir — `UserCard`\'ın kendisi zaten `User`\'dan cascade\'i TAŞIYAN tek satır, bu ikinci basamak cascade\'in aksadığı bir durum YOK.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<UserCategory>()', aciklama: 'İkinci FK ilişkisinin başlangıcı — kişisel kategoriye.', neden: null, olmasaydi: null },
+          { satir: '.HasForeignKey(x => x.UserCategoryId)', aciklama: 'FK sütunu — `UserCardUserCategory.UserCategoryId`.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction);', aciklama: 'DATABASE_SCHEMA/Kisisel_Icerik.md\'nin literal olarak yazdığı gerekçenin KENDİSİ: `User` bu tabloya İKİ ayrı yoldan cascade ile ulaşabilir — (1) `User→UserCards→UserCardCategories/UserCardUserCategories` (UserCardId zaten cascade), (2) `User→UserCategories→UserCardUserCategories` (bu FK de cascade OLSAYDI). SQL Server AYNI satıra iki farklı cascade zincirinin ulaşmasını "multiple cascade paths" hatasıyla (1785) REDDEDER.', neden: 'UserCardId zaten cascade zincirini TAŞIDIĞI için (kart silinince bağ zaten gider), UserCategoryId\'nin AYRICA cascade olmasına gerek de yok, olsa bile SQL Server BUNU reddeder — NoAction, "bu ikinci yoldan cascade YAPMA, birinci yol yeterli" niyetini ŞEMAYA taşır.', olmasaydi: 'UserCategoryId de Cascade seçilseydi, bu tablonun migration\'ı (aşağıdaki migration slaydı) `dotnet ef migrations add` aşamasında DEĞİL ama `dotnet ef database update` (SQL Server\'a GERÇEKTEN uygulanma) aşamasında 1785 hatasıyla PATLARDI — tablo hiç OLUŞTURULAMAZDI.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserCardProgressConfiguration.cs — A-09\'un Bekleyen FK\'si Tamamlandı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/UserCardProgressConfiguration.cs',
+        neden: 'A-09\'da `UserCard` entity\'si henüz yazılmadığı için `UserCardProgress.UserCardId` sütunu FK\'siz, düz bir `int` olarak bırakılmıştı. A-10\'da `UserCard` tablosu var olduğuna göre bu FK artık gerçek bir foreign key olarak kurulabilir.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+ using Zausel.Domain.Entities.Auth;
++using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+ public class UserCardProgressConfiguration : IEntityTypeConfiguration<UserCardProgress>
+ {
+     public void Configure(EntityTypeBuilder<UserCardProgress> builder)
+     {
+         builder.ToTable("UserCardProgress");
+
+         builder.Property(x => x.Mastery).HasPrecision(5, 2).HasDefaultValue(0m);
+         builder.Property(x => x.EasinessFactor).HasPrecision(4, 2).HasDefaultValue(2.5m);
+         builder.Property(x => x.SuccessRate).HasPrecision(5, 2).HasDefaultValue(0m);
+         builder.Property(x => x.IntervalDays).HasDefaultValue(1);
+
+         builder.HasIndex(x => new { x.UserId, x.UserCardId }).IsUnique();
+         builder.HasIndex(x => new { x.UserId, x.NextReviewAt });
+
+         builder.HasOne<User>()
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+-        // UserCard entity'si henüz yok (A-10'da gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
++        // NO ACTION — UserCardUserCategories'teki (Kisisel_Icerik.md) AYNI sebep: Users silindiğinde
++        // hem doğrudan (UserId) hem UserCards üzerinden (UserCardId) CASCADE ulaşılsaydı SQL Server
++        // "multiple cascade paths" hatası verir. Doğrudan UserId cascade zincirini taşır.
++        builder.HasOne<UserCard>()
++            .WithMany()
++            .HasForeignKey(x => x.UserCardId)
++            .OnDelete(DeleteBehavior.NoAction);
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`\'ın ad alanı — aşağıdaki YENİ FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<UserCard>()', aciklama: 'YENİ FK ilişkisinin başlangıcı — `UserCardProgress.UserCardId`\'nin artık gerçek bir `UserCards` tablosuna işaret ettiğini kurar.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`UserCard` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null, satirIndex: 32 },
+          { satir: '.HasForeignKey(x => x.UserCardId)', aciklama: 'FK sütunu — `UserCardProgress.UserCardId`, artık düz bir `int` DEĞİL gerçek bir foreign key.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction);', aciklama: 'CASCADE DEĞİL NoAction seçildi.', neden: '`UserCardProgress` zaten `UserId` üzerinden `User`\'a DOĞRUDAN bir CASCADE FK\'ye sahip (A-09\'dan beri). `UserCardId` de CASCADE olsaydı, bir `User` silindiğinde bu satıra İKİ ayrı yoldan cascade ulaşılırdı: doğrudan `User→UserCardProgress` VE dolaylı `User→UserCard→UserCardProgress`. SQL Server bunu (aynı satıra iki farklı cascade zincirinin ulaşması) DDL seviyesinde reddeder — tablo hiç oluşturulamazdı.', olmasaydi: 'NoAction yerine ısrarla Cascade seçilseydi, aşağıdaki "Migration" slaydındaki `dotnet ef database update` adımı SQL Server\'dan 1785 hatası ALIRDI ve migration hiç uygulanamazdı — proje bunu bir üstteki `UserCardUserCategory` FK\'sinde de zaten yaşamıştı, çözüm AYNI: ikincil (dolaylı) yol NoAction olur.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LearningHistoryConfiguration.cs — İkinci Bekleyen FK Tamamlandı',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/Configurations/Srs/LearningHistoryConfiguration.cs',
+        neden: 'A-09\'da `LearningHistory.UserCardId` de AYNI sebeple (o an `UserCard` entity\'si yoktu) FK\'siz bırakılmıştı. `LearningSessionId` A-11\'i beklemeye devam ediyor, ama `UserCardId` artık bağlanabilir.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
++using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data.Configurations.Srs;
+
+ public class LearningHistoryConfiguration : IEntityTypeConfiguration<LearningHistory>
+ {
+     public void Configure(EntityTypeBuilder<LearningHistory> builder)
+     {
+         builder.ToTable("LearningHistory");
+
+         builder.HasKey(x => x.Id);
+
+         builder.Property(x => x.SessionType).HasMaxLength(50);
+         builder.Property(x => x.UserResponse).HasMaxLength(500);
+         builder.Property(x => x.CorrectResponse).HasMaxLength(500);
+         builder.Property(x => x.MasteryBefore).HasPrecision(5, 2);
+         builder.Property(x => x.MasteryAfter).HasPrecision(5, 2);
+         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+         builder.HasIndex(x => x.UserId);
+         builder.HasIndex(x => x.CreatedAt).IsDescending();
+
+         // Kullanıcı silinince (Cascade) geçmişi de gider — tek cascade yolu bu, WordId'nin
+         // NoAction olması bir "multiple cascade paths" çakışması yaratmaz.
+         builder.HasOne<User>()
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+         // Word'ün soft/hard silinmesi geçmiş kaydını etkilemez — bilinçli NoAction.
+         builder.HasOne<Word>()
+             .WithMany()
+             .HasForeignKey(x => x.WordId)
+             .OnDelete(DeleteBehavior.NoAction)
+             .IsRequired(false);
+
+-        // UserCard ve LearningSession entity'leri henüz yok (sırasıyla A-10/A-11'de gelir) —
+-        // FK constraint'leri o zaman eklenir, şimdilik düz sütun.
++        // UserCard'ın soft/hard silinmesi geçmiş kaydını etkilemez — Word ile AYNI bilinçli NoAction.
++        builder.HasOne<UserCard>()
++            .WithMany()
++            .HasForeignKey(x => x.UserCardId)
++            .OnDelete(DeleteBehavior.NoAction)
++            .IsRequired(false);
++
++        // LearningSession entity'si henüz yok (A-11'de gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
+     }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`\'ın ad alanı — aşağıdaki YENİ, opsiyonel FK ilişkisi bu türe kuruluyor.', neden: null, olmasaydi: null },
+          { satir: 'builder.HasOne<UserCard>()', aciklama: 'YENİ, üçüncü FK ilişkisinin başlangıcı — `LearningHistory.UserCardId`\'nin artık gerçek bir `UserCards` tablosuna işaret ettiğini kurar.', neden: null, olmasaydi: null },
+          { satir: '.WithMany()', aciklama: '`UserCard` tarafında bir koleksiyon navigation property TANIMLANMADIĞI için parametresiz.', neden: null, olmasaydi: null, satirIndex: 45 },
+          { satir: '.HasForeignKey(x => x.UserCardId)', aciklama: 'FK sütunu — `LearningHistory.UserCardId`, artık düz bir `int?` DEĞİL gerçek bir foreign key.', neden: null, olmasaydi: null },
+          { satir: '.OnDelete(DeleteBehavior.NoAction)', aciklama: 'CASCADE DEĞİL NoAction seçildi — bir üstteki `Word` FK\'siyle (satır satır) AYNI gerekçe: bir kart hard-silinirse geçmiş kaydı OTOMATİK silinmez, geçmiş o anki durumun bir fotoğrafıdır.', neden: null, olmasaydi: null, satirIndex: 47 },
+          { satir: '.IsRequired(false);', aciklama: 'FK\'nin OPSİYONEL olduğunu (nullable `UserCardId`) EF Core\'a AÇIKÇA bildirir — `Word` FK\'sindeki AYNI desen.', neden: null, olmasaydi: null, satirIndex: 48 }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'ZauselDbContext.cs — 4 Yeni DbSet',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Data/ZauselDbContext.cs',
+        neden: 'A-10\'da dört yeni entity (`UserCard`, `UserCardExample`, `UserCardCategory`, `UserCardUserCategory`) eklendi — `DbSet<T>` property\'si olmadan EF Core bu tipleri hiç TANIMAZ, `ApplyConfigurationsFromAssembly` config\'leri BULSA BİLE model içinde bir sorgu yüzeyi OLUŞMAZDI. `Zausel.Domain.Entities.PersonalContent` ad alanı zaten A-08\'den beri IMPORT edilmiş olduğu için (UserCategory) bu değişiklik yeni bir `using` GEREKTİRMEDİ.',
+        diff: ` using System.Reflection;
+ using Microsoft.EntityFrameworkCore;
+ using Zausel.Domain.Entities;
+ using Zausel.Domain.Entities.Auth;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Logging;
+ using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Infrastructure.Data;
+
+ public class ZauselDbContext : DbContext
+ {
+     public ZauselDbContext(DbContextOptions options) : base(options)
+     {
+     }
+
+     public DbSet<User> Users => Set<User>();
+     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+     public DbSet<QrLoginSession> QrLoginSessions => Set<QrLoginSession>();
+     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+     public DbSet<ApplicationLog> ApplicationLogs => Set<ApplicationLog>();
+     public DbSet<SecurityLog> SecurityLogs => Set<SecurityLog>();
+     public DbSet<Language> Languages => Set<Language>();
+     public DbSet<WordConcept> WordConcepts => Set<WordConcept>();
+     public DbSet<Word> Words => Set<Word>();
+     public DbSet<WordDetail> WordDetails => Set<WordDetail>();
+     public DbSet<WordExample> WordExamples => Set<WordExample>();
+     public DbSet<Category> Categories => Set<Category>();
+     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
+     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
+     public DbSet<UserCategory> UserCategories => Set<UserCategory>();
++    public DbSet<UserCard> UserCards => Set<UserCard>();
++    public DbSet<UserCardExample> UserCardExamples => Set<UserCardExample>();
++    public DbSet<UserCardCategory> UserCardCategories => Set<UserCardCategory>();
++    public DbSet<UserCardUserCategory> UserCardUserCategories => Set<UserCardUserCategory>();
+     public DbSet<UserProgress> UserProgress => Set<UserProgress>();
+     public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
+     public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
+     public DbSet<Achievement> Achievements => Set<Achievement>();
+     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
+
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ZauselDbContext).Assembly);
+
+         // Her BaseEntity türevine otomatik "IsDeleted=false" filtresi uygular — yeni bir entity
+         // eklendiğinde Repository'de elle .Where(!IsDeleted) yazmayı UNUTMA riski ortadan kalkar.
+         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+         {
+             if (!typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+                 continue;
+
+             var method = typeof(ZauselDbContext)
+                 .GetMethod(nameof(ApplySoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!
+                 .MakeGenericMethod(entityType.ClrType);
+             method.Invoke(null, [modelBuilder]);
+         }
+
+         base.OnModelCreating(modelBuilder);
+     }
+
+     private static void ApplySoftDeleteFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : BaseEntity
+     {
+         modelBuilder.Entity<TEntity>().HasQueryFilter(e => !e.IsDeleted);
+     }
+
+     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+     {
+         var now = DateTime.UtcNow;
+         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+         {
+             if (entry.State == EntityState.Added)
+             {
+                 entry.Entity.CreatedAt = now;
+                 entry.Entity.UpdatedAt = now;
+             }
+             else if (entry.State == EntityState.Modified)
+             {
+                 entry.Entity.UpdatedAt = now;
+             }
+         }
+
+         return await base.SaveChangesAsync(cancellationToken);
+     }
+ }`,
+        satirlar: [
+          { satir: 'public DbSet<UserCard> UserCards => Set<UserCard>();', aciklama: 'UserCard için sorgu yüzeyi — `UserCategories` ile AYNI isimlendirme (çoğul), `UserCard` bir DOMAIN karakteri (mutable, soft-delete\'li) taşıdığı için `LearningHistory`/`UserProgress` gibi tekil BIRAKILMADI.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserCardExample> UserCardExamples => Set<UserCardExample>();', aciklama: 'UserCardExample için sorgu yüzeyi.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserCardCategory> UserCardCategories => Set<UserCardCategory>();', aciklama: 'UserCardCategory için sorgu yüzeyi — `WordCategories` ile AYNI isimlendirme deseni.', neden: null, olmasaydi: null },
+          { satir: 'public DbSet<UserCardUserCategory> UserCardUserCategories => Set<UserCardUserCategory>();', aciklama: 'UserCardUserCategory için sorgu yüzeyi.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Migration: 4 Yeni Tablo + 2 Bekleyen FK\'nin Tamamlanması',
+        aciklama: 'Yukarıdaki 4 entity + 4 config yazıldıktan ve A-09\'da FK\'siz bırakılan iki sütuna (UserCardProgress.UserCardId, LearningHistory.UserCardId) gerçek foreign key eklendikten sonra `dotnet ef migrations add AddUserCardEntities --project Zausel.Infrastructure --startup-project Zausel.API` çalıştırıldı. EF Core dört yeni `CreateTable` (UserCards, UserCardCategories, UserCardExamples, UserCardUserCategories) + 9 `CreateIndex` + `LearningHistory`/`UserCardProgress` tablolarına iki `AddForeignKey` içeren tek bir migration dosyası ürettü.',
+        neden: 'Migration dosyasının KENDİSİ elle YAZILMAZ — EF Core\'un "önceki model snapshot\'ı ile şu anki entity/config kümesini karşılaştır" mekanizmasına güvenildi; 4 tablo + 2 sonradan eklenen FK elle yazılsaydı bir `ReferentialAction` değerinin (Cascade/NoAction) yanlış seçilmesi kolayca gözden KAÇARDI.',
+        olmasaydi: 'Migration elle yazılsaydı, yukarıdaki `HasIndex`/`OnDelete` çağrılarının HER BİRİNİN SQL karşılığı elle yeniden üretilmek ZORUNDA kalınırdı — C# config ile elle yazılan SQL zamanla birbirinden SAPARDI, özellikle NoAction/Cascade ayrımının bir satırda bile YANLIŞ kopyalanması "multiple cascade paths" hatasını migration DOSYASI oluşturulduktan SONRA, ancak gerçek veritabanına uygulanırken ortaya çıkarırdı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Gerçek ZauselDB\'ye Uygulandı',
+        aciklama: 'Migration `dotnet ef database update` ile gerçek `ZauselDB`\'ye uygulandı (hata vermeden tamamlandı — bir önceki slayttaki NoAction kararları doğrulandı), ardından `sqlcmd` ile `sys.tables`/`sys.foreign_keys`/`sys.indexes` doğrudan sorgulandı: `UserCards` (1 FK/1 index), `UserCardExamples` (1 FK/1 index), `UserCardCategories` (2 FK/2 index), `UserCardUserCategories` (2 FK/2 index), `UserCardProgress` (2 FK/3 index — `UserCard` FK\'si artık VAR), `LearningHistory` (3 FK/4 index — `UserCard` FK\'si artık VAR) sayıları beklenenle BİREBİR eşleşti. Tüm paket (246 test) migration sonrası da yeşil kaldı.',
+        neden: 'Yalnızca "derlendi, migration dosyası oluştu" ile yetinilseydi, `UserCardUserCategory`/`UserCardProgress`/`LearningHistory`\'deki NoAction kararlarının GERÇEKTEN doğru olup olmadığı (bir "multiple cascade paths" hatasına yol AÇIP açmadığı) yalnızca `database update` FİİLEN çalıştırılınca ortaya çıkardı — bir migration dosyasının derlenmesi, o dosyanın SQL Server\'da BAŞARIYLA uygulanacağının garantisi DEĞİLDİR.',
+        olmasaydi: 'Canlı doğrulama atlanıp yalnızca `dotnet build`/`dotnet ef migrations add` ile yetinilseydi, bu bölümdeki iki `kod-degisiklik` slaytındaki NoAction kararlarından biri yanlışlıkla Cascade YAZILMIŞ olsaydı bu hata yalnızca bir SONRAKİ görev (A-10\'un servis katmanı, gerçek bir kayıt silmeye ÇALIŞTIĞINDA) çok daha GEÇ, çalışma zamanında fark edilirdi.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

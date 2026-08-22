@@ -538,8 +538,8 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 ### A-10 — Kişisel Kart API (UserCard) ⬜
 **Referans:** REFERENCE/API_ENDPOINTS.md §7
 **Frontend karşılığı:** C-07 (Web — Kişisel Kartlar Sayfası), D-09 (Mobil — Kişisel Kartlar Ekranı)
-- [ ] **Entity:** `UserCard`, `UserCardExample` + ara tablolar (`UserCardCategory`, `UserCardUserCategory`) + migration
-- [ ] ➜ **AKADEMI/backend'ye işle**
+- [x] **Entity:** `UserCard`, `UserCardExample` + ara tablolar (`UserCardCategory`, `UserCardUserCategory`) + migration
+- [x] ➜ **AKADEMI/backend'ye işle**
 - [ ] `IUserCardService`/`UserCardService` (liste/detay/CRUD — yalnızca sahibi), duplikat uyarısı
       (409+`?force=true`), sistem kelimesi eşleşme uyarısı (`suggestedSystemWordId`)
 - [ ] ➜ **AKADEMI/backend'ye işle**

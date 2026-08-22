@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zausel.Domain.Entities.Auth;
+using Zausel.Domain.Entities.PersonalContent;
 using Zausel.Domain.Entities.Srs;
 
 namespace Zausel.Infrastructure.Data.Configurations.Srs;
@@ -24,6 +25,12 @@ public class UserCardProgressConfiguration : IEntityTypeConfiguration<UserCardPr
             .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // UserCard entity'si henüz yok (A-10'da gelir) — FK constraint o zaman eklenir, şimdilik düz sütun.
+        // NO ACTION — UserCardUserCategories'teki (Kisisel_Icerik.md) AYNI sebep: Users silindiğinde
+        // hem doğrudan (UserId) hem UserCards üzerinden (UserCardId) CASCADE ulaşılsaydı SQL Server
+        // "multiple cascade paths" hatası verir. Doğrudan UserId cascade zincirini taşır.
+        builder.HasOne<UserCard>()
+            .WithMany()
+            .HasForeignKey(x => x.UserCardId)
+            .OnDelete(DeleteBehavior.NoAction);
     }
 }

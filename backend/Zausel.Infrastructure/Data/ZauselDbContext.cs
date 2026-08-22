@@ -30,6 +30,10 @@ public class ZauselDbContext : DbContext
     public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
     public DbSet<WordCategory> WordCategories => Set<WordCategory>();
     public DbSet<UserCategory> UserCategories => Set<UserCategory>();
+    public DbSet<UserCard> UserCards => Set<UserCard>();
+    public DbSet<UserCardExample> UserCardExamples => Set<UserCardExample>();
+    public DbSet<UserCardCategory> UserCardCategories => Set<UserCardCategory>();
+    public DbSet<UserCardUserCategory> UserCardUserCategories => Set<UserCardUserCategory>();
     public DbSet<UserProgress> UserProgress => Set<UserProgress>();
     public DbSet<UserCardProgress> UserCardProgress => Set<UserCardProgress>();
     public DbSet<LearningHistory> LearningHistory => Set<LearningHistory>();
