@@ -20,13 +20,15 @@ public class GetUserCategoriesQueryHandlerTests
         // ARRANGE — sahiplik filtresi repository'nin GetByUserIdAsync'inde; Handler yalnızca UserId'yi iletir.
         _userCategoryRepository.Setup(r => r.GetByUserIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new UserCategory { Id = 1, UserId = 1, Name = "Hayvanlar" }]);
+        _userCategoryRepository.Setup(r => r.GetCardCountsAsync(It.IsAny<List<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, int> { [1] = 3 });
         var handler = CreateHandler();
 
         // ACT
         var result = await handler.Handle(new GetUserCategoriesQuery(1), default);
 
-        // ASSERT
-        result.Should().ContainSingle(c => c.Name == "Hayvanlar");
+        // ASSERT — CardCount, GetCardCountsAsync'in döndürdüğü sözlükten (ara tablo üzerinden hesaplanan) geliyor.
+        result.Should().ContainSingle(c => c.Name == "Hayvanlar" && c.CardCount == 3);
         _userCategoryRepository.Verify(r => r.GetByUserIdAsync(1, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -35,6 +37,8 @@ public class GetUserCategoriesQueryHandlerTests
     {
         // ARRANGE
         _userCategoryRepository.Setup(r => r.GetByUserIdAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _userCategoryRepository.Setup(r => r.GetCardCountsAsync(It.IsAny<List<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         var handler = CreateHandler();
 
         // ACT

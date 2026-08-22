@@ -46,6 +46,13 @@ public class UserProgressRepository : IUserProgressRepository
     public async Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default) =>
         await _context.UserProgress.FirstOrDefaultAsync(p => p.UserId == userId && p.WordId == wordId, cancellationToken);
 
+    public async Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)
+    {
+        userProgress.CreatedByUserId = userId;
+        userProgress.UpdatedByUserId = userId;
+        await _context.UserProgress.AddAsync(userProgress, cancellationToken);
+    }
+
     public Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)
     {
         userProgress.UpdatedByUserId = userId;

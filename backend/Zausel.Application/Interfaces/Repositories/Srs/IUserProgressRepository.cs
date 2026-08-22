@@ -17,6 +17,10 @@ public interface IUserProgressRepository
     // Leech aksiyonu (Suspend/Reset/Continue) için — sahiplik filtresi (UserId+WordId) gömülü.
     Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default);
 
+    // learn-system-word (A-10) için — bu, projenin bir UserProgress satırını İLK KEZ yarattığı yer
+    // (A-09'daki tek Handler, ApplyWordLeechActionCommand, yalnızca VAR OLAN bir satırı günceller).
+    Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);
+
     Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

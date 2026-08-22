@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-10 — Kişisel Kart API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-retrofit-canli-dogrulama',
+    bolumBaslik: 'A-10 — Kişisel Kart API',
+    oncekiBolum: '02_repository-mapping-crud.html',
+    sonrakiBolum: '04_learn-system-word-ve-gorsel-yukleme.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 3',
+        baslik: 'UserCardsController, A-09/A-08 Bekleyenlerinin Tamamlanması ve Canlı Doğrulama',
+        altBaslik: 'Beş endpoint\'i bağlayan controller, A-09\'un FK\'siz sütunları + A-08\'in CardCount notu kapatılıyor, gerçek ZauselDB üzerinde uçtan uca test.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardsController.cs',
+        dosyaYolu: 'backend/Zausel.API/Controllers/UserCardsController.cs',
+        nedenBuKlasor: 'API/Controllers/ — `UserCategoriesController` (A-08) ile AYNI klasör, projenin TÜM controller\'ları burada yaşar.',
+        kod: `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Zausel.Application.DTOs;
+using Zausel.Application.DTOs.UserCards;
+using Zausel.Application.Features.UserCards;
+
+namespace Zausel.API.Controllers;
+
+[Route("user-cards")]
+[Authorize]
+public class UserCardsController : ApiControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public UserCardsController(IMediator mediator) => _mediator = mediator;
+
+    [HttpGet]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<PagedResult<UserCardResponse>>> GetUserCards(
+        [FromQuery] int? categoryId, [FromQuery] int? userCategoryId, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetUserCardsQuery(CurrentUserId, categoryId, userCategoryId, search, page, pageSize), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("{id}")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<UserCardResponse>> GetById(int id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetUserCardByIdQuery(id, CurrentUserId), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<UserCardResponse>> Create(
+        UserCardCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new CreateUserCardCommand(
+                request.FrontText, request.BackText, request.Notes, request.CategoryIds, request.UserCategoryIds,
+                request.Examples, force, CurrentUserId, CurrentUserRole),
+            cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    [HttpPut("{id}")]
+    [EnableRateLimiting("general")]
+    public async Task<ActionResult<UserCardResponse>> Update(
+        int id, UserCardUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new UpdateUserCardCommand(
+                id, request.FrontText, request.BackText, request.Notes, request.IsActive, request.CategoryIds,
+                request.UserCategoryIds, request.Examples, force, CurrentUserId, CurrentUserRole),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpDelete("{id}")]
+    [EnableRateLimiting("general")]
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+    {
+        await _mediator.Send(new DeleteUserCardCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
+        return NoContent();
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IMediator`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Authorization;', aciklama: '`[Authorize]` özniteliği için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.Mvc;', aciklama: '`ActionResult<T>`/`[HttpGet]`/`[FromQuery]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Microsoft.AspNetCore.RateLimiting;', aciklama: '`[EnableRateLimiting]` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs;', aciklama: '`PagedResult<T>`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.UserCards;', aciklama: '`UserCardResponse`/`UserCardCreateRequest`/`UserCardUpdateRequest`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.UserCards;', aciklama: 'Beş Command/Query\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.API.Controllers;', aciklama: 'Projenin TÜM controller\'larının paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: '[Route("user-cards")]', aciklama: 'Bu controller\'ın temel yolu — `api/v1` öneki `RoutePrefixConvention` ile OTOMATİK eklenir, burada elle yazılmaz.', neden: null, olmasaydi: null },
+          { satir: '[Authorize]', aciklama: 'Sınıf seviyesinde — Admin DEĞİL, herhangi bir GİRİŞ YAPMIŞ kullanıcı kendi kartlarını yönetebilir.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardsController : ApiControllerBase', aciklama: '`CurrentUserId`/`CurrentUserRole` gibi ortak yardımcıları taşıyan temel sınıftan türer.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IMediator _mediator;', aciklama: 'Controller\'ın TEK bağımlılığı — ince controller ilkesi.', neden: null, olmasaydi: null },
+          { satir: 'public UserCardsController(IMediator mediator) => _mediator = mediator;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet]', aciklama: '`GET /user-cards`.', neden: null, olmasaydi: null },
+          { satir: '[EnableRateLimiting("general")]', aciklama: 'Projenin genel rate-limit politikası — TÜM diğer controller\'larla AYNI.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<PagedResult<UserCardResponse>>> GetUserCards(', aciklama: 'Liste uç noktasının imzası.', neden: null, olmasaydi: null },
+          { satir: '[FromQuery] int? categoryId, [FromQuery] int? userCategoryId, [FromQuery] string? search,', aciklama: 'Liste ekranının üç OPSİYONEL filtresi — query string\'ten okunur.', neden: null, olmasaydi: null },
+          { satir: '[FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)', aciklama: 'Sayfalama parametreleri — `WordsController.GetWords` ile AYNI varsayılan değerler.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'İş mantığının TAMAMI MediatR\'a devredilir — controller HİÇBİR karar VERMEZ.', neden: null, olmasaydi: null },
+          { satir: 'new GetUserCardsQuery(CurrentUserId, categoryId, userCategoryId, search, page, pageSize), cancellationToken);', aciklama: '`CurrentUserId` JWT\'den — istemci KENDİ userId\'sini asla göndermez/göndersede DİKKATE ALINMAZ.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 OK.', neden: null, olmasaydi: null },
+          { satir: '[HttpGet("{id}")]', aciklama: '`GET /user-cards/{id}`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCardResponse>> GetById(int id, CancellationToken cancellationToken)', aciklama: 'Detay uç noktasının imzası.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new GetUserCardByIdQuery(id, CurrentUserId), cancellationToken);', aciklama: 'Sahiplik kontrolü BURADA yapılmaz — Handler\'ın kendisi `EntityNotFoundException` fırlatırsa `ExceptionHandlingMiddleware` bunu 404\'e çevirir.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 OK.', neden: null, olmasaydi: null },
+          { satir: '[HttpPost]', aciklama: '`POST /user-cards`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCardResponse>> Create(', aciklama: 'Oluşturma uç noktasının imzası.', neden: null, olmasaydi: null },
+          { satir: 'UserCardCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)', aciklama: '`force`, `WordsController.Create`daki AYNI `[FromQuery] bool force` deseni — request body\'nin bir alanı DEĞİL.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Komutun gönderilmesi.', neden: null, olmasaydi: null },
+          { satir: 'new CreateUserCardCommand(', aciklama: 'Komutun inşası.', neden: null, olmasaydi: null },
+          { satir: 'request.FrontText, request.BackText, request.Notes, request.CategoryIds, request.UserCategoryIds,', aciklama: 'DTO alanlarının komut alanlarına AKTARIMI.', neden: null, olmasaydi: null },
+          { satir: 'request.Examples, force, CurrentUserId, CurrentUserRole),', aciklama: 'Kalan alanlar + HTTP bağlamından gelen üç değer (`force`/`CurrentUserId`/`CurrentUserRole`).', neden: null, olmasaydi: null },
+          { satir: 'cancellationToken);', aciklama: '`Send`\'in ikinci parametresi.', neden: null, olmasaydi: null },
+          { satir: 'return StatusCode(StatusCodes.Status201Created, result);', aciklama: '201 Created — `WordsController.Create` ile AYNI.', neden: null, olmasaydi: null },
+          { satir: '[HttpPut("{id}")]', aciklama: '`PUT /user-cards/{id}`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCardResponse>> Update(', aciklama: 'Güncelleme uç noktasının imzası.', neden: null, olmasaydi: null },
+          { satir: 'int id, UserCardUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)', aciklama: '`id` route\'tan, `force` query string\'ten.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Komutun gönderilmesi.', neden: null, olmasaydi: null },
+          { satir: 'new UpdateUserCardCommand(', aciklama: 'Komutun inşası.', neden: null, olmasaydi: null },
+          { satir: 'id, request.FrontText, request.BackText, request.Notes, request.IsActive, request.CategoryIds,', aciklama: 'Route\'tan gelen `id` + DTO alanları.', neden: null, olmasaydi: null },
+          { satir: 'request.UserCategoryIds, request.Examples, force, CurrentUserId, CurrentUserRole),', aciklama: 'Kalan alanlar + HTTP bağlamı.', neden: null, olmasaydi: null },
+          { satir: 'cancellationToken);', aciklama: '`Send`\'in ikinci parametresi.', neden: null, olmasaydi: null },
+          { satir: 'return Ok(result);', aciklama: '200 OK — güncelleme bir "oluşturma" DEĞİL, 201 dönmez.', neden: null, olmasaydi: null },
+          { satir: '[HttpDelete("{id}")]', aciklama: '`DELETE /user-cards/{id}`.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)', aciklama: 'Silme uç noktasının imzası — dönen bir GÖVDE olmadığı için `ActionResult<T>` DEĞİL düz `IActionResult`.', neden: null, olmasaydi: null },
+          { satir: 'await _mediator.Send(new DeleteUserCardCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);', aciklama: 'Komutun gönderilmesi — dönen `Unit.Value` KULLANILMAZ.', neden: null, olmasaydi: null },
+          { satir: 'return NoContent();', aciklama: '204 No Content — `UserCategoriesController.Delete` ile AYNI.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /user-cards — Sistem Eşleşmesi Önerisiyle Oluşturma',
+        yontem: 'POST',
+        url: 'http://127.0.0.1:5001/api/v1/user-cards',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: { frontText: 'Haus', backText: 'ev (kendi kartım)' },
+        yanit: {
+          durum: 201,
+          govde: { id: 3, frontText: 'Haus', backText: 'ev (kendi kartım)', notes: null, imageUrl: null, isActive: true, categoryIds: [], userCategoryIds: [], examples: [], suggestedSystemWordId: 6 }
+        },
+        notlar: [
+          'Bu örnek gerçek ZauselDB\'de "Haus" (Almanca, WordId=6) sistemde ZATEN kayıtlıyken çalıştırıldı — kart YİNE de oluştu, `suggestedSystemWordId` yalnızca bir ÖNERİ (istemci isterse `POST /user-cards/learn-system-word` ile bunun yerine sistem kelimesini öğrenmeye başlayabilir, A-10\'un sonraki bölümü).',
+          'İstek gövdesine `categoryIds`/`userCategoryIds`/`examples` HİÇ eklenmeyebilir — üçü de opsiyonel, yanıtta boş dizi olarak döner.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /user-cards — Duplikat 409 ve ?force=true ile Aşma',
+        yontem: 'POST',
+        url: 'http://127.0.0.1:5001/api/v1/user-cards',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: { frontText: 'laufen', backText: 'koşmak2' },
+        yanit: {
+          durum: 409,
+          govde: { success: false, error: { code: 'USER_CARD_DUPLICATE', message: 'Aynı metinli bir kartınız zaten var.', details: null } }
+        },
+        notlar: [
+          'Bu istek, AYNI kullanıcının FrontText="laufen" olan bir kartı ZATEN varken atıldı — 409 döndü.',
+          'AYNI gövdeyle `POST /api/v1/user-cards?force=true` çağrıldığında istek 201 ile BAŞARILI oldu (`id`:2) — duplikat kontrolü tamamen ATLANDI, ikinci bir "laufen" kartı bilerek oluşturuldu.',
+          'Force AYRI bir istek olarak, AYNI URL\'e `?force=true` query string\'i EKLENEREK atılır — request body\'ye `"force": true` YAZILMAZ.'
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IWordConceptRepository.cs — Dile Bakmaksızın Kelime Arama',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/IWordConceptRepository.cs',
+        neden: 'A-10\'un "sistem eşleşmesi" önerisi (`suggestedSystemWordId`) için bir kişisel kartın FrontText\'inin SİSTEMDEKİ herhangi bir Word.Text\'e eşleşip eşleşmediğini bulan bir sorguya ihtiyaç var — mevcut `FindWordByLanguageAndTextAsync` bir `languageId` GEREKTİRİYOR, ama `UserCard`\'ın (kişisel kart) bir dili YOK, kullanıcı FrontText\'i hangi dilde yazdığını BELİRTMİYOR.',
+        diff: ` using Zausel.Application.DTOs;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Enums.Content;
+
+ namespace Zausel.Application.Interfaces.Repositories.Content;
+
+ // WordConcept BaseEntity'den türese de, tek başına bir "kelime" değil — Word/WordDetail/WordExample
+ // ile birlikte TEK bir aggregate oluşturuyor (bkz. Icerik.md). Bu yüzden generic IRepository<T>
+ // yalnızca WordConcept satırının kendisini yönetebilirdi, çevirileri/detayları/örnekleri AYRI AYRI
+ // yönetmek için Handler'ın 4 farklı repository enjekte etmesi gerekirdi — bunun yerine TEK bir
+ // aggregate-repository tüm graf üzerinde çalışıyor (User/RefreshToken'ın dar-arayüz deseniyle AYNI
+ // gerekçe: entity'nin doğası generic CRUD'a sığmıyor).
+ public interface IWordConceptRepository
+ {
+     Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);
+
++    // UserCard'ın (A-10) "sistem eşleşmesi" önerisi için — kişisel kart hangi dilde yazıldığı
++    // BİLİNMEDİĞİNDEN (UserCard'ın bir LanguageId'si yok) dile bakılmaksızın arar, FindWordByLanguageAndTextAsync'in
++    // AKSİNE tek bir dille sınırlı DEĞİLDİR.
++    Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default);
+     Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);
+     Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);
+     Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
+
+     Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+         string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
+         int page, int pageSize, CancellationToken cancellationToken = default);
+
+     // Create/UpdateWordCommand'ın categoryIds[] alanı için — mevcut TÜM WordCategories satırlarını
+     // (hard) siler, verilenlerle değiştirir. ReplaceExamplesAsync'in "translations[] tam değişim"
+     // deseniyle AYNI (A-06 kullanıcı kararı — WordCategories'i boş bırakmamak için A-06'da eklendi).
+     Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default);
+
+     // Eşleşmemiş = bir WordConcept'in TOPLAM tek Words satırı olması (dile bakılmaksızın) VE o
+     // satırın languageId'de olması — ayrı bir IsMatched kolonu yok, durum COUNT(*)=1'den türetilir.
+     Task<PagedResult<UnmatchedWordAggregate>> GetUnmatchedAsync(
+         int languageId, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
+
+     // GetUnmatchedAsync'in SAYFASIZ hâli — bir dildeki eşleşmemiş TÜM kelimelerin öneri havuzu
+     // olarak kullanılması için (karşı dilin eşleşmemiş kavramlarına önerilecek aday listesi).
+     Task<List<UnmatchedWordAggregate>> GetUnmatchedPoolAsync(int languageId, CancellationToken cancellationToken = default);
+
+     Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+     Task SoftDeleteConceptCascadeAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+     // Eşleştirme (PairWordConceptsCommand) iki adımlı: önce otherConceptId'nin Word'leri
+     // primaryId'ye TAŞINIR (MoveWordToConceptAsync), sonra artık boş kalan otherConceptId
+     // SoftDeleteConceptOnlyAsync ile silinir — SoftDeleteConceptCascadeAsync'in AKSİNE Words'e
+     // DOKUNMAZ, çünkü onlar zaten başka bir kavrama taşındı.
+     Task MoveWordToConceptAsync(int wordId, int targetConceptId, int? userId, CancellationToken cancellationToken = default);
+     Task SoftDeleteConceptOnlyAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+     Task AddWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+     Task AddDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+     Task ReplaceExamplesAsync(int wordId, List<WordExample> newExamples, int? userId, CancellationToken cancellationToken = default);
+
+     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+ }`,
+        satirlar: [
+          { satir: 'Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default);', aciklama: 'Dile bakılmaksızın, yalnızca METNE göre arama — `FindWordByLanguageAndTextAsync`\'in `excludeWordId` parametresi burada YOK, çünkü bu metot yalnızca ÖNERİ amaçlı okunur, bir kaydı KENDİSİYLE karşılaştırma senaryosu (Update) burada söz konusu DEĞİL.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'WordConceptRepository.cs — Tek Satırlık İmplementasyon',
+        aciklama: 'Yukarıdaki arayüz metodunun `Zausel.Infrastructure/Repositories/Content/WordConceptRepository.cs`\'teki karşılığı: `public async Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default) => await _context.Words.FirstOrDefaultAsync(w => w.Text == text, cancellationToken);` — `FindWordByLanguageAndTextAsync`\'in HEMEN üstüne eklendi, dosyanın geri kalanı (A-05/A-06\'da tam öğretilen 300\'ü aşkın satır) DEĞİŞMEDİ.',
+        neden: '`FindWordByLanguageAndTextAsync` ile AYNI ifade-gövdeli (`=>`) metot deseni — tek fark `Where`teki filtre koşulu (`LanguageId` karşılaştırması YOK).',
+        olmasaydi: 'Bu metot `WordConceptRepository`ye eklenmeseydi, `IWordConceptRepository` arayüzü derleme HATASI verirdi (arayüzdeki HER metodun bir implementasyonu OLMAK zorunda) — DI konteyneri `CreateUserCardCommandHandler`ı KURARKEN bu tutarsızlığı ÇALIŞMA ZAMANINDA değil derleme ZAMANINDA yakalardı.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'ErrorMessages.cs — 11 Yeni USER_CARD_* Kodu (tr+de)',
+        aciklama: '`Zausel.Application/Common/ErrorMessages.cs`\'in tr ve de sözlüklerine (A-03\'ten beri var olan, `Code` → yerelleştirilmiş metin eşleyen TEK dosya) her iki dilde de 11\'er yeni anahtar eklendi: `USER_CARD_ID_INVALID`, `USER_CARD_FRONT_TEXT_REQUIRED`/`_TOO_LONG`, `USER_CARD_BACK_TEXT_REQUIRED`/`_TOO_LONG`, `USER_CARD_NOTES_TOO_LONG`, `USER_CARD_EXAMPLE_SENTENCE_FRONT_REQUIRED`/`_BACK_REQUIRED`, `USER_CARD_DUPLICATE` — HER biri Validator\'lardaki (Bölüm 2) `WithErrorCode(...)` çağrılarıyla VE `UserCardDuplicateException`ın `Code`\'uyla BİREBİR eşleşir.',
+        neden: 'Bu sözlüğün deseni (dile göre anahtarlı, `Resolve(code, language)` ile okunan) zaten `WORD_DUPLICATE`/`USER_CATEGORY_*` kodlarıyla TAM olarak aynı biçimde kurulu — yeni bir kod EKLEMEK, var olan hiçbir satıra dokunmadan iki sözlüğe (tr/de) birer satır eklemekten İBARET; `ErrorMessages`in KENDİSİ (yapı, `Resolve` metodu) bu görevde HİÇ değişmedi.',
+        olmasaydi: 'Bu kodlar eklenmeseydi, `ErrorMessages.Resolve("USER_CARD_DUPLICATE", "tr")` sözlükte KARŞILIK BULAMAZ, `TryGetValue` başarısız olur ve istemciye kod\'un KENDİSİ (`"USER_CARD_DUPLICATE"`) HAM metin olarak dönerdi — kullanıcı Türkçe bir hata mesajı yerine İngilizce bir sabit GÖRÜRDÜ.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserCategoryResponse.cs — CardCount Alanı',
+        dosyaYolu: 'backend/Zausel.Application/DTOs/UserCategories/UserCategoryResponse.cs',
+        neden: 'A-08\'de bu dosyaya bırakılan NOT ("CardCount BİLEREK yok... A-10\'da eklenecek") burada KAPATILIYOR — `UserCardUserCategories` ara tablosu artık var, kart sayısı GERÇEKTEN sayılabilir.',
+        diff: ` namespace Zausel.Application.DTOs.UserCategories;
+
+-// CardCount (API_ENDPOINTS.md §8) BİLEREK yok — kaynağı olan UserCardUserCategories ara tablosu
+-// henüz yok (UserCard entity'si A-10'da gelir, dikey dilim sırası bu yüzden UserCategory'yi önce ister).
+-// A-10'da GetUserCategoriesQueryHandler'a eklenecek.
+-public record UserCategoryResponse(int Id, string Name, string? Description, string? Color, string? Icon);
++public record UserCategoryResponse(int Id, string Name, string? Description, string? Color, string? Icon, int CardCount);`,
+        satirlar: [
+          { satir: 'public record UserCategoryResponse(int Id, string Name, string? Description, string? Color, string? Icon);', aciklama: 'A-08\'deki BEŞ alanlı eski hâl — `CardCount` o an HENÜZ eklenemezdi, çünkü kaynağı olan `UserCardUserCategories` ara tablosu (UserCard A-10\'da geldiği için) o zaman hiç yoktu.', neden: null, olmasaydi: null },
+          { satir: 'public record UserCategoryResponse(int Id, string Name, string? Description, string? Color, string? Icon, int CardCount);', aciklama: 'Altıncı alan — bu kategoriye bağlı (UserCardUserCategories üzerinden) kart sayısı, `UserCategory` entity\'sinin bir SÜTUNU DEĞİL, `GetUserCategoriesQueryHandler`ın SONRADAN hesaplayıp doldurduğu bir değer.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserCategoryProfile.cs — CardCount İçin ForCtorParam',
+        dosyaYolu: 'backend/Zausel.Application/Features/UserCategories/UserCategoryProfile.cs',
+        neden: '`UserCategoryResponse`\'a eklenen `CardCount` alanının `UserCategory` entity\'sinde KARŞILIĞI yok — AutoMapper\'ın convention-tabanlı eşlemesi bu alanı OTOMATİK dolduramaz, açıkça bir varsayılan GEREKİR.',
+        diff: ` using AutoMapper;
+ using Zausel.Application.DTOs.UserCategories;
+ using Zausel.Domain.Entities.PersonalContent;
+
+ namespace Zausel.Application.Features.UserCategories;
+
+ // Projenin İLK gerçek AutoMapper kullanımı — CLAUDE.md §3 koşulu: Handler doğrudan
+ // \`new UserCategoryResponse(entity.Id, entity.Alan…)\` yapacaktı (CategoryMapping/WordMapping'in
+ // AKSİNE, tek entity → tek DTO, aggregate/çeviri birleştirmesi YOK), bu yüzden elle yazmak yerine Profile.
+ public class UserCategoryProfile : Profile
+ {
+-    public UserCategoryProfile() => CreateMap<UserCategory, UserCategoryResponse>();
++    // CardCount, UserCategory entity'sinin bir alanı DEĞİL (UserCardUserCategories ara tablosundan
++    // sayılıyor) — AutoMapper'ın otomatik eşleyemeyeceği tek alan bu yüzden 0 ile başlatılır,
++    // Handler gerçek sayıyı \`with\` ifadesiyle SONRADAN üzerine yazar.
++    public UserCategoryProfile() => CreateMap<UserCategory, UserCategoryResponse>()
++        .ForCtorParam(nameof(UserCategoryResponse.CardCount), opt => opt.MapFrom(_ => 0));
+ }`,
+        satirlar: [
+          { satir: 'public UserCategoryProfile() => CreateMap<UserCategory, UserCategoryResponse>();', aciklama: 'A-08\'deki eski hâl — `CreateMap` tek başına yeterliydi, çünkü o zamanki `UserCategoryResponse`nin BEŞ alanının HEPSİ `UserCategory`de birebir karşılık buluyordu.', neden: null, olmasaydi: null },
+          { satir: 'public UserCategoryProfile() => CreateMap<UserCategory, UserCategoryResponse>()', aciklama: 'Constructor gövdesi artık TEK satır DEĞİL — zincire yeni bir çağrı EKLENDİ.', neden: null, olmasaydi: null },
+          { satir: '.ForCtorParam(nameof(UserCategoryResponse.CardCount), opt => opt.MapFrom(_ => 0));', aciklama: '`CardCount` constructor parametresi İÇİN açık bir eşleme kuralı — kaynak `UserCategory`\'de KARŞILIĞI olmadığı için sabit `0` ile başlatılır.', neden: 'AutoMapper, bir record\'un constructor parametresi için KAYNAK nesnede eşleşen bir property BULAMAZSA (ör. `CardCount`), varsayılan davranışı `MapperConfiguration` doğrulamasında bir HATA fırlatmaktır ("no matching constructor parameter") — `ForCtorParam` bu parametreye AÇIKÇA ne konacağını söyleyerek bu hatayı ÖNLER.', olmasaydi: '`ForCtorParam` eklenmeseydi, `new MapperConfiguration(cfg => cfg.AddProfile<UserCategoryProfile>()).CreateMapper()` (Handler\'ın KENDİSİ VEYA test\'lerin kurduğu mapper) UYGULAMA BAŞLARKEN bir `AutoMapperConfigurationException` fırlatırdı — hiçbir `GET /user-categories` isteği İŞLENEMEZDİ.' }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IUserCategoryRepository.cs — İki Yeni Metot',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/PersonalContent/IUserCategoryRepository.cs',
+        neden: 'A-10\'un `UserCardCommand`ları verilen `userCategoryIds[]`in bu kullanıcıya AİT olup olmadığını doğrulamalı (`AllExistForUserAsync`); `GetUserCategoriesQueryHandler` da her kategori için kart SAYISINI bilmeli (`GetCardCountsAsync`) — ikisi de `UserCardUserCategories` ara tablosunu sorgular.',
+        diff: ` using Zausel.Domain.Entities.PersonalContent;
+
+ namespace Zausel.Application.Interfaces.Repositories.PersonalContent;
+
+ public interface IUserCategoryRepository
+ {
+     Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default);
+
+     // Sahiplik filtresi burada gömülü — başkasının kategorisi null döner, Handler'da EntityNotFoundException'a çevrilir.
+     Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default);
+
++    // UserCardCommand'ların (A-10) categoryIds[] gibi userCategoryIds[] alanı için — verilen kimliklerin
++    // TAMAMININ bu kullanıcıya ait olup olmadığını tek sorguda doğrular (başkasının kategorisine bağ
++    // kurulmasını engeller).
++    Task<bool> AllExistForUserAsync(List<int> userCategoryIds, int userId, CancellationToken cancellationToken = default);
++
++    // GetUserCategoriesQuery (A-10) için — UserCategoryId → o kategoriye bağlı (UserCardUserCategories
++    // üzerinden) kart sayısı.
++    Task<Dictionary<int, int>> GetCardCountsAsync(List<int> userCategoryIds, CancellationToken cancellationToken = default);
++
+     Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+     Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+     Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default);
+
+     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+ }`,
+        satirlar: [
+          { satir: 'Task<bool> AllExistForUserAsync(List<int> userCategoryIds, int userId, CancellationToken cancellationToken = default);', aciklama: '`ICategoryRepository.AllExistAsync`\'in (sistem kategorileri için) KİŞİSEL kategoriler için sahiplik-farkındalı KARŞILIĞI — dönen `bool`, TÜM id\'lerin BU kullanıcıya ait olup olmadığını tek seferde söyler.', neden: null, olmasaydi: null },
+          { satir: 'Task<Dictionary<int, int>> GetCardCountsAsync(List<int> userCategoryIds, CancellationToken cancellationToken = default);', aciklama: '`ICategoryRepository.GetActiveWordCountsAsync`\'in (sistem kategorileri için kelime sayısı) KİŞİSEL kategoriler için kart-sayısı KARŞILIĞI — AYNI "toplu say, sözlük döndür" deseni.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserCategoryRepository.cs — İki Yeni Sorgu',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/PersonalContent/UserCategoryRepository.cs',
+        neden: 'Bir üstteki arayüz değişikliğinin somut implementasyonu.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Zausel.Application.Interfaces.Repositories.PersonalContent;
+ using Zausel.Domain.Entities.PersonalContent;
+ using Zausel.Infrastructure.Data;
+
+ namespace Zausel.Infrastructure.Repositories.PersonalContent;
+
+ public class UserCategoryRepository : IUserCategoryRepository
+ {
+     private readonly ZauselDbContext _context;
+
+     public UserCategoryRepository(ZauselDbContext context) => _context = context;
+
+     public async Task<List<UserCategory>> GetByUserIdAsync(int userId, CancellationToken cancellationToken = default) =>
+         await _context.UserCategories.Where(c => c.UserId == userId).OrderBy(c => c.Name).ToListAsync(cancellationToken);
+
+     public async Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default) =>
+         await _context.UserCategories.FirstOrDefaultAsync(c => c.Id == userCategoryId && c.UserId == userId, cancellationToken);
+
++    public async Task<bool> AllExistForUserAsync(List<int> userCategoryIds, int userId, CancellationToken cancellationToken = default)
++    {
++        if (userCategoryIds.Count == 0)
++            return true;
++
++        var distinctIds = userCategoryIds.Distinct().ToList();
++        var matchCount = await _context.UserCategories
++            .Where(c => c.UserId == userId && distinctIds.Contains(c.Id))
++            .CountAsync(cancellationToken);
++        return matchCount == distinctIds.Count;
++    }
++
++    public async Task<Dictionary<int, int>> GetCardCountsAsync(List<int> userCategoryIds, CancellationToken cancellationToken = default)
++    {
++        if (userCategoryIds.Count == 0)
++            return [];
++
++        return await _context.UserCardUserCategories
++            .Where(link => userCategoryIds.Contains(link.UserCategoryId))
++            .GroupBy(link => link.UserCategoryId)
++            .Select(g => new { UserCategoryId = g.Key, Count = g.Count() })
++            .ToDictionaryAsync(g => g.UserCategoryId, g => g.Count, cancellationToken);
++    }
++
+     public async Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+     {
+         userCategory.CreatedByUserId = userId;
+         userCategory.UpdatedByUserId = userId;
+         await _context.UserCategories.AddAsync(userCategory, cancellationToken);
+     }
+
+     public Task UpdateAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+     {
+         userCategory.UpdatedByUserId = userId;
+         _context.UserCategories.Update(userCategory);
+         return Task.CompletedTask;
+     }
+
+     public Task SoftDeleteAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
+     {
+         userCategory.IsDeleted = true;
+         userCategory.DeletedAt = DateTime.UtcNow;
+         userCategory.DeletedByUserId = userId;
+         userCategory.UpdatedByUserId = userId;
+         return Task.CompletedTask;
+     }
+
+     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+         _context.SaveChangesAsync(cancellationToken);
+ }`,
+        satirlar: [
+          { satir: 'public async Task<bool> AllExistForUserAsync(List<int> userCategoryIds, int userId, CancellationToken cancellationToken = default)', aciklama: 'Sahiplik-doğrulama metodunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'if (userCategoryIds.Count == 0)', aciklama: 'Boş liste — doğrulanacak hiçbir şey yok.', neden: null, olmasaydi: null },
+          { satir: 'return true;', aciklama: 'Boş küme için "hepsi var" TRIVIAL olarak doğrudur — Handler\'daki `Count > 0 && !AllExistForUserAsync(...)` kontrolü zaten bu durumda çağrılmaz, ama metodun KENDİSİ de tutarlı davranır.', neden: null, olmasaydi: null },
+          { satir: 'var distinctIds = userCategoryIds.Distinct().ToList();', aciklama: 'İstemci AYNI id\'yi iki kez gönderirse, sayım YANLIŞ (fazla) çıkmasın diye TEKİLLEŞTİRME.', neden: 'Tekilleştirme OLMASAYDI, istemci `[1, 1]` gönderirse `matchCount` (veritabanında TEK satır olduğu için) 1, ama `userCategoryIds.Count` 2 olurdu — eşitlik kontrolü YANLIŞLIKLA başarısız olur, GEÇERLİ bir istek 404\'e DÜŞERDİ.', olmasaydi: null },
+          { satir: 'var matchCount = await _context.UserCategories', aciklama: 'Sahiplik + varlık sorgusunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Where(c => c.UserId == userId && distinctIds.Contains(c.Id))', aciklama: 'Yalnızca BU kullanıcıya ait VE listede istenen id\'lerden biri olan satırlar.', neden: null, olmasaydi: null },
+          { satir: '.CountAsync(cancellationToken);', aciklama: 'Kaç tanesinin GERÇEKTEN eşleştiği.', neden: null, olmasaydi: null },
+          { satir: 'return matchCount == distinctIds.Count;', aciklama: 'Eşleşen sayı, istenen tekil sayıyla AYNIYSA hepsi var VE bu kullanıcıya ait demektir.', neden: 'Tek tek `GetByIdForUserAsync` çağırıp döngüde kontrol etmek YERİNE tek bir `COUNT` sorgusu tercih edildi.', olmasaydi: 'Döngüyle tek tek kontrol edilseydi, 5 `userCategoryId` için 5 AYRI veritabanı round-trip\'i gerekirdi — bu metot TEK sorguyla AYNI sonucu verir.' },
+          { satir: 'public async Task<Dictionary<int, int>> GetCardCountsAsync(List<int> userCategoryIds, CancellationToken cancellationToken = default)', aciklama: 'Kart-sayma metodunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'if (userCategoryIds.Count == 0)', aciklama: 'Sayılacak hiçbir kategori yok.', neden: null, olmasaydi: null },
+          { satir: 'return [];', aciklama: 'Boş sözlük — `GetUserCategoriesQueryHandler`\'daki `GetValueOrDefault` her zaman `0` döner.', neden: null, olmasaydi: null },
+          { satir: 'return await _context.UserCardUserCategories', aciklama: 'Ara tablo üzerinden sayma sorgusunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Where(link => userCategoryIds.Contains(link.UserCategoryId))', aciklama: 'Yalnızca istenen kategorilere ait bağ satırları.', neden: null, olmasaydi: null },
+          { satir: '.GroupBy(link => link.UserCategoryId)', aciklama: 'Kategori id\'sine göre gruplama.', neden: null, olmasaydi: null },
+          { satir: '.Select(g => new { UserCategoryId = g.Key, Count = g.Count() })', aciklama: 'Her grup için kategori id\'si + o kategoriye bağlı satır sayısı.', neden: null, olmasaydi: null },
+          { satir: '.ToDictionaryAsync(g => g.UserCategoryId, g => g.Count, cancellationToken);', aciklama: 'Sonucun `Dictionary<int, int>`e dönüştürülmesi — `ICategoryRepository.GetActiveWordCountsAsync` ile AYNI "toplu say" deseni.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'GetUserCategoriesQuery.cs — CardCount Hesaplaması',
+        dosyaYolu: 'backend/Zausel.Application/Features/UserCategories/GetUserCategoriesQuery.cs',
+        neden: 'A-08\'den beri bekleyen `CardCount` alanı artık gerçek veriyle doldurulabiliyor — Handler, repository\'den gelen `Dictionary<int,int>`i her kategoriye `with` ifadesiyle EKLER.',
+        diff: ` using AutoMapper;
+ using MediatR;
+ using Zausel.Application.DTOs.UserCategories;
+ using Zausel.Application.Interfaces.Repositories.PersonalContent;
+
+ namespace Zausel.Application.Features.UserCategories;
+
+ public record GetUserCategoriesQuery(int UserId) : IRequest<List<UserCategoryResponse>>;
+
+ public class GetUserCategoriesQueryHandler : IRequestHandler<GetUserCategoriesQuery, List<UserCategoryResponse>>
+ {
+     private readonly IUserCategoryRepository _userCategoryRepository;
+     private readonly IMapper _mapper;
+
+     public GetUserCategoriesQueryHandler(IUserCategoryRepository userCategoryRepository, IMapper mapper)
+     {
+         _userCategoryRepository = userCategoryRepository;
+         _mapper = mapper;
+     }
+
+     public async Task<List<UserCategoryResponse>> Handle(GetUserCategoriesQuery request, CancellationToken cancellationToken)
+     {
+         var userCategories = await _userCategoryRepository.GetByUserIdAsync(request.UserId, cancellationToken);
+-        return _mapper.Map<List<UserCategoryResponse>>(userCategories);
++        var cardCounts = await _userCategoryRepository.GetCardCountsAsync(
++            userCategories.Select(c => c.Id).ToList(), cancellationToken);
++
++        return userCategories
++            .Select(c => _mapper.Map<UserCategoryResponse>(c) with { CardCount = cardCounts.GetValueOrDefault(c.Id) })
++            .ToList();
+     }
+ }`,
+        satirlar: [
+          { satir: 'return _mapper.Map<List<UserCategoryResponse>>(userCategories);', aciklama: 'A-08\'deki eski hâl — `AutoMapper` doğrudan bir liste eşlemesi yapıp SONUCU dönüyordu, araya kart-sayma adımı hiç GİRMİYORDU.', neden: null, olmasaydi: null },
+          { satir: 'var cardCounts = await _userCategoryRepository.GetCardCountsAsync(', aciklama: 'TÜM kategoriler için kart sayılarının TEK sorguda (N+1 YAPMADAN) çekilmesi.', neden: null, olmasaydi: null },
+          { satir: 'userCategories.Select(c => c.Id).ToList(), cancellationToken);', aciklama: 'Sorgulanacak kategori id listesi.', neden: null, olmasaydi: null },
+          { satir: 'return userCategories', aciklama: 'Yanıtın inşasının başlangıcı.', neden: null, olmasaydi: null },
+          { satir: '.Select(c => _mapper.Map<UserCategoryResponse>(c) with { CardCount = cardCounts.GetValueOrDefault(c.Id) })', aciklama: 'Her kategori ÖNCE AutoMapper ile temel DTO\'ya çevrilir (Id/Name/Description/Color/Icon + `CardCount=0` varsayılanı), SONRA `with` ifadesiyle GERÇEK sayı üzerine YAZILIR.', neden: '`with` ifadesi (C# record\'ların değişmezliğini KORUYAN kopyalama sözdizimi) tercih edildi çünkü `UserCategoryResponse` bir `record` — property\'leri SONRADAN doğrudan ATANAMAZ (immutable), AutoMapper\'ın ÜRETTİĞİ nesneyi DEĞİŞTİRMEK için yeni bir kopya gerekir.', olmasaydi: '`with` kullanılmasaydı (ör. class\'a çevrilip property set edilseydi), `UserCategoryResponse`\'un `record` olmanın getirdiği değer-eşitliği/immutability garantisi KAYBOLURDU — projedeki TÜM response DTO\'ları (WordResponse, UserCardResponse) record OLDUĞU için bu tutarsızlık dikkat ÇEKERDİ.' },
+          { satir: '.ToList();', aciklama: 'Sonuç listesinin somutlaştırılması.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — Gerçek ZauselDB Üzerinde Uçtan Uca Test',
+        aciklama: 'API gerçek `ZauselDB`\'ye bağlı olarak başlatıldı (admin@zausel.com ile OTP\'li giriş), aşağıdaki akış `curl` ile TEK TEK doğrulandı: (1) `POST /user-cards` — kart oluştu (201), örnek cümle KAYDEDİLDİ; (2) AYNI FrontText\'le ikinci `POST` — 409 `USER_CARD_DUPLICATE`; (3) AYNI istek `?force=true` ile — 201, ikinci kart oluştu; (4) sistemde ZATEN var olan "Haus" (WordId=6) ile bir kart oluşturulduğunda yanıt `suggestedSystemWordId: 6` döndü; (5) `GET /user-cards` — 3 kart, en yeni ÖNCE; (6) `PUT /user-cards/1?force=true` — `isActive:false`, `notes` güncellendi; (7) `DELETE /user-cards/2` — 204, SONRASINDA `GET /user-cards/2` — 404 `ENTITY_NOT_FOUND`; (8) `GET /user-cards/999` (hiç var olmayan id) — AYNI 404; (9) kişisel kategoriye (`userCategoryIds:[2]`) bağlı bir kart oluşturulunca `GET /user-categories` yanıtındaki `cardCount` 0\'dan 1\'e ÇIKTI; (10) BAŞKASININ (id yanlış tahmin edilen) kişisel kategorisine bağlanmaya çalışan istek 404 ile REDDEDİLDİ (`AllExistForUserAsync`). `sqlcmd` ile `ActivityLogs` tablosu sorgulandı: `CREATE_USER_CARD`/`UPDATE_USER_CARD`/`DELETE_USER_CARD` satırları doğru `EntityId`/`UserId` ile YAZILMIŞ. Tüm paket (260 test — 246 mevcut + 14 yeni) migration/kod sonrası da yeşil kaldı.',
+        neden: 'Yalnızca birim testleriyle YETİNİLSEYDİ, `AllExistForUserAsync`/`GetCardCountsAsync` gibi GERÇEK SQL sorguları üreten repository metotlarının doğru ÇALIŞTIĞI (özellikle `GroupBy`/`ToDictionaryAsync` gibi EF Core\'un SQL\'e ÇEVİRİRKEN bazen beklenmedik davranabildiği LINQ operatörleri) yalnızca MOCK\'lanmış arayüzler üzerinden VARSAYILMIŞ olurdu — gerçek veritabanına karşı çalıştırmak bu varsayımı DOĞRULAR.',
+        olmasaydi: 'Canlı doğrulama atlansaydı, ör. `GetCardCountsAsync`daki `GroupBy` ifadesinin SQL Server\'a çevrilirken (EF Core\'un bazı LINQ kalıpları için "client evaluation" uyarısı vermesi gibi) beklenmedik bir davranışı yalnızca bir SONRAKİ görev (A-10\'un frontend karşılığı, C-07) GERÇEK veriyle çalışırken fark EDİLİRDİ.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

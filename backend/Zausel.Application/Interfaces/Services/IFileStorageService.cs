@@ -6,4 +6,9 @@ public interface IFileStorageService
     // "avatars") — depolama yolunu uploads/<purpose>/<yyyy>/<MM>/<guid>.ext şeklinde alt klasörler,
     // amaçlar birbirine karışmaz ve tek klasörde biriken dosya sayısı ayda bir sıfırlanır.
     Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken);
+
+    // Kart görseli/avatar YENİDEN yüklendiğinde eski dosyanın diskte sahipsiz kalmaması için (A-10/A-13) —
+    // url bu servisin ÜRETMEDİĞİ bir adrese işaret ediyorsa (BaseUrl önekiyle eşleşmiyorsa) sessizce hiçbir
+    // şey yapmaz, hata fırlatmaz.
+    Task DeleteImageAsync(string url, CancellationToken cancellationToken);
 }

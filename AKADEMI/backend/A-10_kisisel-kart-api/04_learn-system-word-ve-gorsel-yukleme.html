@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-10 — Kişisel Kart API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'learn-system-word-ve-gorsel-yukleme',
+    bolumBaslik: 'A-10 — Kişisel Kart API',
+    oncekiBolum: '03_controller-retrofit-canli-dogrulama.html',
+    sonrakiBolum: '05_controller-eklentileri-canli-dogrulama.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 4',
+        baslik: 'learn-system-word ve Kart Görseli Yükleme — Repository/Servis Katmanı',
+        altBaslik: 'UserProgress\'i İLK KEZ yaratan Handler, dile bakılmaksızın Word arama, IFileStorageService\'e eklenen silme yeteneği.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden LearnSystemWordCommand Features/UserCards/ DEĞİL Features/Progress/\'te Yaşıyor?',
+        aciklama: '`POST /user-cards/learn-system-word` uç noktası `UserCardsController`\'a bağlı olsa da, `LearnSystemWordCommand.cs` dosyası `Application/Features/UserCards/` DEĞİL `Application/Features/Progress/` klasöründe yaşıyor.',
+        neden: 'Klasörleme, ROUTE\'un hangi controller\'da olduğuna değil, Handler\'ın hangi ENTITY\'yi mutasyona uğrattığına göre yapılır — bu Handler bir `UserCard` değil bir `UserProgress` satırı yaratıyor (görev metninin kendisinin de vurguladığı gibi). `ApplyWordLeechActionCommand` (A-09) da AYNI ayrımı zaten gösteriyor: route\'u `WordsController`da ama dosyası `Features/Progress/`de, çünkü o da `UserProgress`u mutasyona uğratıyor.',
+        olmasaydi: 'Route\'a göre klasörlenseydi, `Features/UserCards/` klasörü zamanla `UserCard`\'ı HİÇ mutasyona uğratmayan (yalnızca `UserProgress` yaratan/güncelleyen) Handler\'larla dolardı — bir sonraki geliştirici "bu klasördeki HER Handler UserCard\'ı mı değiştiriyor" varsayımıyla yanılırdı.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IUserProgressRepository.cs — UserProgress\'i İLK KEZ Yaratan Metot',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Srs/IUserProgressRepository.cs',
+        neden: 'A-09\'daki TEK Handler (`ApplyWordLeechActionCommand`) yalnızca VAR OLAN bir `UserProgress` satırını günceller — bu arayüzde bugüne kadar bir "ekleme" metodu hiç OLMADI. `learn-system-word` bir kullanıcının BİR kelimeyi İLK KEZ öğrenmeye başladığı an olduğu için, bu satırın GERÇEKTEN yaratıldığı bir metoda ihtiyaç var.',
+        diff: ` using Zausel.Domain.Entities.Srs;
+
+ namespace Zausel.Application.Interfaces.Repositories.Srs;
+
+ public interface IUserProgressRepository
+ {
+     // GetProgressSummaryQuery'nin bant/due sayımı için — UserCardProgressRepository'nin AYNI
+     // metoduyla BİRLEŞTİRİLİR (bkz. ProgressSnapshot).
+     Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default);
+
+     // maxExclusive=null → üst sınır yok ("İyi" bandı, Mastery hiçbir zaman 100'ü aşmaz).
+     Task<List<WordProgressItem>> GetByMasteryRangeAsync(
+         int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default);
+
+     Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default);
+
+     // Leech aksiyonu (Suspend/Reset/Continue) için — sahiplik filtresi (UserId+WordId) gömülü.
+     Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default);
+
++    // learn-system-word (A-10) için — bu, projenin bir UserProgress satırını İLK KEZ yarattığı yer
++    // (A-09'daki tek Handler, ApplyWordLeechActionCommand, yalnızca VAR OLAN bir satırı günceller).
++    Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);
++
+     Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);
+
+     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+ }`,
+        satirlar: [
+          { satir: 'Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default);', aciklama: '`UserCardRepository.AddAsync`/`UserCategoryRepository.AddAsync` ile AYNI imza şekli — bu tutarlılık, projedeki HER "ekleme" metodunun aynı üç şeyi (entity, sahiplik için userId, iptal token\'ı) aldığını GARANTİ eder.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserProgressRepository.cs — AddAsync İmplementasyonu',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/Srs/UserProgressRepository.cs',
+        neden: 'Bir üstteki arayüz değişikliğinin somut karşılığı.',
+        diff: ` using Microsoft.EntityFrameworkCore;
+ using Zausel.Application.Interfaces.Repositories.Srs;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Entities.Srs;
+ using Zausel.Infrastructure.Data;
+
+ namespace Zausel.Infrastructure.Repositories.Srs;
+
+ public class UserProgressRepository : IUserProgressRepository
+ {
+     private readonly ZauselDbContext _context;
+
+     public UserProgressRepository(ZauselDbContext context) => _context = context;
+
+     public async Task<List<ProgressSnapshot>> GetSnapshotsAsync(int userId, CancellationToken cancellationToken = default)
+     {
+         // Silinmiş (IsDeleted) bir kelimenin ilerlemesi sayıma girmez — aksi halde bant/due sayıları,
+         // GetByMasteryRangeAsync/GetSuspendedAsync'in (Word'e JOIN yaptığı için zaten hariç tuttuğu)
+         // listelerle TUTARSIZ bir toplam gösterirdi.
+         var activeWordIds = _context.Words.Select(w => w.Id);
+         return await _context.UserProgress
+             .Where(p => p.UserId == userId && activeWordIds.Contains(p.WordId))
+             .Select(p => new ProgressSnapshot(p.Mastery, p.NextReviewAt, p.IsSuspended, p.CurrentLevel))
+             .ToListAsync(cancellationToken);
+     }
+
+     public async Task<List<WordProgressItem>> GetByMasteryRangeAsync(
+         int userId, decimal minInclusive, decimal? maxExclusive, CancellationToken cancellationToken = default)
+     {
+         var query = _context.UserProgress.Where(p => p.UserId == userId && p.Mastery >= minInclusive);
+         if (maxExclusive.HasValue)
+             query = query.Where(p => p.Mastery < maxExclusive.Value);
+
+         var progressRows = await query.ToListAsync(cancellationToken);
+         return await JoinWithWordsAsync(progressRows, cancellationToken);
+     }
+
+     public async Task<List<WordProgressItem>> GetSuspendedAsync(int userId, CancellationToken cancellationToken = default)
+     {
+         var progressRows = await _context.UserProgress
+             .Where(p => p.UserId == userId && p.IsSuspended)
+             .ToListAsync(cancellationToken);
+         return await JoinWithWordsAsync(progressRows, cancellationToken);
+     }
+
+     public async Task<UserProgress?> GetByUserAndWordAsync(int userId, int wordId, CancellationToken cancellationToken = default) =>
+         await _context.UserProgress.FirstOrDefaultAsync(p => p.UserId == userId && p.WordId == wordId, cancellationToken);
+
++    public async Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)
++    {
++        userProgress.CreatedByUserId = userId;
++        userProgress.UpdatedByUserId = userId;
++        await _context.UserProgress.AddAsync(userProgress, cancellationToken);
++    }
++
+     public Task UpdateAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)
+     {
+         userProgress.UpdatedByUserId = userId;
+         _context.UserProgress.Update(userProgress);
+         return Task.CompletedTask;
+     }
+
+     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+         _context.SaveChangesAsync(cancellationToken);
+
+     // Word navigation property'si yok (CategoryRepository'nin Language/Translation birleştirmesiyle
+     // AYNI desen) — kelime metnini almak için ayrı bir sorgu + in-memory Dictionary eşleşmesi.
+     private async Task<List<WordProgressItem>> JoinWithWordsAsync(List<UserProgress> progressRows, CancellationToken cancellationToken)
+     {
+         var wordIds = progressRows.Select(p => p.WordId).Distinct().ToList();
+         var wordsById = await _context.Words.Where(w => wordIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, cancellationToken);
+
+         return progressRows
+             .Where(p => wordsById.ContainsKey(p.WordId))
+             .Select(p =>
+             {
+                 var word = wordsById[p.WordId];
+                 return new WordProgressItem(
+                     p.WordId, word.Text, word.Definition, p.CurrentLevel, p.Mastery,
+                     p.NextReviewAt, p.IsSuspended, p.ConsecutiveIncorrect);
+             })
+             .ToList();
+     }
+ }`,
+        satirlar: [
+          { satir: 'public async Task AddAsync(UserProgress userProgress, int userId, CancellationToken cancellationToken = default)', aciklama: 'Ekleme metodunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.CreatedByUserId = userId;', aciklama: 'BaseEntity\'nin audit alanı.', neden: null, olmasaydi: null },
+          { satir: 'userProgress.UpdatedByUserId = userId;', aciklama: 'İlk oluşturmada Updated de Created ile AYNI kullanıcıya işaret eder.', neden: null, olmasaydi: null, satirIndex: 51 },
+          { satir: 'await _context.UserProgress.AddAsync(userProgress, cancellationToken);', aciklama: 'EF Core\'un change tracker\'ına ekleme — `SaveChangesAsync` çağrılana kadar veritabanına YAZILMAZ.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IWordConceptRepository.cs — Id\'ye Göre Kelime Arama',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/Content/IWordConceptRepository.cs',
+        neden: 'learn-system-word isteği `{ "wordId": 5 }` gönderir — bu somut `Words.Id`\'den yola çıkıp o satırın `WordConceptId`\'sini öğrenmek (SONRA Almanca çeviriyi `FindWordAsync` ile bulmak) için bir "Id\'ye göre getir" metoduna ihtiyaç var; bugüne kadar `Word` yalnızca `(languageId, text)` veya `(wordConceptId, languageId)` çiftiyle aranıyordu, salt `Id` ile ARANAMIYORDU.',
+        diff: ` using Zausel.Application.DTOs;
+ using Zausel.Domain.Entities.Content;
+ using Zausel.Domain.Enums.Content;
+
+ namespace Zausel.Application.Interfaces.Repositories.Content;
+
+ // WordConcept BaseEntity'den türese de, tek başına bir "kelime" değil — Word/WordDetail/WordExample
+ // ile birlikte TEK bir aggregate oluşturuyor (bkz. Icerik.md). Bu yüzden generic IRepository<T>
+ // yalnızca WordConcept satırının kendisini yönetebilirdi, çevirileri/detayları/örnekleri AYRI AYRI
+ // yönetmek için Handler'ın 4 farklı repository enjekte etmesi gerekirdi — bunun yerine TEK bir
+ // aggregate-repository tüm graf üzerinde çalışıyor (User/RefreshToken'ın dar-arayüz deseniyle AYNI
+ // gerekçe: entity'nin doğası generic CRUD'a sığmıyor).
+ public interface IWordConceptRepository
+ {
+     Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);
+
+     // UserCard'ın (A-10) "sistem eşleşmesi" önerisi için — kişisel kart hangi dilde yazıldığı
+     // BİLİNMEDİĞİNDEN (UserCard'ın bir LanguageId'si yok) dile bakılmaksızın arar, FindWordByLanguageAndTextAsync'in
+     // AKSİNE tek bir dille sınırlı DEĞİLDİR.
+     Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default);
+     Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);
+
++    // learn-system-word (A-10) için — istemci UserProgress.WordId olarak KULLANILACAK somut Words.Id'yi
++    // gönderir, Handler bu satırdan WordConceptId'yi öğrenip Almanca çeviriyi (FindWordAsync) ayrıca bulur.
++    Task<Word?> GetWordByIdAsync(int wordId, CancellationToken cancellationToken = default);
+     Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);
+     Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
+
+     Task<PagedResult<WordConceptAggregate>> GetPagedAsync(
+         string? difficultyLevel, PartOfSpeech? partOfSpeech, string? search, int? categoryId,
+         int page, int pageSize, CancellationToken cancellationToken = default);
+
+     // Create/UpdateWordCommand'ın categoryIds[] alanı için — mevcut TÜM WordCategories satırlarını
+     // (hard) siler, verilenlerle değiştirir. ReplaceExamplesAsync'in "translations[] tam değişim"
+     // deseniyle AYNI (A-06 kullanıcı kararı — WordCategories'i boş bırakmamak için A-06'da eklendi).
+     Task ReplaceWordCategoriesAsync(int wordConceptId, List<int> categoryIds, CancellationToken cancellationToken = default);
+
+     // Eşleşmemiş = bir WordConcept'in TOPLAM tek Words satırı olması (dile bakılmaksızın) VE o
+     // satırın languageId'de olması — ayrı bir IsMatched kolonu yok, durum COUNT(*)=1'den türetilir.
+     Task<PagedResult<UnmatchedWordAggregate>> GetUnmatchedAsync(
+         int languageId, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
+
+     // GetUnmatchedAsync'in SAYFASIZ hâli — bir dildeki eşleşmemiş TÜM kelimelerin öneri havuzu
+     // olarak kullanılması için (karşı dilin eşleşmemiş kavramlarına önerilecek aday listesi).
+     Task<List<UnmatchedWordAggregate>> GetUnmatchedPoolAsync(int languageId, CancellationToken cancellationToken = default);
+
+     Task AddConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateConceptAsync(WordConcept concept, int? userId, CancellationToken cancellationToken = default);
+     Task SoftDeleteConceptCascadeAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+     // Eşleştirme (PairWordConceptsCommand) iki adımlı: önce otherConceptId'nin Word'leri
+     // primaryId'ye TAŞINIR (MoveWordToConceptAsync), sonra artık boş kalan otherConceptId
+     // SoftDeleteConceptOnlyAsync ile silinir — SoftDeleteConceptCascadeAsync'in AKSİNE Words'e
+     // DOKUNMAZ, çünkü onlar zaten başka bir kavrama taşındı.
+     Task MoveWordToConceptAsync(int wordId, int targetConceptId, int? userId, CancellationToken cancellationToken = default);
+     Task SoftDeleteConceptOnlyAsync(int wordConceptId, int? userId, CancellationToken cancellationToken = default);
+
+     Task AddWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateWordAsync(Word word, int? userId, CancellationToken cancellationToken = default);
+     Task AddDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+     Task UpdateDetailAsync(WordDetail detail, int? userId, CancellationToken cancellationToken = default);
+     Task ReplaceExamplesAsync(int wordId, List<WordExample> newExamples, int? userId, CancellationToken cancellationToken = default);
+
+     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+ }`,
+        satirlar: [
+          { satir: 'Task<Word?> GetWordByIdAsync(int wordId, CancellationToken cancellationToken = default);', aciklama: 'Yalnızca birincil anahtara göre — `FindWordByLanguageAndTextAsync`/`FindWordByTextAsync`\'in AKSİNE metne değil doğrudan `Id`\'ye göre arar, çünkü istemci ZATEN somut bir `Words.Id` gönderiyor.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'WordConceptRepository.cs — Tek Satırlık İkinci Ekleme',
+        aciklama: '`Zausel.Infrastructure/Repositories/Content/WordConceptRepository.cs`\'e (bu görevde ARTIK ikinci kez dokunulan dosya — ilki Bölüm 3\'teki `FindWordByTextAsync`) `FindWordAsync`\'in HEMEN üstüne tek satır eklendi: `public async Task<Word?> GetWordByIdAsync(int wordId, CancellationToken cancellationToken = default) => await _context.Words.FirstOrDefaultAsync(w => w.Id == wordId, cancellationToken);` — dosyanın geri kalanı (A-05/A-06\'da tam öğretilen, Bölüm 3\'te bir kez daha genişleyen 300\'ü aşkın satır) DEĞİŞMEDİ.',
+        neden: '`FindWordByTextAsync` ile AYNI ifade-gövdeli (`=>`) tek satırlık metot deseni — `MoveWordToConceptAsync` içindeki ÖZEL (private, yalnızca o metodun kullandığı) `_context.Words.FirstOrDefaultAsync(w => w.Id == wordId, ...)` sorgusuyla AYNI filtre, ama BURADA arayüze açık (public) bir metot olarak tekrar yazıldı — private sorgu dışarıdan çağrılabilir DEĞİLDİ.',
+        olmasaydi: 'Bu metot eklenmeseydi, `LearnSystemWordCommandHandler` bir `Word`\'ü YALNIZCA `Id`\'sinden yola çıkarak bulamazdı — `MoveWordToConceptAsync`\'in private sorgusu YALNIZCA o metot içinde kullanılabilir, arayüzün DIŞINA sızdırılmamıştı.'
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'LearnSystemWordRequest/Response — İstek ve Yanıt Şekli',
+        terimler: [
+          { terim: 'LearnSystemWordRequest.cs (DTOs/Progress/)', tanim: '`record LearnSystemWordRequest(int WordId);` — istek gövdesi tek alanlı, `{ "wordId": 5 }`.' },
+          { terim: 'LearnSystemWordResponse.cs (DTOs/Progress/)', tanim: '`record LearnSystemWordResponse(int UserProgressId, int WordId, string GermanWord, bool AlreadyExists);` — `GermanWord`, istemcinin ekranda "şunu öğrenmeye başladın" diye GÖSTERECEĞİ başlık (dile bakılmaksızın hangi Words.Id gönderilirse gönderilsin, HER ZAMAN Almanca metin döner); `AlreadyExists`, kullanıcı bu kelimeyi zaten öğreniyorsa `true` olur — bu durumda YENİ bir satır YARATILMAZ, var olanın `Id`\'si döner.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearnSystemWordCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/Progress/LearnSystemWordCommand.cs',
+        nedenBuKlasor: 'Features/Progress/ — ApplyWordLeechActionCommand (A-09) ile AYNI klasör, ikisi de UserProgress\'i mutasyona uğratıyor.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.Progress;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Repositories.Srs;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.Srs;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.Progress;
+
+public record LearnSystemWordCommand(int WordId, int UserId, string? ActorRole) : IRequest<LearnSystemWordResponse>;
+
+public class LearnSystemWordCommandHandler : IRequestHandler<LearnSystemWordCommand, LearnSystemWordResponse>
+{
+    private readonly IUserProgressRepository _userProgressRepository;
+    private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly ILanguageRepository _languageRepository;
+    private readonly IActivityLogger _activityLogger;
+    private readonly IAchievementService _achievementService;
+
+    public LearnSystemWordCommandHandler(
+        IUserProgressRepository userProgressRepository, IWordConceptRepository wordConceptRepository,
+        ILanguageRepository languageRepository, IActivityLogger activityLogger, IAchievementService achievementService)
+    {
+        _userProgressRepository = userProgressRepository;
+        _wordConceptRepository = wordConceptRepository;
+        _languageRepository = languageRepository;
+        _activityLogger = activityLogger;
+        _achievementService = achievementService;
+    }
+
+    public async Task<LearnSystemWordResponse> Handle(LearnSystemWordCommand request, CancellationToken cancellationToken)
+    {
+        var word = await _wordConceptRepository.GetWordByIdAsync(request.WordId, cancellationToken)
+            ?? throw new EntityNotFoundException($"Word not found: Id={request.WordId}");
+
+        var germanLanguage = await _languageRepository.GetByCodeAsync("de", cancellationToken)
+            ?? throw new EntityNotFoundException("Language not found: Code=de");
+        var germanWord = await _wordConceptRepository.FindWordAsync(word.WordConceptId, germanLanguage.Id, cancellationToken);
+        // Kavram henüz Almanca'yla eşleşmemişse (tek dilli) kendi metnine düşülür — bu ekranın hiçbir
+        // zaman boş bir başlıkla gösterilmemesi için.
+        var germanText = germanWord?.Text ?? word.Text;
+
+        var existing = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken);
+        if (existing is not null)
+            return new LearnSystemWordResponse(existing.Id, request.WordId, germanText, AlreadyExists: true);
+
+        var userProgress = new UserProgress { UserId = request.UserId, WordId = request.WordId };
+        await _userProgressRepository.AddAsync(userProgress, request.UserId, cancellationToken);
+        await _userProgressRepository.SaveChangesAsync(cancellationToken);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "LEARN_SYSTEM_WORD", entityType: "UserProgress", entityId: userProgress.Id,
+            oldValue: null, newValue: new { userProgress.WordId }, cancellationToken: cancellationToken);
+        await _achievementService.EvaluateAndUnlockAsync(request.UserId, cancellationToken: cancellationToken);
+
+        return new LearnSystemWordResponse(userProgress.Id, request.WordId, germanText, AlreadyExists: false);
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`LearnSystemWordResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Content;', aciklama: '`IWordConceptRepository`/`ILanguageRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Srs;', aciklama: '`IUserProgressRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`/`IAchievementService`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.Srs;', aciklama: '`UserProgress`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.Progress;', aciklama: 'UserProgress\'i mutasyona uğratan TÜM Handler\'lar (`ApplyWordLeechActionCommand` de dahil) bu TEK klasörde toplanır — bir sonraki geliştirici "UserProgress\'e dokunan HANGİ kod var" sorusunu tek klasöre bakarak yanıtlayabilsin diye.', neden: null, olmasaydi: null },
+          { satir: 'public record LearnSystemWordCommand(int WordId, int UserId, string? ActorRole) : IRequest<LearnSystemWordResponse>;', aciklama: 'MediatR komutu — `Force` alanı YOK, çünkü burada bir duplikat/çakışma senaryosu değil "zaten öğreniyor musun" sorusu var (aşağıda `AlreadyExists` ile ifade edilir, engelleyici bir hata DEĞİL).', neden: null, olmasaydi: null },
+          { satir: 'public class LearnSystemWordCommandHandler : IRequestHandler<LearnSystemWordCommand, LearnSystemWordResponse>', aciklama: 'MediatR\'ın bu komutu çalıştıracağı Handler.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserProgressRepository _userProgressRepository;', aciklama: 'UserProgress\'i okumak/yaratmak için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IWordConceptRepository _wordConceptRepository;', aciklama: 'Word\'ü Id\'sinden bulmak VE Almanca çeviriyi aramak için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ILanguageRepository _languageRepository;', aciklama: '"Almanca" dilinin Id\'sini `Code="de"`\'den çözmek için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'Audit kaydı için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IAchievementService _achievementService;', aciklama: 'Yeni bir kelime öğrenmeye başlamanın rozet eşiklerini (A-09) yeniden değerlendirmesi için.', neden: null, olmasaydi: null },
+          { satir: 'public LearnSystemWordCommandHandler(', aciklama: 'Constructor injection — beş bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'IUserProgressRepository userProgressRepository, IWordConceptRepository wordConceptRepository,', aciklama: 'İlk iki parametre.', neden: null, olmasaydi: null },
+          { satir: 'ILanguageRepository languageRepository, IActivityLogger activityLogger, IAchievementService achievementService)', aciklama: 'Son üç parametre.', neden: null, olmasaydi: null },
+          { satir: '_userProgressRepository = userProgressRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_wordConceptRepository = wordConceptRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_languageRepository = languageRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_achievementService = achievementService;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<LearnSystemWordResponse> Handle(LearnSystemWordCommand request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın çağıracağı TEK giriş noktası.', neden: null, olmasaydi: null },
+          { satir: 'var word = await _wordConceptRepository.GetWordByIdAsync(request.WordId, cancellationToken)', aciklama: 'İstemcinin gönderdiği somut `Words.Id`\'nin bulunması.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException($"Word not found: Id={request.WordId}");', aciklama: 'Var olmayan bir wordId — 404.', neden: null, olmasaydi: null },
+          { satir: 'var germanLanguage = await _languageRepository.GetByCodeAsync("de", cancellationToken)', aciklama: '"Almanca" dilinin veritabanındaki karşılığının (`Id=1`, seed veriden) çözülmesi.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException("Language not found: Code=de");', aciklama: 'PRATİKTE asla düşülmez (seed veri Almanca\'yı garanti eder) — güvenlik ağı.', neden: null, olmasaydi: null },
+          { satir: 'var germanWord = await _wordConceptRepository.FindWordAsync(word.WordConceptId, germanLanguage.Id, cancellationToken);', aciklama: 'AYNI kavramın Almanca satırının aranması — istemci hangi dildeki `Words.Id`\'yi göndermiş OLURSA olsun, kavram üzerinden Almanca\'ya ULAŞILIR.', neden: null, olmasaydi: null },
+          { satir: 'var germanText = germanWord?.Text ?? word.Text;', aciklama: 'Almanca eşleşme bulunamazsa (kavram tek dilli) İSTEMCİNİN gönderdiği satırın kendi metni kullanılır.', neden: 'Yanıtın `germanWord` alanı HİÇBİR ZAMAN boş/null OLMAMALI (istemci bunu doğrudan bir başlık olarak GÖSTERİR) — eşleşme yoksa sessizce boş dönmek yerine ANLAMLI bir metin (en azından İSTENEN kelimenin kendisi) döndürmek, kullanıcıyı BOŞ bir ekranla KARŞILAŞTIRMAZ.', olmasaydi: 'Bu düşme (fallback) OLMASAYDI, tek dilli bir kavramın kelimesi öğrenilmeye BAŞLANDIĞINDA `germanWord` `null` DÖNERDİ — istemci tarafında ek bir null-kontrolü GEREKTİRİRDİ, ya da ekranda boş bir başlık GÖRÜNÜRDÜ.' },
+          { satir: 'var existing = await _userProgressRepository.GetByUserAndWordAsync(request.UserId, request.WordId, cancellationToken);', aciklama: 'Kullanıcı bu kelimeyi ZATEN öğreniyor mu kontrolü.', neden: null, olmasaydi: null },
+          { satir: 'if (existing is not null)', aciklama: 'Zaten VAR — yeni bir satır YARATILMAZ.', neden: null, olmasaydi: null },
+          { satir: 'return new LearnSystemWordResponse(existing.Id, request.WordId, germanText, AlreadyExists: true);', aciklama: 'Erken çıkış — `AddAsync`/`ActivityLogger`/`AchievementService` HİÇBİRİ çağrılmaz, çünkü hiçbir STATE değişmedi.', neden: 'Bu erken-çıkış OLMASAYDI, `POST /user-cards/learn-system-word`ün AYNI kelime için İKİ KEZ çağrılması (ör. kullanıcının çift tıklaması) `UNIQUE (UserId, WordId)` kısıtına (SRS.md) TAKILIP bir veritabanı HATASI fırlatırdı — 500 yerine sorunsuz bir "zaten öğreniyorsun" yanıtı.', olmasaydi: null },
+          { satir: 'var userProgress = new UserProgress { UserId = request.UserId, WordId = request.WordId };', aciklama: 'Yeni entity\'nin bellekte oluşturulması — geri kalan TÜM alanlar entity\'nin kendi varsayılanlarını (EasinessFactor=2.5m, IntervalDays=1, NextReviewAt=null "yeni kelime havuzu") ALIR, elle DOLDURULMAZ.', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.AddAsync(userProgress, request.UserId, cancellationToken);', aciklama: 'Change tracker\'a ekleme.', neden: null, olmasaydi: null },
+          { satir: 'await _userProgressRepository.SaveChangesAsync(cancellationToken);', aciklama: 'Veritabanına yazma — `userProgress.Id` bu satırdan SONRA bilinir.', neden: null, olmasaydi: null },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: 'Audit log çağrısının başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "LEARN_SYSTEM_WORD", entityType: "UserProgress", entityId: userProgress.Id,', aciklama: 'Kim/hangi rol/hangi eylem/hangi entity — `entityType: "UserProgress"`, `"UserCard"` DEĞİL (bu Handler bir UserCard\'a hiç DOKUNMADI).', neden: null, olmasaydi: null },
+          { satir: 'oldValue: null, newValue: new { userProgress.WordId }, cancellationToken: cancellationToken);', aciklama: 'OldValue=null (yeni kayıt).', neden: null, olmasaydi: null },
+          { satir: 'await _achievementService.EvaluateAndUnlockAsync(request.UserId, cancellationToken: cancellationToken);', aciklama: 'Rozet eşiklerinin YENİDEN değerlendirilmesi — `ApplyWordLeechActionCommand`daki AYNI "mutasyondan SONRA çağır" deseni, `leechRecovered` parametresi burada varsayılan (`false`) bırakılır çünkü bu bir leech kurtarma OLAYI değil.', neden: null, olmasaydi: null },
+          { satir: 'return new LearnSystemWordResponse(userProgress.Id, request.WordId, germanText, AlreadyExists: false);', aciklama: 'Controller\'a dönen son değer — `AlreadyExists: false` çünkü satır BU çağrıda yaratıldı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'LearnSystemWordCommandValidator.cs',
+        dosyaYolu: 'backend/Zausel.Application/Validators/Progress/LearnSystemWordCommandValidator.cs',
+        kod: `using FluentValidation;
+using Zausel.Application.Features.Progress;
+
+namespace Zausel.Application.Validators.Progress;
+
+public class LearnSystemWordCommandValidator : AbstractValidator<LearnSystemWordCommand>
+{
+    public LearnSystemWordCommandValidator()
+    {
+        RuleFor(x => x.WordId).GreaterThan(0).WithErrorCode("WORD_ID_INVALID");
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentValidation;', aciklama: '`AbstractValidator<T>`/`RuleFor` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: '`LearnSystemWordCommand`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Validators.Progress;', aciklama: '`ApplyWordLeechActionCommandValidator` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class LearnSystemWordCommandValidator : AbstractValidator<LearnSystemWordCommand>', aciklama: 'FluentValidation\'ın `IValidator<T>` ailesi.', neden: null, olmasaydi: null },
+          { satir: 'public LearnSystemWordCommandValidator()', aciklama: 'Kurallar constructor içinde tanımlanır.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.WordId).GreaterThan(0).WithErrorCode("WORD_ID_INVALID");', aciklama: 'Bu alan `ApplyWordLeechActionCommand`daki `WordId`den FARKLI olarak REQUEST BODY\'DEN gelir (route\'tan değil) — route parametreleri ASP.NET\'in kendi tip dönüşümüyle zaten `int` olmak ZORUNDADIR, ama bir JSON gövdesindeki `wordId` sıfır/negatif GÖNDERİLEBİLİR, bu yüzden burada AÇIKÇA doğrulanır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'IFileStorageService.cs — Eski Dosyayı Silme Yeteneği',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Services/IFileStorageService.cs',
+        neden: 'A-07\'de bu arayüz yalnızca KAYDETMEYİ biliyordu — bir kart/avatar görseli YENİDEN yüklendiğinde ESKİ dosyanın diskte sahipsiz (hiçbir satırın işaret etmediği) kalmaması için bir SİLME yeteneği gerekiyor.',
+        diff: ` namespace Zausel.Application.Interfaces.Services;
+
+ public interface IFileStorageService
+ {
+     // purpose: dosyanın hangi amaçla yüklendiği (ör. "word-images", A-10'da "user-cards", A-13'te
+     // "avatars") — depolama yolunu uploads/<purpose>/<yyyy>/<MM>/<guid>.ext şeklinde alt klasörler,
+     // amaçlar birbirine karışmaz ve tek klasörde biriken dosya sayısı ayda bir sıfırlanır.
+     Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken);
+
++    // Kart görseli/avatar YENİDEN yüklendiğinde eski dosyanın diskte sahipsiz kalmaması için (A-10/A-13) —
++    // url bu servisin ÜRETMEDİĞİ bir adrese işaret ediyorsa (BaseUrl önekiyle eşleşmiyorsa) sessizce hiçbir
++    // şey yapmaz, hata fırlatmaz.
++    Task DeleteImageAsync(string url, CancellationToken cancellationToken);
+ }`,
+        satirlar: [
+          { satir: 'Task DeleteImageAsync(string url, CancellationToken cancellationToken);', aciklama: 'Parametre bir dosya YOLU/kimliği DEĞİL, `SaveImageAsync`\'in DÖNDÜRDÜĞÜ TAM URL — çağıran taraf (Handler) bu URL\'i zaten entity\'nin `ImageUrl` alanında SAKLIYOR, ayrı bir "dosya kimliği" ALANI taşımaya GEREK yok.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'LocalFileStorageService.cs — DeleteImageAsync İmplementasyonu',
+        dosyaYolu: 'backend/Zausel.Application/Services/LocalFileStorageService.cs',
+        neden: 'Bir üstteki arayüz değişikliğinin somut karşılığı — URL\'den fiziksel dosya yoluna DÖNÜŞ, `SaveImageAsync`\'in URL ÜRETTİĞİ formülün TERSİ.',
+        diff: ` using Microsoft.Extensions.Configuration;
+ using Zausel.Application.Common.Exceptions;
+ using Zausel.Application.Interfaces.Services;
+
+ namespace Zausel.Application.Services;
+
+ // Yalnızca uzantı kontrolü GÜVENSİZ — bir .exe ".png" adıyla yüklenebilir; magic bytes ile
+ // dosyanın GERÇEK ilk baytları da bildirdiği uzantıyla eşleşmeli (A_backend.md A-07 notu).
+ public class LocalFileStorageService : IFileStorageService
+ {
+     private const long MaxFileSizeBytes = 5 * 1024 * 1024;
+
+     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+     {
+         ".jpg", ".jpeg", ".png", ".webp"
+     };
+
+     private readonly IConfiguration _cfg;
+
+     public LocalFileStorageService(IConfiguration cfg) => _cfg = cfg;
+
+     public async Task<string> SaveImageAsync(Stream content, string originalFileName, long contentLength, string purpose, CancellationToken cancellationToken)
+     {
+         var extension = Path.GetExtension(originalFileName);
+         if (!AllowedExtensions.Contains(extension))
+             throw new UnsupportedFileTypeException();
+         if (contentLength > MaxFileSizeBytes)
+             throw new FileTooLargeException();
+
+         using var buffer = new MemoryStream();
+         await content.CopyToAsync(buffer, cancellationToken);
+         var bytes = buffer.ToArray();
+
+         if (!MatchesDeclaredType(bytes, extension))
+             throw new UnsupportedFileTypeException();
+
+         // uploads/<purpose>/<yyyy>/<MM>/<guid>.ext — amaca göre ayrışır, ayda bir yeni klasöre döner.
+         var now = DateTime.UtcNow;
+         var relativeDir = Path.Combine(purpose, now.Year.ToString(), now.Month.ToString("00"));
+         var uploadDir = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativeDir);
+         Directory.CreateDirectory(uploadDir);
+
+         var fileName = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+         await File.WriteAllBytesAsync(Path.Combine(uploadDir, fileName), bytes, cancellationToken);
+
+         var relativeUrl = string.Join('/', purpose, now.Year, now.Month.ToString("00"), fileName);
+         return $"{_cfg["FileStorage:BaseUrl"]!.TrimEnd('/')}/{relativeUrl}";
+     }
+
++    public Task DeleteImageAsync(string url, CancellationToken cancellationToken)
++    {
++        var baseUrl = _cfg["FileStorage:BaseUrl"]!.TrimEnd('/');
++        if (!url.StartsWith(baseUrl, StringComparison.Ordinal))
++            return Task.CompletedTask;
++
++        var relativePath = url[(baseUrl.Length + 1)..].Replace('/', Path.DirectorySeparatorChar);
++        var fullPath = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativePath);
++        if (File.Exists(fullPath))
++            File.Delete(fullPath);
++
++        return Task.CompletedTask;
++    }
++
+     // Spoofing regresyonu: içerik bildirilen uzantıyla eşleşmiyorsa (ör. metin dosyası ".png" adıyla) reddedilir.
+     private static bool MatchesDeclaredType(byte[] bytes, string extension) => extension.ToLowerInvariant() switch
+     {
+         ".jpg" or ".jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+         ".png" => bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+                   && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A,
+         ".webp" => bytes.Length >= 12 && bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F' && bytes[3] == (byte)'F'
+                    && bytes[8] == (byte)'W' && bytes[9] == (byte)'E' && bytes[10] == (byte)'B' && bytes[11] == (byte)'P',
+         _ => false
+     };
+ }`,
+        satirlar: [
+          { satir: 'public Task DeleteImageAsync(string url, CancellationToken cancellationToken)', aciklama: 'Silme metodunun başlangıcı — `async` DEĞİL, çünkü `File.Delete` senkron bir I/O çağrısı, içeride `await` edilecek bir şey yok.', neden: null, olmasaydi: null },
+          { satir: 'var baseUrl = _cfg["FileStorage:BaseUrl"]!.TrimEnd(\'/\');', aciklama: '`SaveImageAsync`\'in URL\'i ürettiği AYNI temel adres — `appsettings.Development.json`daki `FileStorage:BaseUrl`.', neden: null, olmasaydi: null },
+          { satir: 'if (!url.StartsWith(baseUrl, StringComparison.Ordinal))', aciklama: 'Bu servisin ÜRETMEDİĞİ bir URL (ör. harici bir CDN adresi, veya boş string) verilirse.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Sessizce hiçbir şey yapmadan çık — çağıran taraf (Handler) "eski görsel var mı" kontrolünü ZATEN yaptı, burada AYRICA bir hata fırlatmak (ör. dosya bulunamadı) kullanıcıya YÜKLEME işleminin BAŞARISIZ olduğu YANLIŞ izlenimini verirdi (asıl işlem — yeni görselin kaydı — zaten TAMAMLANDI).', neden: null, olmasaydi: null },
+          { satir: 'var relativePath = url[(baseUrl.Length + 1)..].Replace(\'/\', Path.DirectorySeparatorChar);', aciklama: '`{BaseUrl}/{purpose}/{yyyy}/{MM}/{dosya}` biçimindeki URL\'den `BaseUrl/` önekinin ÇIKARILMASI — kalan kısım `SaveImageAsync`\'in ürettiği `relativeUrl` ile BİREBİR aynı, yalnızca `/` ayırıcıları işletim sisteminin KENDİ ayırıcısına (`Path.DirectorySeparatorChar`) çevrilir.', neden: 'macOS/Linux\'ta `/` zaten doğru ayırıcı ama Windows\'ta `\\` beklenir — `Path.Combine` ZATEN doğru ayırıcıyı kullanır, ama URL\'den gelen ARA segmentlerin `/` içermesi (`Path.Combine` çağrılmadan ÖNCE) `File.Exists`/`File.Delete`\'in bazı Windows yapılandırmalarında YANLIŞ yorumlanmasına yol AÇABİLİRDİ.', olmasaydi: 'Bu dönüşüm atlansaydı, geliştirme ortamında (macOS/Linux, `/` zaten doğru) fark EDİLMEZDİ ama bir Windows sunucusuna DAĞITILDIĞINDA (`/` bazı .NET dosya API\'lerinde sorunsuz çalışsa da) potansiyel bir platform-BAĞIMLI hataya yol açabilirdi.' },
+          { satir: 'var fullPath = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativePath);', aciklama: '`SaveImageAsync`\'in dosyayı YAZDIĞI fiziksel kök dizinle AYNI `UploadPath` — URL biçimi ile disk yolu biçimi arasındaki TEK köprü.', neden: null, olmasaydi: null },
+          { satir: 'if (File.Exists(fullPath))', aciklama: 'Dosya zaten yoksa (ör. elle silinmiş) `File.Delete` bir istisna FIRLATMAZ ama bu kontrol yine de EK bir güvenlik.', neden: null, olmasaydi: null },
+          { satir: 'File.Delete(fullPath);', aciklama: 'Fiziksel dosyanın diskten silinmesi.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Senkron işin tamamlandığını bildiren `Task`.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UploadUserCardImageCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/UserCards/UploadUserCardImageCommand.cs',
+        nedenBuKlasor: 'Features/UserCards/ — LearnSystemWordCommand\'ın AKSİNE bu Handler GERÇEKTEN bir UserCard\'ı (ImageUrl alanını) mutasyona uğratıyor, bu yüzden diğer UserCard Command\'larıyla AYNI klasörde.',
+        kod: `using MediatR;
+using Zausel.Application.DTOs.UserCards;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.UserCards;
+
+public record UploadUserCardImageCommand(
+    int UserCardId, Stream Content, string FileName, long ContentLength, int UserId, string? ActorRole)
+    : IRequest<UserCardResponse>;
+
+public class UploadUserCardImageCommandHandler : IRequestHandler<UploadUserCardImageCommand, UserCardResponse>
+{
+    private readonly IUserCardRepository _userCardRepository;
+    private readonly IFileStorageService _fileStorageService;
+    private readonly IActivityLogger _activityLogger;
+
+    public UploadUserCardImageCommandHandler(
+        IUserCardRepository userCardRepository, IFileStorageService fileStorageService, IActivityLogger activityLogger)
+    {
+        _userCardRepository = userCardRepository;
+        _fileStorageService = fileStorageService;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<UserCardResponse> Handle(UploadUserCardImageCommand request, CancellationToken cancellationToken)
+    {
+        // Sahiplik filtresi burada gömülü — başkasının kartına görsel yüklenemez.
+        var aggregate = await _userCardRepository.GetByIdForUserAsync(request.UserCardId, request.UserId, cancellationToken)
+            ?? throw new EntityNotFoundException($"UserCard not found: Id={request.UserCardId}");
+        var oldImageUrl = aggregate.Card.ImageUrl;
+
+        var newImageUrl = await _fileStorageService.SaveImageAsync(
+            request.Content, request.FileName, request.ContentLength, "user-cards", cancellationToken);
+
+        if (oldImageUrl is not null)
+            await _fileStorageService.DeleteImageAsync(oldImageUrl, cancellationToken);
+
+        aggregate.Card.ImageUrl = newImageUrl;
+        await _userCardRepository.UpdateAsync(aggregate.Card, request.UserId, cancellationToken);
+        await _userCardRepository.SaveChangesAsync(cancellationToken);
+
+        var response = UserCardMapping.ToResponse(aggregate);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "UPDATE_USER_CARD", entityType: "UserCard", entityId: aggregate.Card.Id,
+            oldValue: new { ImageUrl = oldImageUrl }, newValue: new { ImageUrl = newImageUrl }, cancellationToken: cancellationToken);
+
+        return response;
+    }
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.UserCards;', aciklama: '`UserCardResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCardRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IFileStorageService`/`IActivityLogger`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.UserCards;', aciklama: 'Bu Handler `UserCard.ImageUrl`\'i mutasyona uğrattığı için (`LearnSystemWordCommand`daki UserProgress ayrımının TERSİ) UserCard\'ı değiştiren diğer Handler\'larla AYNI klasörde toplanır.', neden: null, olmasaydi: null },
+          { satir: 'public record UploadUserCardImageCommand(', aciklama: 'MediatR komutunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'int UserCardId, Stream Content, string FileName, long ContentLength, int UserId, string? ActorRole)', aciklama: '`Stream`/`FileName`/`ContentLength` — `MediaController.UploadImage`daki `UploadImageCommand` ile AYNI üç alan, çünkü Controller\'dan Handler\'a bir `IFormFile` DEĞİL onun HAM parçaları taşınır (Application katmanı ASP.NET\'in `IFormFile` tipini BİLMEZ).', neden: null, olmasaydi: null },
+          { satir: ': IRequest<UserCardResponse>;', aciklama: 'Dönen tip — `MediaUploadResponse` (yalnızca URL) DEĞİL, kartın TAM `UserCardResponse`\'u; istemci görseli yükledikten SONRA kartın GÜNCEL hâlini (kategoriler/örnekler dahil) tek çağrıda görebilsin diye.', neden: null, olmasaydi: null },
+          { satir: 'public class UploadUserCardImageCommandHandler : IRequestHandler<UploadUserCardImageCommand, UserCardResponse>', aciklama: 'MediatR\'ın bu komutu çalıştıracağı Handler.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserCardRepository _userCardRepository;', aciklama: 'Kartı bulmak/güncellemek için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IFileStorageService _fileStorageService;', aciklama: 'Yeni görseli kaydetmek + eskisini silmek için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'Audit kaydı için.', neden: null, olmasaydi: null },
+          { satir: 'public UploadUserCardImageCommandHandler(', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'IUserCardRepository userCardRepository, IFileStorageService fileStorageService, IActivityLogger activityLogger)', aciklama: 'Üç bağımlılık.', neden: null, olmasaydi: null },
+          { satir: '_userCardRepository = userCardRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_fileStorageService = fileStorageService;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<UserCardResponse> Handle(UploadUserCardImageCommand request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın çağıracağı TEK giriş noktası.', neden: null, olmasaydi: null },
+          { satir: 'var aggregate = await _userCardRepository.GetByIdForUserAsync(request.UserCardId, request.UserId, cancellationToken)', aciklama: 'Kartın sahiplik-kontrolLÜ okunması — Update/Delete Handler\'larıyla AYNI desen.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException($"UserCard not found: Id={request.UserCardId}");', aciklama: 'Başkasının kartı da AYNI 404\'ü döner.', neden: null, olmasaydi: null },
+          { satir: 'var oldImageUrl = aggregate.Card.ImageUrl;', aciklama: 'Yeni görsel kaydedilmeden ÖNCE eski URL bir yerel değişkende SAKLANIR — kartın `ImageUrl`\'i az sonra YENİ değere yazılacağı için, silme çağrısı için bu ÖNCEKİ değeri şimdi yakalamak gerekir.', neden: null, olmasaydi: null },
+          { satir: 'var newImageUrl = await _fileStorageService.SaveImageAsync(', aciklama: 'Yeni dosyanın DİSKE yazılması.', neden: null, olmasaydi: null },
+          { satir: 'request.Content, request.FileName, request.ContentLength, "user-cards", cancellationToken);', aciklama: '`purpose="user-cards"` — `word-images`den FARKLI bir alt klasöre yazar.', neden: null, olmasaydi: null },
+          { satir: 'if (oldImageUrl is not null)', aciklama: 'İlk kez görsel yükleniyorsa silinecek bir şey YOK.', neden: null, olmasaydi: null },
+          { satir: 'await _fileStorageService.DeleteImageAsync(oldImageUrl, cancellationToken);', aciklama: 'Eski dosyanın DİSKTEN silinmesi — YENİ dosya BAŞARIYLA kaydedildikten SONRA çağrılır.', neden: '`SaveImageAsync` (dosya tipi/boyutu geçersizse) bir istisna FIRLATABİLİR — silme İŞLEMİ kaydetmeden ÖNCE yapılsaydı, geçersiz bir yükleme denemesi kullanıcının HÂLÂ geçerli olan eski görselini SİLERDİ, kart görselsiz KALIRDI.', olmasaydi: 'Sıra tersine çevrilseydi (önce sil, sonra kaydet), `SaveImageAsync`\'in `UnsupportedFileTypeException`/`FileTooLargeException` fırlattığı bir senaryoda kullanıcı hem YENİ görseli KAYBEDER hem ESKİSİNİ de geri ALAMAZDI.' },
+          { satir: 'aggregate.Card.ImageUrl = newImageUrl;', aciklama: 'Entity\'nin bellekteki güncellenmesi.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.UpdateAsync(aggregate.Card, request.UserId, cancellationToken);', aciklama: 'Change tracker\'a "bu entity değişti" bildirimi.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.SaveChangesAsync(cancellationToken);', aciklama: 'Veritabanına yazma.', neden: null, olmasaydi: null },
+          { satir: 'var response = UserCardMapping.ToResponse(aggregate);', aciklama: 'Yanıtın inşası — `aggregate` DEĞİŞMEDEN (kategoriler/örnekler zaten okunmuştu) yeniden KULLANILIR, Create/Update\'in AKSİNE ikinci bir `GetByIdForUserAsync` çağrısı GEREKMEZ.', neden: 'Görsel değişimi kategori/örnek bağlarını HİÇ ETKİLEMEZ — `aggregate.Card.ImageUrl` zaten bir SATIR YUKARIDA güncellendi, aggregate\'in geri kalanı (Examples/CategoryIds/UserCategoryIds) BAŞTAN BERİ doğru.', olmasaydi: 'Gereksiz yere ikinci bir `GetByIdForUserAsync` çağrılsaydı, aynı bilgiyi (kategoriler/örnekler) veritabanından TEKRAR okumak için FAZLADAN bir round-trip harcanırdı.' },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: 'Audit log çağrısının başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "UPDATE_USER_CARD", entityType: "UserCard", entityId: aggregate.Card.Id,', aciklama: '`UPDATE_USER_CARD` ile AYNI aksiyon kodu — ayrı bir `UPLOAD_USER_CARD_IMAGE` kodu AÇILMADI, çünkü bu, kavramsal olarak kartın bir alanının (ImageUrl) güncellenmesinden BAŞKA bir şey değil.', neden: null, olmasaydi: null },
+          { satir: 'oldValue: new { ImageUrl = oldImageUrl }, newValue: new { ImageUrl = newImageUrl }, cancellationToken: cancellationToken);', aciklama: 'Diff yalnızca `ImageUrl` alanını taşır — `UpdateUserCardCommand`daki TAM `UserCardResponse` diff\'inin AKSİNE, burada yalnızca DEĞİŞEN alan loglanır (diğer alanlar zaten AYNI kaldı).', neden: null, olmasaydi: null },
+          { satir: 'return response;', aciklama: 'Controller\'a dönen son değer.', neden: null, olmasaydi: null }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

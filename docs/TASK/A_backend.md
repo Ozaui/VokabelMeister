@@ -540,21 +540,42 @@ Bu task A-03'ten SONRA (User entity'si hazır), A-18'den ÖNCE (Admin uçları t
 **Frontend karşılığı:** C-07 (Web — Kişisel Kartlar Sayfası), D-09 (Mobil — Kişisel Kartlar Ekranı)
 - [x] **Entity:** `UserCard`, `UserCardExample` + ara tablolar (`UserCardCategory`, `UserCardUserCategory`) + migration
 - [x] ➜ **AKADEMI/backend'ye işle**
-- [ ] `IUserCardService`/`UserCardService` (liste/detay/CRUD — yalnızca sahibi), duplikat uyarısı
+> ⚠️ **[2026-08-22] Gerçekleşen tasarım, madde metninden saptı (kayıt altına alınmış karar):**
+> `IUserCardService`/`Service` deseni **yazılmadı** — A-08 ile AYNI gerekçe: CLAUDE.md §3'teki
+> güncel kanonik desen (MediatR Command+Handler) izlendi: `CreateUserCardCommand`/
+> `UpdateUserCardCommand`/`DeleteUserCardCommand`/`GetUserCardsQuery`/`GetUserCardByIdQuery`.
+> ActivityLogger entegrasyonu (aşağıdaki ayrı madde) bu Handler'ların İÇİNE, A-08 ile AYNI şekilde
+> BAŞTAN dahil edildi — ayrı bir retrofit adımı olarak ERTELENMEDİ. `GetUserCategoriesQuery`'nin
+> A-08'de bırakılan `cardCount` notu da burada kapatıldı (`UserCategoryResponse`/`UserCategoryProfile`/
+> `IUserCategoryRepository`/`UserCategoryRepository` güncellendi).
+- [x] `IUserCardService`/`UserCardService` (liste/detay/CRUD — yalnızca sahibi), duplikat uyarısı
       (409+`?force=true`), sistem kelimesi eşleşme uyarısı (`suggestedSystemWordId`)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] `POST /user-cards/learn-system-word` → `UserCard` değil **`UserProgress`** açar, `UserCardController`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] ⚠️ **[2026-08-15] Kart görseli yükleme eksikti:** `UserCards.ImageUrl` (DATABASE_SCHEMA/
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] `POST /user-cards/learn-system-word` → `UserCard` değil **`UserProgress`** açar, `UserCardController`
+      (**not:** `UserCardsController` zaten var — bu madde ona TEK bir yeni action ekler)
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] ⚠️ **[2026-08-15] Kart görseli yükleme eksikti:** `UserCards.ImageUrl` (DATABASE_SCHEMA/
       Kisisel_Icerik.md) alanı vardı ama onu dolduracak bir uç nokta hiç planlanmamıştı — A-07'nin
       `/media/images/upload`'ı `[Authorize(Roles="Admin")]`, sıradan bir `User` çağıramaz. A-13
       (Avatar) ile AYNI desen: `POST /user-cards/{id}/image` (`[Authorize]`, yalnızca sahibi, A-07'nin
       `IFileStorageService`'i yeniden kullanılır, eski görsel silinir)
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **`IActivityLogger`:** `CREATE_USER_CARD`/`UPDATE_USER_CARD`/`DELETE_USER_CARD`
-- [ ] ➜ **AKADEMI/backend'ye işle**
-- [ ] **Birim testleri:** sahiplik filtresi, duplikat 409, learn-system-word akışı, kart görseli
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **`IActivityLogger`:** `CREATE_USER_CARD`/`UPDATE_USER_CARD`/`DELETE_USER_CARD`
+- [x] ➜ **AKADEMI/backend'ye işle**
+- [x] **Birim testleri:** sahiplik filtresi, duplikat 409, learn-system-word akışı, kart görseli
       yükleme (sahiplik kontrolü + eski dosyanın silindiği), audit çağrısı
+      (**not:** CRUD Handler'larının 14 testine ek olarak learn-system-word (4 test — bulunamadı,
+      yeni kayıt, mevcut kayıt, Almanca eşleşmeyince kendi metnine düşme) ve görsel yükleme
+      (4 test — sahiplik 404, eski görsel yokken kaydetme, eski görseli silme, audit çağrısı)
+      testleri yazıldı — toplam 8 yeni test, paket 268/268 yeşil)
+> **A-10 tamamlandı (2026-08-22):** Entity+migration, repository/CRUD Command-Query katmanı,
+> `UserCardsController` (5+2=7 endpoint), duplikat 409/`?force=true`, sistem eşleşme önerisi
+> (`suggestedSystemWordId`, dile bakılmaksızın `Words.Text` araması), `learn-system-word`
+> (`UserProgress` açar, Almanca çeviriyi `germanWord` olarak döner, `IAchievementService`
+> tetiklenir), kart görseli yükleme (`IFileStorageService`'e eklenen `DeleteImageAsync` ile eski
+> dosya silinir) — tamamı gerçek `ZauselDB`'ye karşı canlı doğrulandı (409/force/öneri/cardCount/
+> ActivityLogs/disk-üzerinde dosya silme dahil), 22 yeni birim testi (268/268 paket yeşil).
+> Sıradaki: `A-11` (Öğrenme/Sınav API).
 - [ ] ➜ **AKADEMI/backend'ye işle**
 
 ### A-11 — Öğrenme / Sınav API ⬜

@@ -21,6 +21,11 @@ public class GetUserCategoriesQueryHandler : IRequestHandler<GetUserCategoriesQu
     public async Task<List<UserCategoryResponse>> Handle(GetUserCategoriesQuery request, CancellationToken cancellationToken)
     {
         var userCategories = await _userCategoryRepository.GetByUserIdAsync(request.UserId, cancellationToken);
-        return _mapper.Map<List<UserCategoryResponse>>(userCategories);
+        var cardCounts = await _userCategoryRepository.GetCardCountsAsync(
+            userCategories.Select(c => c.Id).ToList(), cancellationToken);
+
+        return userCategories
+            .Select(c => _mapper.Map<UserCategoryResponse>(c) with { CardCount = cardCounts.GetValueOrDefault(c.Id) })
+            .ToList();
     }
 }

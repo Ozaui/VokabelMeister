@@ -17,6 +17,30 @@ public class UserCategoryRepository : IUserCategoryRepository
     public async Task<UserCategory?> GetByIdForUserAsync(int userCategoryId, int userId, CancellationToken cancellationToken = default) =>
         await _context.UserCategories.FirstOrDefaultAsync(c => c.Id == userCategoryId && c.UserId == userId, cancellationToken);
 
+    public async Task<bool> AllExistForUserAsync(List<int> userCategoryIds, int userId, CancellationToken cancellationToken = default)
+    {
+        if (userCategoryIds.Count == 0)
+            return true;
+
+        var distinctIds = userCategoryIds.Distinct().ToList();
+        var matchCount = await _context.UserCategories
+            .Where(c => c.UserId == userId && distinctIds.Contains(c.Id))
+            .CountAsync(cancellationToken);
+        return matchCount == distinctIds.Count;
+    }
+
+    public async Task<Dictionary<int, int>> GetCardCountsAsync(List<int> userCategoryIds, CancellationToken cancellationToken = default)
+    {
+        if (userCategoryIds.Count == 0)
+            return [];
+
+        return await _context.UserCardUserCategories
+            .Where(link => userCategoryIds.Contains(link.UserCategoryId))
+            .GroupBy(link => link.UserCategoryId)
+            .Select(g => new { UserCategoryId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.UserCategoryId, g => g.Count, cancellationToken);
+    }
+
     public async Task AddAsync(UserCategory userCategory, int userId, CancellationToken cancellationToken = default)
     {
         userCategory.CreatedByUserId = userId;

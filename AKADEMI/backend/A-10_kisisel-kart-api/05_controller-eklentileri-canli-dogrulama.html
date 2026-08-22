@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-10 — Kişisel Kart API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'controller-eklentileri-canli-dogrulama',
+    bolumBaslik: 'A-10 — Kişisel Kart API',
+    oncekiBolum: '04_learn-system-word-ve-gorsel-yukleme.html',
+    sonrakiBolum: null,
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 5',
+        baslik: 'UserCardsController\'a İki Yeni Action ve Canlı Doğrulama',
+        altBaslik: 'learn-system-word + görsel yükleme uç noktaları controller\'a bağlanıyor, gerçek ZauselDB\'de uçtan uca test — A-10 bu bölümle TAMAMLANIYOR.'
+      },
+      {
+        tur: 'kod-degisiklik',
+        baslik: 'UserCardsController.cs — learn-system-word ve Görsel Yükleme',
+        dosyaYolu: 'backend/Zausel.API/Controllers/UserCardsController.cs',
+        neden: 'Bölüm 4\'te yazılan `LearnSystemWordCommand`/`UploadUserCardImageCommand` henüz hiçbir route\'a BAĞLI değildi — bu iki Handler\'ı gerçekten ÇAĞRILABİLİR kılan iki yeni action eklendi.',
+        diff: ` using MediatR;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.RateLimiting;
++using Zausel.Application.Common.Exceptions;
+ using Zausel.Application.DTOs;
++using Zausel.Application.DTOs.Progress;
+ using Zausel.Application.DTOs.UserCards;
++using Zausel.Application.Features.Progress;
+ using Zausel.Application.Features.UserCards;
+
+ namespace Zausel.API.Controllers;
+
+ [Route("user-cards")]
+ [Authorize]
+ public class UserCardsController : ApiControllerBase
+ {
+     private readonly IMediator _mediator;
+
+     public UserCardsController(IMediator mediator) => _mediator = mediator;
+
+     [HttpGet]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<PagedResult<UserCardResponse>>> GetUserCards(
+         [FromQuery] int? categoryId, [FromQuery] int? userCategoryId, [FromQuery] string? search,
+         [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+     {
+         var result = await _mediator.Send(
+             new GetUserCardsQuery(CurrentUserId, categoryId, userCategoryId, search, page, pageSize), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpGet("{id}")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<UserCardResponse>> GetById(int id, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(new GetUserCardByIdQuery(id, CurrentUserId), cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpPost]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<UserCardResponse>> Create(
+         UserCardCreateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+             new CreateUserCardCommand(
+                 request.FrontText, request.BackText, request.Notes, request.CategoryIds, request.UserCategoryIds,
+                 request.Examples, force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return StatusCode(StatusCodes.Status201Created, result);
+     }
+
+     [HttpPut("{id}")]
+     [EnableRateLimiting("general")]
+     public async Task<ActionResult<UserCardResponse>> Update(
+         int id, UserCardUpdateRequest request, [FromQuery] bool force, CancellationToken cancellationToken)
+     {
+         var result = await _mediator.Send(
+             new UpdateUserCardCommand(
+                 id, request.FrontText, request.BackText, request.Notes, request.IsActive, request.CategoryIds,
+                 request.UserCategoryIds, request.Examples, force, CurrentUserId, CurrentUserRole),
+             cancellationToken);
+         return Ok(result);
+     }
+
+     [HttpDelete("{id}")]
+     [EnableRateLimiting("general")]
+     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+     {
+         await _mediator.Send(new DeleteUserCardCommand(id, CurrentUserId, CurrentUserRole), cancellationToken);
+         return NoContent();
+     }
+
++    [HttpPost("learn-system-word")]
++    [EnableRateLimiting("general")]
++    public async Task<ActionResult<LearnSystemWordResponse>> LearnSystemWord(
++        LearnSystemWordRequest request, CancellationToken cancellationToken)
++    {
++        var result = await _mediator.Send(new LearnSystemWordCommand(request.WordId, CurrentUserId, CurrentUserRole), cancellationToken);
++        return result.AlreadyExists ? Ok(result) : StatusCode(StatusCodes.Status201Created, result);
++    }
++
++    // file: IFormFile? (nullable) — MediaController.UploadImage ile AYNI desen, [ApiController]'ın
++    // otomatik 400'ü yerine FileRequiredException standart ApiErrorResponse şeklini üretir.
++    [HttpPost("{id}/image")]
++    [EnableRateLimiting("general")]
++    [RequestSizeLimit(5 * 1024 * 1024)]
++    public async Task<ActionResult<UserCardResponse>> UploadImage(int id, IFormFile? file, CancellationToken cancellationToken)
++    {
++        if (file is null)
++            throw new FileRequiredException();
++
++        await using var stream = file.OpenReadStream();
++        var result = await _mediator.Send(
++            new UploadUserCardImageCommand(id, stream, file.FileName, file.Length, CurrentUserId, CurrentUserRole),
++            cancellationToken);
++        return Ok(result);
++    }
+ }`,
+        satirlar: [
+          { satir: 'using Zausel.Application.Common.Exceptions;', aciklama: '`FileRequiredException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.Progress;', aciklama: '`LearnSystemWordRequest`/`LearnSystemWordResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.Progress;', aciklama: '`LearnSystemWordCommand`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: '[HttpPost("learn-system-word")]', aciklama: '`POST /user-cards/learn-system-word` — `{id}` gibi bir route PARAMETRESİ TAŞIMADIĞI için ASP.NET routing\'i bunu `GetById`/`Update`/`Delete`daki `{id}` şablonuyla KARIŞTIRMAZ (sabit segment, route şablonuyla eşleşen bir istek her zaman ÖNCELİKLİDİR).', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<LearnSystemWordResponse>> LearnSystemWord(', aciklama: 'Action\'ın imzası.', neden: null, olmasaydi: null },
+          { satir: 'LearnSystemWordRequest request, CancellationToken cancellationToken)', aciklama: 'İstek gövdesi — `{ "wordId": 5 }`.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(new LearnSystemWordCommand(request.WordId, CurrentUserId, CurrentUserRole), cancellationToken);', aciklama: 'Komutun gönderilmesi — `request.WordId` DIŞINDA hiçbir DTO alanı YOK, komut doğrudan bu tek değeri + HTTP bağlamını taşır.', neden: null, olmasaydi: null },
+          { satir: 'return result.AlreadyExists ? Ok(result) : StatusCode(StatusCodes.Status201Created, result);', aciklama: 'Durum kodu SONUCA göre DALLANIR — GERÇEKTEN yeni bir `UserProgress` satırı yaratıldıysa 201, kullanıcı zaten öğreniyorsa 200.', neden: 'Bu uç nokta İDEMPOTENT bir "öğrenmeye başla" isteği — kullanıcı AYNI kelime için butona iki kez BASARSA (ağ gecikmesi/çift tıklama), İKİNCİ istek bir HATA değil bir "zaten öğreniyorsun" onayı ALMALI; sabit 201 dönülseydi istemci HER seferinde "yeni bir şey oluştu" sanırdı.', olmasaydi: 'Her zaman 201 dönülseydi, istemci tarafındaki bir "başarıyla eklendi" bildirimi kullanıcının ZATEN öğrendiği bir kelime için de TETİKLENİR, yanıltıcı bir tekrar bildirimi GÖSTERİRDİ.' },
+          { satir: '[HttpPost("{id}/image")]', aciklama: '`POST /user-cards/{id}/image` — `learn-system-word` sabit segmentinden FARKLI olarak burada `{id}` bir route DEĞİŞKENİ, `GetById`/`Update`/`Delete` ile AYNI route parametre deseni, yalnızca son segment (`/image`) EKLENDİ.', neden: null, olmasaydi: null },
+          { satir: '[RequestSizeLimit(5 * 1024 * 1024)]', aciklama: '`MediaController.UploadImage` ile AYNI 5MB üst sınır — `LocalFileStorageService.MaxFileSizeBytes`ın AYNI DEĞERİYLE eşleşir; bu öznitelik Kestrel\'in gövdeyi OKUMAYA BAŞLAMADAN reddetmesini sağlar, `FileTooLargeException` yalnızca bu sınırı GEÇEN ama Kestrel seviyesinde YAKALANMAYAN nadir bir durumda devreye girer.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<ActionResult<UserCardResponse>> UploadImage(int id, IFormFile? file, CancellationToken cancellationToken)', aciklama: '`MediaController.UploadImage` ile AYNI `IFormFile?` (nullable) deseni.', neden: null, olmasaydi: null },
+          { satir: 'if (file is null)', aciklama: 'Dosya hiç GÖNDERİLMEMİŞ.', neden: null, olmasaydi: null },
+          { satir: 'throw new FileRequiredException();', aciklama: '`MediaController` ile AYNI — `[ApiController]`\'ın kendi ham 400\'ü YERİNE standart `ApiErrorResponse` şeklini üretir.', neden: null, olmasaydi: null },
+          { satir: 'await using var stream = file.OpenReadStream();', aciklama: 'Multipart gövdenin okunabilir bir `Stream`e açılması — `await using`, `IAsyncDisposable`ı Handler bittikten SONRA otomatik KAPATIR.', neden: null, olmasaydi: null },
+          { satir: 'var result = await _mediator.Send(', aciklama: 'Komutun gönderilmesi.', neden: null, olmasaydi: null, satirIndex: 94 },
+          { satir: 'new UploadUserCardImageCommand(id, stream, file.FileName, file.Length, CurrentUserId, CurrentUserRole),', aciklama: 'Route\'tan gelen `id` + dosyanın HAM parçaları + HTTP bağlamı.', neden: null, olmasaydi: null },
+          { satir: 'cancellationToken);', aciklama: '`Send`\'in ikinci parametresi.', neden: null, olmasaydi: null, satirIndex: 96 },
+          { satir: 'return Ok(result);', aciklama: '200 OK — bu bir "oluşturma" DEĞİL, VAR OLAN bir kartın bir alanının güncellenmesi.', neden: null, olmasaydi: null, satirIndex: 97 }
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'ErrorMessages.cs — Bir Kod Daha (WORD_ID_INVALID, tr+de)',
+        aciklama: 'Bölüm 3\'teki 11 `USER_CARD_*` kodunun HEMEN ardına, aynı iki sözlüğe (tr/de) TEK bir yeni anahtar daha eklendi: `WORD_ID_INVALID` — `LearnSystemWordCommandValidator`daki `WithErrorCode("WORD_ID_INVALID")` ile BİREBİR eşleşir.',
+        neden: 'Bu kod `WORD_CONCEPT_ID_INVALID`dan (A-05, `GetWordByIdQueryValidator`) BİLEREK AYRI tutuldu — ikisi FARKLI kimlik uzayına işaret eder (`WordConceptId` bir kavramın kimliği, `WordId` learn-system-word BAĞLAMINDA somut bir dil satırının kimliği), aynı kodun İKİ farklı anlamda kullanılması bir hata mesajını YANLIŞ bağlamda gösterebilirdi.',
+        olmasaydi: 'Ayrı bir kod açılmayıp `WORD_CONCEPT_ID_INVALID` yeniden kullanılsaydı, `learn-system-word`e geçersiz bir `wordId` gönderen bir kullanıcı "Geçersiz kelime kimliği" yerine kavramsal olarak YANLIŞ bir terimle ("kavram" kimliği) karşılaşırdı — iki farklı DOMAIN kavramı (Word vs WordConcept) tek bir hata mesajı ARKASINDA GİZLENİRDİ.'
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /user-cards/learn-system-word — Yeni Kayıt (201)',
+        yontem: 'POST',
+        url: 'http://127.0.0.1:5001/api/v1/user-cards/learn-system-word',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: { wordId: 6 },
+        yanit: {
+          durum: 201,
+          govde: { userProgressId: 6, wordId: 6, germanWord: 'Haus', alreadyExists: false }
+        },
+        notlar: [
+          'wordId=6, sistemde ZATEN kayıtlı "Haus" (Almanca) kelimesinin Words.Id\'si — kullanıcının bu kelime için henüz bir UserProgress\'i YOKTU, bu istek onu yarattı.',
+          'AYNI istek TEKRAR atılırsa (aşağıdaki ikinci senaryo) `alreadyExists:true` ile 200 döner, İKİNCİ bir UserProgress satırı YARATILMAZ.'
+        ]
+      },
+      {
+        tur: 'postman',
+        baslik: 'POST /user-cards/learn-system-word — Zaten Öğreniliyor (200)',
+        yontem: 'POST',
+        url: 'http://127.0.0.1:5001/api/v1/user-cards/learn-system-word',
+        kimlikDogrulama: 'Bearer {{accessToken}}',
+        govde: { wordId: 6 },
+        yanit: {
+          durum: 200,
+          govde: { userProgressId: 6, wordId: 6, germanWord: 'Haus', alreadyExists: true }
+        },
+        notlar: [
+          'Bir üstteki isteğin BİREBİR AYNISI, İKİNCİ kez atıldı — `userProgressId` AYNI (6) kaldı, `alreadyExists:true` döndü.',
+          'Var olmayan bir `wordId` (ör. 99999) gönderilirse 404 `ENTITY_NOT_FOUND` döner — gerçek ZauselDB\'ye karşı doğrulandı.'
+        ]
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Canlı Doğrulama — learn-system-word ve Görsel Yükleme',
+        aciklama: 'API gerçek `ZauselDB`\'ye bağlı olarak yeniden başlatıldı, `curl` ile şu akış doğrulandı: (1) `POST /user-cards/learn-system-word` (`wordId:6`) — 201, `userProgressId:6`, `germanWord:"Haus"`; (2) AYNI istek TEKRAR — 200, `alreadyExists:true`, İKİNCİ satır YOK; (3) var OLMAYAN `wordId:99999` — 404; (4) `POST /user-cards/1/image` (1x1 PNG, multipart) — 201 yerine 200 (kart GÜNCELLENDİ), `imageUrl` `.../user-cards/2026/08/<guid>.png` biçiminde döndü; (5) AYNI kart için İKİNCİ kez görsel yüklendi — YENİ bir dosya adıyla kaydedildi, ESKİ dosya diskten `find`la doğrulanarak SİLİNDİĞİ görüldü (klasörde yalnızca EN SON dosya kaldı); (6) dosyasız istek — 400 `FILE_REQUIRED`. `sqlcmd` ile `ActivityLogs` sorgulandı: `LEARN_SYSTEM_WORD` (EntityType=UserProgress) ve iki `UPDATE_USER_CARD` (görsel yükleme, EntityType=UserCard) satırı doğru `EntityId`/`UserId` ile YAZILMIŞ. Tüm paket (268 test — 260 mevcut + 8 yeni) yeşil kaldı. A-10 bu doğrulamayla TAMAMLANDI.',
+        neden: 'Disk üzerindeki dosya silme davranışı BİRİM testlerinde (Handler, `IFileStorageService` MOCK\'landığı için) hiçbir zaman GERÇEKTEN test EDİLEMEZ — `DeleteImageAsync`in URL→fiziksel-yol dönüşümünün (Bölüm 4) DOĞRU çalıştığı yalnızca GERÇEK bir dosya sisteminde, gerçek bir upload klasöründe DOĞRULANABİLİR.',
+        olmasaydi: 'Canlı doğrulama atlansaydı, `DeleteImageAsync`deki URL-ayrıştırma mantığındaki (ör. `BaseUrl` sonundaki `/` karakterinin FARKLI ele alınması) küçük bir hata yalnızca BİRİM testlerinde (mock\'lanmış arayüz her zaman "başarılı" döner) hiç YAKALANMAZ, üretimde disklerin YAVAŞ YAVAŞ sahipsiz dosyalarla DOLMASINA yol açardı — bu tür bir sızıntı ancak GERÇEK bir dosya yeniden yüklenip ESKİSİNİN diskte GERÇEKTEN silindiği gözlemlenerek fark edilir.'
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

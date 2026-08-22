@@ -96,6 +96,16 @@ public static class ErrorMessages
             ["USER_CATEGORY_ICON_TOO_LONG"] = "İkon adı en fazla 100 karakter olabilir.",
             ["PROGRESS_BAND_INVALID"] = "Geçersiz bant değeri.",
             ["LEECH_ACTION_INVALID"] = "Geçersiz aksiyon.",
+            ["USER_CARD_ID_INVALID"] = "Geçersiz kart kimliği.",
+            ["USER_CARD_FRONT_TEXT_REQUIRED"] = "Kartın ön yüzü zorunlu.",
+            ["USER_CARD_FRONT_TEXT_TOO_LONG"] = "Kartın ön yüzü en fazla 500 karakter olabilir.",
+            ["USER_CARD_BACK_TEXT_REQUIRED"] = "Kartın arka yüzü zorunlu.",
+            ["USER_CARD_BACK_TEXT_TOO_LONG"] = "Kartın arka yüzü en fazla 500 karakter olabilir.",
+            ["USER_CARD_NOTES_TOO_LONG"] = "Not en fazla 2000 karakter olabilir.",
+            ["USER_CARD_EXAMPLE_SENTENCE_FRONT_REQUIRED"] = "Örnek cümlenin ön yüzü zorunlu.",
+            ["USER_CARD_EXAMPLE_SENTENCE_BACK_REQUIRED"] = "Örnek cümlenin arka yüzü zorunlu.",
+            ["USER_CARD_DUPLICATE"] = "Aynı metinli bir kartınız zaten var.",
+            ["WORD_ID_INVALID"] = "Geçersiz kelime kimliği.",
         },
         ["de"] = new()
         {
@@ -185,6 +195,16 @@ public static class ErrorMessages
             ["USER_CATEGORY_ICON_TOO_LONG"] = "Der Icon-Name darf höchstens 100 Zeichen lang sein.",
             ["PROGRESS_BAND_INVALID"] = "Ungültiger Bandwert.",
             ["LEECH_ACTION_INVALID"] = "Ungültige Aktion.",
+            ["USER_CARD_ID_INVALID"] = "Ungültige Karten-ID.",
+            ["USER_CARD_FRONT_TEXT_REQUIRED"] = "Die Vorderseite der Karte ist erforderlich.",
+            ["USER_CARD_FRONT_TEXT_TOO_LONG"] = "Die Vorderseite der Karte darf höchstens 500 Zeichen lang sein.",
+            ["USER_CARD_BACK_TEXT_REQUIRED"] = "Die Rückseite der Karte ist erforderlich.",
+            ["USER_CARD_BACK_TEXT_TOO_LONG"] = "Die Rückseite der Karte darf höchstens 500 Zeichen lang sein.",
+            ["USER_CARD_NOTES_TOO_LONG"] = "Die Notiz darf höchstens 2000 Zeichen lang sein.",
+            ["USER_CARD_EXAMPLE_SENTENCE_FRONT_REQUIRED"] = "Die Vorderseite des Beispielsatzes ist erforderlich.",
+            ["USER_CARD_EXAMPLE_SENTENCE_BACK_REQUIRED"] = "Die Rückseite des Beispielsatzes ist erforderlich.",
+            ["USER_CARD_DUPLICATE"] = "Sie haben bereits eine Karte mit demselben Text.",
+            ["WORD_ID_INVALID"] = "Ungültige Wort-ID.",
         },
     };
 

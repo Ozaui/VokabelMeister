@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IWordConceptRepository, WordConceptRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<IUserCategoryRepository, UserCategoryRepository>();
+        services.AddScoped<IUserCardRepository, UserCardRepository>();
         services.AddScoped<IUserProgressRepository, UserProgressRepository>();
         services.AddScoped<IUserCardProgressRepository, UserCardProgressRepository>();
         services.AddScoped<IUserAchievementRepository, UserAchievementRepository>();

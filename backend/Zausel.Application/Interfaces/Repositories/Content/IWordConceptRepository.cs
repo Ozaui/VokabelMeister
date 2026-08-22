@@ -13,7 +13,16 @@ namespace Zausel.Application.Interfaces.Repositories.Content;
 public interface IWordConceptRepository
 {
     Task<Word?> FindWordByLanguageAndTextAsync(int languageId, string text, int? excludeWordId, CancellationToken cancellationToken = default);
+
+    // UserCard'ın (A-10) "sistem eşleşmesi" önerisi için — kişisel kart hangi dilde yazıldığı
+    // BİLİNMEDİĞİNDEN (UserCard'ın bir LanguageId'si yok) dile bakılmaksızın arar, FindWordByLanguageAndTextAsync'in
+    // AKSİNE tek bir dille sınırlı DEĞİLDİR.
+    Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default);
     Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default);
+
+    // learn-system-word (A-10) için — istemci UserProgress.WordId olarak KULLANILACAK somut Words.Id'yi
+    // gönderir, Handler bu satırdan WordConceptId'yi öğrenip Almanca çeviriyi (FindWordAsync) ayrıca bulur.
+    Task<Word?> GetWordByIdAsync(int wordId, CancellationToken cancellationToken = default);
     Task<WordDetail?> GetDetailByWordIdAsync(int wordId, CancellationToken cancellationToken = default);
     Task<WordConceptAggregate?> GetAggregateAsync(int wordConceptId, CancellationToken cancellationToken = default);
 

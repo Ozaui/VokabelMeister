@@ -24,6 +24,12 @@ public class WordConceptRepository : IWordConceptRepository
         return await query.FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<Word?> FindWordByTextAsync(string text, CancellationToken cancellationToken = default) =>
+        await _context.Words.FirstOrDefaultAsync(w => w.Text == text, cancellationToken);
+
+    public async Task<Word?> GetWordByIdAsync(int wordId, CancellationToken cancellationToken = default) =>
+        await _context.Words.FirstOrDefaultAsync(w => w.Id == wordId, cancellationToken);
+
     public async Task<Word?> FindWordAsync(int wordConceptId, int languageId, CancellationToken cancellationToken = default) =>
         await _context.Words.FirstOrDefaultAsync(w => w.WordConceptId == wordConceptId && w.LanguageId == languageId, cancellationToken);
 

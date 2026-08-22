@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A-10 — Kişisel Kart API</title>
+<link rel="stylesheet" href="../engine/slides.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  window.MODULE = {
+    id: 'repository-mapping-crud',
+    bolumBaslik: 'A-10 — Kişisel Kart API',
+    oncekiBolum: '01_entity-migration.html',
+    sonrakiBolum: '03_controller-retrofit-canli-dogrulama.html',
+    slaytlar: [
+      {
+        tur: 'kapak',
+        ustBaslik: 'BÖLÜM 2',
+        baslik: 'Repository, Aggregate ve CRUD Command/Query Katmanı',
+        altBaslik: 'IUserCardRepository/UserCardRepository, UserCardMapping, beş Command/Query (Create/Update/Delete/GetUserCards/GetUserCardById) — Servis DEĞİL MediatR deseni.'
+      },
+      {
+        tur: 'kavram',
+        baslik: 'Neden "IUserCardService" Değil, Command+Handler?',
+        aciklama: 'Bu görevin madde metni "IUserCardService/UserCardService" yazar, ama gerçek kod bunun yerine beş ayrı MediatR Command/Query + Handler kullanır (CreateUserCardCommand/UpdateUserCardCommand/DeleteUserCardCommand/GetUserCardsQuery/GetUserCardByIdQuery) — UserCategory (A-08) ile AYNI sapma.',
+        neden: '"Servis Arayüzü/Servis" deseni bu projede TERK EDİLDİ — kanonik desen artık MediatR Command+Handler\'dır. Madde metnindeki "Servis" ifadesi eski/güncellenmemiş bir plandan kalma, kod her zaman GÜNCEL desenle yazılır, task dosyasının BİREBİR harfiyle DEĞİL.',
+        olmasaydi: 'Gerçekten bir `IUserCardService` yazılsaydı, projede İKİ farklı iş mantığı organizasyon deseni (bazı feature\'lar Servis, bazıları Command+Handler) bir arada yaşardı — bir sonraki geliştirici yeni bir feature yazarken "ben hangi deseni izleyeceğim" diye SORMAK zorunda kalırdı.'
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardAggregate.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/PersonalContent/UserCardAggregate.cs',
+        nedenBuKlasor: 'Interfaces/Repositories/PersonalContent/ — WordConceptAggregate (Content domain) ile AYNI konum deseni: aggregate tipi, ait olduğu repository arayüzüyle AYNI klasörde yaşar.',
+        kod: `using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Application.Interfaces.Repositories.PersonalContent;
+
+// IUserCardRepository'nin okuma metotlarının döndürdüğü şekil — WordConceptAggregate ile AYNI
+// gerekçe: bir kart tek başına anlamsız, örnekleri + hangi kategorilere bağlı olduğu olmadan
+// gösterilecek bir şeyi yok.
+public record UserCardAggregate(UserCard Card, List<UserCardExample> Examples, List<int> CategoryIds, List<int> UserCategoryIds);`,
+        satirlar: [
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardExample`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCardRepository` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public record UserCardAggregate(UserCard Card, List<UserCardExample> Examples, List<int> CategoryIds, List<int> UserCategoryIds);', aciklama: 'Dört parça TEK bir okuma sonucunda birleşir: kartın kendisi, örnek cümleleri, bağlı sistem kategorilerinin id\'leri ve bağlı kişisel kategorilerin id\'leri.', neden: 'CategoryIds/UserCategoryIds tam `Category`/`UserCategory` nesneleri DEĞİL, yalnızca `int` listesi — kart listesi/detayı bu id\'leri göstermek için kategori adının KENDİSİNE ihtiyaç duymaz, istemci zaten `GET /categories`/`GET /user-categories`\'i AYRICA çağırıp adları KENDİSİ eşler (WordResponse.Categories\'in aksine, admin\'in zengin nested çeviri objesi kişisel kart için GEREKSİZ ağırlık olurdu).', olmasaydi: 'CategoryIds yerine tam `Category` nesneleri taşınsaydı, her `GetUserCardsQuery` çağrısı kategori çevirilerini de JOIN\'lemek ZORUNDA kalırdı — bir kartın 100 kez listelendiği bir sayfada bu, hiçbir ekranın KULLANMADIĞI veriyi tekrar tekrar SORGULAMAK anlamına gelirdi.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'IUserCardRepository.cs',
+        dosyaYolu: 'backend/Zausel.Application/Interfaces/Repositories/PersonalContent/IUserCardRepository.cs',
+        kod: `using Zausel.Application.DTOs;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Application.Interfaces.Repositories.PersonalContent;
+
+public interface IUserCardRepository
+{
+    Task<PagedResult<UserCardAggregate>> GetPagedForUserAsync(
+        int userId, int? categoryId, int? userCategoryId, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default);
+
+    // Sahiplik filtresi burada gömülü — başkasının kartı null döner, Handler'da EntityNotFoundException'a çevrilir.
+    Task<UserCardAggregate?> GetByIdForUserAsync(int userCardId, int userId, CancellationToken cancellationToken = default);
+
+    // Duplikat kontrolü (409+force) için — AYNI kullanıcının FrontText'i (case-insensitive, DB
+    // collation'a güvenilir) eşleşen BAŞKA bir kartı var mı.
+    Task<UserCard?> FindByUserAndFrontTextAsync(int userId, string frontText, int? excludeUserCardId, CancellationToken cancellationToken = default);
+
+    Task AddAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);
+    Task UpdateAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);
+    Task SoftDeleteAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);
+
+    // Create/UpdateUserCardCommand'ın categoryIds[]/userCategoryIds[]/examples[] alanları için —
+    // WordConceptRepository.ReplaceWordCategoriesAsync/ReplaceExamplesAsync ile AYNI "tam değişim"
+    // deseni: mevcut TÜM bağ/örnek satırları (hard) silinir, verilenlerle değiştirilir. UserCardCategory/
+    // UserCardUserCategory/UserCardExample'ın ÜÇÜ de BaseEntity DEĞİL (soft delete yok), bu yüzden
+    // WordExample'ın AKSİNE (soft-delete) burada da HARD silme kullanılır.
+    Task ReplaceCategoriesAsync(int userCardId, List<int> categoryIds, CancellationToken cancellationToken = default);
+    Task ReplaceUserCategoriesAsync(int userCardId, List<int> userCategoryIds, CancellationToken cancellationToken = default);
+    Task ReplaceExamplesAsync(int userCardId, List<UserCardExample> newExamples, CancellationToken cancellationToken = default);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Application.DTOs;', aciklama: '`PagedResult<T>`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardExample`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCategoryRepository`/`UserCardAggregate` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public interface IUserCardRepository', aciklama: 'Sahip olduğu tek entity `UserCard` DEĞİL — `UserCardExample`/`UserCardCategory`/`UserCardUserCategory`\'yi de yönetir, `WordConceptRepository`\'nin "tek aggregate-repository" deseniyle AYNI gerekçe: dört entity TEK bir bütün oluşturuyor.', neden: null, olmasaydi: null },
+          { satir: 'Task<PagedResult<UserCardAggregate>> GetPagedForUserAsync(', aciklama: 'Liste sorgusu — `GetWordsQuery`nin `IWordConceptRepository.GetPagedAsync`ı ile AYNI sayfalama deseni.', neden: null, olmasaydi: null },
+          { satir: 'int userId, int? categoryId, int? userCategoryId, string? search,', aciklama: 'Liste ekranının filtreleri — `userId` sahiplik filtresi (zorunlu), diğer üçü (sistem kategorisi/kişisel kategori/metin arama) opsiyonel.', neden: null, olmasaydi: null },
+          { satir: 'int page, int pageSize, CancellationToken cancellationToken = default);', aciklama: 'Sayfalama parametreleri — `GetWordsQuery` ile AYNI imza şekli.', neden: null, olmasaydi: null },
+          { satir: 'Task<UserCardAggregate?> GetByIdForUserAsync(int userCardId, int userId, CancellationToken cancellationToken = default);', aciklama: 'Hem `GET /user-cards/{id}` hem Update/Delete\'in "önce var mı VE benim mi" kontrolü İÇİN kullanılan TEK metot — `UserCategoryRepository.GetByIdForUserAsync` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'Task<UserCard?> FindByUserAndFrontTextAsync(int userId, string frontText, int? excludeUserCardId, CancellationToken cancellationToken = default);', aciklama: 'Duplikat kontrolü — `IWordConceptRepository.FindWordByLanguageAndTextAsync` ile AYNI `excludeId` deseni (Update kendi FrontText\'ini DEĞİŞTİRMEDEN kaydederken kendi kendine çakışmasın diye).', neden: null, olmasaydi: null },
+          { satir: 'Task AddAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);', aciklama: '`UserCategoryRepository.AddAsync` ile AYNI desen — `CreatedByUserId`/`UpdatedByUserId` burada doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'Task UpdateAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);', aciklama: '`UserCategoryRepository.UpdateAsync` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'Task SoftDeleteAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default);', aciklama: '`UserCategoryRepository.SoftDeleteAsync` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'Task ReplaceCategoriesAsync(int userCardId, List<int> categoryIds, CancellationToken cancellationToken = default);', aciklama: 'UserCard↔sistem Category bağlarının TAM değişimi.', neden: null, olmasaydi: null },
+          { satir: 'Task ReplaceUserCategoriesAsync(int userCardId, List<int> userCategoryIds, CancellationToken cancellationToken = default);', aciklama: 'UserCard↔kişisel UserCategory bağlarının TAM değişimi.', neden: null, olmasaydi: null },
+          { satir: 'Task ReplaceExamplesAsync(int userCardId, List<UserCardExample> newExamples, CancellationToken cancellationToken = default);', aciklama: 'Kartın örnek cümlelerinin TAM değişimi.', neden: null, olmasaydi: null },
+          { satir: 'Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);', aciklama: '`UserCategoryRepository.SaveChangesAsync` ile AYNI desen — Handler tüm değişiklikleri hazırladıktan SONRA tek seferde çağırır.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardRepository.cs',
+        dosyaYolu: 'backend/Zausel.Infrastructure/Repositories/PersonalContent/UserCardRepository.cs',
+        kod: `using Microsoft.EntityFrameworkCore;
+using Zausel.Application.DTOs;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Domain.Entities.PersonalContent;
+using Zausel.Infrastructure.Data;
+
+namespace Zausel.Infrastructure.Repositories.PersonalContent;
+
+public class UserCardRepository : IUserCardRepository
+{
+    private readonly ZauselDbContext _context;
+
+    public UserCardRepository(ZauselDbContext context) => _context = context;
+
+    public async Task<PagedResult<UserCardAggregate>> GetPagedForUserAsync(
+        int userId, int? categoryId, int? userCategoryId, string? search,
+        int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.UserCards.Where(c => c.UserId == userId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(c => c.FrontText.Contains(search) || c.BackText.Contains(search));
+        if (categoryId is not null)
+        {
+            var matchingCardIds = _context.UserCardCategories.Where(link => link.CategoryId == categoryId).Select(link => link.UserCardId);
+            query = query.Where(c => matchingCardIds.Contains(c.Id));
+        }
+        if (userCategoryId is not null)
+        {
+            var matchingCardIds = _context.UserCardUserCategories.Where(link => link.UserCategoryId == userCategoryId).Select(link => link.UserCardId);
+            query = query.Where(c => matchingCardIds.Contains(c.Id));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var cards = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = await BuildAggregatesAsync(cards, cancellationToken);
+        return new PagedResult<UserCardAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
+    }
+
+    public async Task<UserCardAggregate?> GetByIdForUserAsync(int userCardId, int userId, CancellationToken cancellationToken = default)
+    {
+        var card = await _context.UserCards.FirstOrDefaultAsync(c => c.Id == userCardId && c.UserId == userId, cancellationToken);
+        if (card is null)
+            return null;
+
+        var aggregates = await BuildAggregatesAsync([card], cancellationToken);
+        return aggregates[0];
+    }
+
+    public async Task<UserCard?> FindByUserAndFrontTextAsync(int userId, string frontText, int? excludeUserCardId, CancellationToken cancellationToken = default)
+    {
+        var query = _context.UserCards.Where(c => c.UserId == userId && c.FrontText == frontText);
+        if (excludeUserCardId is not null)
+            query = query.Where(c => c.Id != excludeUserCardId);
+
+        return await query.FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task AddAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)
+    {
+        userCard.CreatedByUserId = userId;
+        userCard.UpdatedByUserId = userId;
+        await _context.UserCards.AddAsync(userCard, cancellationToken);
+    }
+
+    public Task UpdateAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)
+    {
+        userCard.UpdatedByUserId = userId;
+        _context.UserCards.Update(userCard);
+        return Task.CompletedTask;
+    }
+
+    public Task SoftDeleteAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)
+    {
+        userCard.IsDeleted = true;
+        userCard.DeletedAt = DateTime.UtcNow;
+        userCard.DeletedByUserId = userId;
+        userCard.UpdatedByUserId = userId;
+        return Task.CompletedTask;
+    }
+
+    public async Task ReplaceCategoriesAsync(int userCardId, List<int> categoryIds, CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserCardCategories.Where(link => link.UserCardId == userCardId).ToListAsync(cancellationToken);
+        _context.UserCardCategories.RemoveRange(existing);
+
+        var newRows = categoryIds.Distinct().Select(categoryId => new UserCardCategory
+        {
+            UserCardId = userCardId,
+            CategoryId = categoryId,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.UserCardCategories.AddRangeAsync(newRows, cancellationToken);
+    }
+
+    public async Task ReplaceUserCategoriesAsync(int userCardId, List<int> userCategoryIds, CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserCardUserCategories.Where(link => link.UserCardId == userCardId).ToListAsync(cancellationToken);
+        _context.UserCardUserCategories.RemoveRange(existing);
+
+        var newRows = userCategoryIds.Distinct().Select(userCategoryId => new UserCardUserCategory
+        {
+            UserCardId = userCardId,
+            UserCategoryId = userCategoryId,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.UserCardUserCategories.AddRangeAsync(newRows, cancellationToken);
+    }
+
+    public async Task ReplaceExamplesAsync(int userCardId, List<UserCardExample> newExamples, CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserCardExamples.Where(e => e.UserCardId == userCardId).ToListAsync(cancellationToken);
+        _context.UserCardExamples.RemoveRange(existing);
+
+        var now = DateTime.UtcNow;
+        foreach (var example in newExamples)
+        {
+            example.CreatedAt = now;
+            example.UpdatedAt = now;
+        }
+
+        await _context.UserCardExamples.AddRangeAsync(newExamples, cancellationToken);
+    }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        _context.SaveChangesAsync(cancellationToken);
+
+    private async Task<List<UserCardAggregate>> BuildAggregatesAsync(List<UserCard> cards, CancellationToken cancellationToken)
+    {
+        var cardIds = cards.Select(c => c.Id).ToList();
+
+        var examplesByCard = (await _context.UserCardExamples
+                .Where(e => cardIds.Contains(e.UserCardId))
+                .OrderBy(e => e.DisplayOrder)
+                .ToListAsync(cancellationToken))
+            .GroupBy(e => e.UserCardId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var categoryIdsByCard = (await _context.UserCardCategories
+                .Where(link => cardIds.Contains(link.UserCardId))
+                .ToListAsync(cancellationToken))
+            .GroupBy(link => link.UserCardId)
+            .ToDictionary(g => g.Key, g => g.Select(link => link.CategoryId).ToList());
+
+        var userCategoryIdsByCard = (await _context.UserCardUserCategories
+                .Where(link => cardIds.Contains(link.UserCardId))
+                .ToListAsync(cancellationToken))
+            .GroupBy(link => link.UserCardId)
+            .ToDictionary(g => g.Key, g => g.Select(link => link.UserCategoryId).ToList());
+
+        return cards
+            .Select(c => new UserCardAggregate(
+                c,
+                examplesByCard.GetValueOrDefault(c.Id, []),
+                categoryIdsByCard.GetValueOrDefault(c.Id, []),
+                userCategoryIdsByCard.GetValueOrDefault(c.Id, [])))
+            .ToList();
+    }
+}`,
+        satirlar: [
+          { satir: 'using Microsoft.EntityFrameworkCore;', aciklama: '`FirstOrDefaultAsync`/`ToListAsync`/`CountAsync` gibi genişletme metotları için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs;', aciklama: '`PagedResult<T>`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCardRepository`/`UserCardAggregate`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardCategory`/`UserCardUserCategory`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Infrastructure.Data;', aciklama: '`ZauselDbContext`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Infrastructure.Repositories.PersonalContent;', aciklama: '`UserCategoryRepository` ile AYNI klasördeki dosyaların paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class UserCardRepository : IUserCardRepository', aciklama: 'Arayüzün tek implementasyonu.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ZauselDbContext _context;', aciklama: 'Repository\'nin tek bağımlılığı — DbContext.', neden: null, olmasaydi: null },
+          { satir: 'public UserCardRepository(ZauselDbContext context) => _context = context;', aciklama: 'Constructor injection.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<PagedResult<UserCardAggregate>> GetPagedForUserAsync(', aciklama: 'Liste sorgusunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'int userId, int? categoryId, int? userCategoryId, string? search,', aciklama: 'Filtre parametreleri.', neden: null, olmasaydi: null },
+          { satir: 'int page, int pageSize, CancellationToken cancellationToken = default)', aciklama: 'Sayfalama parametreleri.', neden: null, olmasaydi: null },
+          { satir: 'var query = _context.UserCards.Where(c => c.UserId == userId);', aciklama: 'Sahiplik filtresi — TEK bir yerde, sorgunun EN BAŞINDA uygulanır.', neden: 'Bu filtre sorgunun EN BAŞINDA kurulmazsa (ör. sona bırakılırsa), sonraki `Where`/`OrderBy` çağrılarının ARASINA yanlışlıkla sahiplik filtresiz bir dal EKLENMESİ ihtimali doğar.', olmasaydi: 'Sahiplik filtresi unutulsaydı, başka bir kullanıcının kartları bu listeye SIZARDI — kişisel içerik hiçbir zaman yalnızca sahibi tarafından görülme garantisini KAYBEDERDİ.' },
+          { satir: 'if (!string.IsNullOrWhiteSpace(search))', aciklama: 'Arama parametresi boş/whitespace değilse filtre uygulanır.', neden: null, olmasaydi: null },
+          { satir: 'query = query.Where(c => c.FrontText.Contains(search) || c.BackText.Contains(search));', aciklama: 'Arama HEM ön HEM arka yüzde — kullanıcı kartını hangi taraftan hatırladığını bilmeyebilir.', neden: null, olmasaydi: null },
+          { satir: 'if (categoryId is not null)', aciklama: 'Sistem kategorisi filtresi opsiyonel.', neden: null, olmasaydi: null },
+          { satir: 'var matchingCardIds = _context.UserCardCategories.Where(link => link.CategoryId == categoryId).Select(link => link.UserCardId);', aciklama: '`WordConceptRepository.GetPagedAsync`daki `categoryId` filtresiyle AYNI "alt sorgu → Contains" deseni.', neden: null, olmasaydi: null },
+          { satir: 'query = query.Where(c => matchingCardIds.Contains(c.Id));', aciklama: 'Ana sorguya eklenen alt-sorgu filtresi.', neden: null, olmasaydi: null },
+          { satir: 'if (userCategoryId is not null)', aciklama: 'Kişisel kategori filtresi opsiyonel.', neden: null, olmasaydi: null },
+          { satir: 'var matchingCardIds = _context.UserCardUserCategories.Where(link => link.UserCategoryId == userCategoryId).Select(link => link.UserCardId);', aciklama: 'Sistem kategorisi filtresiyle AYNI desen, farklı ara tablo.', neden: null, olmasaydi: null },
+          { satir: 'query = query.Where(c => matchingCardIds.Contains(c.Id));', aciklama: 'Ana sorguya eklenen ikinci alt-sorgu filtresi.', neden: null, olmasaydi: null },
+          { satir: 'var totalCount = await query.CountAsync(cancellationToken);', aciklama: 'Sayfalama öncesi TOPLAM eşleşen kayıt sayısı.', neden: null, olmasaydi: null },
+          { satir: 'var cards = await query', aciklama: 'Sayfalanmış sonuç kümesinin çekilmesi.', neden: null, olmasaydi: null },
+          { satir: '.OrderByDescending(c => c.CreatedAt)', aciklama: 'En yeni kart EN ÜSTTE — `WordConceptRepository.GetPagedAsync` ile AYNI sıralama.', neden: null, olmasaydi: null },
+          { satir: '.Skip((page - 1) * pageSize)', aciklama: 'Sayfa ofseti.', neden: null, olmasaydi: null },
+          { satir: '.Take(pageSize)', aciklama: 'Sayfa boyutu.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken);', aciklama: 'Sorgunun VERİTABANINA gönderilip sonuçların belleğe alındığı an.', neden: null, olmasaydi: null },
+          { satir: 'var items = await BuildAggregatesAsync(cards, cancellationToken);', aciklama: 'Sayfadaki kartlar için örnek/kategori/kişisel-kategori id\'lerinin TOPLU (N+1 sorgu YAPMADAN) çekilmesi.', neden: null, olmasaydi: null },
+          { satir: 'return new PagedResult<UserCardAggregate> { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };', aciklama: 'Sayfalanmış sonucun paketlenmesi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<UserCardAggregate?> GetByIdForUserAsync(int userCardId, int userId, CancellationToken cancellationToken = default)', aciklama: 'Detay sorgusunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'var card = await _context.UserCards.FirstOrDefaultAsync(c => c.Id == userCardId && c.UserId == userId, cancellationToken);', aciklama: 'Sahiplik filtresi BURADA — `Id` VE `UserId` birlikte eşleşmezse `null` döner.', neden: null, olmasaydi: null },
+          { satir: 'if (card is null)', aciklama: 'Kart yok VEYA başka bir kullanıcıya ait — ikisi de AYNI dala düşer.', neden: null, olmasaydi: null },
+          { satir: 'return null;', aciklama: 'Handler bu `null`ı `EntityNotFoundException`a çevirir — başkasının kartı için de AYNI 404.', neden: null, olmasaydi: null },
+          { satir: 'var aggregates = await BuildAggregatesAsync([card], cancellationToken);', aciklama: 'TEK kart için de AYNI toplu-yükleme metodu kullanılır — liste/detay arasında iki AYRI aggregate-kurma mantığı YAZILMAZ.', neden: null, olmasaydi: null },
+          { satir: 'return aggregates[0];', aciklama: 'Tek elemanlı sonuçtan aggregate\'in kendisi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<UserCard?> FindByUserAndFrontTextAsync(int userId, string frontText, int? excludeUserCardId, CancellationToken cancellationToken = default)', aciklama: 'Duplikat kontrolünün başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'var query = _context.UserCards.Where(c => c.UserId == userId && c.FrontText == frontText);', aciklama: 'Sahiplik + metin eşleşmesi TEK filtrede — başka bir kullanıcının AYNI metinli kartı ASLA "duplikat" sayılmaz (her kullanıcının kart havuzu bağımsız).', neden: null, olmasaydi: null },
+          { satir: 'if (excludeUserCardId is not null)', aciklama: 'Update senaryosu — kendi kaydını KENDİSİYLE çakışıyor SAYMAMAK için.', neden: null, olmasaydi: null },
+          { satir: 'query = query.Where(c => c.Id != excludeUserCardId);', aciklama: '`FindWordByLanguageAndTextAsync`daki `excludeWordId` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'return await query.FirstOrDefaultAsync(cancellationToken);', aciklama: 'İlk eşleşen (varsa) kart.', neden: null, olmasaydi: null },
+          { satir: 'public async Task AddAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)', aciklama: 'Ekleme metodunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'userCard.CreatedByUserId = userId;', aciklama: 'BaseEntity\'nin audit alanı — Handler\'ın DEĞİL, repository\'nin sorumluluğu (tutarlılık: her ekleme AYNI yerden geçer).', neden: null, olmasaydi: null },
+          { satir: 'userCard.UpdatedByUserId = userId;', aciklama: 'İlk oluşturmada Updated de Created ile AYNI kullanıcıya işaret eder.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCards.AddAsync(userCard, cancellationToken);', aciklama: 'EF Core\'un change tracker\'ına ekleme — henüz veritabanına YAZILMAZ, `SaveChangesAsync` çağrılana kadar.', neden: null, olmasaydi: null },
+          { satir: 'public Task UpdateAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)', aciklama: 'Güncelleme metodunun başlangıcı — `async` DEĞİL, çünkü içinde `await` edilecek bir I/O çağrısı yok (`Update` senkron).', neden: null, olmasaydi: null },
+          { satir: 'userCard.UpdatedByUserId = userId;', aciklama: 'Audit alanı.', neden: null, olmasaydi: null },
+          { satir: '_context.UserCards.Update(userCard);', aciklama: 'EF Core\'a bu entity\'nin DEĞİŞTİĞİNİ bildirir — `card` zaten `GetByIdForUserAsync`\'ten çekildiği (change tracker\'da izlendiği) için bu satır teknik olarak GEREKSİZ ama `UserCategoryRepository` ile AYNI açık niyet ifadesi olarak korunur.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'Zaten tamamlanmış senkron işin `Task` sarmalayıcısı.', neden: null, olmasaydi: null },
+          { satir: 'public Task SoftDeleteAsync(UserCard userCard, int userId, CancellationToken cancellationToken = default)', aciklama: 'Yumuşak silme metodunun başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'userCard.IsDeleted = true;', aciklama: 'Global soft-delete filtresinin (ZauselDbContext) artık bu satırı GİZLEYECEĞİ bayrak.', neden: null, olmasaydi: null },
+          { satir: 'userCard.DeletedAt = DateTime.UtcNow;', aciklama: 'Silinme anı.', neden: null, olmasaydi: null },
+          { satir: 'userCard.DeletedByUserId = userId;', aciklama: 'Kim sildiği.', neden: null, olmasaydi: null },
+          { satir: 'userCard.UpdatedByUserId = userId;', aciklama: 'Silme de bir güncelleme sayılır.', neden: null, olmasaydi: null },
+          { satir: 'return Task.CompletedTask;', aciklama: 'UpdateAsync ile AYNI sebep — senkron iş.', neden: null, olmasaydi: null },
+          { satir: 'public async Task ReplaceCategoriesAsync(int userCardId, List<int> categoryIds, CancellationToken cancellationToken = default)', aciklama: 'Sistem kategorisi bağlarının TAM değişiminin başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'var existing = await _context.UserCardCategories.Where(link => link.UserCardId == userCardId).ToListAsync(cancellationToken);', aciklama: 'Bu karta ait TÜM mevcut bağ satırları.', neden: null, olmasaydi: null },
+          { satir: '_context.UserCardCategories.RemoveRange(existing);', aciklama: 'HARD silme — `UserCardCategory` BaseEntity DEĞİL, soft-delete alanı YOK.', neden: null, olmasaydi: null },
+          { satir: 'var newRows = categoryIds.Distinct().Select(categoryId => new UserCardCategory', aciklama: '`Distinct()` — istemci AYNI kategoriyi yanlışlıkla iki kez gönderirse UNIQUE kısıtına TAKILMADAN sessizce tekilleştirilir.', neden: null, olmasaydi: null },
+          { satir: 'UserCardId = userCardId,', aciklama: 'Yeni bağ satırının kart tarafı.', neden: null, olmasaydi: null },
+          { satir: 'CategoryId = categoryId,', aciklama: 'Yeni bağ satırının kategori tarafı.', neden: null, olmasaydi: null },
+          { satir: 'CreatedAt = DateTime.UtcNow', aciklama: 'BaseEntity DEĞİL, elle doldurulması gerekir.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCardCategories.AddRangeAsync(newRows, cancellationToken);', aciklama: 'Yeni bağların toplu eklenmesi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task ReplaceUserCategoriesAsync(int userCardId, List<int> userCategoryIds, CancellationToken cancellationToken = default)', aciklama: 'Kişisel kategori bağlarının TAM değişiminin başlangıcı — ReplaceCategoriesAsync ile AYNI desen, farklı ara tablo.', neden: null, olmasaydi: null },
+          { satir: 'var existing = await _context.UserCardUserCategories.Where(link => link.UserCardId == userCardId).ToListAsync(cancellationToken);', aciklama: 'Mevcut kişisel-kategori bağları.', neden: null, olmasaydi: null },
+          { satir: '_context.UserCardUserCategories.RemoveRange(existing);', aciklama: 'HARD silme.', neden: null, olmasaydi: null },
+          { satir: 'var newRows = userCategoryIds.Distinct().Select(userCategoryId => new UserCardUserCategory', aciklama: 'Tekilleştirilmiş yeni bağ listesi.', neden: null, olmasaydi: null },
+          { satir: 'UserCardId = userCardId,', aciklama: 'Yeni bağın kart tarafı.', neden: null, olmasaydi: null },
+          { satir: 'UserCategoryId = userCategoryId,', aciklama: 'Yeni bağın kişisel kategori tarafı.', neden: null, olmasaydi: null },
+          { satir: 'CreatedAt = DateTime.UtcNow', aciklama: 'Elle doldurulan zaman damgası.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCardUserCategories.AddRangeAsync(newRows, cancellationToken);', aciklama: 'Yeni bağların toplu eklenmesi.', neden: null, olmasaydi: null },
+          { satir: 'public async Task ReplaceExamplesAsync(int userCardId, List<UserCardExample> newExamples, CancellationToken cancellationToken = default)', aciklama: 'Örnek cümlelerin TAM değişiminin başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'var existing = await _context.UserCardExamples.Where(e => e.UserCardId == userCardId).ToListAsync(cancellationToken);', aciklama: 'Mevcut örnek satırları.', neden: null, olmasaydi: null },
+          { satir: '_context.UserCardExamples.RemoveRange(existing);', aciklama: 'HARD silme — `WordConceptRepository.ReplaceExamplesAsync`\'in AKSİNE (o soft-delete\'e tabi `WordExample`\'ları IsDeleted=true yapar), `UserCardExample` BaseEntity DEĞİL, bu yüzden `WordCategory`/`ReplaceWordCategoriesAsync` ile AYNI HARD silme yolu izlenir.', neden: null, olmasaydi: null },
+          { satir: 'var now = DateTime.UtcNow;', aciklama: 'Tek bir zaman damgası — döngüdeki HER örnek AYNI anı taşısın diye.', neden: null, olmasaydi: null },
+          { satir: 'foreach (var example in newExamples)', aciklama: 'Her yeni örnek satırı için.', neden: null, olmasaydi: null },
+          { satir: 'example.CreatedAt = now;', aciklama: '`UserCardExample` BaseEntity DEĞİL — `ZauselDbContext.SaveChangesAsync`\'in otomatik doldurduğu mekanizma BURADA çalışmaz, elle doldurulur.', neden: null, olmasaydi: null },
+          { satir: 'example.UpdatedAt = now;', aciklama: 'İlk oluşturmada Updated de Created ile AYNI an.', neden: null, olmasaydi: null },
+          { satir: 'await _context.UserCardExamples.AddRangeAsync(newExamples, cancellationToken);', aciklama: 'Yeni örneklerin toplu eklenmesi.', neden: null, olmasaydi: null },
+          { satir: 'public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>', aciklama: 'Handler\'ın TÜM hazırlanan değişiklikleri tek seferde veritabanına YAZDIĞI nokta.', neden: null, olmasaydi: null },
+          { satir: '_context.SaveChangesAsync(cancellationToken);', aciklama: 'EF Core\'un gerçek `INSERT`/`UPDATE`/`DELETE` SQL\'lerini ÜRETTİĞİ an.', neden: null, olmasaydi: null },
+          { satir: 'private async Task<List<UserCardAggregate>> BuildAggregatesAsync(List<UserCard> cards, CancellationToken cancellationToken)', aciklama: 'Liste VE detay sorgusunun PAYLAŞTIĞI özel yardımcı metot.', neden: null, olmasaydi: null },
+          { satir: 'var cardIds = cards.Select(c => c.Id).ToList();', aciklama: 'Aşağıdaki üç toplu sorgunun ortak filtre listesi.', neden: null, olmasaydi: null },
+          { satir: 'var examplesByCard = (await _context.UserCardExamples', aciklama: 'TÜM kartların örneklerinin TEK sorguda çekilmesi.', neden: 'Her kart için AYRI bir `_context.UserCardExamples.Where(...)` sorgusu çalıştırılsaydı, 20 kartlık bir sayfa 20 AYRI SQL round-trip\'i (N+1 sorgu problemi) yaratırdı.', olmasaydi: 'N+1 sorgu deseni önlenmeseydi, kart sayısı arttıkça (sayfa boyutu 100\'e çıkarıldığında) listeleme uç noktasının gecikmesi DOĞRUSAL değil, veritabanı round-trip SAYISI ile birlikte KATLANARAK artardı.' },
+          { satir: '.Where(e => cardIds.Contains(e.UserCardId))', aciklama: 'Bu sayfadaki TÜM kartların örnekleri — tek `IN (...)` sorgusu.', neden: null, olmasaydi: null },
+          { satir: '.OrderBy(e => e.DisplayOrder)', aciklama: 'Örnekler gösterim sırasına göre önceden sıralanır.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken))', aciklama: 'Sorgunun veritabanına gönderilmesi.', neden: null, olmasaydi: null },
+          { satir: '.GroupBy(e => e.UserCardId)', aciklama: 'Bellekte kart id\'sine göre gruplama.', neden: null, olmasaydi: null },
+          { satir: '.ToDictionary(g => g.Key, g => g.ToList());', aciklama: 'Hızlı erişim için `Dictionary<int, List<UserCardExample>>`.', neden: null, olmasaydi: null },
+          { satir: 'var categoryIdsByCard = (await _context.UserCardCategories', aciklama: 'Sistem kategori bağlarının TOPLU çekilmesi — examplesByCard ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: '.Where(link => cardIds.Contains(link.UserCardId))', aciklama: 'Bu sayfadaki kartların TÜM kategori bağları.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken))', aciklama: 'Sorgunun çalıştırılması.', neden: null, olmasaydi: null },
+          { satir: '.GroupBy(link => link.UserCardId)', aciklama: 'Kart id\'sine göre gruplama.', neden: null, olmasaydi: null },
+          { satir: '.ToDictionary(g => g.Key, g => g.Select(link => link.CategoryId).ToList());', aciklama: 'Her kart için yalnızca `CategoryId` listesi — tam entity DEĞİL.', neden: null, olmasaydi: null },
+          { satir: 'var userCategoryIdsByCard = (await _context.UserCardUserCategories', aciklama: 'Kişisel kategori bağlarının TOPLU çekilmesi.', neden: null, olmasaydi: null },
+          { satir: '.Where(link => cardIds.Contains(link.UserCardId))', aciklama: 'Bu sayfadaki kartların TÜM kişisel-kategori bağları.', neden: null, olmasaydi: null },
+          { satir: '.ToListAsync(cancellationToken))', aciklama: 'Sorgunun çalıştırılması.', neden: null, olmasaydi: null },
+          { satir: '.GroupBy(link => link.UserCardId)', aciklama: 'Kart id\'sine göre gruplama.', neden: null, olmasaydi: null },
+          { satir: '.ToDictionary(g => g.Key, g => g.Select(link => link.UserCategoryId).ToList());', aciklama: 'Her kart için yalnızca `UserCategoryId` listesi.', neden: null, olmasaydi: null },
+          { satir: 'return cards', aciklama: 'Son adım — her kart için üç sözlükten kendi payını ÇEKİP aggregate\'e birleştirme.', neden: null, olmasaydi: null },
+          { satir: '.Select(c => new UserCardAggregate(', aciklama: 'Her kart TEK bir `UserCardAggregate`\'e dönüşür.', neden: null, olmasaydi: null },
+          { satir: 'c,', aciklama: 'Kartın kendisi.', neden: null, olmasaydi: null },
+          { satir: 'examplesByCard.GetValueOrDefault(c.Id, []),', aciklama: 'Hiç örneği olmayan bir kart için boş liste — `KeyNotFoundException` fırlatmaz.', neden: null, olmasaydi: null },
+          { satir: 'categoryIdsByCard.GetValueOrDefault(c.Id, []),', aciklama: 'Hiç kategoriye bağlı olmayan bir kart için boş liste.', neden: null, olmasaydi: null },
+          { satir: 'userCategoryIdsByCard.GetValueOrDefault(c.Id, [])))', aciklama: 'Hiç kişisel kategoriye bağlı olmayan bir kart için boş liste.', neden: null, olmasaydi: null },
+          { satir: '.ToList();', aciklama: 'Sonuç listesinin somutlaştırılması.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'UserCardMapping.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/UserCards/UserCardMapping.cs',
+        nedenBuKlasor: 'Features/UserCards/ — WordMapping (Features/Words/) ile AYNI desen: bir aggregate\'i DTO\'ya çeviren statik yardımcı, Command/Handler dosyalarıyla AYNI feature klasöründe yaşar.',
+        kod: `using Zausel.Application.DTOs.UserCards;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Domain.Entities.PersonalContent;
+
+namespace Zausel.Application.Features.UserCards;
+
+// AutoMapper Profile YAZILMADI — UserCardAggregate iki farklı entity türünü (UserCard/UserCardExample)
+// ve iki ayrı ara tablodan türetilmiş id listesini TEK bir iç içe DTO'ya birleştiriyor, WordMapping ile
+// AYNI gerekçe: aggregate/çoklu-kaynaklı bir dönüşüm AutoMapper'ın düz property eşlemesinden daha
+// OKUNAKLI değil. Create/Update/GetById/GetUserCards Handler'larının HEPSİ bu TEK metodu paylaşır.
+public static class UserCardMapping
+{
+    public static UserCardResponse ToResponse(UserCardAggregate aggregate, int? suggestedSystemWordId = null)
+    {
+        var card = aggregate.Card;
+        return new UserCardResponse(
+            card.Id,
+            card.FrontText,
+            card.BackText,
+            card.Notes,
+            card.ImageUrl,
+            card.IsActive,
+            aggregate.CategoryIds,
+            aggregate.UserCategoryIds,
+            aggregate.Examples.Select(ToExampleResponse).ToList(),
+            suggestedSystemWordId);
+    }
+
+    private static UserCardExampleResponse ToExampleResponse(UserCardExample example) =>
+        new(example.Id, example.SentenceFront, example.SentenceBack, example.DisplayOrder);
+}`,
+        satirlar: [
+          { satir: 'using Zausel.Application.DTOs.UserCards;', aciklama: '`UserCardResponse`/`UserCardExampleResponse`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`UserCardAggregate`\'in ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCardExample`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.UserCards;', aciklama: 'Mapping, Command/Query dosyalarıyla AYNI klasörde/ad alanında yaşar — ayrı bir "Mappings" üst klasörü AÇILMAZ, çünkü bu statik sınıf yalnızca BU feature\'ın Handler\'ları tarafından kullanılır, başka bir feature\'ın import etmesi BEKLENMEZ.', neden: null, olmasaydi: null },
+          { satir: 'public static class UserCardMapping', aciklama: '`WordMapping` ile AYNI statik yardımcı sınıf deseni — DI\'ye kayıtlı bir servis DEĞİL, çünkü hiçbir bağımlılığı yok.', neden: null, olmasaydi: null },
+          { satir: 'public static UserCardResponse ToResponse(UserCardAggregate aggregate, int? suggestedSystemWordId = null)', aciklama: '`suggestedSystemWordId` OPSİYONEL — yalnızca Create Handler\'ı bu parametreyi doldurur, Update/GetById/GetUserCards varsayılan `null`\'ı kullanır.', neden: null, olmasaydi: null },
+          { satir: 'var card = aggregate.Card;', aciklama: 'Tekrarlayan `aggregate.Card` erişimini kısaltan yerel değişken.', neden: null, olmasaydi: null },
+          { satir: 'return new UserCardResponse(', aciklama: 'DTO\'nun elle inşası — AutoMapper YOK.', neden: null, olmasaydi: null },
+          { satir: 'card.Id,', aciklama: 'Kart kimliği.', neden: null, olmasaydi: null },
+          { satir: 'card.FrontText,', aciklama: 'Ön yüz.', neden: null, olmasaydi: null },
+          { satir: 'card.BackText,', aciklama: 'Arka yüz.', neden: null, olmasaydi: null },
+          { satir: 'card.Notes,', aciklama: 'Opsiyonel not.', neden: null, olmasaydi: null },
+          { satir: 'card.ImageUrl,', aciklama: 'Opsiyonel görsel — A-10\'un sonraki bir bölümündeki yükleme uç noktası dolduracak.', neden: null, olmasaydi: null },
+          { satir: 'card.IsActive,', aciklama: 'Askıya alma bayrağı.', neden: null, olmasaydi: null },
+          { satir: 'aggregate.CategoryIds,', aciklama: 'Bağlı sistem kategorilerinin id listesi.', neden: null, olmasaydi: null },
+          { satir: 'aggregate.UserCategoryIds,', aciklama: 'Bağlı kişisel kategorilerin id listesi.', neden: null, olmasaydi: null },
+          { satir: 'aggregate.Examples.Select(ToExampleResponse).ToList(),', aciklama: 'Her `UserCardExample` kendi DTO\'suna çevrilir.', neden: null, olmasaydi: null },
+          { satir: 'suggestedSystemWordId);', aciklama: 'Yalnızca Create\'te dolu, aksi halde `null`.', neden: null, olmasaydi: null },
+          { satir: 'private static UserCardExampleResponse ToExampleResponse(UserCardExample example) =>', aciklama: 'Örnek entity\'sini kendi DTO\'suna çeviren yardımcı.', neden: null, olmasaydi: null },
+          { satir: 'new(example.Id, example.SentenceFront, example.SentenceBack, example.DisplayOrder);', aciklama: 'Dört alanın birebir aktarımı.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'UserCard DTO\'ları — Sade Kayıt (record) Tanımları',
+        terimler: [
+          { terim: 'UserCardExampleRequest.cs (DTOs/UserCards/)', tanim: '`record UserCardExampleRequest(string SentenceFront, string SentenceBack)` — istemciden gelen TEK bir örnek cümle, `DisplayOrder` istemciden GELMEZ (Handler dizideki SIRAYA göre üretir).' },
+          { terim: 'UserCardExampleResponse.cs (DTOs/UserCards/)', tanim: '`record UserCardExampleResponse(int Id, string SentenceFront, string SentenceBack, int DisplayOrder)` — kayıtlı bir örneğin TAM görünümü, `Id`/`DisplayOrder` dahil.' },
+          { terim: 'UserCardCreateRequest.cs (DTOs/UserCards/)', tanim: '`record UserCardCreateRequest(string FrontText, string BackText, string? Notes, List<int>? CategoryIds, List<int>? UserCategoryIds, List<UserCardExampleRequest>? Examples)` — `IsActive` YOK (yeni bir kart her zaman `true` başlar, istemcinin karar vermesi gereken bir alan DEĞİL).' },
+          { terim: 'UserCardUpdateRequest.cs (DTOs/UserCards/)', tanim: 'CreateRequest ile AYNI alanlar + `bool IsActive` — güncellemede kullanıcı kartı askıya ALABİLİR/geri AÇABİLİR, bu yüzden Update\'in Create\'ten TEK farkı bu alan.' },
+          { terim: 'UserCardResponse.cs (DTOs/UserCards/)', tanim: '`record UserCardResponse(int Id, string FrontText, string BackText, string? Notes, string? ImageUrl, bool IsActive, List<int> CategoryIds, List<int> UserCategoryIds, List<UserCardExampleResponse> Examples, int? SuggestedSystemWordId)` — TEK şekil, liste/detay/create/update HEPSİ bunu döner (`WordResponse` ile AYNI "tek response şekli" ilkesi); `SuggestedSystemWordId` yalnızca `POST /user-cards`\'ın 201 yanıtında dolabilir.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateUserCardCommand.cs',
+        dosyaYolu: 'backend/Zausel.Application/Features/UserCards/CreateUserCardCommand.cs',
+        kod: `using MediatR;
+using Zausel.Application.Common.Exceptions;
+using Zausel.Application.DTOs.UserCards;
+using Zausel.Application.Interfaces.Repositories.Content;
+using Zausel.Application.Interfaces.Repositories.PersonalContent;
+using Zausel.Application.Interfaces.Services;
+using Zausel.Domain.Entities.PersonalContent;
+using Zausel.Domain.Exceptions;
+
+namespace Zausel.Application.Features.UserCards;
+
+// Force — Controller'da ?force=true query string'inden okunur (CreateWordCommand ile AYNI desen),
+// Request DTO'sunun bir alanı DEĞİL.
+public record CreateUserCardCommand(
+    string FrontText,
+    string BackText,
+    string? Notes,
+    List<int>? CategoryIds,
+    List<int>? UserCategoryIds,
+    List<UserCardExampleRequest>? Examples,
+    bool Force,
+    int UserId,
+    string? ActorRole) : IRequest<UserCardResponse>;
+
+public class CreateUserCardCommandHandler : IRequestHandler<CreateUserCardCommand, UserCardResponse>
+{
+    private readonly IUserCardRepository _userCardRepository;
+    private readonly ICategoryRepository _categoryRepository;
+    private readonly IUserCategoryRepository _userCategoryRepository;
+    private readonly IWordConceptRepository _wordConceptRepository;
+    private readonly IActivityLogger _activityLogger;
+
+    public CreateUserCardCommandHandler(
+        IUserCardRepository userCardRepository, ICategoryRepository categoryRepository,
+        IUserCategoryRepository userCategoryRepository, IWordConceptRepository wordConceptRepository,
+        IActivityLogger activityLogger)
+    {
+        _userCardRepository = userCardRepository;
+        _categoryRepository = categoryRepository;
+        _userCategoryRepository = userCategoryRepository;
+        _wordConceptRepository = wordConceptRepository;
+        _activityLogger = activityLogger;
+    }
+
+    public async Task<UserCardResponse> Handle(CreateUserCardCommand request, CancellationToken cancellationToken)
+    {
+        var categoryIds = request.CategoryIds ?? [];
+        var userCategoryIds = request.UserCategoryIds ?? [];
+
+        if (categoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(categoryIds, cancellationToken))
+            throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", categoryIds)}");
+        if (userCategoryIds.Count > 0 && !await _userCategoryRepository.AllExistForUserAsync(userCategoryIds, request.UserId, cancellationToken))
+            throw new EntityNotFoundException($"One or more user categories not found: Ids={string.Join(",", userCategoryIds)}");
+
+        if (!request.Force)
+        {
+            var duplicate = await _userCardRepository.FindByUserAndFrontTextAsync(request.UserId, request.FrontText, excludeUserCardId: null, cancellationToken);
+            if (duplicate is not null)
+                throw new UserCardDuplicateException(request.FrontText);
+        }
+
+        var card = new UserCard
+        {
+            UserId = request.UserId,
+            FrontText = request.FrontText,
+            BackText = request.BackText,
+            Notes = request.Notes
+        };
+        await _userCardRepository.AddAsync(card, request.UserId, cancellationToken);
+        await _userCardRepository.SaveChangesAsync(cancellationToken);
+
+        await _userCardRepository.ReplaceCategoriesAsync(card.Id, categoryIds, cancellationToken);
+        await _userCardRepository.ReplaceUserCategoriesAsync(card.Id, userCategoryIds, cancellationToken);
+        await _userCardRepository.ReplaceExamplesAsync(card.Id, ToExamples(card.Id, request.Examples), cancellationToken);
+        await _userCardRepository.SaveChangesAsync(cancellationToken);
+
+        // Sistem eşleşmesi — dile bakılmaksızın, engelleyici DEĞİL yalnızca bilgilendirici bir öneri
+        // (aşağıdaki kartın kendisi FORCE gerekmeden zaten oluşturuldu).
+        var suggestedWord = await _wordConceptRepository.FindWordByTextAsync(request.FrontText, cancellationToken);
+
+        var aggregate = await _userCardRepository.GetByIdForUserAsync(card.Id, request.UserId, cancellationToken)
+            ?? throw new EntityNotFoundException($"UserCard not found after creation: Id={card.Id}");
+        var response = UserCardMapping.ToResponse(aggregate, suggestedWord?.Id);
+
+        await _activityLogger.LogAsync(
+            request.UserId, request.ActorRole, "CREATE_USER_CARD", entityType: "UserCard", entityId: card.Id,
+            oldValue: null, newValue: response, cancellationToken: cancellationToken);
+
+        return response;
+    }
+
+    private static List<UserCardExample> ToExamples(int userCardId, List<UserCardExampleRequest>? examples) =>
+        (examples ?? []).Select((example, index) => new UserCardExample
+        {
+            UserCardId = userCardId,
+            SentenceFront = example.SentenceFront,
+            SentenceBack = example.SentenceBack,
+            DisplayOrder = index
+        }).ToList();
+}`,
+        satirlar: [
+          { satir: 'using MediatR;', aciklama: '`IRequest<T>`/`IRequestHandler<TRequest, TResponse>` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Common.Exceptions;', aciklama: '`UserCardDuplicateException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.DTOs.UserCards;', aciklama: '`UserCardResponse`/`UserCardExampleRequest`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.Content;', aciklama: '`ICategoryRepository`/`IWordConceptRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Repositories.PersonalContent;', aciklama: '`IUserCardRepository`/`IUserCategoryRepository`\'nin ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Interfaces.Services;', aciklama: '`IActivityLogger`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Entities.PersonalContent;', aciklama: '`UserCard`/`UserCardExample`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Domain.Exceptions;', aciklama: '`EntityNotFoundException`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Features.UserCards;', aciklama: 'Bu görevin TÜM Command/Query dosyalarının paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public record CreateUserCardCommand(', aciklama: 'MediatR\'ın `IRequest<UserCardResponse>` sözleşmesini uygulayan, değişmez (record) komut.', neden: null, olmasaydi: null },
+          { satir: 'string FrontText,', aciklama: 'Kartın ön yüzü.', neden: null, olmasaydi: null },
+          { satir: 'string BackText,', aciklama: 'Kartın arka yüzü.', neden: null, olmasaydi: null },
+          { satir: 'string? Notes,', aciklama: 'Opsiyonel not.', neden: null, olmasaydi: null },
+          { satir: 'List<int>? CategoryIds,', aciklama: 'Bağlanacak sistem kategorileri.', neden: null, olmasaydi: null },
+          { satir: 'List<int>? UserCategoryIds,', aciklama: 'Bağlanacak kişisel kategoriler.', neden: null, olmasaydi: null },
+          { satir: 'List<UserCardExampleRequest>? Examples,', aciklama: 'Kartla birlikte eklenecek örnek cümleler.', neden: null, olmasaydi: null },
+          { satir: 'bool Force,', aciklama: 'Duplikat uyarısını görmezden gelip yine de oluşturma isteği.', neden: null, olmasaydi: null },
+          { satir: 'int UserId,', aciklama: 'Kartın sahibi — Controller\'da JWT\'den (`CurrentUserId`) okunur.', neden: null, olmasaydi: null },
+          { satir: 'string? ActorRole) : IRequest<UserCardResponse>;', aciklama: 'Audit log için aktörün rolü.', neden: null, olmasaydi: null },
+          { satir: 'public class CreateUserCardCommandHandler : IRequestHandler<CreateUserCardCommand, UserCardResponse>', aciklama: 'MediatR\'ın bu komutu ÇALIŞTIRACAĞI tek Handler.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserCardRepository _userCardRepository;', aciklama: 'Kartın kendisi + ara tablolar için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly ICategoryRepository _categoryRepository;', aciklama: 'Verilen `CategoryIds`\'in GERÇEKTEN var olup olmadığını doğrulamak için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IUserCategoryRepository _userCategoryRepository;', aciklama: 'Verilen `UserCategoryIds`\'in bu KULLANICIYA ait olup olmadığını doğrulamak için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IWordConceptRepository _wordConceptRepository;', aciklama: 'Sistem eşleşmesi önerisi için.', neden: null, olmasaydi: null },
+          { satir: 'private readonly IActivityLogger _activityLogger;', aciklama: 'Audit kaydı için.', neden: null, olmasaydi: null },
+          { satir: 'public CreateUserCardCommandHandler(', aciklama: 'Constructor injection — beş bağımlılık.', neden: null, olmasaydi: null },
+          { satir: 'IUserCardRepository userCardRepository, ICategoryRepository categoryRepository,', aciklama: 'İlk iki parametre.', neden: null, olmasaydi: null },
+          { satir: 'IUserCategoryRepository userCategoryRepository, IWordConceptRepository wordConceptRepository,', aciklama: 'Sonraki iki parametre.', neden: null, olmasaydi: null },
+          { satir: 'IActivityLogger activityLogger)', aciklama: 'Son parametre.', neden: null, olmasaydi: null },
+          { satir: '_userCardRepository = userCardRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_categoryRepository = categoryRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_userCategoryRepository = userCategoryRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_wordConceptRepository = wordConceptRepository;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: '_activityLogger = activityLogger;', aciklama: 'Alan ataması.', neden: null, olmasaydi: null },
+          { satir: 'public async Task<UserCardResponse> Handle(CreateUserCardCommand request, CancellationToken cancellationToken)', aciklama: 'MediatR\'ın çağıracağı TEK giriş noktası.', neden: null, olmasaydi: null },
+          { satir: 'var categoryIds = request.CategoryIds ?? [];', aciklama: 'Null-coalescing — istemci alanı hiç GÖNDERMEZSE boş liste varsayılır, aşağıdaki kodun her yerde `null` kontrolü YAPMASINA gerek KALMAZ.', neden: null, olmasaydi: null },
+          { satir: 'var userCategoryIds = request.UserCategoryIds ?? [];', aciklama: 'CategoryIds ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'if (categoryIds.Count > 0 && !await _categoryRepository.AllExistAsync(categoryIds, cancellationToken))', aciklama: 'Boş listede sorgu HİÇ çalıştırılmaz (kısa devre) — yalnızca GERÇEKTEN bir kategori isteniyorsa doğrulama yapılır.', neden: null, olmasaydi: null },
+          { satir: 'throw new EntityNotFoundException($"One or more categories not found: Ids={string.Join(",", categoryIds)}");', aciklama: 'Var olmayan/silinmiş bir kategoriye bağ kurulması ENGELLENİR.', neden: 'Bu kontrol OLMASAYDI, `ReplaceCategoriesAsync` var OLMAYAN bir `CategoryId`yle bile bir satır YARATABİLİRDİ (FK kısıtı bunu veritabanı seviyesinde YAKALAR ama o zaman hata mesajı GENERIC bir SQL istisnası olurdu, 404 yerine 500).', olmasaydi: 'Kontrol atlansaydı, istemcinin gönderdiği geçersiz bir `categoryId` kullanıcıya ANLAMSIZ bir 500 hatası olarak DÖNERDİ — FK ihlali SQL Server seviyesinde YAKALANIR ama bu, `EntityNotFoundException`ın verdiği AÇIK 404 mesajından ÇOK daha KÖTÜ bir geliştirici/kullanıcı deneyimidir.' },
+          { satir: 'if (userCategoryIds.Count > 0 && !await _userCategoryRepository.AllExistForUserAsync(userCategoryIds, request.UserId, cancellationToken))', aciklama: 'AYNI doğrulama, bu sefer SAHİPLİK dahil (`AllExistForUserAsync` yalnızca VAR OLUP olmadığına değil, bu KULLANICIYA ait olup OLMADIĞINA da bakar).', neden: null, olmasaydi: null },
+          { satir: 'throw new EntityNotFoundException($"One or more user categories not found: Ids={string.Join(",", userCategoryIds)}");', aciklama: 'Başkasının kişisel kategorisine bağ kurulması ENGELLENİR.', neden: 'Bu kontrol OLMASAYDI, bir kullanıcı BAŞKA bir kullanıcının `UserCategoryId`\'sini TAHMİN ederek (id\'ler ardışık integer olduğu için kolay tahmin edilir) kendi kartını o kişinin kategorisine BAĞLAYABİLİRDİ — `UserCardUserCategories` FK\'si `UserCategories(Id)`ye işaret eder ama HANGİ kullanıcıya ait olduğunu KISITLAMAZ, bu yüzden sahiplik kontrolü UYGULAMA katmanında YAPILMAK zorunda.', olmasaydi: 'Sahiplik kontrolü atlansaydı, `GET /user-categories` yanıtındaki `cardCount` başka bir kullanıcının kartlarını da SESSİZCE sayardı — kişisel içerik izolasyonu buradan DELİNİRDİ.' },
+          { satir: 'if (!request.Force)', aciklama: 'Force=true ise duplikat sorgusu HİÇ çalıştırılmaz.', neden: null, olmasaydi: null },
+          { satir: 'var duplicate = await _userCardRepository.FindByUserAndFrontTextAsync(request.UserId, request.FrontText, excludeUserCardId: null, cancellationToken);', aciklama: 'Create\'te henüz bir kart YOK, bu yüzden `excludeUserCardId: null`.', neden: null, olmasaydi: null },
+          { satir: 'if (duplicate is not null)', aciklama: 'AYNI kullanıcının AYNI FrontText\'li BAŞKA bir kartı varsa.', neden: null, olmasaydi: null },
+          { satir: 'throw new UserCardDuplicateException(request.FrontText);', aciklama: '409 Conflict — `?force=true` ile bilerek AŞILABİLİR bir uyarı, sistem seviyesinde bir KISIT DEĞİL (aynı kullanıcı gerçekten iki farklı bağlamda AYNI kelimeyi iki kart olarak tutmak İSTEYEBİLİR).', neden: null, olmasaydi: null },
+          { satir: 'var card = new UserCard', aciklama: 'Yeni entity\'nin bellekte oluşturulması.', neden: null, olmasaydi: null },
+          { satir: 'UserId = request.UserId,', aciklama: 'Sahiplik.', neden: null, olmasaydi: null },
+          { satir: 'FrontText = request.FrontText,', aciklama: 'Ön yüz.', neden: null, olmasaydi: null },
+          { satir: 'BackText = request.BackText,', aciklama: 'Arka yüz.', neden: null, olmasaydi: null },
+          { satir: 'Notes = request.Notes', aciklama: 'Opsiyonel not — `ImageUrl`/`IsActive` BURADA hiç atanmaz, entity\'nin kendi varsayılanları (`null`/`true`) geçerli kalır.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.AddAsync(card, request.UserId, cancellationToken);', aciklama: 'Change tracker\'a ekleme.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.SaveChangesAsync(cancellationToken);', aciklama: 'İLK kayıt — `card.Id`\'nin veritabanından ATANMASI için (aşağıdaki `ReplaceCategoriesAsync` çağrılarının bir FK\'ye ihtiyacı var).', neden: 'IDENTITY sütunlu bir tabloda `Id` yalnızca GERÇEK bir INSERT çalıştıktan SONRA bilinir — kategori/örnek bağları bu Id\'YE ihtiyaç duyduğu için, TEK bir `SaveChangesAsync` ile HER ŞEYİ birlikte yazmak MÜMKÜN değil.', olmasaydi: 'Tek bir `SaveChangesAsync` ile hepsi birlikte yazılmaya ÇALIŞILSAYDI, EF Core\'un change tracker\'ı geçici (henüz atanmamış) bir Id ÜZERİNDEN ilişkileri KENDİSİ çözebilirdi (navigation property KULLANILSAYDI) — ama burada FK\'ler navigation property DEĞİL DÜZ int (`UserCardId`) olduğu için bu OTOMATİK çözümleme ÇALIŞMAZ, iki AŞAMALI kayıt gerekir.' },
+          { satir: 'await _userCardRepository.ReplaceCategoriesAsync(card.Id, categoryIds, cancellationToken);', aciklama: 'Sistem kategori bağları.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.ReplaceUserCategoriesAsync(card.Id, userCategoryIds, cancellationToken);', aciklama: 'Kişisel kategori bağları.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.ReplaceExamplesAsync(card.Id, ToExamples(card.Id, request.Examples), cancellationToken);', aciklama: 'Örnek cümleler.', neden: null, olmasaydi: null },
+          { satir: 'await _userCardRepository.SaveChangesAsync(cancellationToken);', aciklama: 'İKİNCİ kayıt — bağ/örnek satırlarını YAZAR.', neden: null, olmasaydi: null },
+          { satir: 'var suggestedWord = await _wordConceptRepository.FindWordByTextAsync(request.FrontText, cancellationToken);', aciklama: 'Kart zaten OLUŞTU — bu sorgu SONUCU kartın var olup olmamasını ETKİLEMEZ, yalnızca yanıta EKLENECEK bir öneri üretir.', neden: null, olmasaydi: null },
+          { satir: 'var aggregate = await _userCardRepository.GetByIdForUserAsync(card.Id, request.UserId, cancellationToken)', aciklama: 'Yanıtı inşa etmek için kartın TAM (bağlar+örnekler dahil) hâlinin yeniden okunması.', neden: null, olmasaydi: null },
+          { satir: '?? throw new EntityNotFoundException($"UserCard not found after creation: Id={card.Id}");', aciklama: 'Bu satıra PRATİKTE asla düşülmez (kart bir ÖNCEKİ satırda BAŞARIYLA kaydedildi) — `WordConceptRepository.CreateWordCommand`daki AYNI güvenlik-ağı deseni.', neden: null, olmasaydi: null },
+          { satir: 'var response = UserCardMapping.ToResponse(aggregate, suggestedWord?.Id);', aciklama: 'DTO\'nun inşası — `suggestedWord` bulunamadıysa `null` (safe navigation).', neden: null, olmasaydi: null },
+          { satir: 'await _activityLogger.LogAsync(', aciklama: 'Audit log çağrısının başlangıcı.', neden: null, olmasaydi: null },
+          { satir: 'request.UserId, request.ActorRole, "CREATE_USER_CARD", entityType: "UserCard", entityId: card.Id,', aciklama: 'Kim/hangi rol/hangi eylem/hangi entity.', neden: null, olmasaydi: null },
+          { satir: 'oldValue: null, newValue: response, cancellationToken: cancellationToken);', aciklama: 'OldValue=null (yeni kayıt), NewValue dolu — `CreateUserCategoryCommand` ile AYNI desen.', neden: null, olmasaydi: null },
+          { satir: 'return response;', aciklama: 'Controller\'a dönen son değer.', neden: null, olmasaydi: null },
+          { satir: 'private static List<UserCardExample> ToExamples(int userCardId, List<UserCardExampleRequest>? examples) =>', aciklama: 'İstemci DTO\'sunu entity listesine çeviren özel yardımcı — UpdateUserCardCommand da AYNI (kendi kopyasını taşıyan) metodu kullanır.', neden: null, olmasaydi: null },
+          { satir: '(examples ?? []).Select((example, index) => new UserCardExample', aciklama: 'Null ise boş liste, aksi halde her öğe kendi INDEX\'iyle eşleşir.', neden: null, olmasaydi: null },
+          { satir: 'UserCardId = userCardId,', aciklama: 'Yeni örneğin ait olduğu kart.', neden: null, olmasaydi: null },
+          { satir: 'SentenceFront = example.SentenceFront,', aciklama: 'Örnek cümlenin ön yüzü.', neden: null, olmasaydi: null },
+          { satir: 'SentenceBack = example.SentenceBack,', aciklama: 'Örnek cümlenin arka yüzü.', neden: null, olmasaydi: null },
+          { satir: 'DisplayOrder = index', aciklama: 'Gösterim sırası — istemcinin dizideki SIRASI, ayrıca istemciden bir `displayOrder` alanı İSTENMEZ.', neden: null, olmasaydi: null },
+          { satir: '}).ToList();', aciklama: 'Sonuç listesinin somutlaştırılması.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Update/Delete/GetUserCards/GetUserCardById — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'UpdateUserCardCommand.cs (Features/UserCards/)', tanim: 'CreateUserCardCommand ile AYNI doğrulama+duplikat+kategori/örnek-değişim sırasını izler, TEK farkla: önce `GetByIdForUserAsync` ile mevcut kartı (ve sahipliği) çeker — bulunamazsa/başkasınınsa `EntityNotFoundException`; duplikat sorgusunda `excludeUserCardId: request.UserCardId` geçer (kendi kendine çakışma SAYILMAZ); `ActivityLogger.LogAsync`a hem `oldValue` (güncelleme ÖNCESİ response) hem `newValue` (SONRASI) verir — `UpdateUserCategoryCommand` ile AYNI "before/after" audit deseni.' },
+          { terim: 'DeleteUserCardCommand.cs (Features/UserCards/)', tanim: '`DeleteUserCategoryCommand` ile BİREBİR AYNI iskelet: `GetByIdForUserAsync` (sahiplik+404) → `SoftDeleteAsync` → `SaveChangesAsync` → `LogAsync` (`oldValue` dolu, `newValue=null`). Kategori/örnek bağları AYRICA silinmez — soft-delete yalnızca `UserCards.IsDeleted`\'i true yapar, global query filter (ZauselDbContext) bu kartı GİZLER, ara tablo satırları veritabanında KALIR ama artık hiçbir sorgunun ERİŞEMEDİĞİ bir karta işaret ettikleri için PRATİKTE görünmezler (hard-silinmiş bir kartın FK\'siz bıraktığı "yetim" satırlar DEĞİL, sadece SESSİZCE anlamsız kalırlar).' },
+          { terim: 'GetUserCardsQuery.cs (Features/UserCards/)', tanim: '`GetWordsQuery`nin sayfalama deseniyle AYNI — tek fark, sahiplik filtresi (`UserId`) parametre listesinin İLK elemanı, Handler yalnızca `IUserCardRepository.GetPagedForUserAsync`ı çağırıp `UserCardMapping.ToResponse` ile eşler, `suggestedSystemWordId` HİÇ hesaplanmaz (yalnızca Create\'e özgü).' },
+          { terim: 'GetUserCardByIdQuery.cs (Features/UserCards/)', tanim: '`GetByIdForUserAsync` çağırıp bulunamazsa `EntityNotFoundException`, bulunursa `UserCardMapping.ToResponse` — Handler\'ın EN kısası, başka hiçbir doğrulama/yan etki YOK.' }
+        ]
+      },
+      {
+        tur: 'kod',
+        baslik: 'CreateUserCardCommandValidator.cs',
+        dosyaYolu: 'backend/Zausel.Application/Validators/UserCards/CreateUserCardCommandValidator.cs',
+        nedenBuKlasor: 'Validators/UserCards/ — CreateUserCategoryCommandValidator (A-08) ile AYNI klasörleme deseni: doğrulayıcı, Command\'ın kendisiyle AYNI feature adını taşıyan ayrı bir klasörde yaşar.',
+        kod: `using FluentValidation;
+using Zausel.Application.Features.UserCards;
+
+namespace Zausel.Application.Validators.UserCards;
+
+public class CreateUserCardCommandValidator : AbstractValidator<CreateUserCardCommand>
+{
+    public CreateUserCardCommandValidator()
+    {
+        RuleFor(x => x.FrontText).NotEmpty().WithErrorCode("USER_CARD_FRONT_TEXT_REQUIRED");
+        RuleFor(x => x.FrontText).MaximumLength(500).WithErrorCode("USER_CARD_FRONT_TEXT_TOO_LONG");
+        RuleFor(x => x.BackText).NotEmpty().WithErrorCode("USER_CARD_BACK_TEXT_REQUIRED");
+        RuleFor(x => x.BackText).MaximumLength(500).WithErrorCode("USER_CARD_BACK_TEXT_TOO_LONG");
+        RuleFor(x => x.Notes).MaximumLength(2000).WithErrorCode("USER_CARD_NOTES_TOO_LONG");
+
+        RuleForEach(x => x.Examples).ChildRules(example =>
+        {
+            example.RuleFor(e => e.SentenceFront).NotEmpty().WithErrorCode("USER_CARD_EXAMPLE_SENTENCE_FRONT_REQUIRED");
+            example.RuleFor(e => e.SentenceBack).NotEmpty().WithErrorCode("USER_CARD_EXAMPLE_SENTENCE_BACK_REQUIRED");
+        });
+    }
+}`,
+        satirlar: [
+          { satir: 'using FluentValidation;', aciklama: '`AbstractValidator<T>`/`RuleFor`/`RuleForEach` için gerekli.', neden: null, olmasaydi: null },
+          { satir: 'using Zausel.Application.Features.UserCards;', aciklama: '`CreateUserCardCommand`\'ın ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'namespace Zausel.Application.Validators.UserCards;', aciklama: 'Bu görevin TÜM doğrulayıcılarının paylaştığı ad alanı.', neden: null, olmasaydi: null },
+          { satir: 'public class CreateUserCardCommandValidator : AbstractValidator<CreateUserCardCommand>', aciklama: 'FluentValidation\'ın `IValidator<T>` ailesi — MediatR pipeline\'ına eklenen bir davranış (`ValidationBehavior`) bu sınıfı Handler ÇAĞRILMADAN ÖNCE otomatik çalıştırır.', neden: null, olmasaydi: null },
+          { satir: 'public CreateUserCardCommandValidator()', aciklama: 'Kurallar constructor İÇİNDE tanımlanır — FluentValidation\'ın standart deseni, `Validate`/`ValidateAsync` her çağrıldığında YENİDEN kurulmaz.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.FrontText).NotEmpty().WithErrorCode("USER_CARD_FRONT_TEXT_REQUIRED");', aciklama: 'Boş bir ön yüzle kart oluşturulamaz.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.FrontText).MaximumLength(500).WithErrorCode("USER_CARD_FRONT_TEXT_TOO_LONG");', aciklama: 'DB sütun genişliğiyle (`nvarchar(500)`) BİREBİR eşleşen üst sınır — SQL Server\'ın kesme/hata YERİNE, kullanıcı 400 ile AÇIK bir mesaj görür.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.BackText).NotEmpty().WithErrorCode("USER_CARD_BACK_TEXT_REQUIRED");', aciklama: 'FrontText ile AYNI gerekçe.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.BackText).MaximumLength(500).WithErrorCode("USER_CARD_BACK_TEXT_TOO_LONG");', aciklama: 'FrontText ile AYNI üst sınır.', neden: null, olmasaydi: null },
+          { satir: 'RuleFor(x => x.Notes).MaximumLength(2000).WithErrorCode("USER_CARD_NOTES_TOO_LONG");', aciklama: '`Notes` OPSİYONEL (`NotEmpty` YOK), yalnızca DOLDURULURSA üst sınır uygulanır.', neden: null, olmasaydi: null },
+          { satir: 'RuleForEach(x => x.Examples).ChildRules(example =>', aciklama: '`CreateWordCommandValidator`daki `Translations`/`Examples` iç içe doğrulama deseniyle AYNI — dizideki HER örnek kendi kuralına tabi.', neden: null, olmasaydi: null },
+          { satir: 'example.RuleFor(e => e.SentenceFront).NotEmpty().WithErrorCode("USER_CARD_EXAMPLE_SENTENCE_FRONT_REQUIRED");', aciklama: 'Boş bir örnek cümle EKLENEMEZ.', neden: null, olmasaydi: null },
+          { satir: 'example.RuleFor(e => e.SentenceBack).NotEmpty().WithErrorCode("USER_CARD_EXAMPLE_SENTENCE_BACK_REQUIRED");', aciklama: 'SentenceFront ile AYNI gerekçe.', neden: null, olmasaydi: null }
+        ]
+      },
+      {
+        tur: 'sozluk',
+        baslik: 'Kalan Dört Doğrulayıcı — Aynı Deseni İzler',
+        terimler: [
+          { terim: 'UpdateUserCardCommandValidator.cs (Validators/UserCards/)', tanim: 'CreateUserCardCommandValidator ile BİREBİR AYNI kurallar + `RuleFor(x => x.UserCardId).GreaterThan(0).WithErrorCode("USER_CARD_ID_INVALID")` (route\'tan gelen id\'nin geçerliliği).' },
+          { terim: 'DeleteUserCardCommandValidator.cs (Validators/UserCards/)', tanim: 'Tek kural: `RuleFor(x => x.UserCardId).GreaterThan(0).WithErrorCode("USER_CARD_ID_INVALID")` — `DeleteUserCategoryCommandValidator` ile AYNI.' },
+          { terim: 'GetUserCardsQueryValidator.cs (Validators/UserCards/)', tanim: '`GetWordsQueryValidator` ile BİREBİR AYNI iki kural: `Page >= 1` (`PAGE_INVALID`), `PageSize` 1-100 arası (`PAGE_SIZE_INVALID`) — bu iki hata kodu ZATEN `ErrorMessages`te vardı, YENİ bir kod EKLENMEDİ.' },
+          { terim: 'GetUserCardByIdQueryValidator.cs (Validators/UserCards/)', tanim: 'Tek kural: `RuleFor(x => x.UserCardId).GreaterThan(0).WithErrorCode("USER_CARD_ID_INVALID")` — `GetWordByIdQueryValidator` ile AYNI desen.' }
+        ]
+      }
+    ]
+  };
+</script>
+<script src="../engine/slides-engine.js"></script>
+</body>
+</html>

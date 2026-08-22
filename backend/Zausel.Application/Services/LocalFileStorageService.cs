@@ -47,6 +47,20 @@ public class LocalFileStorageService : IFileStorageService
         return $"{_cfg["FileStorage:BaseUrl"]!.TrimEnd('/')}/{relativeUrl}";
     }
 
+    public Task DeleteImageAsync(string url, CancellationToken cancellationToken)
+    {
+        var baseUrl = _cfg["FileStorage:BaseUrl"]!.TrimEnd('/');
+        if (!url.StartsWith(baseUrl, StringComparison.Ordinal))
+            return Task.CompletedTask;
+
+        var relativePath = url[(baseUrl.Length + 1)..].Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.Combine(_cfg["FileStorage:UploadPath"]!, relativePath);
+        if (File.Exists(fullPath))
+            File.Delete(fullPath);
+
+        return Task.CompletedTask;
+    }
+
     // Spoofing regresyonu: içerik bildirilen uzantıyla eşleşmiyorsa (ör. metin dosyası ".png" adıyla) reddedilir.
     private static bool MatchesDeclaredType(byte[] bytes, string extension) => extension.ToLowerInvariant() switch
     {
